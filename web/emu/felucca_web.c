@@ -479,6 +479,13 @@ EXPORT void web_test_heavy(void)
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
 
+/* Exercise the same deferred engine switch as a preset load; no oscillator state is bypassed. */
+EXPORT void web_test_macro(uint32_t preset)
+{
+    host_preset_req(&trk[0], ENGI_MACRO, preset);
+    ui.force = 1;
+}
+
 EXPORT uint16_t *web_screen(void) { return web_fb; }
 EXPORT uint32_t web_screen_draws(void) { return web_draws; }
 EXPORT uint32_t web_now_ms(void) { return fm1_ms; }

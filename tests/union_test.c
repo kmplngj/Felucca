@@ -106,6 +106,22 @@ int main(int argc, char **argv)
                         snprintf(got[n++], 64, "%u-%u-%u p%u w%u %016llx", UE[b], UE[a], UE[b], pi, wait,
                                  (unsigned long long)useq(s3, 3, pi, wait));
                 }
+    /* Append MACRO coverage without changing any of the old sequences or their companion part. */
+    for (w = 0; w < 2u; w++)
+        for (pi = 0; pi < 3u; pi++)
+            for (a = 0; a < UNE; a++) {
+                uint32_t wait = w ? 0u : 10u;
+                uint32_t seq[4][3] = {{UE[a], ENGI_MACRO}, {ENGI_MACRO, UE[a]},
+                                     {UE[a], ENGI_MACRO, UE[a]}, {ENGI_MACRO, UE[a], ENGI_MACRO}};
+                for (b = 0; b < 4; b++) {
+                    uint32_t count = b < 2 ? 2 : 3;
+                    char key[32];
+                    if (count == 2) snprintf(key, sizeof key, "%u-%u", seq[b][0], seq[b][1]);
+                    else snprintf(key, sizeof key, "%u-%u-%u", seq[b][0], seq[b][1], seq[b][2]);
+                    snprintf(got[n++], 64, "%s p%u w%u %016llx", key, pi, wait,
+                             (unsigned long long)useq(seq[b], count, pi, wait));
+                }
+            }
     if (!gf) {
         for (i = 0; i < n; i++)
             printf("%s\n", got[i]);

@@ -20,7 +20,7 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "px_string_excite", "px_string_run", "px_symp_run",
          "dv_metal_run", "dv_kick_run", "dv_snare_run", "dv_clap_run", "dv_hat_run", "dv_tom_run",   # drum_voice.c
          "dv_rim_run", "dv_bell_run", "dv_cym_run", "dv_out", "dv_metal_mix",
-         "slicer_track",
+         "slicer_track", "macro_render", "mac_waveline", "mac_fold", "mac_fbfm",
          "slice_render", "slc_rev",                          # SLICE (eng_slice.c): the render, the reverse windows
          "fm1_alnk0_irq", "fm1_timer5_irq",               # the audio ISR; TIMER5: the key / LED scan (hal/fm1_input.h)
          "uac_tap48",                                       # the USB audio input at 48 kHz: the 44.1 -> 48 resampler (usb.c)

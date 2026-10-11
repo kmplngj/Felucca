@@ -59,3 +59,7 @@ rev_side_mix 9
 track_insert 3
 ins_drive 277
 ins_swept 230
+macro_render 119
+mac_waveline 975
+mac_fold 302
+mac_fbfm 43

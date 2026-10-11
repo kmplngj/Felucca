@@ -13,7 +13,7 @@
 import fs from "fs";
 import { storeSectors, restoreSectors } from "./worklet.js";
 
-const wasmPath = process.argv[2] || "build/emu/felucca.wasm", nativePath = process.argv[3];
+const wasmPath = process.argv[2] || "build/emu/felucca.wasm", nativePath = process.argv[3], macroPath = process.argv[4];
 const bytes = fs.readFileSync(wasmPath);
 const B = { FX: 0, SCL: 1, ENV: 2, LFO: 3, EDIT: 4, GLO: 5, HOME: 6, SAVE: 7, ARP: 8, SEQ: 9, PLAY: 10, REC: 11, OCTDN: 12, OCTUP: 13 };
 const EN = { SELECT: 0, ALGO: 1, PRESETS: 2, K1: 3, K2: 4, K3: 5, K4: 6 };
@@ -167,5 +167,25 @@ for (let i = 0; i < 3; i++) {
 }
 const ratio = best / 1000, max = +(process.env.BENCH_MAX || 0.5);
 check(`1 s of the heavy song (FM6 PHYS GRAIN chords + DRUM) in ${best.toFixed(1)} ms: ${(ratio * 100).toFixed(1)} % of real time`, ratio < max);
+
+// All six MACRO presets, real key events, TIMBRE/COLOR knob turns and release tails.
+const macro = await device(null);
+macro.render(500);
+for (let pi = 0; pi < 6; pi++) {
+  macro.ex.web_test_macro(pi); macro.render(100);
+  macro.ex.web_keys((1 << 7) | (1 << 11) | (1 << 14) | (1 << 19)); macro.render(300);
+  macro.rec = true; macro.peak = 0; macro.render(400);
+  macro.ex.web_enc(EN.K1, 20); macro.render(200);
+  macro.ex.web_enc(EN.K2, -20); macro.render(200);
+  macro.ex.web_keys(0); macro.render(1000);
+  macro.rec = false; macro.render(3000);
+  check(`MACRO preset ${pi}: keys, TIMBRE/COLOR gestures and release (peak ${macro.peak.toFixed(3)})`, macro.peak > 0.01 && macro.peak <= 1);
+}
+if (macroPath) {
+  const nat = new Float32Array(new Uint8Array(fs.readFileSync(macroPath)).buffer), web = macro.samples;
+  let diff = nat.length === web.length ? 0 : Infinity;
+  for (let i = 0; i < web.length && diff === 0; i++) if (nat[i] !== web[i]) diff = i + 1;
+  check(`six MACRO presets native/Wasm: ${web.length / 2} frames, ${diff === 0 ? "bit for bit" : "differs at " + diff}`, diff === 0);
+}
 console.log(fails ? `emu: ${fails} FAILED` : "emu: all ok");
 process.exit(fails ? 1 : 0);

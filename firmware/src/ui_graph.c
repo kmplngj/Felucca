@@ -1260,7 +1260,7 @@ static const char *eng_abbr(const char *name)
 #endif
                                        {"PHASE", "PHAS"}, {"LOFI", "LOFI"},
                                        {"SAMPLE", "SMPL"}, {"VOICE", "VOCL"}, {"TRIO", "TRIO"}, {"WHEEL", "WHEL"},
-                                       {"GRAIN", "GRAN"}, {"PHYS", "PHYS"}, {"DRUM", "DRUM"},
+                                       {"GRAIN", "GRAN"}, {"PHYS", "PHYS"}, {"MACRO", "MACR"}, {"DRUM", "DRUM"},
                                        {"NOISE", "NOIS"}, {"FM6", "FM6"}, {"SLICE", "SLCE"}};
     uint32_t i;
     for (i = 0; i < sizeof A / sizeof A[0]; i++)

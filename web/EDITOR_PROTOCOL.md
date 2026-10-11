@@ -90,12 +90,17 @@ watches (v2, `WATCH`), the device also sends push frames (cmds 23, 24, 26) at an
 | string | ASCII bytes, ended by a 0 byte |
 | scope | 0 = parameter of the selected track (`P_*`, 0..P_COUNT−1); 1 = global parameter (`G_*`, 0..G_COUNT−1) |
 | track | 0..3: tracks 1..4 (synth parts) |
-| engine byte | 0..NENGINES−1 (firmware before 1.0: NENGINES = its drum track, no engine). The numbers are fixed, new engines are appended: 0 ANALOG, 1 reserved (DIGITAL before 1.0: see below), 2 PHASE, 3 LOFI, 4 SAMPLE, 5 VOICE, 6 TRIO, 7 WHEEL, 8 GRAIN, 9 PHYS, 10 DRUM, 11 NOISE, 12 FM6, 13 SLICE (NENGINES 14; a build with `FELUCCA_SLICE=0` has 13). The device and the editor list them in another order (ANALOG FM6 PHASE LOFI SAMPLE VOICE TRIO WHEEL GRAIN PHYS NOISE SLICE DRUM: `ENGINE_ORDER`); the numbers stay |
+| engine byte | 0..NENGINES−1 (firmware before 1.0: NENGINES = its drum track, no engine). The numbers are fixed, new engines are appended: 0 ANALOG, 1 reserved (DIGITAL before 1.0: see below), 2 PHASE, 3 LOFI, 4 SAMPLE, 5 VOICE, 6 TRIO, 7 WHEEL, 8 GRAIN, 9 PHYS, 10 DRUM, 11 NOISE, 12 FM6, 13 SLICE, 14 MACRO (NENGINES 15, including builds with `FELUCCA_SLICE=0`: slot 13 stays reserved and is not selectable). The device and the editor list them in another order (ANALOG FM6 PHASE LOFI SAMPLE VOICE TRIO WHEEL GRAIN PHYS MACRO NOISE SLICE DRUM: `ENGINE_ORDER`); the numbers stay |
 
 The engine parameters are `P_E0..P_E7`: P_COUNT−8 .. P_COUNT−1 (103..110 since 1.5; 96..103 in 1.2 .. 1.4; 91..98 in
 1.1), and `INFO` gives `P_E0`.
 Their meaning, range and names depend on the current engine, so re-read `DESC` for them
 after an engine change.
+
+MACRO uses the existing eight engine parameters: SHAPE (WAVE/FOLD/FBFM), TIMBRE, COLOR,
+TUNE, CUT, RES, DRIVE and FINE; see [the controls](../docs/macro-engine.md). P_COUNT remains
+111 and P_E0 remains 103; no new command or project version is required. Earlier firmware
+cannot load MACRO sounds (unknown engine 14).
 
 The modulation matrix (the MOD page, `firmware/src/mod.c`) is twelve track parameters at ids 49..60 (since
 P_COUNT 69): slot k (1..4) is `SRCk`, `DSTk`, `AMTk` at ids 49 + 3 (k − 1) .. 51 + 3 (k − 1).
@@ -806,6 +811,12 @@ content, and then writes. Abort: `3, id`. Id 0 replaces the music now playing (R
 ids 1..9 are written to flash (settings and presets are applied too). Nothing is written before the commit.
 The web editor sends ids 2..7 and the samples first, then 1, then 0 last. A failed restore can leave
 earlier objects restored; the file is still the source.
+
+With MACRO, settings use PER5: PER4's full prefix is retained and 32 bytes of MACRO favorites
+are appended. Boot import and id 1 restore accept PER4 and migrate it to PER5 after validation;
+MIDI LEARN's row 14 and UI preferences' row 15 are preserved. PER1–PER3 still migrate at boot.
+Older firmware cannot import PER5 settings or restore that settings object; keep a pre-update
+backup if downgrading. Projects retain FUN10 and existing engine IDs.
 
 | rc | Meaning |
 | --- | --- |

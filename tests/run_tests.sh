@@ -323,8 +323,18 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
     run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt tests/cpu_baseline.txt
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/union_test" tests/union_test.c -lm
-    run "engine memory (1.5): every switch between the engines with per-part state sounds as in 1.4 (720 sequences)" \
+    run "engine memory: 720 preserved sequences plus 192 MACRO switches" \
         "$OUT/union_test" tests/union_golden.txt
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/macro_test" tests/macro_test.c -lm
+    run "MACRO: tuning, controls, retrigger, independent parts, release, corners and host cost" "$OUT/macro_test"
+    for cfg in 0.0 1.0 1.1; do
+        IFS=. read -r macro_fm4 macro_slice <<EOF
+$cfg
+EOF
+        $CC -O2 -w -DFELUCCA_FM4="$macro_fm4" -DFELUCCA_SLICE="$macro_slice" -Ibuild/gen -Ifirmware/src \
+            -o "$OUT/macro_config_test" tests/macro_test.c -lm
+        run "MACRO stable IDs and DSP: FM4=$macro_fm4 SLICE=$macro_slice" env NOCOST=1 "$OUT/macro_config_test"
+    done
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/descdump" tests/descdump.c -lm
     echo "== parameter and engine tables as JSON (for the editor mock test)"
     "$OUT/descdump" > "$OUT/desc.json" || fail=1
@@ -393,6 +403,9 @@ elif ! san_ok; then
 else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
+    ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=undefined -Ibuild/gen -Ifirmware/src \
+        -o "$A/macro_core_test" tests/macro_core_test.c -lm
+    run "strict ASan/UBSan: MACRO interpolation, scan and pitch/control bounds, model changes" "$A/macro_core_test"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
     $SCC -o "$A/ldr_test" tests/ldr_test.c
@@ -431,8 +444,9 @@ else
     run "browser emulator: the firmware to WebAssembly (web/emu/build.sh -> build/emu)" sh web/emu/build.sh
     cc -O2 -ffp-contract=off -w -Ibuild/gen -Ifirmware/src -o "$OUT/emu_native" web/emu/native_check.c -lm
     run "browser emulator: the same song from the native build" "$OUT/emu_native" "$OUT/emu_native.f32"
-    run "browser emulator: boot, keys, MIDI, screen, LEDs, PLAY, a save kept across instances, = native, cost" \
-        node web/emu/emu_test.mjs build/emu/felucca.wasm "$OUT/emu_native.f32"
+    run "browser emulator: all MACRO presets from the native build" "$OUT/emu_native" "$OUT/emu_macro_native.f32" macro
+    run "browser emulator: boot, inputs, screen, LEDs, save, song and MACRO = native, cost" \
+        node web/emu/emu_test.mjs build/emu/felucca.wasm "$OUT/emu_native.f32" "$OUT/emu_macro_native.f32"
 fi
 
 [ $fail -eq 0 ] && echo "ALL HOST TESTS PASSED" || { echo "HOST TESTS FAILED"; exit 1; }

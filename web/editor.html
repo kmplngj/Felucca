@@ -1687,7 +1687,7 @@ function makeMockDevice(opt = {}) {
     E("MIDI", ["USB", "TRS"], 0), E("SYNC", NDASH, 0), E("ROUT", ["CH1-4", "SEL", "CH5-8", "CH9-12", "CH13-16"], 0), D("CPU", F.INT, 0, 0, 0),
     D("SLOT", F.INT, 1, 4, 1), E("NAME", NDASH, 0), E("LOAD", NGO, 0), E("SAVE", NGO, 0),
     E("ENG", ["ANALOG", "-", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL",
-      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE"], 0), E("SET", NGO, 0),
+      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE", "MACRO"], 0), E("SET", NGO, 0),
     E("CLRSQ", NGO, 0), E("INIT", NGO, 0),
     E("TYPE", ["ROOM", "SPRING", "HALL"], 2),       /* G_RTYPE (id 24, was G_DRCH): the reverb's model (HALL: 1.2) */
     D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0),   /* G_DRLVL, G_DRREV: inert since 1.0 */
@@ -1773,6 +1773,15 @@ function makeMockDevice(opt = {}) {
         E("MODE", ["ONE", "GATE", "LOOP"], 0), E("REV", ["OFF", "ON"], 0), D("DCAY", F.TIME, 0, 127, 127), D("TONE", F.INT, 0, 127, 127)],
       presets: [P("CHOP", [0, 2, 0, 0, 0, 0, 127, 127], [0, 127, 127, 30], 0, 9), P("STUTTER", [0, 1, 0, 0, 1, 0, 90, 110], [0, 127, 127, 12], 0, 10)] },
   ];
+  ENG.push({ name: "MACRO", titles: ["OSC", "TONE"], edit: [E("SHAPE", ["WAVE", "FOLD", "FBFM"], 0),
+    D("TIMBRE", F.PCT, 0, 127, 64), D("COLOR", F.PCT, 0, 127, 64), D("TUNE", F.SEMI, -24, 24, 0),
+    D("CUT", F.CUTOFF, 0, 127, 110), D("RES", F.PCT, 0, 127, 8), D("DRIVE", F.PCT, 0, 127, 0), D("FINE", F.INT, -50, 50, 0, null, "ct")],
+    presets: [P("WAVE SCAN", [0, 40, 64, 0, 110, 8, 0, 0], [10, 65, 100, 45], 0, 5),
+      P("WAVE BASS", [0, 80, 32, -12, 60, 30, 8, 0], [0, 55, 75, 20], 1, 2),
+      P("FOLD LEAD", [1, 80, 32, 0, 100, 12, 0, 0], [0, 60, 100, 35], 1, 4),
+      P("FOLD PAD", [1, 45, 96, 0, 78, 15, 0, 4], [65, 80, 105, 80], 0, 5),
+      P("FBFM BELL", [2, 50, 76, 0, 115, 5, 0, 0], [0, 85, 0, 70], 0, 7),
+      P("FBFM BASS", [2, 72, 64, -12, 65, 15, 5, 0], [0, 50, 75, 25], 1, 2)] });
   const FM6_E = ENG.findIndex((e) => e.name === "FM6"), FM6_OWN = FM6.FACTORY_PK.length, DRUM_E = ENG.findIndex((e) => e.name === "DRUM");
   /* factory PATTERNS[] (engines.c; the device loads them from SAVE > PHRASES, presets only suggest one): absolute
      notes, 0 rest; flags 1 accent, 2 slide, 4 tie (holds the previous note) */
@@ -2423,7 +2432,7 @@ function enumShown(d) {
 /* the order the device shows its engines in (src/engines.c ENGINE_ORDER): the lists here follow it, the protocol keeps
    the engine numbers. engineOrder(names): the indices of names in that order, "-" (a reserved number) left out; a name
    the list does not know (another firmware) follows in index order */
-const ENGINE_ORDER = ["ANALOG", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "NOISE",
+const ENGINE_ORDER = ["ANALOG", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "MACRO", "NOISE",
   "SLICE", "DRUM"];
 function engineOrder(names) {
   const rank = (n) => { const k = ENGINE_ORDER.indexOf(n); return k < 0 ? ENGINE_ORDER.length : k; };

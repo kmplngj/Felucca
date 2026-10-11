@@ -239,6 +239,25 @@ int main(void)
     bad += check("a wrong CRC is refused before any write",
                  put_all(1, &ps, sizeof ps, st_crc32(&ps, sizeof ps) ^ 1u) == 2u && erases == before);
 
+    {   /* An old PER4 archive expands only after validation, keeping MIDI LEARN's row intact. */
+        persist_t old = ps;
+        old.magic = 0x50455234u;
+        memset(old.favorites.factory[14], 0xa5, 32);
+        memset(old.favorites.macro, 0xff, 32);
+        bad += check("PER4 settings restore as PER5, keeping MIDI LEARN and clearing only new stars",
+                     put_all(1, &old, PERSIST_V4_SIZE, st_crc32(&old, PERSIST_V4_SIZE)) == 0 &&
+                     persist_saved.magic == PERSIST_MAGIC && favorites.factory[14][0] == 0xa5 &&
+                     !favorite_has(ENGI_MACRO, 0));
+        favorite_set(ENGI_MACRO, 5, 1);
+        settings_export(&ps);
+        bad += check("PER5 backup restores MACRO favorites independently of MIDI LEARN",
+                     put_all(1, &ps, sizeof ps, st_crc32(&ps, sizeof ps)) == 0 &&
+                     favorite_has(ENGI_MACRO, 5) && favorites.factory[14][0] == 0xa5);
+        before = erases;
+        bad += check("PER4 magic with PER5 length is refused before any erase",
+                     put_all(1, &old, sizeof old, st_crc32(&old, sizeof old)) == 2u && erases == before);
+    }
+
     /* malformed requests */
     bad += check("an unknown object id is refused", put_begin(8, sizeof ps, 0) == 1u);
     bad += check("a project of the wrong length is refused", put_begin(2, sizeof(project_store_t) - 4u, 0) == 1u);
@@ -420,6 +439,16 @@ int main(void)
         b.nslot = 3;
         bad += check("a bank with the wrong slot count is refused", put_all(7, &b, sizeof b, st_crc32(&b, sizeof b)) == 2u);
     }
+    reset();
+    host_preset(&trk[0], ENGI_MACRO, 4);
+    project_capture(&proj_scratch);
+    proj_pack(&st, &proj_scratch);
+    host_preset(&trk[0], 0, 0);
+    bad += check("FUN10 MACRO backup restores stable engine 14, preset and all engine parameters",
+                 put_all(0, &st, sizeof st, st_crc32(&st, sizeof st)) == 0 &&
+                 trk[0].eng_req == ENGI_MACRO && trk[0].preset == 4 &&
+                 trk[0].p[P_E0] == MAC_FBFM && trk[0].p[P_E1] == 50 && trk[0].p[P_E2] == 76 &&
+                 trk[0].p[P_E4] == 115 && trk[0].p[P_E5] == 5 && trk[0].p[P_E7] == 0);
     printf("backup test %s\n", bad ? "FAILED" : "passed");
     return bad != 0;
 }

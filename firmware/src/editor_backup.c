@@ -106,9 +106,15 @@ static uint32_t ed_bk_commit(void)
         }
         obj = OBJ_PROJECT0 + ed_bk_id - 2u;
     } else if (ed_bk_id == 1u) {
-        const persist_t *p = (const persist_t *)raw;
-        if (ed_bk_len != sizeof *p || p->magic != PERSIST_MAGIC || !palette_stored_ok(p->palette) ||
+        persist_t *p = (persist_t *)raw;
+        int old4 = ed_bk_len == PERSIST_V4_SIZE && p->magic == 0x50455234u;
+        if (!((ed_bk_len == sizeof *p && p->magic == PERSIST_MAGIC) || old4) || !palette_stored_ok(p->palette) ||
             p->lowcut > 2u || !leds_stored_ok(p->zoom) || !hold_stored_ok(p->bold) || p->favorites.filter > 1u || !ed_bk_panel_valid(&p->panel)) return 2;
+        if (old4) {                          /* validate the old CRC and fields before expanding the staged object */
+            memset(p->favorites.macro, 0, sizeof p->favorites.macro);
+            p->magic = PERSIST_MAGIC;
+            ed_bk_len = sizeof *p;
+        }
         obj = OBJ_SETTINGS;
     } else if (ed_bk_id == 6u || ed_bk_id == 7u) {
         const up_bank_t *p = (const up_bank_t *)raw;
@@ -168,7 +174,7 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)
         if (n != 12u || a[6] > 15u || a[11] > 15u) return 1;
         uint32_t len = ed_bk_r32(a + 2);
         if (len > ED_BK_MAX || (a[1] == 0u && !proj_store_len(len)) ||
-            (a[1] == 1u && len != sizeof(persist_t)) ||
+            (a[1] == 1u && len != sizeof(persist_t) && len != PERSIST_V4_SIZE) ||
             (a[1] >= 2u && a[1] <= 5u && len && !proj_store_len(len)) ||
             ((a[1] == 6u || a[1] == 7u) && len && len != sizeof(up_bank_t)) ||
             (a[1] == 8u && len && len != sizeof(fm6_bank_t)) || (a[1] == 9u && len && len != sizeof(upf_t))) return 1;

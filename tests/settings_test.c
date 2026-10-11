@@ -4,7 +4,8 @@
 #include <string.h>
 #include <assert.h>
 #define __attribute__(x)
-#define NENGINES 9u
+#define NENGINES 15u
+#define ENGI_MACRO 14u
 #define UP_SLOTS 32u
 #define ENGI_SAMPLE 4u                           /* (core.h: SAMPLE, DRUM, the retired PERC set) */
 #define ENGI_DRUM 10u
@@ -208,7 +209,25 @@ int main(void)
         p = original; assert(settings_import(&p, sizeof p) == 1);
     }
 #endif
+    {   /* PER4 keeps MIDI LEARN and the old favorites; PER5 stars MACRO independently. */
+        p = original; p.magic = 0x50455234u;
+        memset(p.favorites.factory[14], 0xa5, 32);
+        memset(p.favorites.macro, 0xff, 32);  /* bytes beyond an old record must never be imported */
+        assert(settings_import(&p, PERSIST_V4_SIZE) == 2 && p.magic == PERSIST_MAGIC);
+        assert(favorite_has(8, 0) && favorite_has(NENGINES, 31) && !favorite_has(ENGI_MACRO, 0));
+        assert(favorite_set(ENGI_MACRO, 0, 1) && favorite_set(ENGI_MACRO, 5, 1) && favorite_set(ENGI_MACRO, 255, 1));
+        for (uint32_t i = 0; i < 32; i++) assert(favorites.factory[14][i] == 0xa5);
+        settings_export(&p);
+        assert(settings_import(&p, sizeof p) == 1 && favorite_has(ENGI_MACRO, 255));
+        memset(favorites.factory[14], 0, 32); /* clearing MIDI LEARN cannot clear MACRO stars */
+        assert(favorite_has(ENGI_MACRO, 0) && favorite_has(ENGI_MACRO, 5));
+        assert(favorite_set(ENGI_MACRO, 5, 0) && !favorite_has(ENGI_MACRO, 5));
+        settings_export(&p);
+        assert(settings_import(&p, sizeof p) == 1 && favorite_has(ENGI_MACRO, 0) && !favorite_has(ENGI_MACRO, 5));
+        p.magic = 0x50455234u;
+        assert(settings_import(&p, sizeof p) == 0); /* magic and size must agree */
+    }
     assert(settings_import(&p, 3) == 0 && settings_import(&p, -1) == 0);
     assert(settings_import(&p, sizeof p - 1) == 0);
-    puts("Settings: PER1/PER2/PER3 migration, palette ids, calibration, HOLD, LEDS, CLICK / COUNT-IN, the FX key map, MIDI LEARN's map and independent feature preservation passed.");
+    puts("Settings: PER1..PER4 migration to PER5, palette ids, calibration, HOLD, LEDS, CLICK / COUNT-IN, FX keys, independent MIDI LEARN and MACRO favorites passed.");
 }

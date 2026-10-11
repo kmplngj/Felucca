@@ -85,8 +85,8 @@ static const uint8_t FM4_TO_FM6[FM4_NPRESETS] = {0, 1, 2, 3, 6, 4, 5, 7};
         {l4, F_PCT, 0, 127, 60, 0, 0}, {l5, f1, 0, 127, 60, 0, 0}, {l6, F_PCT, 0, 127, 0, 0, 0},               \
         {"-", F_INT, 0, 0, 0, 0, 0}}
 
-#if !FELUCCA_FM4
-/* engine 1 without the DSP: never selectable, no presets, silent (a track never keeps it: fm4_convert) */
+/* Reserved engine slots without DSP: never selectable, no presets, silent.
+ * Also used for disabled SLICE, including builds that retain DIGITAL. */
 static void fm4_gone_note_on(struct track *t, voice_t *v) { (void)t; (void)v; }
 static void fm4_gone_render(struct track *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
@@ -100,8 +100,6 @@ static const engine_t ENG_FM4_GONE = {
     .render = fm4_gone_render,
     .knob = {P_E4, P_E5, P_E6, P_REL},
 };
-#endif
-
 /* ------------------------------------------------------- conversion --- */
 #define FM4_MUTE (-100000)       /* the microsteps of silence */
 #ifndef FM4_FB_NOISE

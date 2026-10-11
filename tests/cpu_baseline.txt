@@ -78,3 +78,9 @@ cpu/mix/idle 286
 cpu/mix/idle_drums 552
 cpu/mix/3parts_full_drums 1574
 cpu/mix/idle_click 334
+cpu/MACRO/00_WAVE_SCAN 1995
+cpu/MACRO/01_WAVE_BASS 2219
+cpu/MACRO/02_FOLD_LEAD 1807
+cpu/MACRO/03_FOLD_PAD 1800
+cpu/MACRO/04_FBFM_BELL 1276
+cpu/MACRO/05_FBFM_BASS 1374
