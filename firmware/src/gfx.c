@@ -37,6 +37,9 @@ typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #define GFX_HOOK_BEGIN() ((void)0)
 #define GFX_HOOK_PIXELS(n) ((void)0)
 #endif
+#ifndef GFX_HOOK_BLIT_RECT
+#define GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h) ((void)0)
+#endif
 #ifndef GFX_HOOKS
 #define GFX_HOOKS 1
 #endif
@@ -217,6 +220,24 @@ static void cv_blit_from(uint32_t x, uint32_t y, uint32_t r0)
     GFX_HOOK_BLIT(x, y, r0);
     if (r0 < cv_h)
         lcd_blit(x, y + r0, cv_w, cv_h - r0, cv_px + r0 * cv_w);
+}
+
+/* Submit a rectangle from a freshly rendered canvas. Packing forward is safe:
+ * each destination precedes its source, including within a row. The canvas is
+ * consumed; cv_begin must wait for this DMA before any following drawing. */
+static void cv_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h)
+{
+    uint32_t r, c, dst = 0;
+    if (x0 >= cv_w || y0 >= cv_h || !w || !h)
+        return;
+    if (w > cv_w - x0) w = cv_w - x0;
+    if (h > cv_h - y0) h = cv_h - y0;
+    lcd_sync();                                   /* never overwrite a running DMA's source */
+    GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h);         /* before packing changes canvas coordinates */
+    for (r = 0; r < h; r++)
+        for (c = 0; c < w; c++)
+            cv_px[dst++] = cv_px[(y0 + r) * cv_w + x0 + c];
+    lcd_blit(x + x0, y + y0, w, h, cv_px);
 }
 
 static inline void cv_pset(int32_t x, int32_t y, uint16_t c)

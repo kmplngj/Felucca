@@ -117,7 +117,32 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
         for (i = 0; i < w && x + i < 240u; i++)
             host_put((y + j) * 240u + x + i, (uint16_t)((c >> 8) | (c << 8)));
 }
-static void lcd_sync(void) {}
+static void lcd_sync(void);
+static void (*host_lcd_sync_hook)(void);
+static int host_lcd_async;
+static uint32_t host_dma_bad, host_blit_pixels, host_blit_calls;
+static struct { uint32_t x, y, w, h, hash; const uint16_t *p; } host_dma;
+static uint32_t host_lcd_hash(const uint16_t *p, uint32_t n)
+{
+    uint32_t h = 2166136261u;
+    while (n--) h = (h ^ *p++) * 16777619u;
+    return h;
+}
+static void host_lcd_copy(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
+{
+    uint32_t i, j;
+    for (j = 0; j < h && y + j < 240u; j++)
+        for (i = 0; i < w && x + i < 240u; i++) host_put((y + j) * 240u + x + i, p[j * w + i]);
+}
+static void lcd_sync(void)
+{
+    if (host_dma.p) {
+        host_dma_bad += host_dma.hash != host_lcd_hash(host_dma.p, host_dma.w * host_dma.h);
+        host_lcd_copy(host_dma.x, host_dma.y, host_dma.w, host_dma.h, host_dma.p);
+        host_dma.p = 0;
+    }
+    if (host_lcd_sync_hook) host_lcd_sync_hook();
+}
 /* MENU > SCREEN OFF (lcd.c lcd_power / lcd_wake_now): what the panel was told, in order (0 off: DISPOFF, SLPIN;
  * 1 SLPOUT; 2 DISPON; 3 lcd_wake_now), with the time; host_bl the panel showing (the backlight itself stays on: PA2 is
  * the key matrix's /OE too, lcd.c lcd_power) */
@@ -135,10 +160,15 @@ static void lcd_wake_now(void) { host_pw_log(3u); }
 static uint32_t host_blit_rows;                    /* rows blitted (what a frame draws) */
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
-    uint32_t i, j;
+    lcd_sync();
     host_blit_rows += h;
-    for (j = 0; j < h && y + j < 240u; j++)
-        for (i = 0; i < w && x + i < 240u; i++) host_put((y + j) * 240u + x + i, p[j * w + i]);
+    host_blit_pixels += w * h;
+    host_blit_calls++;
+    if (host_lcd_async) {
+        host_dma.x = x; host_dma.y = y; host_dma.w = w; host_dma.h = h; host_dma.p = p;
+        host_dma.hash = host_lcd_hash(p, w * h);
+    } else
+        host_lcd_copy(x, y, w, h, p);
 }
 static struct { uint32_t stage; } felucca_dbg;
 #define FELUCCA_FLASH 0
@@ -4889,6 +4919,125 @@ static int test_piano_roll(void)
     }
     key_up(7); frames(100);
     song.rec = 0;
+    return bad;
+}
+
+/* Partial STEP transfers must assemble exactly the same screen as a fresh
+ * full graph, including the notes/ties/slides that obscure the playhead. */
+static uint16_t pr_damage_shot[240 * 240];
+static int pr_damage_compare(uint32_t pixels)
+{
+    uint32_t sent = host_blit_pixels, calls = host_blit_calls;
+    int ok;
+    lcd_sync();
+    memcpy(pr_damage_shot, host_screen, sizeof pr_damage_shot);
+    ui.force = 1; draw_graph(); lcd_sync(); ui.force = 0;
+    ok = !memcmp(pr_damage_shot, host_screen, sizeof pr_damage_shot);
+    return ok && sent == pixels && calls == (pixels != 0u);
+}
+static void pr_damage_draw(void) { host_blit_pixels = host_blit_calls = 0; draw_graph(); }
+static void pr_damage_advance(void)
+{
+    TSEL->seq_idx++;
+    host_lcd_sync_hook = 0;
+}
+static void pr_damage_edit_during_draw(void)
+{
+    TSEL->step[0].note[0]++;
+    host_lcd_sync_hook = 0;
+}
+static void pr_damage_force_during_draw(void)
+{
+    ui.force = 1;
+    host_lcd_sync_hook = 0;
+}
+static int test_piano_roll_damage(void)
+{
+    uint32_t pal, style, large, i, k, adjacent = (PR_CW + 1u) * PR_ROWS * PR_RH, full = 240u * H_GRAPH;
+    int bad = 0, ok = 1;
+    ui_power_on(); go_page(GR_ROLL);
+    TSEL->p[P_SLEN] = 32;
+    TSEL->p[P_VOICE] = V_POLY;
+    for (i = 0; i < NSTEP; i++) {
+        step_t *s = &TSEL->step[i];
+        step_clear(s);
+        if (i % 4u != 1u) {
+            s->time = ST_NOTE; s->n = 4;
+            for (k = 0; k < 4u; k++) s->note[k] = (uint8_t)(30u + i % 7u + k * 22u);
+            s->flags = SF_SLIDE | (i % 3u ? SF_ACCENT : 0u);
+            if (i % 4u == 3u) step_set_ratchet(s, 4);
+        } else s->time = ST_TIE;
+    }
+    host_lcd_async = 1; host_dma_bad = 0;
+    for (pal = 0; pal < NPALETTES; pal++)
+        for (style = 0; style < 2u; style++)
+            for (large = 0; large < 2u; large++) {
+                ux.style = (uint8_t)style; palette_set(pal);
+                ui_prefs = PREF_ANIM_OFF | (large ? PREF_LARGE : 0u);
+                ui.bank = 0; ui.cursor = 5; song.playing = 1; TSEL->seq_idx = 0;
+                ui.force = 1; draw_graph(); ui.force = 0;
+                for (i = 1; i < 16u; i++) {
+                    TSEL->seq_idx = i; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+                }
+                TSEL->seq_idx = 14; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+                /* last -> first, skipped steps, off-bank, transport: conservative full fallback */
+                TSEL->seq_idx = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 6; pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 16; pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 17; pr_damage_draw(); ok &= pr_damage_compare(0);
+                TSEL->seq_idx = 8; pr_damage_draw(); ok &= pr_damage_compare(full);
+                song.playing = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+                song.playing = 1; pr_damage_draw(); ok &= pr_damage_compare(full);
+                ui.bank = 1; ui.cursor = 20; TSEL->seq_idx = 16;
+                pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 17; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+            }
+    bad += check("STEP damage: every palette/style/LARGE, chords, ties, slides, ratchets, out-of-view notes; exact full-redraw pixels", ok);
+    ok = 1;
+    ui.bank = 0; ui.cursor = 4; TSEL->seq_idx = 4; ui.force = 1; draw_graph(); ui.force = 0;
+    /* Audio advances after capture, when cv_begin waits for the preceding DMA. */
+    TSEL->seq_idx = 5; host_lcd_sync_hook = pr_damage_advance;
+    pr_damage_draw(); lcd_sync();
+    ok &= pr_shown == 5u && TSEL->seq_idx == 6u;
+    TSEL->seq_idx = 5; ok &= pr_damage_compare(adjacent);
+    TSEL->seq_idx = 6; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+    for (i = 0; i < 8u; i++) {
+        TSEL->seq_idx = i + 7u;
+        switch (i) {
+        case 0: ui.cursor++; break;
+        case 1: TSEL->step[0].note[0]++; break;
+        case 2: TSEL->p[P_SCALE]++; break;
+        case 3: TSEL->p[P_SLEN] = 15; break;
+        case 4: palette_set((pal + 1u) % NPALETTES); break;
+        case 5: proll.lo++; break;
+        case 6: kb_chn[0] = 1; kb_trk[0] = song.sel; kb_chord[0][0] = proll.lo; break;
+        case 7: ui.force = 1; break;
+        }
+        pr_damage_draw(); ui.force = 0; ok &= pr_damage_compare(full);
+    }
+    kb_chn[0] = 0;
+    pr_damage_draw();
+    TSEL->seq_idx = 13; host_lcd_sync_hook = pr_damage_edit_during_draw;
+    pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 12; host_lcd_sync_hook = pr_damage_force_during_draw;
+    pr_damage_draw(); ui.force = 0; ok &= pr_damage_compare(full);
+    motion_set_lock(TSEL, 0, P_ATK, 3);
+    TSEL->seq_idx = 11; pr_damage_draw(); ok &= pr_damage_compare(full);
+    go_title("DETAIL"); ui.force = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 10; pr_damage_draw(); ok &= pr_damage_compare(full);
+    go_page(GR_ROLL); ui.force = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 9; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+    TSEL->eng_req = ENGI_DRUM; TSEL->seq_idx = 8;
+    pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 7; pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->eng_req = 0; TSEL->seq_idx = 6;             /* ANALOG */
+    pr_damage_draw(); ok &= pr_damage_compare(full);
+    track_select(1); go_page(GR_ROLL); TSEL->seq_idx = 1;
+    ui.force = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+    ok &= host_dma_bad == 0u;
+    host_lcd_async = 0;
+    bad += check("STEP damage: captured playhead survives audio advance; concurrent static edits and force send full; DMA source remains owned", ok);
+    ui_power_on();
     return bad;
 }
 
@@ -10359,6 +10508,7 @@ int main(void)
     bad += test_bughunt_ui();
     bad += test_bughunt_ui2();
     bad += test_piano_roll();
+    bad += test_piano_roll_damage();
     bad += test_play_leds();
     bad += test_cursor_step_leds();
     bad += test_midi_leds();

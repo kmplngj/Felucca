@@ -192,7 +192,13 @@ static void pr_bars(const step_t *st, int32_t x, int32_t w, uint16_t c, int acc_
             pr_split(x, y + 1, w, PR_RH - 2, c, hits);
     }
 }
-static void graph_roll(const track_t *t, uint16_t c)
+/* Captured once per draw: audio can advance seq_idx while the canvas is drawn. */
+static uint32_t pr_playhead(const track_t *t)
+{
+    uint32_t ph = song.playing ? t->seq_idx : NSTEP;
+    return ph < (uint32_t)t->p[P_SLEN] && ph / 16u == ui.bank ? ph : NSTEP;
+}
+static void graph_roll(const track_t *t, uint16_t c, uint32_t ph)
 {
     uint32_t i, len = (uint32_t)t->p[P_SLEN], base = ui.bank * 16u, ncol, mask = scale_mask(t), held = pr_held();
     uint64_t locks = motion_lock_steps(trk_index(t));
@@ -229,7 +235,7 @@ static void graph_roll(const track_t *t, uint16_t c)
         int32_t x = PR_X0 + (int32_t)i * PR_CW;
         if (si == ui.cursor)
             cv_frame(x, PR_Y0 - 2, PR_CW + 1, ybot - PR_Y0 + 4, T_TEXT);
-        if (song.playing && si == t->seq_idx)
+        if (si == ph)
             cv_rect(x + 6, PR_Y0, 1, ybot - PR_Y0, T_ACCENT);
         if ((locks >> si) & 1u)                       /* a parameter lock: a mark under the step */
             cv_rect(x + 3, ybot + 3, 7, 2, T_ACCENT);
@@ -1182,7 +1188,9 @@ static void graph_title(void)
     cv_text_in(0, y, 240, f, ti, T_THEME, T_SURF);
 }
 
-static uint32_t graph_signature(void)
+/* Keep the two checks in draw_graph's shared stack frame: outlining this
+ * function reserves SONG's layout scratch even for a melodic roll. */
+static inline __attribute__((always_inline)) uint32_t graph_signature(void)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
@@ -1240,9 +1248,11 @@ static uint32_t graph_signature(void)
         h ^= (fm6_pgen[(t - trk) % NTRK] + 1u) * 2246822519u + (fop_op + 1u) * 40503u + (fop_stg + 1u) * 7919u;
     if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE) h ^= sample_wave.pos * 13u + sample_wave.key;
     if (pg->graph == GR_ROLL) {
-        uint32_t ph = song.playing ? t->seq_idx : 0xFFFFu;
-        if (ph / 16u != ui.bank)
-            ph = 0xFFFFu;                            /* the roll shows the cursor's bank only */
+        uint32_t ph = pr_playhead(t);
+        if (!detail_on() && !drum_track(t)) {
+            ph = 0;                                  /* melodic roll: playhead tracked separately */
+            h = (h ^ ux.gen) * 16777619u;
+        }
         h ^= steps_hash(t) + ph * 31u + ui.cursor * 7919u + ui.lane * 104723u + ui.bank * 613u +
              drum_mute[trk_index(t) % NPART] * 2654435761u;
         {                                            /* the parameter locks' marks (the roll, the grid) */
@@ -2233,12 +2243,22 @@ static void graph_song(void)
                      i < 4u ? "[K3] ADD SECTION" : "[SAVE] PROJECT A-D", T_MID, T_SURF, x0 - 10 - SG_X0);
     }
 }
+/* Last submitted melodic roll. cv_px is shared by every UI area: redraw the
+ * full canvas even for damage, then submit only the pixels changed by the two
+ * playhead lines. Notes, ties and slides are drawn over those lines as before;
+ * their colour follows the cursor, never the playhead. */
+static uint32_t pr_shown = NSTEP;
+static uint8_t pr_valid;
 static void draw_graph(void)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
     uint16_t c = ACC;
-    uint32_t sig;
+    uint32_t sig, ph = NSTEP, old_ph = pr_shown;
+    int roll = !ui.home && pg->graph == GR_ROLL && strip_kind() == SK_NONE && !detail_on() && !drum_track(t);
+    int damage;
+    if (roll) ph = pr_playhead(t);
+    else pr_valid = 0;
     if (!ui.home && pg->graph == GR_TRK) {
         draw_tracks();
         return;
@@ -2249,8 +2269,10 @@ static void draw_graph(void)
     }
     if (!ui.home && pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE) sample_wave_tick(t);
     sig = graph_signature();
-    if (!ui.force && sig == ui.graph_sig)
+    if (!ui.force && sig == ui.graph_sig && (!roll || (pr_valid && ph == old_ph)))
         return;
+    damage = roll && pr_valid && !ui.force && sig == ui.graph_sig && ph < NSTEP && old_ph < NSTEP &&
+             (ph + 1u == old_ph || old_ph + 1u == ph);  /* start/stop, wrap and skipped steps: full fallback */
     ui.graph_sig = sig;
     cv_begin(240, graph_h(), T_BG);
     cv_rrect(3, 0, 234, graph_h(), 5, T_SURF, T_BG);   /* the panel (MENU > LARGE: the strip) */
@@ -2283,7 +2305,7 @@ static void draw_graph(void)
             else if (drum_track(t))
                 graph_grid(t, c);
             else
-                graph_roll(t, c);
+                graph_roll(t, c, ph);
             break;
         case GR_SCALE:
             graph_scale(t, c);
@@ -2359,5 +2381,14 @@ static void draw_graph(void)
         }
     }
     cv_oy = 0;
-    cv_blit(0, graph_y());
+    if (damage && (ui.force || graph_signature() != sig))
+        damage = 0;                                  /* static state changed while the canvas was drawn */
+    if (damage) {
+        uint32_t a = PR_X0 + (old_ph % 16u) * PR_CW + 6u, b = PR_X0 + (ph % 16u) * PR_CW + 6u;
+        uint32_t x0 = a < b ? a : b, x1 = a > b ? a : b;
+        cv_blit_rect(0, graph_y(), x0, PR_Y0, x1 - x0 + 1u, PR_ROWS * PR_RH);
+    } else
+        cv_blit(0, graph_y());
+    pr_shown = ph;
+    pr_valid = (uint8_t)roll;
 }
