@@ -239,36 +239,50 @@ static uint32_t delay_samples(void)
     return s < 16u ? 16u : s >= DLY_LEN ? DLY_LEN - 1u : s;
 }
 
+/* ROOM's comb: its line c (len samples), write index *j and low-pass *lp, the input in; its output. Inline,
+ * the four written out: constant lengths and offsets, the states in locals for the block (through fx, every
+ * sample, the stores into the lines could alias them) */
+static inline int32_t room_comb(int16_t *c, uint32_t len, uint32_t *j, int32_t *lp, int32_t in, int32_t kd,
+                                int32_t size)
+{
+    int32_t o = c[*j];
+    *lp = o + mulq15(*lp - o, kd);
+    c[*j] = (int16_t)clamp(in + mulq15(*lp, size), -32768, 32767);
+    if (++*j >= len)
+        *j = 0;
+    return o;
+}
+/* ROOM's allpass: its line c (len samples), write index *j, the input a; its output */
+static inline int32_t room_ap(int16_t *c, uint32_t len, uint32_t *j, int32_t a)
+{
+    int32_t o = c[*j];
+    int32_t v = a + (o >> 1);
+    c[*j] = (int16_t)clamp(v, -32768, 32767);
+    if (++*j >= len)
+        *j = 0;
+    return o - a;                                       /* Freeverb: out = buf - in (o - v is a notch comb) */
+}
+
 /* ROOM (G_RTYPE 0): 4 damped combs + 2 allpasses (Freeverb-like, mono), added to out */
 static __attribute__((noinline)) void rev_room(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
-    uint32_t i, k;
+    uint32_t i, j0 = fx.comb_i[0], j1 = fx.comb_i[1], j2 = fx.comb_i[2], j3 = fx.comb_i[3];
+    uint32_t a0 = fx.ap_i[0], a1 = fx.ap_i[1];
+    int32_t l0 = fx.comb_lp[0], l1 = fx.comb_lp[1], l2 = fx.comb_lp[2], l3 = fx.comb_lp[3];
     int32_t size = 25000 + song.g[G_RSIZE] * 50, damp = 32767 - song.g[G_RDAMP] * 200;
     for (i = 0; i < n; i++) {
-        int32_t a = 0;
-        int16_t *c = rev_comb;
         int32_t in = mulq15(rev_in[i], 2580);           /* 1/8 at -4 dB: level as before the allpass fix */
-        for (k = 0; k < 4u; k++) {
-            int32_t o = c[fx.comb_i[k]];
-            fx.comb_lp[k] = o + mulq15(fx.comb_lp[k] - o, 32767 - damp);
-            c[fx.comb_i[k]] = (int16_t)clamp(in + mulq15(fx.comb_lp[k], size), -32768, 32767);
-            if (++fx.comb_i[k] >= REV_COMB[k])
-                fx.comb_i[k] = 0;
-            a += o;
-            c += REV_COMB[k];
-        }
-        c = rev_ap;
-        for (k = 0; k < 2u; k++) {
-            int32_t o = c[fx.ap_i[k]];
-            int32_t v = a + (o >> 1);
-            c[fx.ap_i[k]] = (int16_t)clamp(v, -32768, 32767);
-            a = o - a;                                  /* Freeverb: out = buf - in (o - v is a notch comb) */
-            if (++fx.ap_i[k] >= REV_AP[k])
-                fx.ap_i[k] = 0;
-            c += REV_AP[k];
-        }
-        out[i] += a;
+        int32_t a = room_comb(rev_comb, REV_COMB[0], &j0, &l0, in, 32767 - damp, size);
+        a += room_comb(rev_comb + REV_COMB[0], REV_COMB[1], &j1, &l1, in, 32767 - damp, size);
+        a += room_comb(rev_comb + REV_COMB[0] + REV_COMB[1], REV_COMB[2], &j2, &l2, in, 32767 - damp, size);
+        a += room_comb(rev_comb + REV_COMB[0] + REV_COMB[1] + REV_COMB[2], REV_COMB[3], &j3, &l3, in, 32767 - damp,
+                       size);
+        a = room_ap(rev_ap, REV_AP[0], &a0, a);
+        out[i] += room_ap(rev_ap + REV_AP[0], REV_AP[1], &a1, a);
     }
+    fx.comb_i[0] = (uint16_t)j0, fx.comb_i[1] = (uint16_t)j1, fx.comb_i[2] = (uint16_t)j2, fx.comb_i[3] = (uint16_t)j3;
+    fx.ap_i[0] = (uint16_t)a0, fx.ap_i[1] = (uint16_t)a1;
+    fx.comb_lp[0] = l0, fx.comb_lp[1] = l1, fx.comb_lp[2] = l2, fx.comb_lp[3] = l3;
 }
 
 /* SPRING (see the top), added to out */
