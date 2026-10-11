@@ -3,11 +3,12 @@
 /* Small-canvas renderer (no full framebuffer). Draw text/lines into
  * an off-screen strip, then blit it in one DMA transfer. Pixels are stored
  * byte-swapped (the panel takes RGB565 big-endian).
- * Text and icons are 4-bit alpha bitmaps made at build time (tools/gen_aa_font.py: Inter Tight;
+ * Text and icons are bitmaps made at build time (tools/gen_aa_font.py: Inter Tight;
  * tools/gen_aa_icons.py: Fukiai). A glyph is trimmed to its ink box, advances are in 1/16 px, and
  * each glyph is rasterised at 1 << psh horizontal phases (S M 4, L 2: drawn at a pen of +0, +1/4 .. px);
  * cv_text takes the phase that puts it within a phase step of its true place. Blending uses a 16-entry
- * ramp per (ink, background) pair, cached, so a pixel costs a nibble read and a store. Colours come from the theme tokens. */
+ * ramp per (ink, background) pair, cached. The optional pixel fonts use packed 1-bit glyphs,
+ * with L sharing M at 2x. Colours come from the theme tokens. */
 typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
 typedef struct {
     uint8_t h, asc, first, last, nex;   /* line height, baseline; ASCII range; extras */
@@ -18,11 +19,12 @@ typedef struct {
     const int8_t *kd;                   /* 1/16 px */
     const uint8_t *ex;                  /* codes of the extra glyphs */
     uint8_t psh;                        /* log2 of the phases per glyph: g[i << psh] .. g[(i << psh) + phases - 1] */
+    uint8_t bitmap_scale;               /* 0 = alpha; 1/2 = packed 1-bit glyphs, integer scale (in existing padding) */
     const uint8_t *hc;                  /* data's Huffman code (cv_alpha_hc), 0 = 2 px per byte (cv_alpha) */
 } aafont_t;
 typedef struct { const char *name; uint16_t bg, surf, text, theme, accent; } ui_pal_t;
 typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
-#include "ui_fonts.h"                   /* AF_S 12 px / 400, AF_M 15 px / 500, AF_L 28 px / 600 */
+#include "ui_fonts.h"                   /* default Inter Tight; FELUCCA_FONT selects optional pixel fonts */
 #include "ui_palettes.h"
 #include "ui_keycaps.h"                 /* KC_*: the keycaps / badges (tools/gen_aa_keycaps.py), KNOB_* arcs */
 #define ELLIPSIS '\x85'                 /* the ellipsis glyph of AF_S and AF_M */
@@ -385,6 +387,32 @@ static void cv_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
     GFX_HOOK_PIXELS(w * h);
 }
 
+#if UI_FONT_BITMAP
+/* MSB-first, byte-aligned glyphs. L shares M's data; its metadata describes the doubled ink box.
+ * Clip in output coordinates, then index the source bit. No framebuffer or decoded-glyph scratch. */
+static void cv_bitmap(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d,
+                      uint32_t scale, uint16_t ink)
+{
+    uint32_t sh = scale - 1u, sw = w >> sh, gx, gy;
+    y += cv_oy;
+    for (gy = 0; gy < h; gy++) {
+        int32_t py = y + (int32_t)gy;
+        uint32_t base = (gy >> sh) * sw;
+        uint16_t *row;
+        if (py < cv_cy0 || py >= cv_cy1)
+            continue;
+        row = cv_px + (uint32_t)py * cv_w;
+        for (gx = 0; gx < w; gx++) {
+            uint32_t bit = base + (gx >> sh);
+            int32_t px = x + (int32_t)gx;
+            if ((uint32_t)px < cv_w && (d[bit >> 3] & (0x80u >> (bit & 7u))))
+                row[px] = ink;
+        }
+    }
+    GFX_HOOK_PIXELS(w * h);
+}
+#endif
+
 /* the same from a glyph's Huffman-coded bit stream (tools/gen_aa_font.py huff_pack): canonical codes, MSB
  * first; hc = the number of codes of each length 1..15, then the symbols in code order, each a value and
  * its repeat count ((count - 1) << 4 | value: runs of zeros and 15s). Codes of up to 8 bits come from a
@@ -548,6 +576,10 @@ static int32_t text_run(int32_t x, int32_t y, const aafont_t *f, const char *s, 
             int32_t gx = x + (pos >> 4) + g->bx, gy = y + g->by;
             if (!rv)
                 ;                                    /* (text_ink: measured only) */
+#if UI_FONT_BITMAP
+            else if (f->bitmap_scale)
+                cv_bitmap(gx, gy, g->bw, g->bh, f->data + g->off, f->bitmap_scale, rv[15]);
+#endif
             else if (f->hc)
                 cv_alpha_hc(gx, gy, g->bw, g->bh, f->data + g->off, f->hc, rv);
             else
@@ -744,7 +776,7 @@ static int32_t cv_key_hint(int32_t x, int32_t y, uint32_t id, const char *act, i
     x = cv_keycap(x, y, id, on ? T_KEY : T_DIM, T_INK, under);
     if (act && act[0]) {
         GFX_HOOK_ALIGN(0, y, 0, y + KC_H, AL_V | AL_PASS, "key hint word on its keycap's line");
-        x = cv_text_on(x + KH_GAP, y - 1, &AF_S, act, on ? T_TEXT : T_DIM, under);
+        x = cv_text_on(x + KH_GAP, y + CAP_IN(S, KC_H), &AF_S, act, on ? T_TEXT : T_DIM, under);
     }
     return x;
 }
@@ -801,6 +833,7 @@ static int32_t cv_free_hint(int32_t x, int32_t y, const char *s, uint16_t fg, ui
 {
     uint32_t n, i;
     int32_t id = kc_tag(s, &n), x0 = x;
+    int32_t ky = y + AF_S_CAP_Y + HALF_UP(AF_S_CAP_H - KC_H);   /* the keycap on the words' capital line */
     for (i = 0; id < 0 && i < 7u && s[i] && s[i] != ' '; i++)
         ;
     if (id < 0 && i && s[i] == ' ' && (id = kc_tag(s + i + 1u, &n)) >= 0) {
@@ -808,18 +841,18 @@ static int32_t cv_free_hint(int32_t x, int32_t y, const char *s, uint16_t fg, ui
         uint32_t j;
         for (j = 0; j < i; j++)
             w[j] = s[j];
-        GFX_HOOK_ALIGN(0, y + 1, 0, y + 1 + KC_H, AL_V | AL_PASS, "free hint words on the keycap's line");
+        GFX_HOOK_ALIGN(0, ky, 0, ky + KC_H, AL_V | AL_PASS, "free hint words on the keycap's line");
         x = cv_text_on(x, y, &AF_S, w, fg, bg) + KH_GAP;
         s += i + 1u;
     }
     if (id >= 0 && kc_w((uint32_t)id) + KH_GAP < maxw - (x - x0)) {
-        x = cv_keycap(x, y + 1, (uint32_t)id, T_KEY, T_INK, bg) + KH_GAP;
+        x = cv_keycap(x, ky, (uint32_t)id, T_KEY, T_INK, bg) + KH_GAP;
         s += n;
         while (*s == ' ')
             s++;
         if (!*s)
             return x - KH_GAP;
-        GFX_HOOK_ALIGN(0, y + 1, 0, y + 1 + KC_H, AL_V | AL_PASS, "free hint words on the keycap's line");
+        GFX_HOOK_ALIGN(0, ky, 0, ky + KC_H, AL_V | AL_PASS, "free hint words on the keycap's line");
     }
     return cv_free_text(x, y, &AF_S, s, fg, bg, maxw - (x - x0));
 }

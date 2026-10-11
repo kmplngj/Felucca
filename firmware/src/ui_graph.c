@@ -218,7 +218,7 @@ static void graph_roll(const track_t *t, uint16_t c)
             {   /* its ink ends at x 23, a column before the keys (by the advance, C1's 1 ended 2 px short) */
                 int32_t b[4];
                 text_ink(&AF_S, nb, b);
-                cv_text_on(23 - b[2], y - 5, &AF_S, nb, T_DIM, T_SURF);   /* (the widest, "C-1", inside the panel) */
+                cv_text_on(23 - b[2], y + CAP_IN(S, PR_RH), &AF_S, nb, T_DIM, T_SURF);   /* (the widest, "C-1", inside the panel) */
             }
         }
     }
