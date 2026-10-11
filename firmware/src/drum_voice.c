@@ -808,19 +808,37 @@ static __attribute__((noinline)) void dv_tom_run(const dv_coef_t *c, dv_voice_t 
     uint32_t i, ph = v->ph[0], es = v->e[0], bs = c->span[0] >> 16;
     int32_t a, d, lp = v->s[2];
     dv_slow(&v->q[0], c->kb[0], &a, &d);
-    for (i = 0; i < n; i++) {
-        int32_t al, x, nz;
-        a += d;
-        al = a >> 5;
-        ph += c->inc[0] + bs * (uint32_t)((al * al) >> 14);   /* the pitch follows amplitude^2 (Q16) */
-        x = (sine_i(ph) * al) >> 15;
-        nz = DV_NOISE(v);
-        lp += ((nz - lp) * c->hp) >> 15;                 /* the stick (low), the slap (high) */
-        x += ((((lp * c->g[0]) >> 15) + (((nz - lp) * c->g[2]) >> 15)) * (int32_t)(es >> 1)) >> 15;
-        es = (es * c->k[0]) >> 15;
-        if (c->g[1])
-            x = softclip((x * c->g[1]) >> 12);
-        y[i] = x;
+    if (es > 1u) {
+        for (i = 0; i < n; i++) {
+            int32_t al, x, nz;
+            a += d;
+            al = a >> 5;
+            ph += c->inc[0] + bs * (uint32_t)((al * al) >> 14);   /* the pitch follows amplitude^2 (Q16) */
+            x = (sine_i(ph) * al) >> 15;
+            nz = DV_NOISE(v);
+            lp += ((nz - lp) * c->hp) >> 15;             /* the stick (low), the slap (high) */
+            x += ((((lp * c->g[0]) >> 15) + (((nz - lp) * c->g[2]) >> 15)) * (int32_t)(es >> 1)) >> 15;
+            es = (es * c->k[0]) >> 15;
+            if (c->g[1])
+                x = softclip((x * c->g[1]) >> 12);
+            y[i] = x;
+        }
+    } else {                                             /* the stick has rung out: es <= 1 stays so (k[0] <= 32768,
+                                                          * dv_k) until the next strike, its term is exactly 0. The
+                                                          * noise and its filter still run (the same state) */
+        for (i = 0; i < n; i++) {
+            int32_t al, x;
+            a += d;
+            al = a >> 5;
+            ph += c->inc[0] + bs * (uint32_t)((al * al) >> 14);
+            x = (sine_i(ph) * al) >> 15;
+            lp += ((DV_NOISE(v) - lp) * c->hp) >> 15;
+            if (c->g[1])
+                x = softclip((x * c->g[1]) >> 12);
+            y[i] = x;
+        }
+        if (n)
+            es = (es * c->k[0]) >> 15;                   /* (0 or 1: the same after one sample as after n) */
     }
     v->ph[0] = ph, v->e[0] = es, v->s[2] = lp;
     v->live = v->q[0] > DV_QUIET;
