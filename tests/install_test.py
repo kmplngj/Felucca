@@ -5,8 +5,11 @@
 The fake device is the one in web/test_web.mjs: identity on the handshake,
 then "device asks, host answers" reads of the logical image. Run from the repo root:
   python3 tests/install_test.py
-Also checks logical_image/product_of against web/fm1pkg.js (needs node and
-build/felucca.fwsc, skipped otherwise)."""
+The packages are genuine ones, built with tools/fm1pkg_make.py from synthetic SDK
+files, app and loader; the preflight (#118) gets them damaged one cause at a time.
+Also checks logical_image/product_of against web/fm1pkg.js (needs node; the
+build/felucca.fwsc check is skipped without a build)."""
+import json
 import io
 import queue
 import shutil
@@ -20,6 +23,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import fm1_install as I  # noqa: E402
+import fm1pkg_make as M  # noqa: E402
+import build as B  # noqa: E402
 
 I.DELAY.update(open=0, start=0.01, reply=0, loader=0.01, reboot=0.01, retry=0.02, poll=0.05, hs=0.1,
                idle_check=0.4, idle_write=0.4, wait_loader=2, wait_reboot=2)
@@ -72,6 +77,7 @@ class FakeFM1:
         self.stall_after, self.bad_addr = stall_after, bad_addr
         self.served = self.bad = self.upgrades = 0
         self.sent, self.links, self.gen, self.lock = [], [], 0, threading.Lock()
+        self.opened = 0
         self.boot(identity, name)
 
     def boot(self, identity, name):
@@ -88,6 +94,7 @@ class FakeFM1:
     def open(self, in_name, out_name):
         if in_name != self.name or not self.connected:
             raise IOError("no such port")
+        self.opened += 1
         link = FakeLink(self, self.gen)
         self.links.append(link)
         return link
@@ -140,15 +147,71 @@ class FakeFM1:
 
 # ----------------------------------------------------------------- helpers ---
 
-def package(product="FM-1_900", marker=True, size=0x2000):
-    raw = bytearray((i * 7) & 0xFF for i in range(size + I.BLOCKS))
-    for i in range(I.BLOCKS):
-        raw[i * I.BLK + I.KEEP] = (ord(product[i]) + i + 1) & 0xFF if i < len(product) else 0x7D
-    raw[0x1800:0x1800 + 16] = I.LOADER_MARK if marker else bytes(16)
-    return bytes(raw)
-
-
 TMP = Path(tempfile.mkdtemp(prefix="felucca-install-"))
+
+
+def synth(n, seed):
+    return bytes((i * seed + (i >> 7) * 29 + seed) & 0xFF for i in range(n))
+
+
+# synthetic SDK files (not the Apache-2.0 ones): fm1pkg_make only places them
+for rel, n, seed in (("uboot.boot", 0x600, 11), ("cfg_tool.bin", 0x200, 13), ("cfg/eq_cfg_hw.bin", 0x100, 17)):
+    f = TMP / "sdk/cpu/wl82/tools" / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(synth(n, seed))
+M.SDK = TMP / "sdk"
+FLASH = M.flash_image(synth(60000, 7), M.KEY)
+
+
+def loader(marker=True):
+    """a loader in build.py's ota.bin format; the body starts with the marker (crt0_ldr.S)"""
+    return B.ldr_wrap((I.LOADER_MARK if marker else b"NOT-THE-LOADER-1") + synth(3000, 101))
+
+
+def package(product="FM-1_900", marker=True, extra=(), ota=None):
+    return M.ufw(FLASH, ota or loader(marker), product, extra)
+
+
+def fwsc(logical, raw):
+    """logical image -> .fwsc with raw's 20 identity markers"""
+    out = bytearray()
+    for i in range(I.BLOCKS):
+        out += logical[i * I.KEEP:(i + 1) * I.KEEP] + raw[i * I.BLK + I.KEEP:i * I.BLK + I.BLK]
+    return bytes(out + logical[I.BLOCKS * I.KEEP:])
+
+
+def reheader(raw, hdr=None, ent=None):
+    """change the decoded UFW header (hdr(h)) or entries (ent(i, e)), CRCs recomputed: one cause at a time"""
+    img = bytearray(I.logical_image(raw))
+    h = I.jl_dec(img[:0x40])
+    n = I.u16(h, 8)
+    for i in range(n):
+        o = 0x40 + i * 0x50
+        e = I.jl_dec(img[o:o + 0x50])
+        if ent:
+            ent(i, e)
+        img[o:o + 0x50] = I.jl_dec(e)
+    if hdr:
+        hdr(h)
+    lend = 0x40 + I.u16(h, 8) * 0x50
+    h[2:4] = I.crc16(img[0x40:lend]).to_bytes(2, "little")
+    h[0:2] = I.crc16(h[2:]).to_bytes(2, "little")
+    img[:0x40] = I.jl_dec(h)
+    return fwsc(img, raw)
+
+
+def flip(raw, logical_off):
+    img = bytearray(I.logical_image(raw))
+    img[logical_off] ^= 0x40
+    return fwsc(img, raw)
+
+
+def entry_of(raw, typ):
+    img = I.logical_image(raw)
+    for i in range(I.u16(I.jl_dec(img[:0x40]), 8)):
+        e = I.jl_dec(img[0x40 + i * 0x50:0x90 + i * 0x50])
+        if I.u16(e, 0) == typ:
+            return I.u32(e, 8), I.u32(e, 12)
 
 
 def pkgfile(name, raw):
@@ -273,6 +336,120 @@ def errors():
     ok(rc == 2, "missing file -> exit 2")
 
 
+def preflight():
+    """#118: structure and CRCs on the host, before any MIDI port; --force skips none of it"""
+    raw = package()
+    fl_off, fl_size = entry_of(raw, 0)
+    ota_off, ota_size = entry_of(raw, 100)
+    ok(I.ufw_damage(I.logical_image(raw)) is None and I.load_package(pkgfile("v.fwsc", raw), False)
+       == ("FM-1_900", I.logical_image(raw)), "preflight: a valid package -> same identity and logical image")
+    many = lambda n: package(extra=[(200 + k, f"x{k}.bin", synth(100 + k, k + 3)) for k in range(n - 2)])
+    for n in (8, 11):
+        r = many(n)
+        ok(I.ufw_damage(I.logical_image(r)) is None and I.load_package(pkgfile("n.fwsc", r), False)[1]
+           == I.logical_image(r), f"preflight: {n} UFW entries are taken (ota.c: up to 11)")
+    dev = FakeFM1(I.logical_image(many(11)))
+    rc, out, err = cli([pkgfile("n11.fwsc", many(11)), "--yes"], dev)
+    ok(rc == 0 and dev.bad == 0, "install: an 11-entry package")
+    plain = package(marker=False)
+    ok(I.load_package(pkgfile("p.fwsc", plain), True)[1] == I.logical_image(plain),
+       "preflight: a valid package without the loader marker passes with --force")
+
+    def lay(t, size):          # flash.bin entry with another size, its data CRC kept true
+        def f(i, e):
+            if I.u16(e, 0) == 0:
+                e[12:16] = size.to_bytes(4, "little")
+                e[4:6] = I.crc16(I.logical_image(raw)[fl_off:fl_off + size]).to_bytes(2, "little")
+        return f
+    bad_head = bytearray(loader())
+    bad_head[0x28] ^= 1                                 # inner head: load address (and its CRC) off
+    bad_body = bytearray(loader())
+    bad_body[-1] ^= 1                                   # loader body, the UFW entry CRC recomputed by the maker
+    retype = lambda old, new: lambda i, e: e.__setitem__(slice(0, 2), new.to_bytes(2, "little")) \
+        if I.u16(e, 0) == old else None
+    move = lambda typ, off: lambda i, e: e.__setitem__(slice(8, 12), off.to_bytes(4, "little")) \
+        if I.u16(e, 0) == typ else None
+    cases = [
+        ("too short", b"\0" * 100, "too short"),
+        ("short header (1 KiB the FM-1 reads)", raw[:0x3F0 + I.BLOCKS], "1 KiB UFW header"),
+        ("short entry list", many(11)[:I.BLOCKS * I.BLK], "entry list cut off"),
+        ("0 entries", reheader(raw, hdr=lambda h: h.__setitem__(slice(8, 10), b"\0\0")), "0 UFW entries"),
+        ("12 entries (first count ota.c refuses)", many(12), "12 UFW entries"),
+        ("0xFFFF entries", reheader(raw, hdr=lambda h: h.__setitem__(slice(8, 10), b"\xff\xff")),
+         "65535 UFW entries"),
+        ("header CRC", flip(raw, 0x30), "UFW header CRC mismatch"),
+        ("entry list CRC", flip(raw, 0x60), "entry list CRC mismatch"),
+        ("flash.bin CRC", flip(raw, fl_off + 0x5000), "(flash.bin, type 0): data CRC mismatch"),
+        ("ota.bin CRC", flip(raw, ota_off + ota_size - 1), "(ota.bin, type 100): data CRC mismatch"),
+        ("extra file CRC", flip(many(8), len(I.logical_image(many(8))) - 1), "(x5.bin, type 205): data CRC"),
+        ("truncated file", raw[:-100], "(ota.bin, type 100): data [0x"),
+        ("extent out of bounds", reheader(raw, ent=move(100, 0x7FFFFFF0)), "outside the package"),
+        ("extent over the header", reheader(raw, ent=move(0, 0)), "outside the package"),
+        ("no flash.bin", reheader(raw, ent=retype(0, 7)), "no flash.bin"),
+        ("no ota.bin", reheader(raw, ent=retype(100, 5)), "no ota.bin"),
+        ("two flash.bin", package(extra=[(0, "flash.bin", FLASH)]), "a second type-0 file"),
+        ("flash.bin too small", reheader(raw, ent=lay(0, 0x90000)), "the loader takes"),
+        ("loader heads", package(ota=bytes(bad_head)), "loader heads"),
+        ("loader body CRC", package(ota=bytes(bad_body)), "loader body CRC mismatch"),
+        ("oversized", raw + bytes(I.MAX_PKG), "larger than 2048 KiB"),
+    ]
+    for what, bad, msg in cases:
+        p = pkgfile("bad.fwsc", bad)
+        res = []
+        for force in ([], ["--force"]):
+            dev = FakeFM1(I.logical_image(raw))
+            rc, out, err = cli([p, "--yes", *force], dev)
+            res.append(rc == 2 and msg in err and dev.opened == 0 and dev.sent == [])
+        ok(all(res), f"preflight: {what} -> exit 2, no port (also --force)")
+        if not all(res):
+            print("   ", err.strip())
+    dev = FakeFM1(I.logical_image(raw))
+    rc, out, err = cli([pkgfile("pb.fwsc", flip(plain, fl_off + 0x5000)), "--yes", "--force"], dev)
+    ok(rc == 2 and "data CRC mismatch" in err and dev.opened == 0, "preflight: --force on a damaged unmarked package")
+    dev = FakeFM1(I.logical_image(raw))
+    rc, out, err = cli(["--info"], dev)
+    ok(rc == 0 and dev.opened == 1, "--info: no package, no preflight")
+    good, bad = pkgfile("o_good.fwsc", raw), pkgfile("o_bad.fwsc", flip(raw, 0x60))
+    code = ("import sys; sys.path.insert(0, %r); import fm1_install as I\n"
+            "assert False\n"
+            "I.load_package(%r, False)\n"
+            "try:\n    I.load_package(%r, True)\nexcept I.InstallError as e:\n    print('refused', e)\n"
+            % (str(ROOT / "tools"), good, bad))
+    r = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)
+    ok(r.returncode == 0 and "refused" in r.stdout and "list CRC" in r.stdout, "preflight: active under python -O")
+
+
+def js_synthetic():
+    """the synthetic packages through web/fm1pkg.js: same identity, logical image, entries; same CRC refusals"""
+    if not shutil.which("node"):
+        print("preflight vs fm1pkg.js: skipped (needs node)")
+        return
+    js = ("import { Package, logicalImage, productOf } from %r; import { readFileSync } from 'node:fs';"
+          "const out = []; for (const f of process.argv.slice(1)) { const p = readFileSync(f);"
+          "let e = null; try { e = new Package(p).entries.map((x) => [x.type, x.dcrc, x.dataOff, x.size, x.name]); }"
+          "catch (err) { e = String(err.message); }"
+          "out.push({ product: productOf(p), image: Buffer.from(logicalImage(p)).toString('hex'), entries: e }); }"
+          "process.stdout.write(JSON.stringify(out));") % str(ROOT / "web/fm1pkg.js")
+    raw = package(extra=[(200, "x.bin", synth(300, 5))])
+    fl_off, _ = entry_of(raw, 0)
+    files = [pkgfile(f"js{k}.fwsc", r) for k, r in enumerate(
+        (raw, flip(raw, 0x30), flip(raw, 0x60), flip(raw, fl_off + 0x5000)))]
+    r = subprocess.run(["node", "--input-type=module", "-e", js, *files], capture_output=True, text=True)
+    if r.returncode:
+        ok(False, f"fm1pkg.js on the synthetic packages: {r.stderr.strip()[:80]}")
+        return
+    res = json.loads(r.stdout)
+    img = I.logical_image(raw)
+    ents = []
+    for i in range(3):
+        e = I.jl_dec(img[0x40 + i * 0x50:0x90 + i * 0x50])
+        ents.append([I.u16(e, 0), I.u16(e, 4), I.u32(e, 8), I.u32(e, 12), e[0x40:].split(b"\0")[0].decode()])
+    ok(res[0]["product"] == I.product_of(raw) and bytes.fromhex(res[0]["image"]) == img and res[0]["entries"] == ents,
+       "synthetic package: identity, logical image, UFW entries == fm1pkg.js")
+    ok(all(isinstance(x["entries"], str) and I.ufw_damage(bytes.fromhex(x["image"])) for x in res[1:]),
+       "header / list / flash.bin CRC damage: fm1pkg.js refuses it too")
+
+
 def against_js():
     clean = ROOT / "build/felucca.fwsc"
     if not shutil.which("node") or not clean.exists():
@@ -309,6 +486,8 @@ def official():
 wire()
 installs()
 errors()
+preflight()
+js_synthetic()
 against_js()
 official()
 shutil.rmtree(TMP, ignore_errors=True)

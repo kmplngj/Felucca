@@ -152,8 +152,9 @@ def flash_image(app, key):
     return bytes(f)
 
 
-def ufw(flash, ota, product):
-    files = [(0, "flash.bin", flash), (100, "ota.bin", ota)]
+def ufw(flash, ota, product, extra=()):
+    """extra: more (type, name, data) files after ota.bin"""
+    files = [(0, "flash.bin", flash), (100, "ota.bin", ota), *extra]
     off, ents, data = 0x400, [], bytearray()
     for i, (typ, name, d) in enumerate(files):
         off = (off + 0xFF) & ~0xFF
