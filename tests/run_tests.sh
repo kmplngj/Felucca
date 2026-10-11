@@ -8,7 +8,9 @@
 #   golden renders  every engine x preset, the GM map on DRUM, voice modes, FX sends, a 4-track mix: one hash
 #                   each in tests/golden.txt. A change of the sound fails with the list of renders.
 #   health          clipping, DC, peak level, voices free after the release, silence at the end.
-#   CPU             instructions / sample per preset and mix (tests/cpu_baseline.txt, +25 %), ns printed;
+#   CPU             instructions / sample per preset and mix (tests/cpu_baseline.txt, +25 %), ns printed; again
+#                   built -Os -fno-vectorize -fno-slp-vectorize as the target is (-Os, no SIMD; -O2 here vectorises
+#                   with NEON: PHYS BOWED 1236 vs 1729) against tests/cpu_baseline_os.txt, the goldens too;
 #                   target: loop instructions of the render functions in the pi32v2 disassembly
 #                   (tests/target_budget.txt, +10 %; exact, static).
 #   voices          the budget of 8, steal fades, MONO / LEGATO / UNISON keep their note, the VOICE cap,
@@ -322,6 +324,11 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "REVERB TYPE: ROOM / SPRING bit-identical, SPRING and HALL decay / stability / level, HALL silence / stereo / ringing, model changes, cost, demos" "$OUT/reverb_test" build/fx_demo build/reverb_demo
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
     run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt tests/cpu_baseline.txt
+    NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
+    echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
+    run "regression built as the target (-Os, no vectorising): the same goldens, CPU budget" \
+        "$OUT/regress_os" tests/golden.txt tests/cpu_baseline_os.txt
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/union_test" tests/union_test.c -lm
     run "engine memory (1.5): every switch between the engines with per-part state sounds as in 1.4 (720 sequences)" \
         "$OUT/union_test" tests/union_golden.txt
