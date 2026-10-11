@@ -271,10 +271,23 @@ static __attribute__((noinline)) void rev_room(const int32_t *rev_in, int32_t *o
     }
 }
 
+/* SPRING's allpass stage: its state *a (its output 4 samples ago), the input x, *p the stage before's state (in:
+ * its old value; out: this one's); its output. Inline, the SP_N written out: no loop overhead (the states stay in
+ * memory: ap[j + k] is a different slot every sample) */
+_Static_assert(SP_N == 10u, "rev_spring writes the SP_N stages out");
+static inline int32_t sp_ap(int32_t *a, int32_t x, int32_t *p)
+{
+    int32_t o = *a, v = (x - o) * SP_A;                 /* (lossless: bounded by the loop's input, no clamp) */
+    x = ((v + ((v >> 31) & 4095)) >> 12) + *p;          /* towards 0, as the loop's gain: floors would feed */
+    *p = o;                                             /* the loop a little offset and noise for ever */
+    *a = x;
+    return x;
+}
+
 /* SPRING (see the top), added to out */
 static __attribute__((noinline)) void rev_spring(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
-    uint32_t i, k, s = (uint32_t)song.g[G_RSIZE];
+    uint32_t i, s = (uint32_t)song.g[G_RSIZE];
     int32_t g = 19661 + (int32_t)s * 85;                /* the loop's gain: 0.6 .. 0.93 */
     int32_t kl = 26000 - song.g[G_RDAMP] * 160;         /* its low-pass: ~9 kHz .. ~1.3 kHz */
     int32_t len = (int32_t)(1323u + ((s * 1323u) >> 7)) << 8, L, L2, L3, f, w;
@@ -302,13 +315,16 @@ static __attribute__((noinline)) void rev_spring(const int32_t *rev_in, int32_t 
         x -= fx.sp_hp;
         p = ap[j];                                      /* the chain: ap[j + k], stage k's output 4 samples ago */
         ap[j] = x;
-        for (k = 1; k <= SP_N; k++) {                   /* (lossless: bounded by the loop's input, no clamp) */
-            int32_t v = (x - ap[j + k]) * SP_A;         /* towards 0, as the loop's gain: floors would feed */
-            o = ap[j + k];                              /* the loop a little offset and noise for ever */
-            x = ((v + ((v >> 31) & 4095)) >> 12) + p;
-            p = o;
-            ap[j + k] = x;
-        }
+        x = sp_ap(ap + j + 1u, x, &p);                  /* the SP_N stages written out (sp_ap) */
+        x = sp_ap(ap + j + 2u, x, &p);
+        x = sp_ap(ap + j + 3u, x, &p);
+        x = sp_ap(ap + j + 4u, x, &p);
+        x = sp_ap(ap + j + 5u, x, &p);
+        x = sp_ap(ap + j + 6u, x, &p);
+        x = sp_ap(ap + j + 7u, x, &p);
+        x = sp_ap(ap + j + 8u, x, &p);
+        x = sp_ap(ap + j + 9u, x, &p);
+        x = sp_ap(ap + j + 10u, x, &p);
         ln[wp & SP_MASK] = (int16_t)clamp(x, -32768, 32767);
         fx.sp_w = (uint16_t)(wp + 1u);
         out[i] += (t0 + (((t1 - t0) * f) >> 8)) * 4 + ln[(wp - (uint32_t)L3) & SP_MASK] * 2;
@@ -703,21 +719,21 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
         uint32_t tr = pf_tri(s->ph + (n >> 1) * inc), q = 32768u + (uint32_t)(((int32_t)tr - 32768) * (int32_t)dep / 127);
         int32_t a = PH_A[q >> 11] + (((PH_A[(q >> 11) + 1u] - PH_A[q >> 11]) * (int32_t)(q & 2047u)) >> 11);
         int32_t fbk = c * 180;                          /* 0 .. 0.7, Q15 */
+        int32_t fb = s->fb, w = s->w, dc = s->dc;      /* in locals for the block (the stores into b could alias
+                                                         * them); the stages' 8 stay in s (in locals: spills) */
         for (i = 0; i < n; i++) {
-            int32_t x = b[i], xs = clamp((x + 4) >> 3, -16383, 16383), u = xs + ((s->fb * fbk + 16384) >> 15), y = u;
-            uint32_t st;
-            s->w += clamp(tw - s->w, -SL_SLOPE, SL_SLOPE);
-            for (st = 0; st < PH_ST; st++) {            /* y = a (u - y1) + u1 */
-                y = clamp(s->px[st] + ((a * (u - s->py[st]) + 8192) >> 14), -65535, 65535);
-                s->px[st] = u;
-                s->py[st] = y;
-                u = y;
-            }
-            s->fb = clamp(y, -32767, 32767);
+            int32_t x = b[i], xs = clamp((x + 4) >> 3, -16383, 16383), y = xs + ((fb * fbk + 16384) >> 15);
+            w += clamp(tw - w, -SL_SLOPE, SL_SLOPE);
+            y = ph_ap(&s->px[0], &s->py[0], y, a);      /* the PH_ST stages written out (perform.c) */
+            y = ph_ap(&s->px[1], &s->py[1], y, a);
+            y = ph_ap(&s->px[2], &s->py[2], y, a);
+            y = ph_ap(&s->px[3], &s->py[3], y, a);
+            fb = clamp(y, -32767, 32767);
             y <<= 2;                                    /* (y: at an eighth) */
-            s->dc += ((y << 8) - s->dc) >> 9;           /* DC blocker, ~14 Hz (a clipped loud input is lopsided) */
-            b[i] = pf_mix(x, (x >> 1) + y - (s->dc >> 8), s->w);   /* (dry + all-passed) / 2 */
+            dc += ((y << 8) - dc) >> 9;                 /* DC blocker, ~14 Hz (a clipped loud input is lopsided) */
+            b[i] = pf_mix(x, (x >> 1) + y - (dc >> 8), w);   /* (dry + all-passed) / 2 */
         }
+        s->fb = fb, s->w = w, s->dc = dc;
         s->ph += n * inc;
         return;
     }
