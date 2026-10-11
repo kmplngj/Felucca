@@ -112,6 +112,11 @@ cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). After an intended ch
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
 does the same for the cost files.
 
+## Device diagnostics
+
+For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
+The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
+
 ## Install
 
 Use the web installer in Chrome or Edge:

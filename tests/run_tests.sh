@@ -415,6 +415,7 @@ run "regression: target cost of the render loops (pi32v2 disassembly)" python3 t
     build/felucca.dis tests/target_budget.txt
 
 run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
+run "CDC diagnostics: console fixtures, bounded transport and interval evidence" python3 tests/diagnostics_test.py
 
 if command -v node >/dev/null 2>&1; then
     run "web pages: editor protocol + samples, package builder, update protocol" node web/test_web.mjs
