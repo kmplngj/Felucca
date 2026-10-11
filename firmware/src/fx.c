@@ -24,6 +24,7 @@ static struct {
     int32_t sp_lp, sp_hp, sp_he, sp_size;   /* .. its loop low-pass, low cut (and its remainder), the loop
                                              * length (Q8, glides) */
     uint32_t sp_ph;                      /* .. the output tap's wobble */
+    uint32_t cho_live, dly_live;         /* samples until cho_buf / dly_buf hold only zeros (0: they do; fx_buses) */
 } fx;
 
 /* SPRING (G_RTYPE 1): one spring of a spring tank, mono like the other buses, in the ROOM's own buffers (no
@@ -83,6 +84,8 @@ static struct {                          /* HALL's state (in the pool: no .bss) 
     int16_t g[HL_NL], sz;                /* the lines' gains / sqrt(7) (Q14), for SIZE sz - 1 (0: none yet) */
     uint32_t ph;                         /* the taps' drift */
     uint8_t side;                        /* sd holds this block's stereo difference (HALL running) */
+    uint16_t live;                       /* samples (half rate) until the lines and diffusers hold only zeros (0: they
+                                          * do; hall_rest) */
     int32_t sd[CTL];                     /* the block's left minus right (mix_block: rev_side_mix) */
     int32_t bx[HL_NC], l[HL_NC], r[HL_NC];   /* the block at half the rate: the diffused send, left, right */
     int16_t y[HL_NL][HL_NC];             /* the lines' ends, then what goes back into them */
@@ -385,6 +388,28 @@ static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t
     *lp = l;
     *le = r;
 }
+/* the buses at rest (#2): a line that holds only zeros, its states at rest and its send silent for the block would
+ * write zeros and add nothing; it is skipped and only its indices and phases move on as the block would move them
+ * (bit for bit the same sound when a send comes). Idle, that is most of the buses' cost. The chorus, the delay and
+ * HALL; never ROOM (its combs floor: a -1 circulates for ever) and the delay while its low-pass, floored too, rests
+ * at -1 with FDBK feeding it back; SPRING runs as before. bus_zero and hall_rest noinline: their loops stay out of
+ * the audio ISR's (inlined, its layout and target budget as before) */
+static __attribute__((noinline)) int bus_zero(const int32_t *x, uint32_t n)   /* a send's block all 0? */
+{
+    uint32_t i;
+    int32_t z = 0;
+    for (i = 0; i < n; i++)
+        z |= x[i];
+    return !z;
+}
+static int zeros16(const int16_t *x, uint32_t n)        /* (stops at the first not 0: while sounding, at once) */
+{
+    uint32_t i;
+    for (i = 0; i < n && !x[i]; i++)
+        ;
+    return i == n;
+}
+
 /* the block's HL_NC samples of a circular buffer of len from index d in at most two runs, no wrap inside them:
  * body with s (the run's start in the block) and k (its length); d moves on */
 #define HL_RUNS(d, len, k, s, body)                                                         \
@@ -486,6 +511,33 @@ static __attribute__((noinline)) void rev_hall(const int32_t *rev_in, int32_t *o
     }
     hl.m = mp, hl.s = sp;
     hl.side = 1;
+    if (!zeros16(&hl.y[0][0], HL_NL * HL_NC) || !zeros16(rev_ap, HL_AP[0] + HL_AP[1]))
+        hl.live = 743;                                  /* (the longest line: written over once, it holds zeros) */
+    else
+        hl.live = (uint16_t)(hl.live > HL_NC ? hl.live - HL_NC : 0u);
+}
+
+/* HALL at rest (bus_zero): lines and diffusers all 0 (hl.live), the states 0, the send silent: the block's indices
+ * and drift move on as rev_hall moves them; hl.side stays 0 (rev_side_mix not run). 0: HALL must run. (The low-pass
+ * steps' remainders he, le need not be 0: on silence they stay as they are and move nothing) */
+static __attribute__((noinline)) int hall_rest(const int32_t *rev_in, uint32_t n)
+{
+    uint32_t k, d;
+    int32_t z = hl.live | hl.x | hl.hp | hl.m | hl.s;
+    for (k = 0; k < HL_NL; k++)
+        z |= hl.lp[k];
+    if (z || !bus_zero(rev_in, n))
+        return 0;
+    for (k = 0; k < HL_NL; k++) {
+        d = hl.i[k] + HL_NC;
+        hl.i[k] = (uint16_t)(d >= HL_LEN[k] ? d - HL_LEN[k] : d);
+    }
+    for (k = 0; k < HL_NAP; k++) {
+        d = hl.d[k] + HL_NC;
+        hl.d[k] = (uint16_t)(d >= HL_AP[k] ? d - HL_AP[k] : d);
+    }
+    hl.ph += HL_LFO;
+    return 1;
 }
 
 /* the reverb's buffers and states to silence (the model changed) */
@@ -502,6 +554,7 @@ static void rev_clear(void)
         hl.lp[i] = hl.le[i] = 0;
     fx.sp_lp = fx.sp_hp = fx.sp_he = 0;
     hl.x = hl.m = hl.s = hl.hp = hl.he = 0;
+    hl.live = 0;
 }
 
 static int32_t part_buf[CTL];                            /* a part's block (mix_part); the fade of a model change */
@@ -535,41 +588,58 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
     uint32_t i, dl = delay_samples();
     int32_t fb = song.g[G_DFDBK] * 230, col = 2000 + song.g[G_DCOLOR] * 240;
     int32_t dmix = song.g[G_DMIX] * 258;
-    int32_t cdepth = song.g[G_CDEPTH] * 6, rt;
+    int32_t cdepth = song.g[G_CDEPTH] * 6, rt, zc = 0, zd = 0;
     uint32_t cinc = LFO_INC[song.g[G_CRATE] & 127] / CTL;
+    int rc, rd;
     if (pf.ew1 && fb < THR_FB)
         fb += mulq16(THR_FB - fb, (uint32_t)pf.ew1 << 1);   /* ECHO THROW (perform.c): more feedback while held, 0.7
                                                              * at most (the loop's gain below 1: it never runs away) */
-    for (i = 0; i < n; i++) {
-        int32_t y = 0, x, r;
-        /* chorus: modulated short delay, 5..15 ms */
-        cho_buf[fx.cho_w & (CHO_LEN - 1u)] = (int16_t)clamp(cho_in[i] >> 1, -32768, 32767);
-        fx.cho_ph += cinc;
-        r = (400 << 8) + ((osc_sine(fx.cho_ph) + 32768) * cdepth >> 8);   /* Q8 delay: read between samples */
-        {
-            uint32_t ri = (uint32_t)r >> 8;
-            int32_t f = r & 255, c0 = cho_buf[(fx.cho_w - ri) & (CHO_LEN - 1u)];
-            int32_t c1 = cho_buf[(fx.cho_w - ri - 1u) & (CHO_LEN - 1u)];
-            y += (c0 + (((c1 - c0) * f) >> 8)) << 1;
+    rc = fx.cho_live || !bus_zero(cho_in, n);           /* at rest (bus_zero): only the indices and phases move */
+    rd = fx.dly_live || mulq15(-fx.dly_lp, col) || mulq15(fx.dly_lp, fb) || !bus_zero(dly_in, n);   /* (its low-pass
+                                                         * at rest: kept by a silent line, feeding nothing back) */
+    if (rc) {
+        for (i = 0; i < n; i++) {                       /* chorus: modulated short delay, 5..15 ms */
+            int32_t x = clamp(cho_in[i] >> 1, -32768, 32767), r;
+            zc |= x;
+            cho_buf[fx.cho_w & (CHO_LEN - 1u)] = (int16_t)x;
+            fx.cho_ph += cinc;
+            r = (400 << 8) + ((osc_sine(fx.cho_ph) + 32768) * cdepth >> 8);   /* Q8 delay: read between samples */
+            {
+                uint32_t ri = (uint32_t)r >> 8;
+                int32_t f = r & 255, c0 = cho_buf[(fx.cho_w - ri) & (CHO_LEN - 1u)];
+                int32_t c1 = cho_buf[(fx.cho_w - ri - 1u) & (CHO_LEN - 1u)];
+                wet[i] = (c0 + (((c1 - c0) * f) >> 8)) << 1;
+            }
+            fx.cho_w++;
         }
-        fx.cho_w++;
-        /* delay with a low-passed feedback */
-        x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)];
-        fx.dly_lp += mulq15(x - fx.dly_lp, col);
-        dly_buf[fx.dly_w & (DLY_LEN - 1u)] =
-            (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
-        fx.dly_w++;
-        y += mulq15(x << 1, dmix);
-        wet[i] = y;
+        fx.cho_live = zc ? CHO_LEN : fx.cho_live > n ? fx.cho_live - n : 0u;   /* (written over with zeros: all 0) */
+    } else {
+        for (i = 0; i < n; i++)
+            wet[i] = 0;
+        fx.cho_ph += n * cinc, fx.cho_w += n;
     }
+    if (rd) {
+        for (i = 0; i < n; i++) {                       /* delay with a low-passed feedback */
+            int32_t x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)], w;
+            fx.dly_lp += mulq15(x - fx.dly_lp, col);
+            w = clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
+            zd |= w;
+            dly_buf[fx.dly_w & (DLY_LEN - 1u)] = (int16_t)w;
+            fx.dly_w++;
+            wet[i] += mulq15(x << 1, dmix);
+        }
+        fx.dly_live = zd ? DLY_LEN : fx.dly_live > n ? fx.dly_live - n : 0u;
+    } else
+        fx.dly_w += n;
     rt = song.g[G_RTYPE];
     rt = rt == 1 || rt == 2 ? rt : 0;
     hl.side = 0;
     if (rt != fx.rtype)
         rev_switch(rev_in, wet, n, rt);
-    else if (rt == 2)
-        rev_hall(rev_in, wet, n);
-    else if (rt)
+    else if (rt == 2) {
+        if (!hall_rest(rev_in, n))
+            rev_hall(rev_in, wet, n);
+    } else if (rt)
         rev_spring(rev_in, wet, n);
     else
         rev_room(rev_in, wet, n);
