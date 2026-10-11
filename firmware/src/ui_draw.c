@@ -1582,8 +1582,12 @@ static void ui_draw_page(uint32_t counting)
     draw_head();
     felucca_dbg.stage = 4;
     draw_columns();
+    if (ui.help_t)
+        ui.help_t--;
+    felucca_dbg.stage = 6;
+    draw_foot();                                      /* submit the steps before the larger graph transfer */
     felucca_dbg.stage = 5;
-    draw_graph();
+    draw_graph();                                    /* the knob highlight still sees its last active frame */
     if (ui.msg_t && !--ui.msg_t && ui.msg2[0]) {     /* the second message (ui_notices) */
         str_cpy(ui.msg, ui.msg2, sizeof ui.msg);
         ui.msg2[0] = 0;
@@ -1593,9 +1597,5 @@ static void ui_draw_page(uint32_t counting)
         ui.bpm_t--;
     if (ui.hot_t)
         ui.hot_t--;
-    if (ui.help_t)
-        ui.help_t--;
-    felucca_dbg.stage = 6;
-    draw_foot();
     ui.force = 0;
 }
