@@ -403,10 +403,13 @@ static void px_modal_run(const px_modal_blk_t *B, px_modal_t *M, int32_t *out, i
 {
     uint32_t i, k, nm = B->n;
     int32_t x[32];
+    int64_t acc[32];                                     /* the modes' sum per sample: 256 B more audio ISR stack */
     if (n > 32u)
         n = 32u;
-    for (i = 0; i < n; i++)                              /* (no else below: a cold block after the function, */
+    for (i = 0; i < n; i++) {                            /* (no else below: a cold block after the function, */
         aux[i] = x[i] = 0;                               /* jumping back, reads as a loop to the budget) */
+        acc[i] = 0;
+    }
     if (B->dust_thr || B->strike || M->e1 || M->e2) {
         int32_t e1 = M->e1, e2 = M->e2, t, bp, big = 0;
         uint32_t rs = M->rng;
@@ -436,21 +439,22 @@ static void px_modal_run(const px_modal_blk_t *B, px_modal_t *M, int32_t *out, i
         M->e2 = px_clamp(e2, -(1 << 30), 1 << 30);
         M->rng = rs;
     }
-    for (i = 0; i < n; i++) {                            /* the modes, band-pass */
-        int64_t acc = 0;
-        const px_mode_t *c = B->m;
-        int32_t (*st)[2] = M->s, xi = x[i];
-        for (k = 0; k < nm; k++, c++, st++) {
-            int32_t s1 = st[0][0], s2 = st[0][1], t, v;
-            t = px_m(c->gh, xi - px_m(c->rpg, s1, 28) - s2, 30);
+    for (k = 0; k < nm; k++) {                           /* the modes, band-pass, mode by mode: its state and */
+        int32_t s1 = M->s[k][0], s2 = M->s[k][1], t, v;  /* coefficients stay in registers over the block; */
+        const int32_t gh = B->m[k].gh, rpg = B->m[k].rpg, g = B->m[k].g, a = B->m[k].a;
+        for (i = 0; i < n; i++) {                        /* acc[i] still adds k = 0..nm-1 in order (bit for bit) */
+            t = px_m(gh, x[i] - px_m(rpg, s1, 28) - s2, 30);
             v = s1 + t;
-            st[0][0] = v + t;
-            t = px_m(c->g, v, 28);
-            st[0][1] = s2 + t + t;
-            acc += (int64_t)c->a * v;
+            s1 = v + t;
+            t = px_m(g, v, 28);
+            s2 = s2 + t + t;
+            acc[i] += (int64_t)a * v;
         }
-        out[i] = (int32_t)(acc >> 30);                   /* Q28 * Q22 -> Q20 */
+        M->s[k][0] = s1;
+        M->s[k][1] = s2;
     }
+    for (i = 0; i < n; i++)
+        out[i] = (int32_t)(acc[i] >> 30);                /* Q28 * Q22 -> Q20 */
 }
 
 /* ------------------------------------------------------------ String --- */
