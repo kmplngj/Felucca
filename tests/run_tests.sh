@@ -12,7 +12,9 @@
 #                   built -Os -fno-vectorize -fno-slp-vectorize as the target is (-Os, no SIMD; -O2 here vectorises
 #                   with NEON: PHYS BOWED 1236 vs 1729) against tests/cpu_baseline_os.txt, the goldens too;
 #                   target: loop instructions of the render functions in the pi32v2 disassembly
-#                   (tests/target_budget.txt, +10 %; exact, static).
+#                   (tests/target_budget.txt, +10 %; exact, static); the estimator itself has fixture tests on
+#                   small hand-written listings (tests/target_budget_test.py: loops, nesting, divides, calls,
+#                   missing / unreadable input; no disassembly needed), which also document where it is approximate.
 #   voices          the budget of 8, steal fades, MONO / LEGATO / UNISON keep their note, the VOICE cap,
 #                   no hanging notes on any MIDI / key routing.
 # ENGINE MEMORY (tests/union_test.c, 1.5): engine switches on a part (every pair and A -> B -> A of the engines that
@@ -417,6 +419,8 @@ else
     $SCC -o "$A/fuzz_smp" tests/fuzz_smp.c -lm
     run "ASan/UBSan fuzz: user sample slot headers -> scan -> SAMPLE / GRAIN / SLICE (1000, seed 17)" "$A/fuzz_smp" 1000 17
 fi
+
+run "regression: target cost estimator on hand-written disassembly fixtures (no felucca.dis needed)" python3 tests/target_budget_test.py
 
 run "regression: target cost of the render loops (pi32v2 disassembly)" python3 tests/target_budget.py \
     build/felucca.dis tests/target_budget.txt
