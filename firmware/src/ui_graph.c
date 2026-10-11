@@ -1182,13 +1182,15 @@ static void graph_title(void)
     cv_text_in(0, y, 240, f, ti, T_THEME, T_SURF);
 }
 
+static uint32_t scope_prepare(uint32_t height);
+
 static uint32_t graph_signature(void)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
     uint32_t h = 2166136261u, i;
     if (ui.home)
-        return h ^ (ui.frame / 2u);                  /* scope: redraw every other frame */
+        return scope_prepare(graph_h());             /* hash the trace that graph_scope will draw */
     h ^= (uint32_t)pg->graph * 131u + TSEL->eng_req + song.sel * 7777u + ui.page * 1291u;
     if (strip_kind() == SK_TITLE)                    /* MENU > LARGE: the page's title (its engine, its number) */
         return h ^ 0x5A17u;
@@ -1918,26 +1920,41 @@ static void draw_home_tracks(void)
 }
 /* oscilloscope of the output, triggered on a rising zero crossing: a RAISE centre line, the trace 2 px (in silence
  * a flat line on it; MENU > SCREEN OFF keeps it from staying on the panel for hours) */
-static void graph_scope(uint16_t c)
+static int16_t scope_snap[SCOPE_N] __attribute__((section(".pool")));
+/* Main-loop scratch: capture once, then replace the snapshot's prefix with the displayed y values. The source
+ * index is always at or ahead of the destination, so the conversion does not overwrite unread samples. HOME's
+ * signature and drawing use this same trace even if the audio producer advances scope_buf in between. */
+static uint32_t scope_prepare(uint32_t height)
 {
-    static int16_t snap[SCOPE_N] __attribute__((section(".pool")));
-    uint32_t w = scope_w, i, trig = 0;
-    int32_t cy = (int32_t)cv_h / 2, py = cy, x, peak = 1500, a = cv_h == H_GRAPH ? 46 : cy - 6;   /* (LARGE: the strip) */
+    uint32_t w = scope_w, i, trig = 0, h = 2166136261u;
+    int32_t cy = (int32_t)height / 2, peak = 1500, a = height == H_GRAPH ? 46 : cy - 6;
     for (i = 0; i < SCOPE_N; i++) {
-        snap[i] = scope_buf[(w + i) & (SCOPE_N - 1u)];
-        if (snap[i] > peak)
-            peak = snap[i];
-        else if (-snap[i] > peak)
-            peak = -snap[i];
+        scope_snap[i] = scope_buf[(w + i) & (SCOPE_N - 1u)];
+        if (scope_snap[i] > peak)
+            peak = scope_snap[i];
+        else if (-scope_snap[i] > peak)
+            peak = -scope_snap[i];
     }
     for (i = 1; i < SCOPE_N - 240u; i++)
-        if (snap[i - 1] < 0 && snap[i] >= 0) {
+        if (scope_snap[i - 1] < 0 && scope_snap[i] >= 0) {
             trig = i;
             break;
         }
+    for (i = 0; i < PANEL_W; i++) {
+        int32_t y = cy - scope_snap[trig + i] * a / peak;   /* auto-scaled, as the drawing */
+        scope_snap[i] = (int16_t)y;
+        h = (h ^ (uint32_t)y) * 16777619u;
+    }
+    return h;
+}
+static void graph_scope(uint16_t c)
+{
+    int32_t cy = (int32_t)cv_h / 2, py = cy, x;
+    if (!ui.home)                                    /* other pages' fallback scope has no trace signature */
+        (void)scope_prepare(cv_h);
     cv_rect(PANEL_X0, cy, PANEL_W, 1, T_RAISE);
     for (x = 0; x < PANEL_W; x++) {
-        int32_t y = cy - snap[trig + (uint32_t)x] * a / peak;    /* auto-scaled */
+        int32_t y = scope_snap[x];
         if (x)
             cv_line_t(PANEL_X0 - 1 + x, py, PANEL_X0 + x, y, c, 2);
         py = y;
@@ -2247,6 +2264,8 @@ static void draw_graph(void)
         draw_home_tracks();
         return;
     }
+    if (ui.home && !ui.force && (ui.frame & 1u))      /* retain the scope's maximum every-other-frame cadence */
+        return;
     if (!ui.home && pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE) sample_wave_tick(t);
     sig = graph_signature();
     if (!ui.force && sig == ui.graph_sig)

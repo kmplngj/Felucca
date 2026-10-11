@@ -10289,6 +10289,135 @@ static int test_prev_page(void)
     return bad;
 }
 
+/* Reference scope renderer before #8: compare full canvas pixels, not only the signature's y values. */
+static void scope_reference(uint16_t c)
+{
+    int16_t snap[SCOPE_N];
+    uint32_t w = scope_w, i, trig = 0;
+    int32_t cy = (int32_t)cv_h / 2, py = cy, x, peak = 1500, a = cv_h == H_GRAPH ? 46 : cy - 6;
+    for (i = 0; i < SCOPE_N; i++) {
+        snap[i] = scope_buf[(w + i) & (SCOPE_N - 1u)];
+        if (snap[i] > peak) peak = snap[i];
+        else if (-snap[i] > peak) peak = -snap[i];
+    }
+    for (i = 1; i < SCOPE_N - 240u; i++)
+        if (snap[i - 1] < 0 && snap[i] >= 0) { trig = i; break; }
+    cv_rect(PANEL_X0, cy, PANEL_W, 1, T_RAISE);
+    for (x = 0; x < PANEL_W; x++) {
+        int32_t y = cy - snap[trig + (uint32_t)x] * a / peak;
+        if (x) cv_line_t(PANEL_X0 - 1 + x, py, PANEL_X0 + x, y, c, 2);
+        py = y;
+    }
+}
+static int test_scope_redraw(void)
+{
+    static uint16_t ref[CV_MAX];
+    uint32_t mode, pal, kind, i, rows, sig, rng = 19u;
+    int bad = 0, ok = 1;
+    ui_power_on();
+    ui_home_view = HV_SCOPE;
+    for (mode = 0; mode < 2u; mode++) {
+        ui_prefs = mode ? PREF_LARGE : 0;
+        for (pal = 0; pal < NPALETTES; pal++) {
+            palette_set(pal);
+            for (kind = 0; kind < 8u; kind++) {
+                scope_w = 0xFFFFFF00u + kind * 73u;
+                for (i = 0; i < SCOPE_N; i++) {
+                    rng = rng * 1664525u + 1013904223u;
+                    scope_buf[i] = kind == 0 ? 0 : kind == 1 ? 1 : kind == 2 ? -1 :
+                                   kind == 3 ? (int16_t)(i * 101u - 25000u) :
+                                   kind == 4 ? (i & 1u ? -32768 : 32767) :
+                                   kind == 5 ? (int16_t)((i % 64u) * 300u - 9600u) :
+                                   kind == 6 ? -1500 : (int16_t)(rng >> 16);
+                }
+                cv_begin(240, graph_h(), T_SURF);
+                scope_reference(ACC);
+                memcpy(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+                (void)graph_signature();
+                cv_begin(240, graph_h(), T_SURF);
+                graph_scope(ACC);
+                ok &= !memcmp(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+                /* The producer may advance after signature calculation: drawing keeps the captured trace. */
+                memset(scope_buf, 0, sizeof scope_buf);
+                scope_w += SCOPE_N;
+                cv_begin(240, graph_h(), T_SURF);
+                graph_scope(ACC);
+                ok &= !memcmp(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+            }
+        }
+    }
+    bad += check("#8 scope: exact reference pixels, all palettes/heights/signals; one snapshot per draw", ok);
+    for (mode = 0; mode < 2u; mode++) {
+        ui_power_on(); ui_home_view = HV_SCOPE; ui_prefs = mode ? PREF_LARGE : 0;
+        memset(scope_buf, 0, sizeof scope_buf); scope_w = 0;
+        ui_draw();
+        rows = host_blit_rows;
+        for (i = 0; i < 120u; i++) ui_draw();
+        ok = host_blit_rows == rows;
+        bad += check("#8 scope: silence skips graph transfers across 120 frames", ok);
+        ui.frame &= ~1u;                         /* a frame eligible for the scope's 30 Hz cadence */
+        scope_buf[0] = 1;                          /* subpixel changes do not repaint the same line */
+        draw_graph(); ok = host_blit_rows == rows;
+        scope_buf[0] = 1000; draw_graph();
+        ok &= host_blit_rows == rows + graph_h();
+        rows = host_blit_rows; sig = ui.graph_sig;
+        scope_w += SCOPE_N; draw_graph();
+        ok &= host_blit_rows == rows && ui.graph_sig == sig;
+        bad += check("#8 scope: redraw only when displayed pixels change, independent of ring counter", ok);
+        /* Sustained signal, then one full ring of silence: one final flat-line transfer and no further churn. */
+        for (i = 0; i < SCOPE_N; i++) scope_buf[i] = (int16_t)((i % 64u) * 300u - 9600u);
+        draw_graph(); rows = host_blit_rows;
+        memset(scope_buf, 0, sizeof scope_buf); scope_w += SCOPE_N;
+        draw_graph(); ok = host_blit_rows == rows + graph_h(); rows = host_blit_rows;
+        for (i = 0; i < 120u; i++) { scope_w += 128u; ui_draw(); }
+        ok &= host_blit_rows == rows;
+        bad += check("#8 scope: sustained signal returns to silence once, then stays idle", ok);
+        ok = 1;
+        for (i = 0; i < 120u; i++) {
+            rows = host_blit_rows;
+            scope_buf[0] = (int16_t)(500 + (i / 2u % 2u) * 500u);
+            ui_draw();
+            ok &= host_blit_rows - rows == ((ui.frame & 1u) ? 0u : graph_h());
+        }
+        bad += check("#8 scope: changing audio keeps the maximum every-other-frame transfer cadence", ok);
+        rows = host_blit_rows;
+        ui.frame |= 1u;                          /* forced invalidation also works on a skipped scope frame */
+        ui.force = 1; draw_graph(); ok = host_blit_rows == rows + graph_h(); ui.force = 0;
+        memset(scope_buf, 0, sizeof scope_buf);
+        rows = host_blit_rows;
+        go_page(GR_ADSR); draw_graph(); ui.force = 0;
+        ui.home = 1; page_entered(); draw_graph(); ui.force = 0;
+        ok &= host_blit_rows == rows + 2u * graph_h();
+        rows = host_blit_rows;
+        menu_put(MI_COLOR, (settings.palette + 1u) % NPALETTES);
+        ui_draw(); ok &= host_blit_rows > rows;
+        bad += check("#8 scope: force, page re-entry and palette changes still repaint", ok);
+        ui.force = 1; ui_draw();
+        memcpy(ref, host_screen + graph_y() * 240u, graph_h() * 240u * sizeof host_screen[0]);
+        ok = 1;
+        for (kind = 0; kind < 4u; kind++) {
+            if (kind == 0) ui.menu = 1;
+            else if (kind == 1) ui.confirm = CF_CLEAR_SEQ;
+            else if (kind == 2) ui.layer = LAYER_FX;
+            else ui.uboot = 3;
+            ui.force = 1; ui_draw();
+            ui.menu = ui.confirm = ui.layer = ui.uboot = 0;
+            ui.force = 1; ui_draw();
+            ok &= !memcmp(ref, host_screen + graph_y() * 240u, graph_h() * 240u * sizeof host_screen[0]);
+        }
+        bad += check("#8 scope: HOME pixels restored after menu, confirmation, layer and update overlays", ok);
+        /* Existing non-HOME fallback scopes still take fresh samples when their graph redraws. */
+        ui.home = 0; memset(scope_buf, 0, sizeof scope_buf);
+        cv_begin(240, H_GRAPH, T_SURF); scope_reference(ACC);
+        memcpy(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+        cv_begin(240, H_GRAPH, T_SURF); graph_scope(ACC);
+        ok = !memcmp(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+        bad += check("#8 scope: non-HOME fallback captures its own current trace", ok);
+    }
+    ui_prefs = 0; ui_power_on();
+    return bad;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -10375,6 +10504,7 @@ int main(void)
     bad += test_fm6_charts();
     bad += test_fm6_ops();
     bad += test_home_tracks();
+    bad += test_scope_redraw();
     bad += test_fx_map_columns();
     bad += test_help();
     bad += test_prev_page();
