@@ -2,11 +2,29 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The few libc routines the compiler may call implicitly (struct copies,
  * zeroing). Freestanding: no other libc. */
+/* Word accesses may alias any object's representation. The alternate attribute
+ * spelling keeps this rule when host harnesses mask __attribute__ for sections. */
+typedef uint32_t libc_word_t __attribute((__may_alias__));
+
 void *memset(void *d, int c, unsigned n)
 {
     unsigned char *p = d;
+    unsigned char byte = (unsigned char)c;
+    while (n && ((uintptr_t)p & 3u)) {
+        *p++ = byte;
+        n--;
+    }
+    if (n >= 4u) {
+        libc_word_t *w = (libc_word_t *)p;
+        uint32_t fill = (uint32_t)byte * 0x01010101u;
+        unsigned words = n / 4u;
+        n &= 3u;
+        while (words--)
+            *w++ = fill;
+        p = (unsigned char *)w;
+    }
     while (n--)
-        *p++ = (unsigned char)c;
+        *p++ = byte;
     return d;
 }
 
@@ -14,6 +32,18 @@ void *memcpy(void *d, const void *s, unsigned n)
 {
     unsigned char *p = d;
     const unsigned char *q = s;
+    /* Unaligned pairs keep the compact byte loop on pi32v2. As with memcpy,
+     * the caller must provide nonoverlapping ranges. */
+    if (n >= 4u && !(((uintptr_t)p | (uintptr_t)q) & 3u)) {
+        libc_word_t *w = (libc_word_t *)p;
+        const libc_word_t *r = (const libc_word_t *)q;
+        unsigned words = n / 4u;
+        n &= 3u;
+        while (words--)
+            *w++ = *r++;
+        p = (unsigned char *)w;
+        q = (const unsigned char *)r;
+    }
     while (n--)
         *p++ = *q++;
     return d;
