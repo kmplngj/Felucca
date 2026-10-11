@@ -147,6 +147,11 @@ def flash_image(app, key):
     cfg_body = eq_e + eq
     cfg = entry(crc16(cfg_body), 0x20, 0x20 + len(cfg_body), 0x83, 0xFF, 1, "cfg") + cfg_body
     region = bytearray(area + cfg)
+    # A bytearray slice assignment past the end would silently enlarge flash.bin.
+    if len(region) > FLASH_SIZE - 0x4000:
+        raise SystemExit(f"fm1pkg_make: app area is {len(region)} B, available {FLASH_SIZE - 0x4000} B "
+                         f"(flash end {0x4000 + len(region):#x}, limit {FLASH_SIZE:#x}; "
+                         f"SDK cfg_tool.bin {len(cfg_tool)} B, cfg/eq_cfg_hw.bin {len(eq)} B)")
     sfc(region, 0, len(region), 0, key)
     f[0x4000:0x4000 + len(region)] = region
     return bytes(f)
