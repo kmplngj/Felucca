@@ -68,5 +68,6 @@ Validate YAML syntax and every setting against the current
 before merging configuration changes. The
 [YAML validator](https://docs.coderabbit.ai/configuration/yaml-validator) and
 `cr config validate` in the [CodeRabbit CLI](https://docs.coderabbit.ai/cli/reference)
-provide service-maintained validation. CodeRabbit reads configuration from the
-PR branch, so a configuration PR can exercise its own settings before merge.
+provide service-maintained validation. For branches in this repository, CodeRabbit
+reads configuration from the PR branch, so a configuration PR can exercise its own
+settings before merge. PRs from forks use the target branch's configuration.
