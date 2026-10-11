@@ -403,7 +403,8 @@ static __attribute__((noinline)) int zeros32(const int32_t *x, uint32_t n)    /*
         z |= x[i];
     return !z;
 }
-static int zeros16(const int16_t *x, uint32_t n)        /* (stops at the first not 0: while sounding, at once) */
+/* Return 1 if all n samples in x are zero, otherwise 0; stop at the first nonzero sample. */
+static int zeros16(const int16_t *x, uint32_t n)
 {
     uint32_t i;
     for (i = 0; i < n && !x[i]; i++)
@@ -420,12 +421,13 @@ static int zeros16(const int16_t *x, uint32_t n)        /* (stops at the first n
         d = (d) + k >= (len) ? 0u : (d) + k;                                                \
     }
 
+#define HL_LFO ((uint32_t)(0.37 * CTL / FS * 4294967296.0))   /* the drift: 0.37 Hz (even lines), 0.74 Hz (odd) */
+
 /* HALL (see the top): a block of the send (n = CTL samples: audio.c) -> the mid added to out, the side into
  * rev_side. At half the rate (HL_NC samples) in passes over the block, each with few states (every line is
  * longer than a block: what the lines give in this block was written before it): the send, every other
  * sample, low cut, diffusers (hl.bx); the lines' ends at their drifting taps, low-passed, scaled (hl.y); the
  * outputs and the matrix; back into the lines; the outputs back to 44.1 kHz. */
-#define HL_LFO ((uint32_t)(0.37 * CTL / FS * 4294967296.0))   /* the drift: 0.37 Hz (even lines), 0.74 Hz (odd) */
 static __attribute__((noinline)) void rev_hall(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
     int16_t *b = rev_comb, *a = rev_ap;
