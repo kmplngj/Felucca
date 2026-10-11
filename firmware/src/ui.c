@@ -1558,6 +1558,42 @@ static const param_desc_t *home_param(uint32_t k, int16_t **vp)
     return track_desc(home_trk(k), id);
 }
 
+/* Display words only: the engine's DESC labels, parameter IDs and saved values remain stable. */
+static const char *ui_param_label(const track_t *t, uint32_t id)
+{
+    static const char *const NAME[MAC_NSHAPE][2] = {{"SCAN", "TEXTURE"}, {"FOLD", "BLEND"}, {"DEPTH", "MOD PIT"}};
+    if (t->eng_req % NENGINES == ENGI_MACRO) {
+        if (id == P_E0) return "MODEL";
+        if (id == P_E1 || id == P_E2) return NAME[(uint32_t)t->p[P_E0] % MAC_NSHAPE][id - P_E1];
+    }
+    return track_desc(t, id)->label;
+}
+/* Compact value cells (MOD, AUTOMATION) have less room than control labels. */
+static const char *ui_param_short_label(const track_t *t, uint32_t id)
+{
+    if (t->eng_req % NENGINES == ENGI_MACRO && id == P_E2) {
+        uint32_t shape = (uint32_t)t->p[P_E0] % MAC_NSHAPE;
+        if (shape == MAC_WAVE) return "TEX";
+        if (shape == MAC_FBFM) return "MPIT";
+    }
+    return ui_param_label(t, id);
+}
+static const char *ui_mod_dst_name(const track_t *t, int32_t v)
+{
+    if (MD_ENGINE(v) && t->eng_req % NENGINES == ENGI_MACRO)
+        return ui_param_short_label(t, P_E0 + (uint32_t)(v - MD_E1));
+    return mod_dst_name(t, v);
+}
+static void ui_param_format(const track_t *t, uint32_t id, const param_desc_t *d, int32_t v, char *val, const char **unit)
+{
+    /* FBFM's COLOR is one semitone per detent; 127 reaches +63.992 st, displayed rounded to +64.
+     * The editor still exposes its original 0..127 control, and modulation/locks use that range. */
+    if (t->eng_req % NENGINES == ENGI_MACRO && (uint32_t)t->p[P_E0] % MAC_NSHAPE == MAC_FBFM && id == P_E2)
+        param_format(&ENG_MACRO.edit[3], v == 127 ? 64 : v - 64, val, unit);
+    else
+        param_format(d, v, val, unit);
+}
+
 /* select track i (KNOB 1 on TRACKS, the editor): its sound, pages and pattern from now on */
 static void track_select(uint32_t i)
 {

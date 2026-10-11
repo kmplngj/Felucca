@@ -9559,6 +9559,75 @@ static int test_edit_quick_actions(void)
     return bad;
 }
 
+/* Model words are presentation only. The preview must work while silent, match settled
+ * oscillator tables, and leave all live DSP state alone. Layout sweeps live in ui_render.c. */
+static int test_macro_ui(void)
+{
+    static const char *const LABEL[MAC_NSHAPE][2] = {{"SCAN", "TEXTURE"}, {"FOLD", "BLEND"}, {"DEPTH", "MOD PIT"}};
+    static const char *const SHORT[MAC_NSHAPE] = {"TEX", "BLEND", "MPIT"};
+    static const int16_t CORNER[] = {0, 31, 32, 63, 64, 95, 96, 127};
+    uint32_t s, j, k, phase, before, track_hash, mem_hash, sig;
+    int bad = 0, words = 1, fits = 1, preview = 1, idle = 1, pure = 1;
+    char val[12], name[12];
+    const char *unit;
+    ui_power_on(); set_engine_of(TSEL, ENGI_MACRO);
+    song.playing = 0;
+    for (s = 0; s < MAC_NSHAPE; s++) {
+        apply_preset_to(TSEL, 2u * s);
+        TSEL->p[P_E0] = (int16_t)s;
+        go_home(); draw_columns();
+        words &= !strncmp(ui.col[0], LABEL[s][0], strlen(LABEL[s][0])) &&
+                 !strncmp(ui.col[1], LABEL[s][1], strlen(LABEL[s][1])) && !strncmp(ui.col[3], "MODEL|", 6);
+        fits &= help_fits(help_page());
+        go_title("EDIT 1"); draw_columns();
+        words &= !strncmp(ui.col[1], LABEL[s][0], strlen(LABEL[s][0])) &&
+                 !strncmp(ui.col[2], LABEL[s][1], strlen(LABEL[s][1]));
+        fits &= help_fits(help_page());
+        words &= str_eq(ui_mod_dst_name(TSEL, MD_E1 + 1), LABEL[s][0]) && str_eq(ui_mod_dst_name(TSEL, MD_E1 + 2), SHORT[s]);
+        ev_name(TSEL, P_E2, name); words &= str_eq(name, SHORT[s]);
+        words &= str_eq(track_desc(TSEL, P_E1)->label, "TIMBRE") && str_eq(track_desc(TSEL, P_E2)->label, "COLOR") &&
+                 str_eq(track_desc(TSEL, P_E0)->label, "SHAPE") && track_desc(TSEL, P_E2)->fmt == F_PCT;
+        track_hash = fnv(2166136261u, trk, sizeof trk);
+        mem_hash = fnv(2166136261u, eng_mem, sizeof eng_mem);
+        ui.force = 1; draw_graph(); ui.force = 0;
+        sig = graph_signature(); host_blit_rows = 0; ui.frame += 2; draw_graph();
+        idle &= graph_signature() == sig && host_blit_rows == 0;
+        pure &= fnv(2166136261u, trk, sizeof trk) == track_hash && fnv(2166136261u, eng_mem, sizeof eng_mem) == mem_hash;
+        if (s == MAC_FBFM) continue;
+        before = fnv(2166136261u, host_screen, sizeof host_screen);
+        TSEL->p[P_E1] = 127; TSEL->p[P_E2] = 127; draw_graph();
+        preview &= graph_signature() != sig && fnv(2166136261u, host_screen, sizeof host_screen) != before;
+        for (j = 0; j < 128u; j++)
+            for (k = 0; k < NELEM(CORNER); k++)
+                for (phase = 0; phase < 128u; phase += 7u) {
+                    macro_osc_t osc = {0};
+                    uint32_t ph = phase << 25;
+                    int16_t sample;
+                    TSEL->p[P_E1] = (int16_t)j; TSEL->p[P_E2] = CORNER[k];
+                    osc.timbre = j == 127u ? 32767 : (int32_t)j * 256;
+                    osc.color = CORNER[k] == 127 ? 32767 : CORNER[k] * 256;
+                    osc.scan = osc.timbre * 2;
+                    if (s == MAC_WAVE) mac_waveline(&osc, &ph, 0, osc.timbre, osc.color, &sample, 1);
+                    else mac_fold(&osc, &ph, 0, 60 * 128, osc.timbre, osc.color, &sample, 1);
+                    if (macro_preview_sample(TSEL, phase << 25) != sample) {
+                        if (preview) printf("ui: MACRO preview %u timbre %u color %d phase %u differs from settled DSP\n", s, j, CORNER[k], phase);
+                        preview = 0;
+                    }
+                }
+    }
+    TSEL->p[P_E0] = MAC_FBFM;
+    for (j = 0; j < 128u; j++) {
+        int32_t want = j == 127u ? 64 : (int32_t)j - 64;
+        ui_param_format(TSEL, P_E2, track_desc(TSEL, P_E2), (int32_t)j, val, &unit);
+        words &= atoi(val) == want && str_eq(unit, "st");
+    }
+    bad += check("MACRO: model labels on HOME/OSC, modulation and automation; wire DESC unchanged", words);
+    bad += check("MACRO: all model hints fit; idle OSC cached without touching voices or engine memory", fits && idle && pure);
+    bad += check("MACRO: silent preview responds; 128 timbres x texture corners match settled WAVE/FOLD", preview);
+    ui_power_on();
+    return bad;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -9643,6 +9712,7 @@ int main(void)
     bad += test_home_tracks();
     bad += test_fx_map_columns();
     bad += test_help();
+    bad += test_macro_ui();
     bad += test_no_flash();
 #if FELUCCA_FM4
     bad += test_fm_charts();                        /* (DIGITAL's charts: built with FELUCCA_FM4=1 only) */

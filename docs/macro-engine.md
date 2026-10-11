@@ -24,13 +24,87 @@ the four parts, including POLY, MONO, LEGATO and UNISON.
 | DRIVE | 0..127 | Soft clipping before the filter |
 | FINE | −50..50 cents | Fine tuning |
 
-HOME's knobs are TIMBRE, COLOR, CUT and SHAPE. OSC has SHAPE, TIMBRE, COLOR, TUNE;
-TONE has CUT, RES, DRIVE, FINE. The existing envelopes, filter envelope, sends,
+HOME's knobs are the model's TIMBRE and COLOR controls, CUT and MODEL. OSC has
+MODEL, the two model controls and TUNE; TONE has CUT, RES, DRIVE, FINE. The
+existing envelopes, filter envelope, sends,
 pitch bend, fine detuning and modulation matrix apply. The SHP modulation
 destination changes TIMBRE; the E1..E8 destinations address the eight controls
 in table order. SHAPE changes retain phase and correct the first sample to the
 previous sample, fading that correction over 32 samples. Sounding retriggers
 retain oscillator, feedback and filter state; a new note from silence resets them.
+
+## Panel labels, hints and preview
+
+The panel gives TIMBRE and COLOR model-specific names:
+
+| Model | TIMBRE label | COLOR label | OSC guidance |
+| --- | --- | --- | --- |
+| WAVE | SCAN | TEXTURE | Move through 64 waves; step, smooth or crush the texture |
+| FOLD | FOLD | BLEND | Add harmonics; blend sine into triangle |
+| FBFM | DEPTH | MOD PIT | FM with carrier feedback; transpose the modulator |
+
+SHAPE is labelled MODEL. FBFM's MOD PIT reads in semitones: −64 at stored value 0,
+0 at 64, and +64 at 127 (rounded from +63.992). The last detent spans approximately
+two semitones. MOD and AUTOMATION use the compact names TEX and MPIT where their
+value cells need less text; automation and held locks retain the same pitch units.
+DESC continues to expose SHAPE/TIMBRE/COLOR and COLOR's original 0..127 range.
+Stored values, wire IDs and modulation ranges are unchanged.
+
+OSC shows two short hints even with MENU > HELP off. With HELP on, its temporary
+footer hints and HOME's knob hints follow the selected model too. The preview fits
+the existing graph panel and the smaller LARGE strip:
+
+- WAVE shows a settled wavetable cycle and a marker for the scan position.
+- FOLD shows the folded sine/triangle blend at a reference pitch of C4.
+- FBFM shows modulator → carrier and carrier → modulator feedback.
+
+These are control illustrations before envelopes, modulation, oversampling, drive,
+filter and effects, not live output traces. High-note folding attenuation is also
+absent from the illustration. HOME and TONE retain the live scope. The waveform
+uses 129 bounded points and existing immutable DSP tables in the main loop, without
+allocating a buffer or touching voices, oscillator phases or engine memory. OSC
+redraws when its values change; an unchanged preview remains cached while silent.
+
+## Factory and user presets
+
+The starter bank provides two sounds for each model:
+
+| Preset | Model | Starting point |
+| --- | --- | --- |
+| WAVE SCAN | WAVE | Polyphonic wavetable texture |
+| WAVE BASS | WAVE | Low, filtered mono bass |
+| FOLD LEAD | FOLD | Bright mono lead |
+| FOLD PAD | FOLD | Slow attack and release, polyphonic pad |
+| FBFM BELL | FBFM | Decaying metallic bell |
+| FBFM BASS | FBFM | Filtered mono FM bass |
+
+Turn PRESETS to audition sounds. Tap SAVE twice to open PRESETS: KNOB 1 browses
+sounds, KNOB 2 changes engine, KNOB 3 marks a favorite, and KNOB 4 filters by
+favorites or category. Factory presets remain available after editing a sound.
+
+MACRO uses Felucca's **32 shared user preset slots**, alongside the other engines.
+To keep an edited sound:
+
+1. Stop playback, tap SAVE once for USER, and choose a slot with KNOB 1.
+2. Press OCT+ to open NAME; a used slot asks for overwrite confirmation first.
+3. Enter a name with the piano keys or KNOB 1/2, and choose a category with KNOB 3.
+   EDIT on USER renames an existing slot. Names can contain up to 12 characters.
+4. Press OCT+ to save, or OCT− to cancel. Saving includes the model, all eight
+   MACRO controls, envelopes, effect sends and the other sound parameters.
+
+To load it, select its USER slot, turn KNOB 2 to select LOAD, then press OCT+.
+Saved sounds also appear in the combined PRESETS list and its category/favorite
+filters. The browser emulator stores these slots in this browser's local storage;
+the FM-1 stores them in flash. Clearing browser storage removes the emulator's saves.
+
+On 2026-10-11, the local browser build at revision `9b2792e` played all six factory
+sounds through AudioWorklet at 44.1 kHz. An edited FOLD LEAD was saved in U01,
+renamed MY FOLD, then loaded after a full page reload: SHAPE FOLD, TIMBRE 65%,
+COLOR 26% and CUT 4.2 kHz were retained, and the loaded sound produced audio.
+The Wasm regression also saves, names and reloads edited WAVE/FOLD/FBFM sounds in
+fresh instances, comparing all eight engine values and their categories.
+These checks establish the emulator workflow; real-device flash and panel
+validation remains outstanding.
 
 ## DSP and attribution
 
@@ -90,8 +164,8 @@ No build flags, sample quality or existing engines were removed to make room.
 
 | Resource | Before | After | Delta | After spare |
 | --- | ---: | ---: | ---: | ---: |
-| App image (`felucca.bin`, capacity 581,564 B) | 495,580 B | 509,188 B | **+13,608 B** | 72,376 B |
-| XIP `.text` | 492,240 B | 505,848 B | +13,608 B | Included above |
+| App image (`felucca.bin`, capacity 581,564 B) | 495,580 B | 511,708 B | **+16,128 B** | 69,856 B |
+| XIP `.text` | 492,240 B | 508,368 B | +16,128 B | Included above |
 | `.ram_text` | 2,924 B | 2,924 B | 0 | Separate RAM execution region |
 | `.data` + `.bss` (capacity 73,728 B) | 54,964 B | 54,964 B | **0** | 18,764 B |
 | `.pool` (capacity 368,640 B) | 327,800 B | 327,896 B | **+96 B** | 40,744 B |
@@ -109,8 +183,15 @@ measured on hardware.
 
 App SHA-256 before:
 `badced1770fabc99ede44a31039e696fa3d51670eb1ee8af3687412d96ccdfde`;
-after: `683f17351a1cc55559cdedcbe382a74a034859bf32821928bdbeb80c23d92254`.
+after: `1461849b7a2aaf1371685fc03c72c00752e9c5c45ec3fa279dcfa20eb8a6608e`.
 The loader remains 6,930 bytes. Package size (610,086 B) is not app-slot usage.
+
+The model labels, hints and preview add **2,520 B of app flash** over the previous
+MACRO implementation at `9b2792e7450e19647faad22f240c85e84c374275` (509,188 B).
+Every static RAM region remains unchanged. That revision was rebuilt before this
+UI change with the same toolchain and assets; its app hash matches the earlier
+measurement. Baseline and final UI-change artifacts are in ignored
+`build/macro-ui-before/` and `build/macro-ui-after/`.
 
 ### CPU
 
@@ -156,6 +237,32 @@ These are the existing `target_budget.py` estimates (nested loops weighted ×4),
 not cycles or a proof of meeting the 2.902 ms DMA deadline. Each function has a
 new budget; all existing target budget entries are retained.
 
+The UI follow-up leaves DSP source and sample-loop costs unchanged. Its final
+full-suite corner run measured eight voices at 2,230.2 / 1,953.0 / 1,373.2 host
+instructions per frame for WAVE / FOLD / FBFM, and 2,160.3 for the mixed load;
+all remain inside the existing budgets. Counts vary slightly between runs; the
+three-run DSP table above records the earlier implementation measurements.
+
+The same extended `tests/ui_render.c` harness was compiled with Apple Clang
+`cc -O1` against an archive of `9b2792e` and the final sources. In consecutive
+runs after the suite finished, its process-clock averages were:
+
+| OSC model | Old scope: forced panel draw | New preview: forced panel draw | New cached frame |
+| --- | ---: | ---: | ---: |
+| WAVE | 47.2 µs | 36.6 µs | 0.08 µs |
+| FOLD | 47.1 µs | 33.7 µs | 0.07 µs |
+| FBFM | 47.3 µs | 33.7 µs | 0.08 µs |
+
+The harness averages 800 calls for each panel measurement. With unchanged
+parameters, the old animated scope still redrew every other frame (23.3–23.7 µs
+per call); the new preview only checks its signature. LARGE full-screen redraws,
+including its richer new strip, measured 67.7 / 72.8 / 78.4 µs versus
+74.8 / 65.3 / 65.3 µs previously, averaging 200 forced redraws per model.
+These host times are informational, depend on machine load and exclude actual
+LCD transfer and interrupt timing. They do not establish FM-1 CPU utilization.
+Reports and the archived baseline harness are retained under the UI-change
+artifact directories above, including their `ui-cost/` subdirectories.
+
 ## Validation and reproduction
 
 Fresh target build, the full applicable `tests/run_tests.sh` suite and target
@@ -192,9 +299,19 @@ without overlap. Native and WebAssembly produce identical output for 476,280
 frames covering all six MACRO presets, key chords, TIMBRE/COLOR gestures and
 release tails; the existing heavy-song parity check is preserved.
 
+The new UI tests compare all 128 timbres at eight texture/blend corners with the
+settled DSP tables, check labels and pitch formatting, preserve generic DESC,
+and prove cached idle draws leave track and engine state untouched. Chromium
+exercises model changes and control endpoints in normal and LARGE layouts. A FOLD
+sound saved as MACRO01X reloads after a full page refresh with FOLD 43%, BLEND 35%
+and TUNE 0 st retained; its preview and hints are restored too. AudioWorklet is
+running at 44.1 kHz, and the 390 px viewport has no horizontal overflow. These are
+browser observations, not real-device observations.
+
 Local baseline/after ELF, binary, disassembly, section reports, hashes and logs
-are under ignored `build/macro-before/` and `build/macro-after/`. Generated UI
-images are under `build/ui_new/` and `build/ui_fm4/`. The optional DaisySP float
+are under ignored `build/macro-before/` and `build/macro-after/`; the UI follow-up
+is captured separately in `build/macro-ui-before/` and `build/macro-ui-after/`.
+Generated UI images are under `build/ui_new/` and `build/ui_fm4/`. The optional DaisySP float
 reference is skipped because no DaisySP checkout is configured. The host suite's
 five pre-existing unsequenced `host_now` warnings in `input_test.c` remain; the
 fresh target build has no compiler warnings.

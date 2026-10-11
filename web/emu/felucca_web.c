@@ -478,6 +478,10 @@ EXPORT void web_test_heavy(void)
 }
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
+EXPORT uint32_t web_test_engine(void) { return TSEL->eng_req; }
+EXPORT int32_t web_test_param(uint32_t i) { return i < P_COUNT ? TSEL->p[i] : 0; }
+EXPORT const char *web_test_user_name(uint32_t i) { return i < UP_SLOTS ? up_rec(i)->name : 0; }
+EXPORT uint32_t web_test_user_category(uint32_t i) { return up_cat(i); }
 
 /* Exercise the same deferred engine switch as a preset load; no oscillator state is bypassed. */
 EXPORT void web_test_macro(uint32_t preset)
