@@ -1,0 +1,178 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+language: en-US
+early_access: false
+enable_free_tier: true
+tone_instructions: >-
+  Be concise and specific. Prioritize correctness, audio deadlines, memory bounds,
+  compatibility and missing evidence. Explain the failure scenario; avoid praise
+  and cosmetic nitpicks.
+
+chat:
+  # Ordinary CI/agent comments must not start unsolicited conversations.
+  # Explicit mentions and commands still work; see .github/CODERABBIT.md.
+  auto_reply: false
+  art: false
+  allow_non_org_members: true
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  review_status: true
+  review_details: true
+  enable_prompt_for_ai_agents: true
+  in_progress_fortune: false
+  poem: false
+  auto_apply_labels: false
+  auto_assign_reviewers: false
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    drafts: false
+    # The default branch (main) is always eligible; no additional bases.
+    base_branches: []
+    # Do not confuse PR authors with comment authors: this is not a chat filter.
+    ignore_usernames: []
+    ignore_title_keywords:
+      - "[skip review]"
+
+  # Retain source assets, attribution and test baselines in review scope.
+  path_filters:
+    - "!build/**"
+    - "!**/node_modules/**"
+    - "!**/__pycache__/**"
+
+  path_instructions:
+    - path: "firmware/src/**"
+      instructions: |
+        This is bare-metal FM-1 firmware using JieLi Clang 4.0.1 on pi32v2.
+        felucca.c includes the other C files as a single translation unit;
+        implementation-local functions and state are normally static.
+        Trace ISR reachability. Audio DMA deadlines and nested TIMER5 scanning
+        require bounded work; allocation, blocking I/O, flash operations and
+        formatted diagnostics belong in existing main-loop service paths.
+        Check queue ownership, bounds and RING_PUBLISH publication order;
+        volatile alone does not publish a multi-field snapshot.
+        Preserve fixed-point units, rounding, saturation, phase/RNG order,
+        click-free transitions and release tails. Check arithmetic bounds before
+        shifts, multiply movement or narrowed storage. Size engine state against
+        eng_mem_claim and ENG_MEM_FITS, preserving fade/reset/ownership rules.
+        Engine, stored-parameter and wire IDs are contracts. Append engine IDs,
+        reserve retired IDs, and update old-format import, validation, defaults,
+        round trips and malformed-input coverage together. Consult
+        web/EDITOR_PROTOCOL.md for MIDI/editor changes.
+        Keep register access in firmware/hal. Preserve deferred/coalesced saves
+        and stopped/idle autosave; a knob detent must not cause immediate erase.
+    - path: "firmware/hal/**"
+      instructions: |
+        Check actual AC791N register semantics, interrupt nesting, DMA ownership,
+        memory barriers and hardware guards. Keep peripheral access here and
+        expose helpers to application/loader code. Sequence side-effecting
+        register or test-clock accesses in separate statements. Host stubs do
+        not prove device timing, USB/MIDI behavior or electrical correctness.
+    - path: "firmware/loader/**"
+      instructions: |
+        Preserve RAM-only execution and accessible data while flash is busy,
+        loader no-call checks, memory-region bounds, update validation and
+        recovery behavior. Require target/package evidence and identify any
+        remaining real-device checks; host tests do not prove safe flashing.
+    - path: "firmware/*.ld"
+      instructions: |
+        Check load and runtime addresses, region overlap, alignment, reserved
+        RAM, stack guards and flash-busy code/data placement against target
+        linker output. Preserve the separate loader/application boundary.
+    - path: "tools/**"
+      instructions: |
+        Preserve JieLi toolchain compatibility, reproducible asset generation,
+        package-region checks, licensing and attribution. Generated build/gen
+        headers are outputs; change their generator or input assets.
+        The selective size pass in size_fns.py must retain -Os on interrupt
+        paths; trace callers before adding minsize functions or callbacks.
+        Compare optimizations with an unchanged baseline using identical flags
+        and workloads; report target bytes, RAM and timing provenance separately.
+    - path: "tests/**"
+      instructions: |
+        Require affected harnesses to be rebuilt after source changes. Protect
+        golden sound hashes, CPU/target budgets, engine-memory switching and
+        persistence/protocol malformed-input regressions. Baseline updates must
+        explain intended sound/cost changes and retain unaffected entries.
+        A failed budget is a finding, not grounds to regenerate all baselines.
+        Keep host results, target static estimates, emulator and device evidence
+        distinct; identify skipped tools/checks. Config/docs-only changes need
+        relevant syntax/schema/link checks, not firmware or hardware runs.
+    - path: "web/**"
+      instructions: |
+        The emulator compiles real DSP sources against simulated hardware; wire
+        new source files into its build as well as firmware and host harnesses.
+        Preserve editor/MIDI/backup wire IDs and compatibility documented in
+        EDITOR_PROTOCOL.md. Check binary bounds and malformed input. Browser
+        tests do not establish real USB/MIDI timing or FM-1 behavior. Editor and
+        installer development has moved to Felucca-WebApp.
+
+  pre_merge_checks:
+    # A blanket docstring quota adds noise to this C firmware project.
+    docstrings:
+      mode: "off"
+    custom_checks:
+      - name: "Validation evidence"
+        mode: warning
+        instructions: |
+          Pass when the PR states checks actually run, their results and skipped
+          applicable checks. For firmware behavior changes, require a fresh
+          target build and applicable host regressions, with device validation
+          reported or explicitly remaining. For optimization claims, require
+          baseline/revision, flags, workload and before/after bytes, RAM and
+          timing provenance. For config/docs-only changes, relevant syntax,
+          schema and link verification suffices. Warn on missing evidence;
+          never infer hardware validation or measured CPU savings from prose.
+
+  # Keep applicable bundled analysis available on the free OSS plan.
+  # Analyzer Clang is not the target JieLi compiler and cannot prove a build.
+  tools:
+    clang:
+      enabled: true
+    cppcheck:
+      enabled: true
+    ruff:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+    github-checks:
+      enabled: true
+    actionlint:
+      enabled: true
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CONTRIBUTING.md"
+      - "BUILDING.md"
+      - "LICENSING.md"
+      - "web/EDITOR_PROTOCOL.md"
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
+  web_search:
+    enabled: true
