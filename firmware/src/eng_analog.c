@@ -116,9 +116,11 @@ static __attribute__((noinline)) void analog_render_x(track_t *t, voice_t *v, in
 }
 
 /* WAVE 0..4 through the filter TYPE ft: analog_render's loop with ft 0 (a constant: LP, the code as it always was),
- * analog_render_f's with BP / HP (its own copy: the LP loop gains nothing) */
+ * analog_render_f's with BP / HP (its own copy: the LP loop gains nothing). o2 (a constant) 0: MIX 0, OSC 2's level
+ * exactly 0 (mulq15(b, 0) is 0), so its waveform is left out; its phase still runs, a later MIX finds it where it was
+ * (analog_render_1) */
 static inline __attribute__((always_inline)) void analog_osc(track_t *t, voice_t *v, int32_t *out, uint32_t n,
-                                                             const vmod_t *m, uint32_t ft)
+                                                             const vmod_t *m, uint32_t ft, uint32_t o2)
 {
     const int16_t *p = t->p;
     uint32_t wave = (uint32_t)p[P_E0], i;
@@ -136,32 +138,37 @@ static inline __attribute__((always_inline)) void analog_osc(track_t *t, voice_t
     int32_t fk = ft ? ANALOG_K(p[P_E5]) : 0;
     tsvf_coef(&flt, cut, p[P_E5]);
     for (i = 0; i < n; i++) {
-        int32_t a, b, s;
+        int32_t a, b = 0, s;
         switch (wave) {
         case 1:
             a = osc_pulse(ph0, inc1, 0x80000000u);
-            b = osc_pulse(ph1, inc2, 0x80000000u);
+            if (o2)
+                b = osc_pulse(ph1, inc2, 0x80000000u);
             break;
         case 2:
             a = osc_tri(ph0);
-            b = osc_tri(ph1);
+            if (o2)
+                b = osc_tri(ph1);
             break;
         case 3:
             a = osc_sine(ph0);
-            b = osc_sine(ph1);
+            if (o2)
+                b = osc_sine(ph1);
             break;
         case 4:
             a = osc_pulse(ph0, inc1, pw);
-            b = osc_pulse(ph1, inc2, pw);
+            if (o2)
+                b = osc_pulse(ph1, inc2, pw);
             break;
         default:
             a = osc_saw(ph0, inc1);
-            b = osc_saw(ph1, inc2);
+            if (o2)
+                b = osc_saw(ph1, inc2);
             break;
         }
         ph0 += inc1;
         ph1 += inc2;
-        s = mulq15(a, m1) + mulq15(b, m2);
+        s = o2 ? mulq15(a, m1) + mulq15(b, m2) : mulq15(a, 32767);   /* (m1 32767 at MIX 0) */
         if (nz)
             s += mulq15((int32_t)(noise32(&nst) >> 17) - 16384, nz);
         if (drv)
@@ -186,17 +193,28 @@ static inline __attribute__((always_inline)) void analog_osc(track_t *t, voice_t
 }
 static __attribute__((noinline)) void analog_render_f(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
-    analog_osc(t, v, out, n, m, (uint32_t)t->p[P_FTYPE]);
+    analog_osc(t, v, out, n, m, (uint32_t)t->p[P_FTYPE], 1);
+}
+/* MIX 0 (#138): OSC 1 alone, the LP and the BP / HP loop as above, chosen once a block (analog_render's loop stays
+ * what it was) */
+static __attribute__((noinline)) void analog_render_1(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+{
+    if (t->p[P_FTYPE])
+        analog_osc(t, v, out, n, m, (uint32_t)t->p[P_FTYPE], 0);
+    else
+        analog_osc(t, v, out, n, m, 0, 0);
 }
 
 static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     if (t->p[P_E0] >= AW_SYNC)
         analog_render_x(t, v, out, n, m);
+    else if (!t->p[P_E2])
+        analog_render_1(t, v, out, n, m);
     else if (t->p[P_FTYPE])
         analog_render_f(t, v, out, n, m);
     else
-        analog_osc(t, v, out, n, m, 0);
+        analog_osc(t, v, out, n, m, 0, 1);
 }
 
 static const preset_t ANALOG_PRESETS[] = {
