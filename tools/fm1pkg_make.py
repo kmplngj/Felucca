@@ -147,6 +147,12 @@ def flash_image(app, key):
     cfg_body = eq_e + eq
     cfg = entry(crc16(cfg_body), 0x20, 0x20 + len(cfg_body), 0x83, 0xFF, 1, "cfg") + cfg_body
     region = bytearray(area + cfg)
+    if 0x4000 + len(region) > FLASH_SIZE:               # a longer slice assignment would grow the image
+        raise SystemExit(
+            f"fm1pkg_make: app region is {len(region)} B (header+app {0x120 + APP_SLOT} B, cfg_tool.bin {len(cfg_tool)} B, "
+            f"cfg dir {len(cfg)} B with eq_cfg_hw.bin {len(eq)} B), ends at {0x4000 + len(region):#x}; "
+            f"{FLASH_SIZE - 0x4000} B available (flash {FLASH_SIZE:#x}): "
+            f"{0x4000 + len(region) - FLASH_SIZE} B too much, check the SDK cfg_tool.bin and cfg/eq_cfg_hw.bin")
     sfc(region, 0, len(region), 0, key)
     f[0x4000:0x4000 + len(region)] = region
     return bytes(f)

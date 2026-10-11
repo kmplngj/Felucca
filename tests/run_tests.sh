@@ -422,6 +422,8 @@ run "regression: target cost of the render loops (pi32v2 disassembly)" python3 t
     build/felucca.dis tests/target_budget.txt
 
 run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
+run "package builder (fm1pkg_make.py): app region must fit the flash image (#55)" python3 tests/pkg_make_test.py
+run "package builder (fm1pkg_make.py): the same under python -O" python3 -O tests/pkg_make_test.py
 
 if command -v node >/dev/null 2>&1; then
     run "web pages: editor protocol + samples, package builder, update protocol" node web/test_web.mjs
