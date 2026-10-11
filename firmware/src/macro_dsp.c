@@ -11,7 +11,7 @@
  * it is not a claim that these nonlinear/wavetable oscillators are band limited. */
 #include "felucca_macro.h"
 
-enum { MAC_WAVE, MAC_FOLD, MAC_FBFM, MAC_NSHAPE };
+enum { MAC_WAVE, MAC_FOLD, MAC_FBFM, MAC_NSHAPE = 48 };
 typedef struct {
     uint32_t inc;
     int32_t timbre, color, scan;

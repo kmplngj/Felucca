@@ -58,7 +58,7 @@ static void tuning_and_controls(void)
             snprintf(msg, sizeof msg, "%s note %u: %.2f Hz (want %.2f)", N_MACRO_SHAPE[shape], note, hz, want);
             check(msg, fabs(hz - want) < FS / 8192.0 + want * 0.002);
         }
-    for (shape = 0; shape < MAC_NSHAPE; shape++) {
+    for (shape = 0; shape < 3u; shape++) {
         uint64_t a, b, c, d;
         setup(shape, 20, 32); a = capture(60, 0);
         setup(shape, 100, 32); b = capture(60, 0);
@@ -71,7 +71,7 @@ static void lifecycle(void)
 {
     int32_t b[CTL];
     uint32_t shape, i;
-    for (shape = 0; shape < MAC_NSHAPE; shape++) {
+    for (shape = 0; shape < 3u; shape++) {
         setup(shape, 100, 80);
         trk_note_on(&trk[0], 60, 100);
         for (i = 0; i < 100; i++) track_render(&trk[0], b, CTL);
@@ -99,7 +99,7 @@ static void corners(void)
 {
     uint32_t shape, k, i, j;
     int32_t b[CTL], peak = 0;
-    for (shape = 0; shape < MAC_NSHAPE; shape++)
+    for (shape = 0; shape < 3u; shape++)
         for (k = 0; k < 32; k++) {
             setup(shape, k & 1 ? 127 : 0, k & 2 ? 127 : 0);
             trk[0].p[P_E4] = k & 4 ? 127 : 0;
@@ -155,7 +155,7 @@ static void costs(void)
     double idle = cost(0, 0, 0, 0, 0), worst = 0;
     if (!idle) { puts("macro: SKIP host instructions (no proc_pid_rusage counter)"); return; }
     printf("macro: CPU host instructions per 44.1 kHz frame (0.5 s warm, 1 s counted), idle %.1f\n", idle);
-    for (shape = 0; shape < MAC_NSHAPE; shape++)
+    for (shape = 0; shape < 3u; shape++)
         for (notes = 1; notes <= 8; notes *= 2) {
             double high = 0;
             uint32_t worst_color = 0;

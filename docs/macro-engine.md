@@ -10,13 +10,15 @@ Every existing engine remains in the default build.
 ## Playing
 
 MACRO appears between PHYS and NOISE in PRESETS and the EDIT engine map. Its stable
-stored/protocol ID is **14**, with six factory sounds: WAVE SCAN, WAVE BASS, FOLD LEAD,
-FOLD PAD, FBFM BELL and FBFM BASS. It shares the existing eight-voice budget across
-the four parts, including POLY, MONO, LEGATO and UNISON.
+stored/protocol ID is **14**, with **48 models and 51 factory sounds**. The six
+original sounds and WAVE/FOLD/FBFM IDs 0/1/2 retain eight-voice operation. The
+45 appended models (IDs 3..47) use **one Felucca voice per part**, including in
+POLY and UNISON modes, to fit the full Braids delay/state storage. PLUCKED retains
+Braids' internal three-string history. The four parts have independent state.
 
 | Control | Range | Function |
 | --- | --- | --- |
-| SHAPE | WAVE / FOLD / FBFM | Select the oscillator model |
+| SHAPE | 48 models | Select the oscillator model; the full list and IDs are in [the cost table](braids-model-costs.csv) |
 | TIMBRE | 0..127 | WAVE: scan 64 original WAV LINE waves; FOLD: folding gain; FBFM: modulation depth |
 | COLOR | 0..127 | WAVE: stepped/smooth samples, wave interpolation, then coarser samples; FOLD: sine-to-triangle blend; FBFM: modulator pitch approximately ±64 semitones |
 | TUNE | −24..24 semitones | Transpose the oscillator |
@@ -29,9 +31,11 @@ MODEL, the two model controls and TUNE; TONE has CUT, RES, DRIVE, FINE. The
 existing envelopes, filter envelope, sends,
 pitch bend, fine detuning and modulation matrix apply. The SHP modulation
 destination changes TIMBRE; the E1..E8 destinations address the eight controls
-in table order. SHAPE changes retain phase and correct the first sample to the
-previous sample, fading that correction over 32 samples. Sounding retriggers
-retain oscillator, feedback and filter state; a new note from silence resets them.
+in table order. Model changes correct the first sample to the previous sample, fading that
+correction over 32 samples. The added bank resets its full oscillator on a model
+change and fades any extra legacy voices out over one control block. Note events
+strike the physical/percussion models. Sounding retriggers retain the oscillator
+and filter history; a new note from silence resets the legacy note/filter state.
 
 ## Panel labels, hints and preview
 
@@ -48,7 +52,8 @@ SHAPE is labelled MODEL. FBFM's MOD PIT reads in semitones: −64 at stored valu
 two semitones. MOD and AUTOMATION use the compact names TEX and MPIT where their
 value cells need less text; automation and held locks retain the same pitch units.
 DESC continues to expose SHAPE/TIMBRE/COLOR and COLOR's original 0..127 range.
-Stored values, wire IDs and modulation ranges are unchanged.
+Stored parameter IDs and modulation ranges are unchanged; SHAPE's maximum is
+now 47. DESC returns all 48 complete model names, and NAMES returns 51 presets.
 
 OSC shows two short hints even with MENU > HELP off. With HELP on, its temporary
 footer hints and HOME's knob hints follow the selected model too. The preview fits
@@ -57,6 +62,9 @@ the existing graph panel and the smaller LARGE strip:
 - WAVE shows a settled wavetable cycle and a marker for the scan position.
 - FOLD shows the folded sine/triangle blend at a reference pitch of C4.
 - FBFM shows modulator → carrier and carrier → modulator feedback.
+- Added models show their full name, two compact model-specific controls and bars,
+  the one-voice limit and note-trigger guidance. Control meanings are recorded in
+  [models.json](../assets/braids/models.json).
 
 These are control illustrations before envelopes, modulation, oversampling, drive,
 filter and effects, not live output traces. High-note folding attenuation is also
@@ -67,7 +75,8 @@ redraws when its values change; an unchanged preview remains cached while silent
 
 ## Factory and user presets
 
-The starter bank provides two sounds for each model:
+The six original starter sounds retain their indices and values. One starter
+preset for each added model follows them, for 51 sounds total:
 
 | Preset | Model | Starting point |
 | --- | --- | --- |
@@ -117,20 +126,22 @@ carrier → modulator → carrier feedback topology. The wrapper is
 [assets/braids/README.md](../assets/braids/README.md), and the full MIT notice is in
 [LICENSES/MIT-Braids.txt](../LICENSES/MIT-Braids.txt). Firmware credits also name Braids.
 
-The tables are original data, generated offline from the bundled JSON. WAVE's 64
-waves plus a duplicate endpoint guard, the sine and two folding tables occupy
-**9,927 bytes** of immutable XIP data. No delay line or full Braids wave/resource
-bank is allocated. Wave interpolation uses split products to avoid signed
-overflow; feedback phase modulation wraps in unsigned arithmetic.
+The pinned original source is now bundled and translated offline by
+`tools/gen_braids.py` into `build/gen/felucca_braids.h`. It includes every source
+model and the full wave/resource bank. The legacy three models reuse those
+immutable tables, retaining their previous hashes and interpolation behavior.
+The other 45 models run the translated source with its full delay storage, with
+explicit unsigned wrapping instead of undefined signed-overflow/shift behavior.
+The only delay-bound correction clamps a negative comb-delay pitch to zero.
 
-Felucca supplies its 44.1 kHz tuning instead of Braids' 96 kHz tables. WAVE and
-FOLD average two subsamples. Scan smoothing is adjusted to the 32-sample control
-cadence; FOLD and FBFM attenuate high-pitch modulation/folding as in Braids.
-Carrier pitch is clamped to Felucca's tuning range; the modulator extends below
-note 0 by octave shifts and clamps at the top of the same table. Parameter
-ramps, averaging order and Felucca's filter/envelopes differ from the original.
-This is a three-model adaptation, not a sample-identical M8 or full Braids port.
-These models can alias, particularly on high notes with strong folding/FM.
+Added models render at 88.2 kHz, then average pairs into Felucca's 44.1 kHz audio.
+The phase and delay tables are retuned offline from Braids' original 96 kHz.
+Calls use 24/24/16 source-sample chunks for a 32-frame control block, preserving
+the original 24-entry scratch bounds. The engine retains Felucca's envelopes,
+filter, drive, modulation and control cadence. This does not claim sample identity
+with Braids hardware or M8. The original-rate translated C core is bit-compared
+against the pinned C++ separately from these rate/integration differences.
+These models can alias at high notes, especially with strong folding/FM.
 
 ## Persistence and compatibility
 
@@ -149,10 +160,148 @@ validated before the staged settings expand. There is no new save-on-boot or
 immediate erase on a knob turn.
 
 **Downgrading:** earlier firmware cannot load engine 14 or import PER5 settings.
-Keep a pre-update backup to restore settings after a downgrade. Existing-engine
+The earlier three-model branch also cannot represent IDs 3..47: it clamps new
+model values and cannot reproduce those sounds. Keep a pre-update backup to
+restore settings and sounds after a downgrade. Existing-engine
 projects retain their previous format and sound hashes.
 
-## Measured resources — 2026-10-11
+## Full-bank expansion — 2026-10-11
+
+The remaining **45 models** are implemented on the same `kori/macro-engine`
+branch, bringing the bank to 48. This includes CSAW/MORPH, SUB/SYNC/triple
+oscillators, ring/swarm/comb/toy, digital filters, VOSIM/vowels/harmonics/FM,
+plucked/bowed/blown/flute, bell/drums, wavetable/map/chords, noise/cloud/particles,
+QPSK and the source's hidden QUESTION model. The original six presets and model
+IDs retain their values and hashes. All engines remain enabled as before;
+[issue #28](https://github.com/kmplngj/Felucca/issues/28) tracks optional builds.
+
+### Firmware and RAM
+
+The unchanged baseline for this expansion is **`b767f1107517feba1cb0b9ffd0ffc2804ef29540`**,
+built before source changes. Both builds use the default features/assets described
+below: SLICE=1, FM4=0, JieLi Clang 4.0.1 `-Os` for interrupt/DSP paths and the
+existing selective main-loop `minsize` pass. The final build has no compiler
+warnings. Binaries, ELF, disassembly, source snapshots and logs are retained in
+ignored `build/macro-full-before/` and `build/macro-full-after/`.
+
+| Resource | Three-model branch | Full bank | Delta |
+| --- | ---: | ---: | ---: |
+| App image | 511,708 B | 580,360 B | **+68,652 B** |
+| Regular RAM (.data + .bss) | 54,964 B | 54,964 B | 0 |
+| POOL SRAM | 327,896 B | 345,656 B | **+17,760 B** |
+| RAM code (.ram_text) | 2,924 B | 2,924 B | 0 |
+| Retained RAM (.noinit) | 15,564 B | 15,564 B | 0 |
+| Loader image | 6,930 B | 6,930 B | 0 |
+| Padded .fwsc package | 610,086 B | 610,086 B | 0 |
+
+The app has **1,204 B flash spare** out of 581,564 B. Regular RAM has 18,764 B
+spare; POOL has 22,984 B spare. The 55 retained Braids immutable objects total
+**55,056 B** in XIP, including the full 256-wave bank (33,024 B). They replace the
+legacy duplicated extraction. None of the existing sample sets was removed.
+
+The shared engine arena grows from 12,888 to **17,328 B per part** (four parts).
+A MACRO part uses **17,324 B**: eight 40-byte legacy note/filter slots, a
+**17,000-byte full Braids oscillator**, and flags/alignment. This fixed reserve
+applies to every model, including when the legacy models are selected; choosing a
+smaller model does not reduce static RAM. The full source's largest delay buffer
+is retained. One full oscillator per part fits; eight full oscillators per part
+would not fit this SRAM layout. Render scratch is on the existing interrupt stack;
+static RAM figures do not establish its high-water usage.
+
+### Per-model flash and CPU
+
+[braids-model-costs.csv](braids-model-costs.csv) records all 45 added model IDs,
+upstream IDs, isolated target DSP code/table bytes, fixed state bytes, polyphony
+and repeated host CPU ranges.
+
+Flash probes use the same pi32v2 compiler and `tools/build.py` CFLAGS (`-Os`,
+`-ffunction-sections`, `-fno-builtin`). `tools/measure_braids.py` restricts the
+macro/digital dispatch cases in an isolated copy of the generated header, then
+sums the object's .text/.rodata/.data sections. The shared analog dispatcher stays
+intact. The probes include their entry points and shared DSP helpers/tables,
+exclude Felucca's mixer, presets, UI and shared memset implementation, and range
+from **1,632 B (CSAW) to 35,783 B (WAVE CHORD)**. These numbers are **not additive**
+and are not the marginal firmware bytes saved by disabling a model; that needs
+separate modular firmware builds. The actual all-model firmware delta is the
+68,652 B measured above.
+
+CPU uses Apple Clang 21 arm64 `cc -O2` and macOS `ri_instructions`, over the real
+Felucca mixer at 44.1 kHz. For each added model, `tests/braids_test.c` holds note 60
+at velocity 100, with attack/release/filter-envelope zero and sustain 127, CUT
+110, RES 8, DRIVE 127, CHOR/DLY/REV 20/20/35 and ROOM reverb (the host fixture). It tests all nine TIMBRE/COLOR
+combinations from {0,64,127}, warms for 22,048 frames (~0.5 s), counts 44,096 frames
+(~1 s), and reports the largest count. The CSV gives the range of those maxima
+across three process runs. These are **total mixer instructions per output frame**;
+idle is included, unlike the preset-specific increments printed by `regress`.
+
+The added models range from **526.1 to 759.8 host instructions/frame** in these
+runs. HARMONICS is the heaviest; four HARMONICS parts with one held note each
+measure **2,120.0–2,120.6 instructions/frame**, versus idle **316.3**.
+This grid is a repeatable workload, not an exhaustive worst case over pitches,
+note strikes, model automation, effects and USB traffic. Host instruction counts
+are not pi32v2 cycles or FM-1 CPU percentages.
+
+Model-change reset is bounded: fresh ownership is already zeroed by
+`eng_mem_claim`; later changes clear 4,250 aligned words. The target emits a
+store plus decrement/branch per word: **8,500 reset-loop instructions per part**,
+plus initialization and rendering. All non-inlined dispatchers and the wrapper
+are covered by the static target budget. `macro_render`'s budget deliberately
+changes from 119 to 19,591 because the compiler inlines many newly added model
+loops into it; the heuristic sums mutually exclusive paths and does not estimate
+one model's timing. Other existing target budgets are retained.
+
+Reproduce after the normal build:
+
+```sh
+build/host/braids_test
+python3 tests/braids_reference.py
+python3 tools/measure_braids.py --out build/braids-cost
+python3 tests/target_budget.py build/felucca.dis tests/target_budget.txt
+```
+
+Repeat `braids_test` three times on the same host/compiler. The reference and
+flash probes work offline from pinned inputs; the target probe needs the normal
+`JIELI_TOOLCHAIN` environment. Generated binaries/probe headers remain under build.
+
+### Validation and remaining device checks
+
+The applicable full suite covers 143 golden renders, preserving all 98 earlier
+hashes; 720 original and 192 legacy MACRO engine-switch sequences; all 45 added
+models' bounds, resets, independent parts, retrigger/release and live voice-cap
+changes; strict ASan/UBSan; stable engine IDs under all FM4/SLICE configurations;
+DESC's complete 48 names and NAMES' 51 presets; existing storage/backup/fuzz tests.
+Only the added 45 golden/host CPU entries and newly compiled bank target budgets
+are added; older entries are retained.
+
+The offline original-rate C++/C comparison covers 48 models at nine parameter
+combinations, 200 x 24-sample blocks each, **2,059,200 samples with zero bit
+mismatches**. Three comb cases with zero TIMBRE are excluded from this comparison
+because the original negative-delay shift is deliberately clamped; the corrected
+port is exercised at those corners under strict sanitizers.
+
+Default and FM4 UI render sweeps cover all ten palettes and FLAT/LINE/LARGE with
+**zero layout/alignment findings**, including the added model labels and panels.
+Chromium runs AudioWorklet and shows the new controls at desktop and 390 px width
+without horizontal overflow or console warnings/errors. BOWED was saved in empty
+U32 as **MACRO 32X**, then loaded after a full page reload: model BOWED, friction
+39%, position 50% and TUNE 0 st were retained. Automated fresh-instance save/load
+checks additionally verify all eight edited controls, names and categories for
+WAVE/FOLD/FBFM plus PLUCKED/WAVE MAP/QPSK.
+
+Native/Wasm audio matches over **4,723,110 frames across all 51 MACRO presets**,
+including attacks, control gestures and release tails; the existing 88,200-frame
+heavy song also matches. The optional DaisySP reference and official V15 restore-image check are skipped
+(the required checkout/image are absent).
+No real FM-1 was flashed or measured. Remaining acceptance is real-device
+listening, maximum audio-ISR timing/deadline misses (including strikes, rapid
+model changes and four parts), interrupt stack guards/high-water usage, physical
+panel/preset flash behavior, USB audio and USB/TRS MIDI under load. Keep issue #27
+open for those checks; the small flash reserve makes issue #28 useful next work.
+
+## Initial three-model measurements — 2026-10-11
+
+The following measurements are historical, before the full-bank expansion.
+Current expansion costs are recorded above in the full-bank section.
 
 The unchanged base was built first, then the implementation with identical default
 features and assets: SLICE enabled, DIGITAL disabled, five sample sets / eleven
