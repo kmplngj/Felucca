@@ -1248,6 +1248,10 @@ int main(int argc, char **argv)
     nc = load_kv(cpath, cpu, MAXJ);
     idle_now = J[c1 - 4u].r.ipc;
     idle_base = kv_get(cpu, nc, J[c1 - 4u].name) ? atof(kv_get(cpu, nc, J[c1 - 4u].name)) : 0;
+    if (!nc && !cupd && idle_now > 0) {       /* counted, but no CPU_FILE to check against: fail, not a silent pass */
+        printf("regress: CPU baseline %s missing or empty (BUDGET_UPDATE=1 writes it)\n", cpath);
+        c_fail++;
+    }
     for (i = c0; i < c1; i++) {
         const job_t *j = &J[i];
         const char *want = kv_get(cpu, nc, j->name);

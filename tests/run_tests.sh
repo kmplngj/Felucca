@@ -324,7 +324,9 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "REVERB TYPE: ROOM / SPRING bit-identical, SPRING and HALL decay / stability / level, HALL silence / stereo / ringing, model changes, cost, demos" "$OUT/reverb_test" build/fx_demo build/reverb_demo
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
     run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt tests/cpu_baseline.txt
-    $CC -Os -fno-vectorize -fno-slp-vectorize -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
+    NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
+    echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
     run "regression built as the target (-Os, no vectorising): the same goldens, CPU budget" \
         "$OUT/regress_os" tests/golden.txt tests/cpu_baseline_os.txt
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/union_test" tests/union_test.c -lm
