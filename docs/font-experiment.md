@@ -3,8 +3,10 @@
 
 Branch experiment for [issue #37](https://github.com/kmplngj/Felucca/issues/37),
 on `kori/pixel-font-test`, based on `9b2792e7450e19647faad22f240c85e84c374275`.
-Measured on 2026-10-11. Inter Tight remains the default; Tamzen and M8Stealth
-are selectable with `FELUCCA_FONT`. No firmware was flashed or released.
+Measured on 2026-10-11 with Inter Tight as the control. Following the comparison,
+M8Stealth is the user-selected default; Inter Tight and Tamzen remain selectable
+with `FELUCCA_FONT`. The saving is in firmware flash, with unchanged RAM use.
+No firmware was flashed or released.
 
 ## Configurations
 
@@ -98,6 +100,11 @@ m8stealth    b8b5207d2f0698abf339439ab5491ce1175482fb687d4d5ad761cd8d24476d08
 - Fresh full applicable suites pass for Inter Tight, Tamzen and final M8Stealth.
   The Inter Tight/Tamzen apps were rebuilt against the final C sources using
   archived variant headers; both are byte-identical to the measured, tested apps.
+- The follow-up default build with `FELUCCA_FONT` unset selects M8Stealth and is
+  byte-identical to the validated explicit M8 selection above, including the loader.
+  Its fresh full applicable suite passes. The 718,325 B browser emulator was
+  rebuilt, switched on and visually inspected; the displayed Wasm binary matches
+  the final suite's binary. This establishes browser startup, not physical LCD behavior.
 - Each variant passes the independent text renderer's 9,540 pen/pixel cases,
   including edge/negative clipping, themes and supported extra marks. M8Stealth
   also passes these cases under ASan/UBSan. Its additional source test pins 231
@@ -147,8 +154,10 @@ These are visual observations from renders, not human reading tests on an LCD.
 Both pixel options display HOME's LARGE `355` in L at 18 px capital height;
 Inter Tight falls back to M there. M8's medium 9 px advance is wider than Tamzen's
 8 px, so longer values such as `ENV ATK` still use S. Font saving is demonstrated;
-a universal readability win is not. Keep Inter Tight as default, with M8Stealth
-as the stronger bold-digit candidate for a real FM-1 comparison.
+a universal readability win is not. The render review recommended retaining
+Inter Tight as default until a real FM-1 comparison, with M8Stealth as the stronger
+bold-digit candidate. The user subsequently chose M8Stealth as the build default
+for its flash saving. Physical LCD readability and redraw checks remain open.
 
 Artifacts under ignored `build/font-m8/`:
 
@@ -159,6 +168,9 @@ Artifacts under ignored `build/font-m8/`:
 - `inter-tight/`, `tamzen/`, `m8stealth/`: app/ELF/disassembly/package, font headers,
   section/symbol measurements, screenshots, full build/test logs and checksums.
 - `control-confirm.log`: final-source target rebuilds proving both controls identical.
+- `default-build.log`, `default-tests.log`, `default-emu-build.log`: fresh default
+  selection verification; `default-emulator-proof.json` records binary hashes and
+  `m8stealth-emulator.jpg` shows the running local emulator.
 
 ## Reproduce
 

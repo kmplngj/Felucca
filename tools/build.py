@@ -92,7 +92,7 @@ def tc_all(*cmds):
 
 def generate():
     """generated headers (UI fonts, icons, keycaps, palettes, tables, samples)"""
-    font = os.environ.get("FELUCCA_FONT", "inter-tight")
+    font = os.environ.get("FELUCCA_FONT", "m8stealth")
     if font not in ("inter-tight", "tamzen", "m8stealth"):
         raise SystemExit("FELUCCA_FONT must be inter-tight, tamzen or m8stealth")
     GEN.mkdir(parents=True, exist_ok=True)

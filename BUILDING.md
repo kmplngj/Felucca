@@ -48,9 +48,9 @@ firmware:
 
 | Value | UI font |
 | --- | --- |
-| `inter-tight` | Inter Tight, the default |
+| `inter-tight` | Inter Tight |
 | `tamzen` | Tamzen regular 6×12 / 8×16 pixel faces |
-| `m8stealth` | Trash80 M8Stealth57 / M8Stealth89 pixel faces |
+| `m8stealth` | Trash80 M8Stealth57 / M8Stealth89 pixel faces, the default |
 
 ```sh
 FELUCCA_FONT=inter-tight ./build.sh
@@ -58,13 +58,14 @@ FELUCCA_FONT=tamzen ./build.sh
 FELUCCA_FONT=m8stealth ./build.sh
 ```
 
-Plain `./build.sh` selects Inter Tight when `FELUCCA_FONT` is unset. Tamzen stores
+Plain `./build.sh` selects M8Stealth when `FELUCCA_FONT` is unset. The pixel fonts
+save about 39 KB of firmware flash; RAM use is unchanged. Tamzen stores
 6×12 and 8×16 pixel faces as 1-bit glyphs; large readouts share the 8×16 data at 2×.
 The line boxes and baselines keep the existing layout metrics, while the visible
 capital heights change. Rebuild after choosing a variant, then run
 `tests/run_tests.sh`; host tests and the browser emulator use the generated font
 header from that build. Real FM-1 readability and redraw behavior still need
-comparison before choosing a new default.
+comparison.
 M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and shared
 M ink at 2× for L, with 17 px large advances to fit three-digit card readouts.
 Its WOFF2 inputs require Brotli (`fonttools[woff]`); the WOFF2
@@ -109,7 +110,7 @@ at the note's pitch instead, and the screen says NO SAMPLE.
 
 ```
 ./build.sh
-web/emu/build.sh
+sh web/emu/build.sh
 python3 -m http.server -d build/emu 8790     # open http://localhost:8790/
 ```
 
