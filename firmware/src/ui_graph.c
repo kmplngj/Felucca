@@ -1156,13 +1156,29 @@ static int32_t macro_preview_sample(const track_t *t, uint32_t phase)
 }
 static void graph_macro(const track_t *t, uint16_t c, int small)
 {
-    static const char *const HINT[MAC_NSHAPE][2] = {
+    static const char *const HINT[3][2] = {
         {"SCAN: MOVE THROUGH 64 WAVES", "TEXTURE: STEP / SMOOTH / CRUSH"},
         {"FOLD: ADD HARMONICS", "BLEND: SINE TO TRIANGLE"},
         {"DEPTH: FM + CARRIER FEEDBACK", "MOD PIT: MODULATOR TRANSPOSE"}
     };
     uint32_t shape = (uint32_t)t->p[P_E0] % MAC_NSHAPE, i;
     int32_t cy = small ? 18 : 50, amp = small ? 11 : 23, py = cy;
+    if (shape >= 3u) {
+        int32_t y = small ? 3 : 30;
+        if (!small) {
+            cv_text_on(12, 5, &AF_S, N_MACRO_SHAPE[shape], T_TEXT, T_SURF);
+            cv_text_r(228, 5, &AF_S, "BRAIDS", T_MID, T_SURF);
+        }
+        cv_text_on(12, y, &AF_S, "ONE VOICE / PART", T_MID, T_SURF);
+        cv_text_on(12, y + 17, &AF_S, MACRO_LABEL[shape][0], T_TEXT, T_SURF);
+        cv_rect(115, y + 21, 104, 2, T_RAISE);
+        cv_rect(115, y + 21, t->p[P_E1] * 104 / 127, 2, c);
+        cv_text_on(12, y + 34, &AF_S, MACRO_LABEL[shape][1], T_TEXT, T_SURF);
+        cv_rect(115, y + 38, 104, 2, T_RAISE);
+        cv_rect(115, y + 38, t->p[P_E2] * 104 / 127, 2, c);
+        if (!small) cv_text_on(12, 105, &AF_S, "NOTE TRIGGERS MODEL", T_MID, T_SURF);
+        return;
+    }
     if (!small) {
         cv_text_on(12, 5, &AF_S, shape == MAC_WAVE ? "WAVETABLE" : shape == MAC_FOLD ? "WAVEFOLD" : "FEEDBACK FM", T_TEXT, T_SURF);
         cv_text_r(228, 5, &AF_S, shape == MAC_FBFM ? "SIGNAL PATH" : "PRE-FILTER", T_MID, T_SURF);

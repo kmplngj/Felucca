@@ -324,8 +324,8 @@ In the order the device lists them:
 - **WHEEL**: tonewheel-style organ; drawbar registrations, percussion, key click, drive, rotary speaker
 - **GRAIN**: granular textures from the built-in samples or a user slot
 - **PHYS**: physical models: modal resonators, strings, struck membranes, sympathetic strings
-- **MACRO**: Braids-derived wavetable scanning, sine/triangle wavefolding and feedback FM;
-  TIMBRE and COLOR shape the sound, with six presets and a filter ([controls and measured cost](docs/macro-engine.md))
+- **MACRO**: the full 48-model Braids bank, including wavetable, folding, FM, physical models, drums and noise;
+  model-specific controls, 51 starter presets, user saves and a filter ([controls and measured cost](docs/macro-engine.md))
 - **NOISE**: noise from analog to digital: colours, crackle, shift-register and metallic tones
 - **SLICE**: a drum break, a piano note (both built in) or your own sample cut into slices, one per key;
   set the slices by hand on the SLICES page
@@ -428,7 +428,7 @@ For more details, see [On AI-Assisted Development and Responsibility](https://gi
 - VOICE engine: after [klattsch](https://github.com/tgies/klattsch) by Tony Gies (MIT); formant data from Klatt (1980) and Hillenbrand et al. (1995)
 - PHYS engine: models ported from [DaisySP](https://github.com/electro-smith/DaisySP) by Electrosmith and Emilie Gillet ([MIT](LICENSES/MIT-DaisySP.txt)) and from Emilie Gillet's [eurorack](https://github.com/pichenettes/eurorack) code ([MIT](LICENSES/MIT-Rings.txt))
 - FM6 engine: msfa from [Dexed](https://github.com/asb2m10/dexed) by Google Inc. and Pascal Gauthier ([Apache-2.0](LICENSES/Apache-2.0-msfa.txt))
-- MACRO engine: selected oscillators and tables from Emilie Gillet's [Braids](https://github.com/pichenettes/eurorack/tree/08460a69a7e1f7a81c5a2abcc7189c9a6b7208d4/braids) ([MIT](LICENSES/MIT-Braids.txt))
+- MACRO engine: oscillators and resource tables from Emilie Gillet's [Braids](https://github.com/pichenettes/eurorack/tree/08460a69a7e1f7a81c5a2abcc7189c9a6b7208d4/braids) ([MIT](LICENSES/MIT-Braids.txt))
 - Browser emulator: after [X0X](https://github.com/charlesvestal/fm1-x0x) by [charlesvestal](https://github.com/charlesvestal) (GPL-3.0), a Felucca fork whose browser build showed the way
 - Package format and boot files: [JieLi AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK) ([Apache-2.0](LICENSES/Apache-2.0.txt); three of its files are in every package, none in this tree)
 - Contributions: [keremimo](https://github.com/keremimo) (white-key scales, #2), [ChanceTheMaker](https://github.com/ChanceTheMaker)

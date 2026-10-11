@@ -327,6 +327,13 @@ if [ -f build/gen/felucca_tables.h ]; then
         "$OUT/union_test" tests/union_golden.txt
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/macro_test" tests/macro_test.c -lm
     run "MACRO: tuning, controls, retrigger, independent parts, release, corners and host cost" "$OUT/macro_test"
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/braids_test" tests/braids_test.c -lm
+    run "Braids: all models, bounds, independent parts, live cap changes and per-model host CPU" "$OUT/braids_test"
+    if command -v c++ >/dev/null 2>&1; then
+        run "Braids: offline original C++ versus C bit comparison" python3 tests/braids_reference.py
+    else
+        echo "== skip Braids C++ reference (no c++ compiler)"
+    fi
     for cfg in 0.0 1.0 1.1; do
         IFS=. read -r macro_fm4 macro_slice <<EOF
 $cfg
@@ -406,6 +413,9 @@ else
     ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=undefined -Ibuild/gen -Ifirmware/src \
         -o "$A/macro_core_test" tests/macro_core_test.c -lm
     run "strict ASan/UBSan: MACRO interpolation, scan and pitch/control bounds, model changes" "$A/macro_core_test"
+    ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=undefined -Ibuild/gen -Ifirmware/src \
+        -o "$A/braids_test" tests/braids_test.c -lm
+    run "strict ASan/UBSan: full Braids bank" env NOCOST=1 "$A/braids_test"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
     $SCC -o "$A/ldr_test" tests/ldr_test.c

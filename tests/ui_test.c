@@ -9572,7 +9572,7 @@ static int test_macro_ui(void)
     const char *unit;
     ui_power_on(); set_engine_of(TSEL, ENGI_MACRO);
     song.playing = 0;
-    for (s = 0; s < MAC_NSHAPE; s++) {
+    for (s = 0; s < 3u; s++) {
         apply_preset_to(TSEL, 2u * s);
         TSEL->p[P_E0] = (int16_t)s;
         go_home(); draw_columns();
@@ -9614,6 +9614,15 @@ static int test_macro_ui(void)
                         preview = 0;
                     }
                 }
+    }
+    for (s = 3; s < MAC_NSHAPE; s++) {
+        TSEL->p[P_E0] = (int16_t)s;
+        go_home(); draw_columns();
+        words &= str_eq(ui_param_label(TSEL, P_E1), MACRO_LABEL[s][0]) && str_eq(ui_param_label(TSEL, P_E2), MACRO_LABEL[s][1]);
+        fits &= help_fits(help_page());
+        go_title("EDIT 1"); draw_columns();
+        fits &= help_fits(help_page());
+        ui.force = 1; draw_graph(); ui.force = 0;
     }
     TSEL->p[P_E0] = MAC_FBFM;
     for (j = 0; j < 128u; j++) {

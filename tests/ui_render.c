@@ -764,7 +764,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_LEARN_WAIT, S_LEARN_PICK, S_LEARN_SET, S_LEARN_LONG, S_GLO_LEARN, S_MENU_LCLEAR, S_MENU_LCLEAR_NONE,
        S_DLY_DOT, S_DLY_DOT16, S_FX_THROW,
        S_DETAIL, S_DETAIL_PLAYING, S_DETAIL_REST, S_DETAIL_DRUM, S_ROLL_MARKS, S_DRUM_MARKS, S_HELP_DETAIL,
-       S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO, S_COUNT };
+       S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO, S_BRAIDS_MAP, S_BRAIDS_BOWED, S_BRAIDS_VOWEL, S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "phrases", "project", "tools", "song_empty", "song", "step", "auto_steps", "auto_add_chance", "automation", "drum",
     "drum_hand", "drum_cym", "mixer", "mixer_from_home", "mixer_pan", "env", "env_dest", "lfo", "mod", "fx", "slicer", "dly", "scl", "chord", "chord_wide", "chord_off", "chord_kit", "arp",
@@ -792,7 +792,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "learn_wait", "learn_pick", "learn_set", "learn_long", "layer_glo_learn", "menu_learn_clear", "menu_learn_clear_none",
     "dly_dotted", "dly_dotted_16", "perform_throw",
     "detail", "detail_playing", "detail_rest", "detail_drum", "roll_marks", "drum_marks", "help_detail",
-    "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto"};
+    "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto", "braids_map", "braids_bowed", "braids_vowel"};
 
 /* the STEP page's piano roll (ui_graph.c graph_roll) on track 1, stopped unless said: an empty pattern; ACID in
  * A minor; POLY chords (Am7 F C G, tied); a line with ties, slides and accents in C major; LEN 32 on its second
@@ -1195,6 +1195,9 @@ static void setup(int s)
     case S_EDIT_PHYS: eng(9); go_title("EDIT 1"); break;
     case S_MACRO_WAVE: case S_MACRO_FOLD: case S_MACRO_FBFM:
         eng(ENGI_MACRO); apply_preset_to(TSEL, 2u * (uint32_t)(s - S_MACRO_WAVE));
+        song.playing = 0; go_title("EDIT 1"); break;
+    case S_BRAIDS_MAP: case S_BRAIDS_BOWED: case S_BRAIDS_VOWEL:
+        eng(ENGI_MACRO); apply_preset_to(TSEL, s == S_BRAIDS_MAP ? 42u : s == S_BRAIDS_BOWED ? 33u : 27u);
         song.playing = 0; go_title("EDIT 1"); break;
     case S_MACRO_HOME:
         eng(ENGI_MACRO); apply_preset_to(TSEL, 4); song.playing = 0; go_home(); break;
@@ -2286,7 +2289,7 @@ int main(int argc, char **argv)
     /* draw cost: a full redraw of a screen (all strips), and HOME frame by frame (the scope, every other frame) */
     {
         static const int COST[] = {S_HOME, S_PRESETS, S_STEP, S_ROLL_CHORDS, S_DRUM, S_MIXER, S_MENU, S_ABOUT_CREDITS, S_CONFIRM_PROJ,
-                                   S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM};
+                                   S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_BRAIDS_MAP, S_BRAIDS_BOWED, S_BRAIDS_VOWEL};
         enum { N = 200 };
         uint32_t i, k;
         fprintf(rep, "\ndraw cost on the host (cc -O1; only the ratios mean anything on the device):\n");
@@ -2313,7 +2316,7 @@ int main(int argc, char **argv)
                     (double)(clock() - c0) / CLOCKS_PER_SEC / (N * 4) * 1e6, (unsigned long long)(n_text / (N * 4)));
         }
         {   /* the STEP page's piano roll: its panel alone redrawn, and a frame that changes nothing (the signature only) */
-            static const int G[] = {S_ROLL_CHORDS, S_ROLL_PLAYING, S_DRUM, S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM};
+            static const int G[] = {S_ROLL_CHORDS, S_ROLL_PLAYING, S_DRUM, S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_BRAIDS_MAP, S_BRAIDS_BOWED, S_BRAIDS_VOWEL};
             for (k = 0; k < NELEM(G); k++) {
                 clock_t c0;
                 double tg, ti;
@@ -2331,7 +2334,7 @@ int main(int argc, char **argv)
         }
         roll_cost();
         {   /* MENU > LARGE: the same full redraws, tall cards and the strip */
-            static const int LC[] = {S_HOME, S_EDIT_ANALOG, S_ENV, S_LFO, S_MIXER, S_FX, S_CLOCK, S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM};
+            static const int LC[] = {S_HOME, S_EDIT_ANALOG, S_ENV, S_LFO, S_MIXER, S_FX, S_CLOCK, S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_BRAIDS_MAP, S_BRAIDS_BOWED, S_BRAIDS_VOWEL};
             fprintf(rep, "  MENU > LARGE:\n");
             large_on = 1;
             for (k = 0; k < sizeof LC / sizeof LC[0]; k++) {

@@ -1561,10 +1561,9 @@ static const param_desc_t *home_param(uint32_t k, int16_t **vp)
 /* Display words only: the engine's DESC labels, parameter IDs and saved values remain stable. */
 static const char *ui_param_label(const track_t *t, uint32_t id)
 {
-    static const char *const NAME[MAC_NSHAPE][2] = {{"SCAN", "TEXTURE"}, {"FOLD", "BLEND"}, {"DEPTH", "MOD PIT"}};
     if (t->eng_req % NENGINES == ENGI_MACRO) {
         if (id == P_E0) return "MODEL";
-        if (id == P_E1 || id == P_E2) return NAME[(uint32_t)t->p[P_E0] % MAC_NSHAPE][id - P_E1];
+        if (id == P_E1 || id == P_E2) return MACRO_LABEL[(uint32_t)t->p[P_E0] % MAC_NSHAPE][id - P_E1];
     }
     return track_desc(t, id)->label;
 }

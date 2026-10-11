@@ -137,13 +137,13 @@ c.render(600);
 check("a fresh instance with the kept sectors has it; one without does not",
       b.ex.web_test_user_preset(0) === 1 && c.ex.web_test_user_preset(0) === 0);
 
-// ---- edited MACRO sounds: all three models through the panel's save/name/load flow
+// ---- legacy and added MACRO models through the panel's save/name/load flow
 // Read the controls as well as slot occupancy: an occupied slot alone cannot prove that
 // the new engine ID, its eight controls and the category survived the flash round trip.
 const macroParams = (d) => Array.from({ length: 8 }, (_, i) => d.ex.web_test_param(103 + i));
 const userName = (d) => Buffer.from(new Uint8Array(d.mem.buffer, d.ex.web_test_user_name(0), 12))
   .toString("ascii").replace(/\0.*$/, "");
-for (const [model, pi, category] of [["WAVE", 0, 4], ["FOLD", 2, 3], ["FBFM", 4, 5]]) {
+for (const [model, pi, category] of [["WAVE", 0, 4], ["FOLD", 2, 3], ["FBFM", 4, 5], ["PLUCKED", 32, 5], ["WAVE MAP", 42, 3], ["QPSK", 49, 8]]) {
   const d = await device(null);
   d.render(600);
   d.ex.web_buttons(1 << B.EDIT); d.render(600);            // EDIT held: the engine map
@@ -215,13 +215,15 @@ for (let i = 0; i < 3; i++) {
 const ratio = best / 1000, max = +(process.env.BENCH_MAX || 0.5);
 check(`1 s of the heavy song (FM6 PHYS GRAIN chords + DRUM) in ${best.toFixed(1)} ms: ${(ratio * 100).toFixed(1)} % of real time`, ratio < max);
 
-// All six MACRO presets, real key events, TIMBRE/COLOR knob turns and release tails.
+// All 51 MACRO presets, real key events, TIMBRE/COLOR knob turns and release tails.
 const macro = await device(null);
 macro.render(500);
-for (let pi = 0; pi < 6; pi++) {
+for (let pi = 0; pi < 51; pi++) {
   macro.ex.web_test_macro(pi); macro.render(100);
+  // Include the attack: triggered percussion can have decayed after 300 ms.
+  macro.rec = true; macro.peak = 0;
   macro.ex.web_keys((1 << 7) | (1 << 11) | (1 << 14) | (1 << 19)); macro.render(300);
-  macro.rec = true; macro.peak = 0; macro.render(400);
+  macro.render(400);
   macro.ex.web_enc(EN.K1, 20); macro.render(200);
   macro.ex.web_enc(EN.K2, -20); macro.render(200);
   macro.ex.web_keys(0); macro.render(1000);
@@ -232,7 +234,7 @@ if (macroPath) {
   const nat = new Float32Array(new Uint8Array(fs.readFileSync(macroPath)).buffer), web = macro.samples;
   let diff = nat.length === web.length ? 0 : Infinity;
   for (let i = 0; i < web.length && diff === 0; i++) if (nat[i] !== web[i]) diff = i + 1;
-  check(`six MACRO presets native/Wasm: ${web.length / 2} frames, ${diff === 0 ? "bit for bit" : "differs at " + diff}`, diff === 0);
+  check(`51 MACRO presets native/Wasm: ${web.length / 2} frames, ${diff === 0 ? "bit for bit" : "differs at " + diff}`, diff === 0);
 }
 console.log(fails ? `emu: ${fails} FAILED` : "emu: all ok");
 process.exit(fails ? 1 : 0);
