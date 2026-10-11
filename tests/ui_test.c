@@ -164,6 +164,28 @@ static int check(const char *what, int ok)
     return ok ? 0 : 1;
 }
 
+static int test_canvas_clear(void)
+{
+    static const uint32_t widths[] = { 0, 1, 2, 3, 7, 8, 9, 17, 239, 240, 241 };
+    static const uint32_t heights[] = { 0, 1, 2, 3, 7, 8, 9, 123, 124, 125 };
+    static const uint16_t colors[] = { 0x1234, 0, 0xffff };
+    uint32_t wi, hi, ci, i, failures = 0;
+    for (wi = 0; wi < sizeof widths / sizeof widths[0]; wi++)
+        for (hi = 0; hi < sizeof heights / sizeof heights[0]; hi++)
+            for (ci = 0; ci < sizeof colors / sizeof colors[0]; ci++) {
+                uint32_t w = widths[wi], h = heights[hi], n;
+                uint16_t expected = swap16(colors[ci]);
+                for (i = 0; i < CV_MAX; i++) cv_px[i] = 0x5aa5;
+                if (w * h > CV_MAX) h = CV_MAX / w;
+                n = w * h;
+                cv_begin(w, heights[hi], colors[ci]);
+                failures += cv_w != w || cv_h != h || cv_bg != colors[ci] || cv_cy0 != 0 || cv_cy1 != (int16_t)h;
+                for (i = 0; i < CV_MAX; i++)
+                    failures += cv_px[i] != (i < n ? expected : 0x5aa5);
+            }
+    return check("canvas clear: empty, odd/even dimensions, byte order, clipped height and untouched tail", !failures);
+}
+
 /* main.c felucca_init */
 static void ui_power_on(void)
 {
@@ -10293,6 +10315,7 @@ int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     int bad = 0;
+    bad += test_canvas_clear();
     bad += test_large_face();
     bad += test_sound_loads();
     bad += test_patterns();
