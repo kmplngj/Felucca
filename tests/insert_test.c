@@ -12,6 +12,7 @@
  * 4. stored: a project round trip (FUN10, 111 parameters with 1.5's TYPE and ESYNC; 16 spare bytes left), a FUN10 of 104 (1.2 .. 1.4) loads the
  *    INSERT OFF; user presets of 111 and 104; the labels and values the pages show per TYPE; the page order.
  * 5. the cost per type and track (instructions / sample, host) against an 8-voice ANALOG part.
+ * 0. ins_lpk (#109): INS_LPK is the original (g << 16) / (4096 + g) on SVF_G, all 128 entries, and the index clamps.
  * 6. demos (DEMO_DIR): each TYPE on a loop (acid line + drums), two bars dry, two bars with the INSERT. */
 #define UI_TEST_NO_MAIN 1
 #include "ui_test.c"
@@ -552,8 +553,31 @@ static int demos(const char *dir)
     return (int)n;
 }
 
+/* ------------------------------------------------------------------ 0 --- */
+/* ins_lpk is the lookup of the table the generator derives from the SAME quantized SVF_G: every entry against the
+ * original unsigned formula, the table's bounds, and the index clamped below 0 and above 127 */
+static void test_lpk(void)
+{
+    uint32_t c, exact = 0, rng_ok = 1;
+    int32_t lo, hi;
+    for (c = 0; c < 128u; c++) {
+        uint32_t g = SVF_G[c], q = (g << 16) / (4096u + g);
+        exact += (uint32_t)ins_lpk((int32_t)c) == q && INS_LPK[c] == q;
+        rng_ok &= ((uint64_t)g << 16) <= 0xFFFFFFFFull && q <= 0xFFFFu;
+    }
+    ck("ins_lpk: all 128 entries = (SVF_G << 16) / (4096 + SVF_G), unsigned", exact == 128u);
+    ck("ins_lpk: g << 16 fits uint32_t, every quotient fits uint16_t", rng_ok);
+    ck("ins_lpk: sizeof INS_LPK = 256 B, 127 .. 44891", sizeof INS_LPK == 256u && INS_LPK[0] == 127u &&
+       INS_LPK[127] == 44891u);
+    lo = ins_lpk(0);
+    hi = ins_lpk(127);
+    ck("ins_lpk: below the range clamps to index 0", ins_lpk(-1) == lo && ins_lpk(-128) == lo && ins_lpk(INT32_MIN) == lo);
+    ck("ins_lpk: above the range clamps to index 127", ins_lpk(128) == hi && ins_lpk(255) == hi && ins_lpk(INT32_MAX) == hi);
+}
+
 int main(int argc, char **argv)
 {
+    test_lpk();
     test_identity();
     test_types();
     test_glide();
