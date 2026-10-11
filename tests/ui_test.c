@@ -150,7 +150,15 @@ static struct { uint32_t stage; } felucca_dbg;
 #include "../firmware/src/ui.c"
 #include "../firmware/src/menu_items.c"
 #include "../firmware/src/icons.c"
+static uint32_t host_project_reads;
+static int host_project_info(uint32_t slot, char *b, uint16_t *len48, uint32_t *den, uint8_t *n)
+{
+    host_project_reads++;
+    return project_info(slot, b, len48, den, n);
+}
+#define project_info host_project_info
 #include "../firmware/src/ui_graph.c"
+#undef project_info
 #include "../firmware/src/ui_draw.c"
 #include "../firmware/src/ui_menu.c"
 #include "../firmware/src/ui_input.c"
@@ -10289,6 +10297,96 @@ static int test_prev_page(void)
     return bad;
 }
 
+/* PROJECT display shares the graph's four-slot cache; actions must still inspect the actual slot. */
+static int test_project_readiness_cache(void)
+{
+    int bad = 0, ok;
+    uint32_t i, ms;
+    project_store_t saved;
+    ui_power_on();
+    project_save_as(0, "FIRST");
+    saved = proj_slot[0];
+    go_page(GR_SLOTS);
+    ui.act = 3; song.g[G_SLOT] = 1; ui.msg_t = 0;
+    ui.frame++; ui.force = 1;
+    host_project_reads = 0;
+    ok = act_ready() && host_project_reads == 4u;
+    ui.force = 0;
+    ms = fm1_ms;
+    proj_scratch.magic = 0;                         /* another full import would overwrite this */
+    for (i = 0; i < 20u; i++) {
+        ui.frame++;
+        ok &= act_ready();
+        (void)oct_leds();
+        draw_act_column(2, "LOAD", T_TEXT, ICON_AUTO);
+        draw_foot();
+    }
+    bad += check("PROJECT readiness: LEDs, action card and footer reuse four cached imports",
+                 ok && host_project_reads == 4u && proj_scratch.magic == 0);
+    song.g[G_SLOT] = 2;
+    ok = !act_ready() && host_project_reads == 4u;
+    song.g[G_SLOT] = 1;
+    bad += check("PROJECT readiness: a slot change selects its cached result immediately", ok && act_ready());
+    fm1_ms = ms + 499u;
+    ok = act_ready() && host_project_reads == 4u;
+    fm1_ms++;
+    ok &= act_ready() && host_project_reads == 8u;
+    (void)act_ready();
+    bad += check("PROJECT readiness: refresh at 500 ms, once for all consumers", ok && host_project_reads == 8u);
+    ui.frame++; ui.force = 1;
+    (void)act_ready(); (void)act_ready();
+    bad += check("PROJECT readiness: a forced frame refreshes once", host_project_reads == 12u);
+    ui.force = 0;
+
+    project_save_as(1, "SECOND");
+    song.g[G_SLOT] = 2;
+    ok = !act_ready();                              /* save/rename visible by the next periodic refresh */
+    fm1_ms += 500u;
+    ok &= act_ready() && str_eq(graph_project_name(1), "SECOND");
+    project_rename(1, "RENAMED");
+    fm1_ms += 500u;
+    ok &= act_ready() && str_eq(graph_project_name(1), "RENAMED");
+    bad += check("PROJECT readiness: save and rename appear on the next cache refresh", ok);
+    project_load(1);
+    ui.frame++; host_project_reads = 0;
+    (void)act_ready();
+    bad += check("PROJECT readiness: a load forces the next frame to refresh", ui.force && host_project_reads == 4u);
+    ui.force = 0;
+
+    song.g[G_SLOT] = 1;
+    proj_slot[0].raw[100] ^= 1;                      /* stale positive display must not authorize a corrupt load */
+    trk[0].p[P_LEVEL] = 11;
+    ok = act_ready();
+    act_do();
+    bad += check("PROJECT readiness: stale positive LOAD still validates and refuses a damaged slot",
+                 ok && trk[0].p[P_LEVEL] == 11 && msg_is("EMPTY SLOT") && ui.act == 3u);
+    fm1_ms += 500u;
+    ok = !act_ready();
+    proj_slot[0] = saved;                           /* stale negative display must not bypass overwrite */
+    ui.act = 4;
+    act_do();
+    bad += check("PROJECT readiness: stale empty SAVE still asks before overwriting",
+                 ok && ui.confirm == CF_OVR_PROJ && ui.confirm_trk == 0u && !name_on());
+    ui.confirm = CF_NONE;
+    ui.act = 3;
+    ui.frame++; ui.force = 1;
+    ok = act_ready();
+    memset(&proj_slot[0], 0, sizeof proj_slot[0]);    /* same invalidation used by backup import/delete */
+    ui.frame++; ui.force = 1;
+    bad += check("PROJECT readiness: forced restore/delete invalidation updates the display", ok && !act_ready());
+    ui.force = 0;
+    fm1_ms = UINT32_MAX - 100u;
+    (void)act_ready();
+    host_project_reads = 0;
+    fm1_ms += 499u;
+    (void)act_ready();
+    ok = host_project_reads == 0u;
+    fm1_ms++;
+    (void)act_ready();
+    bad += check("PROJECT readiness: the 500 ms interval survives clock wrap", ok && host_project_reads == 4u);
+    return bad;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -10304,6 +10402,7 @@ int main(void)
     bad += test_midi();
     bad += test_save();
     bad += test_actions();
+    bad += test_project_readiness_cache();
     bad += test_tracks();
     bad += test_grid();
     bad += test_screen();

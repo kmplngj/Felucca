@@ -8,6 +8,7 @@ static int project_save(uint32_t slot);
 static void panel_setup(void);
 static void project_load(uint32_t slot);
 static int project_used(uint32_t slot);
+static int graph_project_used(uint32_t slot);       /* cached slot validity for display only (ui_graph.c) */
 static uint32_t chain_prepare(void);
 static int up_used(uint32_t k);              /* user presets: upreset.c */
 static int up_load(uint32_t k);
@@ -1937,8 +1938,8 @@ static int act_ready(void)
     if (cur_page()->graph == GR_SLOTS && c == 1u)       /* PROJECT ERASE: a used slot, stopped */
         return !song.playing && project_used((uint32_t)song.g[G_SLOT] - 1u);
     id = cur_page()->id[c & 3u];
-    if (id == G_LOAD)
-        return project_used((uint32_t)song.g[G_SLOT] - 1u);
+    if (id == G_LOAD)                               /* display only: project_load validates the slot afresh */
+        return graph_project_used((uint32_t)song.g[G_SLOT] - 1u);
     if (id == G_SAVE)
         return !song.playing;
     if (id == G_CLRSEQ)
