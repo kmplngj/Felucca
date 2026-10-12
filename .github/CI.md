@@ -34,8 +34,9 @@ requires the vendor firmware, which is deliberately not redistributed here.
 
 ## Dependencies and provenance
 
-Python 3.12 and Node 22 are selected explicitly. Pillow and fontTools versions
-are in `tools/ci-requirements.txt`; Raqm is mandatory. Emscripten 6.0.11 and DaisySP
+Python 3.12 and Node 22 are selected explicitly. Pillow, fontTools and Brotli versions
+are in `tools/ci-requirements.txt`; Raqm is mandatory. Brotli decodes the default
+M8Stealth WOFF2 inputs during asset generation. Emscripten 6.0.11 and DaisySP
 are fetched from fixed source commits. The target cache contains only JieLi's
 `jieli-linux-toolchains-20260730.1` and the three AC79 SDK files. Cache keys include
 runner OS/architecture and setup/checker sources. Every cache hit rechecks the
