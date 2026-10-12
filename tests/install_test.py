@@ -9,6 +9,7 @@ The packages are genuine ones, built with tools/fm1pkg_make.py from synthetic SD
 files, app and loader; the preflight (#118) gets them damaged one cause at a time.
 Also checks logical_image/product_of against web/fm1pkg.js (needs node; the
 build/felucca.fwsc check is skipped without a build)."""
+import hashlib
 import json
 import io
 import queue
@@ -452,17 +453,49 @@ def js_synthetic():
 
 def against_js():
     clean = ROOT / "build/felucca.fwsc"
-    if not shutil.which("node") or not clean.exists():
-        print("logical image vs fm1pkg.js: skipped (needs node and build/felucca.fwsc)")
+    if not clean.exists():
+        print("built package preflight / fm1pkg.js parity: skipped (needs build/felucca.fwsc)")
+        return
+    raw = clean.read_bytes()
+    ok(I.load_package(clean, False) == (I.product_of(raw), I.logical_image(raw)),
+       f"preflight accepts the actual build ({clean.name}) without changing its image or identity")
+    if not shutil.which("node"):
+        print("logical image vs fm1pkg.js: skipped (needs node)")
         return
     js = ("import { logicalImage, productOf } from %r; import { readFileSync } from 'node:fs';"
           "const p = readFileSync(process.argv[1]); process.stderr.write(productOf(p));"
           "process.stdout.write(logicalImage(p));") % str(ROOT / "web/fm1pkg.js")
     r = subprocess.run(["node", "--input-type=module", "-e", js, str(clean)], capture_output=True, check=True)
-    raw = clean.read_bytes()
     ok(I.logical_image(raw) == r.stdout and I.product_of(raw) == r.stderr.decode(),
        f"logical_image / product_of == fm1pkg.js ({clean.name}, {I.product_of(raw)})")
     ok(I.LOADER_MARK in raw, f"{clean.name} carries the Felucca loader marker")
+
+
+def stock_policy():
+    """Exercise the exact-digest exception with a synthetic stand-in, not real V15 format/device evidence."""
+    raw = flip(package(product="FM-1_015", marker=False), 0x30)
+    ok(I.ufw_damage(I.logical_image(raw)) is not None, "stock policy fixture would fail ordinary preflight")
+    digest = I.STOCK_V15_SHA256
+    try:
+        I.STOCK_V15_SHA256 = hashlib.sha256(raw).hexdigest()
+        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015")
+        rc, out, err = cli([pkgfile("digest-approved.fwsc", raw), "--yes"], dev)
+        ok(rc == 0 and dev.bad == 0 and dev.identity == "FM-1_015",
+           "stock policy: exactly approved bytes bypass preflight and marker restrictions")
+        bad = bytearray(raw)
+        bad[-1] ^= 1
+        for force in ([], ["--force"]):
+            dev = FakeFM1(I.logical_image(bytes(bad)))
+            rc, out, err = cli([pkgfile("digest-modified.fwsc", bytes(bad)), "--yes", *force], dev)
+            ok(rc == 2 and dev.opened == 0 and dev.sent == [],
+               f"stock policy: changed bytes lose the digest exception, no MIDI ({force})")
+        unlisted = package(product="FM-1_015", marker=False)
+        dev = FakeFM1(I.logical_image(unlisted))
+        rc, out, err = cli([pkgfile("digest-unlisted.fwsc", unlisted), "--yes"], dev)
+        ok(rc == 2 and "no Felucca update loader" in err and dev.opened == 0 and dev.sent == [],
+           "stock policy: matching identity alone does not grant the digest exception")
+    finally:
+        I.STOCK_V15_SHA256 = digest
 
 
 def official():
@@ -480,7 +513,7 @@ def official():
     bad[-1] ^= 1
     dev = FakeFM1(I.logical_image(bytes(bad)), identity="FM-1_900", name="Felucca")
     rc, out, err = cli([pkgfile("v15mod.fwsc", bytes(bad)), "--yes"], dev)
-    ok(rc == 2 and "official V15" in err and dev.sent == [], "a modified V15 is still refused (no MIDI)")
+    ok(rc == 2 and dev.opened == 0 and dev.sent == [], "a modified V15 is still refused (no MIDI)")
 
 
 wire()
@@ -489,6 +522,7 @@ errors()
 preflight()
 js_synthetic()
 against_js()
+stock_policy()
 official()
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"INSTALL TESTS FAILED ({failed})" if failed else "install tests passed")
