@@ -8,6 +8,9 @@ The build makes three files in `build/`:
 | `loader/ota.bin` | the update loader |
 | `felucca.fwsc` | the installable package (app + loader) |
 
+Development invariants are in [AGENTS.md](AGENTS.md). For repeatable CPU, RAM and
+firmware-size comparisons, follow [Measuring and optimizing Felucca](docs/performance.md).
+
 ## Prerequisites (macOS)
 
 - Python 3 with Pillow and fontTools: `pip3 install Pillow fonttools` (the UI font and icons are
