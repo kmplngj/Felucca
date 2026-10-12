@@ -137,9 +137,17 @@ def emit(name, ascent, glyphs, chars, height, baseline, scale, data=None, offset
         if not shared:
             offsets[code] = len(data)
             data += pack(bits)
-        assert len(data) < 65536
-        table.append((offsets[code], (advance * scale + tracking) * 16, bx * scale,
-                      (by * scale + baseline - cap_bottom * scale) if w else 0, w * scale, h * scale))
+        entry = (offsets[code], (advance * scale + tracking) * 16, bx * scale,
+                 (by * scale + baseline - cap_bottom * scale) if w else 0, w * scale, h * scale)
+        # aag_t stores off/adv as uint16_t, bx as int8_t and by/bw/bh as uint8_t.
+        # Reject narrowing even when Python runs with assertions disabled.
+        for field, value, low, high in zip(('off', 'adv', 'bx', 'by', 'bw', 'bh'), entry,
+                                          (0, 0, -128, 0, 0, 0), (65535, 65535, 127, 255, 255, 255)):
+            if not low <= value <= high:
+                raise ValueError(f'face {name}, glyph U+{code:04X}: {field}={value} outside {low}..{high}')
+        if len(data) > 65535:
+            raise ValueError(f'face {name}: bitmap data exceeds 65535 bytes')
+        table.append(entry)
     lines = []
     if not shared:
         lines.append(c_array(f'AF_{name}_DATA', 'uint8_t', list(data), 24, '0x{:02x}'))

@@ -2132,7 +2132,7 @@ static int test_roll(void)
     turn(EN_K4, 1); frame(); frame(); frame();
     memcpy(roll_shot, host_screen, sizeof roll_shot);
     ui.force = 1; ui_draw();                       /* (snaps: the static render) */
-    ok = roll_diff(STRIP(3), 0) == 0 && roll_diff(STRIP(3), 1) > 0u && !ui.roll[3].from[0];
+    ok = roll_diff(STRIP(3), 0) == 0 && roll_diff(STRIP(3), 1) >= 8u && !ui.roll[3].from[0];
     if (!ok) printf("    mid-roll: %u changed pixels outside, %u inside; active %u\n",
                     roll_diff(STRIP(3), 0), roll_diff(STRIP(3), 1), ui.roll[3].from[0] != 0);
     bad += check("roll: a mid-roll frame differs from the static render inside the value strip only", ok);
