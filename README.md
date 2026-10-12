@@ -28,7 +28,8 @@ Multi-engine synthesizer firmware for the M-VAVE FM-1. Please report what you fi
 
 Source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects M8Stealth, Tamzen
 or Inter Tight at build time. The [controlled font comparison](docs/font-experiment.md)
-shows about 39 KB of firmware flash saved with M8Stealth; RAM use is unchanged.
+shows about 39 KB of firmware flash saved with M8Stealth. Font-specific decode
+caches also save 1,032 B of POOL RAM with M8Stealth or Tamzen versus Inter Tight.
 Sound and saved formats are preserved. Physical FM-1 readability and redraw checks
 remain pending; build instructions and font metrics are in [BUILDING.md](BUILDING.md#build).
 
