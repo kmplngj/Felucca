@@ -1406,9 +1406,14 @@ int main(int argc, char **argv)
     for (i = c1 - 4u; i < c1; i++)
         printf("regress:   %-23s %6.0f instr  %6.1f ns\n", J[i].name + 8, J[i].r.ipc, J[i].r.ns);
 
-    printf("regress: %u golden renders (%u changed, %u gone), %u health failures, %u voice / routing checks failed, "
-           "%u CPU entries over budget (%u notes), %u crashes; %.1f s\n", g1 - g0, gupd ? 0 : g_changed,
-           gupd ? 0 : g_gone, h_fail, k_fail, cupd ? 0 : c_fail, c_warn, crash, (double)(now_ns() - t_start) / 1e9);
+    if (nz != c1 - c0 || !strcmp(cpath, "-"))   /* a skipped budget must not read as a passed one */
+        printf("regress: %u golden renders (%u changed, %u gone), %u health failures, %u voice / routing checks failed, "
+               "CPU budget not checked, %u crashes; %.1f s\n", g1 - g0, gupd ? 0 : g_changed,
+               gupd ? 0 : g_gone, h_fail, k_fail, crash, (double)(now_ns() - t_start) / 1e9);
+    else
+        printf("regress: %u golden renders (%u changed, %u gone), %u health failures, %u voice / routing checks failed, "
+               "%u CPU entries over budget (%u notes), %u crashes; %.1f s\n", g1 - g0, gupd ? 0 : g_changed,
+               gupd ? 0 : g_gone, h_fail, k_fail, cupd ? 0 : c_fail, c_warn, crash, (double)(now_ns() - t_start) / 1e9);
     if (!gupd && (g_changed || g_gone))
         printf("regress: the sound changed. If that is intended: GOLDEN_UPDATE=1 sh tests/run_tests.sh, "
                "then review and commit tests/golden.txt\n");
