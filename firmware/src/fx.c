@@ -70,7 +70,8 @@ _Static_assert(sizeof rev_comb / 2u >= SP_LEN && sizeof rev_u.sp / 4u >= 4u * (S
 #define HL_KD(d) (32767 - (d) * 180)     /* its coefficient (Q15) for DAMP d: none at 0 .. ~1 kHz at 127 */
 #define HL_LOUD 32                       /* a line this loud (two samples' sum) rounds its gain to the nearest */
 #define HL_OUT 4                         /* the outputs' gain: the level of ROOM's tail */
-static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};   /* (+1 each: the mirror) */
+static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};   /* (+1 each: the mirror;
+                                                                                 * rising: hl.live) */
 static const uint16_t HL_AP[HL_NAP] = {131, 307};
 static const int16_t HL_APG[HL_NAP] = {11469, 10240};               /* Q14: 0.7, 0.625 */
 _Static_assert(467 + 509 + 547 + 593 + 631 + 673 + 709 + 743 + HL_NL <= sizeof rev_comb / 2u &&
@@ -84,8 +85,8 @@ static struct {                          /* HALL's state (in the pool: no .bss) 
     int16_t g[HL_NL], sz;                /* the lines' gains / sqrt(7) (Q14), for SIZE sz - 1 (0: none yet) */
     uint32_t ph;                         /* the taps' drift */
     uint8_t side;                        /* sd holds this block's stereo difference (HALL running) */
-    uint16_t live;                       /* samples (half rate) until the lines and diffusers hold only zeros (0: they
-                                          * do; hall_rest) */
+    uint16_t live;                       /* samples (half rate) until the lines hold only zeros (0: they do; the
+                                          * diffusers are scanned; hall_rest: a new state above goes there too) */
     int32_t sd[CTL];                     /* the block's left minus right (mix_block: rev_side_mix) */
     int32_t bx[HL_NC], l[HL_NC], r[HL_NC];   /* the block at half the rate: the diffused send, left, right */
     int16_t y[HL_NL][HL_NC];             /* the lines' ends, then what goes back into them */
@@ -388,13 +389,13 @@ static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t
     *lp = l;
     *le = r;
 }
-/* the buses at rest (#2): a line that holds only zeros, its states at rest and its send silent for the block would
+/* the buses at rest: a line that holds only zeros, its states at rest and its send silent for the block would
  * write zeros and add nothing; it is skipped and only its indices and phases move on as the block would move them
  * (bit for bit the same sound when a send comes). Idle, that is most of the buses' cost. The chorus, the delay and
  * HALL; never ROOM (its combs floor: a -1 circulates for ever) and the delay while its low-pass, floored too, rests
- * at -1 with FDBK feeding it back; SPRING runs as before. bus_zero and hall_rest noinline: their loops stay out of
+ * at -1 with FDBK feeding it back; SPRING runs as before. zeros32 and hall_rest noinline: their loops stay out of
  * the audio ISR's (inlined, its layout and target budget as before) */
-static __attribute__((noinline)) int bus_zero(const int32_t *x, uint32_t n)   /* a send's block all 0? */
+static __attribute__((noinline)) int zeros32(const int32_t *x, uint32_t n)    /* a send's block all 0? */
 {
     uint32_t i;
     int32_t z = 0;
@@ -512,12 +513,12 @@ static __attribute__((noinline)) void rev_hall(const int32_t *rev_in, int32_t *o
     hl.m = mp, hl.s = sp;
     hl.side = 1;
     if (!zeros16(&hl.y[0][0], HL_NL * HL_NC) || !zeros16(rev_ap, HL_AP[0] + HL_AP[1]))
-        hl.live = 743;                                  /* (the longest line: written over once, it holds zeros) */
+        hl.live = HL_LEN[HL_NL - 1u];                   /* (the longest line: written over once, it holds zeros) */
     else
         hl.live = (uint16_t)(hl.live > HL_NC ? hl.live - HL_NC : 0u);
 }
 
-/* HALL at rest (bus_zero): lines and diffusers all 0 (hl.live), the states 0, the send silent: the block's indices
+/* HALL at rest (zeros32): lines and diffusers all 0 (hl.live), the states 0, the send silent: the block's indices
  * and drift move on as rev_hall moves them; hl.side stays 0 (rev_side_mix not run). 0: HALL must run. (The low-pass
  * steps' remainders he, le need not be 0: on silence they stay as they are and move nothing) */
 static __attribute__((noinline)) int hall_rest(const int32_t *rev_in, uint32_t n)
@@ -526,7 +527,7 @@ static __attribute__((noinline)) int hall_rest(const int32_t *rev_in, uint32_t n
     int32_t z = hl.live | hl.x | hl.hp | hl.m | hl.s;
     for (k = 0; k < HL_NL; k++)
         z |= hl.lp[k];
-    if (z || !bus_zero(rev_in, n))
+    if (z || !zeros32(rev_in, n))
         return 0;
     for (k = 0; k < HL_NL; k++) {
         d = hl.i[k] + HL_NC;
@@ -594,8 +595,8 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
     if (pf.ew1 && fb < THR_FB)
         fb += mulq16(THR_FB - fb, (uint32_t)pf.ew1 << 1);   /* ECHO THROW (perform.c): more feedback while held, 0.7
                                                              * at most (the loop's gain below 1: it never runs away) */
-    rc = fx.cho_live || !bus_zero(cho_in, n);           /* at rest (bus_zero): only the indices and phases move */
-    rd = fx.dly_live || mulq15(-fx.dly_lp, col) || mulq15(fx.dly_lp, fb) || !bus_zero(dly_in, n);   /* (its low-pass
+    rc = fx.cho_live || !zeros32(cho_in, n);           /* at rest (zeros32): only the indices and phases move */
+    rd = fx.dly_live || mulq15(-fx.dly_lp, col) || mulq15(fx.dly_lp, fb) || !zeros32(dly_in, n);   /* (its low-pass
                                                          * at rest: kept by a silent line, feeding nothing back) */
     if (rc) {
         for (i = 0; i < n; i++) {                       /* chorus: modulated short delay, 5..15 ms */
