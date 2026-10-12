@@ -8,6 +8,9 @@ The build makes three files in `build/`:
 | `loader/ota.bin` | the update loader |
 | `felucca.fwsc` | the installable package (app + loader) |
 
+Development invariants are in [AGENTS.md](AGENTS.md). For repeatable CPU, RAM and
+firmware-size comparisons, follow [Measuring and optimizing Felucca](docs/performance.md).
+
 ## Prerequisites (macOS)
 
 - Python 3 with Pillow and fontTools: `pip3 install Pillow fonttools` (the UI font and icons are
@@ -108,9 +111,14 @@ their floating-point originals; without it that test is skipped.
 
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
-cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). After an intended change of
+cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). It runs a second time built as
+the target is, `-Os -fno-vectorize -fno-slp-vectorize` (no SIMD; `-O2` on Apple silicon
+vectorises with NEON and understates engines such as PHYS and WHEEL by up to a third), with
+the same goldens and its own `tests/cpu_baseline_os.txt`: the host count closest to the
+device, for measuring DSP changes. `tests/target_budget.txt` (from the pi32v2 disassembly,
+needs the toolchain) stays the exact, static check. After an intended change of
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
-does the same for the cost files.
+does the same for the cost files (all three).
 
 ## Install
 

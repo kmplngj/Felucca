@@ -18,6 +18,9 @@
  *    per sample counted by the kernel (proc_pid_rusage ri_instructions: the same on every run within
  *    ~1 %, unlike wall time), compared with CPU_FILE (tests/cpu_baseline.txt) at +-25 %; ns per
  *    sample printed for information. A count over the budget fails, one far under it only warns.
+ *    run_tests.sh runs it twice: -O2 against tests/cpu_baseline.txt, and -Os -fno-vectorize
+ *    -fno-slp-vectorize (regress_os) against tests/cpu_baseline_os.txt: the target's -Os and no SIMD,
+ *    where -O2 on the Mac vectorises with NEON (PHYS BOWED 1236 vs 1729, idle 309 vs 391). Same goldens.
  * 4. voices: the shared budget of 8 across 4 parts, stolen voices fade (no step), MONO / LEGATO /
  *    UNISON keep their note under pressure, the VOICE engine's 4-voice cap, release frees voices, and
  *    no hanging note after the note-offs on any routing (USB channels 1..4, others while the
@@ -45,6 +48,11 @@
 #endif
 #define CPU_TOL 0.25              /* +-25 %, and at least CPU_SLACK instructions (light presets) */
 #define CPU_SLACK 20
+#ifdef __OPTIMIZE_SIZE__
+#define CPU_CC "cc -Os -fno-vectorize -fno-slp-vectorize"   /* named in CPU_FILE's header (regress_os) */
+#else
+#define CPU_CC "cc -O2"
+#endif
 
 /* ------------------------------------------------------------ results --- */
 typedef struct {
@@ -1240,6 +1248,10 @@ int main(int argc, char **argv)
     nc = load_kv(cpath, cpu, MAXJ);
     idle_now = J[c1 - 4u].r.ipc;
     idle_base = kv_get(cpu, nc, J[c1 - 4u].name) ? atof(kv_get(cpu, nc, J[c1 - 4u].name)) : 0;
+    if (!nc && !cupd && idle_now > 0) {       /* counted, but no CPU_FILE to check against: fail, not a silent pass */
+        printf("regress: CPU baseline %s missing or empty (BUDGET_UPDATE=1 writes it)\n", cpath);
+        c_fail++;
+    }
     for (i = c0; i < c1; i++) {
         const job_t *j = &J[i];
         const char *want = kv_get(cpu, nc, j->name);
@@ -1277,7 +1289,7 @@ int main(int argc, char **argv)
             perror(cpath);
             return 2;
         }
-        fprintf(f, "# FELUCCA host CPU baseline (tests/regress.c): instructions per 44.1 kHz sample, cc -O2 on\n"
+        fprintf(f, "# FELUCCA host CPU baseline (tests/regress.c): instructions per 44.1 kHz sample, " CPU_CC " on\n"
                    "# the Mac (kernel-counted, ~1 %% run to run). The check allows +%.0f %%. Rewritten by BUDGET_UPDATE=1.\n",
                 CPU_TOL * 100);
         for (i = c0; i < c1; i++)
