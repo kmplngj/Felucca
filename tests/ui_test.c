@@ -5968,6 +5968,20 @@ static int test_momentary_status(void)
     btn_down(B_LFO); frame();
     bad += check("#175 status: STEP (no momentary knobs): no status", cur_page()->graph == GR_ROLL && !mom_hd());
     btn_up(B_LFO); frame();
+    {   /* FM6's operator pages: their knobs are fop_knob's (no momentary value), so no status that promises a restore */
+        uint32_t sel0 = song.sel;
+        song.sel = 1;                                  /* T2: FM6 */
+        go_title("OPERATOR"); frame();
+        btn_down(B_LFO); frame(); frame();
+        ok = TSEL->eng_req == ENGI_FM6 && cur_page()->graph == GR_FMOP && !mom.st && !mom_hd();
+        btn_up(B_LFO); frame();
+        go_title("EDIT 1"); frame();
+        btn_down(B_LFO); frame(); frame();
+        ok &= mom.st == MOM_ST_READY;                  /* (FM6's EDIT 1: momentary knobs, the status) */
+        btn_up(B_LFO); frame();
+        song.sel = sel0;
+        bad += check("#175 status: FM6 OPERATOR (knobs not momentary): no status; FM6 EDIT 1: the status", ok);
+    }
     /* a sound load / a project load / the engine: recomputed, no stale count or KEPT */
     go_home(); frames(400);
     btn_down(B_LFO); frame();

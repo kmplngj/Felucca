@@ -76,22 +76,27 @@ static int mom_page(void)
 }
 /* the header's persistent status while LFO is held where it is momentary (ui_draw.c mom_head): MOM_ST_READY, MOM_ST_KEPT
  * or MOM_ST_N + the values held; 0 = none. Main loop state only, once per ui_input */
+static const param_desc_t *mom_target(uint32_t k, int16_t **vpp);
 static uint8_t mom_status(void)
 {
-    if (!mom_down() || !mom_page()) {
+    uint32_t k = 4u;
+    int16_t *vp;
+    if (mom_down())                                    /* (a page none of whose knobs is momentary: FM6's operator pages) */
+        for (k = 0; k < 4u && !mom_target(k, &vp); k++)
+            ;
+    if (k == 4u) {
         mom.kept = 0;                                  /* (let go, a menu, a page of no momentary: no stale KEPT) */
         return 0;
     }
     return mom.n ? (uint8_t)(MOM_ST_N + mom.n) : mom.kept ? MOM_ST_KEPT : MOM_ST_READY;
 }
-/* KNOB k turned s with LFO held: 1 = taken (a momentary value, or refused full), 0 = not a momentary value (the turn
- * goes as ever: the column picks, steps, acts) */
-static int mom_turn(uint32_t k, int32_t s)
+/* KNOB k's momentary value here (its desc; *vpp where it is), 0: none (the turn goes as ever). No side effect */
+static const param_desc_t *mom_target(uint32_t k, int16_t **vpp)
 {
     const page_t *pg = cur_page();
     const param_desc_t *d;
     int16_t *vp = 0;
-    uint32_t i, g;
+    uint32_t g;
     const track_t *t = ui.home ? home_trk(k) : TSEL;     /* (HOME LEVELS: KNOB k is track k's) */
     if (ui.home) {
         d = home_param(k, &vp);
@@ -108,6 +113,18 @@ static int mom_turn(uint32_t k, int32_t s)
     if (!d || !vp || d->max == d->min ||
         !((vp >= t->p && vp < t->p + P_COUNT) || (g <= G_CDEPTH && g != G_CLOCK) || g == G_RTYPE))
         return 0;                                      /* (only the values a sound and the FX are: no CLK, no actions) */
+    *vpp = vp;
+    return d;
+}
+/* KNOB k turned s with LFO held: 1 = taken (a momentary value, or refused full), 0 = not a momentary value (the turn
+ * goes as ever: the column picks, steps, acts) */
+static int mom_turn(uint32_t k, int32_t s)
+{
+    int16_t *vp = 0;
+    const param_desc_t *d = mom_target(k, &vp);
+    uint32_t i;
+    if (!d)
+        return 0;
     for (i = 0; i < mom.n && mom.vp[i] != vp; i++)
         ;
     if (i == mom.n) {                                  /* the first turn of this value: what it was */
