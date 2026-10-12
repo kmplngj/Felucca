@@ -49,6 +49,8 @@ static uint32_t ntight;
 static uint32_t npend, nscr, nfind, nfree;
 static uint64_t px_visited, n_text, blit_px;
 static FILE *rep;
+static FILE *scene_manifest;                     /* expected images, including a failed write */
+static FILE *film_manifest;                      /* current capture only, not stale slot files */
 static const char *cur_name = "";
 static char free_seen[64][40];
 static uint32_t nfree_seen;
@@ -640,8 +642,9 @@ static void write_ppm(const char *dir, const char *pal, const char *name)
     uint32_t i;
     FILE *f;
     snprintf(path, sizeof path, "%s/ppm/%s_%s.ppm", dir, pal, name);
+    fprintf(scene_manifest, "%s_%s\n", pal, name);
     f = fopen(path, "wb");
-    if (!f) { fprintf(stderr, "cannot write %s\n", path); return; }
+    if (!f) { fprintf(stderr, "cannot write %s\n", path); nfind++; return; }
     fprintf(f, "P6\n240 240\n255\n");
     for (i = 0; i < 240u * 240u; i++) {
         uint16_t c = swap16(host_screen[i]);
@@ -1771,8 +1774,9 @@ static void roll_film_save(const char *dir, const char *pal, const char *name, c
     char path[512];
     FILE *f;
     snprintf(path, sizeof path, "%s/%s_%s.ppm", dir, pal, name);
+    fprintf(film_manifest, "%s_%s.ppm\n", pal, name);
     f = fopen(path, "wb");
-    if (!f) { fprintf(stderr, "cannot write %s\n", path); return; }
+    if (!f) { fprintf(stderr, "cannot write %s\n", path); nfind++; return; }
     fprintf(f, "P6\n%u %u\n255\n", iw, ih);
     fwrite(img, 1, (size_t)iw * ih * 3u, f);
     fclose(f);
@@ -2081,6 +2085,19 @@ int main(int argc, char **argv)
     char path[600];
     uint32_t p, s;
     static const char *const SHOW[] = {"GREY", "MONO", "GREEN", "PAPER", "NIGHT"};   /* (NIGHT: #50, to review) */
+    snprintf(path, sizeof path, "%s/scenes.txt", out);
+    scene_manifest = fopen(path, "w");
+    if (!scene_manifest) { fprintf(stderr, "cannot write %s\n", path); return 1; }
+    snprintf(path, sizeof path, "%s/filmstrips.txt", out);
+    film_manifest = fopen(path, "w");
+    if (!film_manifest) { fprintf(stderr, "cannot write %s\n", path); return 1; }
+    snprintf(path, sizeof path, "%s/render_settings.json", out);
+    rep = fopen(path, "w");
+    if (!rep) { fprintf(stderr, "cannot write %s\n", path); return 1; }
+    fprintf(rep, "{\"width\":240,\"height\":240,\"mode\":\"RGB\",\"pixel_format\":\"RGB565-to-RGB888\","
+                 "\"version\":\"" FELUCCA_VERSION "\",\"fm4\":%u,\"icons\":%u,\"slice\":%u}\n",
+                 FELUCCA_FM4, FELUCCA_ICONS, FELUCCA_SLICE);
+    fclose(rep);
     snprintf(path, sizeof path, "%s/report.txt", out);
     rep = fopen(path, "w");
     if (!rep) { fprintf(stderr, "cannot write %s\n", path); return 1; }
@@ -2367,6 +2384,8 @@ int main(int argc, char **argv)
             nsweep, fmp_charts, nmotion);
     if (!nmotion) { fprintf(stderr, "ui_render: the MOTION sweep marked no card\n"); nfind++; }
     if (!nsong_txt) { fprintf(stderr, "ui_render: SONG's bands checked no text\n"); nfind++; }
+    fclose(scene_manifest);
+    fclose(film_manifest);
     fclose(rep);
     printf("ui_render: %u screens x %u palettes + the page/value sweep; %u lint findings, %u ellipsised free texts (%u distinct), "
            "%u inks on their own colour, %u GREY / MONO pixels off gray / neutral; report %s\n",
