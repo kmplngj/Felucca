@@ -277,17 +277,27 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test" tests/ui_test.c -lm
     run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"
     FV=$(sed -n 's/^#define FELUCCA_VERSION "\([^"]*\)".*/\1/p' firmware/src/felucca.c)   # (the splash, ABOUT: the real version)
-    $CC -O1 -w "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render" tests/ui_render.c -lm
     mkdir -p build/ui_new/ppm build/ui_slot
-    run "UI renders: layout lint (every screen and palette, every page, engine and column value), GREY gray, MONO neutral, alignment by ink (1 px fails), draw cost" \
-        "$OUT/ui_render" build/ui_new build/ui_slot
-    if python3 -c "import PIL" 2>/dev/null; then python3 tests/ui_render.py build/ui_new build/ui_slot; fi
+    if python3 -c "import PIL" 2>/dev/null; then
+        run "UI renders: real renderer, layout lint, alignment, PNGs and comparison manifest" \
+            python3 tests/ui_render.py build/ui_new build/ui_slot --renderer "$OUT/ui_render" --cc "$CC"
+        run "UI comparison: exact pixels, scene matching, settings and strict gate fixtures" python3 tests/ui_compare_test.py
+    else
+        $CC -O1 -w "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render" tests/ui_render.c -lm
+        run "UI renders: layout lint and alignment (Pillow unavailable; PNG/manifest/comparison skipped)" \
+            "$OUT/ui_render" build/ui_new build/ui_slot
+    fi
     $CC -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_fm4" tests/ui_test.c -lm
     run "UI built with FELUCCA_FM4=1 (DIGITAL, kept in the tree): its OP pages, EDIT cycle, algorithm charts" "$OUT/ui_test_fm4"
-    $CC -O1 -w -DFELUCCA_FM4=1 "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render_fm4" tests/ui_render.c -lm
     mkdir -p build/ui_fm4/ppm build/ui_fm4_slot
-    run "UI renders with FELUCCA_FM4=1: DIGITAL's screens (EDIT, OP ENV, the 8 algorithm charts), lint, GREY gray, MONO neutral" \
-        "$OUT/ui_render_fm4" build/ui_fm4 build/ui_fm4_slot
+    if python3 -c "import PIL" 2>/dev/null; then
+        run "UI renders with FELUCCA_FM4=1: DIGITAL screens, lint, PNGs and comparison manifest" \
+            python3 tests/ui_render.py build/ui_fm4 build/ui_fm4_slot --renderer "$OUT/ui_render_fm4" --fm4 --cc "$CC"
+    else
+        $CC -O1 -w -DFELUCCA_FM4=1 "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render_fm4" tests/ui_render.c -lm
+        run "UI renders with FELUCCA_FM4=1: DIGITAL screens and lint (PNG/manifest skipped)" \
+            "$OUT/ui_render_fm4" build/ui_fm4 build/ui_fm4_slot
+    fi
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/audio_test" tests/audio_test.c -lm
     run "audio: overload protection, bounded fades and DMA diagnostics" "$OUT/audio_test"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/click_test" tests/click_test.c -lm
