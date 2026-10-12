@@ -85,6 +85,7 @@ def provenance(out):
     from PIL import features
     import PIL
     import fontTools
+    import brotli
     tc = build.toolchain()
     data = {
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
@@ -92,6 +93,8 @@ def provenance(out):
         "source_date": subprocess.check_output(["git", "show", "-s", "--format=%cI", "HEAD"], text=True).strip(),
         "runner": platform.platform(), "python": sys.version,
         "Pillow": PIL.__version__, "fontTools": fontTools.__version__,
+        "Brotli": brotli.__version__,
+        "ui_font": os.environ.get("FELUCCA_FONT", "m8stealth"),
         "raqm": features.version("raqm"), "freetype": features.version("freetype2"),
         "toolchain": tc.name, "compiler": build.tc("pi32v2/bin/clang", "--version").strip(),
         "compiler_sha256": hashlib.sha256((tc / "pi32v2/bin/clang").read_bytes()).hexdigest(),

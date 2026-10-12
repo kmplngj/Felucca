@@ -139,11 +139,17 @@ def tc_all(*cmds):
 
 def generate():
     """generated headers (UI fonts, icons, keycaps, palettes, tables, samples)"""
+    font = os.environ.get("FELUCCA_FONT", "m8stealth")
+    if font not in ("inter-tight", "tamzen", "m8stealth"):
+        raise SystemExit("FELUCCA_FONT must be inter-tight, tamzen or m8stealth")
     GEN.mkdir(parents=True, exist_ok=True)
     for old in ("felucca_font.h", "felucca_icons.h"):     # headers of the bitmap font and icon atlas
         (GEN / old).unlink(missing_ok=True)
     tools = SRC / "tools"
-    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "inter-tight"],
+    font_cmd = ([tools / "gen_bitmap_font.py", GEN / "ui_fonts.h", "--preset", font] if font != "inter-tight" else
+                [tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "inter-tight"])
+    print(f"UI font: {font}")
+    cmds = [font_cmd,
             [tools / "gen_aa_icons.py", GEN / "ui_icons.h"],
             [tools / "gen_aa_keycaps.py", GEN / "ui_keycaps.h"],
             [tools / "gen_ui_palettes.py", GEN / "ui_palettes.h"],
