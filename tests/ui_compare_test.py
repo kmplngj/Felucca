@@ -8,9 +8,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 from PIL import Image
 import ui_compare as compare
+import ui_render
 
 
 class ComparisonTest(unittest.TestCase):
@@ -173,6 +175,44 @@ class ComparisonTest(unittest.TestCase):
         self.write(self.after, Image.new("RGB", (239, 240)))
         self.assertEqual(run(False), 0)
         self.assertEqual(run(True), 2)
+
+    def test_malformed_container_shapes_keep_report_and_exit_contract(self):
+        variants = [[]]
+        for field, value in (("settings", []), ("provenance", []), ("scenes", {}), ("scenes", [None])):
+            data = copy.deepcopy(self.write(self.after, self.image))
+            data[field] = value
+            variants.append(data)
+        data = copy.deepcopy(self.write(self.after, self.image))
+        data["provenance"]["inputs"] = []
+        variants.append(data)
+        for data in variants:
+            (self.after / "manifest.json").write_text(json.dumps(data))
+            for strict, expected in ((False, 0), (True, 2)):
+                cmd = [sys.executable, "tests/ui_compare.py", str(self.before), str(self.after), "--out", str(self.out)]
+                result = subprocess.run(cmd + (["--strict"] if strict else []), capture_output=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                summary = json.loads((self.out / "summary.json").read_text())
+                self.assertEqual(summary["status"], "invalid")
+
+    def test_explicit_filmstrip_selection_requires_a_capture(self):
+        self.assertEqual(self.run_compare(filmstrips=True)["status"], "invalid")
+
+    def test_conversion_uses_current_filmstrip_inventory(self):
+        capture, slot = self.base / "capture", self.base / "slot"
+        (capture / "ppm").mkdir(parents=True)
+        slot.mkdir()
+        self.image.save(capture / "ppm/GREY_home.ppm")
+        (capture / "scenes.txt").write_text("GREY_home\n")
+        (capture / "render_settings.json").write_text(json.dumps(self.manifest["settings"]))
+        strip = Image.new("RGB", (480, 240))
+        strip.save(slot / "GREY_current.ppm")
+        strip.save(slot / "GREY_stale.ppm")
+        (capture / "filmstrips.txt").write_text("GREY_current.ppm\n")
+        ui_render.convert(SimpleNamespace(out=capture, slot=slot, provenance=self.manifest["provenance"]))
+        manifest = json.loads((capture / "manifest.json").read_text())
+        self.assertEqual([s["name"] for s in manifest["scenes"] if s.get("kind") == "filmstrip"], ["current"])
+        self.assertTrue((slot / "GREY_stale.ppm").exists())
+        self.assertFalse((capture / "filmstrips/GREY_stale.png").exists())
 
     def test_report_cannot_modify_inputs(self):
         with self.assertRaises(ValueError):

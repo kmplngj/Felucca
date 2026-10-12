@@ -79,8 +79,10 @@ def convert(args):
             d.text((x, y + 242), name, fill=(235, 235, 235))
         sheet.save(out / f"sheet_{pal}.png")
     print(f"ui_render: PNGs in {out}/<palette>/ and {out}/sheet_<palette>.png")
+    strips = ([args.slot / name for name in (out / "filmstrips.txt").read_text().splitlines()]
+              if args.slot else [])
     if args.slot:
-        for f in sorted(args.slot.glob("*.ppm")):
+        for f in sorted(strips):
             Image.open(f).convert("RGB").save(f.with_suffix(".png"))
         print(f"ui_render: rolling-digit filmstrips in {args.slot}/*.png")
 
@@ -95,7 +97,7 @@ def convert(args):
             scenes.append({"palette": palette, "style": style, "name": name,
                            "file": file, "sha256": ui_compare.sha256(out / file), "required": True})
     if args.slot:
-        for f in sorted(args.slot.glob("*.ppm")):
+        for f in sorted(strips):
             palette, name = f.stem.split("_", 1)
             target = out / "filmstrips" / f.with_suffix(".png").name
             target.parent.mkdir(exist_ok=True)

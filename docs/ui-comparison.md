@@ -83,6 +83,9 @@ python3 tests/ui_render.py build/ui-candidate build/ui-slot --renderer build/hos
 python3 tests/ui_compare.py build/ui-baseline build/ui-candidate --out build/ui-film --filmstrips
 ```
 
+The renderer lists the current capture's filmstrips in `filmstrips.txt`; older files
+in a reused slot directory are not attributed to the new capture. Requesting
+`--filmstrips` when neither capture contains them is an invalid comparison.
 Filmstrip entries have their own dimensions/style and remain excluded from ordinary
 comparisons. Supply slot directories for both captures to compare them. Filmstrips are
 copied inside their render directory so a copied manifest remains portable.

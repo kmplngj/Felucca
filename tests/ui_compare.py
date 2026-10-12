@@ -43,15 +43,21 @@ def label(scene_key):
 
 def load_manifest(directory):
     manifest = json.loads((directory / "manifest.json").read_text())
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest must be an object")
     if manifest.get("schema") != 1:
         raise ValueError("unsupported manifest schema")
     settings = manifest["settings"]
+    if not isinstance(settings, dict):
+        raise ValueError("settings must be an object")
     if settings["mode"] != "RGB" or settings["width"] != 240 or settings["height"] != 240:
         raise ValueError("expected exact 240 x 240 RGB screen settings")
     for field in ("pixel_format", "fm4", "icons", "slice"):
         if field not in settings:
             raise ValueError(f"missing render setting: {field}")
     provenance = manifest["provenance"]
+    if not isinstance(provenance, dict) or not isinstance(provenance.get("inputs"), dict):
+        raise ValueError("provenance and inputs must be objects")
     if provenance.get("capture") != "before-render" or not provenance.get("renderer_sha256"):
         raise ValueError("provenance must be captured with ui_render.py --renderer before drawing")
     if not provenance.get("revision") or not provenance.get("inputs"):
@@ -59,7 +65,11 @@ def load_manifest(directory):
     if provenance.get("renderer") != "tests/ui_render.c" or provenance.get("generator") != "tests/ui_render.py":
         raise ValueError("comparison requires the real Felucca renderer and PNG generator")
     indexed = {}
+    if not isinstance(manifest["scenes"], list):
+        raise ValueError("scenes must be a list")
     for scene in manifest["scenes"]:
+        if not isinstance(scene, dict):
+            raise ValueError("each scene must be an object")
         k = key(scene)
         if not all(isinstance(v, str) and v for v in k) or k in indexed:
             raise ValueError(f"invalid or duplicate scene: {k}")
@@ -150,6 +160,8 @@ def compare(before_dir, after_dir, out, palettes=(), styles=(), names=(), filmst
         for field in sorted(set(before["settings"]) | set(after["settings"])):
             if field != "version" and before["settings"].get(field) != after["settings"].get(field):
                 raise ValueError(f"incompatible render setting: {field}")
+        if filmstrips and not any(s.get("kind") == "filmstrip" for s in list(left.values()) + list(right.values())):
+            raise ValueError("filmstrips requested but neither capture contains them")
         selected = [k for k in sorted(left.keys() | right.keys())
                     if (not palettes or k[0] in palettes) and (not styles or k[1] in styles)
                     and (not names or k[2] in names)
