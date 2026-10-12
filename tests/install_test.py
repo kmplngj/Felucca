@@ -366,6 +366,12 @@ def preflight():
     bad_head[0x28] ^= 1                                 # inner head: load address (and its CRC) off
     bad_body = bytearray(loader())
     bad_body[-1] ^= 1                                   # loader body, the UFW entry CRC recomputed by the maker
+    short_ota = B.ldr_wrap(I.LOADER_MARK)
+    short_pkg = package(ota=short_ota)
+    ok(0x40 <= len(short_ota) < 512, "initial loader-read fixture has valid short loader heads/body")
+    padded = short_pkg + bytes(512 - len(short_ota))
+    ok(I.load_package(pkgfile("loader-read-fit.fwsc", padded), False)[1] == I.logical_image(padded),
+       "preflight: exactly 512 addressable bytes at a short loader are accepted")
     retype = lambda old, new: lambda i, e: e.__setitem__(slice(0, 2), new.to_bytes(2, "little")) \
         if I.u16(e, 0) == old else None
     move = lambda typ, off: lambda i, e: e.__setitem__(slice(8, 12), off.to_bytes(4, "little")) \
@@ -392,6 +398,9 @@ def preflight():
         ("flash.bin too small", reheader(raw, ent=lay(0, 0x90000)), "the loader takes"),
         ("loader heads", package(ota=bytes(bad_head)), "loader heads"),
         ("loader body CRC", package(ota=bytes(bad_body)), "loader body CRC mismatch"),
+        ("short initial loader read", short_pkg, "initial 512-byte loader read"),
+        ("initial loader read one byte short", short_pkg + bytes(511 - len(short_ota)),
+         "initial 512-byte loader read"),
         ("oversized", raw + bytes(I.MAX_PKG), "larger than 2048 KiB"),
     ]
     for what, bad, msg in cases:

@@ -229,6 +229,9 @@ def ufw_damage(img):
     if 100 not in files:
         return "no ota.bin (type 100)"
     off, size, what = files[100]
+    # ota_stage reads 512 bytes before consulting the loader's declared size.
+    if off + 512 > len(img):
+        return f"{what}: initial 512-byte loader read extends outside the package"
     b = img[off:off + min(size, 0x40)]
     n = u32(b, 8)
     if (size < 0x40 or crc16(b[2:32]) != u16(b, 0) or u32(b, 4) != 0x20 or b[12] != 0x41 or size != n + 0x20
