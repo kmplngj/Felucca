@@ -9562,6 +9562,186 @@ static int test_edit_quick_actions(void)
     return bad;
 }
 
+/* #176: OCT- held over a family button's tap: the shown family's previous page (ui_input.c page_rev) */
+static uint32_t fam_pages(uint32_t f, uint8_t *o)  /* the family's shown pages, in table order */
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < NPAGES; i++)
+        if (PAGES[i].fam == f && page_visible(i))
+            o[n++] = (uint8_t)i;
+    return n;
+}
+/* one tap of button b with OCT-, by order: 0 OCT- first, held over the tap; 1 b first, OCT- over it; 2 OCT- let go
+ * before b; 3 both edges in one pass; 4 b first, OCT- tapped over it; 5 OCT- held, b down and up inside one pass */
+static void prev_tap(uint32_t b, int order)
+{
+    switch (order) {
+    case 0: btn_down(B_OCTDN); frame(); btn_down(b); frame(); btn_up(b); frame(); btn_up(B_OCTDN); frame(); break;
+    case 1: btn_down(b); frame(); btn_down(B_OCTDN); frame(); btn_up(b); frame(); btn_up(B_OCTDN); frame(); break;
+    case 2: btn_down(B_OCTDN); frame(); btn_down(b); frame(); btn_up(B_OCTDN); frame(); btn_up(b); frame(); break;
+    case 3: btn_down(B_OCTDN); btn_down(b); frame(); btn_up(B_OCTDN); btn_up(b); frame(); break;
+    case 4: btn_down(b); frame(); btn_down(B_OCTDN); frame(); btn_up(B_OCTDN); frame(); btn_up(b); frame(); break;
+    default: btn_down(B_OCTDN); frame(); host_pressed |= 1u << panel.btn[b]; frame(); btn_up(B_OCTDN); frame(); break;
+    }
+}
+static int test_prev_page(void)
+{
+    static const uint8_t FB[9] = {B_ENV, B_LFO, B_FX, B_SCL, B_EDIT, B_GLO, B_SAVE, B_ARP, B_SEQ};
+    static const uint8_t FF[9] = {FAM_ENV, FAM_LFO, FAM_FX, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE, FAM_ARP, FAM_SEQ};
+    static const uint8_t SELS[4] = {0, 1, 3, 2};   /* T1 ANALOG, T2 FM6, T4 DRUM, T3 */
+    uint8_t pg[NPAGES];
+    int bad = 0, ok, okall = 1, multi = 0, one = 0;
+    uint32_t f, e, o, oo, n, j, k, nfm6 = 0, nana = 0;
+    for (e = 0; e < 4u; e++)
+        for (f = 0; f < 9u; f++) {
+            for (o = 0; o < 6u; o++) {
+                int layer = FB[f] == B_SCL || FB[f] == B_EDIT || FB[f] == B_GLO || FB[f] == B_SEQ || FB[f] == B_FX;
+                if (FB[f] == B_SAVE && o == 5u)
+                    continue;                          /* (SAVE's hold timer needs the button seen down) */
+                ui_power_on();
+                song.sel = SELS[e];
+                n = fam_pages(FF[f], pg);
+                if (!n) { okall = 0; continue; }
+                ui.home = 0; ui.page = pg[0]; ui.fam_last[FF[f]] = pg[0]; page_entered();
+                if (layer && (o == 1 || o == 3 || o == 4)) {   /* the layer's button with OCT- over it: the layer's (UNDO) */
+                    prev_tap(FB[f], (int)o);
+                    okall &= ui.page == pg[0] && !ui.home;
+                    continue;
+                }
+                for (j = 0; j < n + 1u; j++) {          /* first page: the last, then down to the first, then the last */
+                    uint32_t want = pg[(2u * n - 1u - j % n) % n];
+                    oo = (o == 2 || o == 4) && act_cols() ? 0 : o;   /* (an action page: OCT- let go first is its back) */
+                    prev_tap(FB[f], (int)oo);
+                    okall &= !ui.home && ui.page == want && ui.fam_last[FF[f]] == want && song.octave == 0;
+                }
+                press(FB[f]);                          /* a plain tap goes forward as before */
+                if (n > 1u) multi++; else one++;
+                if (FF[f] == FAM_EDIT && o == 0) {
+                    if (e == 1u) nfm6 = n;
+                    if (e == 0u) nana = n;
+                }
+            }
+        }
+    bad += check("#176 OCT- + family button: previous page, wraps; 9 families x 4 tracks x 6 gesture orders", okall);
+    bad += check("  (families of several shown pages and of one were both covered; FM6 EDIT has more pages)",
+                 multi > 0 && one > 0 && nfm6 > nana);
+
+    /* a different family's button: the normal entry, not a reverse; the octave press stays a plain one */
+    ui_power_on(); open_family(FAM_ENV);
+    prev_tap(B_LFO, 0);
+    bad += check("  another family's button: its normal entry, OCT- stays an octave step", cur_page()->fam == FAM_LFO &&
+                 ui.page == page_first(FAM_LFO) && song.octave == -1);
+    ui_power_on(); open_family(FAM_ENV);
+    press(B_OCTDN);
+    j = ui.page;
+    press(B_ENV);
+    bad += check("  OCT- tapped and let go before the button: a plain tap, the octave step stays", ui.page != j && song.octave == -1);
+
+    {   /* OCT- held over two quick taps of a quick-layer button: two reverses, not the layer's double tap (lock) */
+        static const uint8_t LB[3] = {B_FX, B_SCL, B_EDIT}, LF[3] = {FAM_FX, FAM_SCL, FAM_EDIT};
+        ok = 0;
+        for (k = 0; k < 3u && !ok; k++) {
+            ui_power_on();
+            n = fam_pages(LF[k], pg);
+            if (n < 3u)
+                continue;
+            ui.home = 0; ui.page = pg[0]; ui.fam_last[LF[k]] = pg[0]; page_entered();
+            btn_down(B_OCTDN); frame();
+            press(LB[k]); press(LB[k]);
+            btn_up(B_OCTDN); frame();
+            ok = ui.page == pg[n - 2u] && !ui.lock && !ui.layer && song.octave == 0;
+        }
+        bad += check("  OCT- held, a quick-layer button tapped twice quickly: two pages back, no layer lock", ok);
+    }
+    ui_power_on(); open_family(FAM_ENV); open_family(FAM_ENV);   /* (ENV's second page) */
+    j = ui.page;
+    btn_down(B_ENV); frame();
+    press(B_OCTDN); press(B_OCTDN);                    /* OCT- twice over the held button */
+    btn_up(B_ENV); frame();
+    bad += check("  OCT- pressed twice over a held button: one page back, the octave from before the first press",
+                 ui.page == page_first(FAM_ENV) && ui.page != j && song.octave == 0);
+    ui_power_on(); open_family(FAM_ENV); open_family(FAM_ENV);
+    press(B_OCTDN);                                    /* a plain octave step first (-1) */
+    prev_tap(B_ENV, 0);
+    bad += check("  an earlier plain OCT- step is kept: the reverse puts back only its own press", song.octave == -1 &&
+                 ui.page == page_first(FAM_ENV));
+
+    /* no lasting change over repeats */
+    ui_power_on(); open_family(FAM_ENV); song.octave = -2;
+    prev_tap(B_ENV, 0); prev_tap(B_ENV, 2); prev_tap(B_ENV, 3);
+    bad += check("  repeated reverses keep the octave they found (-2)", song.octave == -2);
+
+    /* OCT- and OCT+ together are no modifier */
+    ui_power_on(); open_family(FAM_ENV);
+    n = fam_pages(FAM_ENV, pg); ui.page = pg[0]; j = ui.page;
+    btn_down(B_OCTDN); frame(); btn_down(B_OCTUP); frame(); btn_down(B_ENV); frame(); btn_up(B_ENV); frame();
+    ok = ui.page == pg[1] && song.octave == 0;
+    btn_up(B_OCTDN); btn_up(B_OCTUP); frame();
+    ui.page = (uint8_t)j;
+    btn_down(B_OCTUP); frame(); btn_down(B_OCTDN); frame(); btn_down(B_ENV); frame(); btn_up(B_ENV); frame();
+    ok &= ui.page == pg[1] && song.octave == 0;
+    btn_up(B_OCTDN); btn_up(B_OCTUP); frame();
+    ui.page = (uint8_t)j;
+    btn_down(B_ENV); frame(); btn_down(B_OCTUP); frame(); btn_up(B_OCTUP); frame(); btn_down(B_OCTDN); frame();
+    btn_up(B_ENV); frame(); btn_up(B_OCTDN); frame();
+    ok &= ui.page == pg[1];
+    bad += check("  OCT- and OCT+ together (either order, or OCT+ meanwhile): a forward tap, no reverse", ok);
+
+    /* long holds: a non-layer button held long is a tap (reverses); a layer's button held opens its layer instead */
+    ui_power_on(); open_family(FAM_ENV); ui.page = pg[0];
+    btn_down(B_OCTDN); frame(); hold(B_ENV); btn_up(B_OCTDN); frame();
+    bad += check("  ENV (no layer) held long over OCT-: still the previous page", ui.page == pg[n - 1u] && song.octave == 0);
+    ui_power_on(); open_family(FAM_SCL); j = ui.page;
+    btn_down(B_OCTDN); frame(); hold(B_SCL); btn_up(B_OCTDN); frame();
+    bad += check("  SCL held long over OCT-: its layer, no page change", ui.page == j && !ui.home);
+
+    /* contexts that own OCT- */
+    ui_power_on(); go_page(GR_TOOLS);
+    fam_pages(FAM_SAVE, pg);
+    prev_tap(B_SAVE, 0);
+    bad += check("  an action page (TOOLS): the previous page (OCT- held), not HOME", !ui.home && ui.page == pg[3]);
+    ui_power_on(); go_page(GR_TOOLS);
+    prev_tap(B_SAVE, 2);
+    bad += check("  .. OCT- let go before the tap: its back acted first (HOME), the tap enters SAVE as usual", !ui.home &&
+                 ui.page == pg[0]);
+    ui_power_on(); go_page(GR_TOOLS); press(B_OCTDN);
+    bad += check("  .. a plain OCT- on TOOLS still goes HOME", ui.home);
+    ui_power_on(); open_family(FAM_ENV); n = fam_pages(FAM_ENV, pg); ui.page = pg[0]; ui.ml.on = 1;
+    prev_tap(B_ENV, 0);
+    ui.ml.on = 0;
+    bad += check("  MIDI LEARN: a forward tap", ui.page == pg[1]);
+    ui_power_on(); open_family(FAM_SEQ); ui.confirm = CF_CLEAR_SEQ; j = ui.page;
+    prev_tap(B_SEQ, 0);
+    bad += check("  a dialog: nothing changes page", ui.page == j);
+    ui.confirm = 0;
+    ui_power_on(); open_family(FAM_EDIT); song.sel = 0;
+    j = ui.page;
+    btn_down(B_EDIT); frame(); btn_down(B_OCTDN); frame(); btn_up(B_OCTDN); frame(); btn_up(B_EDIT); frame();
+    bad += check("  EDIT held, OCT- tapped in its layer: the layer's put-back, the page stays", ui.page == j && song.octave == 0);
+
+    /* keys: no stuck note, no re-pitch */
+    ui_power_on(); open_family(FAM_ENV);
+    key_down(3); frame();
+    j = kb_note[3];
+    btn_down(B_OCTDN); frame(); key_down(5); frame();
+    k = kb_note[5];
+    ok = gates() > 0u;
+    btn_down(B_ENV); frame(); btn_up(B_ENV); frame();
+    ok &= kb_note[3] == j && kb_note[5] == k && song.octave == 0 && gates() > 0u;
+    btn_up(B_OCTDN); frame();
+    ok &= kb_note[3] == j && kb_note[5] == k && gates() > 0u;
+    key_up(3); frame();
+    ok &= gates() > 0u;
+    key_up(5); frame();
+    ok &= gates() == 0u;
+    key_down(5); frame();
+    ok &= kb_note[5] == k + 12u && gates() == 1u;
+    key_up(5); frame();
+    ok &= gates() == 0u;
+    bad += check("  notes: before / under OCT- keep their pitch, none stuck, the next at the restored octave", ok);
+    return bad;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -9646,6 +9826,7 @@ int main(void)
     bad += test_home_tracks();
     bad += test_fx_map_columns();
     bad += test_help();
+    bad += test_prev_page();
     bad += test_no_flash();
 #if FELUCCA_FM4
     bad += test_fm_charts();                        /* (DIGITAL's charts: built with FELUCCA_FM4=1 only) */
