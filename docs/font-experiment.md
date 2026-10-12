@@ -68,7 +68,8 @@ slot, while Inter Tight retains its two font books plus icons.
 Fresh local A/B uses the same toolchain, flags and input versions listed above.
 The font-only baseline is `ce87a32` (the `5f829e3` review fix preserves generated
 font bytes); the cache candidate is `e417066`. Main integration adds host tooling
-and documentation without changing these production inputs.
+and documentation; later main PR #237 adds explicit package-product selection.
+The refreshed default build keeps product `FM-1_900` and the same production inputs.
 
 | Configuration | App before -> after | POOL before -> after |
 | --- | ---: | ---: |
