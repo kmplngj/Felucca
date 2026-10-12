@@ -239,10 +239,10 @@ static uint32_t delay_samples(void)
     return s < 16u ? 16u : s >= DLY_LEN ? DLY_LEN - 1u : s;
 }
 
-/* ROOM's comb: its line c (len samples), write index *j and low-pass *lp, the input in; its output. Inline,
+/* ROOM's comb: its line c (len samples), write index *j and low-pass *lp, the input in; its output. Inlined,
  * the four written out: constant lengths and offsets, the states in locals for the block (through fx, every
- * sample, the stores into the lines could alias them) */
-static inline int32_t room_comb(int16_t *c, uint32_t len, uint32_t *j, int32_t *lp, int32_t in, int32_t kd,
+ * sample: the int16 stores into the lines may alias the uint16 indices, and the low-passes were indexed by k) */
+static inline __attribute__((always_inline)) int32_t room_comb(int16_t *c, uint32_t len, uint32_t *j, int32_t *lp, int32_t in, int32_t kd,
                                 int32_t size)
 {
     int32_t o = c[*j];
@@ -253,7 +253,7 @@ static inline int32_t room_comb(int16_t *c, uint32_t len, uint32_t *j, int32_t *
     return o;
 }
 /* ROOM's allpass: its line c (len samples), write index *j, the input a; its output */
-static inline int32_t room_ap(int16_t *c, uint32_t len, uint32_t *j, int32_t a)
+static inline __attribute__((always_inline)) int32_t room_ap(int16_t *c, uint32_t len, uint32_t *j, int32_t a)
 {
     int32_t o = c[*j];
     int32_t v = a + (o >> 1);
@@ -267,21 +267,21 @@ static inline int32_t room_ap(int16_t *c, uint32_t len, uint32_t *j, int32_t a)
 static __attribute__((noinline)) void rev_room(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
     uint32_t i, j0 = fx.comb_i[0], j1 = fx.comb_i[1], j2 = fx.comb_i[2], j3 = fx.comb_i[3];
-    uint32_t a0 = fx.ap_i[0], a1 = fx.ap_i[1];
+    uint32_t d0 = fx.ap_i[0], d1 = fx.ap_i[1];
     int32_t l0 = fx.comb_lp[0], l1 = fx.comb_lp[1], l2 = fx.comb_lp[2], l3 = fx.comb_lp[3];
-    int32_t size = 25000 + song.g[G_RSIZE] * 50, damp = 32767 - song.g[G_RDAMP] * 200;
+    int32_t size = 25000 + song.g[G_RSIZE] * 50, kd = song.g[G_RDAMP] * 200;   /* (32767 - damp: the low-pass) */
+    int16_t *c1 = rev_comb + REV_COMB[0], *c2 = c1 + REV_COMB[1], *c3 = c2 + REV_COMB[2], *p1 = rev_ap + REV_AP[0];
     for (i = 0; i < n; i++) {
         int32_t in = mulq15(rev_in[i], 2580);           /* 1/8 at -4 dB: level as before the allpass fix */
-        int32_t a = room_comb(rev_comb, REV_COMB[0], &j0, &l0, in, 32767 - damp, size);
-        a += room_comb(rev_comb + REV_COMB[0], REV_COMB[1], &j1, &l1, in, 32767 - damp, size);
-        a += room_comb(rev_comb + REV_COMB[0] + REV_COMB[1], REV_COMB[2], &j2, &l2, in, 32767 - damp, size);
-        a += room_comb(rev_comb + REV_COMB[0] + REV_COMB[1] + REV_COMB[2], REV_COMB[3], &j3, &l3, in, 32767 - damp,
-                       size);
-        a = room_ap(rev_ap, REV_AP[0], &a0, a);
-        out[i] += room_ap(rev_ap + REV_AP[0], REV_AP[1], &a1, a);
+        int32_t a = room_comb(rev_comb, REV_COMB[0], &j0, &l0, in, kd, size);
+        a += room_comb(c1, REV_COMB[1], &j1, &l1, in, kd, size);
+        a += room_comb(c2, REV_COMB[2], &j2, &l2, in, kd, size);
+        a += room_comb(c3, REV_COMB[3], &j3, &l3, in, kd, size);
+        a = room_ap(rev_ap, REV_AP[0], &d0, a);
+        out[i] += room_ap(p1, REV_AP[1], &d1, a);
     }
     fx.comb_i[0] = (uint16_t)j0, fx.comb_i[1] = (uint16_t)j1, fx.comb_i[2] = (uint16_t)j2, fx.comb_i[3] = (uint16_t)j3;
-    fx.ap_i[0] = (uint16_t)a0, fx.ap_i[1] = (uint16_t)a1;
+    fx.ap_i[0] = (uint16_t)d0, fx.ap_i[1] = (uint16_t)d1;
     fx.comb_lp[0] = l0, fx.comb_lp[1] = l1, fx.comb_lp[2] = l2, fx.comb_lp[3] = l3;
 }
 
