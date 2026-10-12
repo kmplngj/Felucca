@@ -653,13 +653,14 @@ static void note_name(char *b, uint32_t n)
  * CLOCK, SYSTEM went to the MENU), SAVE USER -> PRESETS -> PHRASES -> PROJECT -> TOOLS (1.5, #173: PRESETS second; up
  * to 1.4.1 the last); HOME: home_tap). From another
  * family the family's page shown last (SAVE: USER); one that is not the family's any more (a page that moved, as GLOBAL
- * and SYSTEM in 1.2), or not shown for this track, gives the family's first */
-static void open_family(uint32_t fam)
+ * and SYSTEM in 1.2), or not shown for this track, gives the family's first. rev (#176: OCT- held over the
+ * tap, ui_input.c page_tap): the same family's previous shown page, the first one wrapping to the last */
+static void open_family_dir(uint32_t fam, uint32_t rev)
 {
     if (!ui.home && cur_page()->fam == fam) {          /* same button again: next page */
         uint32_t n, i = ui.page;
-        for (n = 0; n < NPAGES; n++) {
-            i = (i + 1u) % NPAGES;
+        for (n = 0; n < NPAGES; n++) {                 /* (at most one lap: a family of one shown page stays) */
+            i = (i + (rev ? NPAGES - 1u : 1u)) % NPAGES;
             if (PAGES[i].fam == fam && page_visible(i)) break;
         }
         ui.page = (uint8_t)i;
@@ -676,6 +677,8 @@ static void open_family(uint32_t fam)
     ui.home = 0;
     page_entered();
 }
+
+static void open_family(uint32_t fam) { open_family_dir(fam, 0); }
 
 static void go_home(void)
 {

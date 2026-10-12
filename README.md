@@ -246,6 +246,12 @@ where marked here:
 ![FM-1 controls with Felucca](docs/controls.jpg)
 
 - Tap a page button for its page, again for the next; HOME returns home. Page buttons act when let go
+- **Previous page:** with the family you are in shown, hold **OCT−** and tap its button to go back one page in that
+  family (the first page wraps to the last). The tap decides, when the button is let go: OCT− may be pressed before
+  the button or while it is down (and let go before it, except on action pages, where OCT− acting as "back" on
+  release comes first). It takes OCT− as a modifier, so no octave shift is left behind and notes already sounding
+  keep their pitch. FX, GLO, SCL, EDIT and SEQ also open quick layers: press OCT− first there (OCT− after the button
+  is the layer's UNDO). Another family's button, OCT− with OCT+, dialogs and MIDI LEARN behave as without it
 - Hold FX, GLO, SCL, EDIT, REC or SEQ for its quick layer; hold SAVE to undo, HOME for the menu; hold LFO and turn a
   knob for a MOMENTARY change
 - Double-tap a layer's button to keep its layer open without holding; tap it again to close
