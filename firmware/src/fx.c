@@ -24,6 +24,8 @@ static struct {
     int32_t sp_lp, sp_hp, sp_he, sp_size;   /* .. its loop low-pass, low cut (and its remainder), the loop
                                              * length (Q8, glides) */
     uint32_t sp_ph;                      /* .. the output tap's wobble */
+    uint16_t sp_live;                    /* .. samples until the loop's line holds only zeros (0: it does, and the
+                                          * allpasses' states too; rev_spring) */
     uint32_t cho_live, dly_live;         /* samples until cho_buf / dly_buf hold only zeros (0: they do; fx_buses) */
 } fx;
 
@@ -275,13 +277,36 @@ static __attribute__((noinline)) void rev_room(const int32_t *rev_in, int32_t *o
     }
 }
 
+/* the buses at rest: a line that holds only zeros, its states at rest and its send silent for the block would
+ * write zeros and add nothing; it is skipped and only its indices and phases move on as the block would move them
+ * (bit for bit the same sound when a send comes). Idle, that is most of the buses' cost. The chorus, the delay,
+ * SPRING and HALL; never ROOM (its combs floor: a -1 circulates for ever) and the delay while its low-pass, floored
+ * too, rests at -1 with FDBK feeding it back. zeros32 and hall_rest noinline: their loops stay out of the audio
+ * ISR's (inlined, its layout and target budget as before) */
+static __attribute__((noinline)) int zeros32(const int32_t *x, uint32_t n)    /* a send's block all 0? */
+{
+    uint32_t i;
+    int32_t z = 0;
+    for (i = 0; i < n; i++)
+        z |= x[i];
+    return !z;
+}
+/* Return 1 if all n samples in x are zero, otherwise 0; stop at the first nonzero sample. */
+static int zeros16(const int16_t *x, uint32_t n)
+{
+    uint32_t i;
+    for (i = 0; i < n && !x[i]; i++)
+        ;
+    return i == n;
+}
+
 /* SPRING (see the top), added to out */
 static __attribute__((noinline)) void rev_spring(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
-    uint32_t i, k, s = (uint32_t)song.g[G_RSIZE];
+    uint32_t i, k, a, s = (uint32_t)song.g[G_RSIZE];
     int32_t g = 19661 + (int32_t)s * 85;                /* the loop's gain: 0.6 .. 0.93 */
     int32_t kl = 26000 - song.g[G_RDAMP] * 160;         /* its low-pass: ~9 kHz .. ~1.3 kHz */
-    int32_t len = (int32_t)(1323u + ((s * 1323u) >> 7)) << 8, L, L2, L3, f, w;
+    int32_t len = (int32_t)(1323u + ((s * 1323u) >> 7)) << 8, L, L2, L3, f, w, z;
     int16_t *ln = rev_comb;
     int32_t *ap = rev_u.sp;
     if (!fx.sp_size)
@@ -293,6 +318,15 @@ static __attribute__((noinline)) void rev_spring(const int32_t *rev_in, int32_t 
     L2 = w >> 8;
     f = w & 255;
     L3 = (L * 3) >> 2;
+    z = fx.sp_lp * g;                                   /* at rest (zeros32): the line and the chain all 0, the send
+                                                         * silent, the low-pass kept as it is by silence (it rests at
+                                                         * -1 too) and the low cut at what that feeds back: the block
+                                                         * would write zeros and add 0; only the index moves (the
+                                                         * glide and the wobble above as ever) */
+    if (!fx.sp_live && !mulq15(-fx.sp_lp, kl) && fx.sp_hp == (z + ((z >> 31) & 32767)) >> 15 && zeros32(rev_in, n)) {
+        fx.sp_w = (uint16_t)(fx.sp_w + n);
+        return;
+    }
     for (i = 0; i < n; i++) {
         uint32_t wp = fx.sp_w, j = (wp & 3u) * (SP_N + 1u);
         int32_t x = mulq15(rev_in[i], 2580), r = ln[(wp - (uint32_t)L) & SP_MASK], p, o;
@@ -317,6 +351,11 @@ static __attribute__((noinline)) void rev_spring(const int32_t *rev_in, int32_t 
         fx.sp_w = (uint16_t)(wp + 1u);
         out[i] += (t0 + (((t1 - t0) * f) >> 8)) * 4 + ln[(wp - (uint32_t)L3) & SP_MASK] * 2;
     }
+    a = (fx.sp_w - n) & SP_MASK, k = SP_LEN - a < n ? SP_LEN - a : n;   /* the block's writes: at most two runs */
+    if (!zeros16(ln + a, k) || !zeros16(ln, n - k) || !zeros32(ap, 4u * (SP_N + 1u)))
+        fx.sp_live = SP_LEN;                            /* (written over once, the line holds zeros) */
+    else
+        fx.sp_live = (uint16_t)(fx.sp_live > n ? fx.sp_live - n : 0u);
 }
 
 /* HALL's helpers: m / 2^sh rounded towards zero (a product that feeds back must not floor: a loop of floors
@@ -389,29 +428,6 @@ static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t
     *lp = l;
     *le = r;
 }
-/* the buses at rest: a line that holds only zeros, its states at rest and its send silent for the block would
- * write zeros and add nothing; it is skipped and only its indices and phases move on as the block would move them
- * (bit for bit the same sound when a send comes). Idle, that is most of the buses' cost. The chorus, the delay and
- * HALL; never ROOM (its combs floor: a -1 circulates for ever) and the delay while its low-pass, floored too, rests
- * at -1 with FDBK feeding it back; SPRING runs as before. zeros32 and hall_rest noinline: their loops stay out of
- * the audio ISR's (inlined, its layout and target budget as before) */
-static __attribute__((noinline)) int zeros32(const int32_t *x, uint32_t n)    /* a send's block all 0? */
-{
-    uint32_t i;
-    int32_t z = 0;
-    for (i = 0; i < n; i++)
-        z |= x[i];
-    return !z;
-}
-/* Return 1 if all n samples in x are zero, otherwise 0; stop at the first nonzero sample. */
-static int zeros16(const int16_t *x, uint32_t n)
-{
-    uint32_t i;
-    for (i = 0; i < n && !x[i]; i++)
-        ;
-    return i == n;
-}
-
 /* the block's HL_NC samples of a circular buffer of len from index d in at most two runs, no wrap inside them:
  * body with s (the run's start in the block) and k (its length); d moves on */
 #define HL_RUNS(d, len, k, s, body)                                                         \
@@ -555,7 +571,7 @@ static void rev_clear(void)
         fx.comb_lp[i] = 0;
     for (i = 0; i < HL_NL; i++)
         hl.lp[i] = hl.le[i] = 0;
-    fx.sp_lp = fx.sp_hp = fx.sp_he = 0;
+    fx.sp_lp = fx.sp_hp = fx.sp_he = fx.sp_live = 0;
     hl.x = hl.m = hl.s = hl.hp = hl.he = 0;
     hl.live = 0;
 }
