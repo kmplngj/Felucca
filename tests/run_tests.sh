@@ -268,6 +268,12 @@ else
     echo "== skip MIDI partition invariance (run ./build.sh once)"
 fi
 
+$CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/cc_scale_test" tests/cc_scale_test.c -lm
+run "MIDI CC scaling (#164): reachable descriptor bounds, x * 33027 >> 22 == x / 127, candidate == reference (host only)" "$OUT/cc_scale_test"
+${CC%% *} -O1 -w -fsanitize=undefined -fno-sanitize-recover=undefined -Ibuild/gen -Ifirmware/src \
+    -o "$OUT/cc_scale_test_ubsan" tests/cc_scale_test.c -lm 2>/dev/null &&
+    run "MIDI CC scaling candidate (UBSan)" "$OUT/cc_scale_test_ubsan"
+
 [ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
 
 $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
