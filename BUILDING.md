@@ -16,7 +16,7 @@ firmware-size comparisons, follow [Measuring and optimizing Felucca](docs/perfor
 
 ## Prerequisites (macOS)
 
-- Python 3 with Pillow and fontTools: `pip3 install Pillow fonttools` (the UI font and icons are
+- Python 3 with Pillow and fontTools: `pip3 install Pillow 'fonttools[woff]'` (the UI font and icons are
   rasterised at build time)
 - Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
   `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
@@ -48,6 +48,36 @@ On Linux x86-64 the toolchain runs natively and Docker is not needed.
 
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
+
+Choose the firmware UI font with `FELUCCA_FONT`. The choice is compiled into the
+firmware:
+
+| Value | UI font |
+| --- | --- |
+| `inter-tight` | Inter Tight |
+| `tamzen` | Tamzen regular 6×12 / 8×16 pixel faces |
+| `m8stealth` | Trash80 M8Stealth57 / M8Stealth89 pixel faces, the default |
+
+```sh
+FELUCCA_FONT=inter-tight ./build.sh
+FELUCCA_FONT=tamzen ./build.sh
+FELUCCA_FONT=m8stealth ./build.sh
+```
+
+Plain `./build.sh` selects M8Stealth when `FELUCCA_FONT` is unset. The pixel fonts
+save about 39 KB of firmware flash; RAM use is unchanged. Tamzen stores
+6×12 and 8×16 pixel faces as 1-bit glyphs; large readouts share the 8×16 data at 2×.
+The line boxes and baselines keep the existing layout metrics, while the visible
+capital heights change. Rebuild after choosing a variant, then run
+`tests/run_tests.sh`; host tests and the browser emulator use the generated font
+header from that build. Real FM-1 readability and redraw behavior still need
+comparison.
+M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and shared
+M ink at 2× for L, with 17 px large advances to fit three-digit card readouts.
+Its WOFF2 inputs require Brotli (`fonttools[woff]`); the WOFF2
+container is decoded only during asset generation. The ten extra Felucca marks
+are explicit local bitmap adaptations. All font variants retain Inter Tight keycaps.
+Measurements and validation are recorded in [the font experiment](docs/font-experiment.md).
 
 `./build.sh --release 1.0` makes a release build: the package identity becomes `FM-1_910`
 and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
@@ -86,7 +116,7 @@ at the note's pitch instead, and the screen says NO SAMPLE.
 
 ```
 ./build.sh
-web/emu/build.sh
+sh web/emu/build.sh
 python3 -m http.server -d build/emu 8790     # open http://localhost:8790/
 ```
 

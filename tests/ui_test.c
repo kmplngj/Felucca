@@ -2126,12 +2126,15 @@ static int test_roll(void)
     bad += check("roll: a card's value rolls for 9 frames (TUNE 0 -> 1), the value itself at once", ok);
     bad += check("roll: the roll's last frame is pixel-identical to the static render", roll_static_now());
 
-    /* mid-roll: only the value strip differs from the static render */
+    /* mid-roll: visible motion confined to the value strip. A fixed ink-count
+     * threshold depends on the font (Tamzen's thin '1' changes only 18 pixels). */
     ui_power_on(); roll_settle();
     turn(EN_K4, 1); frame(); frame(); frame();
     memcpy(roll_shot, host_screen, sizeof roll_shot);
     ui.force = 1; ui_draw();                       /* (snaps: the static render) */
-    ok = roll_diff(STRIP(3), 0) == 0 && roll_diff(STRIP(3), 1) > 20u && !ui.roll[3].from[0];
+    ok = roll_diff(STRIP(3), 0) == 0 && roll_diff(STRIP(3), 1) > 0u && !ui.roll[3].from[0];
+    if (!ok) printf("    mid-roll: %u changed pixels outside, %u inside; active %u\n",
+                    roll_diff(STRIP(3), 0), roll_diff(STRIP(3), 1), ui.roll[3].from[0] != 0);
     bad += check("roll: a mid-roll frame differs from the static render inside the value strip only", ok);
 
     /* BPM 120 -> 121 (SELECT): the header rolls, the digits 1 and 2 stay; the BPM card too (no unit:
@@ -8056,7 +8059,7 @@ static int test_large(void)
     ui_prefs = 0; ui.force = 1; frame();
     ok &= lg_value_rows(0) <= AF_M_CAP_H + 2;
     ui_prefs = PREF_LARGE; ui.force = 1; frame();
-    bad += check("#15 LARGE: a card value in L (CLOCK's BPM 120: about 21 rows of figures, M's 11)", ok);
+    bad += check("#15 LARGE: three-digit CLOCK BPM uses L, normal mode uses M", ok);
 
     /* a knob turned: its own card redrawn, the other three not */
     go_title("ENV"); frame(); frames(600);
