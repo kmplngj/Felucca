@@ -85,7 +85,7 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 (`felucca-1.0-app.bin`), `SHA256SUMS`, the sample attribution, `LICENSE`, `LICENSING.md` and
 `LICENSES/` (the package contains Apache-2.0 SDK files, so the licence texts travel with it).
 
-#### Build product identity (forks)
+### Build product identity (forks)
 
 `--product FM-1_XXX` sets the package identity explicitly, independent of the display version:
 `./build.sh --release 1.0 --product FM-1_ACME` builds version `v1.0` with identity `FM-1_ACME`.

@@ -70,7 +70,7 @@ class Resolve(unittest.TestCase):
 
     def test_invalid(self):
         bad = ["", "FM-1_", "FM-1_" + "x" * 16, "fm-1_abc", "FM-1_acme", "FM-1_Acme", "FM-2_abc", "ACME", "FM-1_a b", "FM-1_a\"b", "FM-1_a'b",
-               "FM-1_a\\b", "FM-1_a\nb", "FM-1_a\tb", "FM-1_a\x00b", "FM-1_ä", "FM-1_a​", " FM-1_abc",
+               "FM-1_a\\b", "FM-1_a\nb", "FM-1_a\tb", "FM-1_a\x00b", "FM-1_ä", "FM-1_a\u200b", " FM-1_abc",
                "FM-1_abc\n", "FM-1_a/b", "FM-1_a;b", "ota-FM-1_900", "ota-FM-1_015",
                "FM-1_015"]       # the stock identity
         for p in bad:
