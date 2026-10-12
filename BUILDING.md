@@ -65,7 +65,8 @@ FELUCCA_FONT=m8stealth ./build.sh
 ```
 
 Plain `./build.sh` selects M8Stealth when `FELUCCA_FONT` is unset. The pixel fonts
-save about 39 KB of firmware flash; RAM use is unchanged. Tamzen stores
+save about 39 KB of firmware flash and use 1,032 B less POOL RAM for Huffman
+decode caches than Inter Tight; other RAM regions are unchanged. Tamzen stores
 6×12 and 8×16 pixel faces as 1-bit glyphs; large readouts share the 8×16 data at 2×.
 The line boxes and baselines keep the existing layout metrics, while the visible
 capital heights change. Rebuild after choosing a variant, then run

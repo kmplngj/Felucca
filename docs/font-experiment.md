@@ -26,7 +26,8 @@ hosted CI retains its pinned Pillow 11.1.0 and reports separate provenance.
 
 M8 saves **39,156 B against unchanged main**, or **39,120 B against the
 metric-adjusted Inter Tight control**. Tamzen is 92 B smaller than M8 in this
-main-based tree. No RAM, stack or installer download-size saving is claimed.
+main-based tree. The font-only change claims no RAM, stack or installer download-size
+saving; the separate cache follow-up below records its additional POOL saving.
 Main-loop layout changes account for the control's 36 B reduction. M8 leaves
 125,100 B in the app slot; RAM/POOL spare is 18,764/40,840 B. Stack windows and
 NOINIT reservation are unchanged. RAMTEXT retains 916 instructions and no calls.
@@ -56,6 +57,45 @@ Host images do not establish physical LCD readability or device deadlines.
 Evidence stays under ignored `build/pr-review/font-main-{baseline,m8,inter,tamzen}/`
 and per-variant build/test logs. Capture reports are in the attached
 `foundation-ui-followup` worktree under `build/pr-review/font-main-*`.
+
+## Huffman cache follow-up — 2026-10-12 (#148, PR #233)
+
+The font-only table above is the baseline before this separate cache change.
+The font generators now report their emitted Huffman book count; the renderer
+reserves one additional slot for the shared icon book. Pixel fonts retain one
+slot, while Inter Tight retains its two font books plus icons.
+
+Fresh local A/B uses the same toolchain, flags and input versions listed above.
+The font-only baseline is `ce87a32` (the `5f829e3` review fix preserves generated
+font bytes); the cache candidate is `e417066`. Main integration adds host tooling
+and documentation without changing these production inputs.
+
+| Configuration | App before -> after | POOL before -> after |
+| --- | ---: | ---: |
+| M8Stealth | 456,464 -> 456,416 B (-48 B) | 327,800 -> 326,768 B (-1,032 B) |
+| Tamzen | 456,372 -> 456,328 B (-44 B) | 327,800 -> 326,768 B (-1,032 B) |
+| Inter Tight | 495,584 -> 495,584 B (byte-identical) | 327,800 -> 327,800 B |
+
+For both bitmap profiles, `hc_tab` shrinks from 1,548 to 516 B entirely in
+`.pool`; its free margin increases from 40,840 to 41,872 B. RAM data+bss remains
+54,964 B, RAMTEXT 2,924 B/916 instructions/no calls, NOINIT 15,564 B, loader
+6,930 B and padded FWSC 610,086 B. User/supervisor stack reservations remain
+24,320/7,936 B at unchanged addresses. No CPU speedup is claimed.
+
+All three fresh target builds and complete applicable host suites pass without
+new warnings or baseline updates. Each profile retains byte-identical output
+across 2,580 normal and 2,700 FM4 PPM renders; independent provenance captures
+compare all 2,586 scenes including six filmstrips exactly. Compiled text-reference
+checks cover 9,540 cases per profile. A deliberately wrong Inter Tight book count
+fails the consumer-contract check. M8 browser HOME/STEP work without console
+warnings/errors; physical FM-1 display, panel, audio and USB tests remain deferred.
+Local DaisySP/V15 and absent legacy editor checks have the same limits as above;
+hosted firmware CI covers its pinned DaisySP setup.
+
+Evidence: ignored `build/pr-review/cache-{m8,inter,tamzen}/`, associated build/test
+logs, raw PPM and font-header comparison JSON, consumer-contract rejection and
+`cache-final-default/` production-artifact parity. PR #233 records the final
+main-based integration revision and hosted CI results separately.
 
 ## Historical stacked-branch experiment
 
