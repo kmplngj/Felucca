@@ -53,7 +53,7 @@ wheel_render:
  808: 00 00  ret
 grain_render:
  900: 00 00  r0 = 0
- 902: 00 00  unknown_instruction r0
+ 902: 00 00  r0 += 1
  904: 00 00  if r0 < r1 goto -2 <grain_render: 902 >
  906: 00 00  ret
 grain_block:

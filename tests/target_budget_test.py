@@ -20,6 +20,12 @@ OPTIONAL = ESTIMATOR["OPTIONAL"]
 
 
 class SpanFixtures(unittest.TestCase):
+    def test_real_pi32v2_listing(self):
+        fns = ESTIMATOR["functions"](HERE / "target_budget_fixtures" / "real_pi32v2.dis")
+        self.assertEqual(set(fns), {"dv_out"})
+        self.assertEqual(ESTIMATOR["cost"](fns["dv_out"]),
+                         dict(insns=40, loop=35, div=0, call=0, cost=35))
+
     def test_loop_costs(self):
         fns = ESTIMATOR["functions"](HERE / "target_budget_fixtures" / "loops.dis")
         # Literal expected observations: insns, loop, div, call, cost.
@@ -32,7 +38,7 @@ class SpanFixtures(unittest.TestCase):
             "trio_render": (5, 3, 0, 1, 3),        # callee's cost is not added
             "trio_pass": (4, 3, 1, 0, 11),
             "wheel_render": (5, 3, 1, 0, 11),       # outside divide gets no penalty
-            "grain_render": (4, 2, 0, 0, 2),       # unknown instruction still counted
+            "grain_render": (4, 2, 0, 0, 2),       # ordinary instruction inside loop
             "grain_block": (12, 10, 0, 0, 298),    # depth capped at four
             "mod_begin": (3, 0, 0, 0, 0),          # no loop, even with call/divide
         }
@@ -51,7 +57,6 @@ class SpanFixtures(unittest.TestCase):
  102: 00 00  r1 += 1
  104: 00 00  < 0 : 0x102 >
  106: 00 00  if r1 < r2 goto -4 <analog_render: 102 >
- 108: missing instruction bytes
 untracked_helper:
  200: 00 00  call <analog_render>
 phase_render:
@@ -63,29 +68,16 @@ phase_render:
             })
 
 
-    def test_undecoded_words_are_ordinary_or_hide_the_loop(self):
-        # Known gaps: nothing marks text the disassembler could not decode.
+    def test_incomplete_instruction_rows_are_rejected(self):
         with tempfile.TemporaryDirectory(dir=HERE.parent / "build") as tmp:
             dis = Path(tmp) / "undecoded.dis"
-            dis.write_text("""analog_render:
- 100: 00 00  r0 = 0
- 102: 00 00  .word 0x1234
- 104: 00 00  (bad)
- 106: 00 00  if r0 < r1 goto -4 <analog_render: 102 >
- 108: 00 00  ret
-phase_render:
- 200: 00 00  r0 = 0
- 202: 00 00  r0 += 1
- 204: 00 00  .word 0xdeadbeef
- 206: 00 00  ret
-""")
-            fns = ESTIMATOR["functions"](dis)
-            # '.word' and '(bad)' weigh like any instruction inside the loop.
-            self.assertEqual(ESTIMATOR["cost"](fns["analog_render"]),
-                             dict(insns=5, loop=3, div=0, call=0, cost=3))
-            # An undecoded back edge leaves no span: the loop reads as cost 0.
-            self.assertEqual(ESTIMATOR["cost"](fns["phase_render"]),
-                             dict(insns=4, loop=0, div=0, call=0, cost=0))
+            for row in (" 102: 00 00  .word 0x1234", " 102: 00 00  (bad)",
+                        " 102: missing instruction bytes", " 102: 00 00  unknown_instruction r0",
+                        " 102: 00 00  "):
+                with self.subTest(row=row):
+                    dis.write_text("analog_render:\n 100: 00 00  r0 = 0\n" + row + "\n")
+                    with self.assertRaisesRegex(ValueError, "analog_render: (unparsed|undecoded) instruction"):
+                        ESTIMATOR["functions"](dis)
 
 
 class CommandLineFixtures(unittest.TestCase):
@@ -182,22 +174,44 @@ class CommandLineFixtures(unittest.TestCase):
         self.assertEqual(result.stdout.count("no budget"), len(self.required))
         self.assertFalse(self.budget.exists())
 
-    def test_undecoded_back_edge_passes_as_cost_zero(self):
-        # Known gap: a loop whose back edge is not decoded reads as free and only notes -100 %.
+    def test_undecoded_back_edge_fails_without_rewriting(self):
         text = self.dis.read_text().replace("if r0 < r1 goto -2 <analog_render: 100 >", ".word 0xdeadbeef", 1)
-        self.assertIn(".word", text)
         self.dis.write_text(text)
-        result = self.cli()
-        self.assert_status(result, 0)
-        row = next(line for line in result.stdout.splitlines() if "analog_render" in line)
-        self.assertIn("note: -100 %", row)
+        before = self.budget.read_bytes()
+        for update in (None, "1"):
+            result = self.cli(update=update)
+            self.assert_status(result, 1)
+            self.assertIn("analog_render: undecoded instruction", result.stdout)
+            self.assertNotIn("note: -100 %", result.stdout)
+            self.assertEqual(self.budget.read_bytes(), before)
 
-    def test_zero_budget_crashes_the_report(self):
-        # Known gap: a budget of 0 raises instead of reporting OVER BUDGET.
+    def test_negative_budget_fails_cleanly_before_update(self):
+        for value in (-1, -9):
+            for update in (None, "1"):
+                with self.subTest(value=value, update=update):
+                    self.write_budget(overrides={"analog_render": value})
+                    before = self.budget.read_bytes()
+                    result = self.cli(update=update)
+                    self.assert_status(result, 1)
+                    self.assertIn("invalid budget for analog_render", result.stdout)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertEqual(self.budget.read_bytes(), before)
+
+    def test_zero_budget_reports_growth_without_dividing(self):
         self.write_budget(overrides={"analog_render": 0})
         result = self.cli()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("ZeroDivisionError", result.stderr)
+        self.assert_status(result, 1)
+        self.assertIn("OVER BUDGET (cost 2 exceeds zero baseline)", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_zero_cost_update_round_trip(self):
+        text = self.dis.read_text()
+        start = text.index("analog_render:\n")
+        end = text.index("phase_render:\n", start)
+        self.dis.write_text(text[:start] + "analog_render:\n 100: 00 00  ret\n" + text[end:])
+        self.assert_status(self.cli(update="1"), 0)
+        self.assertIn("analog_render 0\n", self.budget.read_text())
+        self.assert_status(self.cli(), 0)
 
     def test_extra_entry_ignored_and_short_line_skipped(self):
         self.write_budget(extra="untracked_helper 999\nmalformed_single_word\n")
@@ -212,7 +226,7 @@ class CommandLineFixtures(unittest.TestCase):
                 before = self.budget.read_bytes()
                 result = self.cli(update="1")
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("ValueError", result.stderr)
+                self.assertIn("invalid budget", result.stdout)
                 self.assertEqual(self.budget.read_bytes(), before)
 
     def test_optional_function_fallback_and_explicit_budget(self):
