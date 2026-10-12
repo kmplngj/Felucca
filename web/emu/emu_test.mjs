@@ -137,6 +137,53 @@ c.render(600);
 check("a fresh instance with the kept sectors has it; one without does not",
       b.ex.web_test_user_preset(0) === 1 && c.ex.web_test_user_preset(0) === 0);
 
+// ---- legacy and added MACRO models through the panel's save/name/load flow
+// Read the controls as well as slot occupancy: an occupied slot alone cannot prove that
+// the new engine ID, its eight controls and the category survived the flash round trip.
+const macroParams = (d) => Array.from({ length: 8 }, (_, i) => d.ex.web_test_param(103 + i));
+const userName = (d) => Buffer.from(new Uint8Array(d.mem.buffer, d.ex.web_test_user_name(0), 12))
+  .toString("ascii").replace(/\0.*$/, "");
+for (const [model, pi, category] of [["WAVE", 0, 4], ["FOLD", 2, 3], ["FBFM", 4, 5], ["PLUCKED", 32, 5], ["WAVE MAP", 42, 3], ["QPSK", 49, 8]]) {
+  const d = await device(null);
+  d.render(600);
+  d.ex.web_buttons(1 << B.EDIT); d.render(600);            // EDIT held: the engine map
+  d.ex.web_keys(1 << 18); d.render(60);                   // B4: MACRO in the default build
+  d.ex.web_keys(0); d.ex.web_buttons(0); d.render(500);    // let the layer's knob guard expire
+  d.turn(EN.PRESETS, pi);
+  const original = macroParams(d);
+  d.turn(EN.K1, 3); d.turn(EN.K2, -2); d.turn(EN.K3, -2);  // TIMBRE, COLOR, CUT on HOME
+  d.tap(B.EDIT); d.turn(EN.K4, 1);                         // OSC: TUNE
+  d.render(500);                                        // a second page tap, outside EDIT's double-tap lock window
+  d.tap(B.EDIT); d.turn(EN.K2, 1); d.turn(EN.K3, 1); d.turn(EN.K4, 1); // TONE: RES, DRIVE, FINE
+  d.tap(B.HOME);
+  const expected = macroParams(d), writes = d.ex.web_flash_writes_count();
+  check(`MACRO ${model}: panel edits seven controls while retaining the model`,
+        expected[0] === original[0] && expected.slice(1).every((v, i) => v !== original[i + 1]));
+  d.tap(B.SAVE); d.tap(B.OCTUP);                          // USER -> NAME, empty U01
+  d.ex.web_keys(1 << 19); d.render(60);                   // C5 / XYZ: append X to MACRO 01
+  d.ex.web_keys(0); d.render(900);
+  d.turn(EN.K3, 1);                                     // pick the next category
+  d.tap(B.OCTUP); d.render(200);
+  check(`MACRO ${model}: named user preset saved (category ${d.ex.web_test_user_category(0)}, expected ${category})`,
+        d.ex.web_test_user_preset(0) === 1 && d.ex.web_flash_writes_count() > writes &&
+        userName(d) === "MACRO 01X" && d.ex.web_test_user_category(0) === category);
+  d.tap(B.HOME); d.turn(EN.PRESETS, 1); d.tap(B.SAVE);    // change sound before LOAD
+  d.turn(EN.K2, 1); d.tap(B.OCTUP); d.render(100);        // USER: select LOAD, confirm
+  check(`MACRO ${model}: LOAD restores engine 14 and all eight edited controls`,
+        d.ex.web_test_engine() === 14 && JSON.stringify(macroParams(d)) === JSON.stringify(expected));
+  const sectors = storeSectors(new Uint8Array(d.mem.buffer, d.ex.web_nor(), d.ex.web_nor_size()));
+  const json = JSON.parse(JSON.stringify(Object.fromEntries(
+    Object.entries(sectors).map(([k, v]) => [k, Buffer.from(v).toString("base64")]))));
+  const fresh = await device(Object.fromEntries(Object.entries(json)
+    .map(([k, v]) => [k, new Uint8Array(Buffer.from(v, "base64"))])));
+  fresh.render(600); fresh.tap(B.SAVE); fresh.turn(EN.K2, 1); fresh.tap(B.OCTUP); fresh.render(100);
+  check(`MACRO ${model}: fresh instance restores controls, custom name and category`,
+        fresh.ex.web_test_engine() === 14 && JSON.stringify(macroParams(fresh)) === JSON.stringify(expected) &&
+        userName(fresh) === "MACRO 01X" && fresh.ex.web_test_user_category(0) === category);
+  fresh.peak = 0; fresh.ex.web_keys(1 << 7); fresh.render(300); fresh.ex.web_keys(0); fresh.render(400);
+  check(`MACRO ${model}: the reloaded custom sound plays`, fresh.peak > 0.01 && fresh.peak <= 1);
+}
+
 // ---- deterministic: the same gestures, the same samples
 async function song() {
   const d = await device(null);
@@ -168,13 +215,15 @@ for (let i = 0; i < 3; i++) {
 const ratio = best / 1000, max = +(process.env.BENCH_MAX || 0.5);
 check(`1 s of the heavy song (FM6 PHYS GRAIN chords + DRUM) in ${best.toFixed(1)} ms: ${(ratio * 100).toFixed(1)} % of real time`, ratio < max);
 
-// All six MACRO presets, real key events, TIMBRE/COLOR knob turns and release tails.
+// All 51 MACRO presets, real key events, TIMBRE/COLOR knob turns and release tails.
 const macro = await device(null);
 macro.render(500);
-for (let pi = 0; pi < 6; pi++) {
+for (let pi = 0; pi < 51; pi++) {
   macro.ex.web_test_macro(pi); macro.render(100);
+  // Include the attack: triggered percussion can have decayed after 300 ms.
+  macro.rec = true; macro.peak = 0;
   macro.ex.web_keys((1 << 7) | (1 << 11) | (1 << 14) | (1 << 19)); macro.render(300);
-  macro.rec = true; macro.peak = 0; macro.render(400);
+  macro.render(400);
   macro.ex.web_enc(EN.K1, 20); macro.render(200);
   macro.ex.web_enc(EN.K2, -20); macro.render(200);
   macro.ex.web_keys(0); macro.render(1000);
@@ -185,7 +234,7 @@ if (macroPath) {
   const nat = new Float32Array(new Uint8Array(fs.readFileSync(macroPath)).buffer), web = macro.samples;
   let diff = nat.length === web.length ? 0 : Infinity;
   for (let i = 0; i < web.length && diff === 0; i++) if (nat[i] !== web[i]) diff = i + 1;
-  check(`six MACRO presets native/Wasm: ${web.length / 2} frames, ${diff === 0 ? "bit for bit" : "differs at " + diff}`, diff === 0);
+  check(`51 MACRO presets native/Wasm: ${web.length / 2} frames, ${diff === 0 ? "bit for bit" : "differs at " + diff}`, diff === 0);
 }
 console.log(fails ? `emu: ${fails} FAILED` : "emu: all ok");
 process.exit(fails ? 1 : 0);

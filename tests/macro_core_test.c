@@ -21,7 +21,7 @@ int main(void)
             assert(mac_wave(MACRO_WAVES[w], phase) == want);
         }
     assert(!memcmp(MACRO_WAVES[63], MACRO_WAVES[64], 129));
-    for (shape = 0; shape < MAC_NSHAPE; shape++)
+    for (shape = 0; shape < 3u; shape++)
         for (timbre = 0; timbre < 128; timbre += 1)
             for (color = 0; color <= 4; color++)
                 for (note = 0; note < 128; note += 7) {
@@ -37,9 +37,9 @@ int main(void)
                         assert(out.before == 1234 && out.after == 5678);
                     }
                     /* Model changes start at the preceding sample; phases continue. */
-                    for (k = 0; k < MAC_NSHAPE; k++) {
+                    for (k = 0; k < 3u; k++) {
                         int16_t last = s.last;
-                        uint32_t next = (s.shape + 1) % MAC_NSHAPE;
+                        uint32_t next = (s.shape + 1) % 3u;
                         mac_run(&s, next, &ph, &mp, inc, inc, note * 128, 32767, 32767, out.b, CTL);
                         assert(out.b[0] == last && !s.fade);
                     }

@@ -1,0 +1,431 @@
+[
+  {
+    "id": 0,
+    "upstream": 39,
+    "name": "WAVE",
+    "timbre": "SCAN",
+    "color": "TEXTURE",
+    "poly": 8
+  },
+  {
+    "id": 1,
+    "upstream": 3,
+    "name": "FOLD",
+    "timbre": "FOLD",
+    "color": "BLEND",
+    "poly": 8
+  },
+  {
+    "id": 2,
+    "upstream": 26,
+    "name": "FBFM",
+    "timbre": "DEPTH",
+    "color": "MOD PIT",
+    "poly": 8
+  },
+  {
+    "id": 3,
+    "upstream": 0,
+    "name": "CSAW",
+    "timbre": "NOTCH",
+    "color": "DEPTH",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 4,
+    "upstream": 1,
+    "name": "MORPH",
+    "timbre": "WAVE",
+    "color": "CHARACTER",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 5,
+    "upstream": 2,
+    "name": "SAW SQUARE",
+    "timbre": "WIDTH",
+    "color": "BLEND",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 6,
+    "upstream": 4,
+    "name": "BUZZ",
+    "timbre": "HARMONIC",
+    "color": "DETUNE",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 7,
+    "upstream": 5,
+    "name": "SQUARE SUB",
+    "timbre": "WIDTH",
+    "color": "SUB LVL",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 8,
+    "upstream": 6,
+    "name": "SAW SUB",
+    "timbre": "WIDTH",
+    "color": "SUB LVL",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 9,
+    "upstream": 7,
+    "name": "SQUARE SYNC",
+    "timbre": "SYNC PIT",
+    "color": "BALANCE",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 10,
+    "upstream": 8,
+    "name": "SAW SYNC",
+    "timbre": "SYNC PIT",
+    "color": "BALANCE",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 11,
+    "upstream": 9,
+    "name": "TRIPLE SAW",
+    "timbre": "PITCH 2",
+    "color": "PITCH 3",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 12,
+    "upstream": 10,
+    "name": "TRIPLE SQR",
+    "timbre": "PITCH 2",
+    "color": "PITCH 3",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 13,
+    "upstream": 11,
+    "name": "TRIPLE TRI",
+    "timbre": "PITCH 2",
+    "color": "PITCH 3",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 14,
+    "upstream": 12,
+    "name": "TRIPLE SINE",
+    "timbre": "PITCH 2",
+    "color": "PITCH 3",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 15,
+    "upstream": 13,
+    "name": "RING",
+    "timbre": "PITCH 2",
+    "color": "PITCH 3",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 16,
+    "upstream": 14,
+    "name": "SWARM",
+    "timbre": "DETUNE",
+    "color": "HI PASS",
+    "poly": 1,
+    "category": "P"
+  },
+  {
+    "id": 17,
+    "upstream": 15,
+    "name": "SAW COMB",
+    "timbre": "COMB PIT",
+    "color": "FEEDBACK",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 18,
+    "upstream": 16,
+    "name": "TOY",
+    "timbre": "CLOCK",
+    "color": "GLITCH",
+    "poly": 1,
+    "category": "F"
+  },
+  {
+    "id": 19,
+    "upstream": 17,
+    "name": "ZLPF",
+    "timbre": "CUTOFF",
+    "color": "WAVE",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 20,
+    "upstream": 18,
+    "name": "ZPKF",
+    "timbre": "CUTOFF",
+    "color": "WAVE",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 21,
+    "upstream": 19,
+    "name": "ZBPF",
+    "timbre": "CUTOFF",
+    "color": "WAVE",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 22,
+    "upstream": 20,
+    "name": "ZHPF",
+    "timbre": "CUTOFF",
+    "color": "WAVE",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 23,
+    "upstream": 21,
+    "name": "VOSIM",
+    "timbre": "FORMANT 1",
+    "color": "FORMANT 2",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 24,
+    "upstream": 22,
+    "name": "VOWEL",
+    "timbre": "VOWEL",
+    "color": "FORMANT",
+    "poly": 1,
+    "category": "K"
+  },
+  {
+    "id": 25,
+    "upstream": 23,
+    "name": "VOWEL FOF",
+    "timbre": "VOWEL",
+    "color": "FORMANT",
+    "poly": 1,
+    "category": "K"
+  },
+  {
+    "id": 26,
+    "upstream": 24,
+    "name": "HARMONICS",
+    "timbre": "CENTER",
+    "color": "SPREAD",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 27,
+    "upstream": 25,
+    "name": "FM",
+    "timbre": "DEPTH",
+    "color": "RATIO",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 28,
+    "upstream": 27,
+    "name": "CHAOTIC FM",
+    "timbre": "DEPTH",
+    "color": "RATIO",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 29,
+    "upstream": 28,
+    "name": "PLUCKED",
+    "timbre": "DAMPING",
+    "color": "POSITION",
+    "poly": 1,
+    "category": "U"
+  },
+  {
+    "id": 30,
+    "upstream": 29,
+    "name": "BOWED",
+    "timbre": "FRICTION",
+    "color": "POSITION",
+    "poly": 1,
+    "category": "U"
+  },
+  {
+    "id": 31,
+    "upstream": 30,
+    "name": "BLOWN",
+    "timbre": "PRESSURE",
+    "color": "GEOMETRY",
+    "poly": 1,
+    "category": "K"
+  },
+  {
+    "id": 32,
+    "upstream": 31,
+    "name": "FLUTE",
+    "timbre": "PRESSURE",
+    "color": "GEOMETRY",
+    "poly": 1,
+    "category": "K"
+  },
+  {
+    "id": 33,
+    "upstream": 32,
+    "name": "BELL",
+    "timbre": "DAMPING",
+    "color": "INHARM",
+    "poly": 1,
+    "category": "U"
+  },
+  {
+    "id": 34,
+    "upstream": 33,
+    "name": "METAL DRUM",
+    "timbre": "DAMPING",
+    "color": "BRIGHT",
+    "poly": 1,
+    "category": "D"
+  },
+  {
+    "id": 35,
+    "upstream": 34,
+    "name": "KICK",
+    "timbre": "DECAY",
+    "color": "TONE",
+    "poly": 1,
+    "category": "D"
+  },
+  {
+    "id": 36,
+    "upstream": 35,
+    "name": "CYMBAL",
+    "timbre": "BANDPASS",
+    "color": "NOISE",
+    "poly": 1,
+    "category": "D"
+  },
+  {
+    "id": 37,
+    "upstream": 36,
+    "name": "SNARE",
+    "timbre": "TONE",
+    "color": "SNAPPY",
+    "poly": 1,
+    "category": "D"
+  },
+  {
+    "id": 38,
+    "upstream": 37,
+    "name": "WAVETABLE",
+    "timbre": "SCAN",
+    "color": "BANK",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 39,
+    "upstream": 38,
+    "name": "WAVE MAP",
+    "timbre": "X SCAN",
+    "color": "Y SCAN",
+    "poly": 1,
+    "category": "L"
+  },
+  {
+    "id": 40,
+    "upstream": 40,
+    "name": "WAVE CHORD",
+    "timbre": "SCAN",
+    "color": "CHORD",
+    "poly": 1,
+    "category": "P"
+  },
+  {
+    "id": 41,
+    "upstream": 41,
+    "name": "NOISE",
+    "timbre": "RESONANCE",
+    "color": "LP / HP",
+    "poly": 1,
+    "category": "F"
+  },
+  {
+    "id": 42,
+    "upstream": 42,
+    "name": "TWIN PEAKS",
+    "timbre": "RESONANCE",
+    "color": "SPACING",
+    "poly": 1,
+    "category": "F"
+  },
+  {
+    "id": 43,
+    "upstream": 43,
+    "name": "CLOCK NOISE",
+    "timbre": "PERIOD",
+    "color": "QUANTIZE",
+    "poly": 1,
+    "category": "F"
+  },
+  {
+    "id": 44,
+    "upstream": 44,
+    "name": "CLOUD",
+    "timbre": "DENSITY",
+    "color": "SPREAD",
+    "poly": 1,
+    "category": "F"
+  },
+  {
+    "id": 45,
+    "upstream": 45,
+    "name": "PARTICLES",
+    "timbre": "DENSITY",
+    "color": "SPREAD",
+    "poly": 1,
+    "category": "F"
+  },
+  {
+    "id": 46,
+    "upstream": 46,
+    "name": "QPSK",
+    "timbre": "BIT RATE",
+    "color": "DATA",
+    "poly": 1,
+    "category": "F"
+  },
+  {
+    "id": 47,
+    "upstream": 47,
+    "name": "QUESTION",
+    "timbre": "CLOCK",
+    "color": "CHARACTER",
+    "poly": 1,
+    "category": "F"
+  }
+]

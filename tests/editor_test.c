@@ -1160,11 +1160,39 @@ static int learn_protocol(void)
 }
 
 #ifndef EDITOR_TEST_NO_MAIN                              /* (robust_test.c, fuzz_*.c: this file is their base) */
+static int macro_model_protocol(void)
+{
+    const uint8_t desc[] = {0, P_E0}, names[] = {ENGI_MACRO};
+    uint32_t i, n, p;
+    int ok = 1;
+    reset(); set_engine_of(TSEL, ENGI_MACRO);
+    n = request(ED_DESC, desc, sizeof desc);
+    ok &= n < sizeof ed_out && ed_rv(host_wire + 10) == 47 && host_wire[n - 1] == 0xF7;
+    p = 14; while (host_wire[p]) p++; p++; while (host_wire[p]) p++; p++;
+    for (i = 0; i < MAC_NSHAPE && p < n - 1; i++) {
+        ok &= !strcmp((const char *)host_wire + p, N_MACRO_SHAPE[i]);
+        p += (uint32_t)strlen((const char *)host_wire + p) + 1;
+    }
+    ok &= i == MAC_NSHAPE && p == n - 1;
+    n = request(ED_NAMES, names, sizeof names);
+    ok &= n < sizeof ed_out && host_wire[6] == 51 && host_wire[n - 1] == 0xF7;
+    p = 7;
+    for (i = 0; i < 51 && p < n - 1; i++) {
+        ok &= !strcmp((const char *)host_wire + p, MACRO_PRESETS[i].name);
+        p += (uint32_t)strlen((const char *)host_wire + p) + 1;
+    }
+    for (i = 0; i < MAC_NSHAPE; i++) {
+        uint8_t set[] = {0, P_E0, (uint8_t)i, 64};
+        request(ED_SET, set, sizeof set);
+        ok &= TSEL->p[P_E0] == (int16_t)i;
+    }
+    return check("MACRO: all 48 full model names, 51 presets and SET values fit the protocol", ok);
+}
 int main(void)
 {
     int bad = preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + usb_burst() + menu_protocol() + drum_kit_retired() +
-              learn_protocol();
+              learn_protocol() + macro_model_protocol();
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
     return bad != 0;
 }

@@ -79,7 +79,8 @@ static void track_lfo_tick(track_t *t)
 /* voices the engine may use (POLY and UNISON): its cap, else all of them */
 static uint32_t trk_nvoice(const track_t *t)
 {
-    uint32_t c = ENGINES[t->engine]->poly;
+    const engine_t *e = ENGINES[t->engine];
+    uint32_t c = e->poly_for ? e->poly_for(t) : e->poly;
     return c && c < NVOICE ? c : NVOICE;
 }
 

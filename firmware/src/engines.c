@@ -10,9 +10,10 @@
  * last claimed it (eng_mem_owner); a switch to another such engine zeroes its engine_t.mem bytes, which is
  * the state each had at power-on, so a switch sounds as it did with the arrays (tests/union_test.c). State
  * that runs on across notes and switches stays outside (WHEEL's wheels, GRAIN's random numbers).
- * Sized by the largest, PHYS (3 x SYMP's slot); an engine that needs more than ENG_MEM_PART grows it for
+ * Sized by the largest, MACRO (full Braids state), rounded to its 8-byte arena alignment; an engine
+ * that needs more than ENG_MEM_PART grows it for
  * every part (x NPART of the pool). Zero-initialised pool section: main.c fm1_cstart clears it. */
-#define ENG_MEM_PART 12888u
+#define ENG_MEM_PART 17328u
 static union {
     uint64_t align;
     uint8_t b[ENG_MEM_PART];
