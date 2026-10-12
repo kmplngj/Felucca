@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    uses: ./.github/workflows/build.yml

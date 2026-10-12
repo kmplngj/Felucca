@@ -23,6 +23,19 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 If this checkout has a `.codegraph/` index, use CodeGraph first to locate code and trace
 callers. Otherwise use normal source search; indexing is the owner's choice.
 
+## User-facing documentation
+
+For every added or changed user-facing feature, read [README.md](README.md) and
+check whether its feature list and usage instructions still describe the result.
+Update the affected README sections in the same PR when needed, including how to
+access the feature, its defaults, limitations and compatibility implications.
+Keep detailed instructions in the relevant guide when appropriate and link them
+from the README so users can discover the feature.
+
+Before completing the change, record the README assessment in the PR description
+(or completion report when there is no PR): name the sections updated, or explain
+specifically why the existing README already covers the resulting behavior.
+
 ## Architecture and ownership
 
 | Location | Responsibility |
