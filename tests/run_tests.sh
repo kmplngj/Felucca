@@ -170,6 +170,7 @@ CC="${CC:-cc} -O1 -Wall -Wno-unused-function"
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
 
+run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
 run "package flash boundaries (synthetic SDK)" python3 tests/fm1pkg_test.py
 run "package flash boundaries (Python -O, synthetic SDK)" python3 -O tests/fm1pkg_test.py
 
