@@ -15,7 +15,8 @@
  * 2. health checks on every render: no sample beyond 16 bits, none near full scale, DC offset, the
  *    peak level, every voice free after the release, silence at the end. Fails with the numbers.
  * 3. CPU budget: per engine x preset (8 notes held; VOICE: its 4) and a few mixes, the instructions
- *    per sample counted by the kernel (proc_pid_rusage ri_instructions: the same on every run within
+ *    per sample counted by the kernel (macOS proc_pid_rusage ri_instructions, Linux perf_event_open per child:
+ *    the same on every run within
  *    ~1 %, unlike wall time), compared with CPU_FILE (tests/cpu_baseline.txt) at +-25 %; ns per
  *    sample printed for information. A count over the budget fails, one far under it only warns.
  *    run_tests.sh runs it twice: -O2 against tests/cpu_baseline.txt, and -Os -fno-vectorize
@@ -33,6 +34,12 @@
 #ifdef __APPLE__
 #include <libproc.h>
 #include <sys/resource.h>
+#elif defined(__linux__)
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <linux/perf_event.h>
 #endif
 
 /* ------------------------------------------------------------- limits --- */
@@ -46,10 +53,23 @@
 #ifndef TAIL_S
 #define TAIL_S 3                  /* FX tail rendered after the voices are free */
 #endif
+#if defined(__APPLE__) && defined(__aarch64__)
+#define CPU_HOST "macOS arm64"
+#elif defined(__linux__) && defined(__x86_64__)
+#define CPU_HOST "Linux x86_64"
+#elif defined(__linux__) && defined(__aarch64__)
+#define CPU_HOST "Linux aarch64"
+#else
+#define CPU_HOST "this host"
+#endif
 #define CPU_TOL 0.25              /* +-25 %, and at least CPU_SLACK instructions (light presets) */
 #define CPU_SLACK 20
 #ifdef __OPTIMIZE_SIZE__
+#if defined(__GNUC__) && !defined(__clang__)
+#define CPU_CC "cc -Os -fno-tree-vectorize -fno-tree-slp-vectorize"
+#else
 #define CPU_CC "cc -Os -fno-vectorize -fno-slp-vectorize"   /* named in CPU_FILE's header (regress_os) */
+#endif
 #else
 #define CPU_CC "cc -O2"
 #endif
@@ -321,22 +341,92 @@ static void job_song(const job_t *j)
  * the notes are its 8 lanes, struck again every 46 ms, else they ring out); notes DRUM_HITS on part 4:
  * drum_hit (hostsim.c) on 16ths;
  * 0.5 s to settle, then 1 s counted */
-static uint64_t instr_now(void)
+#if defined(__APPLE__)
+#define CPU_SRC "proc_pid_rusage RUSAGE_INFO_V4 ri_instructions, process"
+static int instr_begin(char *why, size_t n)
 {
-#ifdef __APPLE__
+    (void)why, (void)n;
+    return 1;
+}
+static int instr_now(uint64_t *v, char *why, size_t n)
+{
     struct rusage_info_v4 ri;
-    if (!proc_pid_rusage(getpid(), RUSAGE_INFO_V4, (rusage_info_t *)&ri))
-        return ri.ri_instructions;
-#endif
+    if (proc_pid_rusage(getpid(), RUSAGE_INFO_V4, (rusage_info_t *)&ri)) {
+        snprintf(why, n, "proc_pid_rusage failed");
+        return 0;
+    }
+    *v = ri.ri_instructions;
+    return 1;
+}
+#elif defined(__linux__)
+/* perf_event_open: user-space PERF_COUNT_HW_INSTRUCTIONS of the calling thread (pid 0, cpu -1; needs
+ * perf_event_paranoid <= 2, no root). Opened in each child (never the parent's descriptor).
+ * Multiplexed (running < enabled) is not comparable: no count. */
+#define CPU_SRC "perf_event_open PERF_COUNT_HW_INSTRUCTIONS, user space, calling thread"
+static int instr_fd = -1;
+static int instr_begin(char *why, size_t n)
+{
+    struct perf_event_attr a;
+    if (instr_fd >= 0)
+        close(instr_fd);                                /* never a descriptor inherited from the parent */
+    memset(&a, 0, sizeof a);
+    a.type = PERF_TYPE_HARDWARE;
+    a.size = sizeof a;
+    a.config = PERF_COUNT_HW_INSTRUCTIONS;
+    a.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING;
+    a.exclude_kernel = 1;
+    a.exclude_hv = 1;
+    instr_fd = (int)syscall(SYS_perf_event_open, &a, 0, -1, -1, 0);
+    if (instr_fd < 0) {
+        snprintf(why, n, "perf_event_open failed: %s (perf_event_paranoid > 2, no PMU, or blocked by a sandbox)",
+                 strerror(errno));
+        return 0;
+    }
+    return 1;
+}
+static int instr_now(uint64_t *v, char *why, size_t n)
+{
+    uint64_t b[3];                                      /* count, time enabled, time running */
+    ssize_t r;
+    if (instr_fd < 0) {
+        snprintf(why, n, "no counter");
+        return 0;
+    }
+    r = read(instr_fd, b, sizeof b);
+    if (r != (ssize_t)sizeof b) {
+        snprintf(why, n, "counter read failed (%zd bytes: %s)", r, r < 0 ? strerror(errno) : "short");
+        return 0;
+    }
+    if (!b[1] || b[1] != b[2]) {
+        snprintf(why, n, "counter multiplexed or never scheduled (enabled %llu ns, running %llu ns)",
+                 (unsigned long long)b[1], (unsigned long long)b[2]);
+        return 0;
+    }
+    *v = b[0];
+    return 1;
+}
+#else
+#define CPU_SRC "none"
+static int instr_begin(char *why, size_t n)
+{
+    snprintf(why, n, "no instruction counter for this OS");
     return 0;
 }
+static int instr_now(uint64_t *v, char *why, size_t n)
+{
+    (void)v;
+    snprintf(why, n, "no instruction counter for this OS");
+    return 0;
+}
+#endif
 static void job_cpu(const job_t *j)
 {
     static const uint8_t NOTES[8] = {48, 52, 55, 59, 60, 64, 67, 71};
     static const uint8_t KIT[8] = {36, 38, 39, 42, 46, 45, 37, 56};   /* KICK SNARE CLAP HAT CL HAT OP TOM RIM BELL */
     const uint8_t (*parts)[3] = j->parts;
     uint32_t p, i, k, nb = FS / CTL, drums_on = parts[3][2] == DRUM_HITS;
-    uint64_t i0, t0;
+    uint64_t i0 = 0, i1 = 0, t0 = 0;
+    int ic = 0;
     host_tracks_init();
     for (p = 0; p < NPART; p++) {
         host_preset(&trk[p], parts[p][0], parts[p][1]);
@@ -356,7 +446,7 @@ static void job_cpu(const job_t *j)
     }
     for (k = 0; k < nb / 2u + nb; k++) {
         if (k == nb / 2u) {
-            i0 = instr_now();
+            ic = instr_begin(R.msg, sizeof R.msg) && instr_now(&i0, R.msg, sizeof R.msg);
             t0 = now_ns();
         }
         for (p = 0; p < NPART; p++)
@@ -372,7 +462,8 @@ static void job_cpu(const job_t *j)
             click_render(last_out, CTL);                /* (audio.c audio_block: after the master) */
     }
     R.ns = (double)(now_ns() - t0) / (nb * CTL);
-    R.ipc = i0 ? (double)(instr_now() - i0) / (nb * CTL) : 0;
+    if (ic && instr_now(&i1, R.msg, sizeof R.msg) && i1 > i0)
+        R.ipc = (double)(i1 - i0) / (nb * CTL);         /* else 0 and R.msg says why: skipped, never a pass */
 }
 
 static int run_job_body(job_t *j)
@@ -1030,7 +1121,7 @@ int main(int argc, char **argv)
     uint32_t ng, nc, e, pi, i, g0, g1, c0, c1, k0, ncpu = 0;
     uint32_t g_changed = 0, g_new = 0, g_gone = 0, h_fail = 0, c_fail = 0, c_warn = 0, k_fail = 0, crash = 0;
     double heavy[NENGINES] = {0}, heavy_ns[NENGINES] = {0}, idle_now, idle_base;
-    uint32_t heavy_p[NENGINES] = {0};
+    uint32_t heavy_p[NENGINES] = {0}, nz = 0;
     uint64_t t_start = now_ns();
     char name[64], s[64];
     if (jobs_at_once < 1u || jobs_at_once > 64u)
@@ -1243,12 +1334,17 @@ int main(int argc, char **argv)
     }
 
     /* ---- CPU ---- */
+    /* Every count, including idle, must be available before checking any budget. */
+    for (i = c0; i < c1; i++)
+        nz += J[i].r.ipc > 0;
     /* a preset's own cost: its count less the idle mix's (the mix alone is half of a light preset's),
      * so +25 % means 25 % more engine work; the mixes as they are */
     nc = load_kv(cpath, cpu, MAXJ);
     idle_now = J[c1 - 4u].r.ipc;
     idle_base = kv_get(cpu, nc, J[c1 - 4u].name) ? atof(kv_get(cpu, nc, J[c1 - 4u].name)) : 0;
-    if (!nc && !cupd && idle_now > 0) {       /* counted, but no CPU_FILE to check against: fail, not a silent pass */
+    if (!strcmp(cpath, "-"))
+        nc = 0;                                     /* run_tests.sh: no baseline for this host */
+    else if (!nc && !cupd && nz == c1 - c0) {     /* counted, but no CPU_FILE to check against: fail, not a silent pass */
         printf("regress: CPU baseline %s missing or empty (BUDGET_UPDATE=1 writes it)\n", cpath);
         c_fail++;
     }
@@ -1267,7 +1363,7 @@ int main(int argc, char **argv)
             heavy_ns[j->e] = j->r.ns;
             heavy_p[j->e] = j->pi;
         }
-        if (!j->r.ipc || cupd)
+        if (nz != c1 - c0 || cupd || !strcmp(cpath, "-"))
             continue;
         if (!want)
             printf("regress: CPU %s: %.0f instructions / sample, no baseline (BUDGET_UPDATE=1 adds it)\n", j->name, ipc);
@@ -1281,17 +1377,28 @@ int main(int argc, char **argv)
             c_warn++;
         }
     }
-    if (!J[c0].r.ipc)
-        printf("regress: CPU: no instruction counter on this host (proc_pid_rusage); the budget is not checked\n");
-    else if (cupd) {
+    if (nz != c1 - c0) {
+        const char *why = "";
+        for (i = c0; i < c1 && !*why; i++)
+            why = J[i].r.msg;
+        printf("regress: CPU: %u of %u counts unavailable (%s); the budget is not checked%s\n", c1 - c0 - nz, c1 - c0,
+               *why ? why : "no instruction counter on this host", cupd ? ", no baseline written" : "");
+    } else {
+        printf("regress: CPU counter: %s, " CPU_CC " (%s), " CPU_SRC "\n", CPU_HOST, __VERSION__);
+        if (!strcmp(cpath, "-"))
+            printf("regress: CPU: no baseline for this host (BUDGET_UPDATE=1 sh tests/run_tests.sh writes it); "
+                   "the budget is not checked\n");
+    }
+    if (nz == c1 - c0 && cupd) {
         FILE *f = fopen(cpath, "w");
         if (!f) {
             perror(cpath);
             return 2;
         }
         fprintf(f, "# FELUCCA host CPU baseline (tests/regress.c): instructions per 44.1 kHz sample, " CPU_CC " on\n"
-                   "# the Mac (kernel-counted, ~1 %% run to run). The check allows +%.0f %%. Rewritten by BUDGET_UPDATE=1.\n",
-                CPU_TOL * 100);
+                   "# " CPU_HOST " (" CPU_SRC "; ~1 %% run to run). The check allows +%.0f %%. Rewritten by BUDGET_UPDATE=1.\n"
+                   "# Compiler: %s\n",
+                CPU_TOL * 100, __VERSION__);
         for (i = c0; i < c1; i++)
             fprintf(f, "%s %.0f\n", J[i].name, J[i].r.ipc);
         fclose(f);
@@ -1305,9 +1412,14 @@ int main(int argc, char **argv)
     for (i = c1 - 4u; i < c1; i++)
         printf("regress:   %-23s %6.0f instr  %6.1f ns\n", J[i].name + 8, J[i].r.ipc, J[i].r.ns);
 
-    printf("regress: %u golden renders (%u changed, %u gone), %u health failures, %u voice / routing checks failed, "
-           "%u CPU entries over budget (%u notes), %u crashes; %.1f s\n", g1 - g0, gupd ? 0 : g_changed,
-           gupd ? 0 : g_gone, h_fail, k_fail, cupd ? 0 : c_fail, c_warn, crash, (double)(now_ns() - t_start) / 1e9);
+    if (nz != c1 - c0 || !strcmp(cpath, "-"))   /* a skipped budget must not read as a passed one */
+        printf("regress: %u golden renders (%u changed, %u gone), %u health failures, %u voice / routing checks failed, "
+               "CPU budget not checked, %u crashes; %.1f s\n", g1 - g0, gupd ? 0 : g_changed,
+               gupd ? 0 : g_gone, h_fail, k_fail, crash, (double)(now_ns() - t_start) / 1e9);
+    else
+        printf("regress: %u golden renders (%u changed, %u gone), %u health failures, %u voice / routing checks failed, "
+               "%u CPU entries over budget (%u notes), %u crashes; %.1f s\n", g1 - g0, gupd ? 0 : g_changed,
+               gupd ? 0 : g_gone, h_fail, k_fail, cupd ? 0 : c_fail, c_warn, crash, (double)(now_ns() - t_start) / 1e9);
     if (!gupd && (g_changed || g_gone))
         printf("regress: the sound changed. If that is intended: GOLDEN_UPDATE=1 sh tests/run_tests.sh, "
                "then review and commit tests/golden.txt\n");
