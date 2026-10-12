@@ -63,6 +63,31 @@ phase_render:
             })
 
 
+    def test_undecoded_words_are_ordinary_or_hide_the_loop(self):
+        # Known gaps: nothing marks text the disassembler could not decode.
+        with tempfile.TemporaryDirectory(dir=HERE.parent / "build") as tmp:
+            dis = Path(tmp) / "undecoded.dis"
+            dis.write_text("""analog_render:
+ 100: 00 00  r0 = 0
+ 102: 00 00  .word 0x1234
+ 104: 00 00  (bad)
+ 106: 00 00  if r0 < r1 goto -4 <analog_render: 102 >
+ 108: 00 00  ret
+phase_render:
+ 200: 00 00  r0 = 0
+ 202: 00 00  r0 += 1
+ 204: 00 00  .word 0xdeadbeef
+ 206: 00 00  ret
+""")
+            fns = ESTIMATOR["functions"](dis)
+            # '.word' and '(bad)' weigh like any instruction inside the loop.
+            self.assertEqual(ESTIMATOR["cost"](fns["analog_render"]),
+                             dict(insns=5, loop=3, div=0, call=0, cost=3))
+            # An undecoded back edge leaves no span: the loop reads as cost 0.
+            self.assertEqual(ESTIMATOR["cost"](fns["phase_render"]),
+                             dict(insns=4, loop=0, div=0, call=0, cost=0))
+
+
 class CommandLineFixtures(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(dir=HERE.parent / "build")
@@ -156,6 +181,23 @@ class CommandLineFixtures(unittest.TestCase):
         self.assert_status(result, 0)
         self.assertEqual(result.stdout.count("no budget"), len(self.required))
         self.assertFalse(self.budget.exists())
+
+    def test_undecoded_back_edge_passes_as_cost_zero(self):
+        # Known gap: a loop whose back edge is not decoded reads as free and only notes -100 %.
+        text = self.dis.read_text().replace("if r0 < r1 goto -2 <analog_render: 100 >", ".word 0xdeadbeef", 1)
+        self.assertIn(".word", text)
+        self.dis.write_text(text)
+        result = self.cli()
+        self.assert_status(result, 0)
+        row = next(line for line in result.stdout.splitlines() if "analog_render" in line)
+        self.assertIn("note: -100 %", row)
+
+    def test_zero_budget_crashes_the_report(self):
+        # Known gap: a budget of 0 raises instead of reporting OVER BUDGET.
+        self.write_budget(overrides={"analog_render": 0})
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ZeroDivisionError", result.stderr)
 
     def test_extra_entry_ignored_and_short_line_skipped(self):
         self.write_budget(extra="untracked_helper 999\nmalformed_single_word\n")

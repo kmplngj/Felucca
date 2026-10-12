@@ -36,6 +36,12 @@ raise `ValueError`, including on extra entries and before an update. A nonempty
 `BUDGET_UPDATE` value, including `0`, rewrites the file. Updates omit optional
 functions, bypass over-budget checks, and still fail for missing required functions.
 
+Further known gaps, asserted as they are today: undecoded text such as `.word` or
+`(bad)` counts as one ordinary instruction; an undecoded back edge leaves no span,
+so the loop costs 0 and the CLI only prints a `-100 %` note and passes; a budget of
+`0` raises `ZeroDivisionError` instead of reporting OVER BUDGET. Counting unparsed
+lines per tracked function and failing on them would close the first two.
+
 ## Known approximation and possible future accounting
 
 Every recognized backward branch creates an inclusive address span, whether or not
