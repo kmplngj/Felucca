@@ -18,6 +18,8 @@
 #                   no hanging notes on any MIDI / key routing.
 # ENGINE MEMORY (tests/union_test.c, 1.5): engine switches on a part (every pair and A -> B -> A of the engines that
 #                   share the part's state region, with others), hashed against 1.4's (tests/union_golden.txt).
+#                   Owner checks (tests/arena_test.c, FELUCCA_ARENA_CHECK=1, host only): negative fixtures and fixed-seed
+#                   random runs; union_test is also run checked (and under ASan/UBSan).
 # UI renders (tests/ui_render.c): every screen in every palette from the real drawing code: the layout lint (no text
 #                   off the screen, cut, hidden, overlapping or spilling out of its cell / card; only free text
 #                   ellipsised), GREY gray, MONO neutral, the draw cost, the text audit (build/ui_new/text_audit.tsv);
@@ -366,6 +368,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/union_test" tests/union_test.c -lm
     run "engine memory (1.5): every switch between the engines with per-part state sounds as in 1.4 (720 sequences)" \
         "$OUT/union_test" tests/union_golden.txt
+    $CC -O2 -w -DFELUCCA_ARENA_CHECK=1 -Ibuild/gen -Ifirmware/src -o "$OUT/union_test_chk" tests/union_test.c -lm
+    run "engine memory, owner-checked (FELUCCA_ARENA_CHECK=1): the same 720 hashes, every arena access by its owner" \
+        "$OUT/union_test_chk" tests/union_golden.txt
+    $CC -O2 -w -DFELUCCA_ARENA_CHECK=1 -Ibuild/gen -Ifirmware/src -o "$OUT/arena_test" tests/arena_test.c -lm
+    run "engine memory owner checker: negative fixtures, fixed-seed random notes / switches / fades on all parts" \
+        "$OUT/arena_test" 48
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/descdump" tests/descdump.c -lm
     echo "== parameter and engine tables as JSON (for the editor mock test)"
     "$OUT/descdump" > "$OUT/desc.json" || fail=1
@@ -444,6 +452,10 @@ else
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
     done
+    $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/arena_test" tests/arena_test.c -lm
+    run "ASan/UBSan: engine memory owner checker (fixtures + 12 random runs)" "$A/arena_test" 12
+    $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/union_test_chk" tests/union_test.c -lm
+    run "ASan/UBSan: engine memory switches, owner-checked (720 sequences)" "$A/union_test_chk" tests/union_golden.txt
     $SCC -o "$A/fuzz_ed" tests/fuzz_ed.c -lm
     run "ASan/UBSan fuzz: editor SysEx and raw USB-MIDI packets (20000, seed 7)" "$A/fuzz_ed" 20000 7
     $SCC -o "$A/fuzz_proj" tests/fuzz_proj.c -lm

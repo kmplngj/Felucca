@@ -223,6 +223,18 @@ Large automatic arrays and recursion spend stack even when static section sizes 
 The hardware guards detect violations, not stack high-water usage; watermark measurement
 would require separate instrumentation and nested-interrupt stress.
 
+Engine-arena owner checks (host only): `-DFELUCCA_ARENA_CHECK=1` turns `ENG_MEM_OF`
+(`engines.c`) into a checked accessor for GRAIN (`gr_of`), PHYS (`phys_slot_of`), DRUM
+(`drum_kit_of`), FM6 (`fm6_note_of`) and SLICE (`slc_rb`). At each access it checks the part
+(an aligned `trk[]` element), the engine being rendered (`t->engine`; `eng_req` may name the
+next engine during a fade and is no owner) and the claimed owner (`eng_mem_owner`). A failure
+calls `eng_arena_fail` before any access and hands back scratch memory. Without the define the
+macro is plain `ENG_MEM(p)`: no code or data (identical `-O2`/`-Os` host assembly of
+`tests/regress.c`; the target build is untouched). `tests/arena_test.c` (negative fixtures,
+fixed-seed random runs) and a checked `union_test` run from `tests/run_tests.sh`, also under
+ASan/UBSan. Limits: it does not see an out-of-bounds write inside the arena or a wrong slot of
+the right owner, and engines that keep state outside the arena (WHEEL, `gr_rng`) are not covered.
+
 ## Firmware size and optimization order
 
 Measure `build/felucca.bin` against `APP_SLOT` (`tools/fm1pkg_make.py`, currently

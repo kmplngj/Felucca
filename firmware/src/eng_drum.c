@@ -180,7 +180,7 @@ static void step_to_grid(step_t *s)
 
 static drum_lane_t *drum_kit_of(const track_t *t)
 {
-    return t >= &trk[0] && t < &trk[NPART] ? (drum_lane_t *)ENG_MEM(t - trk) : 0;
+    return t >= &trk[0] && t < &trk[NPART] ? (drum_lane_t *)ENG_MEM_OF(t, ENGI_DRUM, t - trk) : 0;
 }
 
 /* the lane voice v plays, 0 when it plays none (any more) */

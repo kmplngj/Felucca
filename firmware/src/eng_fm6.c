@@ -327,7 +327,7 @@ static fm6_note_t *fm6_note_of(track_t *t, voice_t *v)
     if (t < &trk[0] || t >= &trk[NPART])
         return 0;
     i = (uint32_t)(v - t->v);
-    return i < FM6_POLY ? (fm6_note_t *)ENG_MEM(t - trk) + i : 0;
+    return i < FM6_POLY ? (fm6_note_t *)ENG_MEM_OF(t, ENGI_FM6, t - trk) + i : 0;
 }
 
 static void fm6_note_on(track_t *t, voice_t *v)

@@ -98,7 +98,7 @@ static phys_slot_t *phys_slot_of(track_t *t, voice_t *v)
     if (t < &trk[0] || t >= &trk[NPART])
         return 0;
     i = (uint32_t)(v - t->v);
-    return i < PHYS_POLY ? (phys_slot_t *)ENG_MEM(t - trk) + i : 0;
+    return i < PHYS_POLY ? (phys_slot_t *)ENG_MEM_OF(t, ENGI_PHYS, t - trk) + i : 0;
 }
 
 /* a clean state for model md */
