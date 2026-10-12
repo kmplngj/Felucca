@@ -5862,6 +5862,144 @@ static int test_momentary(void)
     bad += check("  at most 8 values: MOMENTARY FULL, the turn does nothing", ok && !mom.n);
     return bad;
 }
+/* 1.5 (#175): MOMENTARY's persistent header status while LFO is held: ready, "N TO RESTORE", KEPT; main-loop state, no
+ * redraw while it holds, nothing edited by watching it */
+static void msg_wait(void) { int i = 0; do frame(); while (ui.msg_t && ++i < 1000); }   /* (a message over) */
+static int mom_hd(void) { return mom_head() != 0; }
+static int mom_hd_is(const char *s) { const char *m = mom_head(); return m && str_eq(m, s); }
+static int test_momentary_status(void)
+{
+    int bad = 0, ok;
+    uint32_t id0, id1, k, sig;
+    int16_t v0, v1;
+    ui_power_on();
+    ui.home = 1; song.playing = 0;
+    id0 = ENGINES[TSEL->eng_req]->knob[0];
+    id1 = ENGINES[TSEL->eng_req]->knob[1];
+    v0 = TSEL->p[id0]; v1 = TSEL->p[id1];
+    msg_wait();
+    bad += check("#175 status: LFO not held: no status, the normal header", !mom_hd() && !mom.st);
+    btn_down(B_LFO); frame();
+    ok = mom_hd_is("MOMENTARY  TURN") && mom.st == MOM_ST_READY && !mom.n;
+    frames(100);                                    /* (past the ordinary message timeout) */
+    ok &= mom_hd_is("MOMENTARY  TURN");
+    bad += check("#175 status: LFO held, nothing turned: ready to turn, stays past the message timeout", ok);
+    turn(EN_K1, 6);
+    frame();
+    ok = mom.n == 1u && ui.msg_t && !mom_hd();     /* (the first turn's message wins its 40 frames) */
+    msg_wait();
+    ok &= !ui.msg_t && mom_hd_is("1 TO RESTORE  [OCT+] KEEP");
+    frames(200);
+    ok &= mom_hd_is("1 TO RESTORE  [OCT+] KEEP") && mom.st == MOM_ST_N + 1u;
+    bad += check("#175 status: one value turned: 1 TO RESTORE / OCT+ KEEP, held past the ordinary timeout", ok);
+    turn(EN_K1, 2); turn(EN_K1, -1); frame();
+    bad += check("#175 status: the same value turned again is counted once", mom.n == 1u && mom.st == MOM_ST_N + 1u);
+    turn(EN_K2, -4); msg_wait();
+    bad += check("#175 status: a second value: 2 TO RESTORE", mom.n == 2u && mom_hd_is("2 TO RESTORE  [OCT+] KEEP"));
+    /* unchanged held state: the header signature steady, no header pixel touched */
+    sig = ui.head_sig;
+    memset(host_screen, 0xA5, 240 * 24 * sizeof host_screen[0]);
+    frames(30);
+    bad += check("#175 status: unchanged held state: no header redraw (signature steady, pixels untouched)",
+                 ui.head_sig == sig && !ui.force && host_screen[0] == 0xA5A5 && host_screen[240 * 12 + 120] == 0xA5A5);
+    {
+        int16_t a0 = TSEL->p[id0], a1 = TSEL->p[id1];
+        uint32_t st = mom.st;
+        frames(30);
+        bad += check("#175 status: watching edits no sound", TSEL->p[id0] == a0 && TSEL->p[id1] == a1 && mom.st == st);
+    }
+    /* MOM_N entries and FULL */
+    for (k = 2; k < MOM_N; k++) { mom.vp[k] = &trk[k % NTRK].p[P_LEVEL + 1 + k / NTRK]; mom.v[k] = *mom.vp[k]; }
+    mom.n = MOM_N; msg_wait();
+    ok = mom_hd_is("8 TO RESTORE  [OCT+] KEEP");
+    ui.msg_t = 0;
+    turn(EN_K3, 3);
+    ok &= msg_is("MOMENTARY FULL") && !mom_hd() && mom.n == MOM_N;
+    msg_wait();
+    ok &= mom_hd_is("8 TO RESTORE  [OCT+] KEEP");
+    bad += check("#175 status: 8 values; FULL stays over the status while it shows, the status after it", ok);
+    mom.n = 2; frame();
+    /* release restores exactly */
+    btn_up(B_LFO); frame();
+    ok = TSEL->p[id0] == v0 && TSEL->p[id1] == v1 && !mom.n && !mom_hd() && !mom.st;
+    msg_wait();
+    ok &= !mom_hd();
+    bad += check("#175 status: release restores exactly and the normal BPM / transport header is back", ok);
+    /* keep */
+    btn_down(B_LFO); frame();
+    turn(EN_K1, 5);
+    v0 = TSEL->p[id0];
+    press(B_OCTUP);
+    ok = !mom.n && msg_is("KEPT");
+    msg_wait();
+    ok &= mom_hd_is("KEPT") && mom.st == MOM_ST_KEPT;
+    frames(200);
+    ok &= mom_hd_is("KEPT");
+    btn_up(B_LFO); frame();
+    ok &= !mom_hd() && TSEL->p[id0] == v0 && !mom.kept;
+    btn_down(B_LFO); frame();
+    ok &= mom_hd_is("MOMENTARY  TURN");                                 /* (a fresh hold: ready, not KEPT) */
+    turn(EN_K1, 3); frame();
+    ok &= mom.n == 1u && !mom.kept;
+    btn_up(B_LFO); frame();
+    bad += check("#175 status: OCT+ keeps exactly; KEPT while held, gone on release, never stale on the next hold", ok);
+    /* a short tap still opens LFO */
+    go_home();
+    press(B_LFO);
+    bad += check("#175 status: a short LFO tap still opens its page", !ui.home && cur_page()->fam == FAM_LFO);
+    /* menu / dialog / pages with no momentary clear it */
+    go_home(); frames(400);
+    v0 = TSEL->p[id0];
+    btn_down(B_LFO); frame();
+    turn(EN_K1, 4); msg_wait();
+    ok = mom_hd();
+    ui.menu = 1; frame();
+    ok &= !mom_hd() && !mom.st && !mom.n && TSEL->p[id0] == v0;
+    ui.menu = 0; msg_wait();
+    ok &= mom_hd_is("MOMENTARY  TURN");
+    ui.confirm = CF_CLEAR_SEQ; frame();
+    ok &= !mom_hd() && !mom.st;
+    ui.confirm = 0; msg_wait();
+    ok &= mom_hd_is("MOMENTARY  TURN");
+    bad += check("#175 status: a menu or a dialog clears it (values back), no stale state after", ok);
+    btn_up(B_LFO); frame();
+    go_home();
+    for (k = 0; k < NPAGES && cur_page()->graph != GR_ROLL; k++) { open_family(FAM_SEQ); frame(); }
+    btn_down(B_LFO); frame();
+    bad += check("#175 status: STEP (no momentary knobs): no status", cur_page()->graph == GR_ROLL && !mom_hd());
+    btn_up(B_LFO); frame();
+    {   /* FM6's operator pages: their knobs are fop_knob's (no momentary value), so no status that promises a restore */
+        uint32_t sel0 = song.sel;
+        song.sel = 1;                                  /* T2: FM6 */
+        go_title("OPERATOR"); frame();
+        btn_down(B_LFO); frame(); frame();
+        ok = TSEL->eng_req == ENGI_FM6 && cur_page()->graph == GR_FMOP && !mom.st && !mom_hd();
+        btn_up(B_LFO); frame();
+        go_title("EDIT 1"); frame();
+        btn_down(B_LFO); frame(); frame();
+        ok &= mom.st == MOM_ST_READY;                  /* (FM6's EDIT 1: momentary knobs, the status) */
+        btn_up(B_LFO); frame();
+        song.sel = sel0;
+        bad += check("#175 status: FM6 OPERATOR (knobs not momentary): no status; FM6 EDIT 1: the status", ok);
+    }
+    /* a sound load / a project load / the engine: recomputed, no stale count or KEPT */
+    go_home(); frames(400);
+    btn_down(B_LFO); frame();
+    turn(EN_K1, 6); msg_wait();
+    turn(EN_PRESET, 1); msg_wait();
+    ok = !mom.n && mom.st == MOM_ST_READY && mom_hd_is("MOMENTARY  TURN");
+    turn(EN_K1, 6); press(B_OCTUP); msg_wait();
+    ok &= mom_hd_is("KEPT");
+    turn(EN_PRESET, 1); msg_wait();
+    ok &= !mom.kept && mom_hd_is("MOMENTARY  TURN");
+    turn(EN_K1, 6); msg_wait();
+    ok &= mom.n == 1u;
+    mom_back(0); msg_wait();                           /* (a project load) */
+    ok &= !mom.n && mom_hd_is("MOMENTARY  TURN");
+    btn_up(B_LFO); frame();
+    bad += check("#175 status: a preset / project load recomputes the count and drops KEPT", ok);
+    return bad;
+}
 /* 1.2 (Discussion #135): MENU > ANIM IDLE, the LEDs' idle animation (ui_input.c idle_leds; the picture and the scan:
  * tests/input_test.c). After a minute without panel input it starts (ui_leds then writes none), with the glow as LEDS
  * says; a key or a button held, a knob turned end it and act as ever (the turn changes its value, the key plays);
@@ -9821,6 +9959,7 @@ int main(void)
     bad += test_screen_off();
     bad += test_idle_leds();
     bad += test_momentary();
+    bad += test_momentary_status();
     bad += test_fm6_charts();
     bad += test_fm6_ops();
     bad += test_home_tracks();

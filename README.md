@@ -101,7 +101,9 @@ Their hosted versions are updated independently of this fork's builds and releas
   any white key can hold any effect (hold the key in the layer and turn PRESETS); MENU > FX LATCH makes them toggle,
   so nothing has to stay held
 - **MOMENTARY:** hold LFO and turn a knob on HOME or a sound / FX page; let go of LFO and the value jumps back
-  (OCT+ while holding keeps it)
+  (OCT+ while holding keeps it). While LFO is held the header stays on its state: MOMENTARY TURN (nothing changed yet),
+  then "N TO RESTORE  OCT+ KEEP" (up to 8 values; a value turned again counts once), KEPT after OCT+; prompts and
+  errors show over it, and the BPM and transport come back when LFO is let go
 - **Quick layers:** hold FX, GLO, SCL, EDIT, REC or SEQ for shortcuts on the keys and knobs, or double-tap it to
   keep the layer open; one-step undo (SAVE held); REC on every page; OCT+ confirms, OCT- goes back; what can be
   pressed breathes softly instead of blinking
