@@ -1,5 +1,8 @@
 # Building Felucca
 
+Pull requests and `main` run the [firmware CI checks](.github/CI.md). That guide also
+explains failure diagnostics, dependency pins and tagged/manual release packaging.
+
 The build makes three files in `build/`:
 
 | File | What |
@@ -7,6 +10,9 @@ The build makes three files in `build/`:
 | `felucca.bin` | the firmware app |
 | `loader/ota.bin` | the update loader |
 | `felucca.fwsc` | the installable package (app + loader) |
+
+Development invariants are in [AGENTS.md](AGENTS.md). For repeatable CPU, RAM and
+firmware-size comparisons, follow [Measuring and optimizing Felucca](docs/performance.md).
 
 ## Prerequisites (macOS)
 
@@ -108,9 +114,14 @@ their floating-point originals; without it that test is skipped.
 
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
-cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). After an intended change of
+cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). It runs a second time built as
+the target is, `-Os -fno-vectorize -fno-slp-vectorize` (no SIMD; `-O2` on Apple silicon
+vectorises with NEON and understates engines such as PHYS and WHEEL by up to a third), with
+the same goldens and its own `tests/cpu_baseline_os.txt`: the host count closest to the
+device, for measuring DSP changes. `tests/target_budget.txt` (from the pi32v2 disassembly,
+needs the toolchain) stays the exact, static check. After an intended change of
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
-does the same for the cost files.
+does the same for the cost files (all three).
 
 ## Device diagnostics
 
@@ -140,3 +151,27 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 
 Installing firmware is at your own risk. If an install fails and the FM-1 no longer
 starts, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
+### Package validation and file errors
+
+When given a package, the command-line installer validates its identity, UFW structure,
+file extents, sizes, CRCs and loader headers before opening MIDI ports or sending update
+data. A damaged or unsupported file is a local package error (exit code 2): obtain an
+intact copy of the intended package, or rebuild it with the supported toolchain and SDK
+from [Build](#build). See the [download and checksum guide](.github/CI.md#downloads-and-checksums)
+for release files. Package acceptance alone does not establish compatibility with your
+FM-1 or a successful installation; the installer still checks the device and final identity.
+
+`--force` only overrides the requirement for the Felucca loader marker. Package structure
+and CRC checks still apply. The exact unmodified official V15 file is accepted through its
+pinned SHA-256 digest without `--force`; this exception does not cover arbitrary vendor files.
+
+Device discovery and connection errors occur later: exit code 3 means the FM-1 was not
+found (check the USB data cable and other apps using MIDI), 4 means the connection was lost
+or the device stopped, 5 means a timeout, and 6 means a model or installed-identity mismatch.
+Run `python3 tools/fm1_install.py --help` for the options and complete exit-code list.
+
+If package generation reports `app area is ... B, available ... B`, the app region plus
+the SDK configuration files and headers exceeds the flash boundary. The app fitting its
+own slot is not enough: use the supported SDK files and review the reported sizes under
+[Measuring and optimizing Felucca](docs/performance.md). Keep the package guard enabled.

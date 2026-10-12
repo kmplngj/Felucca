@@ -40,7 +40,7 @@ LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
 CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
-LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$")
+LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$", re.I)
 
 # SDK files of AC79NN_SDK_V1.2.1_2023-12-13 (the tested version)
 SDK_SHA256 = {
@@ -145,6 +145,47 @@ def ldr_wrap(image):
     return ldr_head(crc16(body), 0x20, len(body), 0x41, LOADER_NAME) + body
 
 
+def loader_check(hdr, syms):
+    """Check allocated loader sections and startup symbols against loader.ld's RAM window."""
+    errors, text_start, text_end = [], None, None
+    lo, hi = LOADER_LOAD, LOADER_LOAD + 0x14000
+    for line in hdr.splitlines():
+        p = line.split()
+        if len(p) < 2 or not p[0].isdigit() or not p[1].startswith("."):
+            continue
+        try:
+            size, addr = int(p[2], 16), int(p[3], 16)
+            if size < 0 or addr < 0:
+                raise ValueError
+        except (ValueError, IndexError):
+            errors.append(f"loader: malformed section row: {line.strip()}")
+            continue
+        allocated = p[1] in (".text", ".bss", ".data", ".ram_text") or bool(set(p[4:]) & {"TEXT", "DATA", "BSS"})
+        if allocated and size and not (lo <= addr and addr + size <= hi):
+            errors.append(f"loader: section {p[1]} [{addr:#x}, {addr + size:#x}) is outside RAM [{lo:#x}, {hi:#x})")
+        if p[1] == ".text" and size:
+            text_start = addr
+            text_end = addr + size
+    if text_end is None:
+        errors.append("loader: missing or empty .text section")
+    elif text_start != lo:
+        errors.append(f"loader: .text does not start at {lo:#x}")
+    values = {}
+    for name in ("_start", "_bss_start", "_bss_end"):
+        m = re.search(r"^([0-9a-fA-F]+) .*\s" + name + r"$", syms, re.M)
+        if m:
+            values[name] = int(m.group(1), 16)
+        else:
+            errors.append(f"loader: missing symbol {name}")
+    if "_start" in values and values["_start"] != lo:
+        errors.append(f"loader: _start is not at {lo:#x}")
+    if "_bss_start" in values and "_bss_end" in values:
+        start, end = values["_bss_start"], values["_bss_end"]
+        if not (lo <= start <= end <= hi) or (text_end is not None and start < text_end):
+            errors.append("loader: BSS symbols are outside RAM, reversed or overlap .text")
+    return errors
+
+
 def build_loader():
     LDR.mkdir(parents=True, exist_ok=True)
     src = FW / "loader"
@@ -159,10 +200,9 @@ def build_loader():
                                ("common/bin/objdump", "-h", elf),
                                ("common/bin/objdump", "-t", elf))
     (LDR / "loader.dis").write_text(dis)
-    for ln in hdr.splitlines():     # the loader rewrites the flash: nothing may run from XIP
-        p = ln.split()
-        if len(p) > 4 and p[1].startswith(".") and int(p[3], 16) >= 0x02000000 and int(p[2], 16):
-            raise SystemExit(f"loader: section {p[1]} at {p[3]} is outside RAM")
+    errors = loader_check(hdr, syms)
+    if errors:
+        raise SystemExit("\n".join(errors))
     image = (LDR / "loader.bin").read_bytes()
     if not image or len(image) > 0x14000:
         raise SystemExit("loader: image empty or too big")
@@ -247,6 +287,41 @@ def build_app():
     return bytes(img), syms, dis, rt
 
 
+def objdump_data_row(line):
+    """Recognize pi32v2's ASCII and scalar data displays, checking their byte values."""
+    m = re.match(r"^\s*[0-9a-f]+:\t ((?:[0-9a-f]{2} ){1,8})( {2,}.*)$", line, re.I)
+    if m:
+        ascii_text = "".join(chr(v) if 32 <= v <= 126 else "." for v in bytes.fromhex(m[1]))
+        padding = m[2][:-len(ascii_text)]
+        if m[2].endswith(ascii_text) and len(padding) >= 2 and not padding.strip():
+            return True
+    m = re.match(r"^\s*[0-9a-f]+:\s+((?:[0-9a-f]{2} ){1,4})\s+< (\d+) : (0x[0-9a-f]+) >$", line, re.I)
+    return bool(m and int.from_bytes(bytes.fromhex(m[1]), "little") == int(m[2]) == int(m[3], 16))
+
+
+def disassembly_rows(text, label, empty_ok=False):
+    """Parsed address rows; an empty RAM section needs actual objdump header output."""
+    rows, errors = [], []
+    for line in text.splitlines():
+        m = LINE.match(line)
+        if m and m.group(3).strip():
+            if label == ".ram_text" and re.match(r"^(?:\.\w+|\(bad\)|unknown\b)", m.group(3).strip(), re.I):
+                errors.append(f"{label}: undecoded instruction row: {line.strip()}")
+            rows.append(m)
+        elif label == "app" and objdump_data_row(line):
+            continue                # .text also holds tables; RAM flash-busy code must decode
+        elif re.match(r"^\s*[0-9a-f]+:", line, re.I):
+            errors.append(f"{label}: malformed instruction row: {line.strip()}")
+    if not rows:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        header = any(re.fullmatch(r".*file format ELF32-pi32v2", line) for line in lines)
+        header_only = all(re.fullmatch(r".*file format ELF32-pi32v2", line) or
+                          line == "Disassembly of section .ram_text:" for line in lines)
+        if not (empty_ok and header and header_only and not errors):
+            errors.append(f"missing or malformed {label} disassembly")
+    return rows, errors
+
+
 def check(img, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -254,17 +329,17 @@ def check(img, syms, dis, rt):
         errors.append(f"_start is not at {APP_XIP:#x}")
     if img[:4] != bytes.fromhex("04818000"):
         errors.append(f"image starts with {img[:4].hex()}, not the entry stub")
+    app_rows, app_errors = disassembly_rows(dis, "app")
+    rt_rows, rt_errors = disassembly_rows(rt, ".ram_text", empty_ok=True)
+    errors += app_errors + rt_errors
     rt_calls = [ln for ln in rt.splitlines() if re.search(r"\bcall\b", ln)]
     if rt_calls:                    # RAM code runs with the flash off: no calls into XIP
         errors.append(f".ram_text contains calls: {rt_calls[:3]}")
-    else:
-        notes.append(f".ram_text: {len([ln for ln in rt.splitlines() if LINE.match(ln)])} insns, no calls")
-    for ln in dis.splitlines():     # nothing may call or load an address in the chip ROM
-        mm = LINE.match(ln)
-        if not mm:
-            continue
-        for v in re.findall(r"= (-?\d+) <|call -?\d+ <[^:>]*: ([0-9a-f]+) >", mm.group(3)):
-            val = (int(v[0]) & 0xFFFFFFFF) if v[0] else int(v[1], 16) & 0xFFFFFFFF
+    elif not rt_errors:
+        notes.append(f".ram_text: {len(rt_rows)} insns, no calls")
+    for mm in app_rows:             # nothing may call or load an address in the chip ROM
+        for v in re.findall(r"(?<![<>=!+*/%&|^-])=\s*(-?(?:0x[0-9a-f]+|\d+))\b|\bcall -?\d+ <[^:>]*: ([0-9a-f]+) >", mm.group(3), re.I):
+            val = (int(v[0], 16 if "0x" in v[0].lower() else 10) & 0xFFFFFFFF) if v[0] else int(v[1], 16) & 0xFFFFFFFF
             if 0xFFC00000 <= val < 0xFFD00000:
                 errors.append(f"reference to ROM address {val:#010x}")
     if len(img) > APP_SLOT:
@@ -272,12 +347,26 @@ def check(img, syms, dis, rt):
 
     def sym(name):
         mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)
-        return int(mm.group(1), 16) if mm else 0
-    region = ld_regions()
+        if not mm:
+            errors.append(f"missing symbol {name}")
+            return None
+        return int(mm.group(1), 16)
+    try:
+        region = ld_regions()
+    except (OSError, ValueError) as e:
+        errors.append(f"app.ld: invalid memory regions: {e}")
+        return errors, notes
+    if any(name not in region or region[name][1] <= 0 for name in ("RAM", "POOL")):
+        errors.append("app.ld: missing or empty RAM/POOL region")
+        return errors, notes
     ram_org, ram_len = region["RAM"]
-    pool_len = region["POOL"][1]
-    bss = sym("_bss_end") - ram_org
-    pool = sym("_pool_end") - sym("_pool_start")
+    pool_org, pool_len = region["POOL"]
+    bss_end, pool_start, pool_end = sym("_bss_end"), sym("_pool_start"), sym("_pool_end")
+    if None in (bss_end, pool_start, pool_end):
+        return errors, notes
+    bss, pool = bss_end - ram_org, pool_end - pool_start
+    if bss < 0 or pool_start != pool_org or pool < 0:
+        errors.append("RAM/POOL symbols are outside their regions or reversed")
     notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of {ram_len}; pool {pool} B of {pool_len}")
     if region["RAM"][0] + ram_len != region["POOL"][0]:
         errors.append("app.ld: POOL does not start where RAM ends")
@@ -309,7 +398,7 @@ def mmio_check():
         return re.sub(r"//[^\n]*", "", s)
     defs = {}
     for h in sorted((FW / "hal").glob("*.h")):
-        for m in re.finditer(r"^#define\s+(\w+)(?:\([^)]*\))?\s+(.*)$", strip(h.read_text()), re.M):
+        for m in re.finditer(r"^#define\s+(\w+)(?:\([^)]*\))?\s+(.*)$", strip(h.read_text()).replace("\\\n", " "), re.M):
             defs[m.group(1)] = m.group(2)
     regs = {n for n, b in defs.items() if re.search(r"\bvolatile\b", b)}
     while True:                                   # macros built on register macros (FM1_WR_LIMIT_H -> FM1_X2)
