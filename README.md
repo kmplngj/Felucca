@@ -23,6 +23,8 @@ Multi-engine synthesizer firmware for the M-VAVE FM-1. Please report what you fi
 - Editor: [web editor](https://hugelton.github.io/Felucca/webapp/editor/); its development has moved to
   [Felucca-WebApp](https://github.com/hugelton/Felucca-WebApp)
 - Build: [BUILDING.md](BUILDING.md)
+- Diagnostics: [collect CDC console reports](docs/diagnostics.md) with an explicitly selected port;
+  requires USB SERIAL on. Real FM-1 load and collector-overhead validation remains pending.
 
 <a href="https://hugelton.itch.io/felucca"><img src="https://static.itch.io/images/badge-color.svg" alt="Available on itch.io" width="74"></a>
 
