@@ -47,10 +47,8 @@ jobs:
           set -euo pipefail
           # Upload paths share build/ as their root, preserving release-VERSION/.
           mv "downloaded/release-$VERSION" release
-          python3 tools/ci.py package "$VERSION"
-          (cd downloaded && sha256sum -c "felucca-$VERSION-release.tar.gz.sha256")
-          cp "downloaded/felucca-$VERSION-release.tar.gz" release/
-          cp "downloaded/felucca-$VERSION-release.tar.gz.sha256" release/
+          python3 tools/ci.py stage-release "$VERSION"
+          (cd assets && sha256sum -c SHA256SUMS)
           # Preserve an existing release and its assets. Never silently replace a package.
           existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[].tag_name')
           if printf '%s\n' "$existing" | grep -Fxq "$GITHUB_REF_NAME"; then
@@ -59,7 +57,4 @@ jobs:
           fi
           args=(--verify-tag --generate-notes --title "Felucca $VERSION")
           if [[ "$VERSION" == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" "${args[@]}" \
-            "release/felucca-$VERSION.fwsc" "release/felucca-$VERSION-app.bin" \
-            "release/felucca-$VERSION-release.tar.gz" "release/felucca-$VERSION-release.tar.gz.sha256" release/SHA256SUMS \
-            release/BUILD-PROVENANCE.json release/LICENSE release/LICENSING.md release/ATTRIBUTION.txt
+          gh release create "$GITHUB_REF_NAME" "${args[@]}" assets/*

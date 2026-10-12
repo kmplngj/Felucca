@@ -3,6 +3,7 @@
 """Strict CI input, coverage and release checks; no device access or baseline updates."""
 import argparse
 from datetime import datetime, timezone
+import gzip
 import hashlib
 import json
 import os
@@ -129,6 +130,28 @@ def preflight():
         raise ValueError("CI must never update goldens or budgets")
 
 
+def write_checksums(root):
+    files = sorted(p for p in root.rglob("*") if p.is_file() and p != root / "SHA256SUMS")
+    (root / "SHA256SUMS").write_text("".join(
+        f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}\n" for p in files))
+
+
+def verify_checksums(root):
+    # Recompute every checksum, and require every distributable file to be covered.
+    expected = sorted(str(p.relative_to(root)) for p in root.rglob("*")
+                      if p.is_file() and p != root / "SHA256SUMS")
+    entries = []
+    for line in (root / "SHA256SUMS").read_text().splitlines():
+        digest, separator, name = line.partition("  ")
+        if not separator or not name or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError(f"malformed release checksum line: {line!r}")
+        if name not in expected or hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
+            raise ValueError(f"invalid release checksum: {name}")
+        entries.append(name)
+    if sorted(entries) != expected:
+        raise ValueError("release checksums do not cover exactly all distributed files")
+
+
 def package(root, value):
     version(value)
     required = [f"felucca-{value}.fwsc", f"felucca-{value}-app.bin", "LICENSE", "LICENSING.md",
@@ -137,17 +160,7 @@ def package(root, value):
     for name in required:
         if not (root / name).is_file() or not (root / name).stat().st_size:
             raise ValueError(f"release file missing or empty: {name}")
-    # Recompute every checksum, and require every distributable file to be covered.
-    expected = sorted(str(p.relative_to(root)) for p in root.rglob("*")
-                      if p.is_file() and p != root / "SHA256SUMS")
-    entries = []
-    for line in (root / "SHA256SUMS").read_text().splitlines():
-        digest, name = line.split("  ", 1)
-        if name not in expected or hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
-            raise ValueError(f"invalid release checksum: {name}")
-        entries.append(name)
-    if sorted(entries) != expected:
-        raise ValueError("release checksums do not cover exactly all distributed files")
+    verify_checksums(root)
     metadata = json.loads((root / "BUILD-PROVENANCE.json").read_text())
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     if metadata.get("revision") != revision or metadata.get("version") != value:
@@ -166,21 +179,54 @@ def package(root, value):
 def finalize(value):
     version(value)
     root = build.OUT / f"release-{value}"
-    shutil.copy(build.OUT / "ci/provenance.json", root / "BUILD-PROVENANCE.json")
-    files = sorted(p for p in root.rglob("*") if p.is_file() and p != root / "SHA256SUMS")
-    (root / "SHA256SUMS").write_text("".join(
-        f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}\n" for p in files))
+    metadata = json.loads((build.OUT / "ci/provenance.json").read_text())
+    # Keep the real build clock in diagnostics, outside reproducible release content.
+    metadata.pop("built_at_utc", None)
+    (root / "BUILD-PROVENANCE.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    write_checksums(root)
     package(root, value)
-    with tarfile.open(build.OUT / f"felucca-{value}-release.tar.gz", "w:gz") as archive:
-        archive.add(root, arcname=f"felucca-{value}")
+    epoch = int(subprocess.check_output(["git", "show", "-s", "--format=%ct", "HEAD"], text=True))
+
+    def normalize(info):
+        info.uid = info.gid = 0
+        info.uname = info.gname = ""
+        info.mtime = epoch
+        info.mode = 0o755 if info.isdir() else 0o644
+        info.pax_headers = {}
+        return info
+
     bundle = build.OUT / f"felucca-{value}-release.tar.gz"
+    with bundle.open("wb") as output, gzip.GzipFile(filename="", fileobj=output, mode="wb", mtime=epoch) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
+            for path in [root, *sorted(root.rglob("*"))]:
+                archive.add(path, arcname=str(Path(f"felucca-{value}") / path.relative_to(root)),
+                            recursive=False, filter=normalize)
     bundle.with_suffix(bundle.suffix + ".sha256").write_text(
         f"{hashlib.sha256(bundle.read_bytes()).hexdigest()}  {bundle.name}\n")
 
 
+def stage_release(root, bundles, destination, value):
+    """Match GitHub's flat release asset names, including every third-party license."""
+    package(root, value)
+    bundle = bundles / f"felucca-{value}-release.tar.gz"
+    sidecar = bundle.with_suffix(bundle.suffix + ".sha256")
+    expected = f"{hashlib.sha256(bundle.read_bytes()).hexdigest()}  {bundle.name}\n"
+    if sidecar.read_text() != expected:
+        raise ValueError("invalid release archive checksum")
+    files = sorted(p for p in root.rglob("*") if p.is_file() and p != root / "SHA256SUMS")
+    files += [bundle, sidecar]
+    if len({p.name for p in files}) != len(files) or any(p.name == "SHA256SUMS" for p in files):
+        raise ValueError("release asset filenames collide after flattening")
+    destination.mkdir()
+    for path in files:
+        shutil.copyfile(path, destination / path.name)
+    write_checksums(destination)
+    verify_checksums(destination)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["version", "sdk", "preflight", "provenance", "verify-tests", "finalize", "package"])
+    parser.add_argument("command", choices=["version", "sdk", "preflight", "provenance", "verify-tests", "finalize", "package", "stage-release"])
     parser.add_argument("value", nargs="?")
     args = parser.parse_args()
     if args.command == "version":
@@ -197,6 +243,8 @@ def main():
         finalize(args.value)
     elif args.command == "package":
         package(Path("release"), args.value)
+    elif args.command == "stage-release":
+        stage_release(Path("release"), Path("downloaded"), Path("assets"), args.value)
 
 
 if __name__ == "__main__":

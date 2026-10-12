@@ -19,7 +19,7 @@ contributors. This change does not alter branch protection or repository setting
 | Robustness | ASan/UBSan and fixed-seed parser/storage/sample fuzz runs |
 | References | Pinned DaisySP comparison and checked-in CC0 samples |
 | Web/emulator | Node tests and Emscripten build, followed by native/WASM song equality and emulator checks |
-| Delivery | Package byte equality from a second clean checkout; no tracked changes or baseline updates |
+| Delivery | Package byte equality from a second clean checkout; release archive equality for release builds; no tracked changes or baseline updates |
 | Release | Required files, attribution and every license, SHA-256 coverage of every bundle file, archive checksum |
 
 `tools/ci.py verify-tests` rejects skipped local optional suites, absent test
@@ -56,6 +56,10 @@ Node, DaisySP and sample hashes. Action inputs pin Python/Node minor versions,
 not every runner OS package or patch update. Reproducibility is checked between
 two checkouts in one run; cross-runner byte identity is not promised. Updates to
 these pins must pass the same goldens and package checks without blanket updates.
+Diagnostics keep the actual `built_at_utc` clock. Release provenance omits that
+clock; tar/gzip metadata uses the source commit timestamp, with normalized
+ownership and permissions. Rebuilding unchanged content in the same environment
+therefore produces the same release archive even when local file metadata changes.
 
 ## Debug artifacts and cost
 
@@ -86,6 +90,10 @@ A separate job downloads and checks the validated bundle before receiving
 `contents: write` publication privileges. It publishes the FWSC, app,
 `SHA256SUMS`, provenance, attribution, license documents and a tar.gz containing
 all files and third-party license texts. The archive has its own `.sha256` file.
+Every third-party license is also uploaded as a standalone release asset. GitHub
+flattens asset filenames, so the release-page `SHA256SUMS` covers those flat names,
+including the archive and sidecar. The manifest inside the archive instead covers
+the unpacked directory structure, including `LICENSES/` paths.
 Suffix versions become prereleases; an existing release is preserved without
 replacing its assets. Nothing flashes a device or publishes an installer/Pages.
 

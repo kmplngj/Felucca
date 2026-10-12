@@ -3,8 +3,10 @@
 """Failure cases for CI coverage, dependency integrity and distributed release files."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -68,28 +70,43 @@ class Checks(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "required test output missing"):
                 ci.verify_tests(log)
 
-    def release(self):
+    def release(self, root=None):
+        root = root or self.root
+        root.mkdir(parents=True, exist_ok=True)
         for name in ("felucca-1.6.fwsc", "felucca-1.6-app.bin", "LICENSE", "LICENSING.md",
                      "ATTRIBUTION.txt", "BUILD-PROVENANCE.json"):
-            (self.root / name).write_text(name)
+            (root / name).write_text(name)
         raw = bytearray(ci.fm1_install.BLOCKS * ci.fm1_install.BLK)
         for i in range(ci.fm1_install.BLOCKS):
             raw[i * ci.fm1_install.BLK + ci.fm1_install.KEEP] = 0x7D
         for i, char in enumerate("FM-1_916"):
             raw[i * ci.fm1_install.BLK + ci.fm1_install.KEEP] = ord(char) + i + 1
-        (self.root / "felucca-1.6.fwsc").write_bytes(raw + ci.fm1_install.LOADER_MARK)
+        (root / "felucca-1.6.fwsc").write_bytes(raw + ci.fm1_install.LOADER_MARK)
         revision = ci.subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        (self.root / "BUILD-PROVENANCE.json").write_text(json.dumps({"revision": revision, "version": "1.6"}))
+        (root / "BUILD-PROVENANCE.json").write_text(json.dumps({"revision": revision, "version": "1.6"}))
         for source in (ci.build.SRC / "LICENSES").glob("*.txt"):
-            target = self.root / "LICENSES" / source.name
+            target = root / "LICENSES" / source.name
             target.parent.mkdir(exist_ok=True)
             target.write_bytes(source.read_bytes())
-        self.checksums()
+        self.checksums(root)
 
-    def checksums(self):
-        files = sorted(p for p in self.root.rglob("*") if p.is_file() and p.name != "SHA256SUMS")
-        (self.root / "SHA256SUMS").write_text("".join(
-            f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(self.root)}\n" for p in files))
+    def checksums(self, root=None):
+        root = root or self.root
+        files = sorted(p for p in root.rglob("*") if p.is_file() and p != root / "SHA256SUMS")
+        (root / "SHA256SUMS").write_text("".join(
+            f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}\n" for p in files))
+
+    def bundle(self):
+        output = self.root / "build"
+        root = output / "release-1.6"
+        self.release(root)
+        (output / "ci").mkdir()
+        metadata = json.loads((root / "BUILD-PROVENANCE.json").read_text())
+        metadata["built_at_utc"] = "2026-10-12T09:00:00+00:00"
+        (output / "ci/provenance.json").write_text(json.dumps(metadata))
+        with patch.object(ci.build, "OUT", output):
+            ci.finalize("1.6")
+        return output, root
 
     def test_release_corruption_and_omitted_licenses_fail(self):
         self.release()
@@ -136,6 +153,67 @@ class Checks(unittest.TestCase):
         (self.root / "LICENSES/SHA256SUMS").write_text("extra manifest")
         with self.assertRaisesRegex(ValueError, "exactly all distributed files"):
             ci.package(self.root, "1.6")
+
+    def test_malformed_checksum_lines_have_clear_errors(self):
+        self.release()
+        for line in ("", "abc", "0" * 64 + " file", "0" * 63 + "  file", "G" * 64 + "  file", "0" * 64 + "  "):
+            (self.root / "SHA256SUMS").write_text(line + "\n")
+            with self.subTest(line=line), self.assertRaisesRegex(ValueError, "malformed release checksum line"):
+                ci.package(self.root, "1.6")
+
+    def test_archive_is_identical_after_build_clock_and_file_metadata_changes(self):
+        output, root = self.bundle()
+        bundle = output / "felucca-1.6-release.tar.gz"
+        original = bundle.read_bytes()
+        diagnostic = output / "ci/provenance.json"
+        metadata = json.loads(diagnostic.read_text())
+        metadata["built_at_utc"] = "2026-10-12T10:00:00+00:00"
+        diagnostic.write_text(json.dumps(metadata))
+        for path in [root, *root.rglob("*")]:
+            os.utime(path, (1_234_567, 1_234_567))
+            path.chmod(0o700 if path.is_dir() else 0o600)
+        with patch.object(ci.build, "OUT", output):
+            ci.finalize("1.6")
+        self.assertEqual(bundle.read_bytes(), original)
+        self.assertEqual(json.loads(diagnostic.read_text())["built_at_utc"], metadata["built_at_utc"])
+        self.assertNotIn("built_at_utc", json.loads((root / "BUILD-PROVENANCE.json").read_text()))
+        epoch = int(ci.subprocess.check_output(["git", "show", "-s", "--format=%ct", "HEAD"], text=True))
+        self.assertEqual(int.from_bytes(original[4:8], "little"), epoch)
+        self.assertEqual(original[3] & 8, 0)  # No output path in the gzip header.
+        with tarfile.open(bundle) as archive:
+            for info in archive.getmembers():
+                self.assertEqual((info.uid, info.gid, info.uname, info.gname, info.mtime), (0, 0, "", "", epoch))
+                self.assertEqual(info.mode, 0o755 if info.isdir() else 0o644)
+
+    def test_release_page_assets_include_flat_licenses_and_valid_checksums(self):
+        output, root = self.bundle()
+        assets = self.root / "assets"
+        ci.stage_release(root, output, assets, "1.6")
+        for source in (ci.build.SRC / "LICENSES").glob("*.txt"):
+            self.assertEqual((assets / source.name).read_bytes(), source.read_bytes())
+        ci.verify_checksums(assets)
+        self.assertNotIn("LICENSES/", (assets / "SHA256SUMS").read_text())
+        self.assertIn("felucca-1.6-release.tar.gz", (assets / "SHA256SUMS").read_text())
+        with tarfile.open(assets / "felucca-1.6-release.tar.gz") as archive:
+            manifest = archive.extractfile("felucca-1.6/SHA256SUMS").read().decode()
+            self.assertIn("LICENSES/Apache-2.0.txt", manifest)
+
+    def test_release_page_staging_rejects_corrupt_archive(self):
+        output, root = self.bundle()
+        (output / "felucca-1.6-release.tar.gz").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "invalid release archive checksum"):
+            ci.stage_release(root, output, self.root / "assets", "1.6")
+
+    def test_release_page_staging_rejects_colliding_asset_names(self):
+        output, root = self.bundle()
+        for name in ("LICENSE", "SHA256SUMS"):
+            path = root / "LICENSES" / name
+            path.write_text("collision")
+            with patch.object(ci.build, "OUT", output):
+                ci.finalize("1.6")
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "filenames collide"):
+                ci.stage_release(root, output, self.root / "assets", "1.6")
+            path.unlink()
 
 
 if __name__ == "__main__":

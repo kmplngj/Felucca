@@ -158,7 +158,14 @@ jobs:
           git diff --exit-code
       - name: Verify and archive release bundle
         if: inputs.version != ''
-        run: python3 tools/ci.py finalize "$VERSION"
+        run: |
+          python3 tools/ci.py finalize "$VERSION"
+          (
+            cd "$RUNNER_TEMP/reproduce"
+            python3 tools/ci.py provenance
+            python3 tools/ci.py finalize "$VERSION"
+          )
+          cmp "build/felucca-$VERSION-release.tar.gz" "$RUNNER_TEMP/reproduce/build/felucca-$VERSION-release.tar.gz"
       - name: Upload diagnostics, including failed runs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
