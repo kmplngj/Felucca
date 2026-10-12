@@ -33,8 +33,9 @@ int main(int argc, char **argv)
         uint32_t pi;
         for (pi = 0; pi < ENG_MACRO.npresets; pi++) {
             web_test_macro(pi); render(100);
+            rec = 1;
             web_keys((1u << 7) | (1u << 11) | (1u << 14) | (1u << 19)); render(300);
-            rec = 1; render(400);
+            render(400);
             web_enc(EN_K1, 20); render(200);
             web_enc(EN_K2, -20); render(200);
             web_keys(0); render(1000);

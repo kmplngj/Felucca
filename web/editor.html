@@ -1773,7 +1773,7 @@ function makeMockDevice(opt = {}) {
         E("MODE", ["ONE", "GATE", "LOOP"], 0), E("REV", ["OFF", "ON"], 0), D("DCAY", F.TIME, 0, 127, 127), D("TONE", F.INT, 0, 127, 127)],
       presets: [P("CHOP", [0, 2, 0, 0, 0, 0, 127, 127], [0, 127, 127, 30], 0, 9), P("STUTTER", [0, 1, 0, 0, 1, 0, 90, 110], [0, 127, 127, 12], 0, 10)] },
   ];
-  ENG.push({ name: "MACRO", titles: ["OSC", "TONE"], edit: [E("SHAPE", ["WAVE", "FOLD", "FBFM"], 0),
+  ENG.push({ name: "MACRO", titles: ["OSC", "TONE"], edit: [E("SHAPE", ["WAVE", "FOLD", "FBFM", "CSAW", "MORPH", "SAW SQUARE", "BUZZ", "SQUARE SUB", "SAW SUB", "SQUARE SYNC", "SAW SYNC", "TRIPLE SAW", "TRIPLE SQR", "TRIPLE TRI", "TRIPLE SINE", "RING", "SWARM", "SAW COMB", "TOY", "ZLPF", "ZPKF", "ZBPF", "ZHPF", "VOSIM", "VOWEL", "VOWEL FOF", "HARMONICS", "FM", "CHAOTIC FM", "PLUCKED", "BOWED", "BLOWN", "FLUTE", "BELL", "METAL DRUM", "KICK", "CYMBAL", "SNARE", "WAVETABLE", "WAVE MAP", "WAVE CHORD", "NOISE", "TWIN PEAKS", "CLOCK NOISE", "CLOUD", "PARTICLES", "QPSK", "QUESTION"], 0),
     D("TIMBRE", F.PCT, 0, 127, 64), D("COLOR", F.PCT, 0, 127, 64), D("TUNE", F.SEMI, -24, 24, 0),
     D("CUT", F.CUTOFF, 0, 127, 110), D("RES", F.PCT, 0, 127, 8), D("DRIVE", F.PCT, 0, 127, 0), D("FINE", F.INT, -50, 50, 0, null, "ct")],
     presets: [P("WAVE SCAN", [0, 40, 64, 0, 110, 8, 0, 0], [10, 65, 100, 45], 0, 5),
@@ -1782,6 +1782,52 @@ function makeMockDevice(opt = {}) {
       P("FOLD PAD", [1, 45, 96, 0, 78, 15, 0, 4], [65, 80, 105, 80], 0, 5),
       P("FBFM BELL", [2, 50, 76, 0, 115, 5, 0, 0], [0, 85, 0, 70], 0, 7),
       P("FBFM BASS", [2, 72, 64, -12, 65, 15, 5, 0], [0, 50, 75, 25], 1, 2)] });
+  // The appended Braids bank preserves the six existing preset indices.
+  ENG[14].presets.push(P("CSAW", [3, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("MORPH", [4, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SAW SQUARE", [5, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("BUZZ", [6, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SQUARE SUB", [7, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SAW SUB", [8, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SQUARE SYNC", [9, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SAW SYNC", [10, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("TRIPLE SAW", [11, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("TRIPLE SQR", [12, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("TRIPLE TRI", [13, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("TRIPLE SINE", [14, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("RING", [15, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SWARM", [16, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SAW COMB", [17, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("TOY", [18, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("ZLPF", [19, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("ZPKF", [20, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("ZBPF", [21, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("ZHPF", [22, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("VOSIM", [23, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("VOWEL", [24, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("VOWEL FOF", [25, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("HARMONICS", [26, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("FM", [27, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("CHAOTIC FM", [28, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("PLUCKED", [29, 64, 64, 0, 110, 8, 0, 0], [0, 85, 0, 45], 0, 5));
+  ENG[14].presets.push(P("BOWED", [30, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("BLOWN", [31, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("FLUTE", [32, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("BELL", [33, 64, 64, 0, 110, 8, 0, 0], [0, 85, 0, 45], 0, 5));
+  ENG[14].presets.push(P("METAL DRUM", [34, 64, 64, 0, 110, 8, 0, 0], [0, 85, 0, 45], 0, 5));
+  ENG[14].presets.push(P("KICK", [35, 64, 64, 0, 110, 8, 0, 0], [0, 85, 0, 45], 0, 5));
+  ENG[14].presets.push(P("CYMBAL", [36, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("SNARE", [37, 64, 64, 0, 110, 8, 0, 0], [0, 85, 0, 45], 0, 5));
+  ENG[14].presets.push(P("WAVETABLE", [38, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("WAVE MAP", [39, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("WAVE CHORD", [40, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("NOISE", [41, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("TWIN PEAKS", [42, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("CLOCK NOISE", [43, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("CLOUD", [44, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("PARTICLES", [45, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("QPSK", [46, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
+  ENG[14].presets.push(P("QUESTION", [47, 64, 64, 0, 110, 8, 0, 0], [0, 85, 100, 45], 0, 5));
   const FM6_E = ENG.findIndex((e) => e.name === "FM6"), FM6_OWN = FM6.FACTORY_PK.length, DRUM_E = ENG.findIndex((e) => e.name === "DRUM");
   /* factory PATTERNS[] (engines.c; the device loads them from SAVE > PHRASES, presets only suggest one): absolute
      notes, 0 rest; flags 1 accent, 2 slide, 4 tie (holds the previous note) */
