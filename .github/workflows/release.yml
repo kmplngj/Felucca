@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to validate (artifact only; does not publish)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+  publish:
+    needs: validate
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-${{ github.run_id }}
+          path: downloaded
+      - name: Verify downloaded bundle and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Upload paths share build/ as their root, preserving release-VERSION/.
+          mv "downloaded/release-$VERSION" release
+          python3 tools/ci.py package "$VERSION"
+          (cd downloaded && sha256sum -c "felucca-$VERSION-release.tar.gz.sha256")
+          cp "downloaded/felucca-$VERSION-release.tar.gz" release/
+          cp "downloaded/felucca-$VERSION-release.tar.gz.sha256" release/
+          # Preserve an existing release and its assets. Never silently replace a package.
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[].tag_name')
+          if printf '%s\n' "$existing" | grep -Fxq "$GITHUB_REF_NAME"; then
+            echo '::notice::Release already exists; no assets were replaced.'
+            exit 0
+          fi
+          args=(--verify-tag --generate-notes --title "Felucca $VERSION")
+          if [[ "$VERSION" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" "${args[@]}" \
+            "release/felucca-$VERSION.fwsc" "release/felucca-$VERSION-app.bin" \
+            "release/felucca-$VERSION-release.tar.gz" "release/felucca-$VERSION-release.tar.gz.sha256" release/SHA256SUMS \
+            release/BUILD-PROVENANCE.json release/LICENSE release/LICENSING.md release/ATTRIBUTION.txt

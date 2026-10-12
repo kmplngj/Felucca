@@ -1,0 +1,218 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: Firmware validation
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Empty for development, otherwise the build.py release version
+        default: ''
+        type: string
+    outputs:
+      version:
+        value: ${{ jobs.build.outputs.version }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  workflow-checks:
+    name: Workflow and CI helper checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate workflows and CI failure cases
+        run: |
+          set -o pipefail
+          mkdir -p build/ci
+          curl -fL --retry 3 -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' | (cd "$RUNNER_TEMP" && sha256sum -c -)
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" 2>&1 | tee build/ci/actionlint.log
+          python3 -m unittest discover -s tests -p ci_test.py -v 2>&1 | tee build/ci/helper-tests.log
+      - name: Upload workflow diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: workflow-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: build/ci/
+  build:
+    name: Target, host and emulator
+    needs: workflow-checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      VERSION: ${{ inputs.version }}
+      CC: clang
+      SANITIZE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate version and record checkout
+        id: version
+        run: |
+          mkdir -p build/ci
+          git show -s --format=fuller HEAD > build/ci/checkout.txt
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${VERSION#v}"; fi
+          if [ -n "$VERSION" ]; then python3 tools/ci.py version "$VERSION"; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          {
+            echo "JIELI_TOOLCHAIN=$RUNNER_TEMP/jieli/toolchain"
+            echo "AC79_SDK=$RUNNER_TEMP/sdk"
+            echo "DAISYSP=$RUNNER_TEMP/DaisySP"
+            echo "EMSDK=$RUNNER_TEMP/emsdk"
+          } >> "$GITHUB_ENV"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install pinned image-generation dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
+          python3 -m pip install -r tools/ci-requirements.txt
+      - name: Cache target inputs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ${{ runner.temp }}/jieli
+            ${{ runner.temp }}/sdk
+          key: target-${{ runner.os }}-${{ runner.arch }}-20260730.1-${{ hashFiles('tools/get_toolchain.sh', 'tools/ci.py', 'tools/build.py') }}
+      - name: Fetch and verify target inputs
+        run: |
+          set -o pipefail
+          {
+            if [ ! -x "$JIELI_TOOLCHAIN/pi32v2/bin/clang" ]; then
+              sh tools/get_toolchain.sh "$RUNNER_TEMP/jieli"
+            fi
+            python3 tools/ci.py sdk
+          } 2>&1 | tee build/ci/dependencies.log
+      - name: Pin Emscripten and DaisySP reference sources
+        run: |
+          set -o pipefail
+          {
+            git init "$EMSDK"
+            git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
+            git -C "$EMSDK" fetch --depth 1 origin dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+            git -C "$EMSDK" checkout --detach FETCH_HEAD
+            "$EMSDK/emsdk" install 6.0.11
+            "$EMSDK/emsdk" activate 6.0.11
+            source "$EMSDK/emsdk_env.sh"
+            echo "$EMSDK/upstream/emscripten" >> "$GITHUB_PATH"
+            echo "EM_CONFIG=$EM_CONFIG" >> "$GITHUB_ENV"
+            git init "$DAISYSP"
+            git -C "$DAISYSP" remote add origin https://github.com/electro-smith/DaisySP.git
+            git -C "$DAISYSP" fetch --depth 1 origin 2c72eaf9eac5fc0dca1919d65d606da907832618
+            git -C "$DAISYSP" checkout --detach FETCH_HEAD
+          } 2>&1 | tee build/ci/reference-dependencies.log
+      - name: Check prerequisites and capture provenance
+        run: |
+          set -o pipefail
+          python3 tools/ci.py preflight 2>&1 | tee build/ci/preflight.log
+          python3 tools/ci.py provenance
+      - name: Target build and resource guards
+        run: |
+          set -o pipefail
+          ulimit -n 8192
+          if [ -n "$VERSION" ]; then
+            ./build.sh --release "$VERSION" 2>&1 | tee build/ci/build.log
+            cp "build/felucca-$VERSION.fwsc" build/felucca.fwsc
+          else
+            ./build.sh 2>&1 | tee build/ci/build.log
+          fi
+          test -s build/felucca.dis
+      - name: Host, sanitizer, web and emulator tests
+        run: |
+          set -o pipefail
+          sh tests/run_tests.sh 2>&1 | tee build/ci/tests.log
+          python3 tools/ci.py verify-tests build/ci/tests.log
+      - name: Reproduce package from a clean checkout
+        run: |
+          set -o pipefail
+          # Local clone preserves this exact PR merge/tag commit and tracked sample assets.
+          git clone --no-local . "$RUNNER_TEMP/reproduce"
+          (
+            cd "$RUNNER_TEMP/reproduce"
+            if [ -n "$VERSION" ]; then ./build.sh --release "$VERSION"; else ./build.sh; fi
+          ) 2>&1 | tee build/ci/reproduce.log
+          package=felucca.fwsc
+          if [ -n "$VERSION" ]; then package="felucca-$VERSION.fwsc"; fi
+          cmp "build/$package" "$RUNNER_TEMP/reproduce/build/$package"
+          sha256sum "build/$package" | tee build/ci/package.sha256
+          git diff --exit-code
+      - name: Verify and archive release bundle
+        if: inputs.version != ''
+        run: python3 tools/ci.py finalize "$VERSION"
+      - name: Upload diagnostics, including failed runs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            build/ci/
+            build/*.elf
+            build/*.dis
+            build/*.map
+            build/*.sym
+            build/loader/*.elf
+            build/loader/*.dis
+            build/host/*.wav
+            build/host/asan/*.log
+            build/ui_new/**/*.png
+            build/ui_fm4/**/*.png
+            build/reverb_demo/*.wav
+            build/fm6_demo/*.wav
+      - name: Upload validated firmware
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: firmware-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            build/felucca*.fwsc
+            build/felucca.bin
+            build/ci/provenance.json
+            build/ci/package.sha256
+            LICENSE
+            LICENSING.md
+            LICENSES/
+            assets/samples-cc0/ATTRIBUTION.txt
+      - name: Upload validated release
+        if: inputs.version != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            build/release-${{ env.VERSION }}/
+            build/felucca-${{ env.VERSION }}-release.tar.gz
+            build/felucca-${{ env.VERSION }}-release.tar.gz.sha256
+      - name: Summarize validation and limits
+        if: always()
+        run: |
+          {
+            echo '### Felucca firmware validation'
+            echo "Result: ${{ job.status }}. Diagnostics retain available outputs for 14 days."
+            echo 'Required: target/resource guards, host goldens and engine switches, ASan/UBSan fuzz, DaisySP, web, native/WASM comparison, package reproducibility.'
+            echo 'Linux host instruction counts are unavailable; ns/sample is informational. Target budgets are static estimates. FM-1 audio deadlines, USB/MIDI, panel behavior and flashing remain device checks.'
+            echo 'Tagged publication is separate from this read-only build job.'
+          } >> "$GITHUB_STEP_SUMMARY"
