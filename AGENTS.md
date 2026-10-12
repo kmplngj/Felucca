@@ -1,0 +1,131 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+# Felucca development guide
+
+Felucca is bare-metal synth firmware for the M-VAVE FM-1 (JieLi AC791N / pi32v2).
+Develop for the actual JieLi Clang 4.0.1 toolchain, its memory map, and audio deadlines.
+Host tests and the browser emulator compile the real DSP sources against simulated hardware.
+
+## Start here
+
+1. Check the branch and working tree; preserve changes belonging to other work.
+2. Read the relevant sources and the documents below before changing behavior.
+3. For an optimization, capture a baseline from the unchanged revision, change one cause,
+   and repeat the same measurements. Report bytes and timing with their provenance.
+
+| Before you… | Read |
+| --- | --- |
+| Build, generate assets, or run tests | [BUILDING.md](BUILDING.md) |
+| Change DSP, interrupt scheduling, buffers, compiler options, or resource use | [docs/performance.md](docs/performance.md) |
+| Change MIDI, saved parameters, backup, or editor messages | [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md), the affected serializers and their tests |
+| Contribute or package third-party code/data | [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSING.md](LICENSING.md) |
+| Evaluate an idea from another FM-1 firmware | [The dated development review](docs/development-review-2026-10-11.md), then that project's current source |
+
+If this checkout has a `.codegraph/` index, use CodeGraph first to locate code and trace
+callers. Otherwise use normal source search; indexing is the owner's choice.
+
+## User-facing documentation
+
+For every added or changed user-facing feature, read [README.md](README.md) and
+check whether its feature list and usage instructions still describe the result.
+Update the affected README sections in the same PR when needed, including how to
+access the feature, its defaults, limitations and compatibility implications.
+Keep detailed instructions in the relevant guide when appropriate and link them
+from the README so users can discover the feature.
+
+Before completing the change, record the README assessment in the PR description
+(or completion report when there is no PR): name the sections updated, or explain
+specifically why the existing README already covers the resulting behavior.
+
+## Architecture and ownership
+
+| Location | Responsibility |
+| --- | --- |
+| `firmware/src/felucca.c` | Single translation unit: includes the other C files in dependency order |
+| `firmware/src/core.h`, `engines.c`, `voice.c` | Types, stable engine IDs, per-part engine memory, voice allocation |
+| `firmware/src/audio.c`, `fx.c`, `eng_*.c`, `dsp.c` | Audio interrupt, mixer, effects, engines, fixed-point helpers |
+| `firmware/src/main.c`, `ui*.c`, `panel.c` | Boot, main loop, UI and panel event handling |
+| `firmware/hal/` | Registers, interrupt assembly, peripheral access, hardware guards |
+| `firmware/app.ld`, `firmware/loader/` | Memory layout and the separate update loader |
+| `firmware/src/storage*.c`, `project.c`, `upreset.c`, `settings_persist.c` | Flash and versioned persistence |
+| `tools/`, `tests/` | Target build, asset generators, host simulation and regression checks |
+| `build/gen/` | Generated headers; change their generator or input asset |
+| `web/emu/` | Browser emulator; editor/installer development has moved to Felucca-WebApp |
+
+Keep hardware register access in `hal/`; expose a HAL helper to application and loader
+code. `tools/build.py` enforces this boundary. Follow the existing include order and use
+`static` for implementation-local functions and state. A new C file must be wired into
+the firmware and relevant host/emulator compilation paths, not merely added to disk.
+
+## Invariants that changes must preserve
+
+- **Bounded interrupts.** Audio fills each DMA half within its deadline; the higher-priority
+  TIMER5 scan can nest inside it. Keep rendering and scan work bounded. Handle UI, preset
+  loading, flash operations and formatted diagnostics in the main loop, using the existing
+  request/service paths. Keep allocation, blocking I/O and waiting locks outside interrupts.
+- **Explicit ownership.** Preserve each queue's producer/consumer, its bounds and publication
+  order (`RING_PUBLISH()` in `core.h`). An interrupt-shared flag and a multi-field snapshot
+  need different synchronization. `volatile` alone does not publish surrounding data.
+- **Predictable memory.** Size static state and buffers against the linker regions. Engine
+  state shared by a part goes through `eng_mem_claim()` and `ENG_MEM_FITS`; preserve the fade,
+  reset and ownership rules and the switch regressions. Main-loop scratch may be shared only
+  when its lifetimes cannot overlap. Keep stack guards, reserved RAM and reset diagnostics intact.
+- **Stable sound.** Preserve fixed-point units, rounding, saturation, phase/RNG order,
+  click-free transitions and release tails. Check arithmetic bounds before moving a multiply,
+  changing a division to a shift, or narrowing storage. Follow existing naming and formatting;
+  comments should explain units, ownership or hardware constraints that the code cannot show.
+  Sequence side-effecting register/test-clock accesses in separate statements so evaluation
+  order is explicit; compiler sequencing warnings undermine timing-test evidence.
+- **Stable data and wire IDs.** Engine numbers and stored/protocol parameter IDs are contracts.
+  Append engine IDs; keep retired IDs reserved. Common track parameters are added before
+  `P_E0` with the existing count-based mapping. Update old-format imports, validation, defaults,
+  round trips and malformed-input tests together; state downgrade limitations explicitly.
+- **Flash-safe execution.** Flash-busy code and its required data must be accessible from RAM.
+  Preserve the `.ram_text` no-call check, loader RAM-only checks, deferred/coalesced settings
+  saves, and stopped/idle autosave policy. An erase pauses audio and scanning; a knob detent
+  must not introduce a new immediate erase.
+- **Measured compiler choices.** Keep the selective size pass in `tools/size_fns.py`: interrupt
+  paths retain `-Os`, eligible main-loop functions get `minsize`. Trace ISR reachability when
+  changing those lists or introducing callbacks. Judge an optimization by target output and
+  repeatable measurements, including regressions in the other resource budgets.
+
+## Build and validate
+
+Use the setup and environment overrides in `BUILDING.md`. From the repository root:
+
+```sh
+./build.sh
+tests/run_tests.sh
+```
+
+For a short DSP iteration after a successful build, the runner produces these binaries:
+
+```sh
+build/host/regress tests/golden.txt tests/cpu_baseline.txt
+build/host/regress_os tests/golden.txt tests/cpu_baseline_os.txt
+python3 tests/target_budget.py build/felucca.dis tests/target_budget.txt
+build/host/union_test tests/union_golden.txt  # engine-memory changes
+```
+
+Rebuild the affected harness after source changes; an existing binary is not evidence for
+new code. Finish firmware changes with the full applicable suite, a fresh target build
+with no new warnings, and the resource checks in `docs/performance.md`. Record every skipped
+check, especially unavailable host instruction counters, DaisySP or browser tooling.
+For UI changes, inspect the generated `build/ui_new/` images and the actual panel behavior;
+for USB/MIDI changes, exercise the affected host configuration and hardware path.
+
+`GOLDEN_UPDATE=1` and `BUDGET_UPDATE=1` intentionally rewrite baselines. Use them only for
+explained changes in sound or cost, review every changed entry, and retain unaffected entries.
+A failed budget is a finding to investigate, not a reason to regenerate all baselines.
+
+New source files carry the GPL-3.0-only SPDX header; preserve third-party attribution.
+For documentation-only changes, verify instructions and links; a firmware run is needed only
+when establishing or changing build/measurement claims.
+
+## Completion evidence
+
+Report the revision and build flags, tests passed/skipped, firmware and RAM deltas, and
+the workload/method behind CPU claims. Separate host regressions, target static estimates,
+browser behavior and real FM-1 observations. Hardware-dependent changes require real-device
+validation under `CONTRIBUTING.md`; if unavailable, name the remaining hardware checks.
+Flash or publish only within the user's requested scope. Commit or push when requested,
+and keep generated binaries, logs and temporary measurements under ignored `build/`.

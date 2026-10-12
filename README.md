@@ -5,7 +5,7 @@
 ![Felucca 1.0](docs/felucca-1.0.png)
 
 **TL;DR:** Felucca 1.5.1 — SEQ > DETAIL for a step's chance, ratchet, nudge and velocity, MIDI Program Change, dotted delay times, REV / ECHO THROW, on top of 1.5's INSERT effects, MIDI LEARN, ANALOG's band-pass and high-pass, ENV SYNC, note lengths and per-step velocity. Connect your FM-1 to a computer by USB,
-open the [web installer](https://hugelton.github.io/Felucca/) in Chrome or Edge, and press Install;
+open the [upstream web installer](https://hugelton.github.io/Felucca/) in Chrome or Edge, and press Install;
 no extra hardware is needed. Installing is at your own risk: M-VAVE's updater or the installer's
 **Return to official V15** takes you back. Coming from 1.1.5.x? Read [⚠ Coming from 1.1.5](#-coming-from-115) first:
 projects saved by 1.4 or later do not open on 1.1.5.x. Going back from 1.5.x to 1.4.1? Read
@@ -15,7 +15,9 @@ projects saved by 1.4 or later do not open on 1.1.5.x. Going back from 1.5.x to 
 Multi-engine synthesizer firmware for the M-VAVE FM-1. Please report what you find in
 [Issues](https://github.com/hugelton/Felucca/issues).
 
-- Install: [web installer](https://hugelton.github.io/Felucca/) (Chrome or Edge, USB), or `tools/fm1_install.py` from a terminal
+- Install: [upstream web installer](https://hugelton.github.io/Felucca/) (Chrome or Edge, USB), or the
+  [command-line installer](BUILDING.md#install)
+- Download: [release packages and CI artifacts](#downloads-and-package-checks)
 - Try: [Felucca in your browser](https://hugelton.github.io/Felucca/webapp/try/): the same firmware compiled to
   WebAssembly, with the panel on screen (mouse, touch, computer keyboard, Web MIDI in)
 - Editor: [web editor](https://hugelton.github.io/Felucca/webapp/editor/); its development has moved to
@@ -23,6 +25,22 @@ Multi-engine synthesizer firmware for the M-VAVE FM-1. Please report what you fi
 - Build: [BUILDING.md](BUILDING.md)
 
 <a href="https://hugelton.itch.io/felucca"><img src="https://static.itch.io/images/badge-color.svg" alt="Available on itch.io" width="74"></a>
+
+## Downloads and package checks
+
+For published packages from this fork, check [Releases](https://github.com/kmplngj/Felucca/releases).
+For development builds, open a successful run under [Actions](https://github.com/kmplngj/Felucca/actions)
+and download its firmware artifact. Pass the `.fwsc` package to the installer; the raw app `.bin`
+and diagnostics are build/debug material. A complete release archive includes the package,
+build provenance, attribution and license texts. Follow the
+[download and checksum instructions](.github/CI.md#downloads-and-checksums) before installing.
+
+The command-line installer checks package structure and CRCs before opening MIDI ports.
+Damaged or unsupported packages are rejected locally; `--force` only overrides the loader-marker
+restriction. See [package validation and file-error recovery](BUILDING.md#package-validation-and-file-errors).
+
+The web installer, browser demo and editor linked above are upstream Hügelton services.
+Their hosted versions are updated independently of this fork's builds and releases.
 
 ## Features
 
