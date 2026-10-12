@@ -65,7 +65,8 @@ FELUCCA_FONT=m8stealth ./build.sh
 ```
 
 Plain `./build.sh` selects M8Stealth when `FELUCCA_FONT` is unset. The pixel fonts
-save about 39 KB of firmware flash; RAM use is unchanged. Tamzen stores
+save about 39 KB of firmware flash and use 1,032 B less POOL RAM for Huffman
+decode caches than Inter Tight; other RAM regions are unchanged. Tamzen stores
 6×12 and 8×16 pixel faces as 1-bit glyphs; large readouts share the 8×16 data at 2×.
 The line boxes and baselines keep the existing layout metrics, while the visible
 capital heights change. Rebuild after choosing a variant, then run
@@ -181,6 +182,10 @@ device, for measuring DSP changes. `tests/target_budget.txt` (from the pi32v2 di
 needs the toolchain) stays the exact, static check. After an intended change of
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
 does the same for the cost files (all three).
+The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_event_open`
+(user-space instructions, needs `perf_event_paranoid` <= 2) and the baselines are
+`tests/cpu_baseline_<os>_<arch>_<compiler>_<version>_<build-id>[_os].txt`, skipped with a reason
+when absent or when any counter is unavailable. See [docs/performance.md](docs/performance.md).
 
 ## Device diagnostics
 

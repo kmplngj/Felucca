@@ -21,6 +21,7 @@ static void lcd_wake_now(void) {}
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 { (void)x; (void)y; (void)w; (void)h; (void)p; }
 #include "../firmware/src/gfx.c"
+#include "ui_icons.h"                            /* the one shared non-font Huffman consumer */
 
 static const char *const STR[] = {
     "CUTOFF", "RESO", "ATK", "DEC", "LEVEL", "PAN", "REV", "MUTE", "STEP", "LANE", "HIT", "ACC", "No.",
@@ -152,6 +153,24 @@ static int32_t ref_text(int32_t x, int32_t y, const aafont_t *f, const char *s, 
 int main(void)
 {
     const aafont_t *F[3] = {&AF_S, &AF_M, &AF_L};
+    const uint8_t *books[4] = {AF_S.hc, AF_M.hc, AF_L.hc, AI_HC};
+    uint32_t font_books = 0, all_books = 0;
+    /* Check compiled consumers independently of the generator's count: a future
+     * font/codebook change must not silently make the cache rebuild every draw. */
+    for (uint32_t i = 0; i < 4u; i++) {
+        uint32_t j;
+        if (!books[i]) continue;
+        for (j = 0; j < i && books[j] != books[i]; j++)
+            ;
+        if (j != i) continue;
+        all_books++;
+        if (i < 3u) font_books++;
+    }
+    if (font_books != UI_FONT_HUFFMAN_BOOKS || all_books != HC_FONTS) {
+        fprintf(stderr, "Huffman cache contract: %u font books, %u total, declared %u/%u\n",
+                font_books, all_books, (unsigned)UI_FONT_HUFFMAN_BOOKS, (unsigned)HC_FONTS);
+        return 1;
+    }
     uint32_t n = 0, bad_px = 0, bad_pen = 0;
     const int32_t positions[3][2] = {{3, 2}, {-7, -5}, {230, 35}};
     for (uint32_t p = 0; p < NPALETTES; p++) {
