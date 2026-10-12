@@ -234,6 +234,23 @@ class ComparisonTest(unittest.TestCase):
         compare.write_sheets(self.out, images)
         self.assertEqual(hashes, [compare.sha256(self.out / file) for file in files])
 
+    def test_reused_report_removes_only_generated_pages(self):
+        self.out.mkdir()
+        images = [(f"scene {n}", (self.image, self.image, self.image)) for n in range(25)]
+        compare.write_sheets(self.out, images)
+        unrelated = self.out / "comparison_notes.png"
+        unrelated.write_bytes(b"reviewer's notes")
+        result = self.run_compare()
+        self.assertEqual(result["sheets"], ["comparison_001.png"])
+        self.assertFalse((self.out / "comparison_002.png").exists())
+        self.assertFalse((self.out / "comparison_003.png").exists())
+        (self.after / "manifest.json").write_text("[]")
+        result = self.run_compare()
+        self.assertEqual(result["status"], "invalid")
+        self.assertEqual(result["sheets"], [])
+        self.assertFalse((self.out / "comparison_001.png").exists())
+        self.assertEqual(unrelated.read_bytes(), b"reviewer's notes")
+
 
 if __name__ == "__main__":
     unittest.main()

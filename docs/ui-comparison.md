@@ -55,6 +55,8 @@ PNG sheet shows up to twelve before/after/diff rows; changed pixels are magenta 
 Counts use exact RGB equality, including a change in only one channel, with no tolerance,
 resampling, perceptual metric or automatic golden update. Sheets are streamed a page at
 a time so the comparator does not keep the full render set in memory.
+Reusing a report directory removes its previous generated `comparison_NNN.png` pages
+before writing the new report, including for invalid captures. Other files are preserved.
 
 Default report mode returns **0**, including when the summary is `different` or
 `invalid`; read the summary when gathering evidence. `--strict` returns **0** only

@@ -147,6 +147,12 @@ def compare(before_dir, after_dir, out, palettes=(), styles=(), names=(), filmst
         if out == source or source.is_relative_to(out) or out.is_relative_to(source):
             raise ValueError("report directory must be separate from both render directories")
     out.mkdir(parents=True, exist_ok=True)
+    # Report directories may be reused for narrower selections or invalid captures.
+    # Keep unrelated files, but remove pages owned by the previous comparison.
+    for page in out.glob("comparison_*.png"):
+        number = page.stem[len("comparison_"):]
+        if len(number) >= 3 and number.isascii() and number.isdecimal() and page.is_file():
+            page.unlink()
     summary = {"schema": 1, "method": "exact RGB pixels; bbox right/bottom exclusive",
                "selection": {"palettes": list(palettes), "styles": list(styles), "scenes": list(names), "filmstrips": filmstrips},
                "errors": [], "added": [], "removed": [], "missing": [], "scenes": [], "sheets": []}
