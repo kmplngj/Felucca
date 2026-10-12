@@ -25,8 +25,8 @@ SIZE_FILES = ["ui.c", "favorites.c", "menu_items.c", "icons.c", "ui_graph.c", "u
               "ui_layer.c", "ui_name.c", "ui_slice.c", "ui_events.c", "main.c", "libc.c", "storage_hw.c", "engines.c", "fm4_convert.c"]
 ISR_ROOTS = ("fm1_alnk0_irq", "fm1_timer5_irq")      # hal/fm1_isr.S: the audio ISR, the key / LED scan (+ USB poll)
 DEF = re.compile(r"^(?:static|void|int|uint\w*|int\w*|const)\b[^;=(]*?\b([A-Za-z_]\w*)\s*\(", re.M)
-IR_DEF = re.compile(r"^(define [^\n]*?@\"?([\w.]+)\"?\([^\n]*\)(?: unnamed_addr| local_unnamed_addr)?)( #\d+[^\n]*\{)$",
-                    re.M)
+IR_NAME = r'(\"(?:\\.|[^\"])*\"|[-\w.$]+)'
+IR_DEF = re.compile(r"^(define [^\n]*?@" + IR_NAME + r"\([^\n]*\)(?: unnamed_addr| local_unnamed_addr)?)([^\n]*\{)$", re.M)
 
 
 def definitions(text):
@@ -53,39 +53,152 @@ def size_names():
     return names
 
 
-IR_BODY = re.compile(r"^define [^\n]*?@\"?([\w.]+)\"?\((.*?)^\}", re.M | re.S)
-IR_REF = re.compile(r"@\"?([\w.]+)\"?")
+IR_BODY = re.compile(r"^define [^\n]*?@" + IR_NAME + r"\([^\n]*\)[^\n]*\{\n(.*?)^\}", re.M | re.S)
+IR_REF = re.compile(r"@" + IR_NAME)
+IR_GLOBAL = re.compile(r"^@" + IR_NAME + r"\s*=(.*?)(?=^(?:@|define |declare |attributes |!|%|source_filename |target |;)|\Z)",
+                       re.M | re.S)
+
+# Reviewed source contract: these callers dispatch only through ENGINES/engine_t.
+# The count is the number of indirect call sites in unoptimized JieLi LLVM 4 IR.
+# A new/changed indirect caller must fail until its complete possible target set
+# is reviewed here. This is an explicit contract, not inferred pointer provenance.
+ISR_INDIRECT = {
+    "chord_kit": (1, ("ENGINES",)),       # keys
+    "kb_engine": (1, ("ENGINES",)),       # keys
+    "seq_step": (1, ("ENGINES",)),        # keys
+    "track_render": (4, ("ENGINES",)),    # block, done, amp, render
+    "voice_start": (1, ("ENGINES",)),     # note_on
+}
 
 
-def isr_reach(ir):
-    """the functions an interrupt can run: ISR_ROOTS and, transitively, every function their bodies call or
-    name (a pointer taken there counts as called), from the unoptimised IR (before inlining: a superset)"""
-    body = {m.group(1): m.group(2) for m in IR_BODY.finditer(ir)}
-    seen, todo = set(), [r for r in ISR_ROOTS if r in body]
+def references(text):
+    return {m[1].strip('"') for m in IR_REF.finditer(text)}
+
+
+def immutable_global(text):
+    # Storage kind precedes the initializer. Names/types/strings can contain
+    # these words too (e.g. mutable global void ()* @constant).
+    masked = re.sub(r'[@%]' + IR_NAME + r'|"(?:\\.|[^"\\])*"', " ", text)
+    kind = re.search(r"\b(global|constant|alias)\b", masked)
+    return bool(kind and kind[1] in ("constant", "alias"))
+
+
+def indirect_calls(body):
+    """Count SSA dispatch; reject other unnamed call forms rather than ignoring them."""
+    count = 0
+    for line in body.splitlines():
+        if not re.search(r"\b(?:call|invoke)\b", line) or re.search(r'\basm(?:\s+(?:sideeffect|alignstack|inteldialect))*\s+"', line):
+            continue
+        # LLVM's actual argument list is the last top-level (...) group. Cast
+        # function types have their own groups; named arguments are not callees.
+        masked = re.sub(r'"(?:\\.|[^"\\])*"', lambda m: " " * len(m[0]), line)
+        depth, start, groups = 0, None, []
+        for i, char in enumerate(masked):
+            if char == "(":
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0 and start is not None:
+                    groups.append((start, i))
+        if depth or not groups:
+            raise ValueError(f"unrecognized call form: {line.strip()}")
+        callee = line[:groups[-1][0]].rstrip()
+        if re.search(r"%" + IR_NAME + r"$", callee):
+            count += 1
+        elif re.search(r"@" + IR_NAME + r"$", callee):
+            continue
+        elif len(groups) >= 2 and re.search(r"\bbitcast\s*$", line[:groups[-2][0]]):
+            operand = line[groups[-2][0] + 1:groups[-2][1]].rsplit(" to ", 1)[0].rstrip()
+            if re.search(r"%" + IR_NAME + r"$", operand):
+                count += 1
+            elif not re.search(r"@" + IR_NAME + r"$", operand):
+                raise ValueError(f"unrecognized call form: {line.strip()}")
+        else:
+            raise ValueError(f"unrecognized call form: {line.strip()}")
+    return count
+
+
+def isr_reach(ir, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
+    """Follow body/global/alias references; unresolved ISR dispatch requires a reviewed contract.
+
+    Every configured root must exist. roots=() explicitly disables ISR analysis
+    for a fixture; the production CLI always requires both hardware roots.
+    """
+    body = {m[1].strip('"'): m[2] for m in IR_BODY.finditer(ir)}
+    headers = {m[2].strip('"') for m in IR_DEF.finditer(ir)}
+    defined = {m[1].strip('"') for m in re.finditer(r"^define [^\n]*?@" + IR_NAME, ir, re.M)}
+    if defined != headers or headers != set(body):
+        raise ValueError("malformed function body in unoptimized IR")
+    missing = set(roots) - set(body)
+    if missing:
+        raise ValueError(f"missing ISR roots: {', '.join(sorted(missing))}")
+    globals_ = {m[1].strip('"'): m[2] for m in IR_GLOBAL.finditer(ir)}
+    edges = {name: references(text) for name, text in {**globals_, **body}.items()}
+    seen, todo = set(), list(roots)
     while todo:
         f = todo.pop()
         if f in seen:
             continue
         seen.add(f)
-        todo += [g for g in IR_REF.findall(body[f]) if g in body and g not in seen]
-    return seen
+        if f in body:
+            count = indirect_calls(body[f])
+            contract = indirect.get(f)
+            if count or contract is not None:
+                if contract is None or contract[0] != count:
+                    raise ValueError(f"{f}: {count} indirect ISR call(s) need a reviewed target/count contract")
+                targets = set(contract[1])
+                if not targets or not targets <= edges.keys():
+                    raise ValueError(f"{f}: indirect ISR contract has missing or empty targets")
+                for target in targets:
+                    closure, pending = set(), [target]
+                    while pending:
+                        g = pending.pop()
+                        if g not in closure:
+                            closure.add(g)
+                            if g in globals_:
+                                if not immutable_global(globals_[g]):
+                                    raise ValueError(f"{f}: mutable dispatch requires explicit function targets, not {g}")
+                                pending += list(edges.get(g, set()) - closure)
+                    if not closure & body.keys():
+                        raise ValueError(f"{f}: indirect ISR target {target} has no defined callbacks")
+                todo += list(targets - seen)
+        todo += list(edges.get(f, set()) - seen)
+    return seen & body.keys()
+
+
+def annotate(ir, candidates, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
+    protected = isr_reach(ir, roots, indirect)
+    names, hit = candidates - protected, set()
+    groups = dict(re.findall(r"^attributes (#\d+) = (.*)$", ir, re.M))
+
+    def mark(m):
+        name = m[2].strip('"')
+        attributes = m[3] + " " + " ".join(groups.get(g, "") for g in re.findall(r"#\d+", m[3]))
+        already = bool(re.search(r"\bminsize\b", attributes))
+        if name in protected and already:
+            raise ValueError(f"{name}: ISR-reachable definition already has minsize")
+        if name not in names:
+            return m[0]
+        hit.add(name)
+        return m[0] if already else m[1] + " minsize" + m[3]
+    return IR_DEF.sub(mark, ir), hit, protected
 
 
 def main(src, dst):
     ir = Path(src).read_text()
-    isr = isr_reach(ir)
-    names, hit = size_names() - isr, set()
-
-    def mark(m):
-        if m.group(2) not in names:
-            return m.group(0)
-        hit.add(m.group(2))
-        return m.group(1) + " minsize" + m.group(3)
-    Path(dst).write_text(IR_DEF.sub(mark, ir))
+    candidates = size_names()
+    annotated, hit, isr = annotate(ir, candidates)
+    names = candidates - isr
+    Path(dst).write_text(annotated)
     print(f"size: {len(hit)} main-loop functions built for size ({len(names) - len(hit)} not in this build; "
-          f"{len(size_names() & isr)} reached from an interrupt kept -Os)")
+          f"{len(candidates & isr)} reached from an interrupt kept -Os)")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(*sys.argv[1:3]))
+    try:
+        sys.exit(main(*sys.argv[1:3]))
+    except (OSError, ValueError) as e:
+        sys.exit(f"size: {e}")

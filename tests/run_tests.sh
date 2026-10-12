@@ -173,6 +173,8 @@ run() { echo "== $1"; shift; "$@" || fail=1; }
 run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
 run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
 run "JieLi 64-bit arithmetic compile/link smoke (explicit skip without toolchain)" python3 tests/build_guard_target_test.py
+run "selective minsize: ISR symbol graph and annotation fixtures" python3 tests/size_fns_test.py
+run "selective minsize: real JieLi LLVM IR smoke (explicit skip without toolchain)" python3 tests/size_fns_target_test.py
 run "package flash boundaries (synthetic SDK)" python3 tests/fm1pkg_test.py
 run "package flash boundaries (Python -O, synthetic SDK)" python3 -O tests/fm1pkg_test.py
 
