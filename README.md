@@ -405,6 +405,10 @@ sevenths, or a fixed shape) and VOIC the voicing.
 | `tests/` | tests that run on the build machine |
 | `LICENSES/` | licence texts of the bundled fonts, icons, ported DSP and SDK files |
 
+The [UI comparison guide](docs/ui-comparison.md) explains how to capture the real
+firmware renderer and compare pixels, palettes, styles and animations. These host
+checks support visual review; physical FM-1 readability and panel behavior remain separate.
+
 ## If the FM-1 does not start
 
 If an update is interrupted and the FM-1 stays black, check whether a computer sees it as a USB device named
