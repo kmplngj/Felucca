@@ -3,6 +3,7 @@
 """Console-shaped fixtures and deterministic sessions; no device I/O."""
 import base64
 import json
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -103,10 +104,11 @@ class FakeTransport:
 
 
 class SessionTransport(FakeTransport):
-    def __init__(self, clock, interrupt_at=None, reboot_at=None, unequal_at=None):
+    def __init__(self, clock, interrupt_at=None, reboot_at=None, unequal_at=None, malformed_at=None):
         super().__init__(clock, chunks=[b"\r\nFelucca v1.6 console - 'help'\r\n> "])
         self.index = -1
         self.interrupt_at, self.reboot_at, self.unequal_at = interrupt_at, reboot_at, unequal_at
+        self.malformed_at = malformed_at
 
     def write(self, data, timeout):
         self.writes.append(data)
@@ -122,6 +124,8 @@ class SessionTransport(FakeTransport):
             text = text.replace("uptime_ms 10000", "uptime_ms " + str(10000 + i * 1000))
             text = text.replace("audio_late 7", "audio_late " + str(7 + i * 2))
             text = text.replace("usb_sof 8000", "usb_sof " + str(8000 + i * 1000))
+            if i == self.malformed_at:
+                text = text.replace("audio_late " + str(7 + i * 2), "audio_late -4294967296")
             if i == self.reboot_at:
                 text = text.replace("boots 4", "boots 5")
         if command == "inp" and i == self.unequal_at:
@@ -137,6 +141,19 @@ def snapshot(status=STATUS, dbg=DBG, inp=INP, crash=CRASH):
 
 
 class ParserTests(unittest.TestCase):
+    def test_signed_uint32_normalization_rejects_values_below_int32(self):
+        for command, text, name in (("status", STATUS, "audio_late"), ("status", STATUS, "uptime_ms"),
+                                    ("dbg", DBG, "boots"), ("crash", CRASH, "count")):
+            for value in (-(1 << 31), -(1 << 31) - 1, -(1 << 32), -(1 << 32) - 1):
+                changed = re.sub(r"(?m)^" + name + r" .*$", name + " " + str(value), text)
+                parsed = diag.parse_response(command, reply(command, changed))
+                if value == -(1 << 31):
+                    self.assertEqual(parsed["fields"][name], 1 << 31)
+                    self.assertNotIn("invalid uint32 " + name, parsed["issues"])
+                else:
+                    self.assertEqual(parsed["fields"][name], value)
+                    self.assertIn("invalid uint32 " + name, parsed["issues"])
+
     def test_real_console_shapes_and_unknowns(self):
         result = diag.parse_response("status", reply("status", STATUS + "future_words new value\n???\n"))
         self.assertEqual(result["issues"], [])
@@ -304,6 +321,16 @@ class SessionTests(unittest.TestCase):
         summary = diag.collect(console, 2, 1, {"scenario": "simulated", "input_latency": "unknown"},
                                events.append, clock=clock, sleep=clock.sleep)
         return summary, events, transport
+
+    def test_malformed_signed_counter_invalidates_session_and_preserves_raw(self):
+        summary, events, transport = self.run_session(malformed_at=1)
+        self.assertEqual(summary["validity"], "INVALID")
+        self.assertIsNone(summary["deltas"]["status"]["audio_late"])
+        self.assertFalse(summary["end_snapshot"]["complete"])
+        self.assertEqual(len(transport.writes), 5)
+        response = [e for e in events if e["type"] == "response"][-1]
+        self.assertIn("invalid uint32 audio_late", response["issues"])
+        self.assertIn(b"audio_late -4294967296", base64.b64decode(response["raw_b64"]))
 
     def test_deterministic_session_and_raw_artifacts(self):
         summary, events, transport = self.run_session()

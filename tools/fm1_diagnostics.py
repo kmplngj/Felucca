@@ -155,7 +155,9 @@ def parse_response(command, raw):
     if command in ("status", "crash"):
         unsigned.add("uptime_ms")
     for key in unsigned:
-        if isinstance(fields.get(key), int) and fields[key] < 0:
+        # Reject values below the formatter's int32 range rather than turning
+        # malformed input such as -2**32 into an apparently supported zero.
+        if isinstance(fields.get(key), int) and -(1 << 31) <= fields[key] < 0:
             fields[key] += 1 << 32
     required = {"status": ("felucca", "uptime_ms"), "dbg": ("magic",),
                 "inp": ("window_ms",), "crash": ("record_present",)}[command]
