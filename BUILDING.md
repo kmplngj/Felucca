@@ -122,6 +122,10 @@ device, for measuring DSP changes. `tests/target_budget.txt` (from the pi32v2 di
 needs the toolchain) stays the exact, static check. After an intended change of
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
 does the same for the cost files (all three).
+The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_event_open`
+(user-space instructions, needs `perf_event_paranoid` <= 2) and the baselines are
+`tests/cpu_baseline_<os>_<arch>[_os].txt`, skipped with a reason when absent or when no counter
+is available. See [docs/performance.md](docs/performance.md).
 
 ## Install
 

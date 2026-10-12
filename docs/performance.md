@@ -83,8 +83,22 @@ work hidden by host SIMD, and retain both checks. Its settings resemble the targ
 its instruction count still comes from the host architecture.
 
 `regress.c` warms CPU scenarios for 0.5 s and counts the next 1 s. On macOS it uses
-`proc_pid_rusage(..., RUSAGE_INFO_V4).ri_instructions`; without that counter the CPU budget
-is explicitly skipped. Preset budgets subtract the idle mixer cost. Failure requires a
+`proc_pid_rusage(..., RUSAGE_INFO_V4).ri_instructions`. On Linux each forked worker opens
+`perf_event_open(PERF_COUNT_HW_INSTRUCTIONS)` for itself (user space only, calling thread,
+`pid` 0, `cpu` -1; no root with `perf_event_paranoid` <= 2) and reads it with enabled/running
+times; a multiplexed interval (running < enabled), a failed open or read, or a short read gives
+no count. Without a count the CPU budget is explicitly skipped with the reason, never passed
+(common reasons: `perf_event_paranoid` > 2, containers or VMs without a PMU). When counting,
+the run prints the platform, architecture, compiler, flags and counter source.
+
+CPU baselines are per host. macOS arm64 uses `tests/cpu_baseline.txt` and
+`tests/cpu_baseline_os.txt`. Other hosts use `tests/cpu_baseline_<os>_<arch>.txt` and
+`tests/cpu_baseline_<os>_<arch>_os.txt` (for example `cpu_baseline_linux_x86_64.txt`), selected
+by `tests/run_tests.sh` from `uname -s`/`uname -m`; counts are never compared across hosts. If
+the file is missing the CPU budget is skipped (`regress` is passed `-`), not created. To adopt a
+host, run `BUDGET_UPDATE=1 tests/run_tests.sh` on it with a working counter (nothing is written
+otherwise), review, and commit the files. Instruction counts differ by ISA, compiler and
+microarchitecture, so a baseline is valid only for that host and toolchain. Preset budgets subtract the idle mixer cost. Failure requires a
 growth above both 25% and 20 instructions/sample; mixed workloads use their full cost.
 Host ns/sample depends on scheduling, clock and compiler, so compare repeated runs on
 the same machine and keep CPU-heavy unrelated work out of timing experiments.
