@@ -64,6 +64,22 @@ static const menu_credit_t MENU_CREDITS[] = {
     {"Emilie Gillet / MIT", MC_TEXT},
     {"https://github.com/pichenettes/eurorack", MC_URL},
     {"", MC_TEXT},
+#if UI_FONT_BITMAP
+#if UI_FONT_M8STEALTH
+    {"M8STEALTH", MC_TITLE},
+    {"Trash80 / CC BY-SA 3.0", MC_TEXT},
+    {"With local extra bitmap marks", MC_TEXT},
+    {"https://fontstruct.com/fontstructors/100463/trash80", MC_URL},
+    {"", MC_TEXT},
+#else
+    {"TAMZEN / TAMSYN", MC_TITLE},
+    {"Suraj N. Kurapati / Scott Fial", MC_TEXT},
+    {"Free use, copy, modify, distribute", MC_TEXT},
+    {"https://github.com/sunaku/tamzen-font", MC_URL},
+    {"", MC_TEXT},
+#endif
+#endif
+    /* Keycap legends still use Inter Tight in the pixel-font experiments. */
     {"INTER TIGHT", MC_TITLE},
     {"The Inter Project Authors", MC_TEXT},
     {"SIL Open Font License 1.1", MC_TEXT},

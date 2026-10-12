@@ -29,6 +29,7 @@ static const char *const STR[] = {
     "AV AW LT TA YO To Vo", "KEYS = STEPS", "PAGE 1/2", "HARDWARE CALIBRATION", "Multi-engine synthesizer",
     "H\xFCgelton Instruments", "FELUCCA", "MENU", "HOME", "ENV DEST 2/2", "ANLG", "SUPER SAW", "WIRE",
     "oeo coco eco nono", "minimum hello level", "decay release sound", "Pitch Cutoff", "bdpq doob", "-1 +2.5",
+    "0O 1Il 5S 8B .-", "\xB7\x85\xD7\xB0\xE4\xF6\xFC\xC4\xD6\xDC",
 };
 #define NSTR (sizeof STR / sizeof STR[0])
 #define W 240
@@ -88,6 +89,14 @@ static void ref_unpack(const aafont_t *f, const aag_t *g)
 {
     uint32_t n = (uint32_t)g->bw * g->bh, k = 0, pos = 0;
     const uint8_t *d = f->data + g->off;
+    if (f->bitmap_scale) {
+        uint32_t scale = f->bitmap_scale, sw = g->bw / scale;
+        for (k = 0; k < n; k++) {
+            uint32_t source = (k / g->bw / scale) * sw + (k % g->bw) / scale;
+            alpha[k] = (d[source / 8] & (1u << (7u - source % 8))) ? 15u : 0u;
+        }
+        return;
+    }
     if (!f->hc) {
         for (k = 0; k < n; k++) alpha[k] = (d[k >> 1] >> ((k & 1u) ? 0 : 4)) & 15u;
         return;
@@ -144,21 +153,23 @@ int main(void)
 {
     const aafont_t *F[3] = {&AF_S, &AF_M, &AF_L};
     uint32_t n = 0, bad_px = 0, bad_pen = 0;
+    const int32_t positions[3][2] = {{3, 2}, {-7, -5}, {230, 35}};
     for (uint32_t p = 0; p < NPALETTES; p++) {
         palette_set(p);
         for (uint32_t k = 0; k < 2u; k++)
             for (uint32_t f = 0; f < 3u; f++)
-                for (uint32_t s = 0; s < NSTR; s++) {
-                    uint16_t fg = k ? T_TEXT : T_THEME, bg = k ? T_BG : T_SURF;
-                    int32_t e0, e1;
-                    for (uint32_t i = 0; i < W * H; i++) ref[i] = bg;
-                    e0 = ref_text(3, 2, F[f], STR[s], fg, bg);
-                    cv_begin(W, H, bg);
-                    e1 = cv_text(3, 2, F[f], STR[s], fg);
-                    bad_pen += e0 != e1;
-                    for (uint32_t i = 0; i < W * H; i++) bad_px += swap16(cv_px[i]) != ref[i];
-                    n++;
-                }
+                for (uint32_t s = 0; s < NSTR; s++)
+                    for (uint32_t at = 0; at < 3u; at++) {
+                        uint16_t fg = k ? T_TEXT : T_THEME, bg = k ? T_BG : T_SURF;
+                        int32_t e0, e1;
+                        for (uint32_t i = 0; i < W * H; i++) ref[i] = bg;
+                        e0 = ref_text(positions[at][0], positions[at][1], F[f], STR[s], fg, bg);
+                        cv_begin(W, H, bg);
+                        e1 = cv_text(positions[at][0], positions[at][1], F[f], STR[s], fg);
+                        bad_pen += e0 != e1;
+                        for (uint32_t i = 0; i < W * H; i++) bad_px += swap16(cv_px[i]) != ref[i];
+                        n++;
+                    }
     }
     printf("text: %u strings x fonts x palettes against the reference renderer: %u end pens and %u pixels differ %s\n",
            n, bad_pen, bad_px, bad_pen || bad_px ? "FAIL" : "ok");

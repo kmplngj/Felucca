@@ -50,10 +50,15 @@ def parse(path):
         kern = {}
         if f[8] != "0":
             kern = dict(zip(arr("KERN"), arr("KD")))
+        data_name = f[7]
+        raw = re.search(r'\b' + data_name + r'\[\d+\] = \{([^}]*)\}', t)[1]
+        data = bytes(int(v.strip(), 0) for v in raw.split(',') if v.strip())
+        scale = int(f[12]) if len(f) > 13 else 0
+        hc = f[13] if len(f) > 13 else f[12] if len(f) > 12 else "0"
         faces[name] = {"h": int(f[0]), "asc": int(f[1]), "first": int(f[2]), "last": int(f[3]), "nex": int(f[4]),
-                       "g": g, "data": bytes(arr("DATA")), "kern": kern, "ex": arr("EX")[:int(f[4])],
+                       "g": g, "data": data, "kern": kern, "ex": arr("EX")[:int(f[4])], "scale": scale,
                        "psh": int(f[11]) if len(f) > 11 else 0,
-                       "hc": arr("HC") if len(f) > 12 and f[12] != "0" else None}
+                       "hc": arr("HC") if hc != "0" else None}
     return faces
 
 
@@ -109,6 +114,12 @@ def place(f, s):
 
 def bitmap(f, e):
     off, adv, bx, by, bw, bh = e
+    if f["scale"]:
+        scale = f["scale"]
+        sw = bw // scale
+        return [15 * ((f["data"][off + ((y // scale * sw + x // scale) // 8)] >>
+                       (7 - (y // scale * sw + x // scale) % 8)) & 1)
+                for y in range(bh) for x in range(bw)]
     if f["hc"]:                                      # Huffman-coded (gen_aa_font.py huff_pack)
         return gf.huff_unpack(f["hc"], f["data"][off:], bw * bh)
     v = []
@@ -174,6 +185,19 @@ def main():
     a = ap.parse_args()
     RULE[0] = a.rule
     faces = parse(a.header)
+    if faces["S"]["scale"]:
+        m8 = '#define UI_FONT_M8STEALTH 1' in Path(a.header).read_text()
+        widths = (("S", 6), ("M", 9), ("L", 17)) if m8 else (("S", 6), ("M", 8), ("L", 16))
+        for name, width in widths:
+            f = faces[name]
+            assert f["scale"] == (2 if name == "L" else 1)
+            assert not f["kern"] and not f["psh"]
+            assert all(e[1] == width * 16 for e in f["g"])
+            assert all(e[4] % f["scale"] == e[5] % f["scale"] == 0 for e in f["g"])
+            for e in f["g"]:
+                bitmap(f, e)                     # bounds of every packed glyph, including the 2x shared face
+            print(f"text spacing {name}: whole-pixel {width}px fixed cells, no fractional gap error; bitmap bounds ok")
+        return
     spec = {n: (font, px) for n, font, px, *_ in gf.preset("inter-tight")}
     bad = 0
     for name, f in faces.items():
