@@ -8,6 +8,108 @@ M8Stealth is the user-selected default; Inter Tight and Tamzen remain selectable
 with `FELUCCA_FONT`. The saving is in firmware flash, with unchanged RAM use.
 No firmware was flashed or released.
 
+## Latest MACRO integration (2026-10-12)
+
+The font branch now includes the latest remote `kori/macro-engine` at
+`c2d91aa4c71b4294e44d8fcbddc4f0ec28956ccc`: 48 models and 51 factory presets.
+The tested combined source revision is `4a6901d60234068db4503c6f57222237ad0e6e3f`.
+Inter Tight and unset/default M8Stealth were freshly built on that identical tree.
+A separate untouched source snapshot of `c2d91aa` was rebuilt as the base comparison.
+
+All builds use the default features (SLICE=1, FM4=0), five sample sets / eleven
+zones / 126,244 B ADPCM, JieLi Clang 4.0.1 / pi32v2, `-Os -ffunction-sections
+-fno-builtin`, the existing selective main-loop `minsize` pass and hash-checked
+AC79NN SDK packaging inputs. The repaired isolated Python environment uses
+Python 3.13.16, Pillow 12.3.0, FontTools 4.66.1 and Brotli 1.2.0. Host tests use
+Apple Clang 21.0.0; the browser build uses Emscripten 6.0.12-git.
+
+| Resource | Untouched MACRO base, Inter | Combined Inter control | Combined M8Stealth |
+| --- | ---: | ---: | ---: |
+| Application .bin | 580,360 B | 580,324 B | **541,240 B** |
+| App-slot spare (581,564 B) | 1,204 B | 1,240 B | **40,324 B** |
+| RAM .data + .bss | 54,964 B | 54,964 B | 54,964 B |
+| POOL | 345,656 B | 345,656 B | 345,656 B |
+| .ram_text | 2,924 B | 2,924 B | 2,924 B |
+| .noinit | 15,564 B | 15,564 B | 15,564 B |
+| UI font symbols + descriptors | 42,904 B | 42,904 B | 3,340 B |
+
+The combined M8 build saves **39,120 B (6.74%)** versus the untouched latest
+MACRO base, or **39,084 B (6.73%)** versus the combined Inter control. The 36 B
+control reduction comes from the font integration's metric-based placement.
+Regular RAM has 18,764 B spare and POOL has 22,984 B spare in every configuration.
+Font selection changes neither RAM region. The full MACRO bank's extra POOL
+storage remains present. Both packaged font builds retain the identical 6,930 B
+loader and the same 610,086 B padded installer size. Target builds have no warnings,
+pass HAL boundaries, and keep the 916-instruction no-call RAMTEXT check.
+
+### Combined validation
+
+Fresh **full applicable suites pass for both Inter Tight and M8Stealth** on this
+combined revision, with `GOLDEN_UPDATE` and `BUDGET_UPDATE` absent. Golden,
+CPU, target-cost and engine-switch baseline files are byte-identical to Git.
+
+- 143 audio golden renders: no changed/missing hashes, health failures or CPU
+  budget overruns; all 98 earlier goldens remain represented.
+- 9,540 independent text-reference cases per font; M8's 231 source glyph checks
+  match upstream 1x/2x ink and all extra marks fit.
+- Normal/FM4 sweeps: 225/235 screens x ten palettes, styles/LARGE and page/value
+  sweeps; zero layout lint/alignment findings. M8 has 3,281,926 / 3,543,123 alignment
+  measurements; Inter has 3,268,133 / 3,528,768.
+- Full-bank bounds/reset/parts/transition tests, engine-switch regressions,
+  strict MACRO/Braids ASan/UBSan, storage/protocol/loader and fuzz tests pass.
+  The offline original-rate C++/C Braids comparison reports zero failures.
+- Native/Wasm samples match bit for bit across all **51 MACRO presets over
+  4,723,110 frames**, plus the existing 88,200-frame heavy song.
+- Host instruction budgets and static target loop estimates pass. These are
+  regression checks, not actual FM-1 timing or a claim of faster redraws.
+
+DaisySP PHYS reference is skipped (checkout unavailable); the official V15
+restore-image check is skipped (image unavailable). Legacy editor mock checks
+also report capability skips for MENU settings, FM6 bank sender and MIDI Learn.
+Both full runs retain the same five pre-existing `host_now` sequencing warnings;
+there are no new target compiler warnings.
+
+The first test attempt mistakenly set both update variables to `0`, which still
+enables regeneration in these checkers. Those generated changes were archived,
+the original files restored, and **both complete suites rerun with the variables
+unset**. Only the final unchanged-baseline runs support the validation above.
+The earlier missing-Pillow pre-compilation attempt is also retained separately.
+
+### Browser and reproduction
+
+The default M8 emulator was rebuilt to **813,566 B Wasm**, opened and visually
+inspected while running. Browser warning/error logs are empty. A stable copy
+serves the preview during control builds; its hash matches the final M8 suite's
+Wasm. This verifies browser behavior; physical FM-1 readability, LCD redraw,
+audio/USB/MIDI under panel load and interrupt stack/deadline checks remain open.
+No hardware was flashed and no firmware release was published.
+
+Use BUILDING.md's Python/toolchain/SDK setup, ensuring update variables are unset:
+
+```sh
+FELUCCA_FONT=inter-tight ./build.sh
+env -u GOLDEN_UPDATE -u BUDGET_UPDATE tests/run_tests.sh
+env -u FELUCCA_FONT ./build.sh
+env -u GOLDEN_UPDATE -u BUDGET_UPDATE tests/run_tests.sh
+```
+
+Application SHA-256:
+
+```text
+MACRO base  084be69a7f21b55359b773dbd08959d0a6ec34ae483bc784fe5993aeea386fc1
+Inter       c36488034555c9c7cf1237a691a4c5a2fe69a69fd2dbdd0b4faed3b1bd4bb4fa
+M8Stealth   40c877d7c6ee328ce49f8dac22007825f64c9772334af16a97438a44ef1b4eca
+```
+
+Wasm SHA-256:
+`842aa47258580d70fb48ced971661ca94ae0cda75998bfbb19421b4becac0a7f`.
+Raw source snapshots, build/test logs, binaries, headers, metrics, hashes and UI
+renders are under ignored `build/font-macro-2026-10-12/`. `browser-m8stealth.jpg`
+records the live preview. Tamzen remains selectable, but was not rebuilt/retested
+on this latest full-bank integration; its earlier measurements follow below.
+
+The remaining sections record the historical three-model comparison from 2026-10-11.
+
 ## Configurations
 
 | Role | Inter Tight | Tamzen regular | M8Stealth |
