@@ -23,6 +23,8 @@ Multi-engine synthesizer firmware for the M-VAVE FM-1. Please report what you fi
 - Editor: [web editor](https://hugelton.github.io/Felucca/webapp/editor/); its development has moved to
   [Felucca-WebApp](https://github.com/hugelton/Felucca-WebApp)
 - Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build)
+- Diagnostics: [collect CDC console reports](docs/diagnostics.md) with an explicitly selected port;
+  requires USB SERIAL on. Real FM-1 load and collector-overhead validation remains pending.
 
 Source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects M8Stealth, Tamzen
 or Inter Tight at build time. The [controlled font comparison](docs/font-experiment.md)
@@ -409,6 +411,10 @@ sevenths, or a fixed shape) and VOIC the voicing.
 | `web/` | the web installer, the earlier editor and the browser emulator (`web/emu/`); the new editor: [Felucca-WebApp](https://github.com/hugelton/Felucca-WebApp) |
 | `tests/` | tests that run on the build machine |
 | `LICENSES/` | licence texts of the bundled fonts, icons, ported DSP and SDK files |
+
+The [UI comparison guide](docs/ui-comparison.md) explains how to capture the real
+firmware renderer and compare pixels, palettes, styles and animations. These host
+checks support visual review; physical FM-1 readability and panel behavior remain separate.
 
 ## If the FM-1 does not start
 

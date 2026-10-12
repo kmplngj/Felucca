@@ -142,6 +142,13 @@ DIGITAL conversion), the chord keys, the modulation matrix, the FX layer, the re
 and swing. With `DAISYSP` pointing at a DaisySP checkout, the PHYS models are also compared with
 their floating-point originals; without it that test is skipped.
 
+With Pillow, the real UI renders also include `manifest.json` with revision, compiler,
+font/generated-asset hashes and render settings. `tests/ui_compare.py BEFORE AFTER`
+produces exact pixel counts, bounds and before/after/diff sheets under `build/ui_compare`.
+Use `--strict` for an approved baseline gate; report mode returns success after writing
+its findings. See [UI comparison](docs/ui-comparison.md) for capture, selections, exit
+codes and the separate hardware readability check.
+
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
 cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). It runs a second time built as
@@ -152,6 +159,11 @@ device, for measuring DSP changes. `tests/target_budget.txt` (from the pi32v2 di
 needs the toolchain) stays the exact, static check. After an intended change of
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
 does the same for the cost files (all three).
+
+## Device diagnostics
+
+For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
+The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
 
 ## Install
 
