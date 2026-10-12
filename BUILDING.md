@@ -1,5 +1,8 @@
 # Building Felucca
 
+Pull requests and `main` run the [firmware CI checks](.github/CI.md). That guide also
+explains failure diagnostics, dependency pins and tagged/manual release packaging.
+
 The build makes three files in `build/`:
 
 | File | What |
