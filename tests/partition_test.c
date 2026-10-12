@@ -98,7 +98,7 @@ static void build(uint32_t variant, uint32_t scen, uint32_t seed)
 typedef struct {
     uint64_t pcm_hash, state_hash;
     int32_t peak; uint64_t e_early, e_late;
-    uint32_t ring_ok, playing, gates;
+    uint32_t ring_ok, playing, gates, late72;
     int32_t pcm[NB * 2u * CTL];
 } res_t;
 
@@ -212,6 +212,7 @@ static void render(res_t *r, uint32_t scen, uint32_t variant, uint32_t seed, con
         for (v = 0; v < NVOICE; v++) {
             h = h64(h, tk->v[v].active); h = h64(h, tk->v[v].gate); h = h64(h, tk->v[v].note); h = h64(h, tk->v[v].stage);
             r->gates += tk->v[v].active && tk->v[v].gate;
+            r->late72 |= tk->v[v].active && tk->v[v].gate && tk->v[v].note == 72u;   /* the late note-on, held to the end */
         }
     }
     h = h64_mem(h, midi_notes, sizeof midi_notes); h = h64_mem(h, midi_ch, sizeof midi_ch);
@@ -251,7 +252,7 @@ int main(int argc, char **argv)
             bad += check(what, a->state_hash == b->state_hash && a->playing == b->playing && a->gates == b->gates);
             snprintf(what, sizeof what, "%s seed 0x%x: audible (peak %d), early and late energy nonzero, rings drained without drops", SCN[sc], seed, a->peak);
             bad += check(what, a->peak > 500 && a->e_early > 0 && a->e_late > 0 && a->ring_ok && b->ring_ok && b->peak > 500);
-            bad += check("  transport running and the late note still held at the end", a->playing && a->gates >= 1u);
+            bad += check("  transport running and the late note still held at the end", a->playing && a->late72 && b->late72);
             if (sd == 0) {                                     /* negative self-checks: the comparison must see these */
                 static const char *const VN[NVAR] = {"", "dropped note-on", "reordered pedal-down / note-off", "dropped pedal-up (note kept after release)"};
                 for (v = V_DROP_ON; v < NVAR; v++) {
