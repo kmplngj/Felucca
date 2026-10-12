@@ -146,3 +146,27 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 
 Installing firmware is at your own risk. If an install fails and the FM-1 no longer
 starts, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
+### Package validation and file errors
+
+When given a package, the command-line installer validates its identity, UFW structure,
+file extents, sizes, CRCs and loader headers before opening MIDI ports or sending update
+data. A damaged or unsupported file is a local package error (exit code 2): obtain an
+intact copy of the intended package, or rebuild it with the supported toolchain and SDK
+from [Build](#build). See the [download and checksum guide](.github/CI.md#downloads-and-checksums)
+for release files. Package acceptance alone does not establish compatibility with your
+FM-1 or a successful installation; the installer still checks the device and final identity.
+
+`--force` only overrides the requirement for the Felucca loader marker. Package structure
+and CRC checks still apply. The exact unmodified official V15 file is accepted through its
+pinned SHA-256 digest without `--force`; this exception does not cover arbitrary vendor files.
+
+Device discovery and connection errors occur later: exit code 3 means the FM-1 was not
+found (check the USB data cable and other apps using MIDI), 4 means the connection was lost
+or the device stopped, 5 means a timeout, and 6 means a model or installed-identity mismatch.
+Run `python3 tools/fm1_install.py --help` for the options and complete exit-code list.
+
+If package generation reports `app area is ... B, available ... B`, the app region plus
+the SDK configuration files and headers exceeds the flash boundary. The app fitting its
+own slot is not enough: use the supported SDK files and review the reported sizes under
+[Measuring and optimizing Felucca](docs/performance.md). Keep the package guard enabled.
