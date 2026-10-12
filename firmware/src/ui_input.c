@@ -1280,6 +1280,45 @@ static int layer_allowed(void);
 static uint32_t ly_bit(uint32_t l);
 static void layer_lock_input(uint32_t pressed);
 
+/* #176: previous page. A family button tapped with OCT- down at any time while it was (either press order, OCT- let go
+ * before it or not): the shown family's previous page (open_family rev), OCT- consumed. Decided when the button is
+ * let go (page_tap, SAVE's tap), from these edges alone. On an action page OCT- also means back / HOME when let go:
+ * a reverse swallows that release (oct_eat), so it works there while OCT- is still down at the tap (let go first, the
+ * release already acted). oct_ov: buttons (panel ids) seen down with OCT-; oct_bad: with
+ * OCT+ too (the UPDATE MODE chord, a keep): no reverse. pg_rev: the ones let go this pass that count. oct_pre: the
+ * octave before the last OCT- press and the one it set (oct_set), to put back when it is consumed; notes already
+ * played keep their pitch (the octave is read at the key's press) */
+static uint32_t oct_ov, oct_bad, pg_rev;
+static int8_t oct_pre, oct_set;
+static uint8_t oct_pre_ok, oct_eat;                     /* oct_eat: the OCT- let go next acts as no back / HOME */
+
+static void oct_overlap(uint32_t pressed)
+{
+    uint32_t dn = 1u << panel.btn[B_OCTDN], up = 1u << panel.btn[B_OCTUP], all = fm1_in.buttons | pressed;
+    if (all & up)
+        oct_bad |= all & ~up;
+    if (all & dn)
+        oct_ov |= all & ~(dn | up);
+    pg_rev = oct_ov & ~oct_bad & ~fm1_in.buttons;       /* (pressed and let go in one pass: in `all`, not in buttons) */
+    oct_ov &= fm1_in.buttons;
+    oct_bad &= fm1_in.buttons;
+}
+
+/* the tap of button b is a reverse: OCT- over it, on the family shown, in no context that owns OCT- (MIDI LEARN, a
+ * momentary edit; dialogs, the menu and SET layers never get here) */
+static uint32_t page_rev(uint32_t b, uint32_t fam)
+{
+    if (!((pg_rev >> panel.btn[b]) & 1u) || ui.home || cur_page()->fam != fam || ui.ml.on || mom.n ||
+        layer_set_open())
+        return 0;
+    pg_rev &= ~(1u << panel.btn[b]);
+    oct_eat |= act_cols() != 0u;
+    if (oct_pre_ok && song.octave == oct_set)           /* the octave press was the modifier: put back */
+        song.octave = oct_pre;
+    oct_pre_ok = 0;
+    return 1;
+}
+
 /* a page button let go (they act on release; a layer's own button: layer_gesture). 1: it acted (EDIT on STEP, USER,
  * PROJECT, AUTOMATION) instead of opening a page */
 static int page_tap(uint32_t b)
@@ -1315,7 +1354,7 @@ static int page_tap(uint32_t b)
     }
     for (f = FAM_HOME + 1u; f < FAM_COUNT; f++)        /* (GLO SEQ SAVE ..: HOME is ui_input's, home_tap) */
         if (FAM_BTN[f] == b && b != B_HOME) {
-            open_family(f);
+            open_family_dir(f, page_rev(b, f));
             return 0;
         }
     return 0;
@@ -1407,6 +1446,7 @@ static void ui_input(void)
         ui.rec_t0 |= 2u;                                /* (REC is its layer's button now: its tap is layer_tap's) */
     layer_oct_open(pressed);                            /* (OCT± with a SET layer's button down: it opens now) */
     oct = oct_taps(pressed, ui.menu || ui.confirm || act_cols() || name_on() || layer_set_open() || ui.ml.on);
+    oct_overlap(pressed);
     oct = layer_oct(pressed, oct);                      /* (a SET layer's OCT-: put back) */
     layer_masks();                                      /* seq.c: keys pressed with a layer's button are its own */
     lay = layer_held();
@@ -1501,7 +1541,7 @@ static void ui_input(void)
     else if (save == BT_HOLD)                                /* SAVE held: undo the last sound load */
         undo_swap();
     else if (save == BT_TAP && !ui.confirm)             /* SAVE acts on release (a hold is the undo) */
-        open_family(FAM_SAVE);
+        open_family_dir(FAM_SAVE, page_rev(B_SAVE, FAM_SAVE));
     if (ui.confirm) {                                   /* OCT- cancels, OCT+ does it; nothing else reacts */
         if (oct & 2u) {
             uint32_t kind = ui.confirm;
@@ -1586,12 +1626,17 @@ static void ui_input(void)
         case B_OCTDN:
         case B_OCTUP: {
             uint32_t both = (1u << panel.btn[B_OCTDN]) | (1u << panel.btn[B_OCTUP]);
+            oct_pre_ok = 0;
             if (act_cols() || layer_set_open() || ui.ml.on)   /* action pages: enter / back (below); SET layers: OCT-; */
                 break;                                  /* MIDI LEARN: clear / done (below) */
-            if ((fm1_in.buttons & both) == both)
+            if ((fm1_in.buttons & both) == both) {
                 song.octave = 0;
-            else
+            } else {
+                oct_pre = song.octave;
                 song.octave += b == B_OCTDN ? (song.octave > -3 ? -1 : 0) : (song.octave < 3 ? 1 : 0);
+                oct_set = song.octave;
+                oct_pre_ok = b == B_OCTDN;
+            }
             break;
         }
         default:                                        /* page buttons (GLO SCL ENV LFO EDIT ARP): when let go */
@@ -1605,6 +1650,10 @@ static void ui_input(void)
     for (id = 0; b; id++, b >>= 1)
         if (b & 1u)
             page_tap(panel_btn_of(id));
+    if (oct_eat) {                                      /* (a reverse from an action page: OCT- was the modifier) */
+        oct &= ~1u;
+        oct_eat = (uint8_t)((fm1_in.buttons >> panel.btn[B_OCTDN]) & 1u);
+    }
     if (act_cols() && (oct & 2u)) {                     /* action pages: OCT+ does the picked action, */
         act_do();
     } else if (act_cols() && (oct & 1u)) {              /* OCT- drops it, or (none picked) goes HOME */
