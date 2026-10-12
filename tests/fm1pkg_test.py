@@ -72,6 +72,7 @@ class FlashImageTest(unittest.TestCase):
                 message = str(raised.exception)
                 self.assertIn(f"{extent} B", message)
                 self.assertIn(f"{P.FLASH_SIZE - 0x4000} B", message)
+                self.assertIn(f"{extent - (P.FLASH_SIZE - 0x4000)} B too much", message)
                 self.assertIn(f"cfg_tool.bin {cfg_size} B", message)
                 self.assertIn(f"cfg/eq_cfg_hw.bin {eq_size} B", message)
 

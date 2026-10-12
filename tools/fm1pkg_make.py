@@ -149,7 +149,8 @@ def flash_image(app, key):
     region = bytearray(area + cfg)
     # A bytearray slice assignment past the end would silently enlarge flash.bin.
     if len(region) > FLASH_SIZE - 0x4000:
-        raise SystemExit(f"fm1pkg_make: app area is {len(region)} B, available {FLASH_SIZE - 0x4000} B "
+        raise SystemExit(f"fm1pkg_make: app area is {len(region)} B, available {FLASH_SIZE - 0x4000} B, "
+                         f"{len(region) - (FLASH_SIZE - 0x4000)} B too much "
                          f"(flash end {0x4000 + len(region):#x}, limit {FLASH_SIZE:#x}; "
                          f"SDK cfg_tool.bin {len(cfg_tool)} B, cfg/eq_cfg_hw.bin {len(eq)} B)")
     sfc(region, 0, len(region), 0, key)
