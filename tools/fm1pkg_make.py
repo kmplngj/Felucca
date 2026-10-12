@@ -105,6 +105,11 @@ def sdk_file(rel):
 
 
 def flash_image(app, key):
+    """Return flash image bytes with the app region encrypted using the chip key.
+
+    Read boot and configuration data from the SDK. Raise SystemExit if the app
+    exceeds its slot or the app region, including SDK data, exceeds flash space.
+    """
     spl = sdk_file("uboot.boot")                         # SDK SPL, BANKCB-encoded as in the SDK
     cfg_tool = sdk_file("cfg_tool.bin")
     eq = sdk_file("cfg/eq_cfg_hw.bin")

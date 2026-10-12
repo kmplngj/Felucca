@@ -18,6 +18,7 @@ import fm1pkg_make as P  # noqa: E402
 
 class FlashImageTest(unittest.TestCase):
     def setUp(self):
+        """Create a temporary synthetic SDK and restore the SDK path after each test."""
         (ROOT / "build").mkdir(exist_ok=True)
         self.tmp = tempfile.TemporaryDirectory(prefix="fm1pkg-", dir=ROOT / "build")
         self.addCleanup(self.tmp.cleanup)
@@ -30,12 +31,14 @@ class FlashImageTest(unittest.TestCase):
         self.sdk(0, 0)
 
     def sdk(self, cfg_size, eq_size):
+        """Write synthetic configuration and EQ files with the given byte sizes."""
         self.cfg = b"C" * cfg_size
         self.eq = b"E" * eq_size
         (self.tools / "cfg_tool.bin").write_bytes(self.cfg)
         (self.tools / "cfg" / "eq_cfg_hw.bin").write_bytes(self.eq)
 
     def check_image(self, app):
+        """Verify image size, decrypted app data, padding, and SDK configuration."""
         image = P.flash_image(app, P.KEY)
         self.assertEqual(len(image), P.FLASH_SIZE)
         region = bytearray(image[0x4000:])
@@ -51,9 +54,11 @@ class FlashImageTest(unittest.TestCase):
         self.assertEqual(region[blk + 64:blk + 64 + len(self.eq)], self.eq)
 
     def test_small_sdk(self):
+        """Accept a small app with empty SDK configuration and EQ files."""
         self.check_image(b"APP!")
 
     def test_exact_fit(self):
+        """Accept configuration and EQ combinations that exactly fill flash."""
         # 32 B SPL, 4 B app: 3812 B cfg + empty EQ fills flash exactly.
         self.assertEqual(P.FLASH_SIZE, 602112)
         self.assertEqual(P.FLASH_SIZE - 0x4000 - 0x120 - P.APP_SLOT - 64, 3812)
@@ -63,6 +68,7 @@ class FlashImageTest(unittest.TestCase):
                 self.check_image(b"APP!")
 
     def test_overflow(self):
+        """Reject configuration or EQ overflow with size details in the error."""
         for cfg_size, eq_size in ((3813, 0), (7908, 0), (0, 3813), (0, 7908), (3812, 1)):
             with self.subTest(cfg=cfg_size, eq=eq_size):
                 self.sdk(cfg_size, eq_size)
@@ -77,6 +83,7 @@ class FlashImageTest(unittest.TestCase):
                 self.assertIn(f"cfg/eq_cfg_hw.bin {eq_size} B", message)
 
     def test_app_slot_limit(self):
+        """Accept a full app slot and reject an app exceeding it by one byte."""
         self.sdk(3812, 0)
         self.check_image(b"A" * P.APP_SLOT)
         with self.assertRaisesRegex(SystemExit, f"app is {P.APP_SLOT + 1} B, the slot is {P.APP_SLOT} B"):
