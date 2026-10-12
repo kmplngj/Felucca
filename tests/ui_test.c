@@ -174,6 +174,7 @@ static void ui_power_on(void)
     page_over = 0;                                /* (no layer's knobs; roll_settle's test page gone) */
     cin_left = cin_total = 0;                     /* (no count-in) */
     memset(&nm, 0, sizeof nm);                    /* NAME closed, no project name */
+    memset(&recent, 0, sizeof recent);            /* RECENT (#80): empty at power-on (the pool) */
     memset(&mom, 0, sizeof mom);                  /* MOMENTARY: no value held (the pool at power-on) */
     proj_name[0] = 0;
     proj_cur = PROJ_NO_SLOT;
@@ -1402,6 +1403,139 @@ static int test_favorites(void)
     return bad;
 }
 
+/* #80: PRESETS > LIST RECENT, the last 8 sounds loaded this session (RAM only): identities, order, eviction, validity */
+static void recent_load(uint32_t e, uint32_t k)           /* as the ALL list loads (factory (e, k) or user slot k) */
+{
+    if (e == NENGINES) {
+        up_load(k);
+    } else {
+        if (e != TSEL->eng_req)
+            select_engine(e);
+        apply_preset(k);
+    }
+    preset_hinted();
+    recent_note();
+}
+static int recent_is(uint32_t n, uint32_t e, uint32_t k)
+{
+    uint32_t kk, ee = recent_at(n, &kk);
+    return ee == e && kk == k;
+}
+static int test_recent(void)
+{
+    int bad = 0, ok;
+    uint32_t total, k, i;
+    persist_t p0, p1;
+    track_t before;
+    ui_power_on();
+    memset(&favorites, 0, sizeof favorites);
+    memset(up_bank, 0, sizeof up_bank);
+    memset(&recent, 0, sizeof recent);
+    song.playing = 0;
+    go_page(GR_BROWSE);
+    settings_export(&p0);
+    turn(EN_K4, 30);
+    recent_pos(&total);
+    bad += check("RECENT: KNOB 4 reaches it after OTHER; empty, the PRESETS knob loads nothing",
+                 list_mode() == LIST_RECENT && !total && (before = *TSEL, ui.msg_t = 0, turn(EN_PRESET, 1), 1) &&
+                 msg_is("NO SOUNDS IN LIST") && !memcmp(TSEL, &before, sizeof before) && recent_at(0, &k) == NENGINES && k == UP_SLOTS);
+    list_set(0);
+    recent_load(0, 1);
+    recent_load(0, 2);
+    recent_load(ENGI_DRUM, 0);
+    bad += check("  loads are noted newest first", recent.n == 3u && recent_is(0, ENGI_DRUM, 0) && recent_is(1, 0, 2) && recent_is(2, 0, 1));
+    recent_load(0, 1);
+    bad += check("  a repeated load moves to the front, no duplicate", recent.n == 3u && recent_is(0, 0, 1) &&
+                 recent_is(1, ENGI_DRUM, 0) && recent_is(2, 0, 2));
+    for (i = 0; i < 9u; i++)
+        recent_load(0, i);
+    bad += check("  full: 8 kept, the oldest out first", recent.n == RECENT_N && recent_is(0, 0, 8) &&
+                 recent_is(7, 0, 1));
+    recent_load(0, 5);
+    bad += check("  a repeat in a full list evicts nothing", recent.n == RECENT_N && recent_is(0, 0, 5) &&
+                 recent_is(1, 0, 8) && recent_is(7, 0, 1) && recent_is(6, 0, 2));
+    /* browsing it: the same loads, its order kept; SAVE held takes the audition back */
+    list_set(LIST_RECENT);
+    recent_load(0, 2);
+    undo.keep = 0;
+    before = *TSEL;
+    recent.hold = 0;
+    turn(EN_PRESET, 1);
+    turn(EN_PRESET, 1);
+    ok = recent_is(0, 0, 2) && recent_is(1, 0, 5) && recent.n == RECENT_N;
+    k = recent_pos(&total);
+    bad += check("  the PRESETS knob steps through it loading each (the order kept); the sound is the entry's",
+                 ok && total == RECENT_N && k == 2u && TSEL->eng_req == 0 && TSEL->preset == 8u);
+    hold(B_SAVE);
+    bad += check("  SAVE held: the audition cancelled as with any browse", same_sound(TSEL, &before) && msg_is("UNDO/REDO T1"));
+    /* user presets: a slot replaced or deleted is not loaded stale */
+    memset(&recent, 0, sizeof recent);
+    list_set(0);
+    select_engine(0);
+    apply_preset(2);
+    up_store(3, "AAA");
+    recent_load(NENGINES, 3);
+    up_store(5, "BBB");
+    recent_load(NENGINES, 5);
+    recent_load(0, 4);
+    list_set(LIST_RECENT);
+    recent_pos(&total);
+    bad += check("  user slots are listed with the factory sounds", total == 3u && recent_is(0, 0, 4) && recent_is(1, NENGINES, 5) &&
+                 recent_is(2, NENGINES, 3));
+    up_rename(3, "AAA2");                                   /* a rename: the same sound */
+    TSEL->p[P_E0] ^= 9;
+    up_store(5, "BBB");                                     /* replaced: another sound under the same slot */
+    recent_pos(&total);
+    bad += check("  a renamed slot is the same sound; a replaced one is skipped", total == 2u && recent_is(0, 0, 4) &&
+                 recent_is(1, NENGINES, 3));
+    up_put(3, 0);
+    recent_pos(&total);
+    bad += check("  an erased slot is skipped", total == 1u && recent_is(0, 0, 4) && recent_at(1, &k) == NENGINES && k == UP_SLOTS);
+    select_engine(ENGI_PHYS);
+    apply_preset(1);
+    before = *TSEL;
+    recent_pos(&total);
+    for (i = 0; i < 4u; i++)
+        turn(EN_PRESET, 1);
+    bad += check("  browsing never loads a deleted or replaced slot", TSEL->user == 0u && TSEL->eng_req == 0u && TSEL->preset == 4u);
+    up_store(3, "AAA2");                                    /* the slot reused for a new sound */
+    recent_pos(&total);
+    bad += check("  a slot reused by a new sound does not bring the old entry back", total == 1u);
+    /* FM6: factory sounds and a user sound that uses a voice bank slot (B1) */
+    memset(&recent, 0, sizeof recent);
+    list_set(0);
+    select_engine(ENGI_FM6);
+    apply_preset(3);
+    recent_note();
+    fm6_bank_used |= 1u;                                    /* (B1 holds a voice) */
+    TSEL->p[P_E7] = FM6_OWN + 1;
+    up_store(7, "BANKVOICE");
+    recent_load(NENGINES, 7);
+    recent_pos(&total);
+    ok = total == 2u && recent_is(0, NENGINES, 7) && recent_is(1, ENGI_FM6, 3);
+    bad += check("  FM6: a factory sound and a user sound with SLOT B1 are listed", ok);
+    list_set(LIST_RECENT);
+    turn(EN_PRESET, 1);
+    bad += check("  .. the PRESETS knob loads the factory FM6 sound", TSEL->eng_req == ENGI_FM6 && TSEL->preset == 3u && TSEL->user == 0u);
+    turn(EN_PRESET, 1);
+    bad += check("  .. and back the user sound saved with SLOT B1 (the voice itself: tests/fm6bank_test.c)",
+                 TSEL->eng_req == ENGI_FM6 && TSEL->user == 8u && recent_is(0, NENGINES, 7));
+    fm6_bank_used = 0;
+    /* a project load changes the sounds, not the list; its entries still name valid sounds */
+    song.playing = 0;
+    project_save_as(1, "RECENT");
+    recent_load(0, 6);
+    list_set(0);
+    project_load(1);
+    recent_pos(&total);
+    bad += check("  a project load keeps the list; entries are re-checked when used", recent.n == 3u && total == 3u && recent_ok(0));
+    /* RAM only: nothing was queued for the flash, the settings equal what they were */
+    settings_export(&p1);
+    bad += check("  never saved: no settings write pending, the stored LIST unchanged", !set_later.on && !memcmp(&p0, &p1, sizeof p0) &&
+                 !favorites.filter && !ui_lcat);
+    return bad;
+}
+
 /* 1.2 (Discussion #90): sound categories. The factory table covers every preset; PRESETS > LIST (KNOB 4) steps ALL FAV
  * BASS .. OTHER without a wrap and browses only that category (factory and user presets), kept with the settings in
  * favorites.factory[15][11] with favorites.filter 0 / 1 as before; the NAME screen's KNOB 3 sets a user preset's
@@ -1443,8 +1577,11 @@ static int test_categories(void)
         ok &= track_cat(TSEL) == CAT_BASS;
     }
     bad += check("  the PRESETS knob steps through basses only (every engine), and round", ok && preset_pos(&total) == total - 1u);
-    turn(EN_K4, 20);
-    bad += check("  .. right to OTHER and no further (no wrap)", list_mode() == LIST_N - 1u && str_eq(list_name(list_mode()), "OTHER"));
+    turn(EN_K4, 7);
+    bad += check("  .. right to OTHER, then RECENT (#80) and no further (no wrap)",
+                 list_mode() == LIST_N - 1u && str_eq(list_name(list_mode()), "OTHER") &&
+                 (turn(EN_K4, 5), list_mode() == LIST_RECENT && str_eq(list_name(list_mode()), "RECENT")));
+    turn(EN_K4, -1);
 #if !FELUCCA_FM4                                           /* (DIGITAL's presets: OTHER's) */
     {
         track_t before = *TSEL;
@@ -9582,6 +9719,7 @@ int main(void)
     bad += test_screen();
     bad += test_favorites();
     bad += test_categories();
+    bad += test_recent();
     bad += test_display_preferences();
     bad += test_menu_tabs();
     bad += test_menu_project_rows();

@@ -957,14 +957,15 @@ static void edit_param(uint32_t slot, int32_t steps)
             preset_step(steps);
         } else if (slot == 1u) {
             select_engine(eng_step(TSEL->eng_req, steps));
+            recent_note();
         } else if (slot == 2u) {
             preset_mark(steps > 0);
-        } else if (slot == 3u) {                          /* LIST: ALL FAV BASS .. OTHER (ui.c list_mode), no wrap */
-            uint32_t m = (uint32_t)clamp((int32_t)list_mode() + steps, 0, (int32_t)LIST_N - 1);
+        } else if (slot == 3u) {                          /* LIST: ALL FAV BASS .. OTHER RECENT (ui.c list_mode), no wrap */
+            uint32_t m = (uint32_t)clamp((int32_t)list_mode() + steps, 0, (int32_t)LIST_RECENT);
             if (m != list_mode()) {
-                list_set(m);
                 ui.force = 1;
-                settings_later();                         /* (#197: not on every detent; ui.c) */
+                if (list_set(m))
+                    settings_later();                         /* (#197: not on every detent; ui.c) */
             }
         }
         return;

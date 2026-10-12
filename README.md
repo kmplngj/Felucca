@@ -108,6 +108,7 @@ Their hosted versions are updated independently of this fork's builds and releas
 - **Presets:** factory presets, 32 user preset slots and 4 projects, named on the device (an FM6
   sound keeps its own patch in both); user presets get a category, and a project can get a random name; projects
   from every earlier version load. The PRESETS knob changes the sound from every page that is not a list.
+  **RECENT:** on SAVE > PRESETS, KNOB 4 (LIST) after OTHER shows the last 8 sounds you loaded, newest first (see Controls)
   Turn the FM-1 off and on and the music is as you left it (MENU > RESTORE LAST, an autosave of its own,
   written only when stopped and idle)
 - **Screen:** flat UI with M8Stealth pixel text, Fukiai icons and Inter Tight keycap legends,
@@ -250,6 +251,13 @@ where marked here:
 - On SEQ > STEP, hold a step and turn KNOB 1–4 to lock those parameters on that step (PRESETS: its NUDGE)
 - On action pages and in dialogs, OCT+ does it and OCT− goes back; in the menu, OCT+ / OCT− change the value and HOME closes it
 - Save a sound: stop, tap SAVE, pick a slot with KNOB 1, then OCT+ and OCT+ again (name it with the keys)
+- Go back to a sound you just auditioned: on SAVE > PRESETS turn KNOB 4 (LIST) right past OTHER to **RECENT**. It lists
+  the last 8 different sounds this session loaded (factory presets, user presets, any engine), newest first; the PRESETS
+  knob steps through them like any list (SAVE held undoes the audition as usual) and loading one from RECENT does not
+  reorder it. A sound loaded again moves to the front; the ninth drops the oldest. A user slot that was erased or
+  saved over with another sound is skipped. RECENT is per session: it is not saved, not part of a project or backup,
+  empty after power-on, and choosing it never changes the saved LIST setting (power-on shows ALL, FAV or the category
+  as before). Uses 36 bytes of RAM
 
 The pages by button:
 
