@@ -1,6 +1,64 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Pixel font experiment
 
+## Main-only integration — 2026-10-12
+
+The font-only commits from PR #151 were extracted onto unchanged main
+`b04f4fa720a4550c00f042a9eb67f26965784ae3`. No MACRO engine, engine IDs,
+presets or Braids credits are included. The historical stacked-branch measurements
+below remain explicitly separate from this current main-based comparison.
+
+Fresh local builds use JieLi Clang 4.0.1/pi32v2 via Linux amd64 Docker, default
+features and the same checked-in samples/verified SDK inputs, `-Os`,
+`-ffunction-sections`, `-fno-builtin` and the selective minsize pass. Local image
+inputs use Python 3.12, Pillow 12.3.0, fontTools 4.66.1 and Brotli 1.2.0;
+hosted CI retains its pinned Pillow 11.1.0 and reports separate provenance.
+
+| Resource | Unchanged main | Inter Tight control | Tamzen | M8Stealth default |
+| --- | ---: | ---: | ---: | ---: |
+| App | 495,620 B | 495,584 B | 456,372 B | 456,464 B |
+| Font symbols + descriptors | 42,904 B | 42,904 B | 3,288 B | 3,340 B |
+| RAM data+bss | 54,964 B | 54,964 B | 54,964 B | 54,964 B |
+| POOL | 327,800 B | 327,800 B | 327,800 B | 327,800 B |
+| RAMTEXT | 2,924 B | 2,924 B | 2,924 B | 2,924 B |
+| NOINIT | 15,564 B | 15,564 B | 15,564 B | 15,564 B |
+| Loader / padded FWSC | 6,930 / 610,086 B | 6,930 / 610,086 B | 6,930 / 610,086 B | 6,930 / 610,086 B |
+
+M8 saves **39,156 B against unchanged main**, or **39,120 B against the
+metric-adjusted Inter Tight control**. Tamzen is 92 B smaller than M8 in this
+main-based tree. No RAM, stack or installer download-size saving is claimed.
+Main-loop layout changes account for the control's 36 B reduction. M8 leaves
+125,100 B in the app slot; RAM/POOL spare is 18,764/40,840 B. Stack windows and
+NOINIT reservation are unchanged. RAMTEXT retains 916 instructions and no calls.
+
+All three font configurations receive fresh target builds and complete applicable
+host suites: 92 unchanged audio goldens at O2 and Os/no-SIMD, 720 unchanged engine
+switches, independent text-reference cases, normal/FM4 layout/alignment sweeps,
+persistence/protocol/loader, sanitizers/fuzz and rebuilt native/Wasm equality.
+M8 source-atlas checks cover 231 glyphs, including 1x/2x and extra-mark fit.
+No baseline was regenerated and no new target compiler warnings occur. The first Tamzen
+runner reported one transient O2 PHYS counter overrun; a repeat moved it to another preset,
+then three focused retries and a fresh complete runner passed. Preprocessed DSP harness
+inputs are byte-identical between unchanged main and Tamzen, so font selection does not
+enter that workload. Failed and repeat logs are retained; no CPU speedup is claimed.
+Local DaisySP reference and unmodified official V15 are unavailable; absent legacy
+editor capabilities are explicitly skipped. Hosted CI covers pinned DaisySP;
+physical FM-1 LCD readability, redraw and audio/USB/panel load remain deferred.
+
+Native-size before/after/diff sheets use the real renderer with PR #84's capture
+tooling in an isolated local integration checkout. Both captures retain exact
+revision/input/binary provenance; the production baseline is main, and the candidate
+production files match this font-only branch. HOME/STEP/MENU examples include
+FLAT/LINE/LARGE and palette variants. The fresh M8 browser emulator was opened;
+splash, HOME and STEP displays were inspected with no browser console errors.
+Host images do not establish physical LCD readability or device deadlines.
+
+Evidence stays under ignored `build/pr-review/font-main-{baseline,m8,inter,tamzen}/`
+and per-variant build/test logs. Capture reports are in the attached
+`foundation-ui-followup` worktree under `build/pr-review/font-main-*`.
+
+## Historical stacked-branch experiment
+
 Branch experiment for [issue #37](https://github.com/kmplngj/Felucca/issues/37),
 on `kori/pixel-font-test`, based on `9b2792e7450e19647faad22f240c85e84c374275`.
 Measured on 2026-10-11 with Inter Tight as the control. Following the comparison,
