@@ -418,7 +418,7 @@ static void cv_bitmap(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_
  * its repeat count ((count - 1) << 4 | value: runs of zeros and 15s). Codes of up to 8 bits come from a
  * 256-entry table made once per font in RAM (symbol | length << 8; 0 = a longer code: bit by bit). The
  * stream is read in order, so rows outside the clip are decoded and dropped; a run spans rows */
-#define HC_FONTS 3                       /* the codes: the faces M and L (gen_aa_font.py HUFF), the icons (AI_HC) */
+#define HC_FONTS (UI_FONT_HUFFMAN_BOOKS + 1u)   /* generated font codebooks, plus the shared icon codebook AI_HC */
 static struct { const uint8_t *hc; uint16_t lut[256]; } hc_tab[HC_FONTS] __attribute__((section(".pool")));
 static const uint16_t *hc_lut(const uint8_t *hc)
 {
