@@ -22,9 +22,15 @@ Multi-engine synthesizer firmware for the M-VAVE FM-1. Please report what you fi
   WebAssembly, with the panel on screen (mouse, touch, computer keyboard, Web MIDI in)
 - Editor: [web editor](https://hugelton.github.io/Felucca/webapp/editor/); its development has moved to
   [Felucca-WebApp](https://github.com/hugelton/Felucca-WebApp)
-- Build: [BUILDING.md](BUILDING.md)
+- Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build)
 - Diagnostics: [collect CDC console reports](docs/diagnostics.md) with an explicitly selected port;
   requires USB SERIAL on. Real FM-1 load and collector-overhead validation remains pending.
+
+Source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects M8Stealth, Tamzen
+or Inter Tight at build time. The [controlled font comparison](docs/font-experiment.md)
+shows about 39 KB of firmware flash saved with M8Stealth; RAM use is unchanged.
+Sound and saved formats are preserved. Physical FM-1 readability and redraw checks
+remain pending; build instructions and font metrics are in [BUILDING.md](BUILDING.md#build).
 
 <a href="https://hugelton.itch.io/felucca"><img src="https://static.itch.io/images/badge-color.svg" alt="Available on itch.io" width="74"></a>
 
@@ -103,7 +109,8 @@ Their hosted versions are updated independently of this fork's builds and releas
   from every earlier version load. The PRESETS knob changes the sound from every page that is not a list.
   Turn the FM-1 off and on and the music is as you left it (MENU > RESTORE LAST, an autosave of its own,
   written only when stopped and idle)
-- **Screen:** flat UI with Inter Tight and Fukiai icons, FLAT or LINE style, 10 palettes including
+- **Screen:** flat UI with M8Stealth pixel text, Fukiai icons and Inter Tight keycap legends,
+  FLAT or LINE style, 10 palettes including
   grayscale, black and white, high contrast and NIGHT; type in sizes by role (what you read in the larger size,
   labels and hints in the smaller); MENU > LARGE for tall knob cards with larger labels and values; the menu in
   five tabs. The header shows the track and the **project slot of its pattern** ("1 A", "1 A*" once edited), the
@@ -444,7 +451,11 @@ For more details, see [On AI-Assisted Development and Responsibility](https://gi
   [CrispyZebra](https://github.com/hugelton/CrispyZebra), GPL-3.0); the DRUM voices and kits; the Hügelton Sample
   Pack (the drum samples, GPL-3.0-only, not CC0); the [Fukiai](https://github.com/hugelton/Fukiai) icon
   font ([MIT](LICENSES/MIT-Fukiai.txt))
-- Fonts: [Inter Tight](https://github.com/rsms/inter-tight) by The Inter Project Authors, [SIL OFL 1.1](LICENSES/OFL-InterTight.txt);
+- Fonts: [M8Stealth57/89](assets/fonts/m8stealth/README.md) by Trash80, with local bitmap adaptations
+  ([CC BY-SA 3.0](LICENSES/CC-BY-SA-3.0-M8Stealth.txt));
+  [Tamzen](assets/fonts/tamzen/README.md) by Suraj N. Kurapati, based on Tamsyn by Scott Fial
+  ([font licence](LICENSES/Tamzen.txt));
+  [Inter Tight](https://github.com/rsms/inter-tight) by The Inter Project Authors, [SIL OFL 1.1](LICENSES/OFL-InterTight.txt);
   the browser emulator's labels: [DotGothic16](https://github.com/fontworks-fonts/DotGothic16) by The DotGothic16 Project Authors, [SIL OFL 1.1](LICENSES/OFL-DotGothic16.txt)
 - Samples: [Versilian Studios](https://versilian-studios.com/) [VSCO-2 Community Edition](https://github.com/sgossner/VSCO-2-CE) and [VCSL](https://github.com/sgossner/VCSL), CC0 1.0: the SAMPLE sets, also SLICE's PIANO and PIANO HD ([attribution](assets/samples-cc0/ATTRIBUTION.txt))
 - VOICE engine: after [klattsch](https://github.com/tgies/klattsch) by Tony Gies (MIT); formant data from Klatt (1980) and Hillenbrand et al. (1995)

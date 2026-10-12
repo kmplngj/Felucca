@@ -650,8 +650,8 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
                 text_ink(lf, label, b);
                 w = b[2] - b[0] + 4;
                 if (w > COL_W + 1 - lx - b[0]) w = COL_W + 1 - lx - b[0];
-                cv_rrect(lx + b[0] - 2, cy - 3, w, lf == &AF_M ? chh + 5 : 15, 3, T_ACCENT, T_SURF);
-                GFX_HOOK_ALIGN(lx + b[0] - 2, cy - 3, lx + b[0] - 2 + w, lf == &AF_M ? cy + chh + 2 : 18, AL_HV,
+                cv_rrect(lx + b[0] - 2, cy - 3, w, chh + (lf == &AF_M ? 5 : 6), 3, T_ACCENT, T_SURF);
+                GFX_HOOK_ALIGN(lx + b[0] - 2, cy - 3, lx + b[0] - 2 + w, cy + chh + (lf == &AF_M ? 2 : 3), AL_HV,
                                "card label chip (MONO hot)");
                 cv_text_fit(lx, ly, lf, label, T_INK, T_ACCENT, COL_W - 2 - lx);
             } else
@@ -662,12 +662,13 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
         else if (vf == &AF_M) {
             if (!ui.roll[c].from[0] && val[0])
                 GFX_HOOK_ALIGN(0, ROLL_Y, COL_W, ROLL_Y + ROLL_H, AL_V, "card value in its roll window");
-            x = roll_text(c, 5, 17, val, vc);
+            x = roll_text(c, 5, ROLL_Y + CAP_IN(M, ROLL_H), val, vc);
         } else
             x = cv_text_fit(5, 20, vf, val, vc, T_SURF, room - uw);
         if (unit[0]) {
-            GFX_HOOK_ALIGN(0, 0, 0, vf == &AF_M ? 17 + AF_M.asc : 20 + AF_S.asc, AL_B, "card unit on its value's baseline");
-            cv_text_on(x + 3, 20, &AF_S, unit, T_MID, T_SURF);     /* on the value's baseline (S) */
+            int32_t baseline = vf == &AF_M ? ROLL_Y + CAP_IN(M, ROLL_H) + AF_M.asc : 20 + AF_S.asc;
+            GFX_HOOK_ALIGN(0, 0, 0, baseline, AL_B, "card unit on its value's baseline");
+            cv_text_on(x + 3, baseline - AF_S.asc, &AF_S, unit, T_MID, T_SURF);
         }
         if (!strip && ratio >= 0) {
             int32_t gw = COL_W - 10, fx = ratio * gw / 1000;
@@ -1219,7 +1220,8 @@ static void draw_columns(void)
 
 
 /* The power-on splash (main.c fm1_main, web/emu felucca_web.c; 1.1.5): a RAISE square centred on the screen, square
- * corners (in every style; LINE too: RAISE from the palette's SURF), in it in AF_M, the ink SPL_PAD in from the left:
+ * corners (in every style; LINE too: RAISE from the palette's SURF), in it in AF_M (M8 maker lines in S),
+ * the ink SPL_PAD in from the left:
  * at the top the name and the version, the first line's capitals' top SPL_PAD down; at the bottom the maker and
  * "with community", the last line's capitals' bottom (its baseline) SPL_PAD up from the square's bottom. Both
  * margins are measured to the capitals (the descender of "community" hangs into the bottom one, as off a baseline).
@@ -1238,18 +1240,43 @@ static void splash_band(uint32_t y, uint32_t h, int32_t ly, const char *const *l
 {
     cv_begin(SPL_SQ, h, T_RAISE);
     GFX_HOOK_ALIGN(0, al0, 0, al1, mode | AL_N(2), tag);
+#if UI_FONT_BITMAP
+    int32_t b[4];
+#if UI_FONT_M8STEALTH
+    /* The wider M8 value face cannot fit the maker's name in this square.
+     * Use S for both maker lines, keeping the bottom baseline and all text. */
+    const aafont_t *f = mode == AL_B ? &AF_S : &AF_M;
+    if (mode == AL_B)
+        ly += AF_M.asc - AF_S.asc;
+#else
+    const aafont_t *f = &AF_M;
+#endif
+    text_ink(f, l[0], b);
+    cv_text_on(SPL_PAD - b[0], ly, f, l[0], T_TEXT, T_RAISE);
+    text_ink(f, l[1], b);
+    cv_text_on(SPL_PAD - b[0], ly + SPL_PITCH, f, l[1], T_TEXT, T_RAISE);
+#else
     cv_text_on(SPL_PAD, ly, &AF_M, l[0], T_TEXT, T_RAISE);
     cv_text_on(SPL_PAD, ly + SPL_PITCH, &AF_M, l[1], T_TEXT, T_RAISE);
+#endif
     cv_blit(SPL_X0, y);
 }
 static void draw_splash(void)
 {
-    int32_t h = SPL_PAD - AF_M_CAP_Y + SPL_PITCH + AF_M.h;     /* a band: its two lines, the descenders in */
+    int32_t top = SPL_PAD - AF_M_CAP_Y;
+#if UI_FONT_BITMAP
+    int32_t b[4];
+    /* Tamzen's lowercase ascenders rise above H. Inset the name's actual ink,
+     * while declaring the capitals' band separately for the alignment check. */
+    text_ink(&AF_M, SPLASH_LINES[0], b);
+    top = SPL_PAD - b[1];
+#endif
+    int32_t h = top + SPL_PITCH + AF_M.h;                    /* a band: its two lines, the descenders in */
     int32_t lb = h - SPL_PAD - AF_M_CAP_H - AF_M_CAP_Y;         /* the bottom band's last line: its top */
     lcd_fill(0, 0, 240, 240, T_BG);
     lcd_fill(SPL_X0, SPL_X0, SPL_SQ, SPL_SQ, T_RAISE);
-    splash_band(SPL_X0, (uint32_t)h, SPL_PAD - AF_M_CAP_Y, SPLASH_LINES, AL_V, SPL_PAD,
-                SPL_PAD + SPL_PITCH + AF_M_CAP_H, "splash name + version SPL_PAD from the top");
+    splash_band(SPL_X0, (uint32_t)h, top, SPLASH_LINES, AL_V, top + AF_M_CAP_Y,
+                top + AF_M_CAP_Y + SPL_PITCH + AF_M_CAP_H, "splash name + version SPL_PAD from the top");
     splash_band(SPL_X0 + SPL_SQ - (uint32_t)h, (uint32_t)h, lb - SPL_PITCH, SPLASH_LINES + 2, AL_B, 0, h - SPL_PAD,
                 "splash maker's baseline SPL_PAD from the bottom");
     lcd_sync();
