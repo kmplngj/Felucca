@@ -78,6 +78,64 @@ dump, credentials or dependency caches. Public GitHub-hosted runner use follows
 GitHub's plan; private forks can consume minutes and artifact storage. There is
 one target/test job per run and no recurring nightly schedule.
 
+## Downloads and checksums
+
+For published packages, open this fork's [Releases](https://github.com/kmplngj/Felucca/releases)
+and choose the intended version, checking whether it is marked as a prerelease. Download
+the complete `felucca-VERSION-release.tar.gz` archive and its matching `.sha256` sidecar
+into a fresh directory. The archive includes the installable `.fwsc`, raw app `.bin`,
+`BUILD-PROVENANCE.json`, sample attribution, `LICENSE`, `LICENSING.md`, third-party
+`LICENSES/` and its own `SHA256SUMS`. Retain attribution and license files when distributing
+the package. Pass the `.fwsc` to the [installer](../BUILDING.md#install); the raw app and
+diagnostic files are build/debug material.
+
+Replace `1.6-rc1` below with the version shown on the chosen release. Run one block from
+the directory containing both downloaded files. Each `&&` continues only after the
+preceding command succeeds.
+
+On macOS:
+
+```sh
+shasum -a 256 -c felucca-1.6-rc1-release.tar.gz.sha256 &&
+tar -xzf felucca-1.6-rc1-release.tar.gz &&
+cd felucca-1.6-rc1 &&
+shasum -a 256 -c SHA256SUMS
+```
+
+On Linux with GNU Coreutils:
+
+```sh
+sha256sum -c felucca-1.6-rc1-release.tar.gz.sha256 &&
+tar -xzf felucca-1.6-rc1-release.tar.gz &&
+cd felucca-1.6-rc1 &&
+sha256sum -c SHA256SUMS
+```
+
+Require every listed file to report `OK` before installation. A missing file or a checksum
+mismatch fails the check: obtain an intact download and verify again. These checks detect
+download corruption; they do not establish publisher authenticity or device compatibility.
+
+If downloading individual release assets instead, save the complete asset set and the
+release-page `SHA256SUMS` together in a fresh directory, then run `shasum -a 256 -c SHA256SUMS`
+(macOS) or `sha256sum -c SHA256SUMS` (Linux) there. That manifest uses GitHub's flat asset
+filenames, including standalone license texts, the archive and its sidecar. The manifest
+inside the archive instead uses its unpacked directory structure, including `LICENSES/`
+paths. Keep each manifest with the files it describes; the sidecar checks the archive itself.
+
+For development builds, open a successful run in [Actions](https://github.com/kmplngj/Felucca/actions)
+and use its Artifacts section. These ZIP downloads are temporary build output, separate
+from published tag releases; access and retention are described under
+[Debug artifacts and cost](#debug-artifacts-and-cost). Firmware artifacts contain the
+`.fwsc`, raw app, provenance and license material; diagnostics contain logs and debugging evidence.
+The package digest in `build/ci/package.sha256` names the CI build path, so compare it with the
+digest of the downloaded `.fwsc` rather than use the release-manifest commands unchanged.
+
+Manual `Release` dispatch produces artifacts without publishing. Tag release publication
+does not flash a device or deploy the web installer or Pages site. The upstream
+[installer](https://hugelton.github.io/Felucca/), [browser demo](https://hugelton.github.io/Felucca/webapp/try/)
+and [editor](https://hugelton.github.io/Felucca/webapp/editor/) are maintained separately;
+check their displayed versions before assuming they contain this fork's changes.
+
 ## Releasing
 
 Push a `vX.Y`, `vX.Y.Z`, `vX.Y.Z.W` or `vX.Y-suffix` tag; each numeric component
