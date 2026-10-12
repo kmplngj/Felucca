@@ -244,7 +244,7 @@ def main():
     elif args.command == "package":
         package(Path("release"), args.value)
     elif args.command == "stage-release":
-        stage_release(Path("release"), Path("downloaded"), Path("assets"), args.value)
+        stage_release(Path("release"), Path("downloaded"), Path("release-assets"), args.value)
 
 
 if __name__ == "__main__":

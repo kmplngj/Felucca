@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -214,6 +215,26 @@ class Checks(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "filenames collide"):
                 ci.stage_release(root, output, self.root / "assets", "1.6")
             path.unlink()
+
+    def test_publisher_cli_preserves_existing_repository_assets(self):
+        output, root = self.bundle()
+        shutil.copytree(root, self.root / "release")
+        downloaded = self.root / "downloaded"
+        downloaded.mkdir()
+        for suffix in (".tar.gz", ".tar.gz.sha256"):
+            shutil.copyfile(output / f"felucca-1.6-release{suffix}", downloaded / f"felucca-1.6-release{suffix}")
+        existing = self.root / "assets/keep.txt"
+        existing.parent.mkdir()
+        existing.write_text("original asset")
+        # The isolated publisher workspace still checks the actual source revision.
+        env = dict(os.environ, GIT_DIR=ci.subprocess.check_output(
+            ["git", "rev-parse", "--absolute-git-dir"], text=True).strip())
+        result = ci.subprocess.run([sys.executable, str(ci.build.SRC / "tools/ci.py"), "stage-release", "1.6"],
+                                   cwd=self.root, env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(existing.read_text(), "original asset")
+        ci.verify_checksums(self.root / "release-assets")
+        self.assertTrue((self.root / "release-assets/Apache-2.0.txt").is_file())
 
 
 if __name__ == "__main__":
