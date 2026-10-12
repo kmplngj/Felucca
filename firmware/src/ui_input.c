@@ -64,6 +64,26 @@ static int mom_down(void)                              /* LFO held where its tur
 {
     return ((fm1_in.buttons >> panel.btn[B_LFO]) & 1u) && !ui.menu && !ui.confirm && !name_on() && !ui.layer && !ui.uboot;
 }
+/* a page whose knobs can be momentary (mom_turn's page tests; a knob or two more there refuse) */
+static int mom_page(void)
+{
+    const page_t *pg = cur_page();
+    if (ui.home || (pg->scope == SC_TRK && !lock_held()))
+        return 1;
+    return !(act_cols() || lock_held() || !(pg->scope == SC_TRACK || pg->scope == SC_ENGINE || pg->scope == SC_GLOBAL) ||
+             pg->graph == GR_EVENTS || pg->graph == GR_SONG || pg->graph == GR_BROWSE || pg->graph == GR_USER ||
+             pg->graph == GR_PATS);
+}
+/* the header's persistent status while LFO is held where it is momentary (ui_draw.c mom_head): MOM_ST_READY, MOM_ST_KEPT
+ * or MOM_ST_N + the values held; 0 = none. Main loop state only, once per ui_input */
+static uint8_t mom_status(void)
+{
+    if (!mom_down() || !mom_page()) {
+        mom.kept = 0;                                  /* (let go, a menu, a page of no momentary: no stale KEPT) */
+        return 0;
+    }
+    return mom.n ? (uint8_t)(MOM_ST_N + mom.n) : mom.kept ? MOM_ST_KEPT : MOM_ST_READY;
+}
 /* KNOB k turned s with LFO held: 1 = taken (a momentary value, or refused full), 0 = not a momentary value (the turn
  * goes as ever: the column picks, steps, acts) */
 static int mom_turn(uint32_t k, int32_t s)
@@ -80,9 +100,7 @@ static int mom_turn(uint32_t k, int32_t s)
         vp = &TSEL->p[MIX_ID[k & 3u]];
         d = &TP[MIX_ID[k & 3u]];
     } else {
-        if (act_cols() || lock_held() || !(pg->scope == SC_TRACK || pg->scope == SC_ENGINE || pg->scope == SC_GLOBAL) ||
-            pg->graph == GR_EVENTS || pg->graph == GR_SONG || pg->graph == GR_BROWSE || pg->graph == GR_USER ||
-            pg->graph == GR_PATS || (pg->graph == GR_SLICES && k < 2u) || (pg->graph == GR_MOD && k == 0u))
+        if (!mom_page() || (pg->graph == GR_SLICES && k < 2u) || (pg->graph == GR_MOD && k == 0u))
             return 0;
         d = page_desc(pg, k, &vp);
     }
@@ -100,6 +118,7 @@ static int mom_turn(uint32_t k, int32_t s)
         mom.vp[i] = vp;
         mom.v[i] = *vp;
         mom.n++;
+        mom.kept = 0;
         if (i == 0u)
             ui_message("MOMENTARY  [OCT+] KEEP");
     }
@@ -1396,8 +1415,10 @@ static void ui_input(void)
     if (mom.n && ((pressed >> panel.btn[B_OCTUP]) & 1u)) {   /* .. OCT+ with LFO held: kept (no octave) */
         mom.n = 0;
         pressed &= ~(1u << panel.btn[B_OCTUP]);
+        mom.kept = 1;
         ui_message("KEPT");
     }
+    mom.st = mom_status();                              /* (the header's status: it redraws when this changes) */
     home = btn_hold(&ui.home_t0, B_HOME, now, 1);
     rec = btn_hold(&ui.rec_t0, B_REC, now, 0);          /* (a tap; held, the REC layer: ui_layer.c) */
     save = btn_hold(&ui.save_t0, B_SAVE, now, !ui.menu && !ui.confirm);   /* held: UNDO (ui.c undo_swap) */

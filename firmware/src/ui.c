@@ -813,10 +813,15 @@ static void load_motion_hold(track_t *t, uint32_t what)
 /* MOMENTARY (ui_input.c mom_turn: LFO held, the knobs' changes go back when it is let go): the values turned, where
  * they are (a track's p[], song.g[]) and what they were. In the main loop's pool (no .bss) */
 #define MOM_N 8u
+#define MOM_ST_READY 1u                          /* mom.st: LFO held, nothing turned yet */
+#define MOM_ST_KEPT 2u                           /* .. OCT+ kept them */
+#define MOM_ST_N 2u                              /* .. MOM_ST_N + n: n values held */
 static struct {
     uint8_t n;                                    /* values held, 0 = none */
     int16_t *vp[MOM_N];
     int16_t v[MOM_N];
+    uint8_t kept;                                 /* OCT+ kept them, LFO still held: the header says KEPT */
+    uint8_t st;                                   /* the header's status (ui_input.c mom_status; ui_draw.c mom_head) */
 } mom __attribute__((section(".pool")));
 static void mom_restore(void)                     /* LFO let go: every value back */
 {
@@ -836,6 +841,7 @@ static void mom_back(const track_t *t)            /* a sound load into t (0: a p
             mom.v[k++] = mom.v[i];
         }
     mom.n = (uint8_t)k;
+    mom.kept = 0;
 }
 static void load_begin(track_t *t, uint32_t what)
 {
