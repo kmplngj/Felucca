@@ -50,9 +50,11 @@ SDK_SHA256 = {
     "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
 }
 
-PRODUCT = "FM-1_900"                # package identity; release builds are FM-1_9XY
+DEV_PRODUCT = "FM-1_900"            # the development default identity; release builds are FM-1_9XY
+PRODUCT = DEV_PRODUCT               # this build's package identity, set by main()
 VERSION = None                      # FELUCCA_VERSION for release builds (default: firmware/src/felucca.c)
-PRODUCT_RE = re.compile(r"FM-1_[A-Za-z0-9._-]{1,15}")    # 20 characters at most: the package marker's room
+PRODUCT_RE = re.compile(r"FM-1_[A-Z0-9._-]{1,15}")    # 20 characters at most: the package marker's room;
+# upper case only, so two products never name the same file on a case-insensitive file system
 # identities an explicit --product must not take: the stock firmware's (the loader's USB identity
 # "ota-FM-1_015" is derived from it, firmware/src/ota.c); the loader's own "ota-FM-1_900" never matches
 RESERVED_PRODUCTS = ("FM-1_015",)
@@ -62,7 +64,7 @@ def check_product(product):
     """Raise SystemExit unless product is a package identity this build may use (syntax only: a valid
     identity is not registered with, or accepted by, any host or Hub)."""
     if not product.isascii() or not PRODUCT_RE.fullmatch(product):
-        raise SystemExit(f"--product {product!r}: use FM-1_ and 1..15 of A-Z a-z 0-9 . _ - (ASCII, 20 characters at most)")
+        raise SystemExit(f"--product {product!r}: use FM-1_ and 1..15 of A-Z 0-9 . _ - (ASCII, 20 characters at most)")
     if product in RESERVED_PRODUCTS:
         raise SystemExit(f"--product {product}: reserved for the stock firmware / the update loader")
     if any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product)):
@@ -71,7 +73,7 @@ def check_product(product):
 
 def resolve(argv):
     """Command line -> the build's identity and output names, before anything is generated or written.
-    product: --product > the --release derived FM-1_9XY > PRODUCT (the development default).
+    product: --product > the --release derived FM-1_9XY > DEV_PRODUCT.
     Only an explicit product that differs from the one the other options give is part of the output names,
     so two products at one display version keep separate files and the default names do not change."""
     ap = argparse.ArgumentParser()
@@ -80,9 +82,9 @@ def resolve(argv):
                     help="package identity (FELUCCA_ID and package marker); default FM-1_9XY with --release, else FM-1_900")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args(argv)
-    product, version, tag = PRODUCT, None, ""
+    product, version, tag = DEV_PRODUCT, None, ""
     if a.release:                   # one digit each: the identity has room for two (X.Y.Z and X.Y.Z.W keep X.Y's)
-        m = re.fullmatch(r"(\d)\.(\d)(?:\.\d){0,2}(-[A-Za-z0-9]+)?", a.release)
+        m = re.fullmatch(r"([0-9])\.([0-9])(?:\.[0-9]){0,2}(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z, X.Y.Z.W or X.Y-suffix, one digit each")
         product = "FM-1_9" + m[1] + m[2]

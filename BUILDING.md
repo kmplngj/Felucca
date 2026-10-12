@@ -65,7 +65,8 @@ identity derived from `--release` (`FM-1_9XY`), then the development default `FM
 `--product` nothing changes: same defines, outputs and file names.
 
 The value is checked before anything is generated, compiled or written: `FM-1_` followed by 1 to 15
-of `A-Z a-z 0-9 . _ -` (ASCII only, 20 characters at most, as the package marker allows); empty,
+of `A-Z 0-9 . _ -` (ASCII upper case only, 20 characters at most, as the package marker allows; upper
+case so that no two products share a file name on a case-insensitive file system); empty, lower-case,
 overlong, non-ASCII, control, space, quote, backslash and newline values are refused, as is
 `FM-1_015` (the stock firmware's identity, from which the loader's USB identity is derived). The
 loader keeps its own identity `ota-FM-1_900` whatever the app uses. An explicit product that differs

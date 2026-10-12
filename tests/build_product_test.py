@@ -51,13 +51,25 @@ class Resolve(unittest.TestCase):
         self.assertEqual((c["name"], c["rel"], c["app"]), ("felucca-1.0.fwsc", "release-1.0", "felucca-1.0-app.bin"))
         self.assertEqual(B.resolve(["--product", "FM-1_900"])["name"], "felucca.fwsc")
 
+    def test_release_digits_ascii(self):
+        for r in ("\u0661.\u0662", "1.\u0662", "1.0.\u0663"):    # Arabic-Indic digits
+            with self.subTest(r=r), self.assertRaises(SystemExit):
+                B.resolve(["--release", r])
+
+    def test_default_not_left_from_an_earlier_build(self):
+        B.PRODUCT = "FM-1_ACME"             # as main() leaves it after a --product build
+        try:
+            self.assertEqual(B.resolve([])["product"], "FM-1_900")
+        finally:
+            B.PRODUCT = B.DEV_PRODUCT
+
     def test_valid(self):
-        for p in ("FM-1_900", "FM-1_ACME", "FM-1_a.b-c_9", "FM-1_" + "x" * 15):
+        for p in ("FM-1_900", "FM-1_ACME", "FM-1_A.B-C_9", "FM-1_" + "X" * 15):
             with self.subTest(p=p):
                 B.check_product(p)
 
     def test_invalid(self):
-        bad = ["", "FM-1_", "FM-1_" + "x" * 16, "fm-1_abc", "FM-2_abc", "ACME", "FM-1_a b", "FM-1_a\"b", "FM-1_a'b",
+        bad = ["", "FM-1_", "FM-1_" + "x" * 16, "fm-1_abc", "FM-1_acme", "FM-1_Acme", "FM-2_abc", "ACME", "FM-1_a b", "FM-1_a\"b", "FM-1_a'b",
                "FM-1_a\\b", "FM-1_a\nb", "FM-1_a\tb", "FM-1_a\x00b", "FM-1_ä", "FM-1_a​", " FM-1_abc",
                "FM-1_abc\n", "FM-1_a/b", "FM-1_a;b", "ota-FM-1_900", "ota-FM-1_015",
                "FM-1_015"]       # the stock identity
@@ -144,6 +156,12 @@ class NoJobs(unittest.TestCase):
         self.assertTrue((rel / "felucca-1.0.fwsc").exists())
         self.assertTrue((rel / "felucca-1.0-app.bin").exists())
         self.assertFalse((rel / "BUILD-INPUTS.txt").exists())
+
+    def test_repeated_builds_in_one_process(self):
+        B.main(["--product", "FM-1_ACME"])
+        B.main([])
+        self.assertEqual(self.packed, ["FM-1_ACME", "FM-1_900"])
+        self.assertEqual((self.out / "felucca.fwsc").read_bytes(), b"pkg:FM-1_900")
 
     def test_default_dev_outputs(self):
         B.main([])
