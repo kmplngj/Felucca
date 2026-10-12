@@ -1302,6 +1302,8 @@ static void oct_overlap(uint32_t pressed)
     pg_rev = oct_ov & ~oct_bad & ~fm1_in.buttons;       /* (pressed and let go in one pass: in `all`, not in buttons) */
     oct_ov &= fm1_in.buttons;
     oct_bad &= fm1_in.buttons;
+    if (!(fm1_in.buttons & dn) && !oct_ov && !pg_rev)   /* (OCT- up over no button: a plain octave step, no gesture) */
+        oct_pre_ok = 0;
 }
 
 /* the tap of button b is a reverse: OCT- over it, on the family shown, in no context that owns OCT- (MIDI LEARN, a
@@ -1354,8 +1356,9 @@ static int page_tap(uint32_t b)
     }
     for (f = FAM_HOME + 1u; f < FAM_COUNT; f++)        /* (GLO SEQ SAVE ..: HOME is ui_input's, home_tap) */
         if (FAM_BTN[f] == b && b != B_HOME) {
-            open_family_dir(f, page_rev(b, f));
-            return 0;
+            uint32_t rev = page_rev(b, f);
+            open_family_dir(f, rev);
+            return (int)rev;                            /* (a reverse is no page tap a double tap could lock) */
         }
     return 0;
 }
@@ -1626,13 +1629,15 @@ static void ui_input(void)
         case B_OCTDN:
         case B_OCTUP: {
             uint32_t both = (1u << panel.btn[B_OCTDN]) | (1u << panel.btn[B_OCTUP]);
+            uint32_t again = oct_pre_ok && b == B_OCTDN && oct_ov;   /* (OCT- again over the same held button) */
             oct_pre_ok = 0;
             if (act_cols() || layer_set_open() || ui.ml.on)   /* action pages: enter / back (below); SET layers: OCT-; */
                 break;                                  /* MIDI LEARN: clear / done (below) */
             if ((fm1_in.buttons & both) == both) {
                 song.octave = 0;
             } else {
-                oct_pre = song.octave;
+                if (!again)                             /* (the octave before the gesture's first OCT-) */
+                    oct_pre = song.octave;
                 song.octave += b == B_OCTDN ? (song.octave > -3 ? -1 : 0) : (song.octave < 3 ? 1 : 0);
                 oct_set = song.octave;
                 oct_pre_ok = b == B_OCTDN;

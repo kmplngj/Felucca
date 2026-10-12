@@ -9637,6 +9637,35 @@ static int test_prev_page(void)
     press(B_ENV);
     bad += check("  OCT- tapped and let go before the button: a plain tap, the octave step stays", ui.page != j && song.octave == -1);
 
+    {   /* OCT- held over two quick taps of a quick-layer button: two reverses, not the layer's double tap (lock) */
+        static const uint8_t LB[3] = {B_FX, B_SCL, B_EDIT}, LF[3] = {FAM_FX, FAM_SCL, FAM_EDIT};
+        ok = 0;
+        for (k = 0; k < 3u && !ok; k++) {
+            ui_power_on();
+            n = fam_pages(LF[k], pg);
+            if (n < 3u)
+                continue;
+            ui.home = 0; ui.page = pg[0]; ui.fam_last[LF[k]] = pg[0]; page_entered();
+            btn_down(B_OCTDN); frame();
+            press(LB[k]); press(LB[k]);
+            btn_up(B_OCTDN); frame();
+            ok = ui.page == pg[n - 2u] && !ui.lock && !ui.layer && song.octave == 0;
+        }
+        bad += check("  OCT- held, a quick-layer button tapped twice quickly: two pages back, no layer lock", ok);
+    }
+    ui_power_on(); open_family(FAM_ENV); open_family(FAM_ENV);   /* (ENV's second page) */
+    j = ui.page;
+    btn_down(B_ENV); frame();
+    press(B_OCTDN); press(B_OCTDN);                    /* OCT- twice over the held button */
+    btn_up(B_ENV); frame();
+    bad += check("  OCT- pressed twice over a held button: one page back, the octave from before the first press",
+                 ui.page == page_first(FAM_ENV) && ui.page != j && song.octave == 0);
+    ui_power_on(); open_family(FAM_ENV); open_family(FAM_ENV);
+    press(B_OCTDN);                                    /* a plain octave step first (-1) */
+    prev_tap(B_ENV, 0);
+    bad += check("  an earlier plain OCT- step is kept: the reverse puts back only its own press", song.octave == -1 &&
+                 ui.page == page_first(FAM_ENV));
+
     /* no lasting change over repeats */
     ui_power_on(); open_family(FAM_ENV); song.octave = -2;
     prev_tap(B_ENV, 0); prev_tap(B_ENV, 2); prev_tap(B_ENV, 3);
