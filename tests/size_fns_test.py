@@ -110,6 +110,13 @@ class Reachability(unittest.TestCase):
         self.assertEqual(S.isr_reach(ir), set(S.ISR_ROOTS))
         self.assertEqual(S.annotate(ir, {"ui"})[1], {"ui"})
 
+    def test_zero_calls_still_check_an_existing_dispatch_contract(self):
+        ir = module(extra=function("callback"))
+        with self.assertRaisesRegex(ValueError, "0 indirect ISR call"):
+            S.isr_reach(ir, indirect={S.ISR_ROOTS[0]: (1, ("callback",))})
+        self.assertEqual(S.isr_reach(ir, indirect={}), set(S.ISR_ROOTS))
+        self.assertIn("callback", S.isr_reach(ir, indirect={S.ISR_ROOTS[0]: (0, ("callback",))}))
+
     def test_roots_missing_disabled_and_malformed_bodies(self):
         ir = function("ui")
         with self.assertRaisesRegex(ValueError, "missing ISR roots"):

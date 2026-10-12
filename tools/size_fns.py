@@ -144,8 +144,8 @@ def isr_reach(ir, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
         seen.add(f)
         if f in body:
             count = indirect_calls(body[f])
-            if count:
-                contract = indirect.get(f)
+            contract = indirect.get(f)
+            if count or contract is not None:
                 if contract is None or contract[0] != count:
                     raise ValueError(f"{f}: {count} indirect ISR call(s) need a reviewed target/count contract")
                 targets = set(contract[1])

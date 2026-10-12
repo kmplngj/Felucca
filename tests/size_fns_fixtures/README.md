@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Selective minsize ISR protection
 
-`python3 tests/size_fns_test.py` exercises the production selector with 15
+`python3 tests/size_fns_test.py` exercises the production selector with 16
 portable tests. It covers both ISR roots, recursion/transitive calls, directly
 taken addresses, global pointer initializers, nested constant tables, aliases
 and cycles, unrelated globals, runtime-written hooks, unknown dispatch, changed
@@ -29,7 +29,7 @@ This lightweight selector does not infer pointer provenance or runtime writes.
 Every reachable indirect call therefore needs an explicit `ISR_INDIRECT` source
 contract: its caller, expected number of indirect call sites in unoptimized IR,
 and complete possible target definitions or immutable tables/aliases. Missing
-contracts, count drift, unknown call forms, empty/missing targets and aliases or
+contracts, count drift (including a drop to zero calls), unknown call forms, empty/missing targets and aliases or
 tables leading to mutable dispatch objects fail the size pass. For runtime-written
 hooks the contract must list every possible callback function explicitly. Ordinary
 mutable DSP state referenced inside those callback bodies remains allowed.
@@ -115,3 +115,10 @@ DaisySP and original stock V15 restore checks were skipped because their inputs
 are absent. The selector SHA-256 for these measurements is
 `88df3fe7147ea3919fef5f52ee49127e2d830b538402ef9ccd476479b8ac179b`.
 Device validation remains deferred; no flashing or device timing was performed.
+
+The subsequent count-to-zero review fix adds one portable regression (16 cases
+pass normally and with Python -O) and passes a fresh target IR smoke. It emits
+byte-identical production annotation to the measured candidate above. Its selector
+SHA-256 is `3fdf1e6262f1caf64df584c1be13a5408681859600b945b27476b09efcc55bed`.
+The earlier full suite belongs to the previous selector revision; the count-zero
+followup is covered by the focused checks and a fresh target build.
