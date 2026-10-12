@@ -21,8 +21,9 @@ python3 tests/ui_render.py build/ui-candidate --renderer build/host/ui_render
 current generated headers, and optionally `--fm4` (`FELUCCA_FM4=1`). `--cc` defaults
 to `CC` or `clang`. Capture includes the Git revision and dirty flag, compiler version
 and command, binary SHA256, Pillow version, source/generator/font/asset/generated-header
-hashes, and the actual compiled display and engine settings. Input hashes are checked
-across compilation and rendering. Generated-header hashes describe exactly what was
+hashes, and the actual compiled display and engine settings. Font inputs include nested
+TTF/WOFF2/BDF files and bitmap references as well as both font generators. Input hashes
+are checked across compilation and rendering. Generated-header hashes describe exactly what was
 used; regenerate assets for each revision rather than assuming an old header is current.
 
 The manifest lists the C renderer’s expected scenes and hashes each produced PNG.

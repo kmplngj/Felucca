@@ -22,8 +22,9 @@ def capture_provenance(renderer):
         return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
     patterns = ("firmware/src/*.[ch]", "firmware/hal/*.[ch]", "tests/*.[ch]",
-                "tests/ui_render.py", "tests/ui_compare.py", "tools/gen_aa*.py",
-                "assets/fonts/*.ttf", "web/fukiai.ttf", "build/gen/*.h")
+                "tests/ui_render.py", "tests/ui_compare.py", "tools/gen_aa*.py", "tools/gen_bitmap_font.py",
+                "assets/fonts/**/*.ttf", "assets/fonts/**/*.woff2", "assets/fonts/**/*.bdf",
+                "assets/fonts/**/*.bmp", "web/fukiai.ttf", "build/gen/*.h")
     inputs = {str(p.relative_to(ROOT)): sha256(p)
               for pattern in patterns for p in sorted(ROOT.glob(pattern))}
     return {"revision": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain")),

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from types import SimpleNamespace
 
 from PIL import Image
@@ -55,6 +56,18 @@ class ComparisonTest(unittest.TestCase):
         self.assertIsNone(result["scenes"][0]["bbox"])
         self.assertTrue((self.out / result["sheets"][0]).is_file())
         self.assertTrue((self.out / "summary.json").is_file())
+
+    def test_provenance_includes_nested_pixel_font_inputs(self):
+        inputs = ("tools/gen_bitmap_font.py", "assets/fonts/Control.ttf",
+                  "assets/fonts/m8stealth/source.woff2", "assets/fonts/m8stealth/reference.bmp",
+                  "assets/fonts/tamzen/source.bdf")
+        for name in inputs:
+            path = self.base / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(name.encode())
+        with mock.patch.object(compare, "ROOT", self.base), mock.patch.object(compare.subprocess, "check_output", return_value="fixture"):
+            captured = compare.capture_provenance(None)["inputs"]
+        self.assertEqual(captured, {name: compare.sha256(self.base / name) for name in inputs})
 
     def test_single_pixel_any_rgb_channel(self):
         for channel in ((1, 0, 0), (0, 1, 0), (0, 0, 1)):
