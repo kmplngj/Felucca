@@ -25,7 +25,12 @@ sources against simulated hardware. A file that is not included from those place
   (`firmware/src/fm4_convert.c`).
 - `NENGINES` is `13 + FELUCCA_SLICE` in `core.h`; a new engine changes that count and the
   `ENGINES[]` table together. A build option that removes an engine (as `FELUCCA_SLICE=0`)
-  has to keep every other number unchanged.
+  has to keep every other number unchanged. Today SLICE (13) is last only because it is
+  conditional: `&ENG_SLICE` sits under `#if FELUCCA_SLICE` at the end of `ENGINES[]`, so an
+  engine simply appended after it would be 14 in a normal build and 13 (SLICE's stored/wire
+  number) with `FELUCCA_SLICE=0`. Before appending, give `FELUCCA_SLICE=0` builds a reserved
+  placeholder in slot 13 (as `ENG_FM4_GONE` holds slot 1, refused by `eng_ok()`) and make
+  `NENGINES` independent of `FELUCCA_SLICE`.
 - The numbers are a wire contract: the engine byte table in
   [web/EDITOR_PROTOCOL.md](../web/EDITOR_PROTOCOL.md) lists them and must gain the new row.
 - `ENGINE_ORDER[]` (`engines.c`) is only the display order (PRESETS, EDIT layer, editor
@@ -123,7 +128,9 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
 2. `#include "eng_x.c"` in `firmware/src/engines.c` with the other `eng_*.c` files (this is the
    dependency-order include point used by `felucca.c`, `tests/hostsim.c` and `web/emu`), and
    add `&ENG_X` at the end of `ENGINES[]`.
-3. Add it to `ENGINE_ORDER[]`, `eng_abbr()`, `PRESET_CAT[]` and the protocol document.
+3. Add it to `ENGINE_ORDER[]`, `eng_abbr()`, `PRESET_CAT[]`, `N_ENGNAME[]` in
+   `firmware/src/params.c` (`GP[G_ENGSEL]` takes the engine-select enum's names and maximum, which
+   the protocol's DESC advertises, from it) and the protocol document.
 4. If its render function is not already covered, add the render function names to `FUNCS` in
    `tests/target_budget.py`.
 5. `tools/size_fns.py` lists main-loop files (`SIZE_FILES`) that get `minsize`; the `eng_*.c` render files
@@ -178,8 +185,12 @@ retain unaffected entries.
   `firmware/src/audio.c`). It renders one DMA half (`HALF_FRAMES = 128`) in blocks of `CTL`.
 - Input scan: TIMER5 at 10 kHz, priority 4, so it **nests inside** the audio ISR
   (`timer5_start()` in `firmware/src/main.c`; rationale in the comment above
-  `fm1_timer5_irq`). Nested, it only scans and counts time; USB and UART polls wait for the first
-  tick outside the render.
+  `fm1_timer5_irq`). Nested, it scans and counts time, and with `FELUCCA_UAC=1` (the build default in [BUILDING.md](../BUILDING.md))
+  it also runs `uac_service()` every 5th tick: the USB audio stream cannot wait for a render. That
+  path touches only EP4 and the consumer side of the audio ring; `usb_poll()` and
+  `uart_midi_poll()` wait for the first tick outside the render, so the two USB paths never
+  interleave. Count `uac_service` among the nested-ISR code in reachability and shared-state
+  analysis.
 - Overload: `shed_check()` / `shed_voice()` in `audio.c` drop voices after two consecutive
   halves above 85 %. Measurements to watch are in [performance.md](performance.md).
 - Rules (AGENTS.md "Bounded interrupts"): UI, preset loading, flash operations and formatted
@@ -270,8 +281,9 @@ sections stay flat.
 
 Engine:
 
+- [ ] SLICE's slot 13 reserved in `FELUCCA_SLICE=0` builds before appending (1.1).
 - [ ] Appended to `ENGINES[]`; `NENGINES`, `ENGINE_ORDER[]`, `eng_abbr()`, `PRESET_CAT[]`,
-      protocol engine table updated; no existing number moved.
+      `N_ENGNAME[]`, protocol engine table updated; no existing number moved in any build option.
 - [ ] `edit[]` ranges/defaults deliberate (they are stored); `desc` hook keeps range/default.
 - [ ] `mem` set with `ENG_MEM_FITS`; zeroed region is a valid initial state; switch tests added.
 - [ ] Render is bounded, fixed-point-exact, click-free on retrigger/switch, releases cleanly.
