@@ -1521,6 +1521,28 @@ static int test_recent(void)
     bad += check("  .. and back the user sound saved with SLOT B1 (the voice itself: tests/fm6bank_test.c)",
                  TSEL->eng_req == ENGI_FM6 && TSEL->user == 8u && recent_is(0, NENGINES, 7));
     fm6_bank_used = 0;
+    {   /* FM6 OWN: the patch is stored beside the record (up_fm6.c); a slot re-saved with only the patch changed is
+         * another sound, so its old entry is skipped */
+        uint8_t v[FP_SIZE + 1u];
+        TSEL->p[P_E7] = FM6_OWN;
+        up_store(9, "OWNPATCH");
+        recent_load(NENGINES, 9);
+        recent_pos(&total);
+        ok = recent_is(0, NENGINES, 9) && recent_ok(0);
+        {   /* the record unchanged (its tag still matches), only the stored patch another one */
+            uint8_t pk[FM6_PACKED];
+            ok &= !upf_get(9, pk);
+            fm6_unpack(pk, v);
+            v[0] = (uint8_t)((v[0] + 1u) % 100u);       /* one operator byte (OP1 R1) */
+            fm6_pack(v, pk);
+            upf_set(9, pk);
+        }
+        recent_pos(&total);
+        ok &= !recent_ok(0);
+        for (i = 0; i < total; i++)                     /* (browsing never reaches it) */
+            ok &= !(recent_at(i, &k) == NENGINES && k == 9u);
+        bad += check("  FM6 OWN: a slot whose stored patch changed (record the same) is skipped", ok);
+    }
     /* a project load changes the sounds, not the list; its entries still name valid sounds */
     song.playing = 0;
     project_save_as(1, "RECENT");

@@ -547,9 +547,13 @@ static uint32_t up_fp(uint32_t k)
 {
     const up_rec_t *r = up_rec(k);
     uint32_t i, h = 2166136261u ^ r->engine;
+    uint8_t pk[FM6_PACKED];
     for (i = 0; i < r->np && i < UP_PMAX * 2u; i++)
         if (r->np != P_COUNT || !param_kept(i))
             h = (h ^ (uint16_t)up_value(r, i)) * 16777619u;
+    if (!upf_get(k, pk))                       /* FM6: its own patch (up_fm6.c), stored beside the record */
+        for (i = 0; i < FM6_PACKED; i++)
+            h = (h ^ pk[i]) * 16777619u;
     return (h ^ h >> 16) & 0xFFFFu;
 }
 
