@@ -124,8 +124,8 @@ the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_
 does the same for the cost files (all three).
 The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_event_open`
 (user-space instructions, needs `perf_event_paranoid` <= 2) and the baselines are
-`tests/cpu_baseline_<os>_<arch>[_os].txt`, skipped with a reason when absent or when no counter
-is available. See [docs/performance.md](docs/performance.md).
+`tests/cpu_baseline_<os>_<arch>_<compiler>_<version>_<build-id>[_os].txt`, skipped with a reason
+when absent or when any counter is unavailable. See [docs/performance.md](docs/performance.md).
 
 ## Install
 

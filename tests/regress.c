@@ -65,7 +65,11 @@
 #define CPU_TOL 0.25              /* +-25 %, and at least CPU_SLACK instructions (light presets) */
 #define CPU_SLACK 20
 #ifdef __OPTIMIZE_SIZE__
+#if defined(__GNUC__) && !defined(__clang__)
+#define CPU_CC "cc -Os -fno-tree-vectorize -fno-tree-slp-vectorize"
+#else
 #define CPU_CC "cc -Os -fno-vectorize -fno-slp-vectorize"   /* named in CPU_FILE's header (regress_os) */
+#endif
 #else
 #define CPU_CC "cc -O2"
 #endif
@@ -1330,6 +1334,9 @@ int main(int argc, char **argv)
     }
 
     /* ---- CPU ---- */
+    /* Every count, including idle, must be available before checking any budget. */
+    for (i = c0; i < c1; i++)
+        nz += J[i].r.ipc > 0;
     /* a preset's own cost: its count less the idle mix's (the mix alone is half of a light preset's),
      * so +25 % means 25 % more engine work; the mixes as they are */
     nc = load_kv(cpath, cpu, MAXJ);
@@ -1337,7 +1344,7 @@ int main(int argc, char **argv)
     idle_base = kv_get(cpu, nc, J[c1 - 4u].name) ? atof(kv_get(cpu, nc, J[c1 - 4u].name)) : 0;
     if (!strcmp(cpath, "-"))
         nc = 0;                                     /* run_tests.sh: no baseline for this host */
-    else if (!nc && !cupd && idle_now > 0) {       /* counted, but no CPU_FILE to check against: fail, not a silent pass */
+    else if (!nc && !cupd && nz == c1 - c0) {     /* counted, but no CPU_FILE to check against: fail, not a silent pass */
         printf("regress: CPU baseline %s missing or empty (BUDGET_UPDATE=1 writes it)\n", cpath);
         c_fail++;
     }
@@ -1356,7 +1363,7 @@ int main(int argc, char **argv)
             heavy_ns[j->e] = j->r.ns;
             heavy_p[j->e] = j->pi;
         }
-        if (!j->r.ipc || cupd || (own && !idle_now) || !strcmp(cpath, "-"))
+        if (nz != c1 - c0 || cupd || !strcmp(cpath, "-"))
             continue;
         if (!want)
             printf("regress: CPU %s: %.0f instructions / sample, no baseline (BUDGET_UPDATE=1 adds it)\n", j->name, ipc);
@@ -1370,8 +1377,6 @@ int main(int argc, char **argv)
             c_warn++;
         }
     }
-    for (i = c0; i < c1; i++)
-        nz += J[i].r.ipc > 0;
     if (nz != c1 - c0) {
         const char *why = "";
         for (i = c0; i < c1 && !*why; i++)
@@ -1391,8 +1396,9 @@ int main(int argc, char **argv)
             return 2;
         }
         fprintf(f, "# FELUCCA host CPU baseline (tests/regress.c): instructions per 44.1 kHz sample, " CPU_CC " on\n"
-                   "# " CPU_HOST " (" CPU_SRC "; ~1 %% run to run). The check allows +%.0f %%. Rewritten by BUDGET_UPDATE=1.\n",
-                CPU_TOL * 100);
+                   "# " CPU_HOST " (" CPU_SRC "; ~1 %% run to run). The check allows +%.0f %%. Rewritten by BUDGET_UPDATE=1.\n"
+                   "# Compiler: %s\n",
+                CPU_TOL * 100, __VERSION__);
         for (i = c0; i < c1; i++)
             fprintf(f, "%s %.0f\n", J[i].name, J[i].r.ipc);
         fclose(f);
