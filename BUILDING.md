@@ -85,6 +85,28 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 (`felucca-1.0-app.bin`), `SHA256SUMS`, the sample attribution, `LICENSE`, `LICENSING.md` and
 `LICENSES/` (the package contains Apache-2.0 SDK files, so the licence texts travel with it).
 
+### Build product identity (forks)
+
+`--product FM-1_XXX` sets the package identity explicitly, independent of the display version:
+`./build.sh --release 1.0 --product FM-1_ACME` builds version `v1.0` with identity `FM-1_ACME`.
+The one resolved value is the target `FELUCCA_ID` define, the package marker, the build summary
+and (with `--release`) `BUILD-INPUTS.txt` in the release folder. Precedence: `--product`, then the
+identity derived from `--release` (`FM-1_9XY`), then the development default `FM-1_900`. Without
+`--product` nothing changes: same defines, outputs and file names.
+
+The value is checked before anything is generated, compiled or written: `FM-1_` followed by 1 to 15
+of `A-Z 0-9 . _ -` (ASCII upper case only, 20 characters at most, as the package marker allows; upper
+case so that no two products share a file name on a case-insensitive file system); empty, lower-case,
+overlong, non-ASCII, control, space, quote, backslash and newline values are refused, as is
+`FM-1_015` (the stock firmware's identity, from which the loader's USB identity is derived). The
+loader keeps its own identity `ota-FM-1_900` whatever the app uses. An explicit product that differs
+from the default is part of the output names (`felucca-1.0-FM-1_ACME.fwsc`, `release-1.0-FM-1_ACME/`),
+so two products at one version do not overwrite each other.
+
+A fork should pick a reviewed identity, record it with its releases and not reuse another
+project's. A syntactically valid product is not a registration: it does not mean the FM-1 hosts,
+installers or any Hub will accept, list or update it.
+
 Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `core.h` and `icons.c`):
 
 | Flag | Default | |

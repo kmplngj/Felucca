@@ -3,11 +3,12 @@
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 """Build Felucca: the app, the update loader and an installable .fwsc package.
 
-  tools/build.py [--release X.Y[-suffix]]
+  tools/build.py [--release X.Y[-suffix]] [--product FM-1_XXX]
 
 Outputs in build/: felucca.bin (app), loader/ota.bin (update loader),
 felucca.fwsc (package). A release build (--release X.Y) writes felucca-X.Y.fwsc and a folder
 release-X.Y/ with the package, the app, SHA256SUMS, the sample attribution and the licence files.
+--product sets the package identity (FELUCCA_ID and the package marker) explicitly; see BUILDING.md.
 See BUILDING.md for the toolchain and the SDK.
 
 The JieLi toolchain is Linux x86-64 only. JIELI_TOOLCHAIN points at it; on
@@ -49,8 +50,54 @@ SDK_SHA256 = {
     "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
 }
 
-PRODUCT = "FM-1_900"                # package identity; release builds are FM-1_9XY
+DEV_PRODUCT = "FM-1_900"            # the development default identity; release builds are FM-1_9XY
+PRODUCT = DEV_PRODUCT               # this build's package identity, set by main()
 VERSION = None                      # FELUCCA_VERSION for release builds (default: firmware/src/felucca.c)
+PRODUCT_RE = re.compile(r"FM-1_[A-Z0-9._-]{1,15}")    # 20 characters at most: the package marker's room;
+# upper case only, so two products never name the same file on a case-insensitive file system
+# identities an explicit --product must not take: the stock firmware's (the loader's USB identity
+# "ota-FM-1_015" is derived from it, firmware/src/ota.c); the loader's own "ota-FM-1_900" never matches
+RESERVED_PRODUCTS = ("FM-1_015",)
+
+
+def check_product(product):
+    """Raise SystemExit unless product is a package identity this build may use (syntax only: a valid
+    identity is not registered with, or accepted by, any host or Hub)."""
+    if not product.isascii() or not PRODUCT_RE.fullmatch(product):
+        raise SystemExit(f"--product {product!r}: use FM-1_ and 1..15 of A-Z 0-9 . _ - (ASCII, 20 characters at most)")
+    if product in RESERVED_PRODUCTS:
+        raise SystemExit(f"--product {product}: reserved for the stock firmware / the update loader")
+    if any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product)):
+        raise SystemExit(f"--product {product}: a character encodes to the unused package marker (0x7D)")
+
+
+def resolve(argv):
+    """Command line -> the build's identity and output names, before anything is generated or written.
+    product: --product > the --release derived FM-1_9XY > DEV_PRODUCT.
+    Only an explicit product that differs from the one the other options give is part of the output names,
+    so two products at one display version keep separate files and the default names do not change."""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_9XY, version string vX.Y")
+    ap.add_argument("--product", metavar="FM-1_XXX",
+                    help="package identity (FELUCCA_ID and package marker); default FM-1_9XY with --release, else FM-1_900")
+    ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
+    a = ap.parse_args(argv)
+    product, version, tag = DEV_PRODUCT, None, ""
+    if a.release:                   # one digit each: the identity has room for two (X.Y.Z and X.Y.Z.W keep X.Y's)
+        m = re.fullmatch(r"([0-9])\.([0-9])(?:\.[0-9]){0,2}(-[A-Za-z0-9]+)?", a.release)
+        if not m:
+            raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z, X.Y.Z.W or X.Y-suffix, one digit each")
+        product = "FM-1_9" + m[1] + m[2]
+        version = "v" + a.release.lower()      # e.g. v1.0, v1.1-rc1
+    if a.product is not None:
+        check_product(a.product)
+        if a.product != product:
+            tag = "-" + a.product
+        product = a.product
+    base = f"felucca-{a.release}{tag}" if a.release else f"felucca{tag}"
+    return {"product": product, "version": version, "release": a.release, "sdk": a.sdk,
+            "explicit": a.product is not None, "name": base + ".fwsc",
+            "rel": f"release-{a.release}{tag}", "app": f"{base}-app.bin"}
 
 
 def toolchain():
@@ -427,21 +474,11 @@ def mmio_check():
     return errors
 
 
-def main():
+def main(argv=None):
     global PRODUCT, VERSION
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_9XY, version string vX.Y")
-    ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
-    a = ap.parse_args()
-    name = "felucca.fwsc"
-    if a.release:                   # one digit each: the identity has room for two (X.Y.Z and X.Y.Z.W keep X.Y's)
-        m = re.fullmatch(r"(\d)\.(\d)(?:\.\d){0,2}(-[A-Za-z0-9]+)?", a.release)
-        if not m:
-            raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z, X.Y.Z.W or X.Y-suffix, one digit each")
-        PRODUCT = "FM-1_9" + m[1] + m[2]
-        VERSION = "v" + a.release.lower()      # e.g. v1.0, v1.1-rc1
-        name = f"felucca-{a.release}.fwsc"
-    fm1pkg_make.SDK = a.sdk
+    c = resolve(sys.argv[1:] if argv is None else argv)     # validated before any job starts
+    PRODUCT, VERSION, name = c["product"], c["version"], c["name"]
+    fm1pkg_make.SDK = c["sdk"]
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
             print(f"warning: SDK {rel} differs from AC79NN_SDK_V1.2.1; the package will not match the reference")
@@ -469,12 +506,12 @@ def main():
         shutil.copy(att, OUT / "ATTRIBUTION.txt")
     print(f"app      {OUT / 'felucca.bin'}  {len(img)} B")
     print(f"loader   {LDR / 'ota.bin'}  {len(ota)} B")
-    print(f"package  {OUT / name}  {len(pkg)} B, identity {PRODUCT}")
-    if a.release:                   # what a release carries: the package, the app and every licence they need
-        rel = OUT / f"release-{a.release}"
+    print(f"package  {OUT / name}  {len(pkg)} B, identity {PRODUCT}" + (" (--product)" if c["explicit"] else ""))
+    if c["release"]:                   # what a release carries: the package, the app and every licence they need
+        rel = OUT / c["rel"]
         shutil.rmtree(rel, ignore_errors=True)
         (rel / "LICENSES").mkdir(parents=True)
-        app = f"felucca-{a.release}-app.bin"
+        app = c["app"]
         (rel / name).write_bytes(pkg)
         (rel / app).write_bytes(img)
         (rel / "SHA256SUMS").write_text("".join(f"{hashlib.sha256(b).hexdigest()}  {n}\n"
@@ -485,6 +522,9 @@ def main():
             shutil.copy(SRC / doc, rel / doc)
         if att.exists():
             shutil.copy(att, rel / "ATTRIBUTION.txt")
+        if c["explicit"]:           # the inputs the file names' version does not show
+            (rel / "BUILD-INPUTS.txt").write_text(f"release {c['release']}\nversion {VERSION}\nproduct {PRODUCT}\n")
+            print(f"inputs   release {c['release']}, version {VERSION}, identity {PRODUCT}")
         print(f"release  {rel}/")
     return 0
 
