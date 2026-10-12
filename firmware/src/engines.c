@@ -26,7 +26,7 @@ static uint8_t eng_mem_owner[NPART];       /* engine index + 1 whose state is in
  * checks the part (t in trk[], aligned), the engine being RENDERED (t->engine; eng_req may already name the next
  * one during a fade and is no owner), and the claimed owner (eng_mem_owner, set by eng_mem_claim). A failure
  * calls eng_arena_fail first and returns a scratch block, never the invalid pointer. Not caught: an in-arena
- * overrun or a wrong slot of the right owner. tests/union_test.c installs the handler (default: trap). */
+ * overrun or a wrong slot of the right owner. tests/arena_test.c installs a handler (default: trap). */
 #define ENGI_GRAIN 8u
 #define ENGI_SLICE 13u
 #if FELUCCA_ARENA_CHECK
