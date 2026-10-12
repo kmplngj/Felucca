@@ -15,17 +15,43 @@ Re-read them if their behavior changes. Numbers below describe the default singl
 3. Repeat the same build and workloads after the change. Compare CPU, both RAM regions,
    app size, audio output and latency; an improvement in one does not establish the others.
 
-Basic capture (choose a new directory name for each baseline/candidate):
+Basic capture (choose a new directory name for each baseline/candidate). Set the
+positional arguments to the untracked source/assets that affect this build, using
+repository-relative file paths; leave them empty when there are no such inputs:
 
 ```sh
 set -eu
+set --  # Example: set -- 'firmware/src/new engine.c' 'assets/new sample.wav'
 mkdir -p build/perf-before
 git rev-parse HEAD > build/perf-before/revision.txt
-git diff > build/perf-before/local.diff
+git diff --binary HEAD > build/perf-before/local.diff
+git diff --binary --cached > build/perf-before/index.diff
+git status --porcelain=v1 -z > build/perf-before/status.paths0
+git ls-files --others --exclude-standard -z > build/perf-before/untracked-candidates.paths0
+: > build/perf-before/untracked-inputs.paths0
+if [ "$#" -gt 0 ]; then
+    printf '%s\0' "$@" > build/perf-before/untracked-inputs.paths0
+    COPYFILE_DISABLE=1 tar -cf build/perf-before/untracked-inputs.tar -- "$@"
+fi
 ./build.sh > build/perf-before/build.log 2>&1
 env -u GOLDEN_UPDATE -u BUDGET_UPDATE tests/run_tests.sh > build/perf-before/tests.log 2>&1
 cp build/felucca.bin build/felucca.elf build/felucca.dis build/felucca.fwsc build/perf-before/
 ```
+
+`local.diff` records the tracked working tree relative to `HEAD`, including both staged
+and unstaged changes, with binary payloads. `index.diff` records the index separately.
+The NUL-delimited candidate list records all non-ignored untracked paths; it is an
+inventory, not the inputs' contents. Review that list and populate `set --` with the
+build-relevant files before running the capture. The selected-path list and tar archive
+preserve those files, including names with spaces and binary assets. Archive only the
+inputs needed for this build; keep unrelated files and credentials outside the archive.
+`COPYFILE_DISABLE=1` omits macOS AppleDouble metadata entries from this build-input archive.
+
+To reconstruct the measured inputs in a clean checkout at `revision.txt`, apply the
+nonempty `local.diff`, restore the selected untracked archive, and reproduce the recorded
+flags/toolchain/SDK. To reproduce staging as well, apply the nonempty `index.diff` with
+`git apply --cached` after restoring the working tree. A candidate list without the
+selected inputs' contents is not complete provenance for a build that uses them.
 
 Run the build and suite sequentially and check each exit status before using its artifacts.
 For release builds, substitute the actual versioned package name. Record the relevant
