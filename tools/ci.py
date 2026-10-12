@@ -69,8 +69,9 @@ def verify_tests(log):
     text = log.read_text()
     # Optional local checks become required here. The Linux instruction counter is
     # deliberately unavailable; its explicit message is retained in the job summary.
-    forbidden = [line for line in text.splitlines()
-                 if re.search(r"^== skip |^target: skip |no budget \(BUDGET_UPDATE|no baseline \(BUDGET_UPDATE", line)]
+    allowed = "official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)"
+    forbidden = [line for line in text.splitlines() if line != allowed
+                 and re.search(r"^== skip |^target: skip |: skipped \(|no budget \(BUDGET_UPDATE|no baseline \(BUDGET_UPDATE", line)]
     if forbidden or "ALL HOST TESTS PASSED" not in text:
         raise ValueError("incomplete test coverage:\n" + "\n".join(forbidden))
     for path in ("build/felucca.dis", "build/emu/felucca.wasm", "build/host/asan/fuzz_ed",
@@ -138,7 +139,7 @@ def package(root, value):
             raise ValueError(f"release file missing or empty: {name}")
     # Recompute every checksum, and require every distributable file to be covered.
     expected = sorted(str(p.relative_to(root)) for p in root.rglob("*")
-                      if p.is_file() and p.name != "SHA256SUMS")
+                      if p.is_file() and p != root / "SHA256SUMS")
     entries = []
     for line in (root / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split("  ", 1)
@@ -166,7 +167,7 @@ def finalize(value):
     version(value)
     root = build.OUT / f"release-{value}"
     shutil.copy(build.OUT / "ci/provenance.json", root / "BUILD-PROVENANCE.json")
-    files = sorted(p for p in root.rglob("*") if p.is_file() and p.name != "SHA256SUMS")
+    files = sorted(p for p in root.rglob("*") if p.is_file() and p != root / "SHA256SUMS")
     (root / "SHA256SUMS").write_text("".join(
         f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}\n" for p in files))
     package(root, value)

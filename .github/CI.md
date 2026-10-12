@@ -29,6 +29,8 @@ unavailable and their explicit messages are retained. Host wall time is
 informational; pi32v2 disassembly cost is a static heuristic. Real FM-1 audio
 deadlines, scanning, USB/MIDI, listening and update/recovery remain device checks.
 This infrastructure change does not change firmware, flags or test baselines.
+The only permitted fixture skip is the official V15 restore comparison: that
+requires the vendor firmware, which is deliberately not redistributed here.
 
 ## Dependencies and provenance
 

@@ -49,10 +49,17 @@ class Checks(unittest.TestCase):
         log = self.root / "tests.log"
         for message in ("== skip the sanitizer runs (the compiler has no ASan / UBSan)",
                         "target: skip (build/felucca.dis missing)",
+                        "logical image vs fm1pkg.js: skipped (needs node and build/felucca.fwsc)",
                         "target: render cost 1 no budget (BUDGET_UPDATE=1 adds it)"):
             log.write_text(message + "\nALL HOST TESTS PASSED\n")
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, "incomplete test coverage"):
                 ci.verify_tests(log)
+
+    def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
+        log = self.root / "tests.log"
+        log.write_text("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)\nALL HOST TESTS PASSED\n")
+        with patch.object(ci.Path, "is_file", return_value=True):
+            ci.verify_tests(log)
 
     def test_complete_tests_require_outputs(self):
         log = self.root / "tests.log"
@@ -122,6 +129,12 @@ class Checks(unittest.TestCase):
         path.write_bytes(raw)
         self.checksums()
         with self.assertRaisesRegex(ValueError, "release product"):
+            ci.package(self.root, "1.6")
+
+    def test_nested_checksum_file_is_also_covered(self):
+        self.release()
+        (self.root / "LICENSES/SHA256SUMS").write_text("extra manifest")
+        with self.assertRaisesRegex(ValueError, "exactly all distributed files"):
             ci.package(self.root, "1.6")
 
 
