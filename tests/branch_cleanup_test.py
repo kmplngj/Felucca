@@ -103,6 +103,7 @@ class EligibilityTests(unittest.TestCase):
             cleanup.eligibility(branch(), META, [], lambda sha: (_ for _ in ()).throw(OSError("offline")))
 
 
+@patch.dict(cleanup.os.environ, {"GITHUB_STEP_SUMMARY": ""})
 class AuditTests(unittest.TestCase):
     def setUp(self):
         self.current = branch()
