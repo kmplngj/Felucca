@@ -311,7 +311,10 @@ Publish every packet's payload **and** metadata before its write index. The empt
 not a hardware memory fence, atomic snapshot or CPU1/cache coherence protocol. The
 `sx_ready` flag is a handoff with a buffer-lifetime rule. Multi-field mutations such as
 `eng_req` plus eight parameters use a bounded IRQ-off window instead (`set_engine_of`
-in [ui.c](../firmware/src/ui.c)); state-preserving helpers are `irq_save()`/`irq_restore()`.
+in [ui.c](../firmware/src/ui.c)). These disable/enable paths require main-loop context
+with interrupts enabled at entry. Despite their names, `fm1_flash.h`'s `irq_save()`
+always returns 0 and `irq_restore()` unconditionally enables interrupts: they do not
+preserve prior state and must not be nested or used from an ISR/IRQ-off caller.
 Adding `volatile` to each field would still let an
 interrupt observe a partly updated engine selection.
 
