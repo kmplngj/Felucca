@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: Merged branch cleanup
+
+on:
+  pull_request:
+    paths:
+      - tools/branch_cleanup.py
+      - tests/branch_cleanup_test.py
+      - .github/workflows/branch-cleanup.yml
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete verified merged branches (otherwise dry-run)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  # Read-only audits must never displace a pending scheduled/manual deletion.
+  # The latest deletion run sweeps all branches, so coalescing deletion events
+  # still covers every merged head; audits have separate queues per ref.
+  group: >-
+    merged-branch-cleanup-${{ (github.event_name == 'pull_request' ||
+    (github.event_name == 'workflow_dispatch' && !inputs.apply)) &&
+    format('audit-{0}', github.ref) || 'apply' }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !inputs.apply)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test cleanup safety
+        run: python3 -m unittest discover -s tests -p branch_cleanup_test.py -v
+      - name: Audit merged branches without deleting
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 tools/branch_cleanup.py --repo "$REPOSITORY" --report build/branch-cleanup/audit.json
+      - name: Upload audit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: branch-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: build/branch-cleanup/audit.json
+  cleanup:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Require the default branch for deletion
+        if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          echo 'Apply requires a run from the default branch.' >&2
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Test cleanup safety
+        run: python3 -m unittest discover -s tests -p branch_cleanup_test.py -v
+      - name: Audit or delete merged branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 tools/branch_cleanup.py --repo "$REPOSITORY" --apply --report build/branch-cleanup/audit.json
+      - name: Upload audit, including partial cleanup on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: branch-cleanup-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: build/branch-cleanup/audit.json
