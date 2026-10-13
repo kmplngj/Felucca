@@ -476,6 +476,46 @@ static int route_track_test(void)
     return bad;
 }
 
+static int route_owner_change_test(void)
+{
+    int bad = 0;
+    uint32_t r;
+    for (r = 0; r < 3u; r++) {
+        uint32_t ch = r == 2u ? 5u : 9u, old = r == 2u ? 0u : 1u, next = r == 2u ? 1u : 0u;
+        int ok;
+        midi_test_reset();
+        song.g[G_ROUTE] = ROUTE_TRACK;
+        trk[old].p[P_VOICE] = V_POLY;
+        events_block(CTL);
+        tch(old, r == 1u ? MCH_OMNI : ch);
+        queued(0x90u | ch, 60, 100, 1);
+        queued(0xB0u | ch, 64, 127, 1);
+        queued(0x90u | ch, 62, 100, 2);
+        queued(0x80u | ch, 62, 0, 2);
+        queued(0xE0u | ch, 127, 127, 1);
+        ok = gate_note(&trk[old], 60) && gate_note(&trk[old], 62) && midi_owners[old] == 2u &&
+             midi_bend_target[old] == 512;
+        if (r == 2u) {
+            song.g[G_ROUTE] = 2;                     /* CH5-8: channel 6 now belongs to T2. */
+            events_block(CTL);
+        } else {
+            tch(next, ch);                          /* An exact match takes over an OMNI or a duplicate channel. */
+        }
+        ok &= midi_slot(ch) == (int32_t)next && !gate_note(&trk[old], 60) && !gate_note(&trk[old], 62) &&
+              !midi_owners[old] && !midi_notes[ch][60] && !midi_notes[ch][62] && !midi_ch[ch].owned[old] &&
+              !(midi_ch[ch].targets & (1u << old)) && !midi_bend_target[old];
+        queued(0x90u | ch, 64, 100, 1);
+        queued(0xB0u | ch, 64, 0, 1);
+        ok &= gate_note(&trk[next], 64) && midi_notes[ch][64] == next + 1u && midi_owners[next] == 1u;
+        queued(0x80u | ch, 64, 0, 1);
+        ok &= !gate_note(&trk[next], 64) && !midi_owners[next];
+        bad += check(r == 0u ? "TRACK duplicate reassignment releases the old track's held/pedal notes and bend" :
+                     r == 1u ? "TRACK exact channel takes over OMNI: old ownership released, new notes release normally" :
+                               "TRACK -> block with a still-heard channel releases its former track ownership", ok);
+    }
+    return bad;
+}
+
 /* 1.5.5 (#208): MIDI IN notes light their track's cushion (always); MENU > MIDI > AUTO SELECT ON selects the track they
  * play, held off while the selected track has notes (MF_HOLD_MS) and after a switch; OFF by default; not with SEL */
 static int follow_test(void)
@@ -982,6 +1022,6 @@ static int pc_test(void)
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
+              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

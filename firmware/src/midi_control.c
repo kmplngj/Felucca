@@ -364,14 +364,26 @@ static void midi_control(uint32_t ch, uint32_t cc, uint32_t value)
 /* ROUT CH1-4 listens to channels 1..4 only (1.2: CH5-8, CH9-12, CH13-16 to their four). A switch to a block from
  * SEL or another block (events_block, before the queue) lets go of what the other channels hold: their notes
  * released (also pedal-held ones), their pedal, bend, wheel and RPN selection reset, so no note can hang on a
- * channel that is no longer heard. Each part's bend then follows its own channel of the block. */
+ * channel that is no longer heard. When entering, leaving or editing TRACK, a still-heard channel also releases
+ * notes whose former track is no longer its destination (duplicates / OMNI). Legacy SEL -> block keeps heard
+ * channels' original owners until note-off. Each part's bend then follows the new routing. */
 static void __attribute__((noinline)) midi_route_block(void)
 {
-    uint32_t ch, note;
+    uint32_t ch, note, i;
+    uint32_t reassign = song.g[G_ROUTE] == ROUTE_TRACK || midi_route == ROUTE_TRACK || midi_route == MIDI_ROUTE_AGAIN;
+    if (reassign)
+        for (i = 0; i < NTRK; i++)
+            midi_bend_target[i] = 0;                /* A track with no channel must not retain the old bend. */
     for (ch = 0; ch < 16u; ch++) {
         midi_channel_t *c = midi_channel(ch);
         if (midi_in_block(ch)) {
-            midi_expression(midi_track(ch), c);
+            track_t *t = midi_track(ch);
+            uint32_t id = trk_index(t) + 1u;
+            if (reassign && (c->targets & (uint8_t)~(1u << (id - 1u))))
+                for (note = 0; note < 128u; note++)
+                    if (midi_notes[ch][note] && (midi_notes[ch][note] & 0x7Fu) != id)
+                        midi_release(ch, note);
+            midi_expression(t, c);
             continue;
         }
         for (note = 0; note < 128u; note++)

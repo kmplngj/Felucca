@@ -190,6 +190,21 @@ static int humanize(void)
     t->mw = 0;
     bad += check("  TIME: QUANTIZE OFF adds to the step's NUDGE; a short step: at most 7/16 of it (as NUDGE)", ok);
 
+    /* A short swung step with both delays must leave room for its early successor. */
+    t = seq1(0);
+    t->p[P_SLEN] = 4;
+    t->p[P_SDIV] = 3;
+    t->p[P_SSWING] = 100;
+    P16 = div_samples(3);
+    mslot(t, 0, MS_MODW, MD_TIME, 63);
+    t->mw = 127;
+    step_set_nudge(&t->step[1], 7);
+    step_set_nudge(&t->step[2], -8);
+    n = play(t, 4u * P16 / CTL, at2, 32);
+    v = (swing_step_len(t, P16, 0) + 7u * P16 / NUDGE_DIV + CTL - 1u) / CTL * CTL;
+    ok = n == 4u && at2[1] == v && at2[2] == v && at2[2] < 2u * P16;
+    bad += check("  TIME + maximum late NUDGE on a short swung step: clamped, early successor plays before its boundary once", ok);
+
     /* saved: a project keeps the slots */
     t = seq1(1);
     mslot(t, 0, MS_RAND, MD_VEL, 20);

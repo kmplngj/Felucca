@@ -1085,7 +1085,7 @@ is told: no list of settings is fixed in the editor. INFO advertises `4E 01 coun
   ABOUT).
   For a kind it does not know, an editor cannot find the tab (it does not know that kind's bytes).
 
-This firmware (count 31; tabs 0 DISPLAY, 1 CONTROL, 2 AUDIO, 3 MIDI, 4 SYSTEM (1.2; before: 3 SYSTEM); 1.0.5 had the
+This firmware (count 32; tabs 0 DISPLAY, 1 CONTROL, 2 AUDIO, 3 MIDI, 4 SYSTEM (1.2; before: 3 SYSTEM); 1.0.5 had the
 first 12, 1.1 the first 15, 1.2 before SCALE LEDS the first 16, before SCREEN OFF the first 17, 1.1.5 the first 18, 1.2
 before MIDI IN the first 21, 1.2 the first 23, 1.3 / 1.4 the first 24, 1.5 / 1.5.1 the first 25):
 

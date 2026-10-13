@@ -1132,9 +1132,12 @@ static __attribute__((noinline)) void seq_nd_start(track_t *t, uint32_t period, 
     } else {                                        /* late by its NUDGE and (1.5.6) the matrix's TIME */
         uint32_t h = seq_time(t, t->seq_idx, period);
         d = seq_nudge(t, &seq_steps(t)[t->seq_idx]);
-        if (d > 0 || h)
-            t->nd_late = (uint32_t)(d > 0 ? d : 0) * period / NUDGE_DIV + h + 1u;
-        else
+        if (d > 0 || h) {
+            uint32_t late = (uint32_t)(d > 0 ? d : 0) * period / NUDGE_DIV + h;
+            uint32_t max = period * 7u / NUDGE_DIV;
+            /* Bound the combined delay, so an early successor stays inside this step too. */
+            t->nd_late = (late < max ? late : max) + 1u;
+        } else
             seq_play(t, t->seq_idx, period);
     }
     t->nd_fired = 0;
@@ -1326,9 +1329,9 @@ static void events_block(uint32_t n)
         transport_req = 0;
     }
     if (midi_route != (uint8_t)song.g[G_ROUTE]) {     /* ROUT changed: a block lets go of the other channels */
-        midi_route = (uint8_t)song.g[G_ROUTE];
-        if (midi_route != ROUTE_SEL)
+        if (song.g[G_ROUTE] != ROUTE_SEL)
             midi_route_block();
+        midi_route = (uint8_t)song.g[G_ROUTE];       /* Keep the previous route available to ownership cleanup. */
     }
     pr = panic_req;
     panic_req = 0;
