@@ -65,6 +65,38 @@ static uint32_t rnd(uint32_t m)
 static int fails;
 static uint64_t nblk, ntail, nedge, nsamp;               /* blocks compared; entered rung out; entered at es 2..3 */
 
+/* Exercise the exact boundary independently of the random hits: an empty block must
+ * not advance es, and k == 32768 keeps es == 1 while any smaller k takes it to zero. */
+static void boundary(uint32_t type)
+{
+    static const uint32_t env[] = {0, 1, 2, 3, 65536};
+    static const uint32_t len[] = {0, 1, CTL};
+    static const uint32_t coef[] = {0, 32767, 32768};
+    dv_param_t p;
+    dv_coef_t c;
+    uint32_t e, l, k;
+    dv_default(&p, type);
+    dv_setup(&c, &p);
+    for (e = 0; e < sizeof env / sizeof env[0]; e++)
+        for (l = 0; l < sizeof len / sizeof len[0]; l++)
+            for (k = 0; k < sizeof coef / sizeof coef[0]; k++) {
+                dv_voice_t a, b;
+                int32_t ya[CTL], yb[CTL];
+                dv_init(&a, type);
+                dv_strike(&c, &a);
+                a.e[0] = env[e];
+                a.s[2] = -12345;
+                b = a;
+                c.k[0] = coef[k];
+                dv_tom_run(&c, &a, ya, len[l]);
+                dv_tom_ref(&c, &b, yb, len[l]);
+                if (memcmp(ya, yb, len[l] * sizeof ya[0]) || memcmp(&a, &b, sizeof a)) {
+                    printf("FAIL boundary type %02x es %u k %u n %u\n", type, env[e], coef[k], len[l]);
+                    fails++;
+                }
+            }
+}
+
 static void param(dv_param_t *p, uint32_t type, uint32_t corner)
 {
     static const uint8_t V[3] = {0, 64, 127};
@@ -142,6 +174,7 @@ int main(void)
             if (dv_run_type(t) != DVT_TOM && dv_run_type(t) != DVT_CONGA)
                 continue;
             ntype++;
+            boundary(t);
             for (corner = 0; corner < 162u; corner++)
                 scenario(t, corner, 0, 0);
             for (corner = 0; corner < 162u; corner += 7u)
@@ -152,7 +185,7 @@ int main(void)
         }
     printf("%u types, %llu blocks (%llu samples), %llu entered rung out, %llu at es 2..3\n", ntype,
            (unsigned long long)nblk, (unsigned long long)nsamp, (unsigned long long)ntail, (unsigned long long)nedge);
-    if (ntype != 7u || !ntail || !nedge) {
+    if (ntype != DV_NKIT + 2u || !ntail || !nedge) {
         printf("FAIL coverage\n");
         fails++;
     }
