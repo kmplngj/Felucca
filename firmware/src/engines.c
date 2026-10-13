@@ -21,6 +21,44 @@ static uint8_t eng_mem_owner[NPART];       /* engine index + 1 whose state is in
 #define ENG_MEM(p) ((void *)eng_mem[p].b)  /* part p's region (p < NPART) */
 #define ENG_MEM_FITS(name, size) _Static_assert((size) <= ENG_MEM_PART, name " state over ENG_MEM_PART")
 
+/* Host/test-only owner check (FELUCCA_ARENA_CHECK=1; off: ENG_MEM_OF is ENG_MEM, no code or data). The arena
+ * consumers (GRAIN, PHYS, DRUM, FM6, SLICE) reach their state through ENG_MEM_OF(t, engine, p): at the access it
+ * checks the part (t in trk[], aligned), the engine being RENDERED (t->engine; eng_req may already name the next
+ * one during a fade and is no owner), and the claimed owner (eng_mem_owner, set by eng_mem_claim). A failure
+ * calls eng_arena_fail first and returns a scratch block, never the invalid pointer. Not caught: an in-arena
+ * overrun or a wrong slot of the right owner. tests/arena_test.c installs a handler (default: trap). */
+#define ENGI_GRAIN 8u
+#define ENGI_SLICE 13u
+#if FELUCCA_ARENA_CHECK
+enum { ARENA_BAD_PART = 1, ARENA_BAD_ENGINE, ARENA_BAD_OWNER };
+static void eng_arena_trap(uint32_t why, const track_t *t, uint32_t want) { (void)why; (void)t; (void)want; __builtin_trap(); }
+static void (*eng_arena_fail)(uint32_t why, const track_t *t, uint32_t want) = eng_arena_trap;
+static uint64_t eng_arena_scratch[ENG_MEM_PART / 8u + 1u];
+static void *eng_mem_of(const track_t *t, uint32_t want)
+{
+    uint32_t p, cur;
+    if ((uintptr_t)t < (uintptr_t)&trk[0] || (uintptr_t)t >= (uintptr_t)&trk[NPART] ||
+        ((uintptr_t)t - (uintptr_t)&trk[0]) % sizeof(track_t)) {
+        eng_arena_fail(ARENA_BAD_PART, t, want);
+        return eng_arena_scratch;
+    }
+    p = (uint32_t)(t - trk);
+    cur = t->engine < NENGINES ? t->engine : 0u;
+    if (cur != want) {
+        eng_arena_fail(ARENA_BAD_ENGINE, t, want);
+        return eng_arena_scratch;
+    }
+    if (eng_mem_owner[p] != want + 1u) {
+        eng_arena_fail(ARENA_BAD_OWNER, t, want);
+        return eng_arena_scratch;
+    }
+    return ENG_MEM(p);
+}
+#define ENG_MEM_OF(t, e, p) eng_mem_of((t), (e))
+#else
+#define ENG_MEM_OF(t, e, p) ENG_MEM(p)         /* p: the part index the caller already derived */
+#endif
+
 #include "eng_analog.c"
 #include "eng_phase.c"
 #include "eng_lofi.c"

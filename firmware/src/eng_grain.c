@@ -102,7 +102,7 @@ ENG_MEM_FITS("GRAIN", sizeof(gr_part_t));
 static int32_t gr_rng[NPART];
 
 static uint32_t gr_part(const track_t *t) { return (uint32_t)(t - trk) % NPART; }
-static gr_part_t *gr_of(const track_t *t) { return (gr_part_t *)ENG_MEM(gr_part(t)); }
+static gr_part_t *gr_of(const track_t *t) { return (gr_part_t *)ENG_MEM_OF(t, ENGI_GRAIN, gr_part(t)); }
 static uint32_t gr_nz(uint32_t src) { return src < SMP_NSETS ? SMP_SETS[src].nz : usr_nz[(src - SMP_NSETS) % SMP_USER_SLOTS]; }
 static const smp_zone_t *gr_zone(uint32_t src, uint32_t zl)
 {
