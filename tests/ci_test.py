@@ -104,14 +104,25 @@ class Checks(unittest.TestCase):
                        env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
         for line in evidence:
             self.assertIn(line, summary.read_text())
-        # Current main has no FX rest harness yet: expose that real coverage gap
-        # without relying on a synthetic skip that production cannot emit.
-        log.write_text("\n".join(evidence[:-1]) + "\n")
-        summary.unlink()
-        subprocess.run(["bash", "-e", "-c", script], cwd=self.root,
-                       env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
-        self.assertIn("FX rest: pending coverage (#153; no regression outcome in this run)", summary.read_text())
-        self.assertNotIn("FX rest: SKIP", summary.read_text())
+        # Setup diagnostics and a partial O2 result cannot establish completion;
+        # the real harness can fail before its Os comparison finishes.
+        for fx, pending in (
+                ("", True),
+                ("FX rest: source=fx.c sha256=123", True),
+                ("FX rest O2: 63 audio/state matches; skips chorus/delay/HALL/SPRING=[1, 1, 1, 0]", True),
+                ("FX rest: source=fx.c sha256=123\nFX rest: FAIL: compile failed", False),
+                ("FX rest O2: 63 audio/state matches; skips chorus/delay/HALL/SPRING=[1, 1, 1, 0]\n"
+                 "FX rest Os: 63 audio/state matches; skips chorus/delay/HALL/SPRING=[1, 1, 1, 0]", False)):
+            with self.subTest(fx=fx):
+                log.write_text("\n".join(evidence[:-1]) + "\n" + fx + "\n")
+                summary.unlink()
+                subprocess.run(["bash", "-e", "-c", script], cwd=self.root,
+                               env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
+                text = summary.read_text()
+                self.assertEqual("FX rest: pending coverage" in text, pending)
+                self.assertNotIn("FX rest: SKIP", text)
+                for line in fx.splitlines():
+                    self.assertIn(line, text)
 
     def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
         log = self.root / "tests.log"
