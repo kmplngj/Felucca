@@ -68,7 +68,7 @@ An engine is a `static const engine_t ENG_X` defined in `firmware/src/eng_x.c` (
 | `knob[4]` | The four parameters on HOME KNOB 1..4. |
 | `poly` | Voice cap for POLY/UNISON, 0 = `NVOICE`. |
 | `sampled` | Plays recorded material (a position, not a phase): `voice.c` keeps no phases on retrigger, spreads none for UNISON, renders at SUS 0. |
-| `keep` | Bit k: voice state `s[k]` survives retriggering a sounding voice (filters). |
+| `keep` | `voice_start` restores selected `s[k]` slots for a sounding, non-sampled retrigger: supported bits are 0, 1 and 4..7 (filters/colour poles); `s[2]`/`s[3]` are not restored. |
 | `oneshot` | Hits (DRUM): always POLY, no glide, the amp ends the voice. |
 | `note_on(t, v)` | Initialises a voice. |
 | `render(t, v, out, n, m)` | Renders `n` samples of one voice into `out`, given the block's `vmod_t`. Runs in the audio ISR. |
