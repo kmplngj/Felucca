@@ -140,18 +140,23 @@ explain why and give the applicable documentation or tooling checks instead.
 Run `tools/fm1_diagnostics.py` on the host connected to the FM-1 by USB. It uses Python 3's
 standard library. Enable **USB SERIAL** on the device, close other serial applications,
 and explicitly select its CDC tty; the collector does not discover or select ports.
-From the repository root, replace the example port with the connected device's port:
+Follow the [idle baseline setup](docs/diagnostics.md#idle-baseline-setup) to reach a
+stopped HOME screen with no MIDI/audio stream or held notes. From the repository root,
+replace the example port with the connected device's port:
 
 ```sh
 # macOS
 python3 tools/fm1_diagnostics.py --port /dev/cu.usbmodem1234 \
-  --scenario 'four-track playback with effects; USB SERIAL on' --duration 60 --interval 5
+  --scenario 'idle; transport stopped; no MIDI/audio stream; USB SERIAL on' --duration 60 --interval 5
 # Linux
 python3 tools/fm1_diagnostics.py --port /dev/ttyACM0 \
-  --scenario 'four-track playback with effects; USB SERIAL on' --duration 60 --interval 5
+  --scenario 'idle; transport stopped; no MIDI/audio stream; USB SERIAL on' --duration 60 --interval 5
 ```
 
-The scenario is a report label: arrange and run the stated workload separately. The
+The scenario is a report label: arrange and run the stated workload separately. For
+playback or stress tests, document the starting project, track/engine/preset, effects,
+MIDI/audio configuration and exact panel actions or external input sequence before
+collection; a label such as "four-track playback with effects" is not a setup procedure. The
 collector sends only `status`, `dbg`, `inp` and `crash`; it does not generate MIDI load,
 control the panel, change settings or flash firmware. Reports (`summary.json`,
 `samples.jsonl`, `console.raw`) go to a new directory under ignored `build/diagnostics/`.

@@ -7,11 +7,12 @@ its CDC tty. Close other serial applications first. The collector opens the tty 
 asserts DTR to obtain the console banner, and restores terminal settings on close.
 Opening a port does not establish that its firmware matches the checkout.
 
-From this checkout's root, for a 60-second workload with equal 5-second windows:
+Follow the [idle baseline setup](#idle-baseline-setup) below. From this checkout's root,
+collect 60 seconds with equal 5-second windows:
 
 ```sh
 python3 tools/fm1_diagnostics.py --port /dev/cu.usbmodem1234 \
-  --scenario 'four parts; USB audio 48 kHz; USB and TRS MIDI; USB SERIAL on' \
+  --scenario 'idle; transport stopped; no MIDI/audio stream; USB SERIAL on' \
   --duration 60 --interval 5
 ```
 
@@ -32,6 +33,56 @@ are handled explicitly. A timeout, framing error or disconnect preserves partial
 and stops the session, so a delayed response cannot become another command's sample.
 Ctrl-C during collection saves an invalid session with the evidence received so far.
 Terminal setup/restoration failures are reported as invalid captures as well.
+
+## Idle baseline setup
+
+This is a quiet baseline for the current project's settings, not a four-track or USB
+audio stress test. Use the same project and settings for repeated comparisons; record
+the installed build revision separately from the displayed version. The following route
+matches this checkout's panel code; real-device execution remains pending.
+
+1. Start with an FM-1 already running a Felucca build with `FELUCCA_CDC=1` and
+   `FELUCCA_CDC_DEFAULT=1` (the defaults). Finish any edits before restarting it.
+   Close the web editor, DAW, MIDI senders, audio capture
+   and serial applications; disconnect TRS MIDI input. Restart the FM-1 with no keys or
+   buttons held, then connect its USB data cable to the Mac/Linux host. Boot reaches HOME
+   with transport stopped; RESTORE LAST can restore project settings, but not playback.
+2. Hold **HOME** for more than 0.7 seconds until MENU appears, then release. Turn
+   **ALGORITHM** until the **SYSTEM** tab appears. Turn **PRESETS** until **ABOUT** is
+   selected, tap **OCT+** to open it, and record the firmware version. Tap **OCT−** to
+   return to the tab's rows.
+3. Turn **PRESETS** to **USB SERIAL**. Record its original value. If it is OFF, tap
+   **OCT+** to set it to **ON**. Tap and release **HOME** to close MENU and return to
+   HOME. A USB SERIAL change re-enumerates the device when MENU closes; wait for the
+   host to show its CDC port. A build with either CDC flag disabled cannot expose the console.
+4. Identify the device's port in the host's device listing (macOS `/dev/cu.usbmodem*`,
+   Linux `/dev/ttyACM*`); with multiple devices, compare listings before/after unplugging
+   this FM-1. Select that exact port explicitly. Do not open a serial monitor alongside
+   the collector. Linux requires permission to open the selected tty.
+5. Keep the device on HOME, without starting playback, pressing keys, turning knobs or
+   opening MIDI/audio streams. The green PLAY indicator should remain off and the audio
+   should be silent; if these conditions fail, investigate before labeling the run idle.
+   Allow 10 seconds to settle. Record the current project/settings
+   and host configuration; keep them identical for baseline and candidate runs.
+6. Run the command above (on Linux, replace its port with the selected `/dev/ttyACM…`).
+   Leave the device idle until the command finishes. The printed path identifies
+   `summary.json`; retain it with `samples.jsonl` and `console.raw`. Expect continuous
+   collection (`VALID`), `playing: 0` in every status snapshot, and no new audio misses,
+   voice shedding or stream errors. If fields are unavailable or collection is INVALID,
+   report the limitation/reason instead of treating missing measurements as zero. Use
+   the counter deltas and interpretation rules below; an idle capture cannot establish
+   loaded performance or input latency.
+7. After collection, restore USB SERIAL to its original value if changed: hold HOME,
+   release after MENU opens, select SYSTEM with ALGORITHM and USB SERIAL with PRESETS,
+   tap **OCT−** for OFF if needed, then tap HOME to close. Restore the host applications
+   and MIDI cable as needed. Report the device build/version, host OS, scenario, logs
+   and any observed versus expected differences.
+
+For a playback/stress scenario, supply a separate reproducible setup: the initial
+project and transport state, each track's engine/preset and effects, panel buttons and
+knob values or a fixed external MIDI sequence, plus USB audio rate/routing. Run that
+workload during collection and keep it identical across comparisons. Changing
+`--scenario` only changes the report label; it does not create notes, effects or streams.
 
 ## Evidence files and provenance
 
