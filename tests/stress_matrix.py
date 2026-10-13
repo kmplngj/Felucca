@@ -100,12 +100,30 @@ def header(scenarios):
     return "\n".join(rows) + "\n};\n"
 
 
+def logged_run(command, stdout_path, stderr_path=None, **kwargs):
+    """Keep captured output even when subprocess.run raises on a timeout."""
+    def raw(value):
+        return value.encode("utf-8") if isinstance(value, str) else value or b""
+
+    def save(stdout, stderr):
+        stdout_path.write_bytes(raw(stdout) + (raw(stderr) if stderr_path is None else b""))
+        if stderr_path is not None:
+            stderr_path.write_bytes(raw(stderr))
+
+    kwargs.setdefault("text", True)
+    try:
+        result = subprocess.run(command, capture_output=True, check=False, **kwargs)
+    except subprocess.TimeoutExpired as error:
+        save(error.stdout, error.stderr)
+        raise
+    save(result.stdout, result.stderr)
+    return result
+
+
 def run(binary, index, directory):
     directory.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run([str(binary), str(index), str(directory / "audio.s32"),
-                             str(directory / "audio.wav")], capture_output=True, text=True, timeout=90)
-    (directory / "stdout.txt").write_text(result.stdout)
-    (directory / "stderr.txt").write_text(result.stderr)
+    result = logged_run([str(binary), str(index), str(directory / "audio.s32"),
+                         str(directory / "audio.wav")], directory / "stdout.txt", directory / "stderr.txt", timeout=90)
     if result.returncode:
         raise ValueError(f"{directory}: renderer exited {result.returncode}; see stderr.txt")
     state = json.loads(result.stdout)
@@ -165,13 +183,16 @@ def main():
               "instructions_per_sample": None, "instruction_skip": "first-stage replay has no instruction-counter adapter",
               "device": "unmeasured", "status": "running"}
     try:
-        report["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True,
-                                                     timeout=METADATA_TIMEOUT).strip()
-        report["compiler"] = subprocess.check_output(cc + ["--version"], text=True, timeout=METADATA_TIMEOUT)
-        (out / "local.diff").write_bytes(subprocess.check_output(["git", "diff", "--binary", "HEAD"],
-                                                               timeout=METADATA_TIMEOUT))
-        (out / "status.txt").write_bytes(subprocess.check_output(["git", "status", "--porcelain"],
-                                                               timeout=METADATA_TIMEOUT))
+        revision = logged_run(["git", "rev-parse", "HEAD"], out / "revision.log", timeout=METADATA_TIMEOUT)
+        revision.check_returncode()
+        report["revision"] = revision.stdout.strip()
+        compiler = logged_run(cc + ["--version"], out / "compiler-version.log", timeout=METADATA_TIMEOUT)
+        compiler.check_returncode()
+        report["compiler"] = compiler.stdout
+        logged_run(["git", "diff", "--binary", "HEAD"], out / "local.diff", out / "diff-stderr.txt",
+                   text=False, timeout=METADATA_TIMEOUT).check_returncode()
+        logged_run(["git", "status", "--porcelain"], out / "status.txt", out / "status-stderr.txt",
+                   text=False, timeout=METADATA_TIMEOUT).check_returncode()
         for pattern in ("firmware/**/*", "build/gen/*", "tests/hostsim.c", "tests/stress_render.c", "tests/stress_matrix.py"):
             for path in ROOT.glob(pattern):
                 if path.is_file():
@@ -181,9 +202,8 @@ def main():
         for name in ("stress_render.c", "stress_matrix.py", "hostsim.c"):
             (out / name).write_bytes((ROOT / "tests" / name).read_bytes())
         # Compiler probe follows the host runner's Clang/GCC policy.
-        probe = subprocess.run(cc + ["-fno-vectorize", "-fno-slp-vectorize", "-x", "c", "-c", "-o", os.devnull, "-"],
-                               input="int main(void){return 0;}\n", text=True, capture_output=True,
-                               timeout=METADATA_TIMEOUT, check=False)
+        probe = logged_run(cc + ["-fno-vectorize", "-fno-slp-vectorize", "-x", "c", "-c", "-o", os.devnull, "-"],
+                           out / "probe.log", input="int main(void){return 0;}\n", timeout=METADATA_TIMEOUT)
         no_simd = ["-fno-vectorize", "-fno-slp-vectorize"] if probe.returncode == 0 else ["-fno-tree-vectorize", "-fno-tree-slp-vectorize"]
         reference = {}
         for label, flags in (("o2", ["-O2"]), ("os", ["-Os"] + no_simd)):
@@ -191,8 +211,7 @@ def main():
             command = cc + flags + ["-w", "-DFELUCCA_ARENA_CHECK=1", "-Ibuild/gen", "-Ifirmware/src", f"-I{out}",
                                     "-o", str(binary), "tests/stress_render.c", "-lm"]
             report["builds"].append(command)
-            built = subprocess.run(command, capture_output=True, text=True, timeout=120)
-            (out / f"build_{label}.log").write_text(built.stdout + built.stderr)
+            built = logged_run(command, out / f"build_{label}.log", timeout=120)
             if built.returncode:
                 raise ValueError(f"build {label} failed; see build_{label}.log")
             for i, s in enumerate(scenarios):
@@ -221,8 +240,7 @@ def main():
         command = report["builds"][0].copy()
         command[command.index("-o") + 1] = str(negative)
         report["negative_build"] = command
-        built = subprocess.run(command, capture_output=True, text=True, timeout=120)
-        (out / "build_negative.log").write_text(built.stdout + built.stderr)
+        built = logged_run(command, out / "build_negative.log", timeout=120)
         if built.returncode:
             raise ValueError("negative-control build failed; see build_negative.log")
         if run(negative, 0, out / "negative/drop_on")["pcm_sha256"] == reference[original["name"]]["pcm_sha256"]:

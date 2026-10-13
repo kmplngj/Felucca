@@ -80,6 +80,8 @@ Each run retains stdout/stderr, exact `audio.s32` and a stereo 16-bit `audio.wav
 The report is written on replay/build and metadata-command failures too, with
 completed results retained. Metadata commands and the compiler probe each have a
 15-second timeout; compilation and each replay have 120/90-second timeouts.
+Timed-out commands retain their captured stdout/stderr before propagating the
+failure, including byte output that is not valid UTF-8.
 Generated assets are hashed, not archived: use the build provenance and matching
 inputs to regenerate them when reconstructing a measurement.
 

@@ -106,6 +106,33 @@ class StressContractTest(unittest.TestCase):
                 finally:
                     os.chdir(cwd)
 
+    def test_replay_timeout_retains_partial_diagnostics(self):
+        build = stress_matrix.ROOT / "build"
+        build.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build) as directory:
+            out = Path(directory) / "replay"
+            error = subprocess.TimeoutExpired(["renderer"], 90, output=b"render checkpoint\n",
+                                              stderr=b"stalled voice\xff\n")
+            with mock.patch.object(subprocess, "run", side_effect=error):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    stress_matrix.run(Path("renderer"), 0, out)
+            self.assertEqual((out / "stdout.txt").read_bytes(), error.stdout)
+            self.assertEqual((out / "stderr.txt").read_bytes(), error.stderr)
+
+    def test_compile_timeout_retains_bytes_text_and_empty_output(self):
+        build = stress_matrix.ROOT / "build"
+        build.mkdir(exist_ok=True)
+        for stdout, stderr, expected in ((b"compile checkpoint\n", b"warning\xff\n", b"compile checkpoint\nwarning\xff\n"),
+                                         ("compile checkpoint\n", "warning\n", b"compile checkpoint\nwarning\n"),
+                                         (None, None, b"")):
+            with self.subTest(stdout=stdout), tempfile.TemporaryDirectory(dir=build) as directory:
+                log = Path(directory) / "build_o2.log"
+                error = subprocess.TimeoutExpired(["cc"], 120, output=stdout, stderr=stderr)
+                with mock.patch.object(subprocess, "run", side_effect=error):
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        stress_matrix.logged_run(["cc"], log, timeout=120)
+                self.assertEqual(log.read_bytes(), expected)
+
 
 if __name__ == "__main__":
     unittest.main()
