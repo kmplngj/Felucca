@@ -42,12 +42,63 @@ def label(scene_key):
     return "/".join(scene_key)
 
 
+def replay_manifest(manifest):
+    """Expose timestamped replay frames to the existing exact pixel comparator.
+
+    Keep replay provenance separate from the static scene renderer. A changed
+    workload/timeline is incompatible even when two frame filenames happen to match.
+    """
+    provenance = manifest["provenance"]
+    if (not isinstance(provenance, dict) or not isinstance(provenance.get("inputs"), dict)
+            or not provenance.get("inputs") or not provenance.get("revision")
+            or provenance.get("adapter") != "tools/replay_native.c"
+            or not provenance.get("binary_sha256")):
+        raise ValueError("replay requires native adapter/source/binary provenance")
+    if (manifest.get("scenario_schema") != 1 or not manifest.get("scenario_sha256")
+            or not isinstance(manifest.get("initial"), dict)
+            or not isinstance(manifest.get("timing"), dict)):
+        raise ValueError("replay requires scenario and timeline identity")
+    screen = manifest["screen"]
+    if (not isinstance(screen, dict) or screen.get("width") != 240 or screen.get("height") != 240
+            or screen.get("source") != "real firmware lcd_fill/lcd_blit"
+            or screen.get("format") != "RGB888 PPM from panel-order RGB565"):
+        raise ValueError("replay requires the real 240 x 240 RGB565 LCD capture")
+    features = provenance["features"]
+    if not isinstance(features, dict) or any(type(features.get(k)) is not int or features[k] not in (0, 1)
+                                            for k in ("fm4", "icons", "slice")):
+        raise ValueError("replay requires explicit compiled FM4/icons/SLICE settings")
+    scenes = []
+    frames = screen["frames"]
+    if not isinstance(frames, list) or len(frames) > 256:
+        raise ValueError("replay frames must be a bounded list")
+    for frame in frames:
+        if not isinstance(frame, dict):
+            raise ValueError("replay frame must be an object")
+        sample, order = frame["requested_sample"], frame["order"]
+        if type(sample) is not int or sample < 0 or type(order) is not int or order < 0:
+            raise ValueError("replay frame requires nonnegative sample/order")
+        scenes.append({"palette": "REPLAY", "style": "NATIVE",
+                       "name": f"sample-{sample:08d}-order-{order:04d}",
+                       "required": True, "file": frame["file"], "sha256": frame["sha256"],
+                       "dimensions": [240, 240]})
+    return {"schema": 1,
+            "settings": {"mode": "RGB", "width": 240, "height": 240,
+                         "pixel_format": screen["format"], "fm4": features["fm4"],
+                         "icons": features["icons"], "slice": features["slice"],
+                         "capture_kind": "interaction-replay", "scenario_sha256": manifest["scenario_sha256"],
+                         "initial": manifest["initial"], "timing": manifest["timing"]},
+            "provenance": provenance, "scenes": scenes}
+
+
 def load_manifest(directory):
     manifest = json.loads((directory / "manifest.json").read_text())
     if not isinstance(manifest, dict):
         raise ValueError("manifest must be an object")
     if manifest.get("schema") != 1:
         raise ValueError("unsupported manifest schema")
+    is_replay = manifest.get("kind") == "interaction-replay"
+    if is_replay:
+        manifest = replay_manifest(manifest)
     settings = manifest["settings"]
     if not isinstance(settings, dict):
         raise ValueError("settings must be an object")
@@ -59,11 +110,11 @@ def load_manifest(directory):
     provenance = manifest["provenance"]
     if not isinstance(provenance, dict) or not isinstance(provenance.get("inputs"), dict):
         raise ValueError("provenance and inputs must be objects")
-    if provenance.get("capture") != "before-render" or not provenance.get("renderer_sha256"):
+    if not is_replay and (provenance.get("capture") != "before-render" or not provenance.get("renderer_sha256")):
         raise ValueError("provenance must be captured with ui_render.py --renderer before drawing")
     if not provenance.get("revision") or not provenance.get("inputs"):
         raise ValueError("missing revision or font/generator/source provenance")
-    if provenance.get("renderer") != "tests/ui_render.c" or provenance.get("generator") != "tests/ui_render.py":
+    if not is_replay and (provenance.get("renderer") != "tests/ui_render.c" or provenance.get("generator") != "tests/ui_render.py"):
         raise ValueError("comparison requires the real Felucca renderer and PNG generator")
     indexed = {}
     if not isinstance(manifest["scenes"], list):
