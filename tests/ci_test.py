@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -53,10 +54,35 @@ class Checks(unittest.TestCase):
         for message in ("== skip the sanitizer runs (the compiler has no ASan / UBSan)",
                         "target: skip (build/felucca.dis missing)",
                         "logical image vs fm1pkg.js: skipped (needs node and build/felucca.fwsc)",
-                        "target: render cost 1 no budget (BUDGET_UPDATE=1 adds it)"):
+                        "target: render cost 1 no budget (BUDGET_UPDATE=1 adds it)",
+                        "regress: CPU cpu/mix/idle: 1 instructions / sample, no baseline (BUDGET_UPDATE=1 adds it)"):
             log.write_text(message + "\nALL HOST TESTS PASSED\n")
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, "incomplete test coverage"):
                 ci.verify_tests(log)
+
+    def test_whole_host_cpu_budget_skips_remain_explicit_and_allowed(self):
+        log = self.root / "tests.log"
+        for message in (
+                "regress: CPU: 2 of 2 counts unavailable (perf_event_open failed: Operation not permitted); the budget is not checked",
+                "regress: CPU: no baseline for this host (BUDGET_UPDATE=1 sh tests/run_tests.sh writes it); the budget is not checked"):
+            log.write_text(message + "\nALL HOST TESTS PASSED\n")
+            with self.subTest(message=message), patch.object(ci.Path, "is_file", return_value=True):
+                ci.verify_tests(log)
+
+    def test_host_cpu_provenance_records_usable_clang_and_gcc_flags(self):
+        compilers = [path for name in ("clang", "gcc") if (path := shutil.which(name))]
+        if not compilers:
+            self.skipTest("needs a host Clang or GCC")
+        for compiler in compilers:
+            with self.subTest(compiler=compiler), patch.dict(os.environ, CC=compiler):
+                metadata = ci.host_cpu_provenance()
+                self.assertEqual(metadata["compiler_command"], [compiler])
+                self.assertEqual(set(metadata["harnesses"]), {"regress", "regress_os"})
+                for name, harness in metadata["harnesses"].items():
+                    self.assertIn("-O2" if name == "regress" else "-Os", harness["flags"])
+                    self.assertEqual(harness["baseline_present"], (ci.build.SRC / harness["baseline"]).is_file())
+                    subprocess.run([compiler, *harness["flags"], "-x", "c", "-c", "-o", str(self.root / "probe.o"), "-"],
+                                   input="int x;", text=True, capture_output=True, check=True)
 
     def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
         log = self.root / "tests.log"

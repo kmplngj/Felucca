@@ -9,6 +9,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -68,8 +69,9 @@ def fetch_sdk(root):
 
 def verify_tests(log):
     text = log.read_text()
-    # Optional local checks become required here. The Linux instruction counter is
-    # deliberately unavailable; its explicit message is retained in the job summary.
+    # Optional local suites become required here. Whole host CPU budgets may be
+    # unavailable (counter or matching host baseline); individual missing entries
+    # in an available budget are coverage failures.
     allowed = "official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)"
     forbidden = [line for line in text.splitlines() if line != allowed
                  and re.search(r"^== skip |^target: skip |: skipped \(|no budget \(BUDGET_UPDATE|no baseline \(BUDGET_UPDATE", line)]
@@ -103,6 +105,30 @@ def emulator_tests():
                     str(host / "emu_native.f32")], check=True)
 
 
+def host_cpu_provenance():
+    """Record the host compiler and the runner's baseline/flag selection before tests."""
+    cc = shlex.split(os.environ.get("CC", "cc"))
+    common = ["-O1", "-Wall", "-Wno-unused-function"]
+    novec = ["-fno-vectorize", "-fno-slp-vectorize"]
+    probe = subprocess.run(cc + common + novec + ["-x", "c", "-c", "-o", os.devnull, "-"],
+                           input="int x;", text=True, capture_output=True)
+    if probe.returncode:
+        novec = ["-fno-tree-vectorize", "-fno-tree-slp-vectorize"]
+    paths = subprocess.check_output([sys.executable, str(build.SRC / "tests/cpu_baseline.py"),
+                                     *cc, *common], text=True).splitlines()
+    return {
+        "compiler_command": cc,
+        "compiler": subprocess.check_output(cc + ["--version"], text=True).strip(),
+        "platform": platform.system(), "architecture": platform.machine(),
+        "harnesses": {
+            name: {"flags": common + flags + ["-w", "-Ibuild/gen", "-Ifirmware/src"],
+                   "baseline": path, "baseline_present": (build.SRC / path).is_file()}
+            for name, flags, path in zip(("regress", "regress_os"), (["-O2"], ["-Os", *novec]), paths)
+        },
+        "counter_policy": "Available counter and matching host baseline required; actual outcomes in tests.log",
+    }
+
+
 def provenance(out):
     from PIL import features
     import PIL
@@ -122,13 +148,14 @@ def provenance(out):
         "compiler_sha256": hashlib.sha256((tc / "pi32v2/bin/clang").read_bytes()).hexdigest(),
         "sdk_reference": SDK_REF, "sdk_sha256": build.SDK_SHA256,
         "build_flags": build.CFLAGS, "selective_minsize": "tools/size_fns.py defaults",
+        "host_cpu": host_cpu_provenance(),
         "version": os.environ.get("VERSION", ""),
         "node": subprocess.check_output(["node", "--version"], text=True).strip(),
         "emscripten": subprocess.check_output(["emcc", "--version"], text=True).splitlines()[0],
         "daisysp_revision": subprocess.check_output(["git", "-C", os.environ["DAISYSP"], "rev-parse", "HEAD"], text=True).strip(),
         "sample_sha256": {str(p.relative_to(build.SRC)): hashlib.sha256(p.read_bytes()).hexdigest()
                           for p in sorted((build.SRC / "assets/samples-cc0").rglob("*.wav"))},
-        "limitations": ["Linux host instruction budget unavailable; ns/sample is informational",
+        "limitations": ["Host instruction budgets may be skipped if the counter or matching baseline is unavailable; ns/sample is informational",
                         "Target instruction budget is static, not FM-1 cycle timing",
                         "No real-device audio, panel, USB/MIDI or flashing validation"],
     }
