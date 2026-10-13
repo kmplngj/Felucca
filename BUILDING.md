@@ -1,7 +1,11 @@
 # Building Felucca
 
-Pull requests and `main` run the [firmware CI checks](.github/CI.md). That guide also
-explains failure diagnostics, dependency pins and tagged/manual release packaging.
+Pull requests and `main` select the [CI checks](.github/CI.md#change-based-validation)
+affected by their complete change range. Firmware/build inputs run the full suite;
+known independent Python, backup and emulator inputs use focused checks, and
+documentation-only changes skip builds. Manual CI and releases always validate
+everything. That guide also explains failure diagnostics, dependency pins and
+tagged/manual release packaging.
 
 The build makes three files in `build/`:
 
