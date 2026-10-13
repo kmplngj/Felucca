@@ -278,6 +278,7 @@ static void menu_put(uint32_t row, uint32_t v)
     case MI_MIDIIN: song.g[G_ROUTE] = (int16_t)v; break;
     case MI_TCH1: case MI_TCH2: case MI_TCH3: case MI_TCH4:   /* (MIDI IN TRACK: what the channel no longer hears let */
         mch_set(row - MI_TCH1, v);                     /* go, seq.c events_block) */
+        RING_PUBLISH();                            /* Publish the channel before the audio ISR's cleanup request. */
         midi_route = MIDI_ROUTE_AGAIN;
         break;
     }

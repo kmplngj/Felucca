@@ -1195,7 +1195,7 @@ static void seq_tick(track_t *t, uint32_t n)
  * here: midi_event drops them), SEL (1) every channel the selected track; CH5-8 .. CH13-16 (2..4) as CH1-4 on
  * their four channels (midi_base); TRACK (5, 1.5.5) the first track set to the channel, else the first set to OMNI, else
  * none (dropped as a channel outside a block) */
-static uint8_t midi_route;                 /* the G_ROUTE events_block last saw (a change to a block: midi_route_block;
+static volatile uint8_t midi_route;        /* the G_ROUTE events_block last saw (a change to a block: midi_route_block;
                                             * MIDI_ROUTE_AGAIN: TRACK's channels changed, the same again) */
 #define MIDI_ROUTE_AGAIN 0xFFu
 static int32_t midi_slot(uint32_t ch)      /* the track channel ch plays, -1 none (and with SEL) */
