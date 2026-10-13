@@ -21,7 +21,13 @@ on:
 permissions: {}
 
 concurrency:
-  group: merged-branch-cleanup
+  # Read-only audits must never displace a pending main/scheduled deletion.
+  # The latest deletion run sweeps all branches, so coalescing deletion events
+  # still covers every merged head; audits have separate queues per ref.
+  group: >-
+    merged-branch-cleanup-${{ (github.event_name == 'pull_request' ||
+    (github.event_name == 'workflow_dispatch' && !inputs.apply)) &&
+    format('audit-{0}', github.ref) || 'apply' }}
   cancel-in-progress: false
 
 jobs:
