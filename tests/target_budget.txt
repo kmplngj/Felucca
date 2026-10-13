@@ -56,6 +56,8 @@ perf_throw 52
 rev_room 218
 rev_spring 126
 rev_hall 1995
+zeros32 4
+hall_rest 27
 rev_side_mix 9
 track_insert 3
 ins_drive 277
