@@ -654,13 +654,14 @@ static void note_name(char *b, uint32_t n)
  * CLOCK, SYSTEM went to the MENU), SAVE USER -> PRESETS -> PHRASES -> PROJECT -> TOOLS (1.5, #173: PRESETS second; up
  * to 1.4.1 the last); HOME: home_tap). From another
  * family the family's page shown last (SAVE: USER); one that is not the family's any more (a page that moved, as GLOBAL
- * and SYSTEM in 1.2), or not shown for this track, gives the family's first */
-static void open_family(uint32_t fam)
+ * and SYSTEM in 1.2), or not shown for this track, gives the family's first. rev (#176: OCT- held over the
+ * tap, ui_input.c page_tap): the same family's previous shown page, the first one wrapping to the last */
+static void open_family_dir(uint32_t fam, uint32_t rev)
 {
     if (!ui.home && cur_page()->fam == fam) {          /* same button again: next page */
         uint32_t n, i = ui.page;
-        for (n = 0; n < NPAGES; n++) {
-            i = (i + 1u) % NPAGES;
+        for (n = 0; n < NPAGES; n++) {                 /* (at most one lap: a family of one shown page stays) */
+            i = (i + (rev ? NPAGES - 1u : 1u)) % NPAGES;
             if (PAGES[i].fam == fam && page_visible(i)) break;
         }
         ui.page = (uint8_t)i;
@@ -677,6 +678,8 @@ static void open_family(uint32_t fam)
     ui.home = 0;
     page_entered();
 }
+
+static void open_family(uint32_t fam) { open_family_dir(fam, 0); }
 
 static void go_home(void)
 {
@@ -814,10 +817,15 @@ static void load_motion_hold(track_t *t, uint32_t what)
 /* MOMENTARY (ui_input.c mom_turn: LFO held, the knobs' changes go back when it is let go): the values turned, where
  * they are (a track's p[], song.g[]) and what they were. In the main loop's pool (no .bss) */
 #define MOM_N 8u
+#define MOM_ST_READY 1u                          /* mom.st: LFO held, nothing turned yet */
+#define MOM_ST_KEPT 2u                           /* .. OCT+ kept them */
+#define MOM_ST_N 2u                              /* .. MOM_ST_N + n: n values held */
 static struct {
     uint8_t n;                                    /* values held, 0 = none */
     int16_t *vp[MOM_N];
     int16_t v[MOM_N];
+    uint8_t kept;                                 /* OCT+ kept them, LFO still held: the header says KEPT */
+    uint8_t st;                                   /* the header's status (ui_input.c mom_status; ui_draw.c mom_head) */
 } mom __attribute__((section(".pool")));
 static void mom_restore(void)                     /* LFO let go: every value back */
 {
@@ -837,6 +845,7 @@ static void mom_back(const track_t *t)            /* a sound load into t (0: a p
             mom.v[k++] = mom.v[i];
         }
     mom.n = (uint8_t)k;
+    mom.kept = 0;
 }
 static void load_begin(track_t *t, uint32_t what)
 {

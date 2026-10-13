@@ -222,6 +222,15 @@ EOF
         "$OUT/usb_desc_test"
 done
 
+# MIDI transport partition invariance (#87; tests/partition_test.c): one event schedule through the real USB / TRS queues and
+# parsers, rendered with 4096-sample spans and with irregular small ones (events at the same CTL boundaries): same PCM, same state
+if [ -f build/gen/felucca_tables.h ]; then
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/partition_test" tests/partition_test.c -lm
+    run "MIDI partition invariance: USB / TRS / mixed schedule, large vs irregular partitions, negative self-checks" "$OUT/partition_test"
+else
+    echo "== skip MIDI partition invariance (run ./build.sh once)"
+fi
+
 [ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
 
 $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
