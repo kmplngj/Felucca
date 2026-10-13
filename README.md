@@ -101,7 +101,9 @@ Their hosted versions are updated independently of this fork's builds and releas
   any white key can hold any effect (hold the key in the layer and turn PRESETS); MENU > FX LATCH makes them toggle,
   so nothing has to stay held
 - **MOMENTARY:** hold LFO and turn a knob on HOME or a sound / FX page; let go of LFO and the value jumps back
-  (OCT+ while holding keeps it)
+  (OCT+ while holding keeps it). While LFO is held the header stays on its state: MOMENTARY TURN (nothing changed yet),
+  then "N TO RESTORE  OCT+ KEEP" (up to 8 values; a value turned again counts once), KEPT after OCT+; prompts and
+  errors show over it, and the BPM and transport come back when LFO is let go
 - **Quick layers:** hold FX, GLO, SCL, EDIT, REC or SEQ for shortcuts on the keys and knobs, or double-tap it to
   keep the layer open; one-step undo (SAVE held); REC on every page; OCT+ confirms, OCT- goes back; what can be
   pressed breathes softly instead of blinking
@@ -244,6 +246,12 @@ where marked here:
 ![FM-1 controls with Felucca](docs/controls.jpg)
 
 - Tap a page button for its page, again for the next; HOME returns home. Page buttons act when let go
+- **Previous page:** with the family you are in shown, hold **OCT−** and tap its button to go back one page in that
+  family (the first page wraps to the last). The tap decides, when the button is let go: OCT− may be pressed before
+  the button or while it is down (and let go before it, except on action pages, where OCT− acting as "back" on
+  release comes first). It takes OCT− as a modifier, so no octave shift is left behind and notes already sounding
+  keep their pitch. FX, GLO, SCL, EDIT and SEQ also open quick layers: press OCT− first there (OCT− after the button
+  is the layer's UNDO). Another family's button, OCT− with OCT+, dialogs and MIDI LEARN behave as without it
 - Hold FX, GLO, SCL, EDIT, REC or SEQ for its quick layer; hold SAVE to undo, HOME for the menu; hold LFO and turn a
   knob for a MOMENTARY change
 - Double-tap a layer's button to keep its layer open without holding; tap it again to close

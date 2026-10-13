@@ -246,10 +246,26 @@ static int head_is_hint(const char *s)
  * icon (ui.c MSG_NOFILE: the accent's) and a locked layer's lock. A message in M (as the panel's titles), a key hint
  * (a layer's label, "[SAVE] HOLD TO UNDO") in S as every keycap's word; a message M cannot hold in maxw (right of the
  * BPM; a long name) in S, ellipsised there if it must be */
+/* MOMENTARY's status in the header (LFO held; ui_input.c mom_status): nothing over a message or a layer */
+static const char *mom_head(void)
+{
+    static char b[28];
+    if (!mom.st || ui.msg_t || ui.layer)
+        return 0;
+    if (mom.st == MOM_ST_READY)
+        return "MOMENTARY  TURN";
+    if (mom.st == MOM_ST_KEPT)
+        return "KEPT";
+    fmt_int(b, mom.st - MOM_ST_N);
+    str_cpy(b + 1, " TO RESTORE  [OCT+] KEEP", sizeof b - 1u);
+    return b;
+}
 static void head_msg(int32_t x, int32_t maxw)
 {
-    const char *m = ui.msg_t ? ui.msg : layer_head();
-    int lock = !ui.msg_t && layer_locked();   /* #83: locked open (a double tap): the lock after its name */
+    const char *m = ui.msg_t ? ui.msg : mom_head();
+    if (!m)
+        m = layer_head();
+    int lock = !ui.msg_t && !mom_head() && layer_locked();   /* #83: locked open (a double tap): the lock after its name */
     int icon = m[0] == MSG_NOFILE[0];
     int32_t lw = lock ? 15 : 0, iw = icon ? 16 + KH_GAP : 0;   /* the lock: its cell 6 px on, its ink to 15 */
     int big = !head_is_hint(m + icon) && text_w(&AF_M, m + icon) <= maxw - lw - iw;
@@ -317,11 +333,11 @@ static void draw_head(void)
     char sl[3];
     int slot = head_slot(sl);
     uint32_t sig = (uint32_t)song.playing * 3u + rec * 5u + (uint32_t)(song.octave + 8) * 11u + song.sel * 13131u +
-                   (ui.msg_t ? str_hash(7u, ui.msg) : ui.layer * 7919u + (uint32_t)layer_locked() * 3u) + (uint32_t)song.g[G_BPM] * 101u + (ui.bpm_t != 0) * 31u +
+                   (ui.msg_t ? str_hash(7u, ui.msg) : mom_head() ? 6007u + mom.st * 211u : ui.layer * 7919u + (uint32_t)layer_locked() * 3u) + (uint32_t)song.g[G_BPM] * 101u + (ui.bpm_t != 0) * 31u +
                    (uint32_t)seq_counting() * 7u + (ui_prefs & PREF_BPM_LOCK) * 4099u +
                    (uint32_t)batt_shown() * 7777u + (chain.running ? (chain.row + 1u) * 104729u : 0u) +
                    (slot ? str_hash(11u, sl) : 0u);
-    int msg = ui.msg_t || ui.layer;
+    int msg = ui.msg_t || ui.layer || mom_head();
     int centre = !msg || ui.bpm_t || ui.layer == LAYER_GLO;   /* the BPM being changed: it stays, the message right */
     int32_t rx = HEAD_REC_X;
     if (song.g[G_BPM] != ui.roll_bpm) {
