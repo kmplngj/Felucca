@@ -20,6 +20,9 @@ video helps.
 
 ## Pull requests
 
+For engine, effect, platform or persistence work, start with the
+[native extension contracts](docs/extending.md) and [development guide](AGENTS.md).
+
 Pull requests are welcome, including AI-assisted ones, with the same bar for all:
 
 - keep it small and focused on one thing;

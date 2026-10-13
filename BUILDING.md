@@ -7,6 +7,9 @@ documentation-only changes skip builds. Manual CI and releases always validate
 everything. That guide also explains failure diagnostics, dependency pins and
 tagged/manual release packaging.
 
+For engine, effect and platform changes, read the
+[native extension contracts](docs/extending.md) before adding hooks or buffers.
+
 The build makes three files in `build/`:
 
 | File | What |
