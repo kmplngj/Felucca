@@ -15,6 +15,7 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 | Before you… | Read |
 | --- | --- |
 | Build, generate assets, or run tests | [BUILDING.md](BUILDING.md) |
+| Collect diagnostics from a connected FM-1 | [docs/diagnostics.md](docs/diagnostics.md), [docs/performance.md](docs/performance.md) |
 | Change DSP, interrupt scheduling, buffers, compiler options, or resource use | [docs/performance.md](docs/performance.md) |
 | Change MIDI, saved parameters, backup, or editor messages | [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md), the affected serializers and their tests |
 | Contribute or package third-party code/data | [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSING.md](LICENSING.md) |
@@ -133,6 +134,38 @@ Explain what to test and the expected results. For FM-1 checks, describe the com
 from a known device state to the function, including buttons, hold/tap gestures, pages and
 knobs. Mark unperformed device checks pending. For changes that need no hardware testing,
 explain why and give the applicable documentation or tooling checks instead.
+
+## Real FM-1 CLI diagnostics (macOS/Linux)
+
+Run `tools/fm1_diagnostics.py` on the host connected to the FM-1 by USB. It uses Python 3's
+standard library. Enable **USB SERIAL** on the device, close other serial applications,
+and explicitly select its CDC tty; the collector does not discover or select ports.
+From the repository root, replace the example port with the connected device's port:
+
+```sh
+# macOS
+python3 tools/fm1_diagnostics.py --port /dev/cu.usbmodem1234 \
+  --scenario 'four-track playback with effects; USB SERIAL on' --duration 60 --interval 5
+# Linux
+python3 tools/fm1_diagnostics.py --port /dev/ttyACM0 \
+  --scenario 'four-track playback with effects; USB SERIAL on' --duration 60 --interval 5
+```
+
+The scenario is a report label: arrange and run the stated workload separately. The
+collector sends only `status`, `dbg`, `inp` and `crash`; it does not generate MIDI load,
+control the panel, change settings or flash firmware. Reports (`summary.json`,
+`samples.jsonl`, `console.raw`) go to a new directory under ignored `build/diagnostics/`.
+See [the diagnostics guide](docs/diagnostics.md) for supplied device-build provenance,
+timeouts, input instrumentation and capture interpretation.
+
+`VALID` means collection was complete and continuous, not that the firmware passed.
+Inspect counter deltas for audio lateness, voice shedding, USB errors and UART drops;
+listen to the audio and check panel responsiveness. `cpu_pct` measures audio render load,
+not whole-chip CPU utilization. Assess static RAM/POOL usage from the matching target
+build under [the performance guide](docs/performance.md); the collector does not measure
+live RAM or stack high-water usage. Emulator replay and host stress results remain
+separate from device evidence. If this session cannot access the connected host/device,
+report real-device checks as pending rather than treating host fixtures as hardware tests.
 
 ## Completion evidence
 
