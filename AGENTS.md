@@ -18,6 +18,7 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 | Change DSP, interrupt scheduling, buffers, compiler options, or resource use | [docs/performance.md](docs/performance.md) |
 | Change MIDI, saved parameters, backup, or editor messages | [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md), the affected serializers and their tests |
 | Contribute or package third-party code/data | [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSING.md](LICENSING.md) |
+| Add an engine, effect or platform/persistence hook | [docs/extending.md](docs/extending.md) |
 | Evaluate an idea from another FM-1 firmware | [The dated development review](docs/development-review-2026-10-11.md), then that project's current source |
 
 If this checkout has a `.codegraph/` index, use CodeGraph first to locate code and trace
