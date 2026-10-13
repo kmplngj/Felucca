@@ -105,9 +105,16 @@ static void up_set_cat(up_rec_t *r, uint32_t c)  /* c CAT_BASS..CAT_OTHER; a rec
         r->packed[UP_CAT_AT] = (uint8_t)c;
 }
 
+/* UP_PUT's engine (#212): one this build can play, or DIGITAL (its sound converts); a record stored with another
+ * id (a full backup's bank, a later firmware's) is kept as it is (up_valid: any id below ENG_ID_MAX) */
+#ifdef UP_HOST
+#define UP_PUT_ENGINE_OK(e) ((e) < NENGINES)
+#else
+#define UP_PUT_ENGINE_OK(e) (eng_ok(e) || (e) == ENGI_DIGITAL)
+#endif
 static int up_valid(const up_rec_t *r)
 {
-    if (!(r->used == UP_USED && r->ver >= 1u && r->ver <= UP_VER_GRID && r->engine < NENGINES &&
+    if (!(r->used == UP_USED && r->ver >= 1u && r->ver <= UP_VER_GRID && r->engine < ENG_ID_MAX &&
           r->np >= 8u && r->np <= (r->ver >= 4u ? UP_PMAX * 2u : UP_PMAX) && r->name[0])) return 0;
     if (r->ver >= 4u) for (uint32_t i = 0; i < r->np; i++) if (r->packed[i] > 191u) return 0;
     return 1;
@@ -228,7 +235,7 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
         ;
     k = 3u + n;                                  /* after the name's 0 */
     end = k + 2u * P_COUNT + 32u;
-    if (a[0] >= UP_SLOTS || a[1] >= NENGINES || 2u + n >= na || !up_name_ok(a + 2, n) ||
+    if (a[0] >= UP_SLOTS || !UP_PUT_ENGINE_OK(a[1]) || 2u + n >= na || !up_name_ok(a + 2, n) ||
         (na != end && ((na != end + 17u && na != end + 18u) || a[end] > 1u)) || (na == end + 18u && a[end + 17u] >= CAT_N))
         return 1;
     up_rec_t staged, *target = r;
@@ -276,12 +283,12 @@ static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for
     int16_t def[P_COUNT];
     uint32_t i;
     for (i = 0; i < P_COUNT; i++)
-        def[i] = param_desc_of(r->engine, i)->def;
+        def[i] = param_desc_of(eng_idx(r->engine), i)->def;
     up_params(r, v, def);
-    if (r->ver == 1u && ENGINES[r->engine] == &ENG_PHYS)   /* (before 1.0: MODEL 2 was DUST) */
+    if (r->ver == 1u && eng_of(r->engine) == &ENG_PHYS)   /* (before 1.0: MODEL 2 was DUST) */
         phys_legacy(&v[P_E0]);
     for (i = 0; i < P_COUNT; i++)
-        v[i] = (int16_t)param_fit(param_desc_of(r->engine, i), v[i]);   /* (a retired KIT: the kit it plays) */
+        v[i] = (int16_t)param_fit(param_desc_of(eng_idx(r->engine), i), v[i]);   /* (a retired KIT: the kit it plays) */
 }
 
 #include "up_fm6.c"                            /* the FM6 user presets' patches: the same kind of store */
@@ -298,7 +305,7 @@ static void up_boot(void)                      /* persist_boot: the banks from f
     fvb_boot();                                  /* FM6's voice bank: a staged one finished, its voices */
 #ifdef FELUCCA_FAVORITES
     for (uint32_t k = 0; k < UP_SLOTS; k++)
-        if (!up_used(k)) favorite_set(NENGINES, k, 0);
+        if (!up_used(k)) favorite_set(ENG_USER, k, 0);
 #endif
 }
 
@@ -343,7 +350,7 @@ static int up_put(uint32_t k, const up_rec_t *r)
 #endif
     if (!r) {
 #ifdef FELUCCA_FAVORITES
-        if (favorite_set(NENGINES, k, 0)) settings_save();
+        if (favorite_set(ENG_USER, k, 0)) settings_save();
 #endif
         uint32_t i;
         for (i = 0; i < NTRK; i++)
@@ -370,8 +377,8 @@ static void up_slot_label(char *b, uint32_t k)  /* "U07" */
 static void up_auto_name(char *b, uint32_t e, uint32_t k)
 {
     char l[4];
-    e %= NENGINES;
-    str_cpy(b, ENGINES[eng_ok(e) ? e : ENGI_FM6]->name, 9);   /* (a DIGITAL record plays as FM6) */
+    str_cpy(b, eng_of(e == ENGI_DIGITAL && !FELUCCA_FM4 ? ENGI_FM6 : e)->name, 9);   /* (a DIGITAL record plays as FM6;
+                                                                                     * #212: an unavailable one N/A) */
     up_slot_label(l, k);
     str_cpy(b + str_len(b), " ", 2);
     str_cpy(b + str_len(b), l + 1, 3);

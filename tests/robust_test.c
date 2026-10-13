@@ -58,23 +58,24 @@ static int projects(void)
     project_capture(&p);
     bad += check("a captured project packs and imports", proj_pack(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE));
     pos = 68u + st.raw[66];                                 /* track 1's engine byte (after its parameters) */
-    for (e0 = NENGINES; e0 < 256u; e0 += 37u) {
+    for (e0 = ENG_ID_MAX; e0 < 256u; e0 += 37u) {        /* (#212: past the engine id space; an id below it that
+                                                             * this build lacks is kept: tests/engid_test.c) */
         st.raw[pos] = (uint8_t)e0;
         sum = proj_hash(st.raw, PROJ_STORE_SIZE - 4u);
         memcpy(st.raw + PROJ_STORE_SIZE - 4u, &sum, 4);
         if (proj_import(&q, &st, PROJ_STORE_SIZE)) break;
     }
-    bad += check("FUN8 with an engine past the last (a valid hash) is not a project", e0 >= 256u);
+    bad += check("FUN8 with an engine past the id space (a valid hash) is not a project", e0 >= 256u);
     memset(&v5, 0, sizeof v5);                              /* FUN5 the same */
     v5.magic = PROJ_MAGIC_V5; v5.size = sizeof v5;
     for (i = 0; i < G_COUNT; i++) v5.g[i] = GP[i].def;
     for (i = 0; i < NTRK; i++) { v5.t[i].engine = trk[i].engine; memcpy(v5.t[i].p, trk[i].p, sizeof v5.t[i].p); }
-    v5.t[2].engine = NENGINES;
+    v5.t[2].engine = ENG_ID_MAX;
     v5.sum = proj_hash(&v5, sizeof v5 - 4u);
-    bad += check("FUN5 with an engine past the last is not a project", !proj_import(&q, &v5, sizeof v5));
+    bad += check("FUN5 with an engine past the id space is not a project", !proj_import(&q, &v5, sizeof v5));
     p.t[1].engine = 200; p.sum = proj_sum(&p);              /* a RAM project_t (valid magic, size and sum) */
     e0 = trk[1].eng_req;
-    bad += check("restoring a project with an engine past the last is refused, nothing changes",
+    bad += check("restoring a project with an engine past the id space is refused, nothing changes",
                  project_restore_runtime(&p) == 1 && trk[1].eng_req == e0);
     /* a retained RAM slot holding FUN5 (its own size): bounded as one from flash (vel 200 cannot be packed) */
     reset();

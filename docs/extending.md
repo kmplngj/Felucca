@@ -27,26 +27,21 @@ for the main options, [core.h](../firmware/src/core.h) for engine options,
 
 ### 1.1 Stable IDs
 
-- An engine's number is its index in `ENGINES[NENGINES]` (`firmware/src/engines.c`). The
-  editor protocol, user presets and projects store it. **Append; never reorder or reuse.**
-  `core.h` says why `SLICE` is last: "the other engines keep their numbers" (`NENGINES`).
+- An engine's number is its id in the engine id space 0..`ENG_ID_MAX`−1 (64, `core.h`) and its index in
+  `ENGINES[]` (`firmware/src/engines.c`). The editor protocol, user presets, projects and favourites store
+  it. **Append; never reorder or reuse.** `NENGINES` is only the length of this build's table (its highest
+  id + 1); it is no stored value and no marker ([#212](https://github.com/kmplngj/Felucca/issues/212)).
 - A retired engine keeps its slot. Engine 1 (DIGITAL) is the example: `ENG_FM4_GONE` fills
   the slot, `eng_ok()` refuses to select it and old sounds convert to FM6
   (`firmware/src/fm4_convert.c`).
-- `NENGINES` is `13 + FELUCCA_SLICE` in `core.h`; a new engine changes that count and the
-  `ENGINES[]` table together. A build option that removes an engine (as `FELUCCA_SLICE=0`)
-  has to keep every other number unchanged. Today SLICE (13) is last only because it is
-  conditional: `&ENG_SLICE` sits under `#if FELUCCA_SLICE` at the end of `ENGINES[]`, so an
-  engine simply appended after it would be 14 in a normal build and 13 (SLICE's stored/wire
-  number) with `FELUCCA_SLICE=0`. Before appending, give `FELUCCA_SLICE=0` builds a reserved
-  placeholder in slot 13 (as `ENG_FM4_GONE` holds slot 1, refused by `eng_ok()`) and make
-  `NENGINES` independent of `FELUCCA_SLICE`.
-- Slot 14 is also a migration gate: [midi_learn.c](../firmware/src/midi_learn.c)
-  uses `favorites.factory[14]` for MIDI Learn and asserts `NENGINES <= 14`.
-  [favorites.c](../firmware/src/favorites.c)/settings persist that layout. Reserving
-  SLICE alone does not make appending engine 14 safe; move/migrate this storage with
-  round-trip and old-settings coverage before increasing the engine count
-  ([#28](https://github.com/kmplngj/Felucca/issues/28)).
+- An id a build lacks (one its catalog leaves out, as `FELUCCA_SLICE=0` leaves out 13, or one past its table)
+  maps to `ENG_NONE`: `eng_idx()` / `eng_of()` never give another engine. Such a sound is kept as stored, shown
+  as N/A and silent. Compare ids exactly (`t->eng_req == ENGI_X`) or pointers (`eng_of(e) == &ENG_X`); never
+  reduce an id with `% NENGINES`. A build option that leaves an engine out keeps the slot (`ENG_AT()` puts
+  `ENG_NONE` there) and removes it from `ENGINE_ORDER[]`, so every other number stays.
+- Favourites have a row per id (`FAV_ROWS` = `ENG_ID_MAX`); MIDI Learn's map and the device bytes are
+  `settings_ml` / `settings_dev`, not favourites rows. A first favourite on an id from 14 makes the settings
+  PER6 (`settings_persist.c`). Per-engine tables (`MIDI_CC_ENG[]`, `PRESET_CAT[]`) are sized by `ENG_ID_MAX`.
 - The numbers are a wire contract: the engine byte table in
   [web/EDITOR_PROTOCOL.md](../web/EDITOR_PROTOCOL.md) lists them and must gain the new row.
 - `ENGINE_ORDER[]` (`engines.c`) is only the display order (PRESETS, EDIT layer, editor
@@ -629,9 +624,9 @@ capabilities and tests instead of opening duplicate feature tickets.
 
 Engine:
 
-- [ ] SLICE's slot 13 reserved in `FELUCCA_SLICE=0` builds before appending (1.1).
-- [ ] Appended to `ENGINES[]`; `NENGINES`, `ENGINE_ORDER[]`, `eng_abbr()`, `PRESET_CAT[]`,
-      `N_ENGNAME[]`, protocol engine table updated; no existing number moved in any build option.
+- [ ] Appended to `ENGINES[]` (with `ENG_AT()`); `NENGINES`, `ENGINE_ORDER[]`, `eng_abbr()`, `PRESET_CAT[]`,
+      `N_ENGNAME[]`, `MIDI_CC_ENG[]`, protocol engine table updated; no existing number moved in any build option;
+      the id below `ENG_ID_MAX` (1.1).
 - [ ] `edit[]` ranges/defaults deliberate (they are stored); `desc` hook keeps range/default.
 - [ ] `mem` set with `ENG_MEM_FITS`; zeroed region is a valid initial state; switch tests added.
 - [ ] Render is bounded, fixed-point-exact, click-free on retrigger/switch, releases cleanly.

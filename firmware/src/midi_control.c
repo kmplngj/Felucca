@@ -217,8 +217,9 @@ static const uint8_t MIDI_CC_MAP[][2] = {
     {5, P_GLIDE}, {7, P_LEVEL}, {10, P_PAN}, {71, MCC_RES}, {72, P_REL}, {73, P_ATK}, {74, MCC_CUT}, {75, P_DEC},
     {91, P_REV}, {93, P_CHOR}, {94, P_DLY},
 };
-/* per engine (ENGINES[] order): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none */
-static const uint8_t MIDI_CC_ENG[NENGINES] = {
+/* per engine id (ENGINES[] order; sized by the id space, #212: an id without an engine, ENG_IDX_NONE included, has
+ * none): CC74's E index + 1 in the high nibble, CC71's in the low one, 0 = none */
+static const uint8_t MIDI_CC_ENG[ENG_ID_MAX] = {
     0x56, 0x00, 0x30, 0x80, 0x50, 0x07, 0x67, 0x00,   /* ANALOG CUT RES, -, PHASE DCW, LOFI TONE, SAMPLE CUT, VOICE Q,
                                                        * TRIO CUT RES, WHEEL - */
     0x80, 0x30, 0x30, 0x34, 0x30,                     /* GRAIN TONE, PHYS BRIT, DRUM TONE, NOISE FREQ RES, FM6 MLVL */
@@ -238,7 +239,8 @@ static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
 }
 /* MIDI LEARN (1.5, Discussion #170): up to ML_N CCs, each set to one parameter of one track, whatever channel it
  * comes on (a channel ROUT ignores stays ignored) and whichever track that channel plays. Kept with the settings in
- * the 32 bytes of favorites.factory[14] (no engine 14: favorites.c; all 0 in every older setting = nothing learned),
+ * the 32 bytes of settings_ml (favorites.c; #212: favorites.factory[14] in the settings of firmware up to 1.6, which a
+ * PER4 record still holds; all 0 in every older setting = nothing learned),
  * an entry two bytes, as a 16-bit value LSB first: bits 0..6 the CC, 7..8 the track, 9..15 the parameter's code, 0 =
  * an empty entry: a common parameter its P_* id + 1 (1 .. ML_E0 - 1: their ids never move, new ones go before P_E0),
  * an engine parameter ML_E0 + k for P_E0 + k (P_E0 moves when common ones are added). A learned CC no longer reaches
@@ -248,7 +250,7 @@ static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
 #define ML_N 16u
 #define ML_E0 120u
 typedef char ml_ids_fit[P_E0 < ML_E0 && P_COUNT - P_E0 == 8 ? 1 : -1];
-static uint8_t *const ml_tab;               /* favorites.factory[14] (midi_learn.c: a build without the UI, none) */
+static uint8_t *const ml_tab;               /* settings_ml (midi_learn.c: a build without the UI, none) */
 static volatile uint8_t *const ml_io;       /* ui.ml.io (midi_learn.c; not globals here: the ISR's data keeps its layout) */
 #define ml_arm (ml_io[0])                   /* the UI waits for a CC (MIDI LEARN with a parameter picked) */
 #define ml_heard (ml_io[1])                 /* .. the CC that came meanwhile, + 1 (0 none) */

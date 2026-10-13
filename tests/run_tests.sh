@@ -20,6 +20,11 @@
 #                   share the part's state region, with others), hashed against 1.4's (tests/union_golden.txt).
 #                   Owner checks (tests/arena_test.c, FELUCCA_ARENA_CHECK=1, host only): negative fixtures and fixed-seed
 #                   random runs; union_test is also run checked (and under ASan/UBSan).
+# ENGINE IDS (tests/engid_test.c, #212): the id space (64) apart from the engines a build has: INFO's 49 01 bitmap,
+#                   FAV_GET / FAV_SET's user marker (127, and the old one: INFO's count), favourites past id 13 in the
+#                   settings (PER6), ids this build lacks kept in projects, user presets and backups (N/A, silent, never
+#                   another engine). Again on a test build with a placeholder engine 14 and a catalog without NOISE
+#                   (FELUCCA_ENG_TEST14=1 FELUCCA_ENG_OMIT=11), with the serializer tests and union_test's goldens.
 # UI renders (tests/ui_render.c): every screen in every palette from the real drawing code: the layout lint (no text
 #                   off the screen, cut, hidden, overlapping or spilling out of its cell / card; only free text
 #                   ellipsised), GREY gray, MONO neutral, the draw cost, the text audit (build/ui_new/text_audit.tsv);
@@ -343,7 +348,7 @@ if [ -f build/gen/felucca_tables.h ]; then
         echo "font Python checks skipped (Pillow unavailable)"
     fi
     $CC -O1 -w -Ibuild/gen -o "$OUT/settings_test" tests/settings_test.c
-    run "settings: PER1..PER4 migration, palette ids and preference preservation" "$OUT/settings_test"
+    run "settings: PER1..PER4 migration, PER6 (#212: engine ids to 63, PER4 <-> PER6, malformed, PER5), palette ids and preference preservation" "$OUT/settings_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test" tests/ui_test.c -lm
     run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"
     $CC -DPREEMPT -g -fwrapv -fsanitize=address,undefined -fno-sanitize=shift -fno-sanitize-recover=all -w \
@@ -389,6 +394,19 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/robust_test" tests/robust_test.c -lm
     run "robustness: crafted sample slots, engine numbers, retained old projects, preset patterns, malformed requests" \
         "$OUT/robust_test"
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/engid_test" tests/engid_test.c -lm
+    run "engine ids (#212): the catalog, INFO's id bitmap, FAV markers old / new, ids this build lacks kept in projects, presets, backups" \
+        "$OUT/engid_test"
+    # #212: a test build with a placeholder engine 14 and a sparse catalog (NOISE, 11, left out): the id tests, the
+    # serializers and the engine-memory switches against the same goldens
+    ENGX="-DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=11"
+    for t in engid_test editor_test project_test upreset_test backup_test robust_test; do
+        $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/${t}_eng14" tests/$t.c -lm
+        run "test build, engine 14 + catalog without 11 (#212): $t" "$OUT/${t}_eng14"
+    done
+    $CC -O2 -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/union_test_eng14" tests/union_test.c -lm
+    run "test build, engine 14 + catalog without 11 (#212): engine memory, the same 720 hashes" \
+        "$OUT/union_test_eng14" tests/union_golden.txt
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/mod_test" tests/mod_test.c -lm
     mkdir -p build/mod_demo
     run "modulation matrix: off = bit-identical, the math, MIDI CC1 / CC11 / aftertouch, cost, demos" "$OUT/mod_test" build/mod_demo
@@ -519,10 +537,12 @@ else
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
-    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test; do
+    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test; do
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
     done
+    $SCC -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=11 -o "$A/engid_test_eng14" tests/engid_test.c -lm
+    run "ASan/UBSan: engid_test, test build (engine 14, catalog without 11)" "$A/engid_test_eng14"
     $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/arena_test" tests/arena_test.c -lm
     run "ASan/UBSan: engine memory owner checker (fixtures + 12 random runs)" "$A/arena_test" 12
     $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/union_test_chk" tests/union_test.c -lm

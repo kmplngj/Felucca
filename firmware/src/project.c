@@ -485,13 +485,14 @@ static void proj_fm6_init(project_t *q)
 }
 static int proj_import_old(project_t *q, const void *b, int n);
 static int proj_import_any(project_t *q, const void *b, int n);
-/* every track's engine one this firmware has (DIGITAL, 1, is one: it converts): a project of another number
- * is not one (it never was: no engine number past the last was ever stored) */
+/* every track's engine an id of the engine id space (#212): one this firmware lacks (another build's catalog, a
+ * later firmware's engine) is kept as it is, and its track plays nothing and shows N/A (engines.c ENG_NONE); a byte
+ * past the id space is no project */
 static int proj_engines_ok(const project_t *q)
 {
     uint32_t t;
     for (t = 0; t < NTRK; t++)
-        if (q->t[t].engine >= NENGINES)
+        if (q->t[t].engine >= ENG_ID_MAX)
             return 0;
     return 1;
 }
@@ -546,8 +547,8 @@ static int proj_import_old(project_t *q, const void *b, int n)
             q->sel = v->sel; q->parts = v->parts; q->phys = v->phys;
             for (i = 0; i < NTRK; i++) {
                 int16_t def[P_COUNT];
-                if (v->t[i].engine >= NENGINES) return 0;
-                for (k = 0; k < P_COUNT; k++) def[k] = param_desc_of(v->t[i].engine, k)->def;
+                if (v->t[i].engine >= ENG_ID_MAX) return 0;
+                for (k = 0; k < P_COUNT; k++) def[k] = param_desc_of(eng_idx(v->t[i].engine), k)->def;
                 params_by_count(q->t[i].p, v->t[i].p, 69u, def);
                 q->t[i].engine = v->t[i].engine; q->t[i].preset = v->t[i].preset;
                 for (k = 0; k < NSTEP; k++) {
@@ -716,8 +717,8 @@ static int proj_unpack(project_t *q, const uint8_t *b, uint32_t st)
         int16_t values[P_COUNT], def[P_COUNT];
         for (i = 0; i < np; i++) { if (b[pos] > 191u) return 0; values[i] = (int16_t)b[pos++] - 64; }
         q->t[t].engine = b[pos++]; q->t[t].preset = b[pos++];
-        if (q->t[t].engine >= NENGINES) return 0;
-        for (i = 0; i < P_COUNT; i++) def[i] = param_desc_of(q->t[t].engine, i)->def;
+        if (q->t[t].engine >= ENG_ID_MAX) return 0;
+        for (i = 0; i < P_COUNT; i++) def[i] = param_desc_of(eng_idx(q->t[t].engine), i)->def;
         params_by_count(q->t[t].p, values, np, def);
         for (i = 0; i < NSTEP; i++) {
             step_t *s = &q->t[t].step[i]; uint32_t meta, nd = 0;
@@ -830,7 +831,7 @@ static void proj_bound(project_t *q)
             if (s->probability >= COND_FIRST + NCOND) s->probability = 0;
         }
         for (i = 0; i < P_COUNT; i++) {
-            const param_desc_t *d = param_desc_of(q->t[t].engine % NENGINES, i);
+            const param_desc_t *d = param_desc_of(eng_idx(q->t[t].engine), i);
             q->t[t].p[i] = (int16_t)param_fit(d, q->t[t].p[i]);   /* (a retired KIT: the kit it plays) */
         }
     }
@@ -1081,14 +1082,15 @@ static int project_restore_runtime(const project_t *input)
     for (k = 0; k < NTRK; k++) {
         track_t *t = &trk[k];
         const proj_trk_t *s = &p->t[k];
-        uint32_t e = s->engine;                         /* (< NENGINES: proj_engines_ok) */
+        uint32_t e = s->engine;                         /* (< ENG_ID_MAX: proj_engines_ok; kept, available or not) */
         t->eng_req = (uint8_t)e;
         t->user = 0;                                    /* (no user preset slot is saved) */
         for (i = 0; i < P_COUNT; i++) {                 /* every value back inside its range (param_fit) */
-            const param_desc_t *d = param_desc_of(e, i);
+            const param_desc_t *d = param_desc_of(eng_idx(e), i);
             t->p[i] = (int16_t)param_fit(d, s->p[i]);
         }
-        t->preset = (uint8_t)(ENGINES[e]->npresets ? (s->preset >= PROJ_DEF_KEEP ? 0u : s->preset) % ENGINES[e]->npresets : 0u);
+        t->preset = (uint8_t)(eng_of(e)->npresets ? (s->preset >= PROJ_DEF_KEEP ? 0u : s->preset) % eng_of(e)->npresets :
+                              eng_ok(e) ? 0u : s->preset);   /* (#212: an unavailable engine's preset number kept) */
         memcpy(t->step, s->step, sizeof t->step);
         proj_steps(t->step);
         {   /* the project's own FM6 patch, never reloaded from SLOT: F n if it is that factory patch, else OWN */
@@ -1149,7 +1151,11 @@ static void project_load(uint32_t slot)
 #include "slice_store.c"                          /* SLICE's MAN slices, kept in the user slots */
 #endif
 #if FELUCCA_FLASH
-static persist_t persist_saved __attribute__((section(".pool")));
+static persist_rec_t persist_saved __attribute__((section(".pool")));   /* the record in flash (persist_len bytes; the
+                                                                     * rest 0) */
+/* main-loop scratch for a whole settings record (#212: PER6 is 2.7 KB, too much for the stack): persist_boot,
+ * settings_poll, settings_unsaved. Each fills and uses it within the call; none calls another of them */
+static persist_rec_t persist_tmp __attribute__((section(".pool")));
 static uint8_t persist_pending;                 /* 1 requested, 2 waiting after a flash error */
 static uint32_t persist_retry_ms;
 #endif
@@ -1157,7 +1163,7 @@ static uint32_t persist_retry_ms;
 static void persist_boot(void)                    /* before settings_init / panel_init */
 {
 #if FELUCCA_FLASH
-    persist_t p;
+    persist_rec_t *p = &persist_tmp;
     uint32_t f = irq_save();
     flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;       /* the expected 1 MiB part, else stay RAM-only */
     irq_restore(f);
@@ -1174,9 +1180,11 @@ static void persist_boot(void)                    /* before settings_init / pane
             smp_user_scan(k);
     }
     {
-        int n = st_load(OBJ_SETTINGS, &p, sizeof p);
-        if (settings_import(&p, n))
-            persist_saved = p;
+        int n;
+        memset(p, 0, sizeof *p);                   /* (past a shorter record: 0, as settings_export_rec leaves it) */
+        n = st_load(OBJ_SETTINGS, p, sizeof *p);
+        if (settings_import((persist_t *)(void *)p, n))
+            persist_saved = *p;
     }
     {   /* projects: fill empty RAM slots from flash, so the slot list is right after power-on */
         uint32_t i;
@@ -1242,21 +1250,21 @@ static uint32_t chain_prepare(void)
 static void settings_poll(void)
 {
 #if FELUCCA_FLASH
-    persist_t p;
+    persist_rec_t *p = &persist_tmp;
 #if FELUCCA_SLICE
     slc_store_poll();                              /* SLICE's slices edited on the SLICES page */
 #endif
     if (!persist_pending || !flash_ok || transport_busy() ||
         (persist_pending == 2u && (uint32_t)(fm1_ms - persist_retry_ms) < 1000u))
         return;
-    p = persist_saved;
-    settings_export(&p);
-    if (!memcmp(&p, &persist_saved, sizeof p)) {
+    *p = persist_saved;
+    settings_export_rec(p);
+    if (!memcmp(p, &persist_saved, sizeof *p)) {
         persist_pending = 0;
         return;                                    /* unchanged: no erase cycle */
     }
-    if (st_save(OBJ_SETTINGS, &p, sizeof p) == 0) {
-        persist_saved = p;
+    if (st_save(OBJ_SETTINGS, p, persist_len(p)) == 0) {
+        persist_saved = *p;
         persist_pending = 0;
     } else {
         persist_pending = 2;
@@ -1272,6 +1280,15 @@ static void settings_save(void)
 #endif
     settings_poll();
 }
+#if FELUCCA_FLASH
+/* 1 = the settings in RAM differ from the record in flash (the editor's rc 3: applied, not saved) */
+static int settings_unsaved(void)
+{
+    persist_tmp = persist_saved;
+    settings_export_rec(&persist_tmp);
+    return memcmp(&persist_tmp, &persist_saved, sizeof persist_tmp) != 0;
+}
+#endif
 
 /* The autosave (1.2, Discussion #130): the music as it is (what a project holds: every track's sound, steps, LEN DIV
  * SWING GATE, mix, the song, the automation and locks, the FM6 patches, the name) kept in its own storage object
@@ -1406,6 +1423,6 @@ static int autosave_boot(int allowed)
 
 #if FELUCCA_FLASH
 _Static_assert(sizeof(project_store_t) <= ST_PAYLOAD_MAX, "project does not fit one flash sector");
-_Static_assert(sizeof(persist_t) <= ST_PAYLOAD_MAX, "settings do not fit one flash sector");
+_Static_assert(sizeof(persist_rec_t) <= ST_PAYLOAD_MAX, "settings do not fit one flash sector");
 #endif
 #endif /* PROJ_HOST */

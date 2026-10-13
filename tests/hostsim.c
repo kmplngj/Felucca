@@ -107,7 +107,7 @@ static void host_preset_values(track_t *t, uint32_t e, uint32_t pi, const preset
 }
 static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)
 {
-    uint32_t n = ENGINES[e]->npresets;
+    uint32_t n = eng_of(e)->npresets;
 #if !FELUCCA_FM4
     if (e == ENGI_DIGITAL) {                      /* DIGITAL preset pi (retired): converted, as ui.c fm4_load_preset */
         uint8_t v[FP_SIZE + 1u];
@@ -124,7 +124,7 @@ static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)
         t->eng_req = (uint8_t)e;
         t->preset = 0;
         for (uint32_t i = 0; i < 8u; i++)
-            t->p[P_E0 + i] = ENGINES[e]->edit[i].def;
+            t->p[P_E0 + i] = eng_of(e)->edit[i].def;
         return;
     }
     pi %= n;
@@ -133,7 +133,8 @@ static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)
 static void host_preset(track_t *t, uint32_t e, uint32_t pi)
 {
     host_preset_req(t, e, pi);
-    t->engine = t->eng_req;                       /* (DIGITAL without FELUCCA_FM4: FM6) */
+    t->engine = (uint8_t)eng_idx(t->eng_req);     /* (DIGITAL without FELUCCA_FM4: FM6; #212: an id without an
+                                                   * engine: ENG_IDX_NONE) */
     eng_mem_claim(t);                             /* (voice.c engine_block would at the next block) */
 }
 

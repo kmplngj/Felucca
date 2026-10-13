@@ -43,7 +43,7 @@ static uint32_t up_gen;                      /* bumped on every user bank change
 /* MENU's two-valued settings (ui_menu.c MENU_FLAGS), a bit each in a byte no engine uses (as ui_layer.c layer_seen):
  * saved with the settings; 0 in older ones = every setting's default (append-only: a new setting takes a new bit,
  * its default is 0) */
-#define ui_prefs (favorites.factory[15][30])
+#define ui_prefs (settings_dev[30])
 #define PREF_LATCH 1u                          /* MENU > FX LATCH ON (#40) */
 #define PREF_ANIM_OFF 2u                       /* MENU > ANIM OFF (#46): values snap (no rolling digits, no glide) */
 #define PREF_ACCEL 4u                          /* MENU > KNOB ACCEL ON (#52): fast turns of wide values x2..x8 */
@@ -61,7 +61,7 @@ static uint32_t up_gen;                      /* bumped on every user bank change
  * 4-5 COUNT-IN (OFF, 1 BAR, 2 BARS); 0 in older settings = OFF / MID / OFF, so nothing clicks or counts in that did
  * not; 3 (unknown) reads as 0 (settings_persist.c puts it back). Bit 6 (1.2): MENU > SCALE LEDS ON (Discussion #127,
  * ui_input.c scale_leds; 0 in older settings = OFF). Bit 7 (1.5.5, #208): MENU > MIDI > AUTO SELECT ON */
-#define ui_rec_prefs (favorites.factory[15][28])
+#define ui_rec_prefs (settings_dev[28])
 #define PREF_REC 0xFF00u                       /* (menu_items.c MENU_FLAGS: a bit of ui_rec_prefs, << 8) */
 #define PREF_SCALE_LEDS (0x40u << 8)
 #define PREF_MIDI_FOLLOW (0x80u << 8)          /* 1.5.5 (#208): MENU > MIDI > AUTO SELECT ON, bit 7 of ui_rec_prefs (0 in
@@ -73,7 +73,7 @@ static uint32_t up_gen;                      /* bumped on every user bank change
  * (Discussion #188, ui_input.c: SELECT steps the pages; 0 = BPM, as before); bit 5 MIDI > SCREEN WAKE PANEL (scr_input:
  * only the panel wakes SCREEN OFF, as up to 1.5.1; 0, every older setting, = +MIDI, the default: a note-on too).
  * 1.5.6: bit 6 SELECT's second bit (#84: sel_mode). Bit 7 free */
-#define ui_prefs2 (favorites.factory[15][24])
+#define ui_prefs2 (settings_dev[24])
 #define PREF_X 0xFF0000u                       /* (menu_items.c MENU_FLAGS: a bit of ui_prefs2, << 16) */
 #define PREF_SCOPE_MIX (0x01u << 16)
 #define PREF_PREVIEW (0x02u << 16)
@@ -92,12 +92,12 @@ static uint32_t sel_mode(void) { return ((ui_prefs2 >> 4) & 1u) | ((ui_prefs2 >>
  * rows of TRACKS, and KNOB 1..4 the LEVEL of T1..T4 in place of the engine's four: home_param). A byte of its own no
  * engine uses, saved with the settings; 0 in older settings = SCOPE; an unknown value (a later firmware's view) reads as
  * SCOPE and is kept as saved (1.3 / 1.4 read LEVELS so) */
-#define ui_home_view (favorites.factory[15][26])
+#define ui_home_view (settings_dev[26])
 /* 1.5.6 (#212): MENU > DISPLAY > LEDS INV LO / INV HI: INV with the idle LEDs at the steady mid level (ui_input.c
  * ui_leds) instead of lit. The mode stays INV (settings_leds, panel.c: so firmware before 1.5.6 reads plain INV) and
  * this byte no engine uses holds the level: 1 LO, 2 HI; 0 (every older setting) or another value = INV as before.
  * Saved with the settings; read only while LEDS is INV (menu_items.c leds_row) */
-#define ui_leds_inv (favorites.factory[15][25])
+#define ui_leds_inv (settings_dev[25])
 static uint32_t leds_inv(void) { return settings_leds == LEDS_INV && ui_leds_inv - 1u < 2u ? ui_leds_inv : 0u; }
 enum { HV_SCOPE, HV_TRACKS, HV_LEVELS, HV_COUNT };
 static int home_tracks(void) { return ui_home_view == HV_TRACKS || ui_home_view == HV_LEVELS; }
@@ -124,7 +124,7 @@ static void rp_put(uint32_t f, uint32_t v)
 /* MENU > STYLE (ui_menu.c): ST_FLAT ST_LINE (gfx.c) in another byte no engine uses, saved with the settings;
  * 0 in older ones = FLAT; 2, the retired PIXEL (1.0.1), reads as LINE; anything else unknown as FLAT (settings_persist.c). gfx.c draws from its copy, ux.style
  * (ui_draw.c style_apply) */
-#define ui_style (favorites.factory[15][29])
+#define ui_style (settings_dev[29])
 static void draw_gaps(uint32_t y, uint32_t h);        /* (ui_draw.c) */
 
 static uint8_t sync_reload;                  /* engine / preset / project / user preset loaded: editor RELOAD push */
@@ -242,10 +242,10 @@ enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PA
  * Off: lcd_power(0) (DISPOFF, SLPIN) and nothing is drawn. Waking, a frame at a time (never a wait in
  * the loop): 120 ms after the SLPIN, SLPOUT (lcd_power(1)); 120 ms after that one frame redraws everything
  * (ui.force), then DISPON (lcd_power(2)) */
-#define ui_scr (favorites.factory[15][27])
+#define ui_scr (settings_dev[27])
 /* MENU > ANIM IDLE (1.2, Discussion #135; menu_items.c, ui_input.c idle_leds): bit 0, the LEDs' idle animation, in a
  * byte no engine uses, kept with the settings; 0 in every older setting = off. The other bits: 0 (room for a delay) */
-#define ui_idle (favorites.factory[15][10])
+#define ui_idle (settings_dev[10])
 #define SCR_DEF 0u                                     /* NEVER (1.1.5.1; 1.1.5: 30 MIN) */
 static const uint8_t SCR_CODE[5] = {0, 2, 1, 4, 7};    /* the stored byte of NEVER 5 15 30 60 MIN (1.1.5: 3 2 1 0 7) */
 static const uint8_t SCR_DEC[8] = {0, 2, 1, 0, 3, 0, 0, 4};   /* .. and back (3: 1.1.5's NEVER; 5, 6 unknown) */
@@ -421,20 +421,20 @@ static uint32_t layer_btn(void);
 static int page_visible(uint32_t i)
 {
     if (PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7)
-        return TSEL->eng_req % NENGINES == ENGI_DRUM;
+        return TSEL->eng_req == ENGI_DRUM;
     if (PAGES[i].id[0] == P_FTYPE)                    /* FILTER (1.5, #104): ANALOG's */
-        return ENGINES[TSEL->eng_req % NENGINES] == &ENG_ANALOG;
+        return eng_of(TSEL->eng_req) == &ENG_ANALOG;
     if (PAGES[i].graph >= GR_FMOP && PAGES[i].graph <= GR_FMENV)
-        return TSEL->eng_req % NENGINES == ENGI_FM6;
+        return TSEL->eng_req == ENGI_FM6;
 #if FELUCCA_SLICE
     if (PAGES[i].graph == GR_SLICES)
-        return ENGINES[TSEL->eng_req % NENGINES] == &ENG_SLICE;
+        return eng_of(TSEL->eng_req) == &ENG_SLICE;
 #else
     if (PAGES[i].graph == GR_SLICES)
         return 0;
 #endif
     return !(PAGES[i].fam == FAM_EDIT && PAGES[i].id[0] >= P_FM1_ATK &&
-             PAGES[i].id[0] <= P_FM4_LEVEL) || (FELUCCA_FM4 && TSEL->eng_req % NENGINES == ENGI_DIGITAL);
+             PAGES[i].id[0] <= P_FM4_LEVEL) || (FELUCCA_FM4 && TSEL->eng_req == ENGI_DIGITAL);
 }
 
 static uint32_t page_first(uint32_t fam)
@@ -505,7 +505,7 @@ static int lock_page_ok(uint32_t i)
 static uint32_t lock_id(uint32_t k)
 {
     uint32_t id = ui.plk_src && lock_page_ok(ui.plk_src - 1u) ? PAGES[ui.plk_src - 1u].id[k & 3u]
-                                                               : ENGINES[TSEL->eng_req % NENGINES]->knob[k & 3u];
+                                                               : eng_of(TSEL->eng_req)->knob[k & 3u];
     return id < P_COUNT && motion_param(id) ? id : 0xFFu;
 }
 
@@ -1292,7 +1292,7 @@ static uint32_t preset_rank(const engine_t *e, uint32_t k)
     return n;
 }
 
-#define preset_shown(e) (ENGINES[e]->npresets - (ENGINES[e]->presets == SMP_PRESET_TABLE ? SMP_NALIAS : 0u))
+#define preset_shown(e) (eng_of(e)->npresets - (eng_of(e)->presets == SMP_PRESET_TABLE ? SMP_NALIAS : 0u))
 
 #if !FELUCCA_FM4
 /* DIGITAL (engine 1, retired): t's sound = p, values as DIGITAL has them, converted to FM6 with a patch of its own
@@ -1340,15 +1340,15 @@ static void set_engine_of(track_t *t, uint32_t ei);
 /* preset pi of the engine the track asked for: the sound only (not the steps, not param_kept) */
 static void apply_preset_to(track_t *t, uint32_t pi)
 {
-    const engine_t *e = ENGINES[t->eng_req % NENGINES];
+    const engine_t *e = eng_of(t->eng_req);
     uint32_t i;
 #if !FELUCCA_FM4
-    if (t->eng_req % NENGINES == ENGI_DIGITAL) {
+    if (t->eng_req == ENGI_DIGITAL) {
         fm4_load_preset(t, pi);
         return;
     }
 #endif
-    if (t->eng_req % NENGINES == ENGI_SAMPLE && pi == SMP_SET_PERC) {   /* SAMPLE preset 4 was PERC (retired, a stored */
+    if (t->eng_req == ENGI_SAMPLE && pi == SMP_SET_PERC) {   /* SAMPLE preset 4 was PERC (retired, a stored */
         set_engine_of(t, ENGI_DRUM);                  /* number: the editor's PRESET, a favourite): DRUM's kit */
         return;                                       /* (core.h drum_from_perc) */
     }
@@ -1388,17 +1388,19 @@ static void apply_preset_to(track_t *t, uint32_t pi)
  * its values or the new one with its own (voice.c engine_block), never one with the other's */
 static void set_engine_of(track_t *t, uint32_t ei)
 {
-    const engine_t *e = ENGINES[ei % NENGINES];
+    const engine_t *e = eng_of(ei);
     uint32_t i;
 #if !FELUCCA_FM4
-    if (ei % NENGINES == ENGI_DIGITAL) {             /* DIGITAL (retired): its first preset, as FM6 */
+    if (ei == ENGI_DIGITAL) {             /* DIGITAL (retired): its first preset, as FM6 */
         fm4_load_preset(t, 0);
         return;
     }
 #endif
+    if (!eng_ok(ei))                                  /* (#212: an engine this build lacks: the sound stays) */
+        return;
     load_begin(t, UNDO_SOUND);
     fm1_irq_off();
-    t->eng_req = (uint8_t)(ei % NENGINES);
+    t->eng_req = (uint8_t)ei;
     for (i = 0; i < 8u; i++)
         t->p[P_E0 + i] = e->edit[i].def;
     apply_preset_to(t, 0);
@@ -1418,14 +1420,16 @@ static void set_engine(uint32_t ei) { set_engine_of(TSEL, ei); }
 #define CLEAN_REL 40                                   /* ~18 ms */
 static void clean_engine_of(track_t *t)
 {
-    uint32_t ei = t->eng_req % NENGINES, i;
-    const engine_t *e = ENGINES[ei];
+    uint32_t ei = t->eng_req, i;
+    const engine_t *e = eng_of(ei);
 #if !FELUCCA_FM4
     if (ei == ENGI_DIGITAL) {                         /* (retired: it becomes FM6, fm4_track) */
         set_engine_of(t, ei);
         return;
     }
 #endif
+    if (!eng_ok(ei))                                  /* (#212: an unavailable engine: its sound is kept) */
+        return;
     load_begin(t, UNDO_SOUND);
     set_engine_of(t, ei);                             /* (nested in this load: one undo copy, from before) */
     fm1_irq_off();
@@ -1463,7 +1467,7 @@ static void clean_engine(void) { clean_engine_of(TSEL); }
 static volatile uint8_t *const mpc_io = ui.mpc;
 static void midi_pc_load(track_t *t, uint32_t n)
 {
-    uint32_t e = t->eng_req % NENGINES, k;
+    uint32_t e = t->eng_req, k;                   /* (#212: an unavailable engine has no presets: ignored) */
     if (e == ENGI_DRUM) {
         const param_desc_t *d = param_desc_of(e, P_E0);
         for (k = (uint32_t)d->min; k <= (uint32_t)d->max && (enum_orig(d, (int32_t)k) != (int32_t)k || n--); k++)
@@ -1478,7 +1482,7 @@ static void midi_pc_load(track_t *t, uint32_t n)
             t->p[P_E7] = (int16_t)s;
         return;
     }
-    for (k = 0; preset_orig(ENGINES[e], k) != k || n--; k++)   /* the n-th shown preset */
+    for (k = 0; preset_orig(eng_of(e), k) != k || n--; k++)   /* the n-th shown preset */
         ;
     apply_preset_to(t, k);
 }
@@ -1509,7 +1513,7 @@ static void track_defaults(track_t *t)
 static void select_engine(uint32_t e)
 {
     set_engine(e);
-    ui_say("ENGINE ", ENGINES[TSEL->eng_req]->name);
+    ui_say("ENGINE ", eng_of(TSEL->eng_req)->name);
     ui.force = 1;
 }
 
@@ -1530,7 +1534,7 @@ static uint32_t preset_all_pos(uint32_t *total)          /* list index of the se
     return cur;
 }
 
-/* list index n (< total) -> engine, *k its preset; NENGINES = user preset, *k its slot */
+/* list index n (< total) -> engine, *k its preset; ENG_USER = user preset, *k its slot */
 static uint32_t preset_all_at(uint32_t n, uint32_t *k)
 {
     uint32_t e = 0, i, r;
@@ -1538,7 +1542,7 @@ static uint32_t preset_all_at(uint32_t n, uint32_t *k)
         n -= preset_shown(eng_vis(r));
     if (r == NENG_SHOWN) {
         *k = up_nth(n);
-        return NENGINES;
+        return ENG_USER;
     }
     e = eng_vis(r);
     for (i = 0; preset_orig(ENGINES[e], i) != i || n--; i++)    /* the n-th shown preset */
@@ -1551,12 +1555,12 @@ static uint32_t preset_all_at(uint32_t n, uint32_t *k)
  * OTHER, category.c): the list mode 0 ALL, 1 FAV, 1 + CAT_* a category. The category is kept with the settings in a
  * byte no engine uses (ui_lcat: 0 = none; firmware before reads ALL there, and favorites.filter stays 0 / 1 for it, the
  * editor and backups); the PRESETS knob and page browse that list */
-#define ui_lcat (favorites.factory[15][11])
+#define ui_lcat (settings_dev[11])
 #define LIST_N (1u + CAT_N)                              /* ALL FAV BASS LEAD PAD PLUCK KEYS DRUM FX OTHER */
 #define LIST_RECENT LIST_N                               /* then RECENT (#80): this session's last sounds, RAM only */
 #define RECENT_N 8u
 /* RECENT: the last RECENT_N sounds loaded (newest first), by identity: a factory preset (engine, preset) or a user slot
- * (e = NENGINES, k = slot, fp = up_fp of its sound when loaded: a deleted / replaced / restored slot no longer matches and
+ * (e = ENG_USER, k = slot, fp = up_fp of its sound when loaded: a deleted / replaced / restored slot no longer matches and
  * is skipped). Main loop only, never saved (no flash write, no protocol field). on: the browser shows it (the persisted
  * LIST is left as it was); hold: a load made by browsing it does not reorder it */
 static struct { uint8_t n, on, hold, e[RECENT_N], k[RECENT_N]; uint16_t fp[RECENT_N]; } recent __attribute__((section(".pool")));
@@ -1578,8 +1582,8 @@ static const char *list_name(uint32_t m)
 {
     return m == 0u ? "ALL" : m == 1u ? "FAV" : m == LIST_RECENT ? "RECENT" : CAT_NAME[(m - 1u) % CAT_N];
 }
-/* the category of list entry e, k (preset_all_at: NENGINES = user preset k) */
-static uint32_t sound_cat(uint32_t e, uint32_t k) { return e == NENGINES ? up_cat(k) : preset_cat(e, k); }
+/* the category of list entry e, k (preset_all_at: ENG_USER = user preset k) */
+static uint32_t sound_cat(uint32_t e, uint32_t k) { return e == ENG_USER ? up_cat(k) : preset_cat(e, k); }
 static int list_keep(uint32_t e, uint32_t k)
 {
     uint32_t m = list_mode();
@@ -1589,24 +1593,24 @@ static int list_keep(uint32_t e, uint32_t k)
 static uint32_t track_cat(const track_t *t)
 {
     uint32_t u = user_of(t);
-    return u < UP_SLOTS ? up_cat(u) : preset_cat(t->eng_req % NENGINES, t->preset);
+    return u < UP_SLOTS ? up_cat(u) : preset_cat(t->eng_req, t->preset);
 }
 
 static int recent_ok(uint32_t i)                         /* entry i still names a loadable sound */
 {
     uint32_t e = recent.e[i], k = recent.k[i], r;
-    if (e == NENGINES)
+    if (e == ENG_USER)
         return up_used(k) && up_fp(k) == recent.fp[i];
     for (r = 0; r < NENG_SHOWN; r++)
         if (eng_vis(r) == e)
             return k < ENGINES[e]->npresets && preset_orig(ENGINES[e], k) == k;
     return 0;
 }
-static void recent_id(uint32_t *e, uint32_t *k)          /* the selected track's sound: (engine | NENGINES, preset | slot) */
+static void recent_id(uint32_t *e, uint32_t *k)          /* the selected track's sound: (engine | ENG_USER, preset | slot) */
 {
     uint32_t u = user_of(TSEL);
-    *e = u < UP_SLOTS ? NENGINES : TSEL->eng_req % NENGINES;
-    *k = u < UP_SLOTS ? u : preset_orig(ENGINES[*e], TSEL->preset % (ENGINES[*e]->npresets ? ENGINES[*e]->npresets : 1u));
+    *e = u < UP_SLOTS ? ENG_USER : TSEL->eng_req;
+    *k = u < UP_SLOTS ? u : preset_orig(eng_of(*e), TSEL->preset % (eng_of(*e)->npresets ? eng_of(*e)->npresets : 1u));
 }
 static void recent_note(void)                            /* after a sound load of the selected track */
 {
@@ -1618,7 +1622,7 @@ static void recent_note(void)                            /* after a sound load o
     recent_id(&e, &k);
     ne[0] = (uint8_t)e;
     nk[0] = (uint8_t)k;
-    nf[0] = (uint16_t)(e == NENGINES ? up_fp(k) : 0u);
+    nf[0] = (uint16_t)(e == ENG_USER ? up_fp(k) : 0u);
     for (i = 0; i < recent.n && n < RECENT_N; i++)       /* the rest: valid, not this sound again (the oldest drops out) */
         if (recent_ok(i) && !(recent.e[i] == e && recent.k[i] == k)) {
             ne[n] = recent.e[i];
@@ -1630,7 +1634,7 @@ static void recent_note(void)                            /* after a sound load o
     memcpy(recent.fp, nf, sizeof nf);
     recent.n = (uint8_t)n;
 }
-static uint32_t recent_at(uint32_t n, uint32_t *k)       /* n-th valid entry -> engine (NENGINES = user), *k; else UP_SLOTS */
+static uint32_t recent_at(uint32_t n, uint32_t *k)       /* n-th valid entry -> engine (ENG_USER = user), *k; else UP_SLOTS */
 {
     uint32_t i;
     for (i = 0; i < recent.n; i++)
@@ -1639,7 +1643,7 @@ static uint32_t recent_at(uint32_t n, uint32_t *k)       /* n-th valid entry -> 
             return recent.e[i];
         }
     *k = UP_SLOTS;
-    return NENGINES;
+    return ENG_USER;
 }
 static uint32_t recent_pos(uint32_t *total)              /* its length; the current sound's place (= total if absent) */
 {
@@ -1682,12 +1686,12 @@ static uint32_t preset_at(uint32_t n, uint32_t *k)
         if (list_keep(e, *k) && !n--) return e;
     }
     *k = UP_SLOTS;
-    return NENGINES;
+    return ENG_USER;
 }
 static int preset_favorite(void)
 {
     uint32_t k = user_of(TSEL);
-    return favorite_has(k < UP_SLOTS ? NENGINES : TSEL->eng_req,
+    return favorite_has(k < UP_SLOTS ? ENG_USER : TSEL->eng_req,
                                         k < UP_SLOTS ? k : TSEL->preset);
 }
 /* #197: a settings change made by a knob (PRESETS > LIST, the FAV mark on PRESETS and in the EDIT layer) is written
@@ -1715,7 +1719,7 @@ static void settings_later_poll(void)                  /* ui_input, every pass *
 static void preset_mark(int on)
 {
     uint32_t k = user_of(TSEL);
-    if (favorite_set(k < UP_SLOTS ? NENGINES : TSEL->eng_req, k < UP_SLOTS ? k : TSEL->preset, on)) {
+    if (favorite_set(k < UP_SLOTS ? ENG_USER : TSEL->eng_req, k < UP_SLOTS ? k : TSEL->preset, on)) {
         ui.force = 1;
         settings_later();
     }
@@ -1725,7 +1729,7 @@ static void preset_mark(int on)
  * preset's PAT(n); a user preset that holds a pattern: that one ("U07") */
 static int32_t preset_pat_hint(void)
 {
-    const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
+    const engine_t *e = eng_of(TSEL->eng_req);
     uint32_t u = user_of(TSEL);
     if (u < UP_SLOTS)
         return up_has_pat(u) ? (int32_t)(NPATTERNS + up_pat_rank(u)) : -1;
@@ -1746,7 +1750,7 @@ static void preset_hinted(void)                     /* after a sound load: SAVE 
 static void preset_go(uint32_t n)                    /* load list index n into the selected track (the sound only) */
 {
     uint32_t k, e = preset_at(n, &k);
-    if (e == NENGINES) {
+    if (e == ENG_USER) {
         if (up_load(k))
             return;
     } else {
@@ -1762,8 +1766,8 @@ static void preset_go(uint32_t n)                    /* load list index n into t
  * made with it (slot order). List index of the current sound; *total the length */
 static uint32_t eng_list_pos(uint32_t *total)
 {
-    const engine_t *en = ENGINES[TSEL->eng_req % NENGINES];
-    uint32_t e = TSEL->eng_req % NENGINES, np = preset_shown(e), u = user_of(TSEL), k, n = 0;
+    const engine_t *en = eng_of(TSEL->eng_req);
+    uint32_t e = TSEL->eng_req, np = preset_shown(e), u = user_of(TSEL), k, n = 0;
     uint32_t cur = np ? preset_rank(en, preset_orig(en, TSEL->preset % en->npresets)) : 0u;   /* (#124: the aliases
                                         * skipped, as on PRESETS: SAMPLE 1 loads as 0, so counting it stuck KNOB 2) */
     for (k = 0; k < UP_SLOTS; k++)
@@ -1778,12 +1782,12 @@ static uint32_t eng_list_pos(uint32_t *total)
 
 static void eng_list_step(int32_t direction)         /* the next / previous sound of the engine (wraps) */
 {
-    uint32_t total, cur = eng_list_pos(&total), e = TSEL->eng_req % NENGINES, np = preset_shown(e), k, n;
+    uint32_t total, cur = eng_list_pos(&total), e = TSEL->eng_req, np = preset_shown(e), k, n;
     if (total < 2u)
         return;
     n = (cur + (direction > 0 ? 1u : total - 1u)) % total;
     if (n < np) {
-        for (k = 0; preset_orig(ENGINES[e], k) != k || n--; k++)   /* the n-th shown preset */
+        for (k = 0; preset_orig(eng_of(e), k) != k || n--; k++)   /* the n-th shown preset */
             ;
         apply_preset(k);
     } else {
@@ -1827,7 +1831,7 @@ static uint32_t preset_visible(uint32_t cur, uint32_t total, uint32_t row)
 static track_t *home_trk(uint32_t k) { return home_levels() ? &trk[k & 3u] : TSEL; }
 static const param_desc_t *home_param(uint32_t k, int16_t **vp)
 {
-    uint32_t id = home_levels() ? (uint32_t)P_LEVEL : ENGINES[TSEL->eng_req % NENGINES]->knob[k & 3u];
+    uint32_t id = home_levels() ? (uint32_t)P_LEVEL : eng_of(TSEL->eng_req)->knob[k & 3u];
     *vp = &home_trk(k)->p[id];
     return track_desc(home_trk(k), id);
 }

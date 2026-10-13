@@ -378,7 +378,7 @@ static int motion_engine_id(uint32_t id)
 static uint32_t motion_sound_loaded(track_t *t, uint32_t from, uint32_t to)
 {
     uint32_t f, k = trk_index(t), i, n = 0, gone;
-    if (eng_idx(from) == eng_idx(to))
+    if (from == to)                                     /* (#212: ids, never reduced to another engine's) */
         return 0;
     f = motion_guard();
     for (i = 0; i < motion.count; i++) {

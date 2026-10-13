@@ -76,7 +76,7 @@ static void reset(void)
     memset(&song, 0, sizeof song); memset(trk, 0, sizeof trk);
     memset(&chain, 0, sizeof chain); chain_defaults(&chain_config);
     memset(&ed_w, 0, sizeof ed_w); memset(&ui, 0, sizeof ui);
-    memset(&favorites, 0, sizeof favorites); memset(&settings, 0, sizeof settings); settings_init();
+    memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev); memset(&settings, 0, sizeof settings); settings_init();
     memset(proj_slot, 0, sizeof proj_slot); memset(up_bank, 0, sizeof up_bank);
     memset(&um, 0, sizeof um); memset(usr_nz, 0, sizeof usr_nz);
     host_progress = 1; host_erases = host_writes = host_wire_n = 0;
@@ -170,6 +170,16 @@ static int preferences(void)
     uint8_t a[4] = {0, 7, 0, 0};
     reset();
     uint32_t n = request(ED_INFO, a, 0);
+    {   /* #212: the engine id space, last: 49 01 ENG_ID_MAX ENG_USER_WIRE, then a bit per id this build plays */
+        uint32_t i, ok = host_wire[n - 15] == 0x49 && host_wire[n - 14] == 1 && host_wire[n - 13] == ENG_ID_MAX &&
+                         host_wire[n - 12] == ENG_USER_WIRE;
+        for (i = 0; i < ENG_ID_MAX; i++)
+            ok &= ((host_wire[n - 11 + i / 7u] >> (i % 7u)) & 1u) == (uint32_t)(eng_ok(i) != 0);
+        ok &= (host_wire[n - 11] & 1u) && !(host_wire[n - 11] & 2u) == !FELUCCA_FM4 &&   /* 0 yes, 1 (DIGITAL) no, */
+              ((host_wire[n - 11 + 2] & 1u) != 0) == FELUCCA_ENG_TEST14;                /* 14 only in a test build */
+        bad += check("INFO #212: 49 01 64 7F and the id bitmap, last", ok);
+        n -= 14u;                                         /* (the tags before it, as before) */
+    }
     uint32_t e = n - 6u;                                  /* (1.5.5: 4B 01 NCOND, 1.6: 45 01 5 last, below) */
     bad += check("INFO explicitly tags display capabilities after SONG without changing command 33",
         ED_SONG == 33 && ED_UI_STATE == 34 && ED_FAV_SET == 38 &&
@@ -209,10 +219,10 @@ static int preferences(void)
     bad += check("FAV_SET marks DRUM as a normal engine", host_wire[5] == 3 && favorite_has(ENGI_DRUM, 0));
     request(ED_FAV_GET, a, 4);
     bad += check("FAV_GET reads the bounded favorite range", host_wire[5] == 0 && host_wire[10] == 1);
-    a[0] = NENGINES; a[1] = 31; request(ED_FAV_SET, a, 4);
-    bad += check("empty user slot cannot be starred", host_wire[5] == 1 && !favorite_has(NENGINES, 31));
+    a[0] = NENGINES; a[1] = 31; request(ED_FAV_SET, a, 4);   /* (the old marker: INFO's count, as editors up to 1.6) */
+    bad += check("empty user slot cannot be starred", host_wire[5] == 1 && !favorite_has(ENG_USER, 31));
     up_store(31, "Saved"); request(ED_FAV_SET, a, 4);
-    bad += check("saved user slot can be starred without changing its sound", host_wire[5] == 3 && favorite_has(NENGINES, 31));
+    bad += check("saved user slot can be starred without changing its sound", host_wire[5] == 3 && favorite_has(ENG_USER, 31));
     a[3] = 32; request(ED_FAV_GET, a, 4);
     bad += check("favorite range cannot cross the end of user slots", host_wire[5] == 1);
     request(ED_FAV_SET, a, 3);
@@ -1033,14 +1043,15 @@ static int menu_protocol(void)
 
     /* an id nobody has */
     {
-        static uint8_t fav0[sizeof favorites], set0[sizeof settings];
+        static uint8_t fav0[sizeof favorites], set0[sizeof settings], dev0[sizeof settings_dev];
         uint8_t hold0 = settings_hold, leds0 = settings_leds;
         memcpy(fav0, &favorites, sizeof favorites); memcpy(set0, &settings, sizeof settings);
+        memcpy(dev0, settings_dev, sizeof settings_dev);
         ok = menu_set(32, 1) == 1 && host_wire[6] == 32 && ed_rv(host_wire + 7) == 1;
         ok &= menu_set(126, -3) == 1 && host_wire[6] == 126 && ed_rv(host_wire + 7) == -3;
         ok &= menu_set(127, 0) == 1 && host_wire[6] == 127;
         ok &= !memcmp(fav0, &favorites, sizeof favorites) && !memcmp(set0, &settings, sizeof settings) &&
-              hold0 == settings_hold && leds0 == settings_leds;
+              !memcmp(dev0, settings_dev, sizeof settings_dev) && hold0 == settings_hold && leds0 == settings_leds;
         bad += check("MENU_SET: an unknown id answers rc 1, id and value echoed, nothing changed", ok);
     }
 
@@ -1154,7 +1165,7 @@ static int learn_protocol(void)
     int bad = 0, ok;
     uint32_t n, i;
     reset();
-    memset(favorites.factory[14], 0, 32);
+    memset(settings_ml, 0, 32);
     n = request(ED_LEARN_GET, 0, 0);
     ok = n == 6u + 1u + 4u * ML_N && host_wire[4] == ED_LEARN_GET && host_wire[5] == ML_N;
     for (i = 0; i < ML_N; i++)
@@ -1193,7 +1204,7 @@ static int learn_protocol(void)
         ok = learn_entry(0, 0, 0, 0, 0) && learn_entry(1, 1, 20, 1, P_PAN) && ml_count() == ML_N - 1u;
         ok &= request(ED_LEARN_SET, odd, 1) && host_wire[5] == 1u;
         request(ED_LEARN_SET, all, 1);
-        ok &= host_wire[5] != 1u && host_wire[5] != 5u && !ml_count() && !favorites.factory[14][0] && !memcmp(favorites.factory[14], favorites.factory[14] + 1, 31);
+        ok &= host_wire[5] != 1u && host_wire[5] != 5u && !ml_count() && !settings_ml[0] && !memcmp(settings_ml, settings_ml + 1, 31);
         ok &= request(ED_LEARN_GET, odd, 1) == 0u;          /* (GET takes no arguments) */
         bad += check("LEARN_SET op 1 clears one CC, op 2 all; unknown ops rc 1; GET with arguments: no reply", ok);
     }
@@ -1308,7 +1319,7 @@ static int custom_palette(void)
         persist_t p;
         pal_send(1, good);
         settings_export(&p);
-        memset(&favorites, 0, sizeof favorites);
+        memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
         ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 3u && palette_n() == NPALETTES + 1u;
         palette_apply();
         ok &= T_BG == good[0] && T_ACCENT == good[4];

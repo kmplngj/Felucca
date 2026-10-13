@@ -181,7 +181,7 @@ static void ui_power_on(void)
     memset(&mom, 0, sizeof mom);                  /* MOMENTARY: no value held (the pool at power-on) */
     proj_name[0] = 0;
     proj_cur = PROJ_NO_SLOT;
-    memset(&favorites, 0, sizeof favorites);
+    memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     ml_off();                                     /* (MIDI LEARN off, nothing learned) */
     memset(&undo, 0, sizeof undo);
     fop_op = fop_stg = 0;                         /* (FM6's operator pages: OP 1, stage 1, as at power-on) */
@@ -1395,21 +1395,21 @@ static int test_favorites(void)
     up_store(31, "Favorite");
     up_load(31);
     turn(EN_K3, 1);
-    bad += check("user slot 32 has its own favorite reference", favorite_has(NENGINES, 31) && preset_favorite());
+    bad += check("user slot 32 has its own favorite reference", favorite_has(ENG_USER, 31) && preset_favorite());
     up_store(31, "Renamed");
-    bad += check("overwriting or renaming a user slot retains its star", favorite_has(NENGINES, 31));
+    bad += check("overwriting or renaming a user slot retains its star", favorite_has(ENG_USER, 31));
     up_put(31, 0);
     bad += check("successful erasure removes the user slot star and source label",
-                 !favorite_has(NENGINES, 31) && !up_used(31) && !TSEL->user);
+                 !favorite_has(ENG_USER, 31) && !up_used(31) && !TSEL->user);
     up_store(31, "New sound");
-    bad += check("reusing the erased slot does not restore its old star", !favorite_has(NENGINES, 31));
+    bad += check("reusing the erased slot does not restore its old star", !favorite_has(ENG_USER, 31));
     return bad;
 }
 
 /* #80: PRESETS > LIST RECENT, the last 8 sounds loaded this session (RAM only): identities, order, eviction, validity */
 static void recent_load(uint32_t e, uint32_t k)           /* as the ALL list loads (factory (e, k) or user slot k) */
 {
-    if (e == NENGINES) {
+    if (e == ENG_USER) {
         up_load(k);
     } else {
         if (e != TSEL->eng_req)
@@ -1431,7 +1431,7 @@ static int test_recent(void)
     persist_t p0, p1;
     track_t before;
     ui_power_on();
-    memset(&favorites, 0, sizeof favorites);
+    memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     memset(up_bank, 0, sizeof up_bank);
     memset(&recent, 0, sizeof recent);
     song.playing = 0;
@@ -1441,7 +1441,7 @@ static int test_recent(void)
     recent_pos(&total);
     bad += check("RECENT: KNOB 4 reaches it after OTHER; empty, the PRESETS knob loads nothing",
                  list_mode() == LIST_RECENT && !total && (before = *TSEL, ui.msg_t = 0, turn(EN_PRESET, 1), 1) &&
-                 msg_is("NO SOUNDS IN LIST") && !memcmp(TSEL, &before, sizeof before) && recent_at(0, &k) == NENGINES && k == UP_SLOTS);
+                 msg_is("NO SOUNDS IN LIST") && !memcmp(TSEL, &before, sizeof before) && recent_at(0, &k) == ENG_USER && k == UP_SLOTS);
     list_set(0);
     recent_load(0, 1);
     recent_load(0, 2);
@@ -1477,23 +1477,23 @@ static int test_recent(void)
     select_engine(0);
     apply_preset(2);
     up_store(3, "AAA");
-    recent_load(NENGINES, 3);
+    recent_load(ENG_USER, 3);
     up_store(5, "BBB");
-    recent_load(NENGINES, 5);
+    recent_load(ENG_USER, 5);
     recent_load(0, 4);
     list_set(LIST_RECENT);
     recent_pos(&total);
-    bad += check("  user slots are listed with the factory sounds", total == 3u && recent_is(0, 0, 4) && recent_is(1, NENGINES, 5) &&
-                 recent_is(2, NENGINES, 3));
+    bad += check("  user slots are listed with the factory sounds", total == 3u && recent_is(0, 0, 4) && recent_is(1, ENG_USER, 5) &&
+                 recent_is(2, ENG_USER, 3));
     up_rename(3, "AAA2");                                   /* a rename: the same sound */
     TSEL->p[P_E0] ^= 9;
     up_store(5, "BBB");                                     /* replaced: another sound under the same slot */
     recent_pos(&total);
     bad += check("  a renamed slot is the same sound; a replaced one is skipped", total == 2u && recent_is(0, 0, 4) &&
-                 recent_is(1, NENGINES, 3));
+                 recent_is(1, ENG_USER, 3));
     up_put(3, 0);
     recent_pos(&total);
-    bad += check("  an erased slot is skipped", total == 1u && recent_is(0, 0, 4) && recent_at(1, &k) == NENGINES && k == UP_SLOTS);
+    bad += check("  an erased slot is skipped", total == 1u && recent_is(0, 0, 4) && recent_at(1, &k) == ENG_USER && k == UP_SLOTS);
     select_engine(ENGI_PHYS);
     apply_preset(1);
     before = *TSEL;
@@ -1513,25 +1513,25 @@ static int test_recent(void)
     fm6_bank_used |= 1u;                                    /* (B1 holds a voice) */
     TSEL->p[P_E7] = FM6_OWN + 1;
     up_store(7, "BANKVOICE");
-    recent_load(NENGINES, 7);
+    recent_load(ENG_USER, 7);
     recent_pos(&total);
-    ok = total == 2u && recent_is(0, NENGINES, 7) && recent_is(1, ENGI_FM6, 3);
+    ok = total == 2u && recent_is(0, ENG_USER, 7) && recent_is(1, ENGI_FM6, 3);
     bad += check("  FM6: a factory sound and a user sound with SLOT B1 are listed", ok);
     list_set(LIST_RECENT);
     turn(EN_PRESET, 1);
     bad += check("  .. the PRESETS knob loads the factory FM6 sound", TSEL->eng_req == ENGI_FM6 && TSEL->preset == 3u && TSEL->user == 0u);
     turn(EN_PRESET, 1);
     bad += check("  .. and back the user sound saved with SLOT B1 (the voice itself: tests/fm6bank_test.c)",
-                 TSEL->eng_req == ENGI_FM6 && TSEL->user == 8u && recent_is(0, NENGINES, 7));
+                 TSEL->eng_req == ENGI_FM6 && TSEL->user == 8u && recent_is(0, ENG_USER, 7));
     fm6_bank_used = 0;
     {   /* FM6 OWN: the patch is stored beside the record (up_fm6.c); a slot re-saved with only the patch changed is
          * another sound, so its old entry is skipped */
         uint8_t v[FP_SIZE + 1u];
         TSEL->p[P_E7] = FM6_OWN;
         up_store(9, "OWNPATCH");
-        recent_load(NENGINES, 9);
+        recent_load(ENG_USER, 9);
         recent_pos(&total);
-        ok = recent_is(0, NENGINES, 9) && recent_ok(0);
+        ok = recent_is(0, ENG_USER, 9) && recent_ok(0);
         {   /* the record unchanged (its tag still matches), only the stored patch another one */
             uint8_t pk[FM6_PACKED];
             ok &= !upf_get(9, pk);
@@ -1543,7 +1543,7 @@ static int test_recent(void)
         recent_pos(&total);
         ok &= !recent_ok(0);
         for (i = 0; i < total; i++)                     /* (browsing never reaches it) */
-            ok &= !(recent_at(i, &k) == NENGINES && k == 9u);
+            ok &= !(recent_at(i, &k) == ENG_USER && k == 9u);
         bad += check("  FM6 OWN: a slot whose stored patch changed (record the same) is skipped", ok);
     }
     /* a project load changes the sounds, not the list; its entries still name valid sounds */
@@ -1563,7 +1563,7 @@ static int test_recent(void)
 
 /* 1.2 (Discussion #90): sound categories. The factory table covers every preset; PRESETS > LIST (KNOB 4) steps ALL FAV
  * BASS .. OTHER without a wrap and browses only that category (factory and user presets), kept with the settings in
- * favorites.factory[15][11] with favorites.filter 0 / 1 as before; the NAME screen's KNOB 3 sets a user preset's
+ * settings_dev[11] with favorites.filter 0 / 1 as before; the NAME screen's KNOB 3 sets a user preset's
  * category (from the sound's own), written with the name and kept by a rename; a record of before (version 2) gets
  * one by a rename, its sound unchanged; PROJECT's KNOB 3 a random name */
 static int test_categories(void)
@@ -1572,7 +1572,7 @@ static int test_categories(void)
     uint32_t e, k, total, pos, n, i;
     char b[16], s1[16];
     ui_power_on();
-    memset(&favorites, 0, sizeof favorites);
+    memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     memset(up_bank, 0, sizeof up_bank);
     for (e = 0; e < NENGINES; e++) {
         const char *c = PRESET_CAT[e];
@@ -1673,7 +1673,7 @@ static int test_categories(void)
     up_load(4);
     pos = preset_pos(&total);
     bad += check("  the user preset is in the LEAD list (after the factory leads), not in BASS",
-                 pos == total - 1u && preset_at(pos, &k) == NENGINES && k == 4u &&
+                 pos == total - 1u && preset_at(pos, &k) == ENG_USER && k == 4u &&
                  (list_set(1u + CAT_BASS), preset_pos(&total) == total));
     list_set(0);
     go_page(GR_USER);
@@ -1723,7 +1723,7 @@ static int test_categories(void)
                  ok && !k && !str_eq(s1, nm.s) && nm.len <= 12u && strchr(nm.s, ' '));
     name_close();
     memset(up_bank, 0, sizeof up_bank);
-    memset(&favorites, 0, sizeof favorites);
+    memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     return bad;
 }
 
@@ -5269,7 +5269,7 @@ static int test_fm4_retired(void)
         settings_import(&pe, (int)sizeof pe);
         bad += check("favourites: DIGITAL PAD / FUNK KEY -> FM6 PAD / PLUCK, engine 1's cleared",
                      favorite_has(ENGI_FM6, 4) && favorite_has(ENGI_FM6, 7) && !favorites.factory[ENGI_DIGITAL][0]);
-        memset(&favorites, 0, sizeof favorites);
+        memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     }
     return bad;
 }
@@ -6356,7 +6356,7 @@ static int test_screen_off(void)
     ok &= host_pw_n == n + 1u && host_pw[n] == 3u && host_bl && scrn.st == SCR_ON;
     bad += check("SCREEN OFF: a dialog, the count-in, UPDATE MODE keep it on and wake it; the crash screen at once", ok);
 
-    {   /* the setting with the settings: SCR_CODE in favorites.factory[15][27]; 1.1.5's codes: 0 (its 30 MIN, its
+    {   /* the setting with the settings: SCR_CODE in settings_dev[27]; 1.1.5's codes: 0 (its 30 MIN, its
          * default) now NEVER, 3 (its NEVER) NEVER, 2 1 7 as they were; 30 MIN is 4 now; unknown NEVER */
         persist_t p = {0};
         p.magic = PERSIST_MAGIC; p.panel = panel;
@@ -8162,7 +8162,7 @@ static int test_browse_no_pattern(void)
             pat_hints += preset_pat_hint() >= 0;
             if (!seq_is_empty(t) || t->p[P_AMODE] || t->nheld || (!(pass & 1u) && (song.playing || transport_req))) {
                 printf("  pass %u, sound %u (%s %u): steps %d ARP %d held %u playing %d\n", pass, n,
-                       ENGINES[t->eng_req % NENGINES]->name, t->preset, !seq_is_empty(t), t->p[P_AMODE], t->nheld,
+                       eng_of(t->eng_req)->name, t->preset, !seq_is_empty(t), t->p[P_AMODE], t->nheld,
                        song.playing);
                 ok = 0;
                 break;
@@ -9573,13 +9573,13 @@ static int test_help(void)
     uint8_t before[32];
     uint32_t i, l;
     ui_power_on();
-    memcpy(before, favorites.factory[15], 32);
+    memcpy(before, settings_dev, 32);
     ok = !help_on() && menu_get(MI_HELP) == 0u && str_eq(MI_NAME[MI_HELP], "HELP") && MI_TAB[MI_HELP] == MTAB_SYSTEM &&
          MI_HELP < MI_VALUES && str_eq(menu_vname(MI_HELP, 1), "ON");
     menu_put(MI_HELP, 1);
-    ok &= help_on() && menu_get(MI_HELP) == 1u && favorites.factory[15][24] == (uint8_t)(before[24] | 8u);
+    ok &= help_on() && menu_get(MI_HELP) == 1u && settings_dev[24] == (uint8_t)(before[24] | 8u);
     for (i = 0; i < 32u; i++)
-        ok &= i == 24u || favorites.factory[15][i] == before[i];
+        ok &= i == 24u || settings_dev[i] == before[i];
     bad += check("1.5 MENU > SYSTEM > HELP: OFF by default, ON a bit of its own (ui_prefs2 bit 3)", ok);
 
     ok = 1;
@@ -9626,7 +9626,7 @@ static int test_home_tracks(void)
     uint32_t i, id;
     int16_t v0;
     ui_power_on();
-    memcpy(before, favorites.factory[15], 32);
+    memcpy(before, settings_dev, 32);
     ok = ui_home_view == 0u && !home_tracks() && menu_get(MI_HOME) == 0u && menu_n(MI_HOME) == 3u &&
          str_eq(MI_NAME[MI_HOME], "HOME") && str_eq(menu_vname(MI_HOME, 0), "SCOPE") &&
          str_eq(menu_vname(MI_HOME, 1), "TRACKS") && str_eq(menu_vname(MI_HOME, 2), "LEVELS") &&   /* (1.5: LEVELS) */
@@ -9634,7 +9634,7 @@ static int test_home_tracks(void)
     menu_put(MI_HOME, 1);
     ok &= ui_home_view == 1u && home_tracks() && menu_get(MI_HOME) == 1u;
     for (i = 0; i < 32u; i++)                           /* (byte 26 only: SCREEN OFF, the 1.2 flags, the FX keys kept) */
-        ok &= i == 26u || favorites.factory[15][i] == before[i];
+        ok &= i == 26u || settings_dev[i] == before[i];
     memset(&p, 0, sizeof p);
     settings_export(&p);
     ok &= p.favorites.factory[15][26] == 1u;
@@ -9803,7 +9803,7 @@ static int test_home_tracks(void)
 
     /* HOME's knobs: the selected track's; ALGORITHM moves the selection; HOME tapped: MIXER, CLOCK, HOME */
     song.sel = 2; ui.force = 1; frame();
-    id = ENGINES[trk[2].eng_req % NENGINES]->knob[0];
+    id = eng_of(trk[2].eng_req)->knob[0];
     v0 = trk[2].p[id];
     {
         int16_t o0 = trk[0].p[id], o1 = trk[1].p[id];
@@ -9814,7 +9814,7 @@ static int test_home_tracks(void)
     turn(EN_ALGO, 1);
     frame();
     ok &= song.sel == 3u && tr_px(3 + 22, tr_y(3) + 1) == T_THEME && tr_px(3 + 22, tr_y(2) + 1) == T_SURF;
-    id = ENGINES[trk[3].eng_req % NENGINES]->knob[1];
+    id = eng_of(trk[3].eng_req)->knob[1];
     v0 = trk[3].p[id];
     turn(EN_K2, -2);
     if (trk[3].p[id] == v0) turn(EN_K2, 4);
@@ -10289,6 +10289,36 @@ static int test_prev_page(void)
     return bad;
 }
 
+/* #212: a track on an engine id this build lacks (a project or user preset of another build, a later firmware):
+ * every page, HOME and the EDIT / PRESETS views draw it as N/A with no preset; the knobs that browse its engine's
+ * sounds change nothing; ENG steps to a real engine (the user's choice). The id and its values stay until then */
+static int test_unknown_engine(void)
+{
+    int bad = 0, ok = 1;
+    uint32_t i, e0;
+    ui_power_on();
+    TSEL->eng_req = 40u; TSEL->preset = 9u; TSEL->p[P_E0] = 127;
+    frames(64);
+    e0 = eng_idx(TSEL->eng_req);                      /* (what the audio side renders: ENG_NONE, silent) */
+    ok &= ENGINES[e0] == &ENG_NONE && e0 == ENG_IDX_NONE && str_eq(eng_of(TSEL->eng_req)->name, "N/A");
+    go_home(); ui.force = 1; frame();
+    for (i = 0; i < NPAGES; i++) {
+        if (!page_visible(i)) continue;
+        ui.home = 0; ui.page = (uint8_t)i; page_entered(); ui.force = 1; frame();
+    }
+    go_page(GR_BROWSE); ui.force = 1; frame();
+    go_home(); ui.layer = LAYER_EDIT; ui.force = 1; frame();
+    turn(EN_K2, 1);                                   /* EDIT's No.: none of its sounds */
+    ok &= TSEL->eng_req == 40u && TSEL->preset == 9u && TSEL->p[P_E0] == 127;
+    ui.layer = 0;
+    bad += check("#212: a track on an id this build lacks: every page, HOME, PRESETS and EDIT draw N/A; kept", ok);
+    go_page(GR_BROWSE);
+    turn(EN_K2, 1);                                   /* PRESETS KNOB 2: the engines */
+    bad += check("#212: .. PRESETS' ENG knob from it: a real engine (the user's choice, no remap of the stored id)",
+                 eng_ok(TSEL->eng_req) && TSEL->eng_req != 40u);
+    return bad;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -10310,6 +10340,7 @@ int main(void)
     bad += test_favorites();
     bad += test_categories();
     bad += test_recent();
+    bad += test_unknown_engine();
     bad += test_display_preferences();
     bad += test_menu_tabs();
     bad += test_menu_project_rows();

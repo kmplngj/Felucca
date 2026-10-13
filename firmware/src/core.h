@@ -17,16 +17,38 @@
 #define FELUCCA_ARENA_CHECK 0    /* 1: host tests check engine-arena owners (engines.c ENG_MEM_OF); never on the target */
 #endif
 #ifndef FELUCCA_SLICE
-#define FELUCCA_SLICE 1          /* the SLICE engine (eng_slice.c), engine 13; FELUCCA_SLICE=0 builds without it */
+#define FELUCCA_SLICE 1          /* the SLICE engine (eng_slice.c), engine 13; FELUCCA_SLICE=0 builds without it (its id
+                                  * stays: left out of the catalog, #212) */
 #endif
 #ifndef FELUCCA_FM4
 #define FELUCCA_FM4 0            /* the DIGITAL engine (eng_digital.c, four-operator FM): kept in the tree, not built
                                   * by default; replaced by FM6, its sounds convert (fm4_convert.c) */
 #endif
-#define NENGINES (13 + FELUCCA_SLICE)   /* SLICE (13) comes last: the other engines keep their numbers */
+/* Engine ids (#212): stable, append-only numbers that projects, user presets, favourites and the editor protocol
+ * store. The id space is ENG_ID_MAX, independent of the engines a build has: an id a build lacks (a retired one, a
+ * later firmware's, one a build profile leaves out) is kept as stored and shown as unavailable (engines.c ENG_NONE,
+ * eng_ok), never mapped onto another engine. NENGINES is only the length of this build's engine table (its highest
+ * id + 1): it is no stored value, no marker and no protocol number (the editor's INFO still sends it in its old
+ * prefix, where it has always been the length of the name list). ENG_USER names a user preset where an engine id
+ * would go (favourites, the PRESETS list, RECENT); ENG_USER_WIRE is the same in the editor's 7-bit FAV_GET / FAV_SET */
+#define ENG_ID_MAX 64u           /* ids 0..63; favourites have a row per id (favorites.c FAV_ROWS) */
+#define ENG_USER 0xFFu           /* a user preset slot, not an engine (never < ENG_ID_MAX) */
+#define ENG_USER_WIRE 0x7Fu      /* .. on the wire (editor_preferences.c; INFO's 49 01 block says it) */
+#ifndef FELUCCA_ENG_TEST14
+#define FELUCCA_ENG_TEST14 0     /* host tests only: a placeholder engine with id 14 (engines.c ENG_TEST14) */
+#endif
+#ifndef FELUCCA_ENG_OMIT
+#define FELUCCA_ENG_OMIT (-1)    /* host tests only: an engine id this build's catalog leaves out (a sparse catalog:
+                                  * its sounds are kept as unavailable), -1 = none */
+#endif
+#define NENGINES (FELUCCA_ENG_TEST14 ? 15 : 14)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
+                                                  * leaves 13 out of the catalog, its slot stays: engines.c) */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
-                                                * in the display order of engines.c ENGINE_ORDER */
+#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - !FELUCCA_SLICE - \
+                    (FELUCCA_ENG_OMIT >= 0 && FELUCCA_ENG_OMIT < NENGINES && (FELUCCA_SLICE || FELUCCA_ENG_OMIT != 13)))
+                                 /* the engines one can pick: PRESETS, the EDIT layer, the editor,
+                                  * in the display order of engines.c ENGINE_ORDER */
+typedef char eng_ids_fit[NENGINES <= ENG_ID_MAX && ENG_ID_MAX < ENG_USER_WIRE ? 1 : -1];
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 #define NELEM(a) (sizeof(a) / sizeof((a)[0]))
 

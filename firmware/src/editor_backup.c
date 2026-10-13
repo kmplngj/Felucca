@@ -12,8 +12,9 @@ static const uint8_t ED_BK_IDS[13] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 32, 33, 34};
 #define ED_BK_N ((uint32_t)sizeof ED_BK_IDS)
 #define ED_BK_MAX ((uint32_t)sizeof proj_wire_u.raw)
 #define ED_BK_RAW (proj_wire_u.raw)  /* reuse the existing serialized main-loop scratch */
-_Static_assert(sizeof proj_wire_u.raw >= sizeof(upf_t) && sizeof proj_wire_u.raw >= sizeof(fm6_bank_t), "backup staging");
-static persist_t ed_bk_settings __attribute__((section(".pool")));
+_Static_assert(sizeof proj_wire_u.raw >= sizeof(upf_t) && sizeof proj_wire_u.raw >= sizeof(fm6_bank_t) &&
+               sizeof proj_wire_u.raw >= sizeof(persist_rec_t), "backup staging");
+static persist_rec_t ed_bk_settings __attribute__((section(".pool")));   /* id 1: persist_len bytes (PER4 or PER6) */
 static uint8_t ed_bk_valid, ed_bk_put, ed_bk_id, ed_bk_gen;
 static uint32_t ed_bk_len, ed_bk_crc, ed_bk_pos, ed_bk_ms, ed_bk_usb;
 static void ed_bk_u32(uint32_t n) { for (uint32_t i = 0; i < 5u; i++) ed_b((n >> (i * 7u)) & 127u); }
@@ -35,7 +36,7 @@ static const uint8_t *ed_bk_object(uint32_t id, uint32_t *len)
 {
     *len = 0;
     if (id == 0u) { *len = sizeof(project_store_t); return ED_BK_RAW; }
-    if (id == 1u) { *len = sizeof ed_bk_settings; return (const uint8_t *)&ed_bk_settings; }
+    if (id == 1u) { *len = persist_len(&ed_bk_settings); return (const uint8_t *)&ed_bk_settings; }
     if (id >= 2u && id <= 5u) {
         if (project_used(id - 2u)) *len = sizeof proj_slot[0];
         return (const uint8_t *)&proj_slot[id - 2u];
@@ -70,7 +71,7 @@ static uint32_t ed_bk_capture(void)
 #else
     memset(&ed_bk_settings, 0, sizeof ed_bk_settings);
 #endif
-    settings_export(&ed_bk_settings);
+    settings_export_rec(&ed_bk_settings);
     ed_bk_put = 0; ed_bk_valid = 1; ed_bk_usb = usb.resets;
     return 0;
 }
@@ -106,8 +107,9 @@ static uint32_t ed_bk_commit(void)
         }
         obj = OBJ_PROJECT0 + ed_bk_id - 2u;
     } else if (ed_bk_id == 1u) {
-        const persist_t *p = (const persist_t *)raw;
-        if (ed_bk_len != sizeof *p || p->magic != PERSIST_MAGIC || !palette_stored_ok(p->palette) ||
+        const persist_t *p = (const persist_t *)raw;   /* PER4, or PER6 with an extension this firmware reads (#212) */
+        if (!((ed_bk_len == sizeof *p && p->magic == PERSIST_MAGIC) || persist_ext_ok(p, (int)ed_bk_len)) ||
+            !palette_stored_ok(p->palette) ||
             p->lowcut > 2u || !leds_stored_ok(p->zoom) || !hold_stored_ok(p->bold) || p->favorites.filter > 1u || !ed_bk_panel_valid(&p->panel)) return 2;
         obj = OBJ_SETTINGS;
     } else if (ed_bk_id == 6u || ed_bk_id == 7u) {
@@ -140,8 +142,9 @@ static uint32_t ed_bk_commit(void)
             proj_cur = PROJ_NO_SLOT;                     /* (another project there now: the music keeps its name) */
         if (ed_bk_len) memcpy(&proj_slot[ed_bk_id - 2u], raw, ed_bk_len);
     } else if (ed_bk_id == 1u) {
-        memcpy(&ed_bk_settings, raw, sizeof ed_bk_settings);
-        settings_import(&ed_bk_settings, sizeof ed_bk_settings);
+        memset(&ed_bk_settings, 0, sizeof ed_bk_settings);
+        memcpy(&ed_bk_settings, raw, ed_bk_len);
+        settings_import((persist_t *)(void *)&ed_bk_settings, (int)ed_bk_len);
         panel_init(); settings_init(); palette_apply();
 #if FELUCCA_FLASH
         persist_saved = ed_bk_settings; persist_pending = 0;
@@ -168,7 +171,8 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)
         if (n != 12u || a[6] > 15u || a[11] > 15u) return 1;
         uint32_t len = ed_bk_r32(a + 2);
         if (len > ED_BK_MAX || (a[1] == 0u && !proj_store_len(len)) ||
-            (a[1] == 1u && len != sizeof(persist_t)) ||
+            (a[1] == 1u && len != sizeof(persist_t) && (len <= sizeof(persist_t) + PERSIST_EXT_HDR ||
+                                                    len > sizeof(persist_rec_t) || (len - sizeof(persist_t) - PERSIST_EXT_HDR) % 32u)) ||
             (a[1] >= 2u && a[1] <= 5u && len && !proj_store_len(len)) ||
             ((a[1] == 6u || a[1] == 7u) && len && len != sizeof(up_bank_t)) ||
             (a[1] == 8u && len && len != sizeof(fm6_bank_t)) || (a[1] == 9u && len && len != sizeof(upf_t))) return 1;
