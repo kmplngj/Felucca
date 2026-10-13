@@ -224,8 +224,13 @@ Direct host/emulator callers exercise the same hooks outside hardware interrupts
 `NVOICE=8` is the **shared sounding-voice budget** across four parts, even though every
 part has eight voice slots. `voices_busy()` excludes voices already fading; `voice_victim()`
 prefers release tails/excess unison voices and protects each part's bass/lead. A note-off
-enters release, not immediate deallocation; steals fade through `voice_kill()` and the
-engine switch obeys 1.4. Do not add an engine-local note queue or voice allocator.
+enters release, not immediate deallocation. Victims passed to `voice_kill()` for shared
+budget room or overload fade over the next block. `voice_alloc()` instead reuses an
+active lane in place when its part's lanes are exhausted or its shared-budget victim
+is in that same part: no `voice_kill()` fade occurs on that path. `voice_start()` uses
+the sounding retrigger rules above, so `note_on` must also remain click-safe without
+a preceding fade. Engine switches follow the separate fade in 1.4. Do not add an
+engine-local note queue or voice allocator.
 
 ## 2. Adding an effect or mixer bus
 
