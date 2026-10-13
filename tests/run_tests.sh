@@ -517,7 +517,9 @@ else
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
-    $SCC -fno-builtin -o "$A/libc_test" tests/libc_test.c
+    # The libc harness needs none of the DSP sanitizer exclusions above.
+    ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined \
+        -fno-sanitize-recover=all -fno-builtin -o "$A/libc_test" tests/libc_test.c
     run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     $SCC -o "$A/ldr_test" tests/ldr_test.c
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
