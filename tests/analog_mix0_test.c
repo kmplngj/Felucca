@@ -13,6 +13,9 @@
 #include "hostsim.c"
 #undef main
 
+/* Deliberate reference faults verify sensitivity to gain rounding and silent OSC 2 phase. */
+static uint32_t ref_fault;
+
 /* eng_analog.c analog_osc before #138, renamed (the reference: OSC 2 computed and mixed at every MIX) */
 static void analog_osc_ref(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m, uint32_t ft)
 {
@@ -56,8 +59,9 @@ static void analog_osc_ref(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
             break;
         }
         ph0 += inc1;
-        ph1 += inc2;
-        s = mulq15(a, m1) + mulq15(b, m2);
+        if (!(ref_fault == 2u && !mix))
+            ph1 += inc2;
+        s = ref_fault == 1u && !mix ? a : mulq15(a, m1) + mulq15(b, m2);
         if (nz)
             s += mulq15((int32_t)(noise32(&nst) >> 17) - 16384, nz);
         if (drv)
@@ -79,10 +83,73 @@ static void analog_osc_ref(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
     v->s[1] = ic2;
     v->s[2] = nst;
 }
+/* Independent current-main SYNC/SUB reference; these paths must stay unchanged. */
+static __attribute__((noinline)) void analog_render_x_ref(track_t *t, voice_t *v, int32_t *out, uint32_t n,
+                                                      const vmod_t *m)
+{
+    const int16_t *p = t->p;
+    uint32_t sub = p[P_E0] == AW_SUB, i;
+    int32_t det = p[P_E1], mix = p[P_E2], noise = p[P_E3];
+    int32_t cut = (p[P_E4] << 8) + m->cutoff + (p[P_E7] * (v->pitch16 - 60 * 16) >> 4);
+    tsvf_t flt;
+    int32_t drive = 32768 + p[P_E6] * 512;
+    int32_t m2 = mix * 258, m1 = 32767 - m2;
+    int32_t nz = noise * 200, drv = p[P_E6];
+    uint32_t ph0 = v->ph[0], ph1 = v->ph[1], inc1 = m->inc, inc2;
+    int32_t ic1 = v->s[0], ic2 = v->s[1], nst = v->s[2];
+    int32_t jl = v->s[3];                             /* SYNC: 1 + the step of a restart a sample ago (16 bits), 0 none */
+    if (sub) {                                        /* an octave below OSC 1, DTN as OSC 2 always had it */
+        inc2 = (det ? cents_inc(m->pitch16, det, 0) : inc1) >> 1;
+    } else {                                          /* DTN and the shape above OSC 1, 3/16 semitone a step */
+        inc2 = pitch_inc(clamp(m->pitch16 + det * 3 + (((m->shape - (64 << 8)) * 3) >> 8), 0, 2047));
+        if (m->fine)
+            inc2 += (uint32_t)((int32_t)(inc2 >> 12) * m->fine);
+    }
+    uint32_t ft = (uint32_t)p[P_FTYPE];
+    int32_t fk = ANALOG_K(p[P_E5]);
+    tsvf_coef(&flt, cut, p[P_E5]);
+    for (i = 0; i < n; i++) {
+        int32_t a = osc_saw(ph0, inc1), b, s;
+        if (sub) {
+            b = osc_pulse(ph1, inc2, 0x80000000u);
+        } else {
+            int32_t bl = blep(ph1, inc2);
+            if (jl) {                                 /* just restarted: the step was jl - 1, not a whole cycle */
+                bl = (bl * ((jl - 1) >> 1)) >> 15;
+                jl = 0;
+            }
+            b = (int32_t)(ph1 >> 16) - 32768 - bl;
+            if (ph0 > 0xFFFFFFFFu - inc1)             /* OSC 1 restarts it before the next sample: round that step */
+                b -= (blep(ph0, inc1) * (int32_t)(ph1 >> 17)) >> 15;
+        }
+        ph0 += inc1;
+        ph1 += inc2;
+        if (!sub && ph0 < inc1) {                     /* OSC 1 wrapped: OSC 2 restarts at the same point */
+            uint32_t f = ph0 / ((inc1 >> 16) | 1u);   /* the part of a sample since, 0..65535 */
+            uint32_t at = ph1 - f * (inc2 >> 16);     /* OSC 2 at the wrap */
+            jl = (int32_t)(at >> 16) + 1;
+            ph1 = f * (inc2 >> 16);
+        }
+        s = mulq15(a, m1) + mulq15(b, m2);
+        if (nz)
+            s += mulq15((int32_t)(noise32(&nst) >> 17) - 16384, nz);
+        if (drv)
+            s = softclip(((s >> 2) * (drive >> 2)) >> 11);
+        s = soft_knee(analog_tap(&flt, fk, s >> 1, &ic1, &ic2, ft), 16000) << 1;
+        out[i] += voice_amp(s, m, i) << 1;
+    }
+    v->ph[0] = ph0;
+    v->ph[1] = ph1;
+    v->s[0] = ic1;
+    v->s[1] = ic2;
+    v->s[2] = nst;
+    v->s[3] = jl;
+}
+
 static void analog_render_ref(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     if (t->p[P_E0] >= AW_SYNC)
-        analog_render_x(t, v, out, n, m);
+        analog_render_x_ref(t, v, out, n, m);
     else
         analog_osc_ref(t, v, out, n, m, (uint32_t)t->p[P_FTYPE]);
 }
@@ -210,6 +277,16 @@ int main(void)
     static const int32_t CORNER[] = {0, 127};
     uint32_t w, ft, ms, r;
     char what[96];
+    {
+        const int16_t p[] = {0, 127, 0, 127, 127, 127, 127, 64, 0};
+        ref_fault = 1u;
+        check("detect omitted OSC 1 Q15 gain rounding", !phrase(p, 0, 960));
+        ref_fault = 2u;
+        check("detect missing silent OSC 2 phase advancement", !phrase(p, 0, 960));
+        ref_fault = 0;
+        rs = 0x9E3779B9u;
+        ncmp = 0;
+    }
     for (w = 0; w < 7u; w++)
         for (ft = 0; ft < 3u; ft++)
             for (ms = 0; ms < 5u; ms++) {

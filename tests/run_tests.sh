@@ -414,6 +414,9 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/analog_mix0_test" tests/analog_mix0_test.c -lm
     run "ANALOG MIX 0 (#138): OSC 2 left out, PCM and voice state as the two-oscillator reference (WAVE x TYPE x MIX)" \
         "$OUT/analog_mix0_test"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/analog_mix0_test_os" tests/analog_mix0_test.c -lm
+    run "ANALOG MIX 0 (#138) built as the target (-Os, no vectorising): PCM/state reference and mutation sensitivity" \
+        "$OUT/analog_mix0_test_os"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/slicer_test" tests/slicer_test.c -lm
     mkdir -p build/slicer_demo
     run "SLICER: no clicks, timing, sync with the sequencer, STUT, cost, demos" "$OUT/slicer_test" build/slicer_demo
