@@ -1,12 +1,14 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Merged branch cleanup
 
-For this fork, GitHub's **Settings > General > Pull Requests > Automatically
-delete head branches** is enabled (`delete_branch_on_merge: true`). This removes
-PR head branches after future merges without a bot, extra secret or privileged
-PR workflow. The setting is repository configuration, so another fork must
-enable it separately. Protect any permanent integration/release branches with
-branch rules; the keep patterns below apply only to the sweep.
+GitHub's **Settings > General > Pull Requests > Automatically delete head
+branches** normally removes PR heads after future merges without a bot or
+extra secret. This fork's GitHub App could not change that administration
+setting (HTTP 403; `delete_branch_on_merge` remains false), so the maintenance
+workflow implements deletion after each push/merge to `main`, with the same
+safety checks as its weekly sweep. It needs no additional credential.
+Protect any permanent integration/release branches with branch rules; the
+keep patterns below apply only to the sweep.
 
 GitHub documents both [automatic deletion](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-the-automatic-deletion-of-branches)
 and [deletion/restoration through merged PRs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-branches-in-your-repository/deleting-and-restoring-branches-in-a-pull-request).
@@ -15,15 +17,18 @@ policy. This fork adds a sweep for historical leftovers and merged branches
 that did not go through a PR. It does not remove branches merely because they
 are old. Contributors' fork branches remain under their owners' control.
 
-## Weekly and manual sweep
+## After merges, weekly and manual sweep
 
-`Merged branch cleanup` runs every Monday at 04:23 UTC. Scheduled runs delete
-verified candidates. **Actions > Merged branch cleanup > Run workflow** defaults
+`Merged branch cleanup` runs after every push to `main` (including PR merges)
+and every Monday at 04:23 UTC. These runs delete verified candidates.
+**Actions > Merged branch cleanup > Run workflow** defaults
 to an audit; select `apply` only to delete, using the default branch. Nondefault
-refs can run audits to validate the implementation before merging; apply on
-those refs fails. The schedule becomes active when the workflow is merged into
-the default branch. GitHub may delay scheduled runs or disable them in inactive
-public repositories; native deletion does not depend on the schedule.
+refs can run read-only audits to validate the implementation before merging;
+apply on those refs fails before checkout. Deletion and the schedule become
+active when the workflow is merged into the default branch. GitHub may delay
+scheduled runs or disable them in inactive public repositories. Events created
+by `GITHUB_TOKEN` generally do not trigger further workflows; the weekly sweep
+catches leftovers from such bot merges too.
 
 The helper uses GitHub CLI (`gh`), Git and Python 3's standard library. A local
 audit only needs repository read access; deletion needs contents write access
@@ -35,10 +40,13 @@ python3 tools/branch_cleanup.py --repo kmplngj/Felucca --apply --report build/br
 python3 -m unittest discover -s tests -p branch_cleanup_test.py -v
 ```
 
-GitHub Actions uses its scoped `GITHUB_TOKEN` (`contents: write`,
+The deletion job uses its scoped `GITHUB_TOKEN` (`contents: write`,
 `pull-requests: read`), pinned checkout/upload actions, no retained checkout
-credentials, and a 15-minute timeout. It has no PR trigger. Existing read-only
-PR CI runs the helper's safety tests and validates workflow syntax. Cleanup runs
+credentials, and a 15-minute timeout. It checks out only the default branch.
+PRs changing the helper, tests or cleanup workflow run safety tests and a live
+dry-run in a separate job with read-only permissions. Manual audits use that
+same read-only job. Existing PR CI also runs the safety tests and validates
+workflow syntax. Cleanup runs
 are serialized; their summary and 30-day JSON artifact record every branch,
 commit and decision, including partial results if a deletion fails.
 

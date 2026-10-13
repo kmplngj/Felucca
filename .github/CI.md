@@ -11,7 +11,8 @@ Repository Actions policy may require maintainer approval for first-time fork
 contributors. These build/release workflows do not alter branch protection or
 repository settings. The separate [merged branch cleanup](BRANCHES.md) uses
 contents write permission only for its scheduled/manual maintenance job;
-GitHub's native automatic deletion handles future PR merges.
+that job also runs after pushes/merges to `main`. PR cleanup audits have
+read-only permissions.
 
 ## Change-based validation
 
