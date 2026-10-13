@@ -54,7 +54,8 @@ perf_flanger 368
 perf_phaser 448
 perf_throw 52
 rev_room 218
-rev_spring 126
+# Stage-loop removal changes the x4 nesting heuristic; trip-count evidence in stage_unroll_test.md.
+rev_spring 161
 rev_hall 1995
 rev_side_mix 9
 track_insert 3
