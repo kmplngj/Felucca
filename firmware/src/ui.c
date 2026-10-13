@@ -15,6 +15,7 @@ static uint32_t up_count(void);
 static uint32_t up_nth(uint32_t n);
 static uint32_t up_rank(uint32_t slot);
 static uint32_t up_engine(uint32_t k);
+static uint32_t up_fp(uint32_t k);
 static void up_name(uint32_t k, char *b);
 static void up_slot_label(char *b, uint32_t k);
 static void up_ui(uint32_t op, uint32_t k);
@@ -1378,13 +1379,31 @@ static uint32_t preset_all_at(uint32_t n, uint32_t *k)
  * editor and backups); the PRESETS knob and page browse that list */
 #define ui_lcat (favorites.factory[15][11])
 #define LIST_N (1u + CAT_N)                              /* ALL FAV BASS LEAD PAD PLUCK KEYS DRUM FX OTHER */
-static uint32_t list_mode(void) { return favorites.filter ? 1u : ui_lcat && ui_lcat < CAT_N ? 1u + ui_lcat : 0u; }
-static void list_set(uint32_t m)
+#define LIST_RECENT LIST_N                               /* then RECENT (#80): this session's last sounds, RAM only */
+#define RECENT_N 8u
+/* RECENT: the last RECENT_N sounds loaded (newest first), by identity: a factory preset (engine, preset) or a user slot
+ * (e = NENGINES, k = slot, fp = up_fp of its sound when loaded: a deleted / replaced / restored slot no longer matches and
+ * is skipped). Main loop only, never saved (no flash write, no protocol field). on: the browser shows it (the persisted
+ * LIST is left as it was); hold: a load made by browsing it does not reorder it */
+static struct { uint8_t n, on, hold, e[RECENT_N], k[RECENT_N]; uint16_t fp[RECENT_N]; } recent __attribute__((section(".pool")));
+static uint32_t list_mode(void)
 {
+    return recent.on ? LIST_RECENT : favorites.filter ? 1u : ui_lcat && ui_lcat < CAT_N ? 1u + ui_lcat : 0u;
+}
+static uint32_t list_set(uint32_t m)                     /* 1 = the persisted LIST changed (settings_later) */
+{
+    uint8_t f = favorites.filter, c = ui_lcat;
+    recent.on = m == LIST_RECENT;
+    if (recent.on)
+        return 0;
     favorites.filter = m == 1u;
     ui_lcat = (uint8_t)(m >= 2u && m < LIST_N ? m - 1u : 0u);
+    return f != favorites.filter || c != ui_lcat;
 }
-static const char *list_name(uint32_t m) { return m == 0u ? "ALL" : m == 1u ? "FAV" : CAT_NAME[(m - 1u) % CAT_N]; }
+static const char *list_name(uint32_t m)
+{
+    return m == 0u ? "ALL" : m == 1u ? "FAV" : m == LIST_RECENT ? "RECENT" : CAT_NAME[(m - 1u) % CAT_N];
+}
 /* the category of list entry e, k (preset_all_at: NENGINES = user preset k) */
 static uint32_t sound_cat(uint32_t e, uint32_t k) { return e == NENGINES ? up_cat(k) : preset_cat(e, k); }
 static int list_keep(uint32_t e, uint32_t k)
@@ -1399,8 +1418,73 @@ static uint32_t track_cat(const track_t *t)
     return u < UP_SLOTS ? up_cat(u) : preset_cat(t->eng_req % NENGINES, t->preset);
 }
 
+static int recent_ok(uint32_t i)                         /* entry i still names a loadable sound */
+{
+    uint32_t e = recent.e[i], k = recent.k[i], r;
+    if (e == NENGINES)
+        return up_used(k) && up_fp(k) == recent.fp[i];
+    for (r = 0; r < NENG_SHOWN; r++)
+        if (eng_vis(r) == e)
+            return k < ENGINES[e]->npresets && preset_orig(ENGINES[e], k) == k;
+    return 0;
+}
+static void recent_id(uint32_t *e, uint32_t *k)          /* the selected track's sound: (engine | NENGINES, preset | slot) */
+{
+    uint32_t u = user_of(TSEL);
+    *e = u < UP_SLOTS ? NENGINES : TSEL->eng_req % NENGINES;
+    *k = u < UP_SLOTS ? u : preset_orig(ENGINES[*e], TSEL->preset % (ENGINES[*e]->npresets ? ENGINES[*e]->npresets : 1u));
+}
+static void recent_note(void)                            /* after a sound load of the selected track */
+{
+    uint32_t e, k, i, n = 1;
+    uint8_t ne[RECENT_N], nk[RECENT_N];
+    uint16_t nf[RECENT_N];
+    if (recent.hold)
+        return;
+    recent_id(&e, &k);
+    ne[0] = (uint8_t)e;
+    nk[0] = (uint8_t)k;
+    nf[0] = (uint16_t)(e == NENGINES ? up_fp(k) : 0u);
+    for (i = 0; i < recent.n && n < RECENT_N; i++)       /* the rest: valid, not this sound again (the oldest drops out) */
+        if (recent_ok(i) && !(recent.e[i] == e && recent.k[i] == k)) {
+            ne[n] = recent.e[i];
+            nk[n] = recent.k[i];
+            nf[n++] = recent.fp[i];
+        }
+    memcpy(recent.e, ne, sizeof ne);
+    memcpy(recent.k, nk, sizeof nk);
+    memcpy(recent.fp, nf, sizeof nf);
+    recent.n = (uint8_t)n;
+}
+static uint32_t recent_at(uint32_t n, uint32_t *k)       /* n-th valid entry -> engine (NENGINES = user), *k; else UP_SLOTS */
+{
+    uint32_t i;
+    for (i = 0; i < recent.n; i++)
+        if (recent_ok(i) && !n--) {
+            *k = recent.k[i];
+            return recent.e[i];
+        }
+    *k = UP_SLOTS;
+    return NENGINES;
+}
+static uint32_t recent_pos(uint32_t *total)              /* its length; the current sound's place (= total if absent) */
+{
+    uint32_t e, k, i, n = 0, pos = RECENT_N;
+    recent_id(&e, &k);
+    for (i = 0; i < recent.n; i++)
+        if (recent_ok(i)) {
+            if (recent.e[i] == e && recent.k[i] == k && pos == RECENT_N)
+                pos = n;
+            n++;
+        }
+    *total = n;
+    return pos == RECENT_N ? n : pos;
+}
+
 static uint32_t preset_pos(uint32_t *total)
 {
+    if (list_mode() == LIST_RECENT)
+        return recent_pos(total);
     uint32_t all, current = preset_all_pos(&all), n = 0, pos = 0xFFFFFFFFu;
     if (!list_mode()) { *total = all; return current; }
     for (uint32_t i = 0; i < all; i++) {
@@ -1415,6 +1499,8 @@ static uint32_t preset_pos(uint32_t *total)
 static uint32_t preset_at(uint32_t n, uint32_t *k)
 {
     uint32_t all;
+    if (list_mode() == LIST_RECENT)
+        return recent_at(n, k);
     if (!list_mode()) return preset_all_at(n, k);
     preset_all_pos(&all);
     for (uint32_t i = 0; i < all; i++) {
@@ -1487,13 +1573,15 @@ static void preset_go(uint32_t n)                    /* load list index n into t
 {
     uint32_t k, e = preset_at(n, &k);
     if (e == NENGINES) {
-        up_load(k);
+        if (up_load(k))
+            return;
     } else {
         if (e != TSEL->eng_req)
             select_engine(e);
         apply_preset(k);
     }
     preset_hinted();
+    recent_note();
 }
 
 /* the EDIT layer's KNOB 2 (ui_layer.c): the selected track's engine only: its factory presets, then the used user presets
@@ -1533,14 +1621,17 @@ static void eng_list_step(int32_t direction)         /* the next / previous soun
             }
     }
     preset_hinted();
+    recent_note();
 }
 
 static void preset_step(int32_t direction)
 {
     uint32_t total, cur = preset_pos(&total);
     if (!total) { ui_message(list_mode() == 1u ? "NO FAVORITES" : "NO SOUNDS IN LIST"); return; }
+    recent.hold = list_mode() == LIST_RECENT;          /* (browsing RECENT keeps its order) */
     preset_go(cur >= total ? (direction > 0 ? 0 : total - 1) :
               (cur + (direction > 0 ? 1u : total - 1u)) % total);
+    recent.hold = 0;
 }
 
 /* Seven display rows. FAV and a category use a bounded window, not a repeating carousel.

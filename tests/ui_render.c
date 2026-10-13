@@ -752,7 +752,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_GLO_PEEK, S_GLO_ACTIVE, S_GLO_EXT, S_SCL_PEEK, S_SCL_ACTIVE, S_EDIT_PEEK, S_EDIT_ACTIVE, S_EDIT_USER, S_LAYER_HINT, S_LAYER_LOCK, S_LAYER_LOCK_FX,
        S_SEQ_TOOLS, S_SEQ_TOOLS_DRUM, S_SEQ_TOOLS_SONG, S_EDIT_DRUM, S_EDIT_DRUM_KIT, S_DRUM_MUTED,
        S_NAME_USER, S_NAME_TYPING, S_NAME_123, S_NAME_EMPTY, S_NAME_FULL, S_NAME_PLAYING, S_PROJECT_NAMED, S_SONG_NAMED,
-       S_PRESETS_CAT, S_PRESETS_CAT_EMPTY, S_NAME_CAT, S_NAME_RANDOM, S_MENU_ANIM_IDLE, S_MOMENTARY, S_MOMENTARY_EDIT, S_MOMENTARY_READY, S_MOMENTARY_N, S_MOMENTARY_KEPT,
+       S_PRESETS_CAT, S_PRESETS_CAT_EMPTY, S_PRESETS_RECENT, S_PRESETS_RECENT_EMPTY, S_NAME_CAT, S_NAME_RANDOM, S_MENU_ANIM_IDLE, S_MOMENTARY, S_MOMENTARY_EDIT, S_MOMENTARY_READY, S_MOMENTARY_N, S_MOMENTARY_KEPT,
        S_SONG_LONG, S_SONG_PLAYING, S_SONG_LONG_PLAYING, S_SONG_UNSAVED, S_SONG_ADD,
        S_USER_FOOT, S_SLICES_BREAK, S_SLICES_USR, S_SLICES_NOFILE,
        S_ROLL_EMPTY, S_ROLL_ACID, S_ROLL_CHORDS, S_ROLL_TIES, S_ROLL_LEN32, S_ROLL_HIGH, S_ROLL_LOW, S_ROLL_WIDE, S_ROLL_PLAYING,
@@ -779,7 +779,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "layer_edit_active", "layer_edit_user", "layer_hint", "layer_lock", "layer_lock_fx",
     "layer_seq_tools", "layer_seq_tools_drum", "layer_seq_tools_song", "layer_edit_drum", "layer_edit_drum_kit", "drum_muted",
     "name_user", "name_typing", "name_123", "name_empty", "name_full", "name_playing", "project_named", "song_named",
-    "presets_bass", "presets_other_empty", "name_category", "name_random", "menu_anim_idle", "momentary", "momentary_edit", "momentary_ready", "momentary_8", "momentary_kept",
+    "presets_bass", "presets_other_empty", "presets_recent", "presets_recent_empty", "name_category", "name_random", "menu_anim_idle", "momentary", "momentary_edit", "momentary_ready", "momentary_8", "momentary_kept",
     "song_long", "song_playing", "song_long_playing", "song_unsaved", "song_add",
     "user_foot", "slices_break", "slices_usr", "slices_nofile",
     "roll_empty", "roll_acid", "roll_chords", "roll_ties", "roll_len32_p2", "roll_high", "roll_low", "roll_wide", "roll_playing",
@@ -1381,6 +1381,13 @@ static void setup(int s)
         eng(0); apply_preset(2); list_set(1u + CAT_BASS); go_page(GR_BROWSE);
         break;
     case S_PRESETS_CAT_EMPTY: list_set(1u + CAT_OTHER); go_page(GR_BROWSE); break;
+    case S_PRESETS_RECENT:                                /* #80: PRESETS > LIST RECENT (a user sound among the factory ones) */
+        song.playing = 0; up_store_cat(3, "MY DEEP BASS", CAT_BASS);
+        memset(&recent, 0, sizeof recent);
+        eng(0); apply_preset(2); recent_note(); up_load(3); recent_note(); eng(ENGI_DRUM); recent_note();
+        list_set(LIST_RECENT); go_page(GR_BROWSE);
+        break;
+    case S_PRESETS_RECENT_EMPTY: memset(&recent, 0, sizeof recent); list_set(LIST_RECENT); go_page(GR_BROWSE); break;
     case S_NAME_CAT:
         song.playing = 0; up_store_cat(4, "MWMWMWMWMWMW", CAT_PLUCK); go_page(GR_USER); name_open(NK_USER_RENAME, 4);
         break;

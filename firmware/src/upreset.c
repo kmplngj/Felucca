@@ -540,6 +540,23 @@ static void up_pat_load(track_t *t, uint32_t k)
 /* the engine a used slot's sound plays on (a DIGITAL record: FM6, without FELUCCA_FM4) */
 static uint32_t up_engine(uint32_t k) { return eng_ok(up_rec(k)->engine) ? up_rec(k)->engine : ENGI_FM6; }
 
+/* RECENT's identity check (ui.c): a hash of the engine and the sound's values as up_load takes them (not the name, the
+ * category, the track's own settings param_kept, nor how old the record is stored): a rename or a re-save of the same
+ * sound hashes the same, a replaced or restored slot differently */
+static uint32_t up_fp(uint32_t k)
+{
+    const up_rec_t *r = up_rec(k);
+    uint32_t i, h = 2166136261u ^ r->engine;
+    uint8_t pk[FM6_PACKED];
+    for (i = 0; i < r->np && i < UP_PMAX * 2u; i++)
+        if (r->np != P_COUNT || !param_kept(i))
+            h = (h ^ (uint16_t)up_value(r, i)) * 16777619u;
+    if (!upf_get(k, pk))                       /* FM6: its own patch (up_fm6.c), stored beside the record */
+        for (i = 0; i < FM6_PACKED; i++)
+            h = (h ^ pk[i]) * 16777619u;
+    return (h ^ h >> 16) & 0xFFFFu;
+}
+
 static uint32_t up_count(void)                 /* used slots */
 {
     uint32_t k, n = 0;
@@ -582,6 +599,7 @@ static void up_ui_named(uint32_t op, uint32_t k, const char *name, uint32_t cat)
     }
     if (op == 0u) {
         up_load(k);
+        recent_note();
         if (up_has_pat(k))                              /* SAVE > PHRASES starts at its pattern */
             ui.ppick = (uint8_t)(NPATTERNS + up_pat_rank(k));
         ui_say("LOADED ", l);
