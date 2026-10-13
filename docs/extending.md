@@ -15,8 +15,13 @@ dependency order, and [tests/hostsim.c](../tests/hostsim.c) (also used by
 sources against simulated hardware. A file that is not included from those places is not built.
 Target order is HAL/generated tables, display, core/engines/modulation/voices/mixer,
 USB/sequencer/audio, UI, storage/editor/update, then boot/main. Do not add an independent audio
-or main-loop wrapper. Feature defaults live in `felucca.c`, [core.h](../firmware/src/core.h)
-and [tools/build.py](../tools/build.py); use [BUILDING.md](../BUILDING.md#build) for overrides.
+or main-loop wrapper. Feature defaults are defined beside their features: `felucca.c`
+for the main options, [core.h](../firmware/src/core.h) for engine options,
+[icons.c](../firmware/src/icons.c) for `FELUCCA_ICONS`,
+[usb.c](../firmware/src/usb.c) for `FELUCCA_UAC_48K`, `FELUCCA_UAC_AS_FIRST` and
+`FELUCCA_CDC_DEFAULT`, and [ota.c](../firmware/src/ota.c) for `FELUCCA_OTA_RAMONLY`.
+[tools/build.py](../tools/build.py) forwards environment overrides; use
+[BUILDING.md](../BUILDING.md#build) for their supported settings.
 
 ## 1. Adding an engine
 
