@@ -141,7 +141,8 @@ class CommandLineFixtures(unittest.TestCase):
                 self.write_dis(loops={"analog_render": count})
                 result = self.cli()
                 self.assert_status(result, status)
-                row = next(line for line in result.stdout.splitlines() if "analog_render" in line)
+                row = next(line for line in result.stdout.splitlines()
+                           if line.split()[:2] == ["target:", "analog_render"])
                 self.assertIn(message, row)
 
     def test_missing_required_function_fails_even_on_update(self):
@@ -151,7 +152,10 @@ class CommandLineFixtures(unittest.TestCase):
                 result = self.cli(update=update)
                 self.assert_status(result, 1)
                 self.assertIn("FAIL analog_render not found", result.stdout)
-        self.assertNotIn("analog_render", self.budget.read_text())
+        budget_names = {line.split()[0] for line in self.budget.read_text().splitlines()
+                        if line.strip() and not line.startswith("#")}
+        self.assertNotIn("analog_render", budget_names)
+        self.assertIn("analog_render_1", budget_names)
 
     def test_empty_required_function_is_missing(self):
         self.write_dis(omit=("analog_render",))
@@ -207,7 +211,8 @@ class CommandLineFixtures(unittest.TestCase):
     def test_zero_cost_update_round_trip(self):
         text = self.dis.read_text()
         start = text.index("analog_render:\n")
-        end = text.index("phase_render:\n", start)
+        next_function = self.required[self.required.index("analog_render") + 1]
+        end = text.index(f"{next_function}:\n", start)
         self.dis.write_text(text[:start] + "analog_render:\n 100: 00 00  ret\n" + text[end:])
         self.assert_status(self.cli(update="1"), 0)
         self.assertIn("analog_render 0\n", self.budget.read_text())
