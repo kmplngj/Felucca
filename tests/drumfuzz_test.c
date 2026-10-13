@@ -232,6 +232,18 @@ static void fz_play(void)
 static void setup(uint32_t synth)
 {
     uint32_t i;
+#ifdef PREEMPT
+    /* Each seed simulates a fresh boot. main.c initializes song and the engine arenas before enabling audio;
+     * ui_power_on clears them, so a timer interrupt during that reset would see a zero BPM or incomplete track.
+     * Block the actual signal: boot helpers can re-enable the modeled IRQ before initialization finishes. */
+    sigset_t boot_mask, saved_mask;
+    sigemptyset(&boot_mask);
+    sigaddset(&boot_mask, SIGVTALRM);
+    if (sigprocmask(SIG_BLOCK, &boot_mask, &saved_mask)) {
+        perror("block boot audio signal");
+        exit(1);
+    }
+#endif
     ui_power_on();
     for (i = 0; i < MI_VALUES; i++)                       /* the MENU at random (HELP, LARGE, PREVIEW, ACCEL ..) */
         if (menu_valued(i) && i != MI_SERIAL && rnd(2))
@@ -239,6 +251,12 @@ static void setup(uint32_t synth)
     ui_power_on();
     for (i = 0; i < NTRK; i++)
         eng_mem_claim(&trk[i]);
+#ifdef PREEMPT
+    if (sigprocmask(SIG_SETMASK, &saved_mask, NULL)) {     /* pending audio resumes with defaults and owners valid */
+        perror("restore audio signal mask");
+        exit(1);
+    }
+#endif
     set_engine_of(&trk[0], synth);
     trk[0].engine = trk[0].eng_req;
     load_pat16(&trk[0], PATTERNS[1].note, PATTERNS[1].flags);
@@ -272,11 +290,7 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IONBF, 0);
     signal(SIGALRM, on_alarm);
 #ifdef PREEMPT
-    {
-        struct itimerval it = {{0, 40}, {0, 40}};
-        signal(SIGVTALRM, on_vt);
-        setitimer(ITIMER_VIRTUAL, &it, 0);
-    }
+    signal(SIGVTALRM, on_vt);
 #endif
     for (s = s0; s < s0 + ns; s++) {
         uint32_t synth = s % NENGINES;
@@ -285,6 +299,15 @@ int main(int argc, char **argv)
         fz_seed = s;
         rs = s * 2654435761u + 1u;
         setup(synth);
+#ifdef PREEMPT
+        if (s == s0) {                                  /* no asynchronous audio before the first boot */
+            struct itimerval it = {{0, 40}, {0, 40}};
+            if (setitimer(ITIMER_VIRTUAL, &it, 0)) {
+                perror("start audio timer");
+                return 1;
+            }
+        }
+#endif
         for (fz_i = 0; fz_i < steps; fz_i++) {
             alarm(5);
             one_step();
