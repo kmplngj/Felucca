@@ -199,6 +199,43 @@ The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_e
 `tests/cpu_baseline_<os>_<arch>_<compiler>_<version>_<build-id>[_os].txt`, skipped with a reason
 when absent or when any counter is unavailable. See [docs/performance.md](docs/performance.md).
 
+### Emulator partition regression
+
+With Node and generated assets, the runner rebuilds the real browser bridge natively;
+with `emcc`, it also rebuilds the same fixture as test-only WebAssembly. The test compares
+every float32 PCM bit, musical/transport state and event-publication position for
+1024-frame drains, irregular `1/23/37/257/19/512` drains and the worklet's 128-frame drains.
+The real audio ISR still renders 128-frame halves in `CTL=32` blocks.
+Both the full host runner and focused `tools/ci.py emulator-tests` use
+`sh web/emu/partition_test.sh`; focused CI requires Wasm and fails on missing tooling.
+
+Each scheduled event is submitted after draining the same output-frame timestamp, in
+stable order. The audio producer can lead that timestamp: the recorded `ring_w` is
+the first unrendered frame where the queued event can become available. Both partitions
+must observe the same producer position and device clock. This is equivalent input
+publication, not an external MIDI sample-accuracy or arrival-jitter claim. The fixture
+covers channel notes, bend, wheel, expression, level and sustain through `web_midi`,
+and stop/restart through held PLAY presses. The browser bridge ignores MIDI realtime
+messages; real USB/TRS clock/start/stop and fragmentation stay in the host partition test.
+
+Fixtures start in fresh runtimes with erased NOR, seeds `0x87/1/2/3`, fixed ANALOG presets
+and no sample dependency. Non-silent windows, pedal-held/released gates, ownership and
+transport checkpoints are required. Dropped/reordered input and deliberately later
+arrival must change PCM; unchanged CC repetitions must preserve it. Native/Wasm output
+is exact signed DAC24 divided by `2^23`, represented without rounding in float32. Exact
+within-runtime equality is checked separately from cross-runtime equality. These are
+simulated browser/native checks; FM-1 hardware transport timing remains separate.
+
+After a runner build, reproduce a failure with its printed seed:
+
+```sh
+node web/emu/partition_test.mjs build/host/emu_partition_native build/host/emu_partition.wasm 0x87
+```
+
+Without Emscripten, omit the Wasm path (the test reports that skip). Details and first
+differing PCM/state word appear in the output; fixture code is in
+`web/emu/partition_test.c` and `web/emu/partition_test.mjs`.
+
 ## Device diagnostics
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).

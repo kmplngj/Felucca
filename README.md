@@ -436,6 +436,10 @@ The [UI comparison guide](docs/ui-comparison.md) explains how to capture the rea
 firmware renderer and compare pixels, palettes, styles and animations. These host
 checks support visual review; physical FM-1 readability and panel behavior remain separate.
 
+The [emulator partition regression](BUILDING.md#emulator-partition-regression) checks
+that equivalent scheduled MIDI/panel input produces exactly the same audio and state
+through the browser bridge with different render partitions, without an FM-1.
+
 ## If the FM-1 does not start
 
 If an update is interrupted and the FM-1 stays black, check whether a computer sees it as a USB device named

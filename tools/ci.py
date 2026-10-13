@@ -103,6 +103,7 @@ def emulator_tests():
     subprocess.run([str(host / "emu_native"), str(host / "emu_native.f32")], check=True)
     subprocess.run(["node", "web/emu/emu_test.mjs", "build/emu/felucca.wasm",
                     str(host / "emu_native.f32")], check=True)
+    subprocess.run(["sh", "web/emu/partition_test.sh", "--require-wasm"], check=True)
 
 
 def host_cpu_provenance():
