@@ -521,9 +521,12 @@ before committing the update record; it does not share project scratch implicitl
 
 For example, `settings_save()` in [project.c](../firmware/src/project.c) marks
 `persist_pending` and calls `settings_poll`: a busy transport defers the save; an
-unchanged exported record clears the request without erase; failure retains a retry
-request (at least 1 s before retry). It can save immediately **when stopped**, so do
-not turn every new knob detent into a new call. `autosave_poll()` runs in the main loop
+unchanged exported record clears the request without erase; failure sets
+`persist_pending=2`, so subsequent polling without a new save request waits at least
+1 s before retrying. A fresh `settings_save()` resets that state to 1 and calls the
+poller immediately, bypassing the retry delay. It can save immediately **when stopped**
+and is not a rate-limited API, so do not turn every new knob detent into a new call.
+`autosave_poll()` runs in the main loop
 every 250 ms, after 10 s unchanged/quiet and at least 60 s between successful writes
 (30 s retry gap on failure). It requires stopped transport, no keys/buttons/active
 voices and honors editor transfer holds/RESTORE LAST OFF. Boot restoration also follows
