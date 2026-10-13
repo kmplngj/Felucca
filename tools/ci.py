@@ -81,6 +81,28 @@ def verify_tests(log):
             raise ValueError(f"required test output missing: {path}")
 
 
+def portable_tests():
+    from ci_changes import PORTABLE_TESTS
+    for name in PORTABLE_TESTS:
+        subprocess.run([sys.executable, str(build.SRC / "tests" / name)], check=True)
+    subprocess.run([sys.executable, "-O", str(build.SRC / "tests/fm1pkg_test.py")], check=True)
+
+
+def emulator_tests():
+    # The emulator needs generated assets, not a pi32v2 app or an SDK package.
+    # Regenerate them even if local outputs exist; compare freshly compiled peers.
+    build.generate()
+    host = build.OUT / "host"
+    host.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["sh", "web/emu/build.sh"], check=True)
+    subprocess.run(["clang", "-O2", "-ffp-contract=off", "-w", "-Ibuild/gen",
+                    "-Ifirmware/src", "-o", str(host / "emu_native"),
+                    "web/emu/native_check.c", "-lm"], check=True)
+    subprocess.run([str(host / "emu_native"), str(host / "emu_native.f32")], check=True)
+    subprocess.run(["node", "web/emu/emu_test.mjs", "build/emu/felucca.wasm",
+                    str(host / "emu_native.f32")], check=True)
+
+
 def provenance(out):
     from PIL import features
     import PIL
@@ -229,7 +251,7 @@ def stage_release(root, bundles, destination, value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["version", "sdk", "preflight", "provenance", "verify-tests", "finalize", "package", "stage-release"])
+    parser.add_argument("command", choices=["version", "sdk", "preflight", "provenance", "verify-tests", "portable-tests", "emulator-tests", "finalize", "package", "stage-release"])
     parser.add_argument("value", nargs="?")
     args = parser.parse_args()
     if args.command == "version":
@@ -242,6 +264,10 @@ def main():
         provenance(build.OUT / "ci/provenance.json")
     elif args.command == "verify-tests":
         verify_tests(Path(args.value))
+    elif args.command == "portable-tests":
+        portable_tests()
+    elif args.command == "emulator-tests":
+        emulator_tests()
     elif args.command == "finalize":
         finalize(args.value)
     elif args.command == "package":

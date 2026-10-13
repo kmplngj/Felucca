@@ -10,6 +10,54 @@ are canceled. Fork PRs use `pull_request`; there is no `pull_request_target` job
 Repository Actions policy may require maintainer approval for first-time fork
 contributors. This change does not alter branch protection or repository settings.
 
+## Change-based validation
+
+Every PR and `main` push starts CI, including documentation changes. Workflow
+syntax, CI helper failure cases and change-selection regressions always run.
+The existing `firmware / Target, host and emulator` check always completes and
+requires every selected focused job to succeed; a failed or canceled selected
+job cannot turn into a successful check. There are no workflow-level path filters
+that could leave a required check pending. Existing check names are preserved.
+
+| Changed inputs | Validation |
+| --- | --- |
+| Known documentation, documentation images, `AGENTS.md`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
+| Portable Python fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
+| `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
+| `web/emu/**` | Fresh generated assets, pinned Emscripten build and freshly compiled native/WASM song equality and emulator checks; no target package, DaisySP or unrelated host/sanitizer suites |
+| Firmware, build scripts/generators, package/installer/editor inputs, shared host harnesses, goldens/budgets, assets, licenses, workflow/selector implementation, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
+| Manual CI dispatch, releases, or unavailable change comparison | Complete pipeline regardless of changed paths |
+
+Independent selections combine when a PR changes several independent areas.
+Full validation includes the focused suites, so separate focused jobs are not
+duplicated. Firmware is a single translation unit, and host/emulator harnesses
+include shared sources: changing an engine or a firmware UI file still runs the
+complete suite. Changes to the Python build/package tools still require real
+target/package validation even when portable mocked fixtures exist.
+`LICENSING.md`, `LICENSES/` and sample attribution are distributed build inputs,
+so they require full validation rather than being treated as ordinary prose.
+
+Selection uses a local, complete NUL-delimited Git diff, with no API file limit.
+PRs compare their base/head using the merge base, covering all commits in the PR;
+main pushes compare event `before`/`after`, covering all pushed commits. Rename
+detection is disabled so both old and new paths are considered. Missing history,
+new-branch zero SHAs and unsupported events select full validation. The selection
+summary and `selection.json` workflow artifact record the suites, reason and paths.
+Full history is fetched only for selection and builds that need it.
+
+Run selector regressions locally with:
+
+```sh
+python3 -m unittest discover -s tests -p ci_changes_test.py -v
+python3 tools/ci.py portable-tests
+node web/test_backup.mjs
+python3 tools/ci.py emulator-tests  # needs the pinned Python deps, clang, emcc and Node
+```
+
+The emulator command regenerates assets and compiles both peers. It does not
+reuse a previous firmware build. The normal `tests/run_tests.sh` and release
+pipeline retain full coverage and strict optional-suite verification.
+
 ## Required checks and evidence
 
 | Check | Required evidence |
@@ -77,7 +125,10 @@ Artifacts section. Artifact access follows repository permissions and may
 require sign-in. Only explicit build paths are uploaded, never an environment
 dump, credentials or dependency caches. Public GitHub-hosted runner use follows
 GitHub's plan; private forks can consume minutes and artifact storage. There is
-one target/test job per run and no recurring nightly schedule.
+at most one target/test job per run, with focused independent jobs when applicable,
+and no recurring nightly schedule. Focused emulator diagnostics include its fresh
+WASM, copied browser files and native song output; focused checks do not upload a
+validated firmware package. Documentation-only runs upload workflow diagnostics.
 
 ## Downloads and checksums
 

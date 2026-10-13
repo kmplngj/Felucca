@@ -24,10 +24,26 @@ jobs:
     name: Workflow and CI helper checks
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    outputs:
+      full: ${{ steps.changes.outputs.full }}
+      python: ${{ steps.changes.outputs.python }}
+      backup: ${{ steps.changes.outputs.backup }}
+      emulator: ${{ steps.changes.outputs.emulator }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Select validation from complete change range
+        id: changes
+        env:
+          RELEASE_VALIDATION: ${{ inputs.version != '' }}
+        run: |
+          set -o pipefail
+          mkdir -p build/ci
+          args=()
+          if [ "$RELEASE_VALIDATION" = true ]; then args+=(--release); fi
+          python3 tools/ci_changes.py "${args[@]}" | tee build/ci/selection.json
       - name: Validate workflows and CI failure cases
         run: |
           set -o pipefail
@@ -38,6 +54,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" 2>&1 | tee build/ci/actionlint.log
           python3 -m unittest discover -s tests -p ci_test.py -v 2>&1 | tee build/ci/helper-tests.log
+          python3 -m unittest discover -s tests -p ci_changes_test.py -v 2>&1 | tee build/ci/selection-tests.log
       - name: Upload workflow diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -45,9 +62,110 @@ jobs:
           name: workflow-checks-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 14
           path: build/ci/
+  python-checks:
+    name: Portable Python tests
+    needs: workflow-checks
+    if: needs.workflow-checks.outputs.python == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Run portable fixtures without firmware outputs
+        run: |
+          set -o pipefail
+          mkdir -p build/ci
+          python3 -m pip install -r tools/ci-requirements.txt
+          python3 tools/ci.py portable-tests 2>&1 | tee build/ci/portable-tests.log
+      - name: Upload Python diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: build/ci/
+  backup-checks:
+    name: Web backup tests
+    needs: workflow-checks
+    if: needs.workflow-checks.outputs.backup == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Run standalone backup protocol fixtures
+        run: |
+          set -o pipefail
+          mkdir -p build/ci
+          node web/test_backup.mjs 2>&1 | tee build/ci/backup-tests.log
+      - name: Upload backup diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backup-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: build/ci/
+  emulator-checks:
+    name: Browser emulator tests
+    needs: workflow-checks
+    if: needs.workflow-checks.outputs.emulator == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Install pinned generation and emulator dependencies
+        env:
+          EMSDK: ${{ runner.temp }}/emsdk
+        run: |
+          mkdir -p build/ci
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
+          python3 -m pip install -r tools/ci-requirements.txt
+          git init "$EMSDK"
+          git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "$EMSDK" fetch --depth 1 origin dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+          git -C "$EMSDK" checkout --detach FETCH_HEAD
+          "$EMSDK/emsdk" install 6.0.11
+          "$EMSDK/emsdk" activate 6.0.11
+      - name: Generate fresh assets and compare native with WASM
+        env:
+          EMSDK: ${{ runner.temp }}/emsdk
+        run: |
+          set -o pipefail
+          source "$EMSDK/emsdk_env.sh"
+          python3 tools/ci.py emulator-tests 2>&1 | tee build/ci/emulator-tests.log
+          git diff --exit-code
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: emulator-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: |
+            build/ci/
+            build/emu/
+            build/host/emu_native.f32
   build:
     name: Target, host and emulator
-    needs: workflow-checks
+    needs: [workflow-checks, python-checks, backup-checks, emulator-checks]
+    # Preserve the existing required check and fail if a selected suite fails.
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
@@ -57,11 +175,32 @@ jobs:
       CC: clang
       SANITIZE: '1'
     steps:
+      - name: Check selected validation results
+        env:
+          WORKFLOW_RESULT: ${{ needs.workflow-checks.result }}
+          PYTHON_SELECTED: ${{ needs.workflow-checks.outputs.python }}
+          PYTHON_RESULT: ${{ needs.python-checks.result }}
+          BACKUP_SELECTED: ${{ needs.workflow-checks.outputs.backup }}
+          BACKUP_RESULT: ${{ needs.backup-checks.result }}
+          EMULATOR_SELECTED: ${{ needs.workflow-checks.outputs.emulator }}
+          EMULATOR_RESULT: ${{ needs.emulator-checks.result }}
+        run: |
+          python3 - <<'PY'
+          import os
+          if os.environ['WORKFLOW_RESULT'] != 'success':
+              raise SystemExit('Workflow/selection checks did not succeed')
+          for suite in ('PYTHON', 'BACKUP', 'EMULATOR'):
+              expected = 'success' if os.environ[suite + '_SELECTED'] == 'true' else 'skipped'
+              if os.environ[suite + '_RESULT'] != expected:
+                  raise SystemExit(suite + ' validation did not complete as selected')
+          PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.workflow-checks.outputs.full == 'true'
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Validate version and record checkout
+        if: needs.workflow-checks.outputs.full == 'true'
         id: version
         run: |
           mkdir -p build/ci
@@ -77,17 +216,21 @@ jobs:
             echo "EMSDK=$RUNNER_TEMP/emsdk"
           } >> "$GITHUB_ENV"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: needs.workflow-checks.outputs.full == 'true'
         with:
           python-version: '3.12'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: needs.workflow-checks.outputs.full == 'true'
         with:
           node-version: '22'
       - name: Install pinned image-generation dependencies
+        if: needs.workflow-checks.outputs.full == 'true'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
           python3 -m pip install -r tools/ci-requirements.txt
       - name: Cache target inputs
+        if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -95,6 +238,7 @@ jobs:
             ${{ runner.temp }}/sdk
           key: target-${{ runner.os }}-${{ runner.arch }}-20260730.1-${{ hashFiles('tools/get_toolchain.sh', 'tools/ci.py', 'tools/build.py') }}
       - name: Fetch and verify target inputs
+        if: needs.workflow-checks.outputs.full == 'true'
         run: |
           set -o pipefail
           {
@@ -104,6 +248,7 @@ jobs:
             python3 tools/ci.py sdk
           } 2>&1 | tee build/ci/dependencies.log
       - name: Pin Emscripten and DaisySP reference sources
+        if: needs.workflow-checks.outputs.full == 'true'
         run: |
           set -o pipefail
           {
@@ -122,11 +267,13 @@ jobs:
             git -C "$DAISYSP" checkout --detach FETCH_HEAD
           } 2>&1 | tee build/ci/reference-dependencies.log
       - name: Check prerequisites and capture provenance
+        if: needs.workflow-checks.outputs.full == 'true'
         run: |
           set -o pipefail
           python3 tools/ci.py preflight 2>&1 | tee build/ci/preflight.log
           python3 tools/ci.py provenance 2>&1 | tee build/ci/provenance.log
       - name: Target build and resource guards
+        if: needs.workflow-checks.outputs.full == 'true'
         run: |
           set -o pipefail
           ulimit -n 8192
@@ -138,11 +285,13 @@ jobs:
           fi
           test -s build/felucca.dis
       - name: Host, sanitizer, web and emulator tests
+        if: needs.workflow-checks.outputs.full == 'true'
         run: |
           set -o pipefail
           sh tests/run_tests.sh 2>&1 | tee build/ci/tests.log
           python3 tools/ci.py verify-tests build/ci/tests.log
       - name: Reproduce package from a clean checkout
+        if: needs.workflow-checks.outputs.full == 'true'
         run: |
           set -o pipefail
           # Local clone preserves this exact PR merge/tag commit and tracked sample assets.
@@ -157,7 +306,7 @@ jobs:
           sha256sum "build/$package" | tee build/ci/package.sha256
           git diff --exit-code
       - name: Verify and archive release bundle
-        if: inputs.version != ''
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.version != ''
         run: |
           python3 tools/ci.py finalize "$VERSION"
           (
@@ -167,7 +316,7 @@ jobs:
           )
           cmp "build/felucca-$VERSION-release.tar.gz" "$RUNNER_TEMP/reproduce/build/felucca-$VERSION-release.tar.gz"
       - name: Upload diagnostics, including failed runs
-        if: always()
+        if: always() && needs.workflow-checks.outputs.full == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
@@ -188,6 +337,7 @@ jobs:
             build/reverb_demo/*.wav
             build/fm6_demo/*.wav
       - name: Upload validated firmware
+        if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: firmware-${{ github.run_id }}
@@ -203,7 +353,7 @@ jobs:
             LICENSES/
             assets/samples-cc0/ATTRIBUTION.txt
       - name: Upload validated release
-        if: inputs.version != ''
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.version != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ github.run_id }}
@@ -219,7 +369,9 @@ jobs:
           {
             echo '### Felucca firmware validation'
             echo "Result: ${{ job.status }}. Diagnostics retain available outputs for 14 days."
-            echo 'Required: target/resource guards, host goldens and engine switches, ASan/UBSan fuzz, DaisySP, web, native/WASM comparison, package reproducibility.'
+            echo "Full firmware validation selected: ${{ needs.workflow-checks.outputs.full }}."
+            echo 'Known independent inputs use focused checks; docs/review-only changes complete this check without building firmware. Selection details are in the workflow-checks summary and diagnostics.'
+            echo 'Full validation retains target/resource guards, host goldens and engine switches, ASan/UBSan fuzz, DaisySP, web, native/WASM comparison and package reproducibility.'
             echo 'Linux host instruction counts are unavailable; ns/sample is informational. Target budgets are static estimates. FM-1 audio deadlines, USB/MIDI, panel behavior and flashing remain device checks.'
             echo 'Tagged publication is separate from this read-only build job.'
           } >> "$GITHUB_STEP_SUMMARY"
