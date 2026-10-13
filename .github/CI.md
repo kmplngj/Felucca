@@ -87,6 +87,11 @@ This infrastructure change does not change firmware, flags or test baselines.
 The only permitted fixture skip is the official V15 restore comparison: that
 requires the vendor firmware, which is deliberately not redistributed here.
 
+For the FX rest regression tracked in [#153](https://github.com/kmplngj/Felucca/issues/153),
+`FX rest: SKIP` reports pending coverage while [#41](https://github.com/kmplngj/Felucca/pull/41)'s
+silent-bus paths are unavailable. It does not establish FX equivalence. Once those
+paths land, require the regression rather than accepting its dependency skip.
+
 ## Dependencies and provenance
 
 Python 3.12 and Node 22 are selected explicitly. Pillow, fontTools and Brotli versions

@@ -84,6 +84,27 @@ class Checks(unittest.TestCase):
                     subprocess.run([compiler, *harness["flags"], "-x", "c", "-c", "-o", str(self.root / "probe.o"), "-"],
                                    input="int x;", text=True, capture_output=True, check=True)
 
+    def test_actions_summary_keeps_actual_cpu_and_pending_dependency_outcomes(self):
+        workflow = (ci.build.SRC / ".github/workflows/build.yml").read_text()
+        script = workflow.split("      - name: Summarize validation and limits\n", 1)[1].split("        run: |\n", 1)[1]
+        script = "\n".join(line[10:] for line in script.splitlines())
+        script = script.replace("${{ job.status }}", "success").replace("${{ needs.workflow-checks.outputs.full }}", "true")
+        log = self.root / "build/ci/tests.log"
+        log.parent.mkdir(parents=True)
+        evidence = (
+            "== CPU baselines: tests/cpu_baseline_linux_x86_64_clang_x.txt / tests/cpu_baseline_linux_x86_64_clang_x_os.txt",
+            "regress: CPU: 78 of 78 counts unavailable (perf_event_open failed: Operation not permitted); the budget is not checked",
+            "regress: CPU: no baseline for this host (BUDGET_UPDATE=1 sh tests/run_tests.sh writes it); the budget is not checked",
+            "official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)",
+            "FX rest: SKIP (#153 depends on unmerged #41; no silent-bus paths in selected fx.c)",
+        )
+        log.write_text("\n".join(evidence) + "\n")
+        summary = self.root / "summary.md"
+        subprocess.run(["bash", "-e", "-c", script], cwd=self.root,
+                       env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
+        for line in evidence:
+            self.assertIn(line, summary.read_text())
+
     def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
         log = self.root / "tests.log"
         log.write_text("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)\nALL HOST TESTS PASSED\n")
