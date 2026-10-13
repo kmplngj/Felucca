@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 # MIDI CC scaling without a divide (issue #164): host preparation
 
 Status: candidate proven on the host; keep/reject needs the JieLi toolchain. Production code is unchanged.
@@ -12,14 +13,14 @@ ranges are the static table ranges.
 
 ## Proven bounds (tests/cc_scale_test.c, real descriptor tables)
 
-Host build, 14 engines x 111 parameter ids = 1554 descriptors.
+Host check against `main` at `0d44c20`, 14 engines x 111 parameter ids = 1554 descriptors.
 
 | Quantity | Value |
 | --- | --- |
 | minimum / maximum over all descriptors | -64 / 127 |
 | span `max - min` | 0..127 |
 | numerator `value * span + 63` | 63..16192 (max 127 * 127 + 63) |
-| descriptors with `max <= min` | 4 (constant or degenerate) |
+| descriptors with `max <= min` | 3 (constant or degenerate) |
 
 The signed minimum is added after the division. For `max > min` the numerator is never negative, so C's
 truncation toward zero never matters. For `max <= min` the current code evaluates the (possibly negative) division
@@ -53,6 +54,7 @@ fails the test's first check and the constants must be re-derived (span up to 10
 Run (after `python3 -c "import sys; sys.path.insert(0,'tools'); import build; build.generate()"`):
 
 ```sh
+mkdir -p build/host
 cc -O1 -w -Ibuild/gen -Ifirmware/src -o build/host/cc_scale_test tests/cc_scale_test.c -lm && build/host/cc_scale_test
 ```
 

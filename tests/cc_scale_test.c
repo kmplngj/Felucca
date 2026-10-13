@@ -61,22 +61,26 @@ static int cc_scale_test(void)
             if (!n || a < num_min) num_min = a;
             degenerate += s <= 0;
             n++;
-            for (value = 0; value < 128; value++)
-                for (int32_t cur = d->min - 1; cur <= d->max + 1; cur += d->max - d->min + 2)   /* changed / unchanged */
-                    mismatch += cc_ref_apply(d, value, cur) != cc_cand_apply(d, value, cur);
+            for (value = 0; value < 128; value++) {
+                /* Out-of-range current values exercise changes; the reference result exercises no change.
+                 * A fixed count also handles max <= min without a range-dependent loop step. */
+                int32_t current[] = {d->min - 1, d->max + 1, cc_ref(d->min, d->max, value)};
+                for (uint32_t i = 0; i < NELEM(current); i++)
+                    mismatch += cc_ref_apply(d, value, current[i]) != cc_cand_apply(d, value, current[i]);
+            }
             for (value = 0; value < 128; value++)
                 if (d->max > d->min) mismatch += cc_ref(d->min, d->max, value) != cc_cand(d->min, d->max, value);
         }
     printf("cc scale: %u descriptors (%u engines x %u ids), min %d, max %d, span %d..%d, numerator %d..%d, %u with max <= min\n",
            n, (unsigned)NENGINES, (unsigned)P_COUNT, lo, hi, span_min, span_max, num_min, num_max, degenerate);
     bad += check("every reachable span fits the candidate's domain (<= 255)", span_max >= 0 && (uint32_t)span_max <= CC_SPAN_MAX);
-    bad += check("the candidate equals midi_cc_set's result for every reachable descriptor, value and current value", !mismatch);
+    bad += check("the candidate equals midi_cc_set's result for every reachable descriptor and value, changed and unchanged", !mismatch);
 
-    /* 2. exhaustive: every value, every span of the domain, a signed and an unsigned minimum */
+    /* 2. exhaustive: every value, every span of the domain, every minimum -300..300 */
     mismatch = 0;
     for (span = 1; span <= CC_SPAN_MAX; span++)
         for (value = 0; value < 128; value++)
-            for (min = -300; min <= 300; min += 100) {
+            for (min = -300; min <= 300; min++) {
                 if (cc_ref(min, min + (int32_t)span, value) != cc_cand(min, min + (int32_t)span, value)) mismatch++;
                 if (cc_ref(min, min + (int32_t)span, value) < min || cc_ref(min, min + (int32_t)span, value) > min + (int32_t)span)
                     mismatch++;                  /* and it stays inside the range */
