@@ -104,6 +104,10 @@ def emulator_tests():
     subprocess.run(["node", "web/emu/emu_test.mjs", "build/emu/felucca.wasm",
                     str(host / "emu_native.f32")], check=True)
     subprocess.run(["sh", "web/emu/partition_test.sh", "--require-wasm"], check=True)
+    # The replay adapter includes the emulator's DSP/UI/event integration, so
+    # emulator-only changes must exercise its native capture contract as well.
+    subprocess.run([sys.executable, str(build.SRC / "tests/replay_test.py"),
+                    "NativeReplayTests"], check=True)
 
 
 def host_cpu_provenance():

@@ -95,6 +95,14 @@ copied inside their render directory so a copied manifest remains portable.
 
 ## Verification boundaries
 
+The comparator also accepts native [interaction replay](interaction-replay.md)
+manifests and their RGB PPM frames. Pairing uses requested sample and event order;
+workload hash, initial state, timing contract and compiled feature settings must
+match. Replay captures keep their own adapter/binary provenance and cannot be
+paired with static scenes. Pixel counts, sheets and strict exit codes work the
+same way. `tests/replay_test.py` checks this integration, including workload and
+path validation. Actual event publication times remain in each replay manifest.
+
 `python3 tests/ui_compare_test.py` checks identical and one-pixel images, moved elements,
 scene pairing, added/removed/missing scenes, dimensions/modes, configuration, provenance,
 image hashes, selection, filmstrip opt-in and both CLI exit policies. With Pillow installed,

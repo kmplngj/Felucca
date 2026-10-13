@@ -158,6 +158,11 @@ MIDI out, the editor, updates), TRS MIDI and the user sample slots. A build of i
 
 ## Tests
 
+For timestamped panel/MIDI replay with synchronized PCM24 WAV, LCD PPM frames and
+provenance, see [Interaction replay](docs/interaction-replay.md). After the asset
+build, run `python3 tools/fm1_replay.py tests/scenarios/interaction.json --out build/replay/example`.
+This uses the native browser-emulator integration on Linux/macOS and needs no hardware.
+
 ```
 tests/run_tests.sh
 ```
