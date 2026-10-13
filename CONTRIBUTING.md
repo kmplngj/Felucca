@@ -27,8 +27,9 @@ Pull requests are welcome, including AI-assisted ones, with the same bar for all
 
 - keep it small and focused on one thing;
 - make sure you understand the change and can explain it;
-- test it on a real FM-1;
-- run `tests/run_tests.sh` (see [BUILDING.md](BUILDING.md));
+- test hardware-dependent changes on a real FM-1 and report any pending device checks;
+- run the applicable checks in [BUILDING.md](BUILDING.md), including
+  `tests/run_tests.sh` for firmware changes;
 - new files carry the GPL-3.0-only SPDX header.
 
 Include **User test instructions** in the PR description: setup, how to reach the
