@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -53,10 +54,75 @@ class Checks(unittest.TestCase):
         for message in ("== skip the sanitizer runs (the compiler has no ASan / UBSan)",
                         "target: skip (build/felucca.dis missing)",
                         "logical image vs fm1pkg.js: skipped (needs node and build/felucca.fwsc)",
-                        "target: render cost 1 no budget (BUDGET_UPDATE=1 adds it)"):
+                        "target: render cost 1 no budget (BUDGET_UPDATE=1 adds it)",
+                        "regress: CPU cpu/mix/idle: 1 instructions / sample, no baseline (BUDGET_UPDATE=1 adds it)"):
             log.write_text(message + "\nALL HOST TESTS PASSED\n")
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, "incomplete test coverage"):
                 ci.verify_tests(log)
+
+    def test_whole_host_cpu_budget_skips_remain_explicit_and_allowed(self):
+        log = self.root / "tests.log"
+        for message in (
+                "regress: CPU: 2 of 2 counts unavailable (perf_event_open failed: Operation not permitted); the budget is not checked",
+                "regress: CPU: no baseline for this host (BUDGET_UPDATE=1 sh tests/run_tests.sh writes it); the budget is not checked"):
+            log.write_text(message + "\nALL HOST TESTS PASSED\n")
+            with self.subTest(message=message), patch.object(ci.Path, "is_file", return_value=True):
+                ci.verify_tests(log)
+
+    def test_host_cpu_provenance_records_usable_clang_and_gcc_flags(self):
+        compilers = [path for name in ("clang", "gcc") if (path := shutil.which(name))]
+        if not compilers:
+            self.skipTest("needs a host Clang or GCC")
+        for compiler in compilers:
+            with self.subTest(compiler=compiler), patch.dict(os.environ, CC=compiler):
+                metadata = ci.host_cpu_provenance()
+                self.assertEqual(metadata["compiler_command"], [compiler])
+                self.assertEqual(set(metadata["harnesses"]), {"regress", "regress_os"})
+                for name, harness in metadata["harnesses"].items():
+                    self.assertIn("-O2" if name == "regress" else "-Os", harness["flags"])
+                    self.assertEqual(harness["baseline_present"], (ci.build.SRC / harness["baseline"]).is_file())
+                    subprocess.run([compiler, *harness["flags"], "-x", "c", "-c", "-o", str(self.root / "probe.o"), "-"],
+                                   input="int x;", text=True, capture_output=True, check=True)
+
+    def test_actions_summary_keeps_actual_cpu_and_pending_dependency_outcomes(self):
+        workflow = (ci.build.SRC / ".github/workflows/build.yml").read_text()
+        script = workflow.split("      - name: Summarize validation and limits\n", 1)[1].split("        run: |\n", 1)[1]
+        script = "\n".join(line[10:] for line in script.splitlines())
+        script = script.replace("${{ job.status }}", "success").replace("${{ needs.workflow-checks.outputs.full }}", "true")
+        log = self.root / "build/ci/tests.log"
+        log.parent.mkdir(parents=True)
+        evidence = (
+            "== CPU baselines: tests/cpu_baseline_linux_x86_64_clang_x.txt / tests/cpu_baseline_linux_x86_64_clang_x_os.txt",
+            "regress: CPU: 78 of 78 counts unavailable (perf_event_open failed: Operation not permitted); the budget is not checked",
+            "regress: CPU: no baseline for this host (BUDGET_UPDATE=1 sh tests/run_tests.sh writes it); the budget is not checked",
+            "official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)",
+            "FX rest: SKIP (#153 depends on unmerged #41; no silent-bus paths in selected fx.c)",
+        )
+        log.write_text("\n".join(evidence) + "\n")
+        summary = self.root / "summary.md"
+        subprocess.run(["bash", "-e", "-c", script], cwd=self.root,
+                       env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
+        for line in evidence:
+            self.assertIn(line, summary.read_text())
+        # Setup diagnostics and a partial O2 result cannot establish completion;
+        # the real harness can fail before its Os comparison finishes.
+        for fx, pending in (
+                ("", True),
+                ("FX rest: source=fx.c sha256=123", True),
+                ("FX rest O2: 63 audio/state matches; skips chorus/delay/HALL/SPRING=[1, 1, 1, 0]", True),
+                ("FX rest: source=fx.c sha256=123\nFX rest: FAIL: compile failed", False),
+                ("FX rest O2: 63 audio/state matches; skips chorus/delay/HALL/SPRING=[1, 1, 1, 0]\n"
+                 "FX rest Os: 63 audio/state matches; skips chorus/delay/HALL/SPRING=[1, 1, 1, 0]", False)):
+            with self.subTest(fx=fx):
+                log.write_text("\n".join(evidence[:-1]) + "\n" + fx + "\n")
+                summary.unlink()
+                subprocess.run(["bash", "-e", "-c", script], cwd=self.root,
+                               env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
+                text = summary.read_text()
+                self.assertEqual("FX rest: pending coverage" in text, pending)
+                self.assertNotIn("FX rest: SKIP", text)
+                for line in fx.splitlines():
+                    self.assertIn(line, text)
 
     def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
         log = self.root / "tests.log"
