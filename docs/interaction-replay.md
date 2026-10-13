@@ -18,6 +18,13 @@ python3 tools/fm1_replay.py tests/scenarios/metronome-fixed.json --out build/rep
 python3 tests/replay_test.py
 ```
 
+CI runs the parser fixtures alone with `python3 tests/replay_validation_test.py`
+in the portable Python suite, and the native fixtures with
+`python3 tests/replay_test.py NativeReplayTests` after generated assets exist.
+Changes to replay tools, native harnesses or scenarios conservatively select full
+CI; emulator changes also run the native replay fixtures because the adapter
+includes the emulator source.
+
 Use a new output directory for every capture. Outputs must stay under this
 checkout's ignored `build/`. No hardware, Emscripten, browser or Pillow is required
 for replay. The native adapter is rebuilt when the compiler, flags, source or
