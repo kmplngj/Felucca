@@ -221,3 +221,5 @@ without executing the publisher. Do not push a tag merely to test CI.
 Failure diagnostics and strict optional-suite coverage improve on these examples.
 Nightlies, extra firmware variants, Linux instruction counting and Pages
 deployment are separate follow-ups rather than prerequisites for this gate.
+
+<!-- Temporary docs-only CI smoke fixture; this branch is not merged. -->
