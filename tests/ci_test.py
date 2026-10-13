@@ -104,6 +104,14 @@ class Checks(unittest.TestCase):
                        env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
         for line in evidence:
             self.assertIn(line, summary.read_text())
+        # Current main has no FX rest harness yet: expose that real coverage gap
+        # without relying on a synthetic skip that production cannot emit.
+        log.write_text("\n".join(evidence[:-1]) + "\n")
+        summary.unlink()
+        subprocess.run(["bash", "-e", "-c", script], cwd=self.root,
+                       env=dict(os.environ, GITHUB_STEP_SUMMARY=str(summary)), check=True)
+        self.assertIn("FX rest: pending coverage (#153; no regression outcome in this run)", summary.read_text())
+        self.assertNotIn("FX rest: SKIP", summary.read_text())
 
     def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
         log = self.root / "tests.log"

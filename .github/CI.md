@@ -88,6 +88,7 @@ The only permitted fixture skip is the official V15 restore comparison: that
 requires the vendor firmware, which is deliberately not redistributed here.
 
 For the FX rest regression tracked in [#153](https://github.com/kmplngj/Felucca/issues/153),
+the summary reports pending coverage when the full test log has no FX rest outcome.
 `FX rest: SKIP` reports pending coverage while [#41](https://github.com/kmplngj/Felucca/pull/41)'s
 silent-bus paths are unavailable. It does not establish FX equivalence. Once those
 paths land, require the regression rather than accepting its dependency skip.
