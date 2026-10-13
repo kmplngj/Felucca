@@ -21,6 +21,7 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 | Add an engine, effect or platform/persistence hook | [docs/extending.md](docs/extending.md) |
 | Evaluate an idea from another FM-1 firmware | [The dated development review](docs/development-review-2026-10-11.md), then that project's current source |
 | Plan build profiles, usage modes, new engine IDs or new persistent data | [docs/modularity.md](docs/modularity.md) and the issues it maps |
+| Create or update a PR, or hand off a change for user testing | [PR testing skill](.agents/skills/pr-testing/SKILL.md) |
 
 If this checkout has a `.codegraph/` index, use CodeGraph first to locate code and trace
 callers. Otherwise use normal source search; indexing is the owner's choice.
@@ -122,6 +123,16 @@ A failed budget is a finding to investigate, not a reason to regenerate all base
 New source files carry the GPL-3.0-only SPDX header; preserve third-party attribution.
 For documentation-only changes, verify instructions and links; a firmware run is needed only
 when establishing or changing build/measurement claims.
+
+## PR user testing instructions
+
+Every PR must include actionable **User test instructions**, separate from the author's
+validation evidence. Use the [PR testing skill](.agents/skills/pr-testing/SKILL.md) when
+preparing or updating that handoff; its detailed checklist need not be read for unrelated work.
+Explain what to test and the expected results. For FM-1 checks, describe the complete route
+from a known device state to the function, including buttons, hold/tap gestures, pages and
+knobs. Mark unperformed device checks pending. For changes that need no hardware testing,
+explain why and give the applicable documentation or tooling checks instead.
 
 ## Completion evidence
 
