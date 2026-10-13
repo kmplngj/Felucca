@@ -331,6 +331,7 @@ jobs:
             build/loader/*.elf
             build/loader/*.dis
             build/host/*.wav
+            build/stress/
             build/host/asan/*.log
             build/ui_new/**/*.png
             build/ui_fm4/**/*.png
