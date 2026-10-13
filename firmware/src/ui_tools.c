@@ -356,26 +356,32 @@ static int eu_hit(uint32_t i)                           /* step i (0..) of the c
     return (p * eu.hits) % n < eu.hits;
 }
 /* the note a hit on step i plays: the NOTE step there, or the note a TIE there holds (its NOTE before it), else none */
-static const step_t *eu_src(uint32_t i)
+static const step_t *eu_src(uint32_t i, uint32_t len)
 {
-    uint32_t j = i;
-    while (j && eu_from[j].time == ST_TIE)
-        j--;
+    uint32_t j = i, n = 0;
+    while (eu_from[j].time == ST_TIE && ++n < len)
+        j = j ? j - 1u : len - 1u;
     return eu_from[j].time == ST_NOTE && eu_from[j].n && (j == i || eu_from[i].time == ST_TIE) ? &eu_from[j] : 0;
 }
 static void eu_render(track_t *t)                       /* (t: ignored, EUCLID's own track) */
 {
     t = eu_track();
-    uint32_t len = tl_len(t), i, l = ui.lane % NLANE;
+    uint32_t len = tl_len(t), i, k, start = 0, l = ui.lane % NLANE;
     memcpy(t->step, eu_from, sizeof t->step);
     if (drum_track(t)) {
         for (i = 0; i < len; i++)
             grid_hit(t, i, l, eu_hit(i));
         return;
     }
-    for (i = 0; i < len; i++) {
+    /* Render from a non-tie so the last step's result is ready before its leading ties. */
+    while (start < len && eu_from[start].time == ST_TIE)
+        start++;
+    if (start == len)
+        start = 0;
+    for (k = 0, i = start; k < len; k++, i = i + 1u < len ? i + 1u : 0u) {
         step_t *s = &t->step[i];
-        const step_t *o = eu_src(i);
+        uint32_t prev = i ? i - 1u : len - 1u;
+        const step_t *o = eu_src(i, len);
         if (eu_hit(i)) {
             if (o != &eu_from[i]) {                   /* (a REST, an empty step, a TIE: a NOTE of its own) */
                 int32_t r = 60 + t->p[P_ROOT] % 12;
@@ -386,8 +392,8 @@ static void eu_render(track_t *t)                       /* (t: ignored, EUCLID's
                 else
                     s->note[0] = (uint8_t)(r > 66 ? r - 12 : r), s->n = 1;
             }
-        } else if (!(s->time == ST_TIE && i && (t->step[i - 1u].time == ST_TIE || (t->step[i - 1u].time == ST_NOTE &&
-                                                                                    t->step[i - 1u].n)))) {
+        } else if (!(s->time == ST_TIE && k && (t->step[prev].time == ST_TIE || (t->step[prev].time == ST_NOTE &&
+                                                                                    t->step[prev].n)))) {
             step_clear(s);
         }
     }

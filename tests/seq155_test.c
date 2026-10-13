@@ -459,6 +459,39 @@ static int test_euclid(void)
         bad += check("  a Program Change for T2 while open (its load's undo copy): T1 turned from its own steps, OCT- "
                      "puts them back, OCT+ applies; T2's steps untouched", ok);
     }
+    {   /* A chord at the end of LEN holds into the leading ties. */
+        t = melody(1u << 7);
+        t->p[P_SLEN] = 8;
+        t->step[7] = (step_t){{69, 72}, 2, ST_NOTE, 0, 100};
+        t->step[0] = t->step[1] = (step_t){{0}, 0, ST_TIE, 0, 0};
+        t->step[8] = (step_t){{99}, 1, ST_NOTE, 0, 100}; /* Outside LEN is never a source. */
+        memcpy(ref, t->step, sizeof ref);
+        go_page(GR_ROLL); frame();
+        eu.steps = 8; eu.hits = 1; eu.rot = 7;
+        btn_down(B_SEQ); frame(); tkey(7);
+        ok = t->step[7].n == 2u && t->step[0].time == ST_TIE && t->step[1].time == ST_TIE &&
+             !memcmp(&t->step[8], &ref[8], sizeof ref[8]);
+        oct_back();
+        ok &= !memcmp(t->step, ref, sizeof ref);
+        bad += check("EUCLID: a retained final chord keeps its leading ties across the loop; cancel restores every step", ok);
+        eu.rot = 0;
+        tkey(7);
+        ok = t->step[0].time == ST_NOTE && t->step[0].n == 2u && t->step[0].note[0] == 69u &&
+             t->step[0].note[1] == 72u && t->step[1].time == ST_TIE;
+        oct_back();
+        bad += check("EUCLID: a hit on a leading tie inherits the wrapped chord, rather than the root", ok);
+        for (i = 0; i < 8u; i++)
+            t->step[i] = (step_t){{0}, 0, ST_TIE, 0, 0};
+        eu.hits = 0;
+        tkey(7);
+        ok = 1;
+        for (i = 0; i < 8u; i++)
+            ok &= t->step[i].time == ST_REST;
+        kt(EN_K1, 1);
+        ok &= t->step[0].n == 1u && t->step[0].note[0] == 60u;
+        oct_back(); btn_up(B_SEQ); frame();
+        bad += check("EUCLID: an all-tie cycle is bounded, has no source outside LEN, and a new hit uses the root", ok);
+    }
     {   /* DRUM: the selected lane only */
         uint32_t m;
         ui_power_on();
