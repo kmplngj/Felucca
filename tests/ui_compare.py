@@ -11,6 +11,7 @@ import sys
 from PIL import Image, ImageChops, ImageDraw, __version__ as pillow_version
 
 ROOT = Path(__file__).resolve().parents[1]
+REPLAY_FEATURES = ("fm4", "slice", "icons", "cdc", "flash", "ota", "uac", "uart")
 
 
 def sha256(path):
@@ -64,9 +65,9 @@ def replay_manifest(manifest):
             or screen.get("format") != "RGB888 PPM from panel-order RGB565"):
         raise ValueError("replay requires the real 240 x 240 RGB565 LCD capture")
     features = provenance["features"]
-    if not isinstance(features, dict) or any(type(features.get(k)) is not int or features[k] not in (0, 1)
-                                            for k in ("fm4", "icons", "slice")):
-        raise ValueError("replay requires explicit compiled FM4/icons/SLICE settings")
+    if (not isinstance(features, dict) or set(features) != set(REPLAY_FEATURES)
+            or any(type(features[k]) is not int or features[k] not in (0, 1) for k in REPLAY_FEATURES)):
+        raise ValueError("replay requires all eight explicit compiled capability settings")
     scenes = []
     frames = screen["frames"]
     if not isinstance(frames, list) or len(frames) > 256:
@@ -85,6 +86,7 @@ def replay_manifest(manifest):
             "settings": {"mode": "RGB", "width": 240, "height": 240,
                          "pixel_format": screen["format"], "fm4": features["fm4"],
                          "icons": features["icons"], "slice": features["slice"],
+                         "features": features,
                          "capture_kind": "interaction-replay", "scenario_sha256": manifest["scenario_sha256"],
                          "initial": manifest["initial"], "timing": manifest["timing"]},
             "provenance": provenance, "scenes": scenes}

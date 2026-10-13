@@ -66,7 +66,8 @@ class ComparisonTest(unittest.TestCase):
             "timing": {"sample_rate": 44100, "ctl_frames": 32, "dma_half_frames": 128},
             "provenance": {"revision": "fixture", "adapter": "tools/replay_native.c",
                            "binary_sha256": "binary-fixture", "inputs": {"source": "fixture"},
-                           "features": {"fm4": 0, "icons": 1, "slice": 1}},
+                           "features": {"fm4": 0, "icons": 1, "slice": 1, "cdc": 1,
+                                        "flash": 1, "ota": 0, "uac": 0, "uart": 0}},
             "screen": {"width": 240, "height": 240, "source": "real firmware lcd_fill/lcd_blit",
                        "format": "RGB888 PPM from panel-order RGB565",
                        "frames": [{"requested_sample": 129, "order": 2, "file": file.name,
@@ -92,6 +93,25 @@ class ComparisonTest(unittest.TestCase):
             data[field] = value
             (self.after / "manifest.json").write_text(json.dumps(data))
             self.assertEqual(self.run_compare()["status"], "invalid")
+
+    def test_replay_compiled_capabilities_must_all_match(self):
+        baseline = self.write_replay(self.before)
+        for feature in ("fm4", "slice", "icons", "cdc", "flash", "ota", "uac", "uart"):
+            with self.subTest(feature=feature):
+                data = self.write_replay(self.after)
+                data["provenance"]["features"][feature] = 1 - baseline["provenance"]["features"][feature]
+                (self.after / "manifest.json").write_text(json.dumps(data))
+                result = self.run_compare()
+                self.assertEqual(result["status"], "invalid")
+                self.assertTrue(any("incompatible render setting" in e for e in result["errors"]))
+        for mutation in ("missing", "boolean", "range"):
+            data = self.write_replay(self.after)
+            if mutation == "missing":
+                del data["provenance"]["features"]["cdc"]
+            else:
+                data["provenance"]["features"]["uart"] = True if mutation == "boolean" else 2
+            (self.after / "manifest.json").write_text(json.dumps(data))
+            self.assertEqual(self.run_compare()["status"], "invalid", mutation)
 
     def test_replay_paths_hashes_and_adapter_provenance_are_validated(self):
         self.write_replay(self.before)
