@@ -18,7 +18,7 @@ fi
 mkdir -p build/host
 # CC may include flags, as in tests/run_tests.sh; the fixture always disables FMA.
 # shellcheck disable=SC2086
-${CC:-clang} -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
+${CC:-cc} -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
     -o build/host/emu_partition_native web/emu/partition_test.c -lm
 if command -v emcc >/dev/null 2>&1; then
     # Same Wasm options as web/emu/build.sh; test exports stay out of the page build.
