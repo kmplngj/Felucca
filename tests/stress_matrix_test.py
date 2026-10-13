@@ -3,9 +3,16 @@
 """Failure controls for portable stress schedules and result acceptance."""
 import copy
 import json
+import os
 from pathlib import Path
+import shlex
+import subprocess
+import sys
+import tempfile
 import unittest
+from unittest import mock
 
+import stress_matrix
 from stress_matrix import health, validate
 
 
@@ -70,6 +77,34 @@ class StressContractTest(unittest.TestCase):
         result["parts"].pop()
         with self.assertRaises(ValueError):
             health(s, result)
+
+    def test_stalled_compiler_metadata_and_probe_retain_failure_report(self):
+        build = stress_matrix.ROOT / "build"
+        build.mkdir(exist_ok=True)
+        for fast_version in (False, True):
+            with self.subTest(fast_version=fast_version), tempfile.TemporaryDirectory(dir=build) as directory:
+                root = Path(directory)
+                compiler = root / "stalled_cc.py"
+                compiler.write_text("import sys, time\n"
+                                    f"if {fast_version!r} and '--version' in sys.argv:\n"
+                                    "    print('fake-cc')\n"
+                                    "else:\n"
+                                    "    time.sleep(2)\n")
+                out = root / "result"
+                cc = f"{shlex.quote(sys.executable)} {shlex.quote(str(compiler))}"
+                cwd = Path.cwd()
+                try:
+                    with mock.patch.dict(os.environ, {"CC": cc}), \
+                         mock.patch.object(sys, "argv", ["stress_matrix.py", "--out", str(out)]), \
+                         mock.patch.object(stress_matrix, "METADATA_TIMEOUT", 1, create=True):
+                        with self.assertRaises(subprocess.TimeoutExpired):
+                            stress_matrix.main()
+                    report = json.loads((out / "report.json").read_text())
+                    self.assertEqual(report["status"], "failed")
+                    self.assertIn(str(compiler), report["error"])
+                    self.assertIn("timed out", report["error"])
+                finally:
+                    os.chdir(cwd)
 
 
 if __name__ == "__main__":

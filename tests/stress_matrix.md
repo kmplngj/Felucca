@@ -77,7 +77,9 @@ voices and fail health); renderer crashes cannot count as successful controls.
 source/generated-asset hashes, matrix hash and explicit measurement availability.
 `matrix.json`, `local.diff`, status and harness-source copies identify local inputs.
 Each run retains stdout/stderr, exact `audio.s32` and a stereo 16-bit `audio.wav`.
-The report is written on replay/build failures too, with completed results retained.
+The report is written on replay/build and metadata-command failures too, with
+completed results retained. Metadata commands and the compiler probe each have a
+15-second timeout; compilation and each replay have 120/90-second timeouts.
 Generated assets are hashed, not archived: use the build provenance and matching
 inputs to regenerate them when reconstructing a measurement.
 

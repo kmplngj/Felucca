@@ -15,6 +15,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+METADATA_TIMEOUT = 15
 TRACK_PARAMS = {
     "level": "P_LEVEL", "voice": "P_VOICE", "release": "P_REL",
     "chorus": "P_CHOR", "delay": "P_DLY", "reverb": "P_REV",
@@ -156,27 +157,33 @@ def main():
     (out / "matrix.json").write_bytes(matrix_bytes)
     (out / "stress_schedule.h").write_text(header(scenarios))
     cc = shlex.split(os.environ.get("CC", "cc"))
-    report = {"version": 1, "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+    report = {"version": 1, "revision": None,
               "host": platform.platform(), "byteorder": sys.byteorder,
-              "compiler": subprocess.check_output(cc + ["--version"], text=True),
+              "compiler": None,
               "matrix_sha256": hashlib.sha256(matrix_bytes).hexdigest(),
               "source_sha256": {}, "builds": [], "results": [],
               "instructions_per_sample": None, "instruction_skip": "first-stage replay has no instruction-counter adapter",
               "device": "unmeasured", "status": "running"}
-    (out / "local.diff").write_bytes(subprocess.check_output(["git", "diff", "--binary", "HEAD"]))
-    (out / "status.txt").write_bytes(subprocess.check_output(["git", "status", "--porcelain"]))
-    for pattern in ("firmware/**/*", "build/gen/*", "tests/hostsim.c", "tests/stress_render.c", "tests/stress_matrix.py"):
-        for path in ROOT.glob(pattern):
-            if path.is_file():
-                report["source_sha256"][str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
-    # These test sources may be untracked during a local experiment. Keep their
-    # contents as well as hashes so the recorded revision is not the only input.
-    for name in ("stress_render.c", "stress_matrix.py", "hostsim.c"):
-        (out / name).write_bytes((ROOT / "tests" / name).read_bytes())
     try:
+        report["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True,
+                                                     timeout=METADATA_TIMEOUT).strip()
+        report["compiler"] = subprocess.check_output(cc + ["--version"], text=True, timeout=METADATA_TIMEOUT)
+        (out / "local.diff").write_bytes(subprocess.check_output(["git", "diff", "--binary", "HEAD"],
+                                                               timeout=METADATA_TIMEOUT))
+        (out / "status.txt").write_bytes(subprocess.check_output(["git", "status", "--porcelain"],
+                                                               timeout=METADATA_TIMEOUT))
+        for pattern in ("firmware/**/*", "build/gen/*", "tests/hostsim.c", "tests/stress_render.c", "tests/stress_matrix.py"):
+            for path in ROOT.glob(pattern):
+                if path.is_file():
+                    report["source_sha256"][str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
+        # These test sources may be untracked during a local experiment. Keep their
+        # contents as well as hashes so the recorded revision is not the only input.
+        for name in ("stress_render.c", "stress_matrix.py", "hostsim.c"):
+            (out / name).write_bytes((ROOT / "tests" / name).read_bytes())
         # Compiler probe follows the host runner's Clang/GCC policy.
         probe = subprocess.run(cc + ["-fno-vectorize", "-fno-slp-vectorize", "-x", "c", "-c", "-o", os.devnull, "-"],
-                               input="int main(void){return 0;}\n", text=True, capture_output=True)
+                               input="int main(void){return 0;}\n", text=True, capture_output=True,
+                               timeout=METADATA_TIMEOUT, check=False)
         no_simd = ["-fno-vectorize", "-fno-slp-vectorize"] if probe.returncode == 0 else ["-fno-tree-vectorize", "-fno-tree-slp-vectorize"]
         reference = {}
         for label, flags in (("o2", ["-O2"]), ("os", ["-Os"] + no_simd)):
