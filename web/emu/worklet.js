@@ -138,3 +138,5 @@ if (typeof registerProcessor === "function") {
   }
   registerProcessor("felucca", Felucca);
 }
+
+// Temporary focused emulator CI smoke fixture.
