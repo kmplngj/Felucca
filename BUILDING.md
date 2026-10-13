@@ -176,6 +176,11 @@ Use `--strict` for an approved baseline gate; report mode returns success after 
 its findings. See [UI comparison](docs/ui-comparison.md) for capture, selections, exit
 codes and the separate hardware readability check.
 
+The [silent FX bus regression](tests/fx_rest_test.md) compares bursts and long silences
+with the rest paths forced off, at `-O2` and `-Os`, including persistent state and
+actual skip counters. It explicitly skips while its DSP dependency (PR #41) is absent;
+the guide explains testing checked-out dependency sources before they merge.
+
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
 cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). It runs a second time built as
