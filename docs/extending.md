@@ -14,7 +14,7 @@ dependency order, and [tests/hostsim.c](../tests/hostsim.c) (also used by
 [web/emu/felucca_web.c](../web/emu/felucca_web.c)) includes the same
 sources against simulated hardware. A file that is not included from those places is not built.
 Target order is HAL/generated tables, display, core/engines/modulation/voices/mixer,
-USB/sequencer/audio, UI, storage/editor/update, then boot/main. Do not add an independent audio
+USB/sequencer/audio, UI, storage/update/editor, then boot/main. Do not add an independent audio
 or main-loop wrapper. Feature defaults are defined beside their features: `felucca.c`
 for the main options, [core.h](../firmware/src/core.h) for engine options,
 [icons.c](../firmware/src/icons.c) for `FELUCCA_ICONS`,
@@ -404,8 +404,14 @@ TIMER5 owns the scan/debounce. [panel.c](../firmware/src/panel.c) maps them to l
 logical steps; shifting `1u << B_PLAY` as if it were a physical bit is wrong. Invalid,
 duplicate or out-of-range calibration resets to `PANEL_DEFAULT`. Musical keys are
 consumed by audio `keyboard_block()` with press-time note ownership; UI key gestures
-use the existing input layer. `ui_leds()` maps logical buttons back to physical LED IDs
-with HAL `fm1_led_key` (physical button IDs 0..13, note-key IDs 14..40). MASTER is the ADC pot, sampled by
+use the existing input layer. [ui_input.c](../firmware/src/ui_input.c) `ui_leds()` maps
+logical buttons through `panel.btn[]` and uses local `led_put()` to compose lit, dim,
+mid-level and breathing planes. It publishes their packed column arrays to `fm1_led`,
+`fm1_led_dim`, `fm1_led_mid` and `fm1_led_breath`, with glow before lit so a transition
+from lit to dim has no dark frame. Extend that composition for UI LED behavior.
+HAL `fm1_led_key` is a separate binary on/off helper for physical button IDs 0..13
+and note-key IDs 14..40; it is not `ui_leds()`'s multi-level path.
+MASTER is the ADC pot, sampled by
 [master.c](../firmware/src/master.c) `master_boot`/`master_poll`, not an encoder.
 
 Drawing is main-loop work: [gfx.c](../firmware/src/gfx.c) `cv_begin`, `cv_rect`, `cv_line`,
