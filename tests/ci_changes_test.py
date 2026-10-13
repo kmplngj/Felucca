@@ -56,6 +56,8 @@ class SelectionTest(unittest.TestCase):
                      "tests/hostsim.c", "tests/ui_render.py", "tests/cpu_baseline.py",
                      "tests/target_budget.py", "tests/golden.txt", "tests/union_golden.txt",
                      "tests/run_tests.sh", "tests/build_guard_target_test.py",
+                     "tools/replay_native.c", "tools/fm1_replay.py", "tests/replay_test.py",
+                     "tests/scenarios/interaction.json", "tests/scenarios/metronome-fixed.json",
                      "tests/size_fns_target_test.py", "tests/install_test.py",
                      "tests/regress_counter_test.py", ".github/workflows/ci.yml",
                      ".github/workflows/build.yml", ".github/workflows/release.yml",

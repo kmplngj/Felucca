@@ -440,6 +440,12 @@ The [emulator partition regression](BUILDING.md#emulator-partition-regression) c
 that equivalent scheduled MIDI/panel input produces exactly the same audio and state
 through the browser bridge with different render partitions, without an FM-1.
 
+The [interaction replay guide](docs/interaction-replay.md) shows how to run a
+timestamped key, button, encoder and MIDI sequence through the native emulator,
+with synchronized WAV audio, LCD frames and a provenance manifest under `build/`.
+It works without hardware on Linux/macOS; its audio captures the DAC output after
+MASTER and the metronome, and its manifest records the emulator's delivery timing.
+
 ## If the FM-1 does not start
 
 If an update is interrupted and the FM-1 stays black, check whether a computer sees it as a USB device named

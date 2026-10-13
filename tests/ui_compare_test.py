@@ -57,6 +57,81 @@ class ComparisonTest(unittest.TestCase):
         self.assertTrue((self.out / result["sheets"][0]).is_file())
         self.assertTrue((self.out / "summary.json").is_file())
 
+    def write_replay(self, directory):
+        file = directory / "frame-0000.ppm"
+        self.image.save(file)
+        manifest = {
+            "schema": 1, "kind": "interaction-replay", "scenario_schema": 1,
+            "scenario_sha256": "scenario-fixture", "initial": {"state": "factory", "seed": 1},
+            "timing": {"sample_rate": 44100, "ctl_frames": 32, "dma_half_frames": 128},
+            "provenance": {"revision": "fixture", "adapter": "tools/replay_native.c",
+                           "binary_sha256": "binary-fixture", "inputs": {"source": "fixture"},
+                           "features": {"fm4": 0, "icons": 1, "slice": 1, "cdc": 1,
+                                        "flash": 1, "ota": 0, "uac": 0, "uart": 0}},
+            "screen": {"width": 240, "height": 240, "source": "real firmware lcd_fill/lcd_blit",
+                       "format": "RGB888 PPM from panel-order RGB565",
+                       "frames": [{"requested_sample": 129, "order": 2, "file": file.name,
+                                   "sha256": compare.sha256(file)}]},
+        }
+        (directory / "manifest.json").write_text(json.dumps(manifest))
+        return manifest
+
+    def test_replay_frames_pair_by_requested_sample_and_order(self):
+        self.write_replay(self.before)
+        self.write_replay(self.after)
+        result = self.run_compare()
+        self.assertEqual(result["status"], "identical")
+        self.assertEqual(result["scenes"][0]["name"], "sample-00000129-order-0002")
+        self.write(self.after, self.image)
+        self.assertEqual(self.run_compare()["status"], "invalid")
+
+    def test_replay_workload_and_timing_must_match(self):
+        self.write_replay(self.before)
+        for field, value in (("scenario_sha256", "other"), ("initial", {"seed": 2}),
+                             ("timing", {"sample_rate": 48000})):
+            data = self.write_replay(self.after)
+            data[field] = value
+            (self.after / "manifest.json").write_text(json.dumps(data))
+            self.assertEqual(self.run_compare()["status"], "invalid")
+
+    def test_replay_compiled_capabilities_must_all_match(self):
+        baseline = self.write_replay(self.before)
+        for feature in ("fm4", "slice", "icons", "cdc", "flash", "ota", "uac", "uart"):
+            with self.subTest(feature=feature):
+                data = self.write_replay(self.after)
+                data["provenance"]["features"][feature] = 1 - baseline["provenance"]["features"][feature]
+                (self.after / "manifest.json").write_text(json.dumps(data))
+                result = self.run_compare()
+                self.assertEqual(result["status"], "invalid")
+                self.assertTrue(any("incompatible render setting" in e for e in result["errors"]))
+        for mutation in ("missing", "boolean", "range"):
+            data = self.write_replay(self.after)
+            if mutation == "missing":
+                del data["provenance"]["features"]["cdc"]
+            else:
+                data["provenance"]["features"]["uart"] = True if mutation == "boolean" else 2
+            (self.after / "manifest.json").write_text(json.dumps(data))
+            self.assertEqual(self.run_compare()["status"], "invalid", mutation)
+
+    def test_replay_paths_hashes_and_adapter_provenance_are_validated(self):
+        self.write_replay(self.before)
+        for mutation in ("path", "hash", "adapter", "features", "duplicate", "sample"):
+            data = self.write_replay(self.after)
+            if mutation == "path":
+                data["screen"]["frames"][0]["file"] = "../escape.ppm"
+            elif mutation == "hash":
+                data["screen"]["frames"][0]["sha256"] = "wrong"
+            elif mutation == "adapter":
+                data["provenance"]["adapter"] = "other.c"
+            elif mutation == "features":
+                data["provenance"]["features"]["fm4"] = True
+            elif mutation == "duplicate":
+                data["screen"]["frames"] *= 2
+            else:
+                data["screen"]["frames"][0]["requested_sample"] = True
+            (self.after / "manifest.json").write_text(json.dumps(data))
+            self.assertEqual(self.run_compare()["status"], "invalid", mutation)
+
     def test_provenance_includes_nested_pixel_font_inputs(self):
         inputs = ("tools/gen_bitmap_font.py", "assets/fonts/Control.ttf",
                   "assets/fonts/m8stealth/source.woff2", "assets/fonts/m8stealth/reference.bmp",
