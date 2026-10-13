@@ -130,6 +130,8 @@ therefore produces the same release archive even when local file metadata change
 Each run uploads available diagnostics with `if: always()`, including failures:
 setup/build/test/reproduction logs, provenance, target ELF/map/disassembly,
 loader ELF/disassembly, UI PNGs, host WAVs and selected FM6/reverb examples.
+The host stress matrix retains its scenario inputs, JSON reports, replay logs and
+raw PCM/WAVs under `build/stress/` in the same diagnostics artifact, including failures.
 Setup failures may have only checkout details; the complete Actions step logs
 remain on the run page. A canceled job can upload available diagnostics while
 its runner remains alive; a killed runner cannot guarantee an upload.

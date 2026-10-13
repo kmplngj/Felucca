@@ -204,6 +204,14 @@ The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_e
 `tests/cpu_baseline_<os>_<arch>_<compiler>_<version>_<build-id>[_os].txt`, skipped with a reason
 when absent or when any counter is unavailable. See [docs/performance.md](docs/performance.md).
 
+### Host stress matrix
+
+For reproducible host stress workloads, run `python3 tests/stress_matrix.py` after
+a fresh build. The [stress replay guide](tests/stress_matrix.md) describes the five
+data-driven scenarios, exact repeat checks and retained WAV/JSON evidence under
+`build/stress/`. This first increment uses direct host musical input; emulator/device
+adapters and instruction counts remain follow-ups. The full host runner includes it.
+
 ### Emulator partition regression
 
 With Node and generated assets, the runner rebuilds the real browser bridge natively;

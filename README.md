@@ -81,6 +81,9 @@ with synchronized WAV audio, LCD frames and a provenance manifest under `build/`
 It works without hardware on Linux/macOS; its audio captures the DAC output after
 MASTER and the metronome, and its manifest records the emulator's delivery timing.
 
+The [host stress matrix](tests/stress_matrix.md) replays fixed voice-load, effect and
+engine-switch workloads and retains exact PCM, WAVs and health results without an FM-1.
+
 ## Support and contributing
 
 Please report what you find in [Issues](https://github.com/hugelton/Felucca/issues) (reproducible bugs, one per issue). Ideas and
