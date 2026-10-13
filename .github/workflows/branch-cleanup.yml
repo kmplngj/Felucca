@@ -7,8 +7,6 @@ on:
       - tools/branch_cleanup.py
       - tests/branch_cleanup_test.py
       - .github/workflows/branch-cleanup.yml
-  push:
-    branches: [main]
   schedule:
     - cron: '23 4 * * 1'
   workflow_dispatch:
@@ -21,7 +19,7 @@ on:
 permissions: {}
 
 concurrency:
-  # Read-only audits must never displace a pending main/scheduled deletion.
+  # Read-only audits must never displace a pending scheduled/manual deletion.
   # The latest deletion run sweeps all branches, so coalescing deletion events
   # still covers every merged head; audits have separate queues per ref.
   group: >-
@@ -58,7 +56,7 @@ jobs:
           if-no-files-found: warn
           path: build/branch-cleanup/audit.json
   cleanup:
-    if: github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply)
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
