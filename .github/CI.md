@@ -8,7 +8,10 @@ Build jobs have `contents: read`, checkout does not retain credentials, Actions
 are pinned to commit SHAs, jobs time out after 60 minutes, and superseded PR runs
 are canceled. Fork PRs use `pull_request`; there is no `pull_request_target` job.
 Repository Actions policy may require maintainer approval for first-time fork
-contributors. This change does not alter branch protection or repository settings.
+contributors. These build/release workflows do not alter branch protection or
+repository settings. The separate [merged branch cleanup](BRANCHES.md) uses
+contents write permission only for its scheduled/manual maintenance job;
+GitHub's native automatic deletion handles future PR merges.
 
 ## Change-based validation
 

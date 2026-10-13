@@ -41,4 +41,8 @@ the PR template includes a place for it. Explain when hardware testing is unnece
 
 By contributing you agree that your contribution is licensed under GPL-3.0-only.
 
+This fork automatically deletes merged PR branches. The
+[branch cleanup guide](.github/BRANCHES.md) covers the weekly sweep, preserved
+branches, manual audits and restoration.
+
 The web editor and installer live in [Felucca-WebApp](https://github.com/hugelton/Felucca-WebApp).
