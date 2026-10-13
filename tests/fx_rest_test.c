@@ -93,6 +93,7 @@ static void trajectory(uint32_t model, uint32_t feedback, uint32_t sends, uint32
         if (b >= 24u * sec)
             song.g[G_RTYPE] = (int16_t)((model + (b - 24u * sec) / (sec / 3u)) % 3u);
         pf.ew = pf.ew1 = b >= 25u * sec && b < 25u * sec + 12u ? 32768 : 0;
+        pf.rw = pf.rw1 = pf.ew1;
         for (i = 0; i < CTL; i++) {
             int32_t x = amp == 1 || amp == 4 ? ((i & 1u) ? -amp : amp) : noise(amp);
             c[i] = sends & 1u ? x : 0;
@@ -100,7 +101,7 @@ static void trajectory(uint32_t model, uint32_t feedback, uint32_t sends, uint32
             r[i] = sends & 4u ? x : 0;
             dry[i] = x;
         }
-        /* Actual ECHO THROW contribution arrives after ordinary track sends. */
+        /* Actual REV/ECHO THROW contributions arrive after ordinary track sends. */
         if (pf.ew1)
             perf_throw(&trk[0], dry, d, r, CTL);
         fx_buses(c, d, r, w, CTL);

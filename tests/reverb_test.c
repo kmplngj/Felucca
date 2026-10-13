@@ -20,6 +20,8 @@
  * 7. cost: host instructions per sample of the reverb alone (rev_room, rev_spring, rev_hall): SPRING and HALL at
  *    most ROOM + 30 %; and of the whole bus stage (fx_buses), with the device estimate (1.7 % per 100,
  *    drum_test's ratio).
+ * SPRING at rest (#39): skipped while silent (spring_rest), bit for bit as run on every block: bursts and silences
+ *    through fx_buses, the wet bus and every state against a copy whose gate never opens.
  * HALL (1.2): SPRING (and ROOM <-> SPRING) bit for bit as before HALL (a hash of the old firmware's renders);
  *    RT60 against SIZE; DAMP: the decay at 500 Hz and 3 kHz; the corners (as SPRING's) and 27 SIZE x DAMP x
  *    level runs end in exact silence (left and side); no offset after a loud burst; level against ROOM;
@@ -325,6 +327,160 @@ static void test_spring_identical(void)
     xs = x0;
     snprintf(what, sizeof what, "SPRING (and ROOM <-> SPRING) bit for bit as before HALL: 20 s of sends, hash 0x%08x", h);
     check(what, h == 0xdd93d2f8u);
+    song.g[G_RTYPE] = 0;
+    rev_clear();
+    fx.rtype = 0;
+}
+
+/* ------------------------------------------------------ SPRING at rest --- */
+/* #39: SPRING skipped while its line, allpasses and states rest and the send is silent (spring_rest) sounds bit for
+ * bit as SPRING run on every block. Two copies of the buses' whole state (fx, hl, the reverb's, delay's and chorus'
+ * buffers) through fx_buses on the same sends: the one as the firmware runs it, the other with fx.sp_live held
+ * non-zero before each block (the gate never opens: rev_spring every block). Bursts of noise (the reverb alone, or
+ * with the chorus and the delay; 1 .. 90000 peak, so the loop's low-pass also comes to rest at -1) between silences
+ * of up to 2.5 s, blocks of 1 .. CTL samples, every FDBK, SIZE and DAMP changing while it rests (SIZE's glide);
+ * the wet bus and every state the same after each block, and the gate opened on most silent blocks. */
+static struct {
+    __typeof__(fx) f;
+    __typeof__(hl) h;
+    int16_t comb[sizeof rev_comb / 2u], dly[DLY_LEN], cho[CHO_LEN];
+    __typeof__(rev_u) u;
+} sr_st[2];
+static void sr_save(int k)
+{
+    memcpy(&sr_st[k].f, &fx, sizeof fx), memcpy(&sr_st[k].h, &hl, sizeof hl), memcpy(&sr_st[k].u, &rev_u, sizeof rev_u);
+    memcpy(sr_st[k].comb, rev_comb, sizeof rev_comb), memcpy(sr_st[k].dly, dly_buf, sizeof dly_buf);
+    memcpy(sr_st[k].cho, cho_buf, sizeof cho_buf);
+}
+static void sr_load(int k)
+{
+    memcpy(&fx, &sr_st[k].f, sizeof fx), memcpy(&hl, &sr_st[k].h, sizeof hl), memcpy(&rev_u, &sr_st[k].u, sizeof rev_u);
+    memcpy(rev_comb, sr_st[k].comb, sizeof rev_comb), memcpy(dly_buf, sr_st[k].dly, sizeof dly_buf);
+    memcpy(cho_buf, sr_st[k].cho, sizeof cho_buf);
+}
+static void test_spring_rest(void)
+{
+    static const int32_t AMP[6] = {1, 3, 40, 4000, 30000, 90000};
+    static const int16_t FB[4] = {0, 60, 120, 127};
+    static int32_t c[CTL], d[CTL], r[CTL], wa[CTL], wb[CTL];
+    uint32_t cfg, x0 = xs, rest_lp = 0;
+    char what[200];
+    xs = 0x39u;
+    for (cfg = 0; cfg < 8u; cfg++) {
+        uint32_t t = 0, len = 0, sil = 0, quiet = 0, gated = 0, diff = 0, first = 0, blocks = 0, buses = 0;
+        int32_t amp = 0;
+        host_tracks_init();
+        memset(&fx, 0, sizeof fx);
+        memset(dly_buf, 0, sizeof dly_buf);
+        memset(cho_buf, 0, sizeof cho_buf);
+        rev_clear();
+        song.g[G_RTYPE] = 1;                                    /* (fx.rtype 0: the first block switches to SPRING) */
+        song.g[G_DFDBK] = FB[cfg & 3u];
+        song.g[G_RSIZE] = (int16_t)(cfg * 127u / 7u);
+        song.g[G_RDAMP] = (int16_t)(cfg & 1u ? 127 : cfg * 18u);
+        sr_save(0), sr_save(1);
+        while (t < 15u * FS) {
+            uint32_t n = 1u + (uint32_t)noise(1 << 30) % CTL, i, k, z = 1;
+            int sg;
+            if (!len && !sil) {                                 /* the next burst and the silence after it */
+                len = 1u + (uint32_t)noise(1 << 30) % 4000u;
+                sil = (uint32_t)noise(1 << 30) % (5u * FS / 2u);
+                amp = AMP[(uint32_t)noise(1 << 30) % 6u];
+                buses = (uint32_t)noise(1 << 30) % 4u;          /* 0: the reverb alone; 1, 2, 3: chorus, delay, both */
+            }
+            if (!len && (uint32_t)noise(1 << 30) % 64u == 0u) {   /* resting: SIZE and DAMP change */
+                song.g[G_RSIZE] = (int16_t)((uint32_t)noise(1 << 30) % 128u);
+                if ((uint32_t)noise(1 << 30) % 2u)
+                    song.g[G_RDAMP] = (int16_t)((uint32_t)noise(1 << 30) % 128u);
+            }
+            for (i = 0; i < n; i++) {
+                int32_t on = len > 0;
+                len -= on, sil -= !on && sil;
+                r[i] = on ? noise(amp) : 0;
+                c[i] = on && (buses & 1u) ? noise(amp) : 0;
+                d[i] = on && (buses & 2u) ? noise(amp) : 0;
+                z &= !r[i];
+            }
+            sr_load(0);
+            sg = fx.rtype == 1u && z && !fx.sp_live && !fx.sp_hp && (fx.sp_lp == 0 || fx.sp_lp == -1);
+            rest_lp += sg && fx.sp_lp == -1;
+            fx_buses(c, d, r, wa, n);
+            sr_save(0);
+            sr_load(1);
+            fx.sp_live = SP_LEN;
+            fx_buses(c, d, r, wb, n);
+            sr_save(1);
+            k = memcmp(wa, wb, n * sizeof wa[0]) || memcmp(sr_st[0].comb, sr_st[1].comb, sizeof rev_comb) ||
+                memcmp(&sr_st[0].u, &sr_st[1].u, sizeof rev_u) || memcmp(&sr_st[0].h, &sr_st[1].h, sizeof hl) ||
+                memcmp(sr_st[0].dly, sr_st[1].dly, sizeof dly_buf) || memcmp(sr_st[0].cho, sr_st[1].cho, sizeof cho_buf);
+            sr_st[1].f.sp_live = sr_st[0].f.sp_live;
+            k |= memcmp(&sr_st[0].f, &sr_st[1].f, sizeof fx) != 0;
+            if (k && !diff)
+                first = blocks;
+            diff += k;
+            quiet += z;
+            gated += (uint32_t)sg;
+            blocks++;
+            t += n;
+        }
+        snprintf(what, sizeof what, "SPRING at rest: FDBK %d, 15 s of bursts, %u blocks, gated %u of %u silent, differ %u (first %u)",
+                 FB[cfg & 3u], blocks, gated, quiet, diff, first);
+        check(what, !diff && gated * 2u > quiet);
+    }
+    snprintf(what, sizeof what, "  the loop's low-pass resting at -1 gated too (%u blocks)", rest_lp);
+    check(what, rest_lp > 0);
+    {                                                   /* (a low-pass that would still move, +1, or feed the loop, */
+        int32_t ok = 1, v;                              /* -2: SPRING runs) */
+        memset(r, 0, sizeof r);
+        rev_clear();
+        fx.rtype = 1;
+        for (v = -3; v <= 2; v++) {
+            fx.sp_lp = v;
+            ok &= spring_rest(r, CTL) == (v == 0 || v == -1);
+        }
+        check("  the gate shut for any other low-pass at rest (-3, -2, 1, 2)", ok);
+    }
+    {                                                   /* Residual low-cut error and wrapped indices still advance
+                                                         * exactly as the regular SPRING renderer. */
+        uint32_t lp, rem, block, ok = 1;
+        static const int32_t remainders[] = {0, 1, 63};
+        static const uint32_t lengths[] = {1, CTL - 1u, CTL};
+        for (lp = 0; lp < 2; lp++)
+            for (rem = 0; rem < 3; rem++) {
+                rev_clear();
+                fx.rtype = 1;
+                fx.sp_lp = -(int32_t)lp;
+                fx.sp_he = remainders[rem];
+                fx.sp_w = UINT16_MAX - 1u;
+                fx.sp_ph = UINT32_MAX - LFO_INC[24];
+                sr_save(0), sr_save(1);
+                for (block = 0; block < 12; block++) {
+                    uint32_t n = lengths[block % 3];
+                    song.g[G_RSIZE] = block & 1u ? 127 : 0;
+                    song.g[G_RDAMP] = block & 2u ? 127 : 0;
+                    memset(wa, 0, sizeof wa), memset(wb, 0, sizeof wb);
+                    sr_load(0);
+                    ok &= spring_rest(r, n);
+                    sr_save(0);
+                    sr_load(1);
+                    rev_spring(r, wb, n);
+                    sr_save(1);
+                    ok &= !memcmp(wa, wb, n * sizeof wa[0]) &&
+                          !memcmp(&sr_st[0], &sr_st[1], sizeof sr_st[0]);
+                }
+            }
+        check("  0/-1 fixed points, low-cut remainder, wrap and SIZE/DAMP changes match every state", ok);
+        rev_clear();
+        fx.sp_hp = 1;
+        check("  a nonzero low cut prevents SPRING rest", !spring_rest(r, CTL));
+        fx.sp_hp = 0;
+        r[CTL - 1u] = 1;
+        check("  a tiny input at the last sample prevents SPRING rest", !spring_rest(r, CTL));
+        r[CTL - 1u] = 0;
+        fx.sp_live = 1;
+        check("  unexpired line liveness prevents SPRING rest", !spring_rest(r, CTL));
+    }
+    xs = x0;
     song.g[G_RTYPE] = 0;
     rev_clear();
     fx.rtype = 0;
@@ -973,6 +1129,7 @@ int main(int argc, char **argv)
     test_room_identical();
     test_spring();
     test_spring_identical();
+    test_spring_rest();
     test_hall();
     test_clear();
     test_switch();

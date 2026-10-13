@@ -25,6 +25,7 @@ static struct {
                                              * length (Q8, glides) */
     uint32_t sp_ph;                      /* .. the output tap's wobble */
     uint32_t cho_live, dly_live;         /* samples until cho_buf / dly_buf hold only zeros (0: they do; fx_buses) */
+    uint16_t sp_live;                    /* .. until SPRING's line and allpasses hold only zeros (spring_rest) */
 } fx;
 
 /* SPRING (G_RTYPE 1): one spring of a spring tank, mono like the other buses, in the ROOM's own buffers (no
@@ -393,8 +394,8 @@ static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t
  * write zeros and add nothing; it is skipped and only its indices and phases move on as the block would move them
  * (bit for bit the same sound when a send comes). Idle, that is most of the buses' cost. The chorus, the delay and
  * HALL; never ROOM (its combs floor: a -1 circulates for ever) and the delay while its low-pass, floored too, rests
- * at -1 with FDBK feeding it back; SPRING runs as before. zeros32 and hall_rest noinline: their loops stay out of
- * the audio ISR's (inlined, its layout and target budget as before) */
+ * at -1 with FDBK feeding it back; SPRING too. zeros32, hall_rest, spring_rest and spring_live noinline: their
+ * loops stay out of the audio ISR's (inlined, its layout and target budget as before) */
 static __attribute__((noinline)) int zeros32(const int32_t *x, uint32_t n)    /* a send's block all 0? */
 {
     uint32_t i;
@@ -543,6 +544,34 @@ static __attribute__((noinline)) int hall_rest(const int32_t *rev_in, uint32_t n
     return 1;
 }
 
+/* SPRING at rest (as hall_rest): its line and allpasses all 0 (fx.sp_live), the low cut 0, the loop's low-pass
+ * 0 or -1 (floored, it rests there: mulq15(1, kl) is 0, and -1 * g, rounded towards zero, feeds the loop nothing),
+ * the send silent: the block's write index, SIZE's glide and the wobble move on as rev_spring moves them. 0: SPRING
+ * must run. (The low cut's remainder sp_he need not be 0: on silence it stays as it is and moves nothing) */
+static __attribute__((noinline)) int spring_rest(const int32_t *rev_in, uint32_t n)
+{
+    int32_t len;
+    if (fx.sp_live || fx.sp_hp || (uint32_t)fx.sp_lp + 1u > 1u || !zeros32(rev_in, n))
+        return 0;
+    len = (int32_t)(1323u + (((uint32_t)song.g[G_RSIZE] * 1323u) >> 7)) << 8;   /* (as rev_spring) */
+    if (!fx.sp_size)
+        fx.sp_size = len;
+    fx.sp_size += clamp(len - fx.sp_size, -256, 256);
+    fx.sp_ph += 2u * LFO_INC[24];
+    fx.sp_w = (uint16_t)(fx.sp_w + n);
+    return 1;
+}
+/* after rev_spring ran: the block wrote only zeros into the line and left the allpasses at 0? fx.sp_live counts down
+ * (written over with zeros once: all 0), else it starts again */
+static __attribute__((noinline)) void spring_live(uint32_t n)
+{
+    uint32_t a = (uint32_t)(fx.sp_w - n) & SP_MASK, m = SP_LEN - a < n ? SP_LEN - a : n, k;
+    int32_t z = !zeros16(rev_comb + a, m) || !zeros16(rev_comb, n - m);
+    for (k = 0; k < 4u * (SP_N + 1u) && !z; k++)
+        z = rev_u.sp[k];
+    fx.sp_live = (uint16_t)(z ? SP_LEN : fx.sp_live > n ? fx.sp_live - n : 0u);
+}
+
 /* the reverb's buffers and states to silence (the model changed) */
 static void rev_clear(void)
 {
@@ -558,6 +587,7 @@ static void rev_clear(void)
     fx.sp_lp = fx.sp_hp = fx.sp_he = 0;
     hl.x = hl.m = hl.s = hl.hp = hl.he = 0;
     hl.live = 0;
+    fx.sp_live = 0;
 }
 
 static int32_t part_buf[CTL];                            /* a part's block (mix_part); the fade of a model change */
@@ -642,9 +672,12 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
     else if (rt == 2) {
         if (!hall_rest(rev_in, n))
             rev_hall(rev_in, wet, n);
-    } else if (rt)
-        rev_spring(rev_in, wet, n);
-    else
+    } else if (rt) {
+        if (!spring_rest(rev_in, n)) {
+            rev_spring(rev_in, wet, n);
+            spring_live(n);
+        }
+    } else
         rev_room(rev_in, wet, n);
 }
 
