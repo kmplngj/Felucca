@@ -1338,6 +1338,10 @@ static void graph_browse(void)
             panel_note("NO FAVORITES", "LIST ALL TO ADD SOUNDS", 0);
             return;
         }
+        if (list_mode() == LIST_RECENT) {
+            panel_note("NO RECENT SOUNDS", "LOAD ONE TO SEE IT HERE", 0);
+            return;
+        }
         str_cpy(b, "NO ", sizeof b);                    /* a category with no sound (OTHER: tag your own) */
         str_cpy(b + 3, list_name(list_mode()), sizeof b - 3);
         str_cpy(b + str_len(b), " SOUNDS", sizeof b - str_len(b));
