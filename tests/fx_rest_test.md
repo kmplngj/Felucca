@@ -7,8 +7,8 @@ It requires generated headers from `./build.sh`, as the other DSP tests do.
 
 The chorus, delay and HALL rest paths come from PR #41. The suite invokes
 `python3 tests/fx_rest_test.py --require-rest`, so removal of the optimization
-fails instead of silently skipping. SPRING still runs normally; its skip
-assertion becomes active when PR #172 (#39) is present. Direct invocation
+fails instead of silently skipping. SPRING's rest path comes from PR #172 (#39),
+and its skip assertion is active in this branch. Direct invocation
 without `--require-rest` can still inspect older sources and explicitly skips
 when all rest paths are absent.
 
@@ -48,7 +48,8 @@ its initial SPRING model when PR #172 is present. Forced-off runs must report
 zero skips. ROOM has no skip assertion: its floored comb feedback can retain
 an offset. Counters assert branch execution, not a timing or CPU improvement.
 
-`--mutation-check` deliberately changes the HALL rest phase advance in another
-temporary copy and requires an audio/state mismatch. This validates that
-`hall_rest` drifting from `rev_hall` is caught. The check is optional because
-it adds another pair of complete renders.
+`--mutation-check` deliberately changes the HALL rest phase advance and, when
+SPRING is present, its rest write-index advance in separate temporary copies.
+Each must produce an audio/state mismatch. This validates that skipped state
+advances drifting from the regular render paths are caught. The check is
+optional because each mutation adds another pair of complete renders.

@@ -92,7 +92,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fx-source", type=Path, default=ROOT / "firmware/src/fx.c")
     parser.add_argument("--require-rest", action="store_true", help="fail instead of skip if dependency is absent")
-    parser.add_argument("--mutation-check", action="store_true", help="verify that a broken HALL drift is detected")
+    parser.add_argument("--mutation-check", action="store_true", help="verify broken HALL/SPRING rest advances are detected")
     parser.add_argument("--cc", default=os.environ.get("CC", "cc"))
     args = parser.parse_args()
     raw = args.fx_source.read_text()
@@ -116,17 +116,22 @@ def main():
     if not spring:
         print("FX rest: SPRING skip assertion pending #39/#172 (SPRING sound/state comparison ran)")
     if args.mutation_check:
-        broken = replace_once(source, "fx_test_skips[2]++; hl.ph += HL_LFO;",
-                               "fx_test_skips[2]++; hl.ph += HL_LFO - 1u;")
-        binary = build(broken, out / "mutation", cc, ["-O2"])
-        try:
-            compare(binary, spring)
-        except ValueError as error:
-            if "audio/state differs" not in str(error):
-                raise
-            print("FX rest: deliberate hall_rest drift mutation detected")
-        else:
-            raise ValueError("deliberately broken hall_rest passed")
+        mutations = [("HALL", "fx_test_skips[2]++; hl.ph += HL_LFO;",
+                      "fx_test_skips[2]++; hl.ph += HL_LFO - 1u;")]
+        if spring:
+            mutations.append(("SPRING", "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n);",
+                              "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n - 1u);"))
+        for name, old, new in mutations:
+            broken = replace_once(source, old, new)
+            binary = build(broken, out / ("mutation_" + name.lower()), cc, ["-O2"])
+            try:
+                compare(binary, spring)
+            except ValueError as error:
+                if "audio/state differs" not in str(error):
+                    raise
+                print(f"FX rest: deliberate {name} rest advance mutation detected")
+            else:
+                raise ValueError(f"deliberately broken {name} rest advance passed")
     return 0
 
 
