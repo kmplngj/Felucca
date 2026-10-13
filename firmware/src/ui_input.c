@@ -64,14 +64,39 @@ static int mom_down(void)                              /* LFO held where its tur
 {
     return ((fm1_in.buttons >> panel.btn[B_LFO]) & 1u) && !ui.menu && !ui.confirm && !name_on() && !ui.layer && !ui.uboot;
 }
-/* KNOB k turned s with LFO held: 1 = taken (a momentary value, or refused full), 0 = not a momentary value (the turn
- * goes as ever: the column picks, steps, acts) */
-static int mom_turn(uint32_t k, int32_t s)
+/* a page whose knobs can be momentary (mom_turn's page tests; a knob or two more there refuse) */
+static int mom_page(void)
+{
+    const page_t *pg = cur_page();
+    if (ui.home || (pg->scope == SC_TRK && !lock_held()))
+        return 1;
+    return !(act_cols() || lock_held() || !(pg->scope == SC_TRACK || pg->scope == SC_ENGINE || pg->scope == SC_GLOBAL) ||
+             pg->graph == GR_EVENTS || pg->graph == GR_SONG || pg->graph == GR_BROWSE || pg->graph == GR_USER ||
+             pg->graph == GR_PATS);
+}
+/* the header's persistent status while LFO is held where it is momentary (ui_draw.c mom_head): MOM_ST_READY, MOM_ST_KEPT
+ * or MOM_ST_N + the values held; 0 = none. Main loop state only, once per ui_input */
+static const param_desc_t *mom_target(uint32_t k, int16_t **vpp);
+static uint8_t mom_status(void)
+{
+    uint32_t k = 4u;
+    int16_t *vp;
+    if (mom_down())                                    /* (a page none of whose knobs is momentary: FM6's operator pages) */
+        for (k = 0; k < 4u && !mom_target(k, &vp); k++)
+            ;
+    if (k == 4u) {
+        mom.kept = 0;                                  /* (let go, a menu, a page of no momentary: no stale KEPT) */
+        return 0;
+    }
+    return mom.n ? (uint8_t)(MOM_ST_N + mom.n) : mom.kept ? MOM_ST_KEPT : MOM_ST_READY;
+}
+/* KNOB k's momentary value here (its desc; *vpp where it is), 0: none (the turn goes as ever). No side effect */
+static const param_desc_t *mom_target(uint32_t k, int16_t **vpp)
 {
     const page_t *pg = cur_page();
     const param_desc_t *d;
     int16_t *vp = 0;
-    uint32_t i, g;
+    uint32_t g;
     const track_t *t = ui.home ? home_trk(k) : TSEL;     /* (HOME LEVELS: KNOB k is track k's) */
     if (ui.home) {
         d = home_param(k, &vp);
@@ -80,9 +105,7 @@ static int mom_turn(uint32_t k, int32_t s)
         vp = &TSEL->p[MIX_ID[k & 3u]];
         d = &TP[MIX_ID[k & 3u]];
     } else {
-        if (act_cols() || lock_held() || !(pg->scope == SC_TRACK || pg->scope == SC_ENGINE || pg->scope == SC_GLOBAL) ||
-            pg->graph == GR_EVENTS || pg->graph == GR_SONG || pg->graph == GR_BROWSE || pg->graph == GR_USER ||
-            pg->graph == GR_PATS || (pg->graph == GR_SLICES && k < 2u) || (pg->graph == GR_MOD && k == 0u))
+        if (!mom_page() || (pg->graph == GR_SLICES && k < 2u) || (pg->graph == GR_MOD && k == 0u))
             return 0;
         d = page_desc(pg, k, &vp);
     }
@@ -90,6 +113,18 @@ static int mom_turn(uint32_t k, int32_t s)
     if (!d || !vp || d->max == d->min ||
         !((vp >= t->p && vp < t->p + P_COUNT) || (g <= G_CDEPTH && g != G_CLOCK) || g == G_RTYPE))
         return 0;                                      /* (only the values a sound and the FX are: no CLK, no actions) */
+    *vpp = vp;
+    return d;
+}
+/* KNOB k turned s with LFO held: 1 = taken (a momentary value, or refused full), 0 = not a momentary value (the turn
+ * goes as ever: the column picks, steps, acts) */
+static int mom_turn(uint32_t k, int32_t s)
+{
+    int16_t *vp = 0;
+    const param_desc_t *d = mom_target(k, &vp);
+    uint32_t i;
+    if (!d)
+        return 0;
     for (i = 0; i < mom.n && mom.vp[i] != vp; i++)
         ;
     if (i == mom.n) {                                  /* the first turn of this value: what it was */
@@ -100,6 +135,7 @@ static int mom_turn(uint32_t k, int32_t s)
         mom.vp[i] = vp;
         mom.v[i] = *vp;
         mom.n++;
+        mom.kept = 0;
         if (i == 0u)
             ui_message("MOMENTARY  [OCT+] KEEP");
     }
@@ -1280,6 +1316,47 @@ static int layer_allowed(void);
 static uint32_t ly_bit(uint32_t l);
 static void layer_lock_input(uint32_t pressed);
 
+/* #176: previous page. A family button tapped with OCT- down at any time while it was (either press order, OCT- let go
+ * before it or not): the shown family's previous page (open_family rev), OCT- consumed. Decided when the button is
+ * let go (page_tap, SAVE's tap), from these edges alone. On an action page OCT- also means back / HOME when let go:
+ * a reverse swallows that release (oct_eat), so it works there while OCT- is still down at the tap (let go first, the
+ * release already acted). oct_ov: buttons (panel ids) seen down with OCT-; oct_bad: with
+ * OCT+ too (the UPDATE MODE chord, a keep): no reverse. pg_rev: the ones let go this pass that count. oct_pre: the
+ * octave before the last OCT- press and the one it set (oct_set), to put back when it is consumed; notes already
+ * played keep their pitch (the octave is read at the key's press) */
+static uint32_t oct_ov, oct_bad, pg_rev;
+static int8_t oct_pre, oct_set;
+static uint8_t oct_pre_ok, oct_eat;                     /* oct_eat: the OCT- let go next acts as no back / HOME */
+
+static void oct_overlap(uint32_t pressed)
+{
+    uint32_t dn = 1u << panel.btn[B_OCTDN], up = 1u << panel.btn[B_OCTUP], all = fm1_in.buttons | pressed;
+    if (all & up)
+        oct_bad |= all & ~up;
+    if (all & dn)
+        oct_ov |= all & ~(dn | up);
+    pg_rev = oct_ov & ~oct_bad & ~fm1_in.buttons;       /* (pressed and let go in one pass: in `all`, not in buttons) */
+    oct_ov &= fm1_in.buttons;
+    oct_bad &= fm1_in.buttons;
+    if (!(fm1_in.buttons & dn) && !oct_ov && !pg_rev)   /* (OCT- up over no button: a plain octave step, no gesture) */
+        oct_pre_ok = 0;
+}
+
+/* the tap of button b is a reverse: OCT- over it, on the family shown, in no context that owns OCT- (MIDI LEARN, a
+ * momentary edit; dialogs, the menu and SET layers never get here) */
+static uint32_t page_rev(uint32_t b, uint32_t fam)
+{
+    if (!((pg_rev >> panel.btn[b]) & 1u) || ui.home || cur_page()->fam != fam || ui.ml.on || mom.n ||
+        layer_set_open())
+        return 0;
+    pg_rev &= ~(1u << panel.btn[b]);
+    oct_eat |= act_cols() != 0u;
+    if (oct_pre_ok && song.octave == oct_set)           /* the octave press was the modifier: put back */
+        song.octave = oct_pre;
+    oct_pre_ok = 0;
+    return 1;
+}
+
 /* a page button let go (they act on release; a layer's own button: layer_gesture). 1: it acted (EDIT on STEP, USER,
  * PROJECT, AUTOMATION) instead of opening a page */
 static int page_tap(uint32_t b)
@@ -1315,8 +1392,9 @@ static int page_tap(uint32_t b)
     }
     for (f = FAM_HOME + 1u; f < FAM_COUNT; f++)        /* (GLO SEQ SAVE ..: HOME is ui_input's, home_tap) */
         if (FAM_BTN[f] == b && b != B_HOME) {
-            open_family(f);
-            return 0;
+            uint32_t rev = page_rev(b, f);
+            open_family_dir(f, rev);
+            return (int)rev;                            /* (a reverse is no page tap a double tap could lock) */
         }
     return 0;
 }
@@ -1396,8 +1474,10 @@ static void ui_input(void)
     if (mom.n && ((pressed >> panel.btn[B_OCTUP]) & 1u)) {   /* .. OCT+ with LFO held: kept (no octave) */
         mom.n = 0;
         pressed &= ~(1u << panel.btn[B_OCTUP]);
+        mom.kept = 1;
         ui_message("KEPT");
     }
+    mom.st = mom_status();                              /* (the header's status: it redraws when this changes) */
     home = btn_hold(&ui.home_t0, B_HOME, now, 1);
     rec = btn_hold(&ui.rec_t0, B_REC, now, 0);          /* (a tap; held, the REC layer: ui_layer.c) */
     save = btn_hold(&ui.save_t0, B_SAVE, now, !ui.menu && !ui.confirm);   /* held: UNDO (ui.c undo_swap) */
@@ -1407,6 +1487,7 @@ static void ui_input(void)
         ui.rec_t0 |= 2u;                                /* (REC is its layer's button now: its tap is layer_tap's) */
     layer_oct_open(pressed);                            /* (OCT± with a SET layer's button down: it opens now) */
     oct = oct_taps(pressed, ui.menu || ui.confirm || act_cols() || name_on() || layer_set_open() || ui.ml.on);
+    oct_overlap(pressed);
     oct = layer_oct(pressed, oct);                      /* (a SET layer's OCT-: put back) */
     layer_masks();                                      /* seq.c: keys pressed with a layer's button are its own */
     lay = layer_held();
@@ -1501,7 +1582,7 @@ static void ui_input(void)
     else if (save == BT_HOLD)                                /* SAVE held: undo the last sound load */
         undo_swap();
     else if (save == BT_TAP && !ui.confirm)             /* SAVE acts on release (a hold is the undo) */
-        open_family(FAM_SAVE);
+        open_family_dir(FAM_SAVE, page_rev(B_SAVE, FAM_SAVE));
     if (ui.confirm) {                                   /* OCT- cancels, OCT+ does it; nothing else reacts */
         if (oct & 2u) {
             uint32_t kind = ui.confirm;
@@ -1586,12 +1667,19 @@ static void ui_input(void)
         case B_OCTDN:
         case B_OCTUP: {
             uint32_t both = (1u << panel.btn[B_OCTDN]) | (1u << panel.btn[B_OCTUP]);
+            uint32_t again = oct_pre_ok && b == B_OCTDN && oct_ov;   /* (OCT- again over the same held button) */
+            oct_pre_ok = 0;
             if (act_cols() || layer_set_open() || ui.ml.on)   /* action pages: enter / back (below); SET layers: OCT-; */
                 break;                                  /* MIDI LEARN: clear / done (below) */
-            if ((fm1_in.buttons & both) == both)
+            if ((fm1_in.buttons & both) == both) {
                 song.octave = 0;
-            else
+            } else {
+                if (!again)                             /* (the octave before the gesture's first OCT-) */
+                    oct_pre = song.octave;
                 song.octave += b == B_OCTDN ? (song.octave > -3 ? -1 : 0) : (song.octave < 3 ? 1 : 0);
+                oct_set = song.octave;
+                oct_pre_ok = b == B_OCTDN;
+            }
             break;
         }
         default:                                        /* page buttons (GLO SCL ENV LFO EDIT ARP): when let go */
@@ -1605,6 +1693,10 @@ static void ui_input(void)
     for (id = 0; b; id++, b >>= 1)
         if (b & 1u)
             page_tap(panel_btn_of(id));
+    if (oct_eat) {                                      /* (a reverse from an action page: OCT- was the modifier) */
+        oct &= ~1u;
+        oct_eat = (uint8_t)((fm1_in.buttons >> panel.btn[B_OCTDN]) & 1u);
+    }
     if (act_cols() && (oct & 2u)) {                     /* action pages: OCT+ does the picked action, */
         act_do();
     } else if (act_cols() && (oct & 1u)) {              /* OCT- drops it, or (none picked) goes HOME */
