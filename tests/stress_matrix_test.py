@@ -17,9 +17,14 @@ class StressContractTest(unittest.TestCase):
         self.assertTrue({"idle", "shared_eight", "voice_pressure", "active_effects", "engine_switch_tails"}
                         <= {s["name"] for s in validate(self.matrix)})
 
+    def test_tempo_uses_firmware_units_not_midi_data_range(self):
+        self.matrix["scenarios"][0]["events"] = [[0, "global", 0, "bpm", 180]]
+        validate(self.matrix)
+
     def test_reject_bad_timing_and_unbounded_work(self):
         for event in ([321, "on", 0, 60, 100], [352800, "on", 0, 60, 100],
                       [320, "on", 4, 60, 100], [320, "on", 0, 60, 0],
+                      [320, "on", 0, 60, 180],
                       [320, "param", 0, "unrecognized", 1], [320, "preset", 0, True, 0]):
             with self.subTest(event=event):
                 m = copy.deepcopy(self.matrix)

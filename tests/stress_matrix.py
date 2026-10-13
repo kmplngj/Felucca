@@ -55,13 +55,14 @@ def validate(matrix):
                 raise ValueError("unaligned event or unknown operation")
             previous = frame
             integer(part, 0, 3)
-            integer(b, 0, 127)
             if op in ("param", "global"):
+                integer(b, 0, 32767)  # Base parameter units; renderer enforces the descriptor range.
                 if a not in (TRACK_PARAMS if op == "param" else GLOBAL_PARAMS):
                     raise ValueError(f"unknown {op} parameter {a!r}")
                 if op == "global" and part != 0:
                     raise ValueError("global events use part 0")
             else:
+                integer(b, 0, 127)
                 integer(a, 0, 127)
                 if op == "on" and b == 0 or op == "off" and b != 0:
                     raise ValueError("on needs nonzero velocity; off uses zero")
