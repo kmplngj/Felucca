@@ -5041,6 +5041,71 @@ static int test_piano_roll_damage(void)
     return bad;
 }
 
+/* The current roll follows the playing bank, then holds the cursor's bank
+ * while editing. A changing pitch viewport also invalidates all graph pixels. */
+static int test_piano_roll_damage_follow(void)
+{
+    uint32_t i, frames_moving = 0, old_lo;
+    const uint32_t adjacent = (PR_CW + 1u) * PR_ROWS * PR_RH, full = 240u * H_GRAPH;
+    int bad = 0, ok = 1;
+    ui_power_on(); go_page(GR_ROLL);
+    ui_prefs = 0;
+    TSEL->p[P_SLEN] = 32;
+    for (i = 0; i < NSTEP; i++) {
+        step_clear(&TSEL->step[i]);
+        TSEL->step[i].time = ST_NOTE; TSEL->step[i].n = 1;
+        TSEL->step[i].note[0] = (uint8_t)(i < 16u ? 48u : 72u);
+    }
+    ui.cursor = 0; ui.bank = 0; song.playing = 1; TSEL->seq_idx = 14;
+    host_lcd_async = 1; host_dma_bad = 0;
+    proll.init = 0;
+    ui.force = 1; draw_graph(); ui.force = 0;
+    TSEL->seq_idx = 15; follow_poll(); ui.frame++;
+    pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+    TSEL->seq_idx = 16; follow_poll(); ui.frame++;
+    pr_damage_draw(); ok &= ui.bank == 1u && ui.cursor == 0u && pr_damage_compare(full);
+    /* Even an adjacent playhead needs full pixels on every animated pitch scroll. */
+    while (proll.moving && frames_moving < 32u) {
+        old_lo = proll.lo;
+        TSEL->seq_idx = TSEL->seq_idx == 30u ? 29u : TSEL->seq_idx + 1u;
+        ui.frame++; pr_damage_draw();
+        ok &= proll.lo != old_lo && pr_damage_compare(full);
+        frames_moving++;
+    }
+    ok &= frames_moving > 2u && !proll.moving;
+    TSEL->seq_idx++; ui.frame++; pr_damage_draw();
+    ok &= pr_damage_compare(adjacent);
+    /* Cursor touch returns to its bank, hiding this bank's playhead. */
+    follow_hold(); ui.frame++; pr_damage_draw();
+    ok &= ui.bank == 0u && ui.cursor == 0u && pr_damage_compare(full);
+    for (i = 0; proll.moving && i < 32u; i++) { ui.frame++; pr_damage_draw(); ok &= pr_damage_compare(full); }
+    ok &= !proll.moving;
+    TSEL->seq_idx = 30; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= follow.hold && ui.bank == 0u && pr_damage_compare(0);
+    fm1_ms += FOLLOW_MS; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= !follow.hold && ui.bank == 1u && pr_damage_compare(full);
+    for (i = 0; proll.moving && i < 32u; i++) { ui.frame++; pr_damage_draw(); ok &= pr_damage_compare(full); }
+    ok &= !proll.moving;
+    TSEL->seq_idx = 31; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= pr_damage_compare(adjacent);
+    TSEL->seq_idx = 0; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= ui.bank == 0u && ui.cursor == 0u && pr_damage_compare(full);
+    /* A complete lap also releases editing's hold before its timeout. */
+    follow_hold();
+    TSEL->seq_idx = 16; follow_poll();
+    ok &= follow.hold && ui.bank == 0u;
+    TSEL->seq_idx = 31; follow_poll();
+    TSEL->seq_idx = 0; follow_poll();
+    ok &= !follow.hold && follow.steps == 32u;
+    song.playing = 0; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= !follow.hold && pr_damage_compare(full);
+    ok &= !host_dma_bad;
+    host_lcd_async = 0;
+    bad += check("STEP damage: play-position bank follow, animated pitch scroll, cursor hold/timeout/lap and wrap keep full-redraw pixels and DMA ownership", ok);
+    ui_power_on();
+    return bad;
+}
+
 /* bug fixes, second round (UI) */
 static uint32_t accent_in(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
 {
@@ -10509,6 +10574,7 @@ int main(void)
     bad += test_bughunt_ui2();
     bad += test_piano_roll();
     bad += test_piano_roll_damage();
+    bad += test_piano_roll_damage_follow();
     bad += test_play_leds();
     bad += test_cursor_step_leds();
     bad += test_midi_leds();
