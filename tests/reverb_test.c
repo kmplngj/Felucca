@@ -127,7 +127,7 @@ static void ref_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_
 static void test_room_identical(void)
 {
     static int32_t c[CTL], d[CTL], r[CTL], w0[CTL], w1[CTL];
-    uint32_t b, i, diff = 0, nb = 30u * FS / CTL;
+    uint32_t b, i, diff = 0, state_diff = 0, nb = 30u * FS / CTL;
     host_tracks_init();
     song.g[G_RTYPE] = 0;                                        /* (HALL is the default since 1.2) */
     for (b = 0; b < nb; b++) {
@@ -148,8 +148,16 @@ static void test_room_identical(void)
         ref_buses(c, d, r, w1, CTL);
         for (i = 0; i < CTL; i++)
             diff += w0[i] != w1[i];
+        /* The optimized ROOM keeps state in locals: verify every block publishes the same
+         * indices, low-pass history and delay lines as the original implementation. */
+        state_diff += memcmp(fx.comb_i, rf.comb_i, sizeof rf.comb_i) != 0 ||
+                      memcmp(fx.ap_i, rf.ap_i, sizeof rf.ap_i) != 0 ||
+                      memcmp(fx.comb_lp, rf.comb_lp, sizeof rf.comb_lp) != 0 ||
+                      memcmp(rev_comb, ref_comb, sizeof ref_comb) != 0 ||
+                      memcmp(rev_ap, ref_ap, sizeof ref_ap) != 0;
     }
     check("ROOM: the buses bit for bit as before SPRING (30 s of noise sends, settings changing)", !diff && !fx.rtype);
+    check("ROOM: indices, low-pass state and delay lines match the reference after every block", !state_diff);
 }
 
 /* ------------------------------------------------------------- SPRING --- */
