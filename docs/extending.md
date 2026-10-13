@@ -217,7 +217,7 @@ The native hook callers and units are in [core.h](../firmware/src/core.h),
 | `amp` | `track_render`, audio ISR, once per active voice/control block; input/output Q15, after `env_tick`. Core still owns gating. |
 | `done` | `track_render`, audio ISR, before rendering an `ownenv` voice; nonzero retires it. Preserve the engine's release tail until then. |
 | `render` | `track_render`, audio ISR; add `n` mono samples using the supplied `vmod_t`, normally `n=CTL`. Do not confuse this buffer with the later interleaved stereo output. |
-| `desc` | `track_desc`, UI/editor descriptor lookup; immutable descriptor or null fallback, same range/default. |
+| `desc` | `track_desc`, device UI lookup; immutable descriptor or null fallback, same range/default. Editor `ed_tdesc` uses static `param_desc_of` without this hook (1.5). |
 | `keys` | `kb_engine` through `kb_map`, including audio keyboard/sequencer paths and UI map drawing; logical key index, mapped MIDI note or -1 fallback. Must also be safe in interrupts. |
 
 Direct host/emulator callers exercise the same hooks outside hardware interrupts.
