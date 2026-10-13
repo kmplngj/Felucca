@@ -163,6 +163,9 @@
 # Browser emulator (web/emu, when emcc is there): the firmware in WebAssembly (build/emu) boots, plays keys and MIDI,
 #                   draws, lights its LEDs, keeps a save across instances, plays a song bit for bit as the same file
 #                   built with cc (web/emu/native_check.c); the cost of 1 s of a heavy song against real time.
+# Emulator partitions (#87, with Node): actual web_render bridge, exact PCM/state/publication equality for
+#                   1024 vs irregular/128-frame drains; sustain/transport checkpoints and negative fixtures.
+#                   Native always runs with generated assets; the same fixture also runs in Wasm with emcc.
 # PHYS (tests/phys_test.c): stability over the whole parameter and pitch range, the worst-case cost against
 #                   the heaviest factory preset, demos in build/phys_demo/; tests/phys_ref.cpp compares the
 #                   fixed-point models with DaisySP's float originals when DaisySP is there (DAISYSP=path).
@@ -533,6 +536,13 @@ if command -v node >/dev/null 2>&1; then
     run "web backup: capture, validation before writes, restore order" node web/test_backup.mjs
 else
     echo "== skip web tests (no node)"
+fi
+
+if command -v node >/dev/null 2>&1 && [ -f build/gen/felucca_tables.h ]; then
+    run "emulator partitions: exact PCM/state/publication, native and optional WebAssembly, negative fixtures" \
+        sh web/emu/partition_test.sh
+else
+    echo "== skip emulator partitions (needs node and build/gen)"
 fi
 
 if ! command -v emcc >/dev/null 2>&1; then

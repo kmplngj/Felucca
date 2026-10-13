@@ -72,13 +72,27 @@ pipeline retain full coverage and strict optional-suite verification.
 
 `tools/ci.py verify-tests` rejects skipped local optional suites, absent test
 outputs and missing target-budget entries even if the runner prints success.
-Linux has no `proc_pid_rusage` instruction counter: both host CPU budgets remain
-unavailable and their explicit messages are retained. Host wall time is
-informational; pi32v2 disassembly cost is a static heuristic. Real FM-1 audio
+Linux uses `perf_event_open` to count user-space instructions of each regression
+worker's calling thread. Both host CPU budgets are checked when every count and
+the matching platform/compiler baseline are available. A denied or unavailable
+counter, invalid count interval, or absent matching host baseline permits a whole
+CPU-budget skip, with the exact reason and selected paths retained in the test log
+and Actions summary. An available budget with missing entries fails the gate;
+CI never creates baselines or changes PMU access policy. Host wall time is
+informational; pi32v2 disassembly cost is a static heuristic. See
+[host measurement policy](../docs/performance.md#host-regression) for counter and
+baseline details. Real FM-1 audio
 deadlines, scanning, USB/MIDI, listening and update/recovery remain device checks.
 This infrastructure change does not change firmware, flags or test baselines.
 The only permitted fixture skip is the official V15 restore comparison: that
 requires the vendor firmware, which is deliberately not redistributed here.
+
+For the FX rest regression tracked in [#153](https://github.com/kmplngj/Felucca/issues/153),
+the summary retains actual FX rest diagnostics and reports pending coverage when
+the full test log has no completed success, failure or dependency-skip outcome.
+`FX rest: SKIP` reports pending coverage while [#41](https://github.com/kmplngj/Felucca/pull/41)'s
+silent-bus paths are unavailable. It does not establish FX equivalence. Once those
+paths land, require the regression rather than accepting its dependency skip.
 
 ## Dependencies and provenance
 
@@ -100,7 +114,8 @@ is available here. Provenance includes the downloaded compiler's SHA-256; this
 does not establish an independently authenticated vendor archive.
 
 `build/ci/provenance.json` records the actual checkout revision/date, runner,
-Python/font dependencies, compiler/hash, SDK hashes, default flags, Emscripten,
+Python/font dependencies, target compiler/hash, SDK hashes, default target flags,
+host compiler/platform, both regression flag sets and selected baseline paths, Emscripten,
 Node, DaisySP and sample hashes. Action inputs pin Python/Node minor versions,
 not every runner OS package or patch update. Reproducibility is checked between
 two checkouts in one run; cross-runner byte identity is not promised. Updates to
@@ -219,5 +234,5 @@ without executing the publisher. Do not push a tag merely to test CI.
 - [Ghoulbox](https://github.com/jasonpersinger/ghoulbox-fm1-dungeon-synth/blob/8081206b951353b8d04886eeae615feb18123ef5/.github/workflows/host-tests.yml): bounded/read-only CI. Felucca retains target/image checks instead of host-only omissions.
 
 Failure diagnostics and strict optional-suite coverage improve on these examples.
-Nightlies, extra firmware variants, Linux instruction counting and Pages
+Nightlies, extra firmware variants, reviewed Linux CPU baselines and Pages
 deployment are separate follow-ups rather than prerequisites for this gate.

@@ -71,6 +71,10 @@ firmware reads SEQ+T as SEQ. **SEQ TOOLS > EUCLID** exposes HITS, STEPS and ROT 
 one undo and a live, reversible preview (OCT+ applies; OCT− cancels); seeded drop
 remains future work.
 
+The [emulator partition regression](BUILDING.md#emulator-partition-regression) checks
+that equivalent scheduled MIDI/panel input produces exactly the same audio and state
+through the browser bridge with different render partitions, without an FM-1.
+
 ## Support and contributing
 
 Please report what you find in [Issues](https://github.com/hugelton/Felucca/issues) (reproducible bugs, one per issue). Ideas and

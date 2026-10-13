@@ -372,6 +372,16 @@ jobs:
             echo "Full firmware validation selected: ${{ needs.workflow-checks.outputs.full }}."
             echo 'Known independent inputs use focused checks; docs/review-only changes complete this check without building firmware. Selection details are in the workflow-checks summary and diagnostics.'
             echo 'Full validation retains target/resource guards, host goldens and engine switches, ASan/UBSan fuzz, DaisySP, web, native/WASM comparison and package reproducibility.'
-            echo 'Linux host instruction counts are unavailable; ns/sample is informational. Target budgets are static estimates. FM-1 audio deadlines, USB/MIDI, panel behavior and flashing remain device checks.'
+            echo 'Host CPU budgets require available counters and matching host/compiler baselines; ns/sample is informational. Target budgets are static estimates. FM-1 audio deadlines, USB/MIDI, panel behavior and flashing remain device checks.'
+            if [ -f build/ci/tests.log ]; then
+              echo ''
+              echo 'Host CPU evidence, allowed fixture skips and FX coverage (both regression builds):'
+              echo '```text'
+              grep -E '^== CPU baselines:|^regress: CPU counter:|^regress: CPU: .*the budget is not checked|^regress: [0-9]+ golden renders.*CPU (budget not checked|entries over budget)|^official V15 restore: skipped|^FX rest' build/ci/tests.log || true
+              if ! grep -Eq '^FX rest: (SKIP|FAIL:)|^FX rest Os: [0-9]+ audio/state matches;' build/ci/tests.log; then
+                echo 'FX rest: pending coverage (#153; no completed regression outcome in this run)'
+              fi
+              echo '```'
+            fi
             echo 'Tagged publication is separate from this read-only build job.'
           } >> "$GITHUB_STEP_SUMMARY"
