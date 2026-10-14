@@ -118,6 +118,14 @@ Source: [`storage.c`](https://github.com/kmplngj/Felucca/blob/b04f4fa720a4550c00
 Pattern banks, Jam arrangements, generator recall, editable drum kits, deep engine patches,
 setlists and Maku likes all need an allocation from #213 before their formats are designed.
 
+**Status (2026-10-14):** the allocation table, options, common rules and proposed follow-up issues are in
+[flash-capacity.md](flash-capacity.md), measured at `a373657` (after #212). In short: flash has no free
+sector; the settings tail (about 960 B) takes device-wide state; one sidecar sector pair per project takes
+per-project state, and its sectors, with the deep-patch, FM6-library and kit objects, come from user
+sample slot 3 through an explicit opt-in reclaim; pattern banks (#62) are blocked as specified; NOINIT
+(132 B spare) gets no new users. The ranges above are the `b04f4fa` snapshot; the new page has the
+current addresses.
+
 ### App flash
 
 The dated `main` snapshot had 85,984 B spare; MACRO's full bank would leave 1,204 B.
