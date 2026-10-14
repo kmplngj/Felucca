@@ -37,7 +37,7 @@ if [ "$#" -gt 0 ]; then
 fi
 ./build.sh > build/perf-before/build.log 2>&1
 env -u GOLDEN_UPDATE -u BUDGET_UPDATE tests/run_tests.sh > build/perf-before/tests.log 2>&1
-cp build/felucca.bin build/felucca.elf build/felucca.dis build/felucca.fwsc build/perf-before/
+cp build/felucca.bin build/felucca.elf build/felucca.dis build/felucca.dis.profile.json build/felucca.fwsc build/perf-before/
 ```
 
 `local.diff` records the tracked working tree relative to `HEAD`, including both staged
@@ -54,6 +54,11 @@ nonempty `local.diff`, restore the selected untracked archive, and reproduce the
 flags/toolchain/SDK. To reproduce staging as well, apply the nonempty `index.diff` with
 `git apply --cached` after restoring the working tree. A candidate list without the
 selected inputs' contents is not complete provenance for a build that uses them.
+
+Keep `felucca.dis.profile.json` beside its matching listing when archiving or renaming
+disassembly. The target budget checker verifies its listing hash and selects the recorded
+engine set, independently of the current `build/gen` profile. A listing without a sidecar
+retains the historical full checks; a stale or incompatible sidecar fails validation.
 
 Run the build and suite sequentially and check each exit status before using its artifacts.
 For release builds, substitute the actual versioned package name. Record the relevant

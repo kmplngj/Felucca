@@ -30,12 +30,14 @@ these initial profiles; further native pruning is a separate dependency/asset ex
 
 ## Measurements
 
+### Historical initial qualification
+
 Measured on Linux x86-64, JieLi Clang 4.0.1/pi32v2 and the pinned AC79 SDK, M8Stealth,
 default flags and selective minsize enabled. Baseline is unchanged `037d2c6`; candidate
 is the initial #341 implementation over that base with Engines `c46e0086f69bdc26df1cd144dca9e683cc4531dd`.
 This evidence is distinct from the later portable API pin integration and its final checks.
 App bytes include RAMTEXT/data load images. Section sizes come from fresh objdump output;
-RAM uses `.data + .bss`, as in the build guard.
+RAM is the build guard's allocated span, including alignment gaps.
 
 | Region (bytes) | Baseline, CPU2=1 | Standard, CPU2=1 | Reduced LOFI, CPU2=1 | Reduced LOFI, CPU2=0 |
 | --- | ---: | ---: | ---: | ---: |
@@ -72,6 +74,38 @@ Wasm emulator partition suites retained exact PCM, state, event publication and 
 Host CPU instruction budgets were not measured in this focused pass; no CPU speed claim
 is made. Full combined portable/firmware suites and source-archive reproduction are
 integration checks recorded in the implementation PR, without golden/budget regeneration.
+
+### Review fixes qualification
+
+The later #343 review fixes were measured independently at firmware commit
+`94d221d4fcc8fcd621200a64fb5e5be096fe341e`, before the profile/metadata adapter.
+These measurements use the same Linux x86-64, JieLi Clang 4.0.1/pi32v2, pinned SDK,
+M8Stealth and selective minsize configuration, with only `FELUCCA_CPU2` varied.
+The historical table above remains evidence for the initial profile implementation;
+it does not include these later DSP review fixes.
+
+| Region (bytes) | Reviewed #343, CPU2=1 | Reviewed #343, CPU2=0 |
+| --- | ---: | ---: |
+| App | 475912 | 472228 |
+| Allocated RAM | 61800 | 55412 |
+| POOL | 336436 | 336436 |
+| RAMTEXT `.ram_text` | 2924 | 2924 |
+| RAMTEXT `.c1_text` | 160 | 0 |
+| NOINIT | 15568 | 15564 |
+
+PHASE's render scratch is now owned by each part when the second core is compiled,
+adding 768 B of allocated RAM to CPU2=1. The reviewed CPU2=1 app adds 100 B relative
+to its matched pre-review baseline. CPU2=0 retains its single-core scratch and its app
+is byte-identical to its matched pre-review baseline. These changes are separate from
+the historical 728 B app cost of the profile/metadata adapter. The combined reviewed
+standard/reduced profile sizes require their own direct integration measurements;
+no combined value is inferred from those deltas here.
+
+Both reviewed targets passed the existing render budgets and RAMTEXT no-call check
+(916 instructions). CPU2=1 retains the 50-instruction worker text; CPU2=0 contains no
+second-core code, stack or mailbox. Allocated RAM margins are 11928/18316 B for
+CPU2=1/0; POOL and NOINIT allocations stay as reported above. These are target static
+measurements, not live stack, deadline or FM-1 reliability observations.
 
 ## User test instructions and remaining gates
 

@@ -4,6 +4,9 @@
 Run independently of the toolchain: python3 tests/target_budget_test.py
 """
 import os
+import json
+import hashlib
+import shutil
 from pathlib import Path
 import runpy
 import subprocess
@@ -118,11 +121,40 @@ class CommandLineFixtures(unittest.TestCase):
         if update is not None:
             env["BUDGET_UPDATE"] = update
         args = [] if defaults else [str(self.dis), str(self.budget)]
-        return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.root,
+        return subprocess.run([sys.executable, str(getattr(self, "script", SCRIPT)), *args], cwd=self.root,
                               env=env, capture_output=True, text=True)
 
     def assert_status(self, result, status):
         self.assertEqual(result.returncode, status, result.stdout + result.stderr)
+
+    def profile_sidecar(self, excluded):
+        self.dis.with_suffix(self.dis.suffix+'.profile.json').write_text(json.dumps({
+            'schema_version':1,'dis_sha256':hashlib.sha256(self.dis.read_bytes()).hexdigest(),
+            'resolved_profile':{'schema_version':1,'excluded_engine_budget_functions':excluded}}))
+
+    def test_artifact_selection_is_independent_of_current_generated_profile(self):
+        self.script=self.root/'tests/target_budget.py';self.script.parent.mkdir()
+        shutil.copyfile(SCRIPT,self.script)
+        current=self.root/'build/gen/resolved-profile.json';current.parent.mkdir(parents=True)
+        current.write_text(json.dumps({'excluded_engine_budget_functions':['lofi_render']}))
+        self.assert_status(self.cli(),0)
+        self.assertIn('lofi_render',self.cli().stdout)
+        self.profile_sidecar([])
+        self.assert_status(self.cli(),0)
+        self.write_dis(omit=['lofi_render']);self.profile_sidecar(['lofi_render'])
+        current.write_text(json.dumps({'excluded_engine_budget_functions':[]}))
+        self.assert_status(self.cli(),0)
+        self.assertNotIn('lofi_render',self.cli().stdout)
+
+    def test_stale_or_mismatched_artifact_profile_is_rejected(self):
+        self.profile_sidecar(['lofi_render'])
+        self.assert_status(self.cli(),1)  # Manifest excludes an implementation the listing contains.
+        self.profile_sidecar([])
+        self.dis.write_text(self.dis.read_text()+'\n')
+        self.assert_status(self.cli(),1)  # Hash ties metadata to the actual preserved listing.
+        self.write_dis(omit=['lofi_render'])
+        self.dis.with_suffix(self.dis.suffix+'.profile.json').unlink()
+        self.assert_status(self.cli(),1)  # An unpaired sparse listing cannot silently relax coverage.
 
     def test_complete_input_passes_without_rewriting(self):
         before = self.budget.read_bytes()
