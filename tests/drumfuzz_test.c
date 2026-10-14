@@ -232,6 +232,15 @@ static void fz_play(void)
 static void setup(uint32_t synth)
 {
     uint32_t i;
+#ifdef PREEMPT
+    /* Each seed boots a fresh fixture: ui_power_on briefly clears song/BPM and
+     * track state. Defer the simulated ISR until boot is complete, as on hardware.
+     * Block the signal itself: menu setup can restore the emulated IRQ mask. */
+    sigset_t boot_signals, previous_signals;
+    sigemptyset(&boot_signals);
+    sigaddset(&boot_signals, SIGVTALRM);
+    sigprocmask(SIG_BLOCK, &boot_signals, &previous_signals);
+#endif
     ui_power_on();
     for (i = 0; i < MI_VALUES; i++)                       /* the MENU at random (HELP, LARGE, PREVIEW, ACCEL ..) */
         if (menu_valued(i) && i != MI_SERIAL && rnd(2))
@@ -245,6 +254,9 @@ static void setup(uint32_t synth)
     trk[0].p[P_SLEN] = 16;
     song.g[G_BPM] = (int16_t)(60 + rnd(180));
     song.master_q12 = 4096;
+#ifdef PREEMPT
+    sigprocmask(SIG_SETMASK, &previous_signals, NULL);
+#endif
     fz_audio(8);
     if (fz_song) {
         uint32_t k, j;
