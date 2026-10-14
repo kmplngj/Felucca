@@ -50,6 +50,7 @@ import hashlib
 import math
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -435,6 +436,12 @@ def input_key(have_cc0):
 
 
 def main(out):
+    # This directory contains only generated inputs. Older builds or local files
+    # can otherwise win the sorted drum-role glob, even after canonical WAVs are rewritten.
+    # Keep cleanup here, before generation/hash/cache lookup, so parallel header
+    # jobs and standalone invocations share the same sample generation boundary.
+    if GENDIR.exists():
+        shutil.rmtree(GENDIR)
     subprocess.run([sys.executable, str(Path(__file__).with_name("gen_waves.py")), str(GENDIR)], check=True)
     have_cc0 = CC0.exists() and any(CC0.glob("*/*.wav"))
     if not have_cc0:

@@ -218,6 +218,7 @@ run() { echo "== $1"; shift; "$@" || fail=1; }
 
 run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
 run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
+run "generated sample inputs: stale/extra WAVs and header cache" python3 tests/gen_samples_test.py
 run "build --product: precedence, validation, no job on bad input (mocked)" python3 tests/build_product_test.py
 run "JieLi 64-bit arithmetic compile/link smoke (explicit skip without toolchain)" python3 tests/build_guard_target_test.py
 run "selective minsize: ISR symbol graph and annotation fixtures" python3 tests/size_fns_test.py
