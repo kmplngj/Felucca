@@ -324,19 +324,20 @@ static void con_inp(void)
 
 static void con_crash(void)
 {
-    if (fm1_crash.magic != FM1_CRASH_MAGIC) {
+    fm1_crash_t c;
+    if (!fm1_crash_read(&c)) {
         con_puts("no crash record\r\n");
         return;
     }
-    con_kv("count", (int32_t)fm1_crash.count);
-    con_kx("vec", fm1_crash.vec);
-    con_kx("pc", fm1_crash.pc);
-    con_kx("rets", fm1_crash.rets);
-    con_kx("emu", fm1_crash.emu);
-    con_kx("sp", fm1_crash.sp);
-    con_kx("psr", fm1_crash.psr);
-    con_kv("uptime_ms", (int32_t)fm1_crash.uptime_ms);
-    con_kv("early", (int32_t)fm1_crash.early);
+    con_kv("count", (int32_t)c.count);
+    con_kx("vec", c.vec);
+    con_kx("pc", c.pc);
+    con_kx("rets", c.rets);
+    con_kx("emu", c.emu);
+    con_kx("sp", c.sp);
+    con_kx("psr", c.psr);
+    con_kv("uptime_ms", (int32_t)c.uptime_ms);
+    con_kv("early", (int32_t)c.early);
 }
 
 static void con_params(void)
