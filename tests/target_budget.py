@@ -11,6 +11,8 @@ something not inlined any more). Compared with tests/target_budget.txt at +10 %.
 CPU check (regress.c) is the primary one; this one sees the target compiler's code.
   tests/target_budget.py [DIS [BUDGET]]      BUDGET_UPDATE=1 rewrites BUDGET"""
 import os
+import json
+from pathlib import Path
 import re
 import sys
 
@@ -32,6 +34,14 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "perf_throw",                                      # .. REV / ECHO THROW (1.5.1): per part, while held or gliding
          "rev_room", "rev_spring", "rev_hall", "rev_side_mix",   # the reverb bus (fx.c): REVERB TYPE ROOM / SPRING / HALL (and its stereo)
          "track_insert", "ins_drive", "ins_swept"]          # the per-track INSERT (fx.c, 1.5), while a TYPE plays
+# The profile owns engine coverage. Deliberately omitted render/helpers are absent, while
+# all shared FX/HAL paths retain their existing checks. Registry additions must name budgets
+# (profile_test.py checks each declared render against this list).
+selection_path = Path(__file__).resolve().parents[1] / "build/gen/resolved-profile.json"
+if selection_path.exists():
+    selection = json.loads(selection_path.read_text())
+    excluded = set(selection.get("excluded_engine_budget_functions", []))
+    FUNCS = [name for name in FUNCS if name not in excluded]
 # built only with FELUCCA_FM4=1 (DIGITAL, src/eng_digital.c; not in the default build, so not in BUDGET): absent,
 # they are skipped; present, checked against these (their budget lines until the engine was retired in 1.0)
 OPTIONAL = {"digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,

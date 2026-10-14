@@ -210,7 +210,9 @@ export AC79_SDK="${AC79_SDK:-$HOME/fw-AC79_AIoT_SDK}"
 cd "$(dirname "$0")/.."
 OUT=build/host
 mkdir -p "$OUT"
-CC="${CC:-cc} -O1 -Wall -Wno-unused-function"
+python3 tools/profile.py --check
+python3 tests/profile_test.py
+CC="${CC:-cc} -O1 -Wall -Wno-unused-function -Ibuild/gen"
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
 
@@ -293,6 +295,7 @@ $CC -o "$OUT/ldr_test" tests/ldr_test.c
 run "update loader: other app -> this build" "$OUT/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
 
 if [ -f build/gen/felucca_tables.h ]; then
+    run "profiles: isolated host selection, metadata and stored-sound round trips" python3 tests/profile_integration_test.py
     run "timestamped interaction replay: PCM/LCD determinism and real emulator" python3 tests/replay_test.py NativeReplayTests
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hostsim" tests/hostsim.c -lm
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/scale_test" tests/scale_test.c -lm

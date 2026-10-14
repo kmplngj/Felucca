@@ -67,8 +67,9 @@ An engine is a `static const engine_t ENG_X`. Firmware-native engines live in `f
 ANALOG, LOFI, TRIO, WHEEL and NOISE live in the pinned MIT submodule `firmware/engines/src/`.
 The shared types now come from its
 [felucca_engine.h](https://github.com/kmplngj/Felucca-Engines/blob/c46e0086f69bdc26df1cd144dca9e683cc4531dd/src/felucca_engine.h)
-via `core.h`; the small `ENG_NOISE` there is a minimal example. Host identity metadata remains
-firmware-owned; coordinate portable layout changes under #340/#301. Fields:
+via `core.h`; the small `ENG_NOISE` there is a minimal example. Host identity metadata lives in `profiles/catalog.json`, resolved to the const
+`ENGINE_META` adapter keyed by stable ID in `core.h`; portable `engine_t` has no
+Felucca icon/category/CC/order fields. Coordinate portable layout changes under #340. Fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -143,14 +144,14 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
 
 ### 1.6 Presets, categories, UI and help
 
-- Factory `preset_t` arrays live in the engine's file. `PRESET_CAT[]` (`firmware/src/category.c`)
-  needs one letter per preset for the engine's number; `tests/ui_test.c` checks each string
-  against `npresets`. `cat_of_engine()` there also names kit-style engines.
+- Factory `preset_t` arrays live in the engine's file. The host registry's `preset_categories`
+  needs one letter per preset; metadata and UI tests check it against `npresets`.
+  Its `category` and `kit` fields identify kit-style engines.
 - EDIT 1 / EDIT 2 and HOME are generated from `edit[]`, `page_title` and `knob[]`; a plain engine
   needs no new page. Engine-specific pages (`FILTER`, `LANES`, `OPERATOR`, `SLICES`) are gated by
   `page_visible()` in `ui.c`; add a gate there only for a genuinely engine-specific page.
-- `eng_abbr()` in `ui_graph.c` holds four-letter abbreviations by engine name; `engine_icon()`
-  is in `icons.c`. Add the new name to both.
+- `eng_abbr()` and `engine_icon()` read the firmware-owned identity adapter by stable ID;
+  add `tag` and `icon` to the registry entry.
 - Contextual help strings are in `firmware/src/ui_help.c`.
 - The UI render test (`tests/ui_render.c`) iterates every engine; inspect `build/ui_new/`
   for the new engine's pages (AGENTS.md requires it for UI changes).
@@ -159,12 +160,11 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
 
 1. Create `firmware/src/eng_x.c` with the GPL-3.0-only SPDX header
    ([CONTRIBUTING.md](../CONTRIBUTING.md)).
-2. `#include "eng_x.c"` in `firmware/src/engines.c` with the other `eng_*.c` files (this is the
-   dependency-order include point used by `felucca.c`, `tests/hostsim.c` and `web/emu`), and
-   add `&ENG_X` at the end of `ENGINES[]`.
-3. Add it to `ENGINE_ORDER[]`, `eng_abbr()`, `PRESET_CAT[]`, `N_ENGNAME[]` in
-   `firmware/src/params.c` (`GP[G_ENGSEL]` takes the engine-select enum's names and maximum, which
-   the protocol's DESC advertises, from it) and the protocol document.
+2. Add the source path and `ENG_X` symbol to `profiles/catalog.json` with a new stable ID.
+   Generated includes feed `engines.c` in the single translation unit used by target/host/emulator.
+3. Fill tag, icon, category/letters, display order, kit flag and packed CC74/CC71 targets
+   (high/low nibble = E index + 1, zero = none). Choose source/assets/tests/dependencies;
+   select the engine explicitly in intended profiles and update the protocol document.
 4. If its render function is not already covered, add the render function names to `FUNCS` in
    `tests/target_budget.py`.
 5. `tools/size_fns.py` lists main-loop files (`SIZE_FILES`) that get `minsize`; the `eng_*.c` render files
@@ -643,9 +643,9 @@ capabilities and tests instead of opening duplicate feature tickets.
 
 Engine:
 
-- [ ] Appended to `ENGINES[]` (with `ENG_AT()`); `NENGINES`, `ENGINE_ORDER[]`, `eng_abbr()`, `PRESET_CAT[]`,
-      `N_ENGNAME[]`, `MIDI_CC_ENG[]`, protocol engine table updated; no existing number moved in any build option;
-      the id below `ENG_ID_MAX` (1.1).
+- [ ] Added one complete stable-ID entry to `profiles/catalog.json` (tag, icon, category/letters,
+      CC74/CC71 mapping, display order, kit flag, dependencies, source/assets/tests and render budgets);
+      selected explicitly in intended profiles; protocol engine table updated; no ID moves.
 - [ ] `edit[]` ranges/defaults deliberate (they are stored); `desc` hook keeps range/default.
 - [ ] `mem` set with `ENG_MEM_FITS`; zeroed region is a valid initial state; switch tests added.
 - [ ] Render is bounded, fixed-point-exact, click-free on retrigger/switch, releases cleanly.
@@ -668,3 +668,25 @@ Platform / persistence:
 - [ ] `README.md` reviewed for user-facing changes (AGENTS.md "User-facing documentation").
 - [ ] `./build.sh` clean (no new warnings) and `tests/run_tests.sh` green; skipped checks and
       real-device validation stated (AGENTS.md "Completion evidence").
+
+
+### Two-repository profile workflow
+
+Reusable MIT engines belong in the shared Felucca-Engines fork, with portable tests,
+DSP/tables and API contract changes committed there first. Then update Felucca's explicit
+gitlink and host registry/profile selection, rebuild, and run both portable conformance
+and firmware host/target/emulator tests. Builds never edit or fetch the dependency.
+Firmware-dependent and GPL-derived implementations remain in `firmware/src`; moving
+source does not change its licence or assign an engine ID. Firmware UI identity remains
+in the GPL host adapter, never appended to the MIT `engine_t` merely for convenience.
+
+`profiles/catalog.json` is the source of host metadata and includes. New engines require
+explicit standard inclusion: discovery never silently expands releases. The resolver
+requires every identity facet, stable ID uniqueness, boot defaults and an acyclic provider
+graph without explicit dependency exclusions. Shared UI/FX/arena owners cannot yet be
+omitted. Add render/helper coverage to `budget_functions` and `tests/target_budget.py`;
+`profile_test.py` checks main-render coverage. Arena consumers are discovered using
+`engine_t.mem` in union/arena tests, so a new state user cannot escape those tests.
+
+See [BUILDING.md](../BUILDING.md#engine-build-profiles) for generation/freshness and
+[profile evidence](build-profiles.md) for compatibility and device qualification gates.

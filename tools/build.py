@@ -100,6 +100,13 @@ def resolve(argv):
         if a.product != product:
             tag = "-" + a.product
         product = a.product
+    profile_name = os.environ.get("FELUCCA_PROFILE", "standard")
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", profile_name):
+        raise SystemExit("invalid FELUCCA_PROFILE name")
+    if profile_name != "standard":
+        if a.release and (a.product is None or not tag):
+            raise SystemExit("non-standard release profile requires a distinct --product identity")
+        tag += "-" + profile_name
     base = f"felucca-{a.release}{tag}" if a.release else f"felucca{tag}"
     return {"product": product, "version": version, "release": a.release, "sdk": a.sdk,
             "explicit": a.product is not None, "name": base + ".fwsc",
@@ -148,6 +155,11 @@ def generate():
     font = os.environ.get("FELUCCA_FONT", "m8stealth")
     if font not in ("inter-tight", "tamzen", "m8stealth"):
         raise SystemExit("FELUCCA_FONT must be inter-tight, tamzen or m8stealth")
+    from profile import generated
+    for name, content in generated(SRC, os.environ.get("FELUCCA_PROFILE", "standard")).items():
+        GEN.mkdir(parents=True, exist_ok=True)
+        (GEN / name).write_text(content)
+    print(f"Engine profile: {os.environ.get('FELUCCA_PROFILE', 'standard')}")
     GEN.mkdir(parents=True, exist_ok=True)
     for old in ("felucca_font.h", "felucca_icons.h"):     # headers of the bitmap font and icon atlas
         (GEN / old).unlink(missing_ok=True)
@@ -542,6 +554,14 @@ def main(argv=None):
     global PRODUCT, VERSION
     c = resolve(sys.argv[1:] if argv is None else argv)     # validated before any job starts
     PRODUCT, VERSION, name = c["product"], c["version"], c["name"]
+    if (SRC / "SOURCE-PINS.json").exists():
+        from source_archive import verify_tree
+        verify_tree(SRC)
+    from profile import validate_selection
+    try:
+        validate_selection(SRC, os.environ.get("FELUCCA_PROFILE", "standard"))  # before jobs/writes
+    except (ValueError, KeyError, OSError) as error:
+        raise SystemExit(f"profile: {error}")
     fm1pkg_make.SDK = c["sdk"]
     if not (FW / "engines" / "src" / "felucca_engine.h").exists():
         raise SystemExit("firmware/engines is empty: the Felucca-Engines submodule "
@@ -578,6 +598,7 @@ def main(argv=None):
         rel = OUT / c["rel"]
         shutil.rmtree(rel, ignore_errors=True)
         (rel / "LICENSES").mkdir(parents=True)
+        shutil.copy(GEN / "resolved-profile.json", rel / "resolved-profile.json")
         app = c["app"]
         (rel / name).write_bytes(pkg)
         (rel / app).write_bytes(img)

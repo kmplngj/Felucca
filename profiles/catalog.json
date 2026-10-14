@@ -1,0 +1,444 @@
+{
+  "schema_version": 1,
+  "standard_base": "037d2c6f7f0c1ce7dcac9dbdec5786f0e2f6dc99",
+  "engines_upstream_revision": "a53ecf428c29c780108fd70a31b71a32a6b5c313",
+  "engines": [
+    {
+      "id": 0,
+      "name": "ANALOG",
+      "symbol": "ENG_ANALOG",
+      "source": "firmware/engines/src/eng_analog.c",
+      "owner": "portable-mit",
+      "tag": "ANLG",
+      "icon": "wave",
+      "category": 8,
+      "preset_categories": "LPBPBKLBULLP",
+      "cc": 86,
+      "order": 0,
+      "kit": false,
+      "requires": [
+        "portable-dsp"
+      ],
+      "tests": [
+        "tests/regress.c"
+      ],
+      "assets": [],
+      "render": "analog_render",
+      "budget_functions": [
+        "analog_render"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "DIGITAL",
+      "symbol": "ENG_DIGITAL",
+      "source": "firmware/src/eng_digital.c",
+      "owner": "firmware",
+      "tag": "DGTL",
+      "icon": "algorithm",
+      "category": 8,
+      "preset_categories": "",
+      "cc": 0,
+      "order": 2,
+      "kit": false,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/digital_test.c"
+      ],
+      "assets": [],
+      "render": "digital_render",
+      "budget_functions": [
+        "digital_render",
+        "digital_render_legacy",
+        "digital_render_custom"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "PHASE",
+      "symbol": "ENG_PHASE",
+      "source": "firmware/src/eng_phase.c",
+      "owner": "firmware",
+      "tag": "PHAS",
+      "icon": "phase",
+      "category": 8,
+      "preset_categories": "LKPLUU",
+      "cc": 48,
+      "order": 3,
+      "kit": false,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/regress.c"
+      ],
+      "assets": [],
+      "render": "phase_render",
+      "budget_functions": [
+        "phase_render",
+        "phase_render_f"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "LOFI",
+      "symbol": "ENG_LOFI",
+      "source": "firmware/engines/src/eng_lofi.c",
+      "owner": "portable-mit",
+      "tag": "LOFI",
+      "icon": "bits",
+      "category": 8,
+      "preset_categories": "LBLLL",
+      "cc": 128,
+      "order": 4,
+      "kit": false,
+      "requires": [
+        "portable-dsp"
+      ],
+      "tests": [
+        "tests/regress.c"
+      ],
+      "assets": [
+        "WRAM",
+        "LOFI_PRESETS"
+      ],
+      "render": "lofi_render",
+      "budget_functions": [
+        "lofi_render"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "SAMPLE",
+      "symbol": "ENG_SAMPLE",
+      "source": "firmware/src/eng_sample.c",
+      "owner": "firmware",
+      "tag": "SMPL",
+      "icon": "sample",
+      "category": 8,
+      "preset_categories": "KKLL",
+      "cc": 80,
+      "order": 5,
+      "kit": false,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/sample_test.c"
+      ],
+      "assets": [],
+      "render": "sample_render",
+      "budget_functions": [
+        "sample_render"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "VOICE",
+      "symbol": "ENG_FORMANT",
+      "source": "firmware/src/eng_formant.c",
+      "owner": "firmware",
+      "tag": "VOCL",
+      "icon": "mouth",
+      "category": 8,
+      "preset_categories": "PLBF",
+      "cc": 7,
+      "order": 6,
+      "kit": false,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/regress.c"
+      ],
+      "assets": [],
+      "render": "formant_render",
+      "budget_functions": [
+        "formant_render"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "TRIO",
+      "symbol": "ENG_TRIO",
+      "source": "firmware/engines/src/eng_trio.c",
+      "owner": "portable-mit",
+      "tag": "TRIO",
+      "icon": "trio",
+      "category": 8,
+      "preset_categories": "BLLUP",
+      "cc": 103,
+      "order": 7,
+      "kit": false,
+      "requires": [
+        "portable-dsp"
+      ],
+      "tests": [
+        "tests/regress.c"
+      ],
+      "assets": [],
+      "render": "trio_render",
+      "budget_functions": [
+        "trio_render",
+        "trio_pass"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "WHEEL",
+      "symbol": "ENG_WHEEL",
+      "source": "firmware/engines/src/eng_wheel.c",
+      "owner": "portable-mit",
+      "tag": "WHEL",
+      "icon": "drawbar",
+      "category": 8,
+      "preset_categories": "KKKKK",
+      "cc": 0,
+      "order": 8,
+      "kit": false,
+      "requires": [
+        "portable-dsp"
+      ],
+      "tests": [
+        "tests/regress.c"
+      ],
+      "assets": [],
+      "render": "wheel_render",
+      "budget_functions": [
+        "wheel_render",
+        "wheel_block"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "GRAIN",
+      "symbol": "ENG_GRAIN",
+      "source": "firmware/src/eng_grain.c",
+      "owner": "firmware",
+      "tag": "GRAN",
+      "icon": "grain",
+      "category": 8,
+      "preset_categories": "PFPP",
+      "cc": 128,
+      "order": 9,
+      "kit": false,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/regress.c"
+      ],
+      "assets": [],
+      "render": "grain_render",
+      "budget_functions": [
+        "grain_render",
+        "grain_block"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "PHYS",
+      "symbol": "ENG_PHYS",
+      "source": "firmware/src/eng_phys.c",
+      "owner": "firmware",
+      "tag": "PHYS",
+      "icon": "phys",
+      "category": 8,
+      "preset_categories": "UUUPUDDPU",
+      "cc": 48,
+      "order": 10,
+      "kit": false,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/phys_test.c"
+      ],
+      "assets": [],
+      "render": "phys_render",
+      "budget_functions": [
+        "phys_render"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "DRUM",
+      "symbol": "ENG_DRUM",
+      "source": "firmware/src/eng_drum.c",
+      "owner": "firmware",
+      "tag": "DRUM",
+      "icon": "drum",
+      "category": 6,
+      "preset_categories": "DDDD",
+      "cc": 48,
+      "order": 13,
+      "kit": true,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/drum_test.c"
+      ],
+      "assets": [],
+      "render": "drum_render",
+      "budget_functions": [
+        "drum_render"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "NOISE",
+      "symbol": "ENG_NOISE",
+      "source": "firmware/engines/src/eng_noise.c",
+      "owner": "portable-mit",
+      "tag": "NOIS",
+      "icon": "noise",
+      "category": 8,
+      "preset_categories": "FFFF",
+      "cc": 52,
+      "order": 11,
+      "kit": false,
+      "requires": [
+        "portable-dsp"
+      ],
+      "tests": [
+        "tests/noise_test.c"
+      ],
+      "assets": [],
+      "render": "noise_render",
+      "budget_functions": [
+        "noise_render"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "FM6",
+      "symbol": "ENG_FM6",
+      "source": "firmware/src/eng_fm6.c",
+      "owner": "firmware",
+      "tag": "FM6",
+      "icon": "mod",
+      "category": 8,
+      "preset_categories": "KUBLPUKU",
+      "cc": 48,
+      "order": 1,
+      "kit": false,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/fm6_test.c"
+      ],
+      "assets": [],
+      "render": "fm6_render",
+      "budget_functions": [
+        "fm6_render",
+        "fm6_op_run",
+        "fm6_op_fb"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "SLICE",
+      "symbol": "ENG_SLICE",
+      "source": "firmware/src/eng_slice.c",
+      "owner": "firmware",
+      "tag": "SLCE",
+      "icon": "slice",
+      "category": 6,
+      "preset_categories": "DD",
+      "cc": 128,
+      "order": 12,
+      "kit": true,
+      "requires": [
+        "native-core"
+      ],
+      "tests": [
+        "tests/slice_test.c"
+      ],
+      "assets": [],
+      "render": "slice_render",
+      "budget_functions": [
+        "slice_render",
+        "slc_rev"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "id": "native-core",
+      "requires": [],
+      "licenses": [
+        "LICENSE"
+      ],
+      "generator_inputs": [
+        "tools/gen_tables.py",
+        "tools/gen_fm6_patches.py",
+        "tools/gen_samples.py",
+        "tools/gen_bitmap_font.py",
+        "tools/gen_aa_font.py",
+        "tools/gen_aa_icons.py",
+        "tools/gen_aa_keycaps.py",
+        "tools/gen_ui_palettes.py",
+        "tools/sampleio.py",
+        "tools/gen_waves.py",
+        "tools/aa_raster.py"
+      ],
+      "requires_engines": [
+        2,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        12,
+        13
+      ]
+    },
+    {
+      "id": "portable-dsp",
+      "requires": [
+        "native-core"
+      ],
+      "licenses": [
+        "firmware/engines/LICENSE"
+      ],
+      "generator_inputs": [
+        "firmware/engines/tools/gen_engine_tables.py",
+        "firmware/engines/src/dsp.c",
+        "firmware/engines/src/felucca_engine.h"
+      ],
+      "tests": [
+        "firmware/engines/tests/fe_host.c",
+        "firmware/engines/tests/golden.txt"
+      ]
+    }
+  ],
+  "defaults": [
+    0,
+    12,
+    4,
+    10
+  ],
+  "fixed_owners": {
+    "effects": "firmware/src/fx.c",
+    "arenas": "firmware/src/engines.c",
+    "mode": 0
+  },
+  "shared_assets": [
+    "assets/icons.json",
+    "assets/samples-cc0",
+    "LICENSES",
+    "web/fukiai.ttf",
+    "assets/fonts"
+  ],
+  "shared_tests": [
+    "tests/engid_test.c",
+    "tests/midi_control_test.c",
+    "tests/union_test.c",
+    "tests/arena_test.c"
+  ]
+}

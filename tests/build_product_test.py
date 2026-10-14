@@ -95,7 +95,11 @@ class NoJobs(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        out = Path(self.tmp.name)
+        out = Path(self.tmp.name) / "out"
+        out.mkdir()
+        gen = Path(self.tmp.name) / "gen"
+        gen.mkdir()
+        (gen / "resolved-profile.json").write_text('{"profile":"standard"}\n')
         self.m = {n: MagicMock(name=n) for n in ("generate", "build_loader", "build_app", "check", "mmio_check",
                                                  "tc_all", "run", "Pool")}
         self.m["build_loader"].return_value = b"ota"
@@ -108,7 +112,7 @@ class NoJobs(unittest.TestCase):
             p = patch.object(B, n, new)
             p.start()
             self.addCleanup(p.stop)
-        for p in (patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"),
+        for p in (patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"), patch.object(B, "GEN", gen),
                   patch.object(B.subprocess, "run", self.m["run"]),
                   patch.object(B.fm1pkg_make, "sdk_file", lambda rel: b""),
                   patch.object(B.fm1pkg_make, "flash_image", lambda img, key: img),
@@ -137,6 +141,20 @@ class NoJobs(unittest.TestCase):
             self.assertEqual(self.started(), [])
             self.assertEqual(list(self.out.iterdir()), [])
             self.assertEqual(self.packed, [])
+
+    def test_unknown_profile_starts_no_jobs(self):
+        with patch.dict("os.environ", {"FELUCCA_PROFILE": "unknown-profile"}):
+            with self.assertRaises(SystemExit): B.main([])
+        self.assertEqual(self.started(), [])
+        self.assertEqual(self.packed, [])
+
+    def test_reduced_release_requires_distinct_identity(self):
+        with patch.dict("os.environ", {"FELUCCA_PROFILE": "reduced-lofi"}):
+            for argv in (["--release", "1.0"], ["--release", "1.0", "--product", "FM-1_910"]):
+                with self.assertRaises(SystemExit): B.main(argv)
+            self.assertEqual(self.started(), [])
+            c = B.resolve(["--release", "1.0", "--product", "FM-1_ACME"])
+            self.assertEqual(c['name'], "felucca-1.0-FM-1_ACME-reduced-lofi.fwsc")
 
     def test_override_packages_one_identity(self):
         with patch.object(B, "build_app", side_effect=lambda: (self.assertEqual(B.PRODUCT, "FM-1_ACME"),

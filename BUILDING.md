@@ -403,3 +403,41 @@ If package generation reports `app area is ... B, available ... B`, the app regi
 the SDK configuration files and headers exceeds the flash boundary. The app fitting its
 own slot is not enough: use the supported SDK files and review the reported sizes under
 [Measuring and optimizing Felucca](docs/performance.md). Keep the package guard enabled.
+
+### Engine build profiles
+
+Plain `./build.sh` uses the frozen `standard` profile in `profiles/standard.json`:
+all thirteen current engines, stable reserved DIGITAL slot 1, unchanged display order
+and boot sounds. `FELUCCA_PROFILE=reduced-lofi ./build.sh` omits portable LOFI (id 3),
+including its wave RAM and factory presets, and writes `felucca-reduced-lofi.fwsc`.
+No engine ID moves. Stored LOFI projects, user presets and favourites survive; the
+sound shows N/A and is silent until standard firmware is restored. Selecting another
+sound explicitly replaces it. The existing editor INFO prefix and availability bitmap
+remain unchanged; custom sparse catalogs still require the FM-1/client gates in
+[the modularity guide](docs/modularity.md). This profile adds no usage mode or storage.
+
+`tools/profile.py` validates the firmware-owned `profiles/catalog.json` registry and
+resolves sources, metadata, shared generators/assets, tests and licence inputs to
+`build/gen/resolved-profile.json` plus the generated C selection. Target, host and
+browser builds consume those same includes. `python3 tools/profile.py --check` rejects
+stale files, a different profile/feature selection, source hashes or engine pin; host and
+emulator entry points run it before compiling. Use the same `FELUCCA_PROFILE` and
+`FELUCCA_SLICE`/`FELUCCA_FM4` environment for those entry points as for the target build.
+Do not override `FELUCCA_PROFILE_ENGINE_*` compiler macros; they are generated.
+Existing host-only DIGITAL, test14 and omit fixtures remain supported.
+
+`FELUCCA_CPU2` stays independent, including its OFF runtime default. Native effects,
+UI providers and arena allocation are retained in both initial profiles. The resolver
+rejects removing those owners; further native pruning needs explicit dependency work.
+Measured costs and pending device checks are in [the profile evidence](docs/build-profiles.md).
+`tests/profile_integration_test.py` builds isolated host selections and verifies actual
+standard → reduced → standard project/preset/backup records without rewriting goldens.
+The full runner qualifies standard; the reduced profile uses that focused test and the
+same emulator partition suite, with a fresh target and target budgets.
+
+Non-standard **release** profiles require a distinct `--product` identity; their profile
+name also appears in the package/release filenames. Releases carry `resolved-profile.json`
+with source pins, file hashes and selection. Development `felucca.bin`/ELF/disassembly
+remain scratch outputs overwritten by the next build, so preserve them before comparisons.
+Complete verified source archives can resolve/build without a Git checkout; ordinary
+GitHub source ZIPs still lack the pinned dependency.

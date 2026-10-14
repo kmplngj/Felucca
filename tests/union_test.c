@@ -55,12 +55,16 @@ static void uplay(track_t *t, uint32_t e, uint32_t pi, uint32_t base, uint32_t w
     urun(250);                                   /* still ringing at the next switch */
 }
 
-static const uint32_t UE[] = {0 /* ANALOG */, ENGI_SAMPLE, 7 /* WHEEL */, 8 /* GRAIN */, ENGI_PHYS, ENGI_DRUM, ENGI_FM6,
-#if FELUCCA_SLICE
-                              13 /* SLICE */
-#endif
-};
-#define UNE (sizeof UE / sizeof UE[0])
+/* State users are discovered from the compiled registry. Three deliberate controls exercise
+ * engines whose state lives outside the arena; their stable order preserves the sound hashes. */
+static uint32_t UE[ENG_ID_MAX], UNE;
+static void union_engines(void)
+{
+    uint32_t e;
+    for (e = 0; e < NENGINES; e++)
+        if (eng_ok(e) && (eng_of(e)->mem || e == 0 || e == ENGI_SAMPLE || e == 7))
+            UE[UNE++] = e;
+}
 
 static uint64_t useq(const uint32_t *e, uint32_t n, uint32_t pi, uint32_t wait_ms)
 {
@@ -96,6 +100,7 @@ int main(int argc, char **argv)
     uint32_t a, b, pi, w, n = 0, bad = 0, i;
     const char *gf = argc > 1 ? argv[1] : 0;
     FILE *f;
+    union_engines();
     for (w = 0; w < 2u; w++)
         for (pi = 0; pi < 3u; pi++)
             for (a = 0; a < UNE; a++)

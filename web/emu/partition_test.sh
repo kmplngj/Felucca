@@ -4,6 +4,7 @@
 # Generated assets are prerequisites; CI passes --require-wasm to prohibit skips.
 set -e
 cd "$(dirname "$0")/../.."
+python3 tools/profile.py --check
 case "${1:-}" in
     '') required=0 ;;
     --require-wasm) required=1 ;;

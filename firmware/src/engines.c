@@ -59,24 +59,10 @@ static void *eng_mem_of(const track_t *t, uint32_t want)
 #define ENG_MEM_OF(t, e, p) ENG_MEM(p)         /* p: the part index the caller already derived */
 #endif
 
-#include "../engines/src/eng_analog.c"   /* Felucca-Engines (MIT): ANALOG LOFI TRIO WHEEL NOISE */
-#include "eng_phase.c"
-#include "../engines/src/eng_lofi.c"
-#include "eng_sample.c"
-#include "eng_formant.c"
-#include "../engines/src/eng_trio.c"
-#include "../engines/src/eng_wheel.c"
-#include "eng_grain.c"
-#include "eng_phys.c"           /* PHYS: DaisySP physical models (phys_dsp.c, MIT) */
-#include "eng_drum.c"           /* DRUM: the 8-lane kit (drum_voice.c) */
-#include "../engines/src/eng_noise.c"
-#include "eng_fm6.c"            /* FM6: 6-operator FM, msfa ported (fm6_core.c, Apache-2.0) */
-#include "fm4_convert.c"        /* DIGITAL's tables, and its sounds -> FM6 */
+#include "engine_includes.inc"
+#include "fm4_convert.c"  /* Retired DIGITAL migrations exist in every profile. */
 #if FELUCCA_FM4
-#include "eng_digital.c"        /* DIGITAL: four-operator FM (retired; FELUCCA_FM4=1 builds it) */
-#endif
-#if FELUCCA_SLICE
-#include "eng_slice.c"
+#include "eng_digital.c"
 #endif
 
 /* An id this build has no engine for (#212: one a build's catalog leaves out, FELUCCA_ENG_OMIT; one past this build's
@@ -124,31 +110,7 @@ _Static_assert(FELUCCA_ENG_OMIT != (int)ENGI_DIGITAL, "engine 1 is reserved alre
  * last id (ENG_IDX_NONE) is ENG_NONE: what eng_idx gives for an id this build lacks */
 #define ENG_IDX_NONE ((uint32_t)NENGINES)
 static const engine_t *const ENGINES[] = {
-    ENG_AT(0, &ENG_ANALOG),      /* 0 */
-#if FELUCCA_FM4
-    &ENG_DIGITAL,                /* 1 (ENGI_DIGITAL) */
-#else
-    &ENG_FM4_GONE,               /* 1: reserved (DIGITAL, retired: its sounds convert to FM6, fm4_convert.c) */
-#endif
-    ENG_AT(2, &ENG_PHASE),       /* 2 */
-    ENG_AT(3, &ENG_LOFI),        /* 3 */
-    ENG_AT(4, &ENG_SAMPLE),      /* 4 */
-    ENG_AT(5, &ENG_FORMANT),     /* 5 VOICE (eng_formant.c: "voice" is a sounding note in voice.c) */
-    ENG_AT(6, &ENG_TRIO),        /* 6 */
-    ENG_AT(7, &ENG_WHEEL),       /* 7 */
-    ENG_AT(8, &ENG_GRAIN),       /* 8 */
-    ENG_AT(9, &ENG_PHYS),        /* 9 (ENGI_PHYS) */
-    ENG_AT(10, &ENG_DRUM),       /* 10 (ENGI_DRUM) */
-    ENG_AT(11, &ENG_NOISE),      /* 11 */
-    ENG_AT(12, &ENG_FM6),        /* 12 (ENGI_FM6) */
-#if FELUCCA_SLICE
-    ENG_AT(13, &ENG_SLICE),      /* 13 */
-#else
-    &ENG_NONE,                   /* 13: SLICE, left out of this build's catalog (FELUCCA_SLICE=0; #212: its id stays) */
-#endif
-#if FELUCCA_ENG_TEST14
-    ENG_AT(14, &ENG_TEST14),     /* 14: host tests only */
-#endif
+#include "engine_registry.inc"
     &ENG_NONE,                   /* ENG_IDX_NONE */
 };
 _Static_assert(NELEM(ENGINES) == NENGINES + 1u, "ENGINES: an entry per id, then ENG_NONE");
@@ -202,51 +164,7 @@ static const char *snd_missing(const track_t *t, uint32_t *code)
  * engine indices, never DIGITAL's reserved 1 (with FELUCCA_FM4 it follows FM6). The indices stay as they are (the
  * stores and the protocol hold them); only this table orders them */
 static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
-#if FELUCCA_ENG_OMIT != 0
-    0,                           /* ANALOG */
-#endif
-#if FELUCCA_ENG_OMIT != 12
-    12,                          /* FM6 */
-#endif
-#if FELUCCA_FM4
-    1,                           /* DIGITAL */
-#endif
-#if FELUCCA_ENG_OMIT != 2
-    2,                           /* PHASE */
-#endif
-#if FELUCCA_ENG_OMIT != 3
-    3,                           /* LOFI */
-#endif
-#if FELUCCA_ENG_OMIT != 4
-    4,                           /* SAMPLE */
-#endif
-#if FELUCCA_ENG_OMIT != 5
-    5,                           /* VOICE */
-#endif
-#if FELUCCA_ENG_OMIT != 6
-    6,                           /* TRIO */
-#endif
-#if FELUCCA_ENG_OMIT != 7
-    7,                           /* WHEEL */
-#endif
-#if FELUCCA_ENG_OMIT != 8
-    8,                           /* GRAIN */
-#endif
-#if FELUCCA_ENG_OMIT != 9
-    9,                           /* PHYS */
-#endif
-#if FELUCCA_ENG_OMIT != 11
-    11,                          /* NOISE */
-#endif
-#if FELUCCA_SLICE && FELUCCA_ENG_OMIT != 13
-    13,                          /* SLICE */
-#endif
-#if FELUCCA_ENG_TEST14 && FELUCCA_ENG_OMIT != 14
-    14,                          /* TEST14 (host tests) */
-#endif
-#if FELUCCA_ENG_OMIT != 10
-    10,                          /* DRUM */
-#endif
+#include "engine_order.inc"
 };
 _Static_assert(NELEM(ENGINE_ORDER) == NENG_SHOWN, "ENGINE_ORDER: every engine one can pick, once");
 

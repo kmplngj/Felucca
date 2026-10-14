@@ -1260,21 +1260,9 @@ static uint32_t graph_signature(void)
     return h;
 }
 /* 4-letter engine tags of the preset list */
-static const char *eng_abbr(const char *name)
+static const char *eng_abbr(uint32_t e)
 {
-    static const char *const A[][2] = {{"ANALOG", "ANLG"},
-#if FELUCCA_FM4
-                                       {"DIGITAL", "DGTL"},
-#endif
-                                       {"PHASE", "PHAS"}, {"LOFI", "LOFI"},
-                                       {"SAMPLE", "SMPL"}, {"VOICE", "VOCL"}, {"TRIO", "TRIO"}, {"WHEEL", "WHEL"},
-                                       {"GRAIN", "GRAN"}, {"PHYS", "PHYS"}, {"DRUM", "DRUM"},
-                                       {"NOISE", "NOIS"}, {"FM6", "FM6"}, {"SLICE", "SLCE"}};
-    uint32_t i;
-    for (i = 0; i < sizeof A / sizeof A[0]; i++)
-        if (str_eq(name, A[i][0]))
-            return A[i][1];
-    return name;
+    return eng_ok(e) && ENGINE_META[e].tag ? ENGINE_META[e].tag : eng_of(e)->name;
 }
 
 /* a list row (17 px), in M as every list's (PRESETS, USER, PHRASES, PROJECT, AUTOMATION, MOD, the MENU): the selected
@@ -1368,7 +1356,7 @@ static void graph_browse(void)
             up_slot_label(tag, k);
             up_name(k, nm);
         } else {
-            str_cpy(tag, eng_abbr(ENGINES[e]->name), sizeof tag);
+            str_cpy(tag, eng_abbr(e), sizeof tag);
             str_cpy(nm, ENGINES[e]->presets[k].name, sizeof nm);
         }
         if (hint >= 0) {
@@ -1853,7 +1841,7 @@ static void home_track_row(uint32_t c)
     }
     x = 24;
     if (FELUCCA_ICONS && !large) {                   /* the engine's icon on the name's capitals */
-        uint32_t ei = engine_icon(eng_of(t->eng_req)->name);
+        uint32_t ei = engine_icon(t->eng_req);
         if (ei != ICON_NONE)
             GFX_HOOK_ALIGN(0, TR_NY(large), 0, TR_NY(large) + ch, AL_V, "tracks row icon on the name's line");
         x += cv_icon_in(x, TR_NY(large), 0, ch, 12, ei, sel ? T_INK : T_MID, bg) + 5;

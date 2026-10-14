@@ -930,7 +930,7 @@ static void draw_foot(void)
     }
     {   /* row 2: engine icon + name, sound, page title at the right with its icon before it (MIXER, PHRASES, SONG,
          * AUTOMATION); icons: their ink on the names' capitals */
-        uint32_t pi = ui.home ? ICON_NONE : page_icon(pg), ei = FELUCCA_ICONS ? engine_icon(ename) : ICON_NONE;
+        uint32_t pi = ui.home ? ICON_NONE : page_icon(pg), ei = FELUCCA_ICONS ? engine_icon(t->eng_req) : ICON_NONE;
         int32_t r = 232, tx, ex, need = text_w(&AF_S, pn), ew = text_w(&AF_S, ename);
         ex = 8 + (FELUCCA_ICONS ? 12 + 5 : 0) + (ew < 80 ? ew : 80);   /* (where the engine's name ends) */
         tx = r - text_w(&AF_S, ti) - (pi != ICON_NONE ? 16 : 0);
@@ -965,7 +965,7 @@ static void engine_columns(void)
     str_cpy(u, "/", 8);
     fmt_int(u + 1, (int32_t)total);
     draw_column(0, "ENG", eng_of(e)->name, "", VAL(0u), (int32_t)eng_rank(e) * 1000 / (NENG_SHOWN > 1 ? NENG_SHOWN - 1 : 1),
-                engine_icon(eng_of(e)->name));
+                engine_icon(e));
     draw_column(1, "No.", val, u, VAL(1u), total > 1u ? (int32_t)(cur * 1000u / (total - 1u)) : 0, ICON_NONE);
     draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
     draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
@@ -1130,7 +1130,7 @@ static void draw_columns(void)
         str_cpy(u, "/", 8);
         fmt_int(u + 1, (int32_t)total);
         draw_column(0, "No.", val, u, VAL(0u), -1, ICON_NONE);
-        draw_column(1, "ENG", eng_of(TSEL->eng_req)->name, "", VAL(1u), -1, engine_icon(eng_of(TSEL->eng_req)->name));
+        draw_column(1, "ENG", eng_of(TSEL->eng_req)->name, "", VAL(1u), -1, engine_icon(TSEL->eng_req));
         draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
         draw_column(3, "LIST", list_name(list_mode()), "", VAL(3u), -1, ICON_X_FOLDER);
         return;
