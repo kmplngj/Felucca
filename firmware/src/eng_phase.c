@@ -217,17 +217,20 @@ static __attribute__((noinline)) void phase_render_f(track_t *t, voice_t *v, int
  * fold's output has none of the wave's DC, so the switch would step (up to half full scale on PLS / RING). That block
  * is rendered both ways and crossfaded, unfolded -> folded or back (going off: at the last FOLD's gain); going on, the
  * blocker starts afresh as on a note-on (its state from the last FOLD long gone). Once per switch: not the loop's cost */
-static int32_t pd_xa[CTL], pd_xb[CTL];
+/* A FOLD crossing can happen on several parts at once. Each rendering part owns its two scratch blocks;
+ * C1_NP keeps the historical single scratch pair in a build without second-core support. */
+static int32_t pd_xa[C1_NP][CTL], pd_xb[C1_NP][CTL];
 static __attribute__((noinline)) void phase_xfade(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m,
                                                   uint32_t on)
 {
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1], ph2 = v->ph[2], i;
+    int32_t *xb = pd_xb[C1_PI(t)], *xa = pd_xa[C1_PI(t)]; /* xb first keeps JieLi's one-core scratch placement */
     int32_t tg0 = v->s[0], tg1 = v->s[1], k;
     if (n > CTL)
         n = CTL;
     for (i = 0; i < n; i++)
-        pd_xa[i] = pd_xb[i] = 0;
-    phase_loop(t, v, pd_xa, n, m, 0);                               /* unfolded; then from the same phases: */
+        xa[i] = xb[i] = 0;
+    phase_loop(t, v, xa, n, m, 0);                                  /* unfolded; then from the same phases: */
     v->ph[0] = ph0;
     v->ph[1] = ph1;
     v->ph[2] = ph2;
@@ -235,14 +238,14 @@ static __attribute__((noinline)) void phase_xfade(track_t *t, voice_t *v, int32_
     v->s[1] = tg1;
     if (on) {
         v->s[4] = v->s[5] = 0;
-        phase_render_f(t, v, pd_xb, n, m);
+        phase_render_f(t, v, xb, n, m);
     } else {
-        phase_loop(t, v, pd_xb, n, m, (uint32_t)v->s[6]);          /* (s[6]: set with the last folded block) */
+        phase_loop(t, v, xb, n, m, (uint32_t)v->s[6]);             /* (s[6]: set with the last folded block) */
         v->s[4] = PD_UNFOLDED;
     }
     for (i = 0; i < n; i++) {
         k = (int32_t)(on ? i + 1u : n - 1u - i);                    /* the folded one's share, of n */
-        out[i] += pd_xa[i] + (pd_xb[i] - pd_xa[i]) * k / (int32_t)n;
+        out[i] += xa[i] + (xb[i] - xa[i]) * k / (int32_t)n;
     }
 }
 
