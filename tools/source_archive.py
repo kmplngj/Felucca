@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Export and verify complete, reproducible Felucca source distributions."""
+# A verifier invoked inside an extracted archive must load stdlib from outside it.
+import os as _source_os
+import sys as _source_sys
+
+_source_import_paths = None
+_source_root = _source_os.path.dirname(_source_os.path.dirname(_source_os.path.realpath(__file__)))
+if _source_os.path.isfile(_source_os.path.join(_source_root, "SOURCE-PINS.json")):
+    _source_sys.dont_write_bytecode = True
+    _source_os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    _source_import_paths = _source_sys.path[:]
+    _source_sys.path = [p for p in _source_import_paths
+                        if not (_source_os.path.realpath(p or _source_os.getcwd()) == _source_root
+                                or _source_os.path.realpath(p or _source_os.getcwd()).startswith(_source_root + _source_os.sep))]
+
 import argparse
 import gzip
 import hashlib
@@ -10,6 +24,9 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import tarfile
+
+if _source_import_paths is not None:
+    _source_sys.path = _source_import_paths
 
 MANIFEST = "SOURCE-PINS.json"
 ENGINE = "firmware/engines"
@@ -24,7 +41,7 @@ def safe_path(name):
     if (not name or path.is_absolute() or path.as_posix() != name
             or any(part in {".", "..", ".git"} for part in path.parts)
             or "\\" in name or any(ord(char) < 32 for char in name)
-            or path.parts[0] == "build"):
+            or path.parts[0] == "build" or path.suffix.lower() in {".pyc", ".pyo"}):
         raise ValueError(f"unsafe source path: {name!r}")
     return path
 
@@ -147,11 +164,13 @@ def verify_tree(root):
     try:
         metadata = validate_manifest(json.loads((root / MANIFEST).read_text()))
         # Glob-based asset generators can consume files absent from the manifest.
-        # Permit only known generated output locations and Python import caches.
+        # Permit known generated outputs, but never importable bytecode caches.
         for path in root.rglob("*"):
             name = path.relative_to(root).as_posix()
             if path.is_symlink():
                 raise ValueError(f"source path is a symlink: {name}")
+            if path.suffix.lower() in {".pyc", ".pyo"}:
+                raise ValueError(f"Python bytecode cache is not a verified source input: {name}")
             if name in metadata["files"] or name == MANIFEST:
                 continue
             parts = path.relative_to(root).parts
@@ -161,13 +180,16 @@ def verify_tree(root):
             safe_path(name)
             if path.is_dir():
                 continue
-            if path.is_file() and path.parent.name == "__pycache__" and path.suffix == ".pyc":
-                continue
             raise ValueError(f"unmanifested source file: {name}")
         for name, entry in metadata["files"].items():
             path = root / name
-            if any(parent.is_symlink() for parent in [path, *path.parents] if parent != root.parent):
-                raise ValueError(f"source path is a symlink: {name}")
+            parent = path
+            while True:
+                if parent.is_symlink():
+                    raise ValueError(f"source path is a symlink: {name}")
+                if parent == root:
+                    break
+                parent = parent.parent
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
                 raise ValueError(f"source file missing or changed: {name}")
             if bool(path.stat().st_mode & 0o111) != (entry["mode"] == 0o755):

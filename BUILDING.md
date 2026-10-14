@@ -423,7 +423,9 @@ browser builds consume those same includes. `python3 tools/profile.py --check` r
 stale files, a different profile/feature selection, source hashes or engine pin; host and
 emulator entry points run it before compiling. Use the same `FELUCCA_PROFILE` and
 `FELUCCA_SLICE`/`FELUCCA_FM4` environment for those entry points as for the target build.
-Do not override `FELUCCA_PROFILE_ENGINE_*` compiler macros; they are generated.
+When `FELUCCA_FONT` is unset, freshness checks retain the font recorded by the target
+build; an explicit font override must match. Do not override `FELUCCA_PROFILE_ENGINE_*`
+compiler macros; they are generated.
 Existing host-only DIGITAL, test14 and omit fixtures remain supported.
 
 `FELUCCA_CPU2` stays independent, including its OFF runtime default. Native effects,
@@ -437,8 +439,9 @@ same emulator partition suite, with a fresh target and target budgets.
 
 Non-standard **release** profiles require a distinct `--product` identity; their profile
 name also appears in the package/release filenames. Releases carry `resolved-profile.json`
-with source pins, file hashes and selection. Development `felucca.bin`/ELF/disassembly
-remain scratch outputs overwritten by the next build, so preserve them before comparisons.
+with source pins, file hashes and selection. Target disassembly carries `felucca.dis.profile.json`, binding its selection to the
+listing's SHA256; preserve both files for later budget comparisons. Development
+`felucca.bin`/ELF/disassembly remain scratch outputs overwritten by the next build, so preserve them before comparisons.
 Complete verified source archives can resolve/build without a Git checkout. The bundled
 `tools/source_archive.py` verifies `SOURCE-PINS.json` before either the resolver or build
 uses archive inputs. Ordinary GitHub source ZIPs still lack the pinned dependency.

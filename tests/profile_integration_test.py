@@ -36,11 +36,15 @@ def compiler_command(value):
 def main():
     OUT.mkdir(parents=True,exist_ok=True)
     cc=compiler_command(os.environ.get('CC','cc'))
+    selection_env=os.environ.copy()
+    if 'FELUCCA_FONT' not in selection_env:
+        common=ROOT/'build/gen/resolved-profile.json'
+        if common.exists(): selection_env['FELUCCA_FONT']=json.loads(common.read_text())['asset_variant']
     for name in ('standard','reduced-lofi'):
         # Include paths come before common generated assets; each host gets its own selection.
         gen=ROOT/'build'/f'profile-{name}-gen'
-        run(sys.executable,'tools/profile.py','--profile',name,'--out',gen)
-        run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,'--check')
+        run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,env=selection_env)
+        run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,'--check',env=selection_env)
         flags=['-O2','-w','-I'+str(gen),'-Ibuild/gen','-Ifirmware/src']
         macros=subprocess.check_output([*cc,*flags,'-dM','-E','tests/profile_roundtrip.c'],text=True,cwd=ROOT)
         assert f'#define FELUCCA_PROFILE_NAME \"{name}\"' in macros, 'wrong compiled profile identity'

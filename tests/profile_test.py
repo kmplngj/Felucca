@@ -92,6 +92,16 @@ class ResolverTests(unittest.TestCase):
         for include in ('-Ibuild/gen','-I build/gen',f'-I{ROOT}/build/gen',f'-I {ROOT}/build/gen'):
             self.assertEqual(integration.compiler_command('ccache clang -O1 '+include+' -Wall -Iother'),
                              ['ccache','clang','-O1','-Wall','-Iother'])
+    def test_check_uses_recorded_font_without_hiding_explicit_override(self):
+        env=dict(os.environ,FELUCCA_FONT='tamzen',FELUCCA_FM4='0',FELUCCA_SLICE='1')
+        with tempfile.TemporaryDirectory() as td:
+            cmd=[sys.executable,str(ROOT/'tools/profile.py'),'--out',td,'--profile','standard']
+            subprocess.run(cmd,env=env,check=True,capture_output=True)
+            default_env=env.copy();default_env.pop('FELUCCA_FONT')
+            self.assertEqual(subprocess.run(cmd+['--check'],env=default_env,capture_output=True).returncode,0)
+            self.assertNotEqual(subprocess.run(cmd+['--check'],env=dict(env,FELUCCA_FONT='m8stealth'),capture_output=True).returncode,0)
+            self.assertEqual(subprocess.run(cmd+['--check'],env=env,capture_output=True).returncode,0)
+
     def test_determinism_and_stale_generated_selection(self):
         env=dict(os.environ,FELUCCA_FM4='0',FELUCCA_SLICE='1')
         with tempfile.TemporaryDirectory() as td:

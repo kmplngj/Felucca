@@ -1,6 +1,33 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Resolve the firmware-owned engine registry once for target, host and emulator."""
+# Verified archives must not execute cached helpers before checking their source tree.
+# os/sys are loaded by Python startup; defer all repository and other stdlib imports.
+import os as _source_os
+import sys as _source_sys
+
+_source_root = _source_os.path.dirname(_source_os.path.dirname(_source_os.path.realpath(__file__)))
+_source_verifier = None
+if _source_os.path.isfile(_source_os.path.join(_source_root, "SOURCE-PINS.json")):
+    _source_sys.dont_write_bytecode = True
+    _source_os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    _source_import_paths = _source_sys.path[:]
+    try:
+        # The verifier uses only stdlib. Exclude archive paths while loading it,
+        # so an unmanifested module cannot shadow a stdlib dependency either.
+        _source_sys.path = [p for p in _source_import_paths
+                            if not (_source_os.path.realpath(p or _source_os.getcwd()) == _source_root
+                                    or _source_os.path.realpath(p or _source_os.getcwd()).startswith(_source_root + _source_os.sep))]
+        _source_verifier_path = _source_os.path.join(_source_root, "tools", "source_archive.py")
+        _source_verifier = {"__name__": "felucca_source_verifier", "__file__": _source_verifier_path}
+        with open(_source_verifier_path, "rb") as _source_verifier_file:
+            exec(compile(_source_verifier_file.read(), _source_verifier_path, "exec"), _source_verifier)
+        _source_verifier["verify_tree"](_source_root)
+    except (OSError, ValueError) as _source_error:
+        raise SystemExit(str(_source_error))
+    finally:
+        _source_sys.path = _source_import_paths
+
 import argparse
 import hashlib
 import json
@@ -98,9 +125,15 @@ def source_pins(root):
     # Complete release archives carry verified provenance and need no .git directory.
     archive = root / 'SOURCE-PINS.json'
     if archive.exists():
-        from source_archive import verify_tree
-        verify_tree(root)
-        pins = read_json(archive)
+        if _source_verifier is not None:
+            pins = _source_verifier['verify_tree'](root)
+        else:
+            # Called from a normal Git checkout with an explicit archive root: load the
+            # trusted checkout's verifier source, never the archive's import caches.
+            verifier_path = ROOT / 'tools/source_archive.py'
+            verifier = {'__name__':'felucca_source_verifier', '__file__':str(verifier_path)}
+            exec(compile(verifier_path.read_bytes(), str(verifier_path), 'exec'), verifier)
+            pins = verifier['verify_tree'](root)
         return {'firmware_revision': pins['firmware_revision'],
                 'engines_gitlink': pins['engines']['revision']}
     pin = git(root, 'ls-files', '--stage', 'firmware/engines').split()[1]
@@ -125,7 +158,7 @@ def validate_selection(root, name):
     return catalog, profile, engines, providers
 
 
-def generated(root, name):
+def generated(root, name, font_variant=None):
     catalog, profile, engines, providers = validate_selection(root, name)
     selected = {e['id'] for e in engines}
     # Existing developer options remain independent; DIGITAL's retired implementation can be requested.
@@ -150,7 +183,10 @@ def generated(root, name):
     hashes = {p: hashlib.sha256((root / p).read_bytes()).hexdigest() for p in sorted(set(inputs))}
     pins = source_pins(root)
     pins['engines_upstream_revision'] = catalog['engines_upstream_revision']
-    resolved = dict(schema_version=1, profile=name, asset_variant=os.environ.get('FELUCCA_FONT','m8stealth'), standard_base=catalog['standard_base'],
+    font_variant = font_variant if font_variant is not None else os.environ.get('FELUCCA_FONT', 'm8stealth')
+    if font_variant not in {'m8stealth', 'tamzen', 'inter-tight'}:
+        raise ValueError('FELUCCA_FONT must be inter-tight, tamzen or m8stealth')
+    resolved = dict(schema_version=1, profile=name, asset_variant=font_variant, standard_base=catalog['standard_base'],
                     source_pins=pins, engine_ids=sorted(selected), portable_engine_ids=[e['id'] for e in engines if e['owner']=='portable-mit'],
                     firmware_native_engine_ids=[e['id'] for e in engines if e['owner']=='firmware'],
                     includes=[e['source'] for e in engines], providers=[p['id'] for p in providers],
@@ -215,7 +251,14 @@ def main():
     ap.add_argument('--check',action='store_true')
     args=ap.parse_args()
     try:
-        outputs=generated(ROOT,args.profile)
+        font_variant = None
+        if args.check and 'FELUCCA_FONT' not in os.environ:
+            # Host/emulator builds have always consumed the generated font. Keep that
+            # choice when no override is supplied; explicit overrides must still match.
+            recorded = args.out / 'resolved-profile.json'
+            if recorded.exists():
+                font_variant = read_json(recorded)['asset_variant']
+        outputs=generated(ROOT,args.profile,font_variant)
         if args.check:
             check_outputs(outputs, args.out)
         else:
