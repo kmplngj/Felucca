@@ -50,7 +50,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
   firmware:
     needs: revision
-    if: always() && (needs.revision.result == 'success' || needs.revision.result == 'skipped')
+    if: ${{ !cancelled() && (needs.revision.result == 'success' || needs.revision.result == 'skipped') }}
     uses: ./.github/workflows/build.yml
     with:
       source_ref: ${{ needs.revision.outputs.sha }}
