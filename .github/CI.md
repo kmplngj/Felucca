@@ -22,11 +22,18 @@ that could leave a required check pending. Existing check names are preserved.
 | Changed inputs | Validation |
 | --- | --- |
 | Known documentation, documentation images, `AGENTS.md`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
-| Portable Python fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
+| Portable fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/console_diagnostics.c`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
 | `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
 | `web/emu/**` | Fresh generated assets, pinned Emscripten build and freshly compiled native/WASM song equality and emulator checks; no target package, DaisySP or unrelated host/sanitizer suites |
 | Firmware, build scripts/generators, package/installer/editor inputs, shared host harnesses, goldens/budgets, assets, licenses, workflow/selector implementation, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
 | Manual CI dispatch, releases, or unavailable change comparison | Complete pipeline regardless of changed paths |
+
+The diagnostics fixture compiles the real `firmware/src/console.c` with bounded
+host state stubs, then feeds its CDC command output to the collector parser. It
+requires a C99 host compiler (`CC`, default `cc`) in addition to Python; Ubuntu
+runners provide one. It checks all counter names, with and without UART/UAC,
+without generated firmware assets or a connected device. Changes to `console.c`
+continue to select full firmware validation.
 
 Independent selections combine when a PR changes several independent areas.
 Full validation includes the focused suites, so separate focused jobs are not
