@@ -99,7 +99,7 @@ class NoJobs(unittest.TestCase):
         self.m = {n: MagicMock(name=n) for n in ("generate", "build_loader", "build_app", "check", "mmio_check",
                                                  "tc_all", "run", "Pool")}
         self.m["build_loader"].return_value = b"ota"
-        self.m["build_app"].return_value = (b"img", "", "", "")
+        self.m["build_app"].return_value = (b"img", "", "", "", "")
         self.m["check"].return_value = ([], [])
         self.m["mmio_check"].return_value = []
         for n, new in (("generate", self.m["generate"]), ("build_loader", self.m["build_loader"]),
@@ -141,7 +141,7 @@ class NoJobs(unittest.TestCase):
     def test_override_packages_one_identity(self):
         with patch.object(B, "build_app", side_effect=lambda: (self.assertEqual(B.PRODUCT, "FM-1_ACME"),
                                                                 self.assertEqual(B.VERSION, "v1.0"),
-                                                                (b"img", "", "", ""))[2]):
+                                                                (b"img", "", "", "", ""))[2]):
             B.main(["--release", "1.0", "--product", "FM-1_ACME"])
         self.assertEqual(self.packed, ["FM-1_ACME"])
         rel = self.out / "release-1.0-FM-1_ACME"

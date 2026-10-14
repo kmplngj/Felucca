@@ -270,11 +270,19 @@ def build_loader():
 
 # ---- app
 
-def noinit_used(syms, org):
-    """Bytes of the NOINIT region in use: the end of the highest .noinit object in `objdump -t`, or None"""
-    ends = [int(p[0], 16) + int(p[-2], 16) for p in map(str.split, syms.splitlines())
-            if len(p) >= 5 and p[-3] == ".noinit" and re.fullmatch(r"[0-9a-f]+", p[0] + p[-2])]
-    return max(ends) - org if ends else None
+def noinit_used(hdr, syms, org):
+    """Bytes of the NOINIT region in use, or None without a .noinit section: the larger of the section's end in
+    `objdump -h` (covers allocations that carry no sized symbol, such as `.space` data or tail padding) and the
+    end of the highest .noinit object in `objdump -t`"""
+    ends = []
+    for p in map(str.split, hdr.splitlines()):
+        if len(p) >= 4 and p[0].isdigit() and p[1] == ".noinit" and re.fullmatch(r"[0-9a-f]+", p[2] + p[3]):
+            ends.append(int(p[3], 16) + int(p[2], 16))
+    if not ends:
+        return None
+    ends += [int(p[0], 16) + int(p[-2], 16) for p in map(str.split, syms.splitlines())
+             if len(p) >= 5 and p[-3] == ".noinit" and re.fullmatch(r"[0-9a-f]+", p[0] + p[-2])]
+    return max(ends) - org
 
 
 def ld_regions():
@@ -321,9 +329,10 @@ def build_app():
        OUT / "felucca.o", "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin"):
         (OUT / sect).unlink(missing_ok=True)
-    *_, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),
+    *_, hdr, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),
                                ("common/bin/objcopy", "-O", "binary", "-j", ".data", elf, OUT / "data.bin"),
                                ("common/bin/objcopy", "-O", "binary", "-j", ".ram_text", elf, OUT / "ramtext.bin"),
+                               ("common/bin/objdump", "-h", elf),
                                ("common/bin/objdump", "-t", elf),
                                ("common/bin/objdump", "-d", elf),
                                ("common/bin/objdump", "-d", "-j", ".ram_text", elf))
@@ -345,7 +354,7 @@ def build_app():
             img += blob
     img += b"\xff" * (-len(img) % 4)
     (OUT / "felucca.bin").write_bytes(img)
-    return bytes(img), syms, dis, rt
+    return bytes(img), hdr, syms, dis, rt
 
 
 def objdump_data_row(line):
@@ -383,7 +392,7 @@ def disassembly_rows(text, label, empty_ok=False):
     return rows, errors
 
 
-def check(img, syms, dis, rt):
+def check(img, hdr, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
     if not m or int(m.group(1), 16) != APP_XIP:
@@ -429,12 +438,12 @@ def check(img, syms, dis, rt):
     bss, pool = bss_end - ram_org, pool_end - pool_start
     if bss < 0 or pool_start != pool_org or pool < 0:
         errors.append("RAM/POOL symbols are outside their regions or reversed")
-    noinit = noinit_used(syms, noinit_org)      # app.ld defines no NOINIT symbols; its objects' ends give the extent
+    noinit = noinit_used(hdr, syms, noinit_org)  # app.ld defines no NOINIT symbols; the section's end gives the extent
     if noinit is None:
-        errors.append("missing .noinit symbols")
+        errors.append("missing .noinit section")
         return errors, notes
     if noinit < 0 or noinit > noinit_len:
-        errors.append("NOINIT symbols are outside their region")
+        errors.append("NOINIT section is outside its region")
     notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of {ram_len}; pool {pool} B of {pool_len}; "
                  f"NOINIT {noinit} B of {noinit_len} ({noinit_len - noinit} B spare)")
     if region["RAM"][0] + ram_len != region["POOL"][0]:
@@ -505,8 +514,8 @@ def main(argv=None):
         gen, ldr = ex.submit(generate), ex.submit(build_loader)
         gen.result()
         ota = ldr.result()
-    img, syms, dis, rt = build_app()
-    errors, notes = check(img, syms, dis, rt)
+    img, hdr, syms, dis, rt = build_app()
+    errors, notes = check(img, hdr, syms, dis, rt)
     hal_err = mmio_check()
     errors += hal_err
     if not hal_err:

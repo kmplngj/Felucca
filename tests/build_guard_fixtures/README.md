@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Firmware safety guard fixtures
 
-`python3 tests/build_guard_test.py` runs 19 portable tests with positive/negative
+`python3 tests/build_guard_test.py` runs 21 portable tests with positive/negative
 subcases. They call the production `tools/build.py` guards against temporary
 images, symbols, disassembly and synthetic firmware/linker trees under ignored
 `build/`. No working firmware or SDK files are modified. The host runner includes

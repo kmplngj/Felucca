@@ -28,6 +28,14 @@ def noinit_symbols(used):
             f"{NOINIT_ORG + 0x40:08x} l       .noinit\t\t {used - 0x40:08x} last\n")
 
 
+def noinit_header(extent):
+    """`objdump -h` rows of the app ELF with a .noinit section that spans `extent` B of its region"""
+    return ("Sections:\nIdx Name          Size      VMA       LMA       File off  Algn\n"
+            "  0 .text         00001000  02000120  02000120  00000100  2**2\n"
+            f"  5 .noinit       {extent:08x}  {NOINIT_ORG:08x}  {NOINIT_ORG:08x}  00040000  2**2\n"
+            "                  ALLOC\n")
+
+
 class AppGuards(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(dir=ROOT / "build")
@@ -53,7 +61,8 @@ class AppGuards(unittest.TestCase):
         return self.run_check(**kw)[0]
 
     def run_check(self, **kw):
-        return B.check(kw.get("img", self.img), kw.get("syms", symbols(self.values) + noinit_symbols(self.noinit_used)),
+        return B.check(kw.get("img", self.img), kw.get("hdr", noinit_header(self.noinit_used)),
+                       kw.get("syms", symbols(self.values) + noinit_symbols(self.noinit_used)),
                        kw.get("dis", self.dis), kw.get("rt", self.rt))
 
     def test_valid_neighbors(self):
@@ -117,16 +126,30 @@ class AppGuards(unittest.TestCase):
         for msg in ("RAM headroom 4095 B", "pool headroom 8191 B", "NOINIT headroom 99 B"):
             self.assertIn(msg, errors)
 
-    def test_noinit_symbols_use_object_ends_and_reject_bad_input(self):
-        self.assertEqual(B.noinit_used(noinit_symbols(15564), NOINIT_ORG), 15564)
+    def test_noinit_extent_is_the_larger_of_section_and_symbols(self):
+        hdr = noinit_header(15564)
+        self.assertEqual(B.noinit_used(hdr, noinit_symbols(15564), NOINIT_ORG), 15564)
         rows = noinit_symbols(15564) + f"{NOINIT_ORG + 0x80:08x} g .bss 00004000 other_section\n"
-        self.assertEqual(B.noinit_used(rows, NOINIT_ORG), 15564)  # other sections do not count
-        self.assertIsNone(B.noinit_used("", NOINIT_ORG))
-        self.assertIn("missing .noinit symbols", " ".join(self.check(syms=symbols(self.values))))
+        self.assertEqual(B.noinit_used(hdr, rows, NOINIT_ORG), 15564)  # other sections do not count
+        self.assertEqual(B.noinit_used(noinit_header(15600), noinit_symbols(15564), NOINIT_ORG), 15600)  # tail padding
+        self.assertEqual(B.noinit_used(noinit_header(100), noinit_symbols(15564), NOINIT_ORG), 15564)    # symbols reach further
+        self.assertIsNone(B.noinit_used("", noinit_symbols(15564), NOINIT_ORG))   # no .noinit section header
+        self.assertIsNone(B.noinit_used("Sections:\n  0 .text 00001000 02000120 02000120 00000100 2**2\n", "", NOINIT_ORG))
+
+    def test_noinit_padding_without_a_symbol_still_counts(self):
+        floor = NOINIT_LEN - B.NOINIT_SPARE_MIN
+        symbols_only = noinit_symbols(floor)                     # the symbols alone leave exactly 100 B
+        errors, _ = B.check(self.img, noinit_header(floor), symbols(self.values) + symbols_only, self.dis, self.rt)
+        self.assertEqual(errors, [])
+        errors, _ = B.check(self.img, noinit_header(floor + 1), symbols(self.values) + symbols_only, self.dis, self.rt)
+        self.assertEqual(errors, ["NOINIT headroom 99 B < 100 B"])  # one anonymous byte in the section is enough
+
+    def test_noinit_missing_or_out_of_region(self):
+        self.assertIn("missing .noinit section", " ".join(self.check(hdr="Sections:\n")))
         self.noinit_used = NOINIT_LEN + 4                        # beyond the region (the linker would refuse)
-        self.assertIn("NOINIT symbols are outside their region", " ".join(self.check()))
-        self.assertIn("NOINIT symbols are outside their region", " ".join(self.check(    # below the region
-            syms=symbols(self.values) + f"{NOINIT_ORG - 4:08x} g .noinit 00000000 low\n")))
+        self.assertIn("NOINIT section is outside its region", " ".join(self.check()))
+        self.assertIn("NOINIT section is outside its region", " ".join(self.check(    # below the region
+            hdr=noinit_header(0).replace(f"{NOINIT_ORG:08x}", f"{NOINIT_ORG - 4:08x}"), syms=symbols(self.values))))
 
     def test_missing_malformed_and_reversed_symbols(self):
         for name in ("_bss_end", "_pool_start", "_pool_end"):
