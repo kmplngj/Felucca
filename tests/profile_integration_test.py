@@ -42,6 +42,9 @@ def main():
         run(sys.executable,'tools/profile.py','--profile',name,'--out',gen)
         run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,'--check')
         flags=['-O2','-w','-I'+str(gen),'-Ibuild/gen','-Ifirmware/src']
+        macros=subprocess.check_output([*cc,*flags,'-dM','-E','tests/profile_roundtrip.c'],text=True,cwd=ROOT)
+        assert f'#define FELUCCA_PROFILE_NAME \"{name}\"' in macros, 'wrong compiled profile identity'
+        assert f'#define FELUCCA_PROFILE_ENGINE_3 {int(name=="standard")}' in macros, 'wrong compiled engine selection'
         for src in ('profile_roundtrip','engine_metadata_test','engid_test'):
             exe=OUT/f'{name}-{src}'
             run(*cc,*flags,f'tests/{src}.c','-lm','-o',exe)
