@@ -135,6 +135,14 @@ invalid. Crash-record uptime is historic and is never compared with current upti
 Older firmware without boot-count evidence cannot establish continuity. Unknown future
 fields are preserved but do not acquire guessed counter/delta semantics.
 
+In builds with second-core support (`FELUCCA_CPU2=1`), `crash` includes `core 0` for
+the main core or `core 1` for the worker. This identifies the retained crash's origin,
+even after the device falls back to one core; current `status` worker state describes
+the running system instead. Builds with `FELUCCA_CPU2=0` and older firmware omit the
+field. The collector preserves it when supplied and leaves it absent otherwise.
+Each `crash` reply formats one validated local copy. If the retained record is absent
+or changes while it is copied, the reply is `no crash record`; a later request can retry.
+
 `cpu_pct` is the smoothed render/deadline ratio with nested TIMER5 scan time subtracted.
 It excludes the main loop and is not whole-chip CPU utilization. `audio_max_us` and
 `dbg.max_us` are cumulative maxima which can persist across reboot; they are not maxima
