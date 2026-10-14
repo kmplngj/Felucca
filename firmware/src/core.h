@@ -16,6 +16,7 @@
 #ifndef FELUCCA_ARENA_CHECK
 #define FELUCCA_ARENA_CHECK 0    /* 1: host tests check engine-arena owners (engines.c ENG_MEM_OF); never on the target */
 #endif
+#include "felucca_profile.h"   /* selected feature defaults, before legacy option fallbacks */
 #ifndef FELUCCA_SLICE
 #define FELUCCA_SLICE 1          /* the SLICE engine (eng_slice.c), engine 13; FELUCCA_SLICE=0 builds without it (its id
                                   * stays: left out of the catalog, #212) */
@@ -41,7 +42,7 @@
 #define FELUCCA_ENG_OMIT (-1)    /* host tests only: an engine id this build's catalog leaves out (a sparse catalog:
                                   * its sounds are kept as unavailable), -1 = none */
 #endif
-#define NENGINES (FELUCCA_ENG_TEST14 ? 15 : 14)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
+#define NENGINES (FELUCCA_ENG_TEST14 ? 15 : FELUCCA_PROFILE_NSLOTS)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
                                                   * leaves 13 out of the catalog, its slot stays: engines.c) */
 #ifndef FELUCCA_CPU2
 #define FELUCCA_CPU2 1           /* the second core (src/felucca.c): 1 = built in, MENU > 2ND CORE ON lets it render
@@ -52,10 +53,21 @@
                                             * one for all with one, as up to 1.6 */
 #define C1_PI(t) ((uint32_t)((t) - trk) % C1_NP)   /* a part's copy */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - !FELUCCA_SLICE - \
-                    (FELUCCA_ENG_OMIT >= 0 && FELUCCA_ENG_OMIT < NENGINES && (FELUCCA_SLICE || FELUCCA_ENG_OMIT != 13)))
-                                 /* the engines one can pick: PRESETS, the EDIT layer, the editor,
-                                  * in the display order of engines.c ENGINE_ORDER */
+/* One generated selection is shared by target, host tests and emulator. */
+#define NENG_SHOWN FELUCCA_PROFILE_NSHOWN
+/* Firmware-owned identity adapter; portable engine_t remains MIT and unchanged. Icon numbers
+ * come from assets/icons.json (the same enum input as gen_aa_icons.py). Const data only. */
+typedef struct {
+    const char *tag, *preset_categories;
+    uint8_t icon, category, cc, order, kit;
+} engine_meta_t;
+static const engine_meta_t ENGINE_META[ENG_ID_MAX] = {
+#include "engine_metadata.inc"
+#if FELUCCA_ENG_TEST14
+    [14] = {"T14", "", 0, 8, 0, 13, 0},
+#endif
+};
+_Static_assert(sizeof ENGINE_META / sizeof ENGINE_META[0] == ENG_ID_MAX, "identity adapter: stable ID space");
 typedef char eng_ids_fit[NENGINES <= ENG_ID_MAX && ENG_ID_MAX < ENG_USER_WIRE ? 1 : -1];
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 

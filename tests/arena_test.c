@@ -66,20 +66,20 @@ static int fixtures(void)
     EXPECT(af_n == 1 && af_why == ARENA_BAD_ENGINE && af_want == ENGI_PHYS && in_scratch(r));
 
     /* unclaimed owner (none, then another engine's) of the rendered engine */
-    for (e = 0; e < 5u; e++) {
-        static const uint8_t EN[5] = {ENGI_GRAIN, ENGI_PHYS, ENGI_DRUM, ENGI_FM6, ENGI_SLICE};
-        t->engine = EN[e];
+    for (e = 0; e < NENGINES; e++) {
+        if (!eng_ok(e) || !eng_of(e)->mem) continue;
+        t->engine = e;
         eng_mem_owner[1] = 0;
         af_n = 0;
-        r = eng_mem_of(t, EN[e]);
-        EXPECT(af_n == 1 && af_why == ARENA_BAD_OWNER && af_want == EN[e] && in_scratch(r));
-        eng_mem_owner[1] = (uint8_t)(EN[(e + 1u) % 5u] + 1u);
+        r = eng_mem_of(t, e);
+        EXPECT(af_n == 1 && af_why == ARENA_BAD_OWNER && af_want == e && in_scratch(r));
+        eng_mem_owner[1] = (uint8_t)((e + 1u) % NENGINES + 1u);
         af_n = 0;
-        r = eng_mem_of(t, EN[e]);
+        r = eng_mem_of(t, e);
         EXPECT(af_n == 1 && af_why == ARENA_BAD_OWNER && in_scratch(r));
-        eng_mem_owner[1] = (uint8_t)(EN[e] + 1u);               /* claimed: succeeds, the part's own region */
+        eng_mem_owner[1] = (uint8_t)(e + 1u);               /* claimed: succeeds, the part's own region */
         af_n = 0;
-        r = eng_mem_of(t, EN[e]);
+        r = eng_mem_of(t, e);
         EXPECT(af_n == 0 && r == ENG_MEM(1));
     }
 
@@ -141,12 +141,9 @@ static uint32_t rnd(void)
     rs ^= rs << 5;
     return rs;
 }
-static const uint32_t RE[] = {0, ENGI_SAMPLE, 7, 8, ENGI_PHYS, ENGI_DRUM, ENGI_FM6, 2, 3, 5, 6, 11,
-#if FELUCCA_SLICE
-                              13
-#endif
-};
-#define NRE (sizeof RE / sizeof RE[0])
+/* Random switching covers every selectable engine, including new arena consumers. */
+#define NRE NENG_SHOWN
+#define RE_AT(k) eng_vis(k)
 
 #if FELUCCA_ARENA_CHECK
 static void run_handler(uint32_t why, const track_t *t, uint32_t want)
@@ -177,10 +174,10 @@ static int rrun(uint32_t seed)
             input_off(t, held[p][k]);
             held[p][k] = held[p][--nheld[p]];
         } else if (a < 10u) {                                       /* rapid switches */
-            host_preset_req(t, RE[rnd() % NRE], rnd() % 8u);
+            host_preset_req(t, RE_AT(rnd() % NRE), rnd() % 8u);
             sw++;
             if (rnd() & 1u)
-                host_preset_req(t, RE[rnd() % NRE], rnd() % 8u);
+                host_preset_req(t, RE_AT(rnd() % NRE), rnd() % 8u);
             if (rnd() & 1u) {                                       /* a note inside the fade */
                 uint32_t n = 36u + rnd() % 48u;
                 input_on(t, n, 100);

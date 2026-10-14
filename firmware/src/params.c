@@ -70,16 +70,8 @@ static const char *const N_IRATE[] = {"689", "919", "1.1k", "1.4k", "1.8k", "2.2
 static const char *const N_MSRC[] = {"OFF", "LFO", "ENV", "VEL", "KEY", "RAND", "MODW", "AT", "EXPR", "S&H", "SLEW"};
 static const char *const N_MDST[] = {"OFF", "PITCH", "CUT", "SHP", "AMP", "PAN", "DIST", "CHO", "DLY", "REV", "RATE",
                                      "VIB", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "DEPTH", "VEL", "TIME"};
-static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS",
-                                             "DRUM", "NOISE", "FM6",
-#if FELUCCA_SLICE
-                                             "SLICE",
-#else
-                                             "-",                     /* (13: left out of this build's catalog) */
-#endif
-#if FELUCCA_ENG_TEST14
-                                             "TEST14",
-#endif
+static const char *const N_ENGNAME[] = {
+#include "engine_names.inc"
 };
 typedef char engname_fit[NELEM(N_ENGNAME) == NENGINES ? 1 : -1];   /* G_ENGSEL: a name per id of the table */
 

@@ -238,28 +238,10 @@ static uint32_t mod_dst_icon(const track_t *t, int32_t d)
     return param_icon(track_desc(t, id), t->p[id]);
 }
 
-/* engine name (ENGINES[]->name) -> icon */
-static uint32_t engine_icon(const char *name)
+/* Firmware-owned metadata keyed by stored engine ID; unavailable sounds keep the generic icon. */
+static uint32_t engine_icon(uint32_t e)
 {
-    static const icon_map_t M[] = {
-        {"ANALOG", ICON_WAVE},
-#if FELUCCA_FM4
-        {"DIGITAL", ICON_ALGORITHM},
-#endif
-        {"PHASE", ICON_PHASE}, {"LOFI", ICON_BITS},
-        {"SAMPLE", ICON_SAMPLE}, {"VOICE", ICON_MOUTH}, {"TRIO", ICON_TRIO}, {"WHEEL", ICON_DRAWBAR},
-        {"SLICE", ICON_SLICE},
-        {"GRAIN", ICON_GRAIN},
-        {"PHYS", ICON_PHYS},
-        {"DRUM", ICON_DRUM},
-        {"NOISE", ICON_NOISE},
-        {"FM6", ICON_MOD},                    /* (symbol_modular: six operators patched; a glyph of its own wanted) */
-    };
-    uint32_t i;
-    for (i = 0; i < sizeof M / sizeof M[0]; i++)
-        if (str_eq(name, M[i].label))
-            return M[i].icon;
-    return ICON_GENERIC;
+    return eng_ok(e) && ENGINE_META[e].tag ? ENGINE_META[e].icon : ICON_GENERIC;
 }
 
 /* MOTION: the knob and its trace; recording into it (REC armed on the selected track, playing): its REC form */
@@ -280,7 +262,7 @@ static uint32_t page_icon(const page_t *pg)
 #else
 static uint32_t icon_for_label(const char *l) { (void)l; return ICON_NONE; }
 static uint32_t param_icon(const param_desc_t *d, int32_t v) { (void)d; (void)v; return ICON_NONE; }
-static uint32_t engine_icon(const char *name) { (void)name; return ICON_NONE; }
+static uint32_t engine_icon(uint32_t e) { (void)e; return ICON_NONE; }
 static uint32_t mod_src_icon(int32_t s) { (void)s; return ICON_NONE; }
 static uint32_t mod_dst_icon(const track_t *t, int32_t d) { (void)t; (void)d; return ICON_NONE; }
 static uint32_t motion_icon(void) { return ICON_NONE; }

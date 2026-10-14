@@ -14,8 +14,36 @@ See BUILDING.md for the toolchain and the SDK.
 The JieLi toolchain is Linux x86-64 only. JIELI_TOOLCHAIN points at it; on
 macOS (or with JIELI_DOCKER=1) each tool runs in a linux/amd64 container.
 """
+# Verified archives must not execute cached helpers before checking their source tree.
+# os/sys are loaded by Python startup; defer all repository and other stdlib imports.
+import os as _source_os
+import sys as _source_sys
+
+_source_root = _source_os.path.dirname(_source_os.path.dirname(_source_os.path.realpath(__file__)))
+_source_verifier = None
+if _source_os.path.isfile(_source_os.path.join(_source_root, "SOURCE-PINS.json")):
+    _source_sys.dont_write_bytecode = True
+    _source_os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    _source_import_paths = _source_sys.path[:]
+    try:
+        # The verifier uses only stdlib. Exclude archive paths while loading it,
+        # so an unmanifested module cannot shadow a stdlib dependency either.
+        _source_sys.path = [p for p in _source_import_paths
+                            if not (_source_os.path.realpath(p or _source_os.getcwd()) == _source_root
+                                    or _source_os.path.realpath(p or _source_os.getcwd()).startswith(_source_root + _source_os.sep))]
+        _source_verifier_path = _source_os.path.join(_source_root, "tools", "source_archive.py")
+        _source_verifier = {"__name__": "felucca_source_verifier", "__file__": _source_verifier_path}
+        with open(_source_verifier_path, "rb") as _source_verifier_file:
+            exec(compile(_source_verifier_file.read(), _source_verifier_path, "exec"), _source_verifier)
+        _source_verifier["verify_tree"](_source_root)
+    except (OSError, ValueError) as _source_error:
+        raise SystemExit(str(_source_error))
+    finally:
+        _source_sys.path = _source_import_paths
+
 import argparse
 import hashlib
+import json
 import os
 import platform
 import re
@@ -100,6 +128,13 @@ def resolve(argv):
         if a.product != product:
             tag = "-" + a.product
         product = a.product
+    profile_name = os.environ.get("FELUCCA_PROFILE", "standard")
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", profile_name):
+        raise SystemExit("invalid FELUCCA_PROFILE name")
+    if profile_name != "standard":
+        if a.release and (a.product is None or not tag):
+            raise SystemExit("non-standard release profile requires a distinct --product identity")
+        tag += "-" + profile_name
     base = f"felucca-{a.release}{tag}" if a.release else f"felucca{tag}"
     return {"product": product, "version": version, "release": a.release, "sdk": a.sdk,
             "explicit": a.product is not None, "name": base + ".fwsc",
@@ -148,6 +183,11 @@ def generate():
     font = os.environ.get("FELUCCA_FONT", "m8stealth")
     if font not in ("inter-tight", "tamzen", "m8stealth"):
         raise SystemExit("FELUCCA_FONT must be inter-tight, tamzen or m8stealth")
+    from profile import generated
+    for name, content in generated(SRC, os.environ.get("FELUCCA_PROFILE", "standard")).items():
+        GEN.mkdir(parents=True, exist_ok=True)
+        (GEN / name).write_text(content)
+    print(f"Engine profile: {os.environ.get('FELUCCA_PROFILE', 'standard')}")
     GEN.mkdir(parents=True, exist_ok=True)
     for old in ("felucca_font.h", "felucca_icons.h"):     # headers of the bitmap font and icon atlas
         (GEN / old).unlink(missing_ok=True)
@@ -346,7 +386,14 @@ def build_app():
                                ("common/bin/objdump", "-d", elf),
                                ("common/bin/objdump", "-d", "-j", ".ram_text", *(("-j", ".c1_text") if CPU2 else ()),
                                 elf))
-    (OUT / "felucca.dis").write_text(dis)
+    dis_path = OUT / "felucca.dis"
+    dis_path.write_text(dis)
+    # Preserved disassembly must carry the selection that produced these exact bytes.
+    dis_path.with_suffix(".dis.profile.json").write_text(json.dumps({
+        "schema_version": 1,
+        "dis_sha256": hashlib.sha256(dis_path.read_bytes()).hexdigest(),
+        "resolved_profile": json.loads((GEN / "resolved-profile.json").read_text()),
+    }, indent=2, sort_keys=True) + "\n")
 
     def symv(name):
         return int(re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M).group(1), 16)
@@ -542,6 +589,13 @@ def main(argv=None):
     global PRODUCT, VERSION
     c = resolve(sys.argv[1:] if argv is None else argv)     # validated before any job starts
     PRODUCT, VERSION, name = c["product"], c["version"], c["name"]
+    if _source_verifier is not None:
+        _source_verifier["verify_tree"](SRC)
+    from profile import validate_selection
+    try:
+        validate_selection(SRC, os.environ.get("FELUCCA_PROFILE", "standard"))  # before jobs/writes
+    except (ValueError, KeyError, OSError) as error:
+        raise SystemExit(f"profile: {error}")
     fm1pkg_make.SDK = c["sdk"]
     if not (FW / "engines" / "src" / "felucca_engine.h").exists():
         raise SystemExit("firmware/engines is empty: the Felucca-Engines submodule "
@@ -578,6 +632,7 @@ def main(argv=None):
         rel = OUT / c["rel"]
         shutil.rmtree(rel, ignore_errors=True)
         (rel / "LICENSES").mkdir(parents=True)
+        shutil.copy(GEN / "resolved-profile.json", rel / "resolved-profile.json")
         app = c["app"]
         (rel / name).write_bytes(pkg)
         (rel / app).write_bytes(img)

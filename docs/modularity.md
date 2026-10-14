@@ -2,8 +2,8 @@
 # Modular builds and usage modes
 
 This is the consolidated plan for build-time engine/effect selection and startup usage
-modes, and for adopting ideas from other FM-1 firmwares through them. The profile resolver
-and startup modes remain planned; implemented prerequisites are identified below. This page
+modes, and for adopting ideas from other FM-1 firmwares through them. The initial standard/reduced portable-engine resolver and host identity adapter are implemented
+([profile evidence](build-profiles.md)); broader native selection and startup modes remain planned. This page
 records vocabulary, ownership, current source constraints, the issue map and open decisions. Acceptance criteria live in the linked issues; when a decision is
 made or an issue changes scope, update this page in the same PR.
 
@@ -22,7 +22,9 @@ pinned to `c46e0086f69bdc26df1cd144dca9e683cc4531dd`. ANALOG, LOFI, TRIO, WHEEL 
 the portable `engine_t`/voice/parameter types, shared DSP and engine table generator live
 there under MIT. Other engines, registration, UI, voices/mixer, persistence and platform
 services remain in the GPL firmware. The source split preserves the existing sound IDs;
-it does not implement profile resolution, selective assets, effects modules or usage modes.
+the backport alone did not implement profile resolution, selective assets, effects modules or usage modes.
+The subsequent #341 integration supplies the initial resolver and reduced LOFI profile; effects/modes
+remain on their existing owners.
 
 | Order | Work | Existing owner / added integration task |
 | --- | --- | --- |

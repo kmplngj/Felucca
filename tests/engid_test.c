@@ -101,6 +101,8 @@ static uint32_t request(uint32_t cmd, const uint8_t *a, uint32_t n)
 /* an id below the id space this build has no engine for, and one it can play that is past the old table */
 #if FELUCCA_ENG_OMIT >= 0
 #define ID_GONE ((uint32_t)FELUCCA_ENG_OMIT)          /* (left out of the catalog) */
+#elif !FELUCCA_PROFILE_ENGINE_3
+#define ID_GONE 3u                                    /* representative reduced portable profile */
 #elif !FELUCCA_SLICE
 #define ID_GONE 13u                                   /* (FELUCCA_SLICE=0: SLICE left out) */
 #else
@@ -412,6 +414,7 @@ static int backup(void)
     return bad;
 }
 
+#ifndef FELUCCA_ENGID_HELPERS_ONLY
 int main(void)
 {
     int bad = catalog() + info() + fav() + projects() + presets() + backup();
@@ -419,3 +422,5 @@ int main(void)
            (unsigned)NENGINES, FELUCCA_ENG_TEST14, FELUCCA_ENG_OMIT);
     return bad != 0;
 }
+
+#endif

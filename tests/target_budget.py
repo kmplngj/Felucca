@@ -11,6 +11,9 @@ something not inlined any more). Compared with tests/target_budget.txt at +10 %.
 CPU check (regress.c) is the primary one; this one sees the target compiler's code.
   tests/target_budget.py [DIS [BUDGET]]      BUDGET_UPDATE=1 rewrites BUDGET"""
 import os
+import json
+import hashlib
+from pathlib import Path
 import re
 import sys
 
@@ -33,6 +36,8 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "perf_throw",                                      # .. REV / ECHO THROW (1.5.1): per part, while held or gliding
          "rev_room", "rev_spring", "rev_hall", "rev_side_mix",   # the reverb bus (fx.c): REVERB TYPE ROOM / SPRING / HALL (and its stereo)
          "track_insert", "ins_drive", "ins_swept"]          # the per-track INSERT (fx.c, 1.5), while a TYPE plays
+# The artifact's hashed sidecar owns sparse engine coverage. A listing without a sidecar
+# retains the historical full checks; mutable build/gen outputs never select its functions.
 # built only with FELUCCA_FM4=1 (DIGITAL, src/eng_digital.c; not in the default build, so not in BUDGET): absent,
 # they are skipped; present, checked against these (their budget lines until the engine was retired in 1.0)
 OPTIONAL = {"digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,
@@ -109,17 +114,39 @@ def cost(insns):
     return {"insns": len(insns), "loop": n, "div": divs, "call": calls, "cost": w}
 
 
+def artifact_functions(path):
+    path = Path(path)
+    sidecar = path.with_suffix(path.suffix + ".profile.json")
+    if not sidecar.exists():
+        return FUNCS, set()
+    try:
+        metadata = json.loads(sidecar.read_text())
+        profile = metadata["resolved_profile"]
+        excluded = profile["excluded_engine_budget_functions"]
+        if (metadata["schema_version"] != 1 or profile["schema_version"] != 1
+                or metadata["dis_sha256"] != hashlib.sha256(path.read_bytes()).hexdigest()
+                or not isinstance(excluded, list) or any(not isinstance(n, str) for n in excluded)
+                or len(excluded) != len(set(excluded)) or set(excluded) - set(FUNCS)):
+            raise ValueError("invalid or stale disassembly profile sidecar")
+        return [name for name in FUNCS if name not in excluded], set(excluded)
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid disassembly profile sidecar: {sidecar}") from error
+
+
 def main():
     if not os.path.exists(dis):
         print(f"target: skip ({dis} missing: run ./build.sh)")
         return 0
     try:
+        active, excluded = artifact_functions(dis)
         fns = functions(dis)
+        if excluded & fns.keys():
+            raise ValueError("disassembly contains engines its profile excludes: " + ", ".join(sorted(excluded & fns.keys())))
     except (OSError, ValueError) as e:
         print(f"target: FAIL {e}")
         return 1
-    res = {n: cost(fns[n]) for n in FUNCS if fns.get(n)}
-    missing = [n for n in FUNCS if n not in res and n not in OPTIONAL]
+    res = {n: cost(fns[n]) for n in active if fns.get(n)}
+    missing = [n for n in active if n not in res and n not in OPTIONAL]
     base = {}
     if os.path.exists(budget):
         with open(budget) as f:
