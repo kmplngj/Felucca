@@ -475,6 +475,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/dualcore_failure_test" tests/dualcore_failure_test.c -lm
     run "second core failures: discard sums, restore canonical/stored parameters through partial modulation/fades; no state replay" "$OUT/dualcore_failure_test"
     run "fault records: publish only a complete owning-core snapshot" python3 tests/crash_record_test.py
+    run "fault consumers: stable snapshots across per-word publication interleavings" python3 tests/crash_snapshot_test.py
     if [ -n "$TSAN" ]; then                     # TSAN=1: the same under ThreadSanitizer (~6 min): shared state
         TSAN_CC="cc -O1 -g -w -Ibuild/gen -Ifirmware/src -fsanitize=thread -pthread"
         $TSAN_CC -o "$OUT/dualcore_tsan" tests/dualcore_test.c -lm

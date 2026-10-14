@@ -53,6 +53,52 @@ typedef struct {
  * fold the magic check away. */
 fm1_crash_t fm1_crash __attribute__((section(".noinit")));
 
+/* A worker may replace this record while core 0 requests diagnostics. Use
+ * volatile word loads and the HAL's CSYNC ordering, not the live object while
+ * formatting output. The pre-copy marker check rejects an already invalidated
+ * record whose new count was read; the final marker/count reject replacement
+ * during copying, including valid -> invalid -> valid. One bounded attempt;
+ * a failed copy is invalid and may be retried by the caller later. This does
+ * not claim cache invalidation or qualify the device's dual-core reliability. */
+static int fm1_crash_read(fm1_crash_t *copy)
+{
+    const volatile fm1_crash_t *shared = &fm1_crash;
+    uint32_t count, i;
+    copy->magic = 0;
+    __asm__ volatile("csync" ::: "memory");
+    if (shared->magic != FM1_CRASH_MAGIC)
+        return 0;
+    count = shared->count;
+    __asm__ volatile("csync" ::: "memory");
+    if (shared->magic != FM1_CRASH_MAGIC)
+        return 0;
+    __asm__ volatile("csync" ::: "memory");
+    copy->count = count;
+    copy->vec = shared->vec;
+    copy->pc = shared->pc;
+    copy->rets = shared->rets;
+    copy->emu = shared->emu;
+    copy->dbg = shared->dbg;
+    copy->sp = shared->sp;
+    copy->psr = shared->psr;
+    copy->icfg = shared->icfg;
+    copy->uptime_ms = shared->uptime_ms;
+    for (i = 0; i < 4u; i++)
+        copy->etm[i] = shared->etm[i];
+    copy->early = shared->early;
+#if FM1_CPU1_USED
+    copy->core = shared->core;
+#endif
+    __asm__ volatile("csync" ::: "memory");
+    if (shared->magic != FM1_CRASH_MAGIC)
+        return 0;
+    __asm__ volatile("csync" ::: "memory");
+    if (shared->count != count)
+        return 0;
+    copy->magic = FM1_CRASH_MAGIC;
+    return 1;
+}
+
 extern const char fm1_fatal_stubs[];
 static void fm1_fault(const fm1_crash_t *c);   /* application: report, then reset */
 
