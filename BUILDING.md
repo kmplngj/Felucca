@@ -439,5 +439,6 @@ Non-standard **release** profiles require a distinct `--product` identity; their
 name also appears in the package/release filenames. Releases carry `resolved-profile.json`
 with source pins, file hashes and selection. Development `felucca.bin`/ELF/disassembly
 remain scratch outputs overwritten by the next build, so preserve them before comparisons.
-Complete verified source archives can resolve/build without a Git checkout; ordinary
-GitHub source ZIPs still lack the pinned dependency.
+Complete verified source archives can resolve/build without a Git checkout. The bundled
+`tools/source_archive.py` verifies `SOURCE-PINS.json` before either the resolver or build
+uses archive inputs. Ordinary GitHub source ZIPs still lack the pinned dependency.
