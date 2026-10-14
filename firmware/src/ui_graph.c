@@ -1146,7 +1146,7 @@ static void page_title(char *ti)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
-    const engine_t *e = ENGINES[t->eng_req % NENGINES];
+    const engine_t *e = eng_of(t->eng_req);
     uint32_t i, n = 0, k = 0;
     const char *pt = pg->scope == SC_ENGINE ? e->page_title[pg->id[0] != P_E0] : 0;   /* EDIT: the engine's */
     for (i = 0; i < NPAGES; i++)
@@ -1232,13 +1232,13 @@ static uint32_t graph_signature(void)
 #if FELUCCA_SLICE
     if (pg->graph == GR_SLICES && slice_page_ok()) h ^= slice_sig();
 #endif
-    if (pg->scope == SC_ENGINE && (ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL || t->eng_req % NENGINES == ENGI_FM6 ||
-                                   (FELUCCA_FM4 && t->eng_req % NENGINES == ENGI_DIGITAL)))
+    if (pg->scope == SC_ENGINE && (eng_of(t->eng_req) == &ENG_WHEEL || t->eng_req == ENGI_FM6 ||
+                                   (FELUCCA_FM4 && t->eng_req == ENGI_DIGITAL)))
         h ^= (ui.hot_t ? ui.hot_col + 1u : 0u) * 65537u;
-    if ((pg->scope == SC_ENGINE || fop_page(pg->graph)) && t->eng_req % NENGINES == ENGI_FM6)   /* the patch (PAT's algorithm,
+    if ((pg->scope == SC_ENGINE || fop_page(pg->graph)) && t->eng_req == ENGI_FM6)   /* the patch (PAT's algorithm,
                                                      * levels, FB; the operator pages: the operator, the stage) */
         h ^= (fm6_pgen[(t - trk) % NTRK] + 1u) * 2246822519u + (fop_op + 1u) * 40503u + (fop_stg + 1u) * 7919u;
-    if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE) h ^= sample_wave.pos * 13u + sample_wave.key;
+    if (pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_SAMPLE) h ^= sample_wave.pos * 13u + sample_wave.key;
     if (pg->graph == GR_ROLL) {
         uint32_t ph = song.playing ? t->seq_idx : 0xFFFFu;
         if (ph / 16u != ui.bank)
@@ -1364,7 +1364,7 @@ static void graph_browse(void)
         int32_t hint = sel ? preset_pat_hint() : -1;    /* the suggested pattern */
         if (index >= total) continue;
         e = preset_at(index, &k);
-        if (e == NENGINES) {                             /* user preset: "U07" and its name */
+        if (e == ENG_USER) {                             /* user preset: "U07" and its name */
             up_slot_label(tag, k);
             up_name(k, nm);
         } else {
@@ -1390,7 +1390,7 @@ static void graph_browse(void)
  * the engine's sounds) or "U07", the name, the star of a favourite */
 static void engine_sound_row(int32_t y)
 {
-    const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
+    const engine_t *e = eng_of(TSEL->eng_req);
     uint32_t total, cur = eng_list_pos(&total), u = user_of(TSEL);
     char tag[6], nm[13];
     int fav = preset_favorite();
@@ -1648,7 +1648,7 @@ static uint32_t trk_level(uint32_t c) { return (uint32_t)trk[c].p[P_LEVEL] & 127
 static void trk_short_name(uint32_t c, char *b)      /* the track's sound, b holds 13 */
 {
     const track_t *t = &trk[c];
-    const engine_t *e = ENGINES[t->eng_req % NENGINES];
+    const engine_t *e = eng_of(t->eng_req);
     if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), b);
     else if (e->npresets)
@@ -1853,7 +1853,7 @@ static void home_track_row(uint32_t c)
     }
     x = 24;
     if (FELUCCA_ICONS && !large) {                   /* the engine's icon on the name's capitals */
-        uint32_t ei = engine_icon(ENGINES[t->eng_req % NENGINES]->name);
+        uint32_t ei = engine_icon(eng_of(t->eng_req)->name);
         if (ei != ICON_NONE)
             GFX_HOOK_ALIGN(0, TR_NY(large), 0, TR_NY(large) + ch, AL_V, "tracks row icon on the name's line");
         x += cv_icon_in(x, TR_NY(large), 0, ch, 12, ei, sel ? T_INK : T_MID, bg) + 5;
@@ -2247,7 +2247,7 @@ static void draw_graph(void)
         draw_home_tracks();
         return;
     }
-    if (!ui.home && pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE) sample_wave_tick(t);
+    if (!ui.home && pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_SAMPLE) sample_wave_tick(t);
     sig = graph_signature();
     if (!ui.force && sig == ui.graph_sig)
         return;
@@ -2347,11 +2347,11 @@ static void draw_graph(void)
             if (fop_ok()) graph_fm6env(t, c);
             break;
         default:
-            if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL) graph_wheel(t, c);
-            else if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE && sample_wave.ready) graph_sample(c);
-            else if (pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_FM6) graph_fm6(t, c, 6u);   /* EDIT 1 and 2 */
+            if (pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_WHEEL) graph_wheel(t, c);
+            else if (pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_SAMPLE && sample_wave.ready) graph_sample(c);
+            else if (pg->scope == SC_ENGINE && t->eng_req == ENGI_FM6) graph_fm6(t, c, 6u);   /* EDIT 1 and 2 */
 #if FELUCCA_FM4
-            else if ((pg->scope == SC_ENGINE || pg->id[0] == P_FM1_LEVEL) && t->eng_req % NENGINES == ENGI_DIGITAL)
+            else if ((pg->scope == SC_ENGINE || pg->id[0] == P_FM1_LEVEL) && t->eng_req == ENGI_DIGITAL)
                 graph_fm(t, c);                      /* (OP LEVEL too: the levels on the chart) */
 #endif
             else { cv_oy = 0; graph_scope(c); }

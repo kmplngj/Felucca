@@ -24,7 +24,7 @@ static struct {
     int8_t lo[SP_COLS], hi[SP_COLS];                 /* per column: smallest / largest sample >> 9 */
 } sp;
 
-static int slice_page_ok(void) { return ENGINES[TSEL->eng_req % NENGINES] == &ENG_SLICE; }
+static int slice_page_ok(void) { return eng_of(TSEL->eng_req) == &ENG_SLICE; }
 static int slice_page_on(void) { return !ui.home && cur_page()->graph == GR_SLICES && slice_page_ok(); }
 
 /* the source the selected part plays, its DIV; 0 = no material (an empty slot: the sine, as slice_note_on) */

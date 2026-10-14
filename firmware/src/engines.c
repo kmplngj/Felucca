@@ -43,7 +43,7 @@ static void *eng_mem_of(const track_t *t, uint32_t want)
         return eng_arena_scratch;
     }
     p = (uint32_t)(t - trk);
-    cur = t->engine < NENGINES ? t->engine : 0u;
+    cur = t->engine < NENGINES ? t->engine : (uint32_t)NENGINES;   /* (an index; NENGINES: ENG_IDX_NONE, below) */
     if (cur != want) {
         eng_arena_fail(ARENA_BAD_ENGINE, t, want);
         return eng_arena_scratch;
@@ -79,32 +79,84 @@ static void *eng_mem_of(const track_t *t, uint32_t want)
 #include "eng_slice.c"
 #endif
 
-/* the editor protocol, user presets and projects store these indices: append, never reorder */
-static const engine_t *const ENGINES[NENGINES] = {
-    &ENG_ANALOG,                 /* 0 */
+/* An id this build has no engine for (#212: one a build's catalog leaves out, FELUCCA_ENG_OMIT; one past this build's
+ * table, a later firmware's): a sound stored with it keeps its id, its preset number and its E values (the full
+ * stored range, -64..127) and plays nothing; it is never offered (eng_ok) and is shown as unavailable ("N/A").
+ * eng_idx maps such an id to ENG_IDX_NONE, the table's extra last entry, never onto another engine */
+static void eng_none_note_on(struct track *t, voice_t *v) { (void)t; (void)v; }
+static void eng_none_render(struct track *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+{
+    (void)t; (void)v; (void)out; (void)n; (void)m;
+}
+#define ENG_NONE_E {"-", F_INT, -64, 127, 0, 0, 0}
+static const engine_t ENG_NONE = {
+    .name = "N/A",
+    .page_title = {"N/A", "N/A"},
+    .edit = {ENG_NONE_E, ENG_NONE_E, ENG_NONE_E, ENG_NONE_E, ENG_NONE_E, ENG_NONE_E, ENG_NONE_E, ENG_NONE_E},
+    .note_on = eng_none_note_on,
+    .render = eng_none_render,
+    .knob = {P_LEVEL, P_ATK, P_DEC, P_REL},
+};
+#if FELUCCA_ENG_TEST14
+/* host tests only (FELUCCA_ENG_TEST14=1, #212): a placeholder engine with id 14, so the stores, favourites, the
+ * editor and the UI are tested with an id past the old 16-row favourites table's MIDI LEARN row. Silent */
+static const preset_t TEST14_PRESETS[] = {
+    {"T14 ONE", {0, 0, 0, 0, 0, 0, 0, 0}, {0, 64, 100, 40}, 0, 0, {0, 0, 0, 0}, 0},
+    {"T14 TWO", {1, 1, 1, 1, 1, 1, 1, 1}, {0, 64, 100, 40}, 0, 0, {0, 0, 0, 0}, 0},
+};
+#define T14_E(l) {l, F_INT, 0, 127, 0, 0, 0}
+static const engine_t ENG_TEST14 = {
+    .name = "TEST14",
+    .page_title = {"TEST", "TEST"},
+    .edit = {T14_E("A"), T14_E("B"), T14_E("C"), T14_E("D"), T14_E("E"), T14_E("F"), T14_E("G"), T14_E("H")},
+    .presets = TEST14_PRESETS,
+    .npresets = 2,
+    .note_on = eng_none_note_on,
+    .render = eng_none_render,
+    .knob = {P_E0, P_E0 + 1, P_E0 + 2, P_REL},
+};
+#endif
+_Static_assert(FELUCCA_ENG_OMIT != (int)ENGI_DIGITAL, "engine 1 is reserved already");
+/* engine id `id` of this build's catalog: e, or ENG_NONE where the catalog leaves it out (FELUCCA_ENG_OMIT) */
+#define ENG_AT(id, e) (FELUCCA_ENG_OMIT == (id) ? &ENG_NONE : (e))
+
+/* the editor protocol, user presets and projects store these indices: append, never reorder. The entry past the
+ * last id (ENG_IDX_NONE) is ENG_NONE: what eng_idx gives for an id this build lacks */
+#define ENG_IDX_NONE ((uint32_t)NENGINES)
+static const engine_t *const ENGINES[] = {
+    ENG_AT(0, &ENG_ANALOG),      /* 0 */
 #if FELUCCA_FM4
     &ENG_DIGITAL,                /* 1 (ENGI_DIGITAL) */
 #else
     &ENG_FM4_GONE,               /* 1: reserved (DIGITAL, retired: its sounds convert to FM6, fm4_convert.c) */
 #endif
-    &ENG_PHASE,                  /* 2 */
-    &ENG_LOFI,                   /* 3 */
-    &ENG_SAMPLE,                 /* 4 */
-    &ENG_FORMANT,                /* 5 VOICE (eng_formant.c: "voice" is a sounding note in voice.c) */
-    &ENG_TRIO,                   /* 6 */
-    &ENG_WHEEL,                  /* 7 */
-    &ENG_GRAIN,                  /* 8 */
-    &ENG_PHYS,                   /* 9 (ENGI_PHYS) */
-    &ENG_DRUM,                   /* 10 (ENGI_DRUM) */
-    &ENG_NOISE,                  /* 11 */
-    &ENG_FM6,                    /* 12 (ENGI_FM6) */
+    ENG_AT(2, &ENG_PHASE),       /* 2 */
+    ENG_AT(3, &ENG_LOFI),        /* 3 */
+    ENG_AT(4, &ENG_SAMPLE),      /* 4 */
+    ENG_AT(5, &ENG_FORMANT),     /* 5 VOICE (eng_formant.c: "voice" is a sounding note in voice.c) */
+    ENG_AT(6, &ENG_TRIO),        /* 6 */
+    ENG_AT(7, &ENG_WHEEL),       /* 7 */
+    ENG_AT(8, &ENG_GRAIN),       /* 8 */
+    ENG_AT(9, &ENG_PHYS),        /* 9 (ENGI_PHYS) */
+    ENG_AT(10, &ENG_DRUM),       /* 10 (ENGI_DRUM) */
+    ENG_AT(11, &ENG_NOISE),      /* 11 */
+    ENG_AT(12, &ENG_FM6),        /* 12 (ENGI_FM6) */
 #if FELUCCA_SLICE
-    &ENG_SLICE,                  /* 13 (FELUCCA_SLICE=0 builds without it) */
+    ENG_AT(13, &ENG_SLICE),      /* 13 */
+#else
+    &ENG_NONE,                   /* 13: SLICE, left out of this build's catalog (FELUCCA_SLICE=0; #212: its id stays) */
 #endif
+#if FELUCCA_ENG_TEST14
+    ENG_AT(14, &ENG_TEST14),     /* 14: host tests only */
+#endif
+    &ENG_NONE,                   /* ENG_IDX_NONE */
 };
+_Static_assert(NELEM(ENGINES) == NENGINES + 1u, "ENGINES: an entry per id, then ENG_NONE");
 
-/* a track's engine number as an index (the audio paths: a compare, cheaper than % NENGINES; a bad number: 0) */
-static inline uint32_t eng_idx(uint32_t e) { return e < NENGINES ? e : 0u; }
+/* a track's engine id as an index of ENGINES (the audio paths: a compare): the id itself when this build has its
+ * engine (or ENG_NONE where its catalog leaves it out), else ENG_IDX_NONE (ENG_NONE: silent) -- never another engine */
+static inline uint32_t eng_idx(uint32_t e) { return e < NENGINES ? e : ENG_IDX_NONE; }
+#define eng_of(e) (ENGINES[eng_idx(e)])
 
 /* part t's engine memory goes to its engine (t->engine; voice.c engine_block, once a block: on a switch, after
  * the old engine's fade, before any note on the new one): zeroed (its engine_t.mem bytes) when another
@@ -150,27 +202,62 @@ static const char *snd_missing(const track_t *t, uint32_t *code)
  * engine indices, never DIGITAL's reserved 1 (with FELUCCA_FM4 it follows FM6). The indices stay as they are (the
  * stores and the protocol hold them); only this table orders them */
 static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
+#if FELUCCA_ENG_OMIT != 0
     0,                           /* ANALOG */
+#endif
+#if FELUCCA_ENG_OMIT != 12
     12,                          /* FM6 */
+#endif
 #if FELUCCA_FM4
     1,                           /* DIGITAL */
 #endif
-    2, 3, 4, 5, 6, 7, 8, 9,      /* PHASE LOFI SAMPLE VOICE TRIO WHEEL GRAIN PHYS */
+#if FELUCCA_ENG_OMIT != 2
+    2,                           /* PHASE */
+#endif
+#if FELUCCA_ENG_OMIT != 3
+    3,                           /* LOFI */
+#endif
+#if FELUCCA_ENG_OMIT != 4
+    4,                           /* SAMPLE */
+#endif
+#if FELUCCA_ENG_OMIT != 5
+    5,                           /* VOICE */
+#endif
+#if FELUCCA_ENG_OMIT != 6
+    6,                           /* TRIO */
+#endif
+#if FELUCCA_ENG_OMIT != 7
+    7,                           /* WHEEL */
+#endif
+#if FELUCCA_ENG_OMIT != 8
+    8,                           /* GRAIN */
+#endif
+#if FELUCCA_ENG_OMIT != 9
+    9,                           /* PHYS */
+#endif
+#if FELUCCA_ENG_OMIT != 11
     11,                          /* NOISE */
-#if FELUCCA_SLICE
+#endif
+#if FELUCCA_SLICE && FELUCCA_ENG_OMIT != 13
     13,                          /* SLICE */
 #endif
+#if FELUCCA_ENG_TEST14 && FELUCCA_ENG_OMIT != 14
+    14,                          /* TEST14 (host tests) */
+#endif
+#if FELUCCA_ENG_OMIT != 10
     10,                          /* DRUM */
+#endif
 };
+_Static_assert(NELEM(ENGINE_ORDER) == NENG_SHOWN, "ENGINE_ORDER: every engine one can pick, once");
 
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
-static int eng_ok(uint32_t e) { return e < NENGINES && (FELUCCA_FM4 || e != ENGI_DIGITAL); }
+static int eng_ok(uint32_t e) { return e < NENGINES && ENGINES[e] != &ENG_NONE && (FELUCCA_FM4 || e != ENGI_DIGITAL); }
 static uint32_t eng_vis(uint32_t n) { return ENGINE_ORDER[n % NENG_SHOWN]; }
 static uint32_t eng_rank(uint32_t e)
 {
     uint32_t n;
-    if (!eng_ok(e))
+    if (e == ENGI_DIGITAL && !FELUCCA_FM4)
         e = ENGI_FM6;                            /* (DIGITAL without FELUCCA_FM4: its sounds play as FM6) */
     for (n = 0; n < NENG_SHOWN && ENGINE_ORDER[n] != e; n++)
         ;
@@ -178,7 +265,10 @@ static uint32_t eng_rank(uint32_t e)
 }
 static uint32_t eng_step(uint32_t e, int32_t dir)
 {
-    return eng_vis((eng_rank(e % NENGINES) + (dir > 0 ? 1u : NENG_SHOWN - 1u)) % NENG_SHOWN);
+    if (!eng_ok(e) && !(e == ENGI_DIGITAL && !FELUCCA_FM4))   /* an unavailable id: the first / last one (a step from it
+                                                               * is the user's choice of another engine, not a remap) */
+        return eng_vis(dir > 0 ? 0u : NENG_SHOWN - 1u);
+    return eng_vis((eng_rank(e) + (dir > 0 ? 1u : NENG_SHOWN - 1u)) % NENG_SHOWN);
 }
 
 /* factory sequence patterns: SAVE > PHRASES loads one into the selected track (ui.c pat_load); a preset

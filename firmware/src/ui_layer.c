@@ -77,14 +77,14 @@ static const page_t *ly_page(uint32_t l) { return l == LAYER_SCL ? &LY_SCL : l =
 #define LY_INIT ((uint32_t)NENG_SHOWN) /* EDIT: the white key of INIT, the one after the engines (13: E5), its map cell */
 #define LY_CLEAN (LY_INIT + 1u)         /* .. and CLEAN INIT's, the next (1.5.5, #190: F5) */
 typedef char ly_init_fits[LY_CLEAN < 16u ? 1 : -1];   /* (a white key: F3 .. G5) */
-#define layer_seen (favorites.factory[15][31])   /* bit l: layer l opened once (a byte no engine uses) */
+#define layer_seen (settings_dev[31])   /* bit l: layer l opened once (a byte no engine uses) */
 static const khint_t FX_LATCH_FOOT[3] = {{KC_KEYS, "ON / OFF"}, {KC_K14, "MACROS"}, {KC_OCTDN, "ALL OFF"}};
 static const khint_t FX_KEY_FOOT[3] = {{KC_PRESETS, "ASSIGN"}, {KC_EDIT, "DEFAULT"}, {KC_K14, "MACROS"}};   /* (a key held) */
 static const khint_t GLO_LOCK_FOOT[3] = {{KC_OCTDN, "UNDO"}, {KC_GLO, "DONE"}, {0, 0}};   /* (locked: PLAY plays, #183) */
 static const khint_t EU_FOOT[3] = {{KC_OCTUP, "APPLY"}, {KC_OCTDN, "CANCEL"}, {0, 0}};   /* (SEQ TOOLS' EUCLID open) */
 /* the FX layer's key map (perform.c perf_map_of / perf_map_put: 16 x 5 bits; all 0, every older setting: the default
  * map) in 10 bytes no engine uses, kept with the settings */
-#define fx_keys (&favorites.factory[15][14])
+#define fx_keys (&settings_dev[14])
 
 static struct {
     uint8_t l, trk, loaded, oct;       /* SET: the layer and the track of the snapshot; EDIT: a sound loaded since
@@ -347,8 +347,8 @@ static void edit_load(uint32_t e, int32_t step)
     uint32_t id = snd_id();
     if (!lys.loaded)
         undo.keep = 0;
-    if (e < NENGINES) {
-        if (e == TSEL->eng_req % NENGINES)
+    if (e != ENG_USER) {                                /* (ENG_USER: KNOB 2's list instead) */
+        if (e == TSEL->eng_req)
             return;                                     /* its engine already: the sound stays */
         select_engine(e);
         preset_hinted();
@@ -573,7 +573,7 @@ typedef char eqa_fits[NLANE <= 11 ? 1 : -1];       /* (11 black keys) */
 
 static uint32_t eqa_count(const track_t *t)        /* the actions of t's engine (black keys 1..n) */
 {
-    uint32_t i, e = t->eng_req % NENGINES;
+    uint32_t i, e = t->eng_req;
     for (i = 0; i < NELEM(EQA); i++)
         if (EQA[i].eng == e)
             return EQA[i].n;
@@ -581,7 +581,7 @@ static uint32_t eqa_count(const track_t *t)        /* the actions of t's engine 
 }
 static const eqa_t *eqa_of(const track_t *t, uint32_t p)   /* black key p's (0 = F#3), 0 none */
 {
-    uint32_t i, e = t->eng_req % NENGINES;
+    uint32_t i, e = t->eng_req;
     for (i = 0; i < NELEM(EQA); i++)
         if (EQA[i].eng == e)
             return p < EQA[i].n ? &EQA[i].a[p] : 0;
@@ -717,7 +717,7 @@ static void layer_knob(uint32_t k, int32_t s)
         if (k == 0u)
             edit_load(eng_step(TSEL->eng_req, s), 0);
         else if (k == 1u)
-            edit_load(NENGINES, s);
+            edit_load(ENG_USER, s);
         else if (k == 2u)
             preset_mark(s > 0);
     } else if (l == LAYER_REC) {                        /* CLICK, COUNT-IN, LEVEL (KNOB 4: none) */
@@ -855,7 +855,7 @@ static uint32_t layer_leds(uint32_t *br)
             on = e == 0u;
             can = (mask >> e) & 1u;
         } else if (l == LAYER_EDIT && !b) {             /* the engine lit, the others and INIT breathe */
-            on = p < NENG_SHOWN && p < LY_INIT && eng_vis(p) == TSEL->eng_req % NENGINES;
+            on = p < NENG_SHOWN && p < LY_INIT && eng_vis(p) == TSEL->eng_req;
             can = p < NENG_SHOWN && p < LY_INIT ? 1u : (p == LY_INIT || p == LY_CLEAN) && !chain_busy();
         } else if (l == LAYER_EDIT && (a = eqa_of(TSEL, p)) != 0) {   /* the quick actions: on lit (DRUM: sounding), */
             on = a->on(TSEL, a->arg) != 0u;             /* a HOLD one off breathes, none dark */
@@ -1055,10 +1055,10 @@ static void layer_edit(void)                            /* the engines from F3, 
     uint32_t na = eqa_count(TSEL);
     for (i = 0; i < cells; i++) {
         int32_t x = LC_X(i % 4u), y = 4 + (int32_t)(h + 4u) * (int32_t)(i / 4u);
-        const engine_t *en = ENGINES[eng_vis(i) % NENGINES];
+        const engine_t *en = eng_of(eng_vis(i));
         if (i < n)
             lcell(x, y, (int32_t)h, 0, engine_icon(en->name), 0, h > 24u ? en->name : eng_abbr(en->name),
-                  eng_vis(i) == TSEL->eng_req % NENGINES ? LS_SEL : LS_OFF, 0);
+                  eng_vis(i) == TSEL->eng_req ? LS_SEL : LS_OFF, 0);
         else
             lcell(x, y, (int32_t)h, 0, i == n ? ICON_X_WARN : ICON_COUNT, 0, i == n ? "INIT" : "CLEAN",   /* (CLEAN: no
                                                                                     * icon, the word fills the cell) */

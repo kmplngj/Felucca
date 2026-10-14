@@ -86,7 +86,7 @@ static void reset(void)
     memset(&persist_saved, 0, sizeof persist_saved);
     memset(&settings, 0, sizeof settings);
     memset(&ui, 0, sizeof ui);
-    memset(&favorites, 0, sizeof favorites);
+    memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     panel = PANEL_DEFAULT;
     host_tracks_init();
     fm1_ms = 0;
@@ -688,12 +688,12 @@ int main(void)
     fail_after = -1;
     bad += check("failed preset save rolls back bank and generation", ok && up_gen == before &&
                   !memcmp(&up_bank[0], &bank, sizeof bank));
-    favorite_set(NENGINES, 3, 1);
+    favorite_set(ENG_USER, 3, 1);
     fail_after = 1;
     ok = up_put(3, 0) == 2;
     fail_after = -1;
     bad += check("failed preset erasure retains both the sound and its favorite", ok && up_used(3) &&
-                  favorite_has(NENGINES, 3) && !memcmp(&up_bank[0], &bank, sizeof bank));
+                  favorite_has(ENG_USER, 3) && !memcmp(&up_bank[0], &bank, sizeof bank));
     memset(&up_bank[0], 0, sizeof up_bank[0]);
     up_boot();
     bad += check("failed preset save keeps old flash", !memcmp(&up_bank[0], &bank, sizeof bank));

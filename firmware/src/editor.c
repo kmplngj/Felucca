@@ -122,7 +122,7 @@ static int ed_smp_end(uint32_t k, const uint8_t *a, uint32_t na)
 }
 
 /* the engine byte of DUMP / RELOAD / TRACK */
-static uint32_t ed_eng(const track_t *t) { return t->eng_req % NENGINES; }
+static uint32_t ed_eng(const track_t *t) { return t->eng_req; }   /* (#212: the stored id, unavailable or not) */
 
 /* ---- live sync (v2): while the editor WATCHes, device-side changes are pushed.
  * Shadows of the selected track's p[] + song.g[] and of its steps are kept in step
@@ -276,7 +276,7 @@ static void ed_sync(void)                                /* main loop */
 
 /* descriptor of parameter id of track t: the engine parameters of the engine it asked for
  * (t->engine follows in the audio ISR, after a short fade) */
-static const param_desc_t *ed_tdesc(const track_t *t, uint32_t id) { return param_desc_of(t->eng_req % NENGINES, id); }
+static const param_desc_t *ed_tdesc(const track_t *t, uint32_t id) { return param_desc_of(eng_idx(t->eng_req), id); }
 /* descriptor and value slot of (scope, id): scope 0 = the selected track, 1 = global */
 static const param_desc_t *ed_desc(uint32_t scope, uint32_t id, int16_t **vp)
 {
@@ -471,8 +471,9 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(G_COUNT);
         ed_b(NSTEP);
         ed_b(P_E0);
-        for (i = 0; i < NENGINES; i++)
-            ed_str(ENGINES[i]->name, 8);
+        for (i = 0; i < NENGINES; i++)                    /* (the old prefix, #212: ids 0..NENGINES-1, "-" for one
+                                                           * this build cannot play; the 49 01 block below is the catalog) */
+            ed_str(eng_ok(i) ? ENGINES[i]->name : "-", 8);
         ed_b(NTRK);                                       /* v3 */
         ed_b(CHAIN_ROWS);                                  /* v6 */
         ed_b(0x55); ed_b(1); ed_b(ed_ui_caps());             /* tagged preferences v1: commands 34..38 */
@@ -492,6 +493,13 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(0x43); ed_b(1); ed_b(ML_N);   /* 1.5: MIDI LEARN's map (cmds 78, 79; editor_learn.c) */
         ed_b(0x4B); ed_b(1); ed_b(NCOND);   /* 1.5.5: a step's condition (1..11) after its nudge */
         ed_b(0x45); ed_b(1); ed_b(ED_PAL_N);   /* 1.6: CUSTOM, the user's palette: 5 colours (cmds 80, 81; editor_palette.c) */
+        ed_b(0x49); ed_b(1); ed_b(ENG_ID_MAX); ed_b(ENG_USER_WIRE);   /* #212: the engine id space, FAV's user marker, */
+        for (i = 0; i < (ENG_ID_MAX + 6u) / 7u; i++) {                 /* then a bit per id this build can play (eng_ok), */
+            uint32_t b = 0, k;                                        /* 7 a byte, id 7i + k in bit k */
+            for (k = 0; k < 7u; k++)
+                b |= (uint32_t)(eng_ok(7u * i + k) != 0) << k;
+            ed_b(b);
+        }
         break;
     case ED_GET:
     case ED_SET:
@@ -502,7 +510,9 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                                                            * DIGITAL's first preset, as FM6) */
                 ed_load_t b;
                 ed_load_before(&b);
-                set_engine((uint32_t)clamp(ed_rv(a + 2), 0, NENGINES - 1));
+                int32_t e = ed_rv(a + 2);                 /* (#212: an engine this build lacks: no change) */
+                if (e >= 0 && (eng_ok((uint32_t)e) || (uint32_t)e == ENGI_DIGITAL))
+                    set_engine((uint32_t)e);
                 ed_load_after(&b);
             } else if (d->max > d->min) {
                 *vp = (int16_t)enum_orig(d, clamp(ed_rv(a + 2), d->min, d->max));
@@ -559,7 +569,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     }
     case ED_PRESET: {                                      /* engine, preset */
         ed_load_t b;
-        if (na < 2u || a[0] >= NENGINES)
+        if (na < 2u || !(eng_ok(a[0]) || a[0] == ENGI_DIGITAL))   /* (#212: an engine this build lacks: no reply) */
             return;
         ed_load_before(&b);
 #if !FELUCCA_FM4
@@ -592,7 +602,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(project_used(a[1] & 3u));
         break;
     case ED_NAMES:                                         /* preset names of an engine */
-        if (na < 1u || a[0] >= NENGINES)
+        if (na < 1u || a[0] >= NENGINES)               /* (an id without an engine here: ENG_NONE's, none) */
             return;
         ed_b(a[0]);
         ed_b(ENGINES[a[0]]->npresets);

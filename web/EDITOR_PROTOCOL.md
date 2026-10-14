@@ -90,7 +90,7 @@ watches (v2, `WATCH`), the device also sends push frames (cmds 23, 24, 26) at an
 | string | ASCII bytes, ended by a 0 byte |
 | scope | 0 = parameter of the selected track (`P_*`, 0..P_COUNT−1); 1 = global parameter (`G_*`, 0..G_COUNT−1) |
 | track | 0..3: tracks 1..4 (synth parts) |
-| engine byte | 0..NENGINES−1 (firmware before 1.0: NENGINES = its drum track, no engine). The numbers are fixed, new engines are appended: 0 ANALOG, 1 reserved (DIGITAL before 1.0: see below), 2 PHASE, 3 LOFI, 4 SAMPLE, 5 VOICE, 6 TRIO, 7 WHEEL, 8 GRAIN, 9 PHYS, 10 DRUM, 11 NOISE, 12 FM6, 13 SLICE (NENGINES 14; a build with `FELUCCA_SLICE=0` has 13). The device and the editor list them in another order (ANALOG FM6 PHASE LOFI SAMPLE VOICE TRIO WHEEL GRAIN PHYS NOISE SLICE DRUM: `ENGINE_ORDER`); the numbers stay |
+| engine byte | an engine id 0..63 (#212: the id space, whatever engines a build has; firmware before 1.0: NENGINES = its drum track, no engine). The numbers are fixed, new engines are appended: 0 ANALOG, 1 reserved (DIGITAL before 1.0: see below), 2 PHASE, 3 LOFI, 4 SAMPLE, 5 VOICE, 6 TRIO, 7 WHEEL, 8 GRAIN, 9 PHYS, 10 DRUM, 11 NOISE, 12 FM6, 13 SLICE (NENGINES 14, also with `FELUCCA_SLICE=0`, which leaves 13 out of its catalog; before #212 such a build had 13). A build plays the ids INFO's `49 01` block marks; an id it lacks is kept where it is stored and reported as it is (see "Engine ids" below). The device and the editor list them in another order (ANALOG FM6 PHASE LOFI SAMPLE VOICE TRIO WHEEL GRAIN PHYS NOISE SLICE DRUM: `ENGINE_ORDER`); the numbers stay |
 
 The engine parameters are `P_E0..P_E7`: P_COUNT−8 .. P_COUNT−1 (103..110 since 1.5; 96..103 in 1.2 .. 1.4; 91..98 in
 1.1), and `INFO` gives `P_E0`.
@@ -185,7 +185,7 @@ at 1..3 and hides 6 5 8: what it sets still plays the right kit, and the device 
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
-| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v6) CHAIN_ROWS (16), then the tagged blocks `55 01 uiCaps`, `4D 01 64 01`, `42 01 3`, `46 01 nfactory nbank`, `53 01 3`, (1.0.3) `50 01 3` and (1.0.4) `4E 01 count` (MENU settings; 12, 1.1: 15, 1.2: 17, 1.1.5: 18, 1.2: 23, 1.3: 24, 1.5: 25, 1.5.5: 32) and (1.0.5) `52 01 4` (ratchet) and (1.1) `4C 01 1` (parameter locks) and (1.2) `41 01 00 01` (128 motion records: two 7-bit bytes, LSB first; `4D 01 64 01` keeps saying 64) and `54 01 16` (a step's nudge, 1/16 of a step) and `57 01 4` (song sections: a slot per track, SONG ops 4..7) and (1.4.1) `56 01 32` (FM6's voice bank: cmds 74..77, SLOT 9..40) and (1.5) `43 01 16` (MIDI LEARN's map: cmds 78, 79) and (1.5.5) `4B 01 NCOND` (a step's condition) and (1.6) `45 01 5` (CUSTOM palette: cmds 80, 81) (below); older firmware ends earlier |
+| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v6) CHAIN_ROWS (16), then the tagged blocks `55 01 uiCaps`, `4D 01 64 01`, `42 01 3`, `46 01 nfactory nbank`, `53 01 3`, (1.0.3) `50 01 3` and (1.0.4) `4E 01 count` (MENU settings; 12, 1.1: 15, 1.2: 17, 1.1.5: 18, 1.2: 23, 1.3: 24, 1.5: 25, 1.5.5: 32) and (1.0.5) `52 01 4` (ratchet) and (1.1) `4C 01 1` (parameter locks) and (1.2) `41 01 00 01` (128 motion records: two 7-bit bytes, LSB first; `4D 01 64 01` keeps saying 64) and `54 01 16` (a step's nudge, 1/16 of a step) and `57 01 4` (song sections: a slot per track, SONG ops 4..7) and (1.4.1) `56 01 32` (FM6's voice bank: cmds 74..77, SLOT 9..40) and (1.5) `43 01 16` (MIDI LEARN's map: cmds 78, 79) and (1.5.5) `4B 01 NCOND` (a step's condition) and (1.6) `45 01 5` (CUSTOM palette: cmds 80, 81) and (#212) `49 01 64 7F` + 10 bitmap bytes (the engine id space, FAV's user marker, the ids this build plays: "Engine ids" below) (below); older firmware ends earlier. The old prefix stays as it was: NENGINES is the length of the name list (ids 0..NENGINES−1), a name `-` an id this build cannot play (DIGITAL's 1, an id its catalog leaves out) |
 | 2 GET | scope, id | scope, id, v14 |
 | 3 SET | scope, id, v14 | scope, id, v14 (the value after clamping). Setting global `G_ENGSEL` (id from DESC label "ENG") changes the engine: its defaults, then its first preset (as on the device) |
 | 4 DUMP | — | engine, preset, then P_COUNT × v14 (the selected track), then G_COUNT × v14 (globals) |
@@ -272,7 +272,7 @@ is not required.
 
 ## v2: user presets
 
-A user preset = engine (0..NENGINES−1), name (1..12 chars, ASCII 32..126; the device shows it upper
+A user preset = engine (an id 0..63; #212), name (1..12 chars, ASCII 32..126; the device shows it upper
 case), all P_COUNT instrument parameters (v14 each, the same order as `DUMP`), and a 16-step pattern:
 16 × (note 0..127 (0 = rest), flags: 1 accent, 2 slide, 4 tie, 8 | 16 the ratchet − 1 (firmware with `52 01`;
 before, 0: x1, and such firmware drops those bits when it loads the pattern)). Loading one applies the engine and
@@ -284,7 +284,8 @@ numbered 0..31 (the device shows U01..U32).
 - `UP_LIST`: count is cut at 16 and at the last slot (start ≥ 32: count 0, no entries).
 - `UP_GET` of an empty slot has the same shape with used 0, engine 0, name "" and all values 0.
   Values come back in the current parameter order, inside their ranges.
-- `UP_PUT`: rc 1 for a slot ≥ 32, an engine ≥ NENGINES, a name that is empty, longer than 12 or has
+- `UP_PUT`: rc 1 for a slot ≥ 32, an engine this build cannot play (#212: INFO's `49 01` bitmap; 1, DIGITAL, is
+  taken and converts as below), a name that is empty, longer than 12 or has
   bytes outside 32..126, or an incomplete or oversized frame. Values are clamped to their ranges for that
   engine. A note with flag 4 is stored as a tie (note 0); flags on a rest are dropped.
 - **DRUM** (engine 10) was PHYS's MODEL 4 (DRUM) before 1.0. A record of PHYS with E1 (MODEL) = 4,
@@ -809,7 +810,7 @@ this firmware sends 3. Requests name objects, never flash addresses.
 | id | object | size |
 | --- | --- | --- |
 | 0 | runtime: the music being played now, as a FUN10 project (1.1: FUN9, 3648; 1.0.x: FUN8, 3584; firmware before FM6: FUN7, 3388) | 3840 |
-| 1 | settings (palette, speaker, HOLD time, favorites, panel calibration, ...) | the settings record's size |
+| 1 | settings (palette, speaker, HOLD time, favorites, panel calibration, ...) | the settings record's size: PER4's, or PER6's while a favourite is on an engine id from 14 (#212, "Engine ids") |
 | 2..5 | PROJECT slots 1..4 (FUN10; 1.1: FUN9, 3648; 1.0.x: FUN8, 3584) | 3840, or 0 if empty |
 | 6, 7 | user preset banks (slots 1..16, 17..32) | the bank's size, or 0 if empty |
 | 8 | the FM6 patch bank of 1.0..1.0.2 (B1..B27). Since 1.0.3 always listed empty (see below) | 3472, or 0 if empty |
@@ -824,7 +825,7 @@ against the list; if it differs the device changed, so start again.
 
 Restoring: `BACKUP_PUT` takes ids 0..9 (firmware before 1.0.3: 0..8, id 9 answers rc 1 at begin and nothing is written) (the samples are written with `SMP_BEGIN` / `SMP_WRITE` / `SMP_END`,
 or `SMP_ERASE` for an empty slot). Begin: `0, id, size u32, crc u32`: size is 3840 (FUN10), 3648 (FUN9), 3584 (FUN8) or 3388 (FUN7, FUN6) for id 0,
-the settings record's size for id 1, 3840, 3648, 3584, 3388 or 0 (empty the slot) for ids 2..5, the bank's size or 0 for 6 and 7,
+the settings record's size for id 1 (PER4's, or a PER6 of 64 rows or fewer: "Engine ids"), 3840, 3648, 3584, 3388 or 0 (empty the slot) for ids 2..5, the bank's size or 0 for 6 and 7,
 3472 or 0 for 8 (the FM6 bank: its magic, layout and every byte below 128 are checked), 3728 or 0 for 9 (its magic,
 version and slot count checked; 0 clears the patches). FUN9, FUN8, FUN7 and FUN6 become FUN10 (1.2; firmware before
 1.2 refuses a 3840-byte project at begin, rc 1).
@@ -981,7 +982,7 @@ LANE, GRID, REC) from them with fixed blends, as for the built-in palettes (`fir
 `tools/gen_ui_palettes.py`), CUSTOM is not GREY and not MONO (the channels blend as they are). The colours are RGB565,
 sent as three 7-bit bytes each: red 0..31, green 0..63, blue 0..31. CUSTOM is part of the settings (kept across
 power-off, not in projects or user presets; a full backup carries it with the settings object, id 1: bytes 0..9 and 12 of
-the favorites' 16th row). Firmware before 1.6 keeps the bytes (a round trip through it does not lose the palette) and shows
+the device bytes, the PER4 record's 16th favourites row and PER6's `dev`). Firmware before 1.6 keeps the bytes (a round trip through it does not lose the palette) and shows
 the built-in palette that was in use before CUSTOM was chosen (the settings' palette field is never CUSTOM). INFO
 advertises `45 01 5` (five colours) after `4B 01 NCOND`; firmware without the tag answers neither command.
 
@@ -1030,8 +1031,11 @@ HI-CON NIGHT MONO; 1.0.2: GREY is the MONO of 1.0.1, MONO a new black and white 
 fields are 127.
 Both u28 signatures are four least-significant-first 7-bit bytes; compare them
 to refresh changed favorites and user slots. Factory references use stable
-engine/preset ids; engine NENGINES denotes a user slot. An empty user slot
-cannot be marked. Factory DRUM sounds use the same favorite path.
+engine/preset ids; engine 127 (#212: INFO's `49 01` block says it) denotes a user slot, and so does the old
+marker, NENGINES (the count in INFO's prefix: 14), which editors before #212 send. An empty user slot
+cannot be marked. Factory DRUM sounds use the same favorite path. A reply echoes the engine byte as asked (127 or
+the old marker). An engine id this build cannot play (DIGITAL's 1, an id past its table or left out of its catalog)
+answers rc 1; its favourites stay in the settings, as stored.
 
 rc 0 = applied and saved; 1 = invalid arguments; 2 = unsupported feature;
 3 = applied in RAM but not saved (no flash or a failed write);
@@ -1039,6 +1043,45 @@ rc 0 = applied and saved; 1 = invalid arguments; 2 = unsupported feature;
 by the same persistence path as the panel. These changes never stop playback.
 Unchanged writes do not erase flash. Replies echo preference ids/values and
 favorite ranges so the editor rejects replies to a different request.
+
+## Engine ids (#212)
+
+Engine ids are a stable, append-only namespace 0..63, independent of the engines a build has and of their count
+(a build profile may leave engines out, a later firmware has more). The device stores and sends an id as it is:
+
+- **INFO** keeps its old prefix for existing editors (Felucca-WebApp): NENGINES, then NENGINES names for ids
+  0..NENGINES−1, `-` for an id this build cannot play (1, DIGITAL, without `FELUCCA_FM4`; one its catalog leaves out). Then, last of the tagged
+  blocks, `49 01 64 7F b0..b9`: the id space (64), FAV_GET / FAV_SET's user marker (127) and a bit per id this build
+  plays: id 7i + k is bit k of b<sub>i</sub> (ten 7-bit bytes, ids 0..69, 64..69 always 0). A catalog with gaps (a
+  build profile, #28) is only meant for an editor that reads this block; an older one shows the `-` names as before.
+- **An id this build lacks** (in a project, a user preset, a backup, a later firmware's or a build profile's) is kept: the
+  track shows N/A, has no presets, plays nothing and keeps its preset number and E1..E8 values (their stored range
+  −64..127). `DUMP`, `TRACK`, `RELOAD`, `UP_LIST` and `UP_GET` report the id as stored, never another engine.
+  `PRESET`, `SET G_ENGSEL` and `UP_PUT` to it change nothing (no reply / rc 1); `NAMES` of it answers no presets (no
+  reply past the name list). Saving a project or the music keeps the id. A byte past the id space (64..255) is no
+  project or user preset (as a byte past the engines was before).
+- **FAV_GET / FAV_SET**: engine 127 is a user slot; the old marker (INFO's prefix count) is taken too. It is never
+  an engine id of the same build, since the name list ends below it. An editor that has 14 built in rather than
+  taken from INFO addresses engine 14 on a build that has one.
+- **Settings (backup id 1)**: the favourites have a row per id (64 rows), MIDI LEARN's map and the device bytes
+  (palette CUSTOM, MENU flags, the FX key map, ...) moved out of the favourites rows. The record is **PER4** (as up to
+  1.6, byte for byte) while no favourite is on an id from 14, else **PER6**: the PER4 record (its rows 0..13, the map in
+  row 14, the device bytes in row 15, as PER4 has them; magic `PER6`), then `ver 1, rows, 32, 32`, the map (32 bytes),
+  the device bytes (32), and `rows` × 32 bytes of favourites (ids 0..rows−1, preset bit p of id r in byte p / 8, bit p
+  % 8). This firmware writes rows 64 and reads 1..64; a PER6 whose extension it cannot read (another version, other
+  counts) is read by its PER4 part. A PER5 record (PER4 + 32 bytes, an unreleased MACRO build, #27) is read: its
+  row is engine 14's.
+- **Downgrade limits:** firmware up to 1.6 reads a PER4 record only. While the settings stay PER4 (no favourite past id
+  13: always on builds without such an engine) a downgrade keeps every setting. A PER6 record in flash is not read by
+  older firmware, which starts with default settings (palette, calibration, favourites, MIDI LEARN, ...) until it saves its
+  own; its backup object is refused by older firmware's `BACKUP_PUT` (rc 1). The first sizeof(PER4) bytes of a PER6
+  record with the magic `PER4` (`50 45 52 34`, little endian) are the PER4 record those firmwares take: everything but
+  the favourites of ids from 14. Favourites, projects and user presets of an id the older firmware lacks are as they
+  were there (a project or user preset with such an id is no project / an empty slot there).
+- **Felucca-WebApp:** existing clients keep working against this firmware unchanged (old prefix, old marker,
+  PER4 settings objects, ids 0..13). A client should take the user marker and the catalog from the `49 01` block when
+  it is there, show ids it does not know as unavailable rather than another engine, and keep backup objects byte
+  for byte (a PER6 settings object restores here, not on firmware up to 1.6).
 
 ## MENU settings (72, 73; 1.0.4)
 

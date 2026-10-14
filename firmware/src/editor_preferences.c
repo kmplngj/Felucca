@@ -55,7 +55,7 @@ static uint32_t ed_ui_save(void)
     if (persist_saved.monitor != settings.monitor) return 3;
 #endif
 #ifdef FELUCCA_FAVORITES
-    if (memcmp(&persist_saved.favorites, &favorites, sizeof favorites)) return 3;
+    if (settings_unsaved()) return 3;              /* (#212: the favourites as the whole record holds them) */
 #endif
     return 0;
 #else
@@ -85,6 +85,21 @@ static uint32_t ed_ui_set(const uint8_t *a, uint32_t n)
     ui.force = 1;
     return ed_ui_save();
 }
+#ifdef FELUCCA_FAVORITES
+/* FAV_GET / FAV_SET's engine byte (#212) -> engine id, ENG_USER for a user preset slot, ED_FAV_BAD: an engine this
+ * build has (eng_ok), ENG_USER_WIRE (INFO's 49 01 block), or the old marker: NENGINES, the count INFO's old prefix
+ * sends, which editors up to 1.6 took from there (14; 13 with FELUCCA_SLICE=0). It is never an engine id of this
+ * build (its table ends below it), so it is unambiguous here; an editor that has it built in as 14 talks to a build
+ * whose INFO count is 14. Engine 1 (DIGITAL, retired), an unavailable id: rc 1 */
+#define ED_FAV_BAD 0x100u
+static uint32_t ed_fav_ref(uint32_t b)
+{
+    if (b == ENG_USER_WIRE || b == NENGINES)
+        return ENG_USER;
+    return eng_ok(b) ? b : ED_FAV_BAD;
+}
+static uint32_t ed_fav_limit(uint32_t e) { return e == ENG_USER ? UP_SLOTS : ENGINES[e]->npresets; }
+#endif
 static int ed_ui_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     switch (cmd) {
@@ -100,12 +115,12 @@ static int ed_ui_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
         return 1;
     case ED_FAV_GET:
 #ifdef FELUCCA_FAVORITES
-        if (n == 4u && a[0] <= NENGINES) {
+        if (n == 4u && ed_fav_ref(a[0]) != ED_FAV_BAD) {
             int32_t start = ed_rv(a + 1);
-            uint32_t limit = a[0] == NENGINES ? UP_SLOTS : ENGINES[a[0]]->npresets;
+            uint32_t e = ed_fav_ref(a[0]), limit = ed_fav_limit(e);
             if (start >= 0 && a[3] && a[3] <= 32u && (uint32_t)start + a[3] <= limit) {
-                ed_b(0); ed_b(a[0]); ed_v(start); ed_b(a[3]);
-                for (uint32_t i = 0; i < a[3]; i++) ed_b(favorite_has(a[0], (uint32_t)start + i));
+                ed_b(0); ed_b(a[0]); ed_v(start); ed_b(a[3]);   /* (the engine byte as asked: either marker) */
+                for (uint32_t i = 0; i < a[3]; i++) ed_b(favorite_has(e, (uint32_t)start + i));
                 return 1;
             }
         }
@@ -116,12 +131,12 @@ static int ed_ui_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
         return 1;
     case ED_FAV_SET:
 #ifdef FELUCCA_FAVORITES
-        if (n == 4u && a[0] <= NENGINES && a[3] <= 1u) {
+        if (n == 4u && ed_fav_ref(a[0]) != ED_FAV_BAD && a[3] <= 1u) {
             int32_t preset = ed_rv(a + 1);
-            uint32_t limit = a[0] == NENGINES ? UP_SLOTS : ENGINES[a[0]]->npresets;
+            uint32_t e = ed_fav_ref(a[0]), limit = ed_fav_limit(e);
             if (preset >= 0 && (uint32_t)preset < limit &&
-                (a[0] != NENGINES || !a[3] || up_used((uint32_t)preset))) {
-                favorite_set(a[0], (uint32_t)preset, a[3]);
+                (e != ENG_USER || !a[3] || up_used((uint32_t)preset))) {
+                favorite_set(e, (uint32_t)preset, a[3]);
                 ui.force = 1;
                 ed_b(ed_ui_save()); ed_b(a[0]); ed_v(preset); ed_b(a[3]);
                 return 1;

@@ -191,7 +191,7 @@ static void con_uac(void)                              /* USB audio input: strea
 
 static void con_status(void)
 {
-    const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
+    const engine_t *e = eng_of(TSEL->eng_req);
     con_puts("felucca ");
     con_puts(FELUCCA_VERSION);
     con_puts("\r\n");

@@ -128,7 +128,7 @@ static int select_page(void)
     uint8_t before[32];
     uint32_t i;
     ui_power_on();
-    memcpy(before, favorites.factory[15], 32);
+    memcpy(before, settings_dev, 32);
     ok = menu_get(MI_SELECT) == 0u && str_eq(MI_NAME[MI_SELECT], "SELECT") && MI_TAB[MI_SELECT] == MTAB_CONTROL &&
          MI_SELECT < MI_VALUES && str_eq(menu_vname(MI_SELECT, 0), "BPM") && str_eq(menu_vname(MI_SELECT, 1), "PAGE") &&
          mtab_rows(MTAB_CONTROL) <= MTAB_ROWS;
@@ -139,9 +139,9 @@ static int select_page(void)
     bad += check("SELECT (#188): MENU > CONTROL > SELECT, BPM by default: SELECT sets the tempo as before", ok);
 
     menu_put(MI_SELECT, 1);
-    ok = menu_get(MI_SELECT) == 1u && favorites.factory[15][24] == (uint8_t)(before[24] | 0x10u);
+    ok = menu_get(MI_SELECT) == 1u && settings_dev[24] == (uint8_t)(before[24] | 0x10u);
     for (i = 0; i < 32u; i++)
-        ok &= i == 24u || favorites.factory[15][i] == before[i];
+        ok &= i == 24u || settings_dev[i] == before[i];
     {   /* saved with the settings; settings from before it read BPM */
         persist_t p;
         settings_export(&p);

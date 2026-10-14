@@ -74,8 +74,14 @@ static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-",
                                              "DRUM", "NOISE", "FM6",
 #if FELUCCA_SLICE
                                              "SLICE",
+#else
+                                             "-",                     /* (13: left out of this build's catalog) */
+#endif
+#if FELUCCA_ENG_TEST14
+                                             "TEST14",
 #endif
 };
+typedef char engname_fit[NELEM(N_ENGNAME) == NENGINES ? 1 : -1];   /* G_ENGSEL: a name per id of the table */
 
 #define PD(l, f, mn, mx, df) {l, f, mn, mx, df, 0, 0}
 #define PE(l, n, df) {l, F_ENUM, 0, (int16_t)(sizeof(n) / sizeof(n[0]) - 1), df, n, 0}
@@ -240,7 +246,8 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
  * only; range and default are the same): what the editor protocol, user presets and projects use */
 static const param_desc_t *param_desc_of(uint32_t e, uint32_t id)
 {
-    return id >= P_E0 ? &ENGINES[e]->edit[id - P_E0] : &TP[id];
+    return id >= P_E0 ? &ENGINES[eng_idx(e)]->edit[id - P_E0] : &TP[id];   /* (e: an id or an index; #212: an id
+                                                                           * without an engine: ENG_NONE's) */
 }
 
 /* a retired F_ENUM value kept as an alias, so stored values stay valid: SAMPLE SET and GRAIN SRC 1, once

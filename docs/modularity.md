@@ -79,6 +79,17 @@ These are prerequisites. Several plans name them as gates; each now has one owne
 
 About twenty planned engine experiments depend on #212; the issue comments name them.
 
+**Status (branch `feat/engine-id-space-212`, 2026-10-13):** implemented as follows; facts above describe `b04f4fa`.
+Engine ids are a fixed space of 64 (`ENG_ID_MAX`, `core.h`); `NENGINES` is only this build's table length.
+Favourites have a row per id; MIDI Learn's map and the row-15 device bytes are separate (`settings_ml`,
+`settings_dev`). Settings are written as PER4 while no favourite is on an id from 14, else as PER6 (PER4 block plus a
+versioned extension with an explicit row count); PER5 is imported (its row is engine 14's). The user-preset marker is
+`ENG_USER` (0xFF) internally and 127 on the wire, the old marker (INFO's count) is still accepted. INFO appends
+`49 01 64 7F` and an id bitmap after its unchanged prefix. Unknown or omitted ids are kept and shown as N/A (`ENG_NONE`,
+silent) instead of `% NENGINES`. `FELUCCA_SLICE=0` is now a sparse catalog (id 13 left out, `NENGINES` stays 14).
+A host test build (`FELUCCA_ENG_TEST14=1 FELUCCA_ENG_OMIT=11`) has a placeholder engine 14 and leaves NOISE out.
+No new engine id is assigned. Details and downgrade limits: [EDITOR_PROTOCOL.md](../web/EDITOR_PROTOCOL.md#engine-ids-212).
+
 ### Flash and retained RAM are allocated — [#213](https://github.com/kmplngj/Felucca/issues/213)
 
 | Range | Use |
@@ -151,7 +162,9 @@ real test of the contract, so the contract is frozen only after it.
    switch. Recommended: make it a Generative-family mode using #214
    ([comment](https://github.com/kmplngj/Felucca/issues/200#issuecomment-6124093303)).
 2. **MACRO merge order versus #212.** Either #212 imports PER5 and keeps MACRO at ID 14,
-   or MACRO's row becomes an ordinary row in #212's layout and PER5 never ships.
+   or MACRO's row becomes an ordinary row in #212's layout and PER5 never ships. The #212 branch
+   does both: favourites row 14 is an ordinary row, and a PER5 record is still imported into it, so
+   MACRO can rebase onto #212 without its own settings version. Still open: which merges first.
 3. **Catalog availability versus presentation.** Every mode exposes the same installed
    engines (#203). Proposed: a mode may set per-part default engines, filter the browser
    and recommend sounds, but never hide or reject an installed engine. This is what
