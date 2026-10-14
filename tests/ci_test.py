@@ -331,6 +331,9 @@ class Checks(unittest.TestCase):
             ci.stage_release(root, output, self.root / "assets", "1.6")
         archive.write_bytes(original)
         sidecar = archive.with_suffix(".gz.sha256")
+        sidecar.unlink()
+        with self.assertRaisesRegex(ValueError, "invalid source archive checksum"):
+            ci.stage_release(root, output, self.root / "assets", "1.6")
         sidecar.write_text("invalid checksum")
         with self.assertRaisesRegex(ValueError, "invalid source archive checksum"):
             ci.stage_release(root, output, self.root / "assets", "1.6")

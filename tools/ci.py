@@ -311,7 +311,7 @@ def stage_release(root, bundles, destination, value):
     metadata = json.loads((root / "BUILD-PROVENANCE.json").read_text())
     source_archive.verify_archive(source, metadata["source_distribution"])
     expected_source = f"{hashlib.sha256(source.read_bytes()).hexdigest()}  {source.name}\n"
-    if source_sidecar.read_text() != expected_source:
+    if not source_sidecar.is_file() or source_sidecar.read_text() != expected_source:
         raise ValueError("invalid source archive checksum")
     files += [bundle, sidecar, source, source_sidecar]
     if len({p.name for p in files}) != len(files) or any(p.name == "SHA256SUMS" for p in files):
