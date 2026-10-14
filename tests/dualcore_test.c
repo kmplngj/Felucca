@@ -8,6 +8,8 @@
  * a thread as core 1 (tests/c1_host.h) taking every split of the parts in turn, the firmware's own choice
  * (mix_split) and fixed splits. The outputs must be bit for bit the same; built with -fsanitize=thread
  * (run_tests.sh TSAN=1), nothing two parts share may be touched by both at once.
+ * Identical FORMANT parts also check that random vowels and breath use different per-part streams, separately;
+ * synchronized RAND-only / breath-only scenes compare the serial schedule with every threaded split.
  *   build/host/dualcore_test          SCENE=text: only the scenes whose name holds it */
 #include "c1_host.h"
 #define main hostsim_main
@@ -16,9 +18,58 @@
 
 #define SECS 3u
 
-typedef struct { const char *name; uint8_t eng[NPART], pre[NPART]; uint8_t morph; } scen_t;
+typedef struct { const char *name; uint8_t eng[NPART], pre[NPART]; uint8_t morph, identical; } scen_t;
 
 static int32_t peak[NPART];                         /* each part's loudest (track_t.peak), for the check */
+
+/* Fresh identical voices must not share their note-local vowel or breath stream. Test each source separately;
+ * a different vowel could otherwise conceal identical breath. Run in a child to retain boot state for scenes. */
+static int formant_separation(uint32_t breath)
+{
+    int32_t out[NPART][CTL * 4] = {{0}};
+    uint32_t k, j, i;
+    vmod_t m = {0};
+    host_tracks_init();
+    m.inc = pitch_inc(60u * 16u);
+    m.pitch16 = 60 * 16;
+    m.amp0 = m.amp1 = 32768;
+    m.envq15 = 32768;
+    m.shape = 64 << 8;
+    for (k = 0; k < NPART; k++) {
+        track_t *t = &trk[k];
+        voice_t *v = &t->v[0];
+        host_preset(t, 5, 0);
+        t->p[P_E5] = breath ? 120 : 0;
+        t->p[P_E7] = breath ? 0 : 127;
+        v->note = 60;
+        v->vel = 96;
+        v->active = v->gate = v->stage = 1;
+        v->pitch16 = v->pitch_cur = 60 * 16;
+        ENG_FORMANT.note_on(t, v);
+        for (i = 0; i < 4; i++)
+            ENG_FORMANT.render(t, v, out[k] + i * CTL, CTL, &m);
+        for (j = 0; j < k; j++) {
+            if (!breath && ((uint32_t)v->s[7] >> 25) == ((uint32_t)trk[j].v[0].s[7] >> 25))
+                return 1;
+            if (!memcmp(out[k], out[j], sizeof out[k]))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static int formant_separation_fork(uint32_t breath)
+{
+    pid_t pid = fork();
+    int status;
+    if (pid < 0)
+        return 1;
+    if (!pid)
+        _exit(formant_separation(breath));
+    if (waitpid(pid, &status, 0) != pid)
+        return 1;
+    return !WIFEXITED(status) || WEXITSTATUS(status) != 0;
+}
 
 static void part_setup(track_t *t, uint32_t k, uint32_t e)
 {
@@ -63,15 +114,24 @@ static uint64_t render(const scen_t *sc, int dual, const char *mask)
         setenv("C1_MASK", mask, 1);
     for (k = 0; k < NPART; k++) {
         host_preset(&trk[k], sc->eng[k], sc->pre[k]);
-        part_setup(&trk[k], k, sc->eng[k]);
+        if (sc->identical) {
+            /* Same patch, pitch, velocity and event times: RNG separation cannot hide behind track settings. */
+            trk[k].p[P_CHOR] = trk[k].p[P_DLY] = trk[k].p[P_REV] = 0;
+            trk[k].p[P_ATK] = 0;
+            trk[k].p[P_E5] = sc->identical == 2 ? 120 : 0;
+            trk[k].p[P_E7] = sc->identical == 2 ? 0 : 127;
+        } else {
+            part_setup(&trk[k], k, sc->eng[k]);
+        }
     }
     for (f = 0; f < SECS * FS; f += CTL) {
         uint32_t ms = f / (FS / 1000u);
         for (k = 0; k < NPART; k++) {
-            uint32_t on = 100u + 330u * k, off = on + 1400u, base = 48u + 5u * k;
+            uint32_t on = 100u + (sc->identical ? 0 : 330u * k), off = on + 1400u;
+            uint32_t base = sc->identical ? 60u : 48u + 5u * k;
             if (ms == on || ms == on + 700u)
                 for (i = 0; i < 2u; i++)
-                    trk_note_on(&trk[k], base + CH[i + (ms != on)], 90 + 10 * k);
+                    trk_note_on(&trk[k], base + CH[i + (ms != on)], sc->identical ? 100 : 90 + 10 * k);
             if (ms == off)
                 for (i = 0; i < 3u; i++)
                     trk_note_off(&trk[k], base + CH[i]);
@@ -124,6 +184,11 @@ int main(void)
     static char names[256][40];
     static const char *const MASKS[] = {"rot", "auto", "5", "10", "3", "12", "1"};
     uint32_t n = 0, e, i, k, g, fail = 0;
+    for (i = 0; i < 2; i++) {
+        uint32_t bad = (uint32_t)formant_separation_fork(i);
+        printf("dualcore: identical VOICE parts, %-6s streams separated   %s\n", i ? "breath" : "RAND", bad ? "FAIL" : "ok");
+        fail += bad;
+    }
     for (e = 0; e < NENGINES; e++) {                    /* every preset: four parts at a time */
         if (!eng_ok(e))                                 /* (a retired number: DIGITAL without FELUCCA_FM4) */
             continue;
@@ -141,6 +206,8 @@ int main(void)
     sc[n++] = (scen_t){"GRAIN NOISE VOICE LOFI", {8, 11, 5, 3}, {1, 4, 7, 10}, 0};
     sc[n++] = (scen_t){"TRIO WHEEL PHASE FM6", {6, 7, 2, ENGI_FM6}, {1, 4, 7, 10}, 0};
     sc[n++] = (scen_t){"PHYS morph + DRUM GRAIN ANALOG", {ENGI_PHYS, ENGI_DRUM, 8, 0}, {2, 1, 3, 5}, 1};
+    sc[n++] = (scen_t){"VOICE identical RAND", {5, 5, 5, 5}, {0, 0, 0, 0}, 0, 1};
+    sc[n++] = (scen_t){"VOICE identical breath", {5, 5, 5, 5}, {0, 0, 0, 0}, 0, 2};
 #if FELUCCA_SLICE
     sc[n++] = (scen_t){"SAMPLE SLICE GRAIN PHASE", {ENGI_SAMPLE, 13, 8, 2}, {2, 1, 3, 5}, 0};
     sc[n++] = (scen_t){"SLICE FM6 SAMPLE DRUM", {13, ENGI_FM6, ENGI_SAMPLE, ENGI_DRUM}, {0, 2, 3, 4}, 0};
