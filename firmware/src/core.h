@@ -62,7 +62,18 @@ typedef char eng_ids_fit[NENGINES <= ENG_ID_MAX && ENG_ID_MAX < ENG_USER_WIRE ? 
 /* ------------------------------------------------------- parameters --- */
 /* the engine interface (Felucca-Engines, MIT: engines/, a git submodule): param_desc_t and F_*, voice_t,
  * vmod_t, preset_t with FX() / PAT(), engine_t, NELEM */
+/* The firmware implements portable engine contract v1. A new library version must be reviewed together
+ * with its host; an old/unversioned dependency must not silently compile against changed shared layouts. */
+#if defined(FELUCCA_ENGINE_API_REQUIRED) && FELUCCA_ENGINE_API_REQUIRED != 1u
+#error "Felucca implements Felucca-Engines API v1; update the host before changing its requirement"
+#endif
+#ifndef FELUCCA_ENGINE_API_REQUIRED
+#define FELUCCA_ENGINE_API_REQUIRED 1u
+#endif
 #include "../engines/src/felucca_engine.h"
+#if !defined(FELUCCA_ENGINE_API_VERSION) || FELUCCA_ENGINE_API_VERSION != FELUCCA_ENGINE_API_REQUIRED
+#error "Felucca requires a matching, versioned Felucca-Engines API (v1)"
+#endif
 
 enum {                          /* per-track parameters */
     P_LEVEL,

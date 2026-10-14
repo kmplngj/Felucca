@@ -27,7 +27,11 @@ The 1.6.1 source split is recorded in [modularity.md](modularity.md#combining-ou
 Shared DSP helpers are in `firmware/engines/src/dsp.c`; the firmware table generator imports
 `firmware/engines/tools/gen_engine_tables.py`. Commit portable MIT work in the Engines fork and
 consume it with a reviewed gitlink update. Fork-specific GPL engines can remain in firmware.
-A submodule change requires both standalone engine tests and the complete firmware suite.
+A submodule change requires both standalone engine tests and the complete firmware suite. The host defines
+`FELUCCA_ENGINE_API_REQUIRED=1` before the portable header and checks its declared
+`FELUCCA_ENGINE_API_VERSION`. The contract requires 44.1 kHz, 32-sample blocks and positive
+part/voice counts; `out[]` must be independent of voice/engine state. API revisions describe
+the portable host contract, never firmware engine IDs or storage versions.
 
 
 ## 1. Adding an engine
