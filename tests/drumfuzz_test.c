@@ -21,12 +21,14 @@
  * ALNK0 interrupt does), held off by fm1_irq_off / motion_guard as on the device */
 #define HOST_IRQ_STUBS 1
 #define FM1_IRQ_TARGET 1
-static volatile int host_irq_mask, host_irq_pend;
+static volatile int host_irq_mask, host_irq_pend, host_booting;
 static uint32_t fm1_icfg(void) { return (uint32_t)host_irq_mask; }
 static void host_isr(void);
 static void fm1_irq_off(void) { host_irq_mask = 1; }
-static void fm1_irq_on(void) { host_irq_mask = 0; if (host_irq_pend) { host_irq_pend = 0; host_isr(); } }
+static void fm1_irq_on(void) { host_irq_mask = 0; if (host_irq_pend && !host_booting) { host_irq_pend = 0; host_isr(); } }
 static void fm1_icfg_set(uint32_t f) { if (f) host_irq_mask = 1; else fm1_irq_on(); }
+static void fz_boot_probe(void);
+#define UI_POWER_ON_RESET_HOOK fz_boot_probe
 #endif
 #include "ui_test.c"
 #ifdef PREEMPT
@@ -48,7 +50,55 @@ static void on_vt(int s)
     if (host_irq_mask || host_in_isr) { host_irq_pend = 1; return; }
     host_isr();
 }
+static void fz_boot_probe(void)
+{
+    sigset_t pending;
+    host_irq_pend = 1;                           /* IRQ helpers must also retain an already deferred render */
+    raise(SIGVTALRM);                            /* deterministic ISR attempt before BPM has its default */
+    if (sigpending(&pending) || sigismember(&pending, SIGVTALRM) != 1) {
+        fprintf(stderr, "boot audio signal was not deferred\n");
+        exit(1);
+    }
+}
 #endif
+
+static void fz_power_on(void)
+{
+#ifdef PREEMPT
+    sigset_t blocked, previous;
+    static uint32_t timer_started;
+    uint32_t signals = host_sig_n;
+    uint32_t blocks;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGVTALRM);
+    /* main.c initializes the song and engines before audio_init. IRQ helpers
+     * inside preset loads may enable interrupts, so block the host signal for
+     * the entire simulated boot, including subsequent seeds' resets. */
+    if (sigprocmask(SIG_BLOCK, &blocked, &previous)) { perror("boot signal block"); exit(1); }
+    host_booting = 1;
+    blocks = host_isr_n;
+#endif
+    ui_power_on();
+#ifdef PREEMPT
+    if (host_isr_n != blocks) {
+        fprintf(stderr, "deferred audio IRQ ran during boot\n");
+        exit(1);
+    }
+    host_booting = 0;
+    if (!host_irq_mask)
+        fm1_irq_on();                            /* drain the probe's deferred IRQ only after initialization */
+    if (!timer_started) {                         /* no timer can render before the very first boot either */
+        struct itimerval it = {{0, 40}, {0, 40}};
+        if (setitimer(ITIMER_VIRTUAL, &it, NULL)) { perror("audio signal timer"); exit(1); }
+        timer_started = 1;
+    }
+    if (sigprocmask(SIG_SETMASK, &previous, NULL)) { perror("boot signal restore"); exit(1); }
+    if (host_sig_n == signals || song.g[G_BPM] != GP[G_BPM].def) {
+        fprintf(stderr, "boot audio signal did not resume with initialized tempo\n");
+        exit(1);
+    }
+#endif
+}
 
 static uint32_t rs;
 static uint32_t rnd(uint32_t n) { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return n ? rs % n : 0; }
@@ -232,11 +282,11 @@ static void fz_play(void)
 static void setup(uint32_t synth)
 {
     uint32_t i;
-    ui_power_on();
+    fz_power_on();
     for (i = 0; i < MI_VALUES; i++)                       /* the MENU at random (HELP, LARGE, PREVIEW, ACCEL ..) */
         if (menu_valued(i) && i != MI_SERIAL && rnd(2))
             menu_put(i, rnd(menu_n(i)));
-    ui_power_on();
+    fz_power_on();
     for (i = 0; i < NTRK; i++)
         eng_mem_claim(&trk[i]);
     set_engine_of(&trk[0], synth);
@@ -272,11 +322,7 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IONBF, 0);
     signal(SIGALRM, on_alarm);
 #ifdef PREEMPT
-    {
-        struct itimerval it = {{0, 40}, {0, 40}};
-        signal(SIGVTALRM, on_vt);
-        setitimer(ITIMER_VIRTUAL, &it, 0);
-    }
+    signal(SIGVTALRM, on_vt);                     /* fz_power_on arms its timer only after initialization */
 #endif
     for (s = s0; s < s0 + ns; s++) {
         uint32_t synth = s % NENGINES;

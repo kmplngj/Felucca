@@ -170,6 +170,9 @@ static void ui_power_on(void)
     uint32_t i;
     memset(trk, 0, sizeof trk);
     memset(&song, 0, sizeof song);
+#ifdef UI_POWER_ON_RESET_HOOK
+    UI_POWER_ON_RESET_HOOK();                     /* (drumfuzz: a signal at the zeroed boot state) */
+#endif
     memset(midi_lit_ms, 0, sizeof midi_lit_ms); midi_seen = 0;   /* (1.5.5: no MIDI IN light) */
     memset(&chain, 0, sizeof chain);
     chain_defaults(&chain_config);
