@@ -193,13 +193,26 @@ Findings:
 | O2 | **Sidecar sector pair per project (PRX), tagged to its parent** | 3,840 B per project and for the autosave | 10 sectors; one more erase when a project that has sidecar content is saved; 5 new backup objects; older firmware ignores the sidecar and a re-save there makes it stale | **Adopt** (needs O5 for sectors) |
 | O3 | **Multi-sector project** (FUN11, second sector in the same object) | atomic commit, 7,680 B per project | `proj_slot` doubles: +15,360 B NOINIT against 132 B spare, or retention is dropped; `proj_wire_u` / `st_buf` / `ED_BK_MAX` / backup, `PROJECT` and song-chain sizes all double; older firmware refuses every project | **Reject** |
 | O4 | **Trade project slots** | 2 sectors per slot removed | Songs reference slots 0-3 (`chain_row_t.slot[]`), editor `PROJECT 1-4`, backup ids 2-5; at most 8 sectors in total | **Reject**: small gain, large loss |
-| O5 | **Trade user sample slot 3** | 20 sectors (`0xC8000..0xDC000`), all inside the loader-protected window | USR3 (80 KiB, about 7.4 s of ADPCM at 22.05 kHz, [slice_store.c:7-11](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/slice_store.c#L7-L11)) is no longer available; SLICE can no longer use it; backup id 34 empties; the slot count in the editor's sample info (`ED_SMP_INFO` sends `SMP_USER_SLOTS`) drops to 2 | **Adopt as an explicit opt-in reclaim**, never on update |
+| O5 | **Trade user sample slot 3** | 20 sectors (`0xC8000..0xDC000`), all inside the loader-protected window | USR3 (80 KiB, about 7.4 s of ADPCM at 22.05 kHz, [slice_store.c:7-11](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/slice_store.c#L7-L11)) is no longer available; SLICE can no longer use it; backup id 34 empties; the slot count in the editor's sample info (`ED_SMP_INFO` sends `SMP_USER_SLOTS`) drops to 2 | **Adopt as an explicit opt-in reclaim**, never on update. Firmware that predates the reclaim cannot see the opt-in: after a downgrade its sample upload or backup-id-34 restore writes across `0xC8000..0xDC000` and destroys A3-A6 (see the downgrade paragraph below the table) |
 | O5b | Trade slots 2 or 1 as well | 20 more sectors each | the same, for another slot | Held back for #62 only ([A8](#5-allocation-table)) |
 | O6 | **Shrink each sample slot** | 1-3 sectors per slot | truncates existing samples, `SMP_USER_SIZE` is baked into the slot layout and the info reply | **Reject** |
 | O7 | **Compression** | see below | main-loop codec, flash for the codec, variable size | **Adopt only for variable-length stores** (banks), never as capacity for fixed objects |
 | O8 | **Sidecar tied by a uid in the project spare bytes** instead of a content hash | tag survives re-packing and unchanged sidecars need no rewrite | spends 4 of the project's 13 spare bytes (see [2.1](#21-flash-map)) | Alternative; see [7, rule 5](#7-common-rules) |
 | O9 | **Unclaimed flash outside the windows** (`0x93000..0x97000`, `0xE8000..0xFC000`) | 4 + 20 sectors | Needs a survey of stock-flashed units and of the stock-return path; touches the loader's and guards' windows | **Not usable now**; survey proposed ([F7](#8-follow-up-issues)) |
 | O10 | **Single-copy sidecar** (the SLICE pattern) | half the sectors | A torn write loses the data | Only for derived data that can be rebuilt |
+
+**Downgrade after the USR3 reclaim (destructive, documented rather than prevented).** The opt-in marker
+protects only the conversion itself. Firmware built before the reclaim does not know the marker, so a
+downgrade exposes USR3 again: its normal sample upload or a backup-id-34 restore writes the whole range
+`0xC8000..0xDC000` and overwrites every A3-A6 object. Because each object is versioned, tagged and CRC-checked
+(common rules 3 to 5), the current firmware then reads the overwritten sectors as *absent*: it never applies
+foreign bytes, and the cost is lost sidecar data (patterns, timing, automation, deep patches, the FM6 library),
+not a corrupted parent project. The plan accepts this and requires F1 to (a) state it in the MENU confirmation
+and the release notes that ship the reclaim, (b) have the editor warn before a backup that contains USR3-region
+objects is restored on older firmware, and (c) keep a full backup of the affected objects (rule 6) as the
+recovery path. If this cost is not acceptable, the alternative is to hold the reclaim back until a loader or
+app-side guard can refuse older sample writes into the range ([F7](#8-follow-up-issues) surveys the windows);
+that is a hardware-and-loader decision, not part of this plan.
 
 ### Compression
 
@@ -305,7 +318,12 @@ Facts the design follows from (the format is F3's job):
   *valid* sidecar copy whose tag matches the parent that actually loaded, and the older copy otherwise.
   A cut before the parent commits leaves the old pair; a cut after it leaves the new pair. Writing the parent
   first would leave a new parent with no matching sidecar.
-- A project that has no sidecar content writes no sidecar (no erase): absent means defaults.
+- A project that never had sidecar content writes no sidecar (no erase): absent means defaults. A project that
+  *had* one and is reset to defaults must invalidate it, because the tag does not cover sidecar content and the
+  old record would still match the unchanged parent and bring the cleared fields back after a reload. The
+  writer therefore stores an explicit empty (tombstone) sidecar, or an equivalent invalidation, on that
+  transition; "written once, now empty" is a state the reader must see. F3 specifies it and tests it
+  (set, clear, reload).
 - The project's FUN10 record has 13 spare bytes ([project.c:154-167](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/project.c#L154-L167):
   body ends at byte 3,296 of 3,309, `PROJ_MIDI_OFF`), three more track parameters at 4 B each. Nothing else
   should be appended to FUN10; use PRX.
@@ -336,7 +354,7 @@ Every persistent object, in this order of decision:
    it), is ignored when the tag does not match, and is never applied to a different parent. See [6](#6-what-the-prx-sidecar-needs).
 6. **Backup and restore.** An object has a `BACKUP_LIST` id (ids 10-31 are free; the existing ones are 0-9
    and 32-34) or it is documented as rebuildable. Restore validates content before writing, refuses a
-   newer version, and keeps its order (parent before sidecar). INFO advertises a capability tag; older
+   newer version, and keeps the commit order of rule 4: it stages and validates the sidecar first and commits the parent last, so every interrupted prefix leaves the old complete pair. INFO advertises a capability tag; older
    firmware answers rc 1 and the editor skips it. Update `web/EDITOR_PROTOCOL.md`, `tests/backup_test.c` and
    the editor tests together. **Existing gaps this page records**: the FM6 voice bank at `0xE7000` and the
    SLICE records are not in the full backup ([F8](#8-follow-up-issues)).
@@ -368,9 +386,9 @@ as in rule 11.
 
 | ID | Title | Scope |
 | --- | --- | --- |
-| F1 | Storage: add the USR3 reclaim and the A3-A6 object map | Enum entries 10-19, `st_sector`, layout tests, an explicit "reclaim USR3" action that requires an empty or backed-up slot and a confirmation, `SMP_USER_SLOTS` 3 to 2 at runtime for that device, SLICE and SAMPLE behavior for the reclaimed slot (USR3 stays a reserved set id that plays as empty), editor sample-info text, README/MENU copy. No consumer. |
+| F1 | Storage: add the USR3 reclaim and the A3-A6 object map | Enum entries 10-19, `st_sector`, layout tests, an explicit "reclaim USR3" action that requires an empty or backed-up slot and a confirmation, `SMP_USER_SLOTS` 3 to 2 at runtime for that device, SLICE and SAMPLE behavior for the reclaimed slot (USR3 stays a reserved set id that plays as empty), editor sample-info text, README/MENU copy, and the downgrade warnings of section 4 (MENU confirmation, release notes, editor warning on restoring USR3-region objects to older firmware). No consumer. |
 | F2 | Settings: write only the used favourite rows and add the SETX tail | Writer trims `rows`; SETX `ver` 2 tagged chunks kept inside 2,688 B; `settings_dev[13]` for #204; downgrade statement; pool unchanged. |
-| F3 | Project extension (PRX) sidecar objects | Payload format and tag (value hash or uid), pair recovery rule, autosave signature, `project_save` / `autosave_poll` ordering, backup ids 10-14, `proj_slot` unaffected. |
+| F3 | Project extension (PRX) sidecar objects | Payload format and tag (value hash or uid), pair recovery rule, the tombstone for a sidecar reset to defaults (set, clear, reload test), autosave signature, `project_save` / `autosave_poll` ordering, backup ids 10-14, `proj_slot` unaffected. |
 | F4 | Deep-patch sidecar (DEEP) for user sounds | Tag to the record, 148 B entries, backup ids 15-16, behavior when a record is edited or renamed (compare `upf_tag`). |
 | F5 | Native FM6 voice library (FVL), 64 voices | Two 32-voice objects, names, replace/delete, backup ids 17-18, interaction with the 32-voice bank at `0xE7000`. |
 | F6 | Design a variable-length pattern-bank store (#62) | Measured capacity from real projects, encoding, "bank store full" policy, RAM residency against #20, the extra trade (O5b), song references; blocks #66. |
