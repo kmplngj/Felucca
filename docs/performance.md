@@ -190,7 +190,9 @@ unallocated (`NOINIT_SPARE_MIN` in `tools/build.py`, which prints `NOINIT <used>
 The linker script defines no symbols for this section, so the used size is the larger of the `.noinit`
 section's end in `objdump -h` (which also covers allocations without a sized symbol, such as `.space` data or
 tail padding) and the end of the highest `.noinit` object in `objdump -t` (the snippet below lists the same
-rows); the linker itself already refuses an overflow. The current build uses 15,564 B (132 B spare).
+rows); the linker itself already refuses an overflow. The v1.6 baseline uses 15,564 B (132 B spare). In the 1.6.1 backport, the default
+`FELUCCA_CPU2=1` build uses 15,568 B (128 B spare): the existing crash record gains a
+4-byte core identifier. `FELUCCA_CPU2=0` retains 15,564 B (132 B spare).
 `tests/build_guard_test.py` covers the exact 100 B boundary, the one-byte failure and padding without a symbol. Raising the floor or
 adding a `.noinit` user needs the plan's rule A7 review first.
 
