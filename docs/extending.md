@@ -516,6 +516,9 @@ are [fm1_flash.h](../firmware/hal/fm1_flash.h) range guards,
 | FM6 voice bank | `0xE7000..0xE8000`; uses the autosave's older sector to stage an update |
 | Settings A/B | `0xFC000..0xFE000` |
 
+No sector in these ranges is free. Allocations for planned persistent features, the options and the
+rules for a new object are in [flash-capacity.md](flash-capacity.md).
+
 Storage objects have 4 KiB sectors, 3,840-byte payload capacity (`ST_PAYLOAD_MAX`),
 and a 32-byte CRC-bearing header committed last after payload pages at offset 256.
 Failed/torn writes keep the earlier valid A/B copy. This is not a 256-byte single-sector
