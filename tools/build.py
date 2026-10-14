@@ -37,6 +37,7 @@ import lz4blk  # noqa: E402
 
 APP_XIP = 0x02000120                # app.bin offset 0 in the XIP map; the SPL jumps here
 APP_SLOT = fm1pkg_make.APP_SLOT
+NOINIT_SPARE_MIN = 100              # B of app.ld's NOINIT region left unallocated (capacity plan rule A7, docs/flash-capacity.md)
 LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
@@ -269,6 +270,21 @@ def build_loader():
 
 # ---- app
 
+def noinit_used(hdr, syms, org):
+    """Bytes of the NOINIT region in use, or None without a .noinit section: the larger of the section's end in
+    `objdump -h` (covers allocations that carry no sized symbol, such as `.space` data or tail padding) and the
+    end of the highest .noinit object in `objdump -t`"""
+    ends = []
+    for p in map(str.split, hdr.splitlines()):
+        if len(p) >= 4 and p[0].isdigit() and p[1] == ".noinit" and re.fullmatch(r"[0-9a-f]+", p[2] + p[3]):
+            ends.append(int(p[3], 16) + int(p[2], 16))
+    if not ends:
+        return None
+    ends += [int(p[0], 16) + int(p[-2], 16) for p in map(str.split, syms.splitlines())
+             if len(p) >= 5 and p[-3] == ".noinit" and re.fullmatch(r"[0-9a-f]+", p[0] + p[-2])]
+    return max(ends) - org
+
+
 def ld_regions():
     """firmware/app.ld's MEMORY regions: name -> (origin, length)"""
     regs = {}
@@ -313,9 +329,10 @@ def build_app():
        OUT / "felucca.o", "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin"):
         (OUT / sect).unlink(missing_ok=True)
-    *_, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),
+    *_, hdr, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),
                                ("common/bin/objcopy", "-O", "binary", "-j", ".data", elf, OUT / "data.bin"),
                                ("common/bin/objcopy", "-O", "binary", "-j", ".ram_text", elf, OUT / "ramtext.bin"),
+                               ("common/bin/objdump", "-h", elf),
                                ("common/bin/objdump", "-t", elf),
                                ("common/bin/objdump", "-d", elf),
                                ("common/bin/objdump", "-d", "-j", ".ram_text", elf))
@@ -337,7 +354,7 @@ def build_app():
             img += blob
     img += b"\xff" * (-len(img) % 4)
     (OUT / "felucca.bin").write_bytes(img)
-    return bytes(img), syms, dis, rt
+    return bytes(img), hdr, syms, dis, rt
 
 
 def objdump_data_row(line):
@@ -375,7 +392,7 @@ def disassembly_rows(text, label, empty_ok=False):
     return rows, errors
 
 
-def check(img, syms, dis, rt):
+def check(img, hdr, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
     if not m or int(m.group(1), 16) != APP_XIP:
@@ -409,24 +426,34 @@ def check(img, syms, dis, rt):
     except (OSError, ValueError) as e:
         errors.append(f"app.ld: invalid memory regions: {e}")
         return errors, notes
-    if any(name not in region or region[name][1] <= 0 for name in ("RAM", "POOL")):
-        errors.append("app.ld: missing or empty RAM/POOL region")
+    if any(name not in region or region[name][1] <= 0 for name in ("RAM", "POOL", "NOINIT")):
+        errors.append("app.ld: missing or empty RAM/POOL/NOINIT region")
         return errors, notes
     ram_org, ram_len = region["RAM"]
     pool_org, pool_len = region["POOL"]
+    noinit_org, noinit_len = region["NOINIT"]
     bss_end, pool_start, pool_end = sym("_bss_end"), sym("_pool_start"), sym("_pool_end")
     if None in (bss_end, pool_start, pool_end):
         return errors, notes
     bss, pool = bss_end - ram_org, pool_end - pool_start
     if bss < 0 or pool_start != pool_org or pool < 0:
         errors.append("RAM/POOL symbols are outside their regions or reversed")
-    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of {ram_len}; pool {pool} B of {pool_len}")
+    noinit = noinit_used(hdr, syms, noinit_org)  # app.ld defines no NOINIT symbols; the section's end gives the extent
+    if noinit is None:
+        errors.append("missing .noinit section")
+        return errors, notes
+    if noinit < 0 or noinit > noinit_len:
+        errors.append("NOINIT section is outside its region")
+    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of {ram_len}; pool {pool} B of {pool_len}; "
+                 f"NOINIT {noinit} B of {noinit_len} ({noinit_len - noinit} B spare)")
     if region["RAM"][0] + ram_len != region["POOL"][0]:
         errors.append("app.ld: POOL does not start where RAM ends")
     if ram_len - bss < 4096:                      # keep >= 4 KiB of .bss spare (state the audio side touches)
         errors.append(f"RAM headroom {ram_len - bss} B < 4096 B")
     if pool_len - pool < 8192:                    # keep >= 8 KiB of the pool spare
         errors.append(f"pool headroom {pool_len - pool} B < 8192 B")
+    if noinit_len - noinit < NOINIT_SPARE_MIN:    # NOINIT gets no new users (A7): keep >= 100 B unallocated
+        errors.append(f"NOINIT headroom {noinit_len - noinit} B < {NOINIT_SPARE_MIN} B")
     return errors, notes
 
 
@@ -487,8 +514,8 @@ def main(argv=None):
         gen, ldr = ex.submit(generate), ex.submit(build_loader)
         gen.result()
         ota = ldr.result()
-    img, syms, dis, rt = build_app()
-    errors, notes = check(img, syms, dis, rt)
+    img, hdr, syms, dis, rt = build_app()
+    errors, notes = check(img, hdr, syms, dis, rt)
     hal_err = mmio_check()
     errors += hal_err
     if not hal_err:

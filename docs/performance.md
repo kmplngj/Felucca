@@ -182,6 +182,16 @@ of RAM and **8,192 B** of POOL remain. The current linker split is 72 KiB RAM / 
 POOL. It is one SRAM: moving the boundary reallocates budget, it does not create memory.
 Report used and spare bytes for both regions.
 
+The same check guards `.noinit`, the region that survives a warm reset ([capacity plan](flash-capacity.md#23-retained-ram-and-the-ram-mirrors)
+rule A7): the build fails unless at least **100 B** of its 15,696 B (`0x3D50`, from `app.ld`) stay
+unallocated (`NOINIT_SPARE_MIN` in `tools/build.py`, which prints `NOINIT <used> B of <length> (<spare> B spare)`).
+The linker script defines no symbols for this section, so the used size is the larger of the `.noinit`
+section's end in `objdump -h` (which also covers allocations without a sized symbol, such as `.space` data or
+tail padding) and the end of the highest `.noinit` object in `objdump -t` (the snippet below lists the same
+rows); the linker itself already refuses an overflow. The current build uses 15,564 B (132 B spare).
+`tests/build_guard_test.py` covers the exact 100 B boundary, the one-byte failure and padding without a symbol. Raising the floor or
+adding a `.noinit` user needs the plan's rule A7 review first.
+
 Static accounting also includes `.ram_text`, `.noinit`, reserved RAM and the two stack
 windows in `app.ld`. Stacks and guard bands follow the pool at fixed addresses; retain the
 current spare margin and actual section placement. `.noinit` diagnostics and restore state
