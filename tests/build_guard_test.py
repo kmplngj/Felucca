@@ -18,6 +18,24 @@ def symbols(values):
     return "".join(f"{v:08x} g .bss 00000000 {name}\n" for name, v in values.items())
 
 
+NOINIT_ORG, NOINIT_LEN = 0x01C7C000, 0x3D50     # as firmware/app.ld
+
+
+def noinit_symbols(used):
+    """`objdump -t` rows of a .noinit holding two objects that end `used` B into the region"""
+    return (f"{NOINIT_ORG:08x} l    d  .noinit\t\t 00000000 .noinit\n"
+            f"{NOINIT_ORG:08x} g       .noinit\t\t 00000040 first\n"
+            f"{NOINIT_ORG + 0x40:08x} l       .noinit\t\t {used - 0x40:08x} last\n")
+
+
+def noinit_header(extent):
+    """`objdump -h` rows of the app ELF with a .noinit section that spans `extent` B of its region"""
+    return ("Sections:\nIdx Name          Size      VMA       LMA       File off  Algn\n"
+            "  0 .text         00001000  02000120  02000120  00000100  2**2\n"
+            f"  5 .noinit       {extent:08x}  {NOINIT_ORG:08x}  {NOINIT_ORG:08x}  00040000  2**2\n"
+            "                  ALLOC\n")
+
+
 class AppGuards(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(dir=ROOT / "build")
@@ -26,6 +44,7 @@ class AppGuards(unittest.TestCase):
         (fw / "app.ld").write_text("""MEMORY {
  RAM (rwx) : ORIGIN = 0x01C08000, LENGTH = 72K
  POOL (rw) : ORIGIN = 0x01C1A000, LENGTH = 0x5A000
+ NOINIT (rw) : ORIGIN = 0x01C7C000, LENGTH = 0x3D50
 }
 """)
         self.patch = patch.object(B, "FW", fw)
@@ -33,13 +52,18 @@ class AppGuards(unittest.TestCase):
         self.addCleanup(self.patch.stop)
         self.values = {"_start": 0x02000120, "_bss_end": 0x01C08000 + 256,
                        "_pool_start": 0x01C1A000, "_pool_end": 0x01C1A000 + 256}
+        self.noinit_used = 15564       # the real build's .noinit: 132 B spare
         self.img = bytes.fromhex("04818000") + bytes(12)
         self.dis = " 2000120: 00 00 \tr0 = 0\n"
         self.rt = " 1c00000: 00 00 \tret\n"
 
     def check(self, **kw):
-        return B.check(kw.get("img", self.img), kw.get("syms", symbols(self.values)),
-                       kw.get("dis", self.dis), kw.get("rt", self.rt))[0]
+        return self.run_check(**kw)[0]
+
+    def run_check(self, **kw):
+        return B.check(kw.get("img", self.img), kw.get("hdr", noinit_header(self.noinit_used)),
+                       kw.get("syms", symbols(self.values) + noinit_symbols(self.noinit_used)),
+                       kw.get("dis", self.dis), kw.get("rt", self.rt))
 
     def test_valid_neighbors(self):
         self.assertEqual(self.check(), [])
@@ -81,27 +105,74 @@ class AppGuards(unittest.TestCase):
         self.values["_pool_end"] += 1
         self.assertIn("pool headroom 8191 B", " ".join(self.check()))
 
+    def test_noinit_spare_floor_and_one_byte_failure(self):
+        floor = NOINIT_LEN - B.NOINIT_SPARE_MIN
+        self.assertEqual(B.NOINIT_SPARE_MIN, 100)
+        self.assertEqual(self.check(), [])                       # the real build: 132 B spare
+        self.noinit_used = floor                                 # exactly 100 B spare
+        errors, notes = self.run_check()
+        self.assertEqual(errors, [])
+        self.assertIn("NOINIT 15596 B of 15696 (100 B spare)", " ".join(notes))
+        self.noinit_used = floor + 1                             # 99 B spare
+        self.assertEqual(self.check(), ["NOINIT headroom 99 B < 100 B"])
+        self.noinit_used = NOINIT_LEN                            # full, still inside its region
+        self.assertEqual(self.check(), ["NOINIT headroom 0 B < 100 B"])
+
+    def test_noinit_floor_is_independent_of_ram_and_pool(self):
+        self.noinit_used = NOINIT_LEN - 99
+        self.values["_bss_end"] = 0x01C08000 + 72 * 1024 - 4095
+        self.values["_pool_end"] = 0x01C1A000 + 0x5A000 - 8191
+        errors = " ".join(self.check())
+        for msg in ("RAM headroom 4095 B", "pool headroom 8191 B", "NOINIT headroom 99 B"):
+            self.assertIn(msg, errors)
+
+    def test_noinit_extent_is_the_larger_of_section_and_symbols(self):
+        hdr = noinit_header(15564)
+        self.assertEqual(B.noinit_used(hdr, noinit_symbols(15564), NOINIT_ORG), 15564)
+        rows = noinit_symbols(15564) + f"{NOINIT_ORG + 0x80:08x} g .bss 00004000 other_section\n"
+        self.assertEqual(B.noinit_used(hdr, rows, NOINIT_ORG), 15564)  # other sections do not count
+        self.assertEqual(B.noinit_used(noinit_header(15600), noinit_symbols(15564), NOINIT_ORG), 15600)  # tail padding
+        self.assertEqual(B.noinit_used(noinit_header(100), noinit_symbols(15564), NOINIT_ORG), 15564)    # symbols reach further
+        self.assertIsNone(B.noinit_used("", noinit_symbols(15564), NOINIT_ORG))   # no .noinit section header
+        self.assertIsNone(B.noinit_used("Sections:\n  0 .text 00001000 02000120 02000120 00000100 2**2\n", "", NOINIT_ORG))
+
+    def test_noinit_padding_without_a_symbol_still_counts(self):
+        floor = NOINIT_LEN - B.NOINIT_SPARE_MIN
+        symbols_only = noinit_symbols(floor)                     # the symbols alone leave exactly 100 B
+        errors, _ = B.check(self.img, noinit_header(floor), symbols(self.values) + symbols_only, self.dis, self.rt)
+        self.assertEqual(errors, [])
+        errors, _ = B.check(self.img, noinit_header(floor + 1), symbols(self.values) + symbols_only, self.dis, self.rt)
+        self.assertEqual(errors, ["NOINIT headroom 99 B < 100 B"])  # one anonymous byte in the section is enough
+
+    def test_noinit_missing_or_out_of_region(self):
+        self.assertIn("missing .noinit section", " ".join(self.check(hdr="Sections:\n")))
+        self.noinit_used = NOINIT_LEN + 4                        # beyond the region (the linker would refuse)
+        self.assertIn("NOINIT section is outside its region", " ".join(self.check()))
+        self.assertIn("NOINIT section is outside its region", " ".join(self.check(    # below the region
+            hdr=noinit_header(0).replace(f"{NOINIT_ORG:08x}", f"{NOINIT_ORG - 4:08x}"), syms=symbols(self.values))))
+
     def test_missing_malformed_and_reversed_symbols(self):
         for name in ("_bss_end", "_pool_start", "_pool_end"):
             with self.subTest(name=name):
                 values = dict(self.values)
                 del values[name]
-                self.assertIn(f"missing symbol {name}", " ".join(self.check(syms=symbols(values))))
+                self.assertIn(f"missing symbol {name}", " ".join(self.check(syms=symbols(values) + noinit_symbols(15564))))
         self.assertIn("missing symbol _pool_end", " ".join(self.check(syms=symbols(self.values).replace("01c1a100", "garbage"))))
         for name, value in (("_bss_end", 0x01C07FFF), ("_pool_start", 0x01C1A001),
                             ("_pool_end", 0x01C19FFF)):
             with self.subTest(name=name):
                 values = dict(self.values, **{name: value})
-                self.assertIn("outside their regions or reversed", " ".join(self.check(syms=symbols(values))))
+                self.assertIn("outside their regions or reversed", " ".join(self.check(syms=symbols(values) + noinit_symbols(15564))))
 
     def test_memory_layout_inputs(self):
         p = B.FW / "app.ld"
         text = p.read_text()
         p.write_text(text.replace("0x01C1A000", "0x01C1A001"))
         self.assertIn("POOL does not start where RAM ends", " ".join(self.check()))
-        for contents in ("", text.replace("POOL (rw)", "OTHER (rw)"), text.replace("72K", "0")):
+        for contents in ("", text.replace("POOL (rw)", "OTHER (rw)"), text.replace("72K", "0"),
+                         text.replace("NOINIT (rw)", "OTHER (rw)"), text.replace("0x3D50", "0")):
             p.write_text(contents)
-            self.assertIn("missing or empty RAM/POOL", " ".join(self.check()))
+            self.assertIn("missing or empty RAM/POOL/NOINIT", " ".join(self.check()))
         p.write_text(text.replace("72K", "72Z"))
         self.assertIn("invalid memory regions", " ".join(self.check()))
         p.unlink()

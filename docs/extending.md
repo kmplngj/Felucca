@@ -245,7 +245,8 @@ engine-local note queue or voice allocator.
 - **Budgets.** Effects run inside the audio ISR. Keep work bounded per block with a cheap idle
   path, add per-sample loops to `FUNCS` in `tests/target_budget.py` (existing entries cover
   `rev_*`, `perf_*`, `slicer_track`), and report RAM/POOL bytes (the build fails below
-  4,096 B RAM / 8,192 B POOL spare, `tools/build.py`). Buffer sizes grow per sample and channel
+  4,096 B RAM / 8,192 B POOL spare, `tools/build.py`; NOINIT takes no new users and the build also fails below
+  100 B of its spare). Buffer sizes grow per sample and channel
   ([performance.md](performance.md), "RAM and stack").
 - Tests to extend: `tests/insert_test.c`, `tests/perform_test.c`, `tests/reverb_test.c`,
   `tests/mod_test.c` as applicable, plus the golden mix entries in `tests/regress.c`.
@@ -377,7 +378,7 @@ there. Compare with `FELUCCA_SIZE=0 ./build.sh`
 (`.pool`: big zero-initialised buffers, engine memory, FX lines), `NOINIT` (diagnostics and
 retained slots that survive reset), two stacks with 256-byte guard bands, and the reserved top of
 RAM. `RAM` and `POOL` are one SRAM: moving the boundary reallocates it. `tools/build.py` reads the
-lengths from the linker script and enforces the spare minimums (4,096 B RAM, 8,192 B POOL).
+lengths from the linker script and enforces the spare minimums (4,096 B RAM, 8,192 B POOL, 100 B NOINIT).
 Place big buffers in `.pool`; interrupt-touched small state stays in RAM. Keep the stack guards,
 reserved RAM and reset diagnostics intact. Large automatic arrays spend stack even if static
 sections stay flat.

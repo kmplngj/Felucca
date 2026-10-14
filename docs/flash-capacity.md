@@ -145,14 +145,14 @@ Other measured sizes that new objects add to or must avoid duplicating (`.pool` 
 | `up_bank` / `upf` | 6,160 / 3,728 | mirrors of flash objects (#22 would read them through XIP) |
 | `chain` (`.bss`) | 13,096 | decoded copies of the four slots for the song (#20) |
 
-Static-region budget (this build; the build fails below 4,096 B RAM or 8,192 B POOL spare):
+Static-region budget (this build; the build fails below 4,096 B RAM, 8,192 B POOL or 100 B NOINIT spare):
 
 | Region | Used | Capacity | Spare | Above the build floor |
 | --- | ---: | ---: | ---: | ---: |
 | App (`felucca.bin`) | 470,440 | 581,564 | 111,124 | n/a |
 | RAM (`.data+.bss`) | 55,364 | 73,728 | 18,364 | 14,268 |
 | POOL | 336,428 | 368,640 | 32,212 | 24,020 |
-| NOINIT | 15,564 | 15,696 | 132 | n/a |
+| NOINIT | 15,564 | 15,696 | 132 | 32 |
 | RAMTEXT | 2,924 | 24,576 | 21,652 | n/a |
 
 These differ from the [2026-10-11 snapshot](development-review-2026-10-11.md#fresh-local-measurements)
@@ -250,7 +250,7 @@ still choose), **BLOCKED** (no capacity).
 | A4 | DEEP: deep-patch sidecars `OBJ_DEEP0/1` (15, 16), one per user-preset bank, tag-tied to the record | `0xD2000/0xD3000`, `0xD4000/0xD5000` | 4 sectors; 16 x (4 B tag + 144 B) = 2,368 B each | #188 |
 | A5 | FM6 library `OBJ_FVL0/1` (17, 18): 32 voices of 112 B each (the packed layout of `fm6_vbank.c`) | `0xD6000/0xD7000`, `0xD8000/0xD9000` | 4 sectors; 3,616 B each, 64 voices | #74 |
 | A6 | KITS `OBJ_KITS` (19): editable drum kit banks | `0xDA000/0xDB000` | 2 sectors; 1,464 B asserted by #141 | #141 stage C. Unassigned until that stage is promoted |
-| A7 | NOINIT | no new users | #116 may extend `bootguard` by up to 16 B; #204's session choice up to 4 B; **at least 100 B stays unallocated** | #116, #204 |
+| A7 | NOINIT | no new users | #116 may extend `bootguard` by up to 16 B; #204's session choice up to 4 B; **at least 100 B stays unallocated** (enforced by the build, F9) | #116, #204 |
 | A8 | Pattern-bank store | none | see the row below | #62, #66 |
 | A9 | **USR3 reclaim** (the sectors for A3-A6): `0xC8000..0xDC000`, 20 of 20 sectors allocated, none in reserve while A6 is assigned | an explicit user action | 20 sectors | prerequisite of A3-A6 |
 
@@ -376,7 +376,7 @@ Every persistent object, in this order of decision:
 9. **Profile independence.** The map does not depend on which engines, effects or modes a build includes.
    A build without a feature keeps its objects as bytes, never erases them, and never reuses the sectors.
 10. **Memory.** No new NOINIT users without a measured reason that flash cannot meet, and 100 B stay
-    unallocated. Mirrors are read through XIP where possible and cost pool, counted per copy (settings count three).
+    unallocated (the build fails below that). Mirrors are read through XIP where possible and cost pool, counted per copy (settings count three).
     Report the object's bytes of flash, pool, RAM and NOINIT in the PR.
 11. **Tests a new object brings:** legacy and malformed input, a torn write at every step (`tests/storage_test.c`
     style), the layout and non-overlap assertions, backup list/get/put round trip and refusal, downgrade
@@ -387,7 +387,7 @@ Every persistent object, in this order of decision:
 
 ## 8. Follow-up issues
 
-Proposed, not created. Each carries legacy, malformed, torn-write, backup and downgrade tests
+Proposed (F8 and F9 are implemented: #321, #322). Each carries legacy, malformed, torn-write, backup and downgrade tests
 as in rule 11.
 
 | ID | Title | Scope |
@@ -400,7 +400,7 @@ as in rule 11.
 | F6 | Design a variable-length pattern-bank store (#62) | Measured capacity from real projects, encoding, "bank store full" policy, RAM residency against #20, the extra trade (O5b), song references; blocks #66. |
 | F7 | Survey and classify the unclaimed flash on stock-flashed FM-1s | Read-only dumps of `0x93000..0x97000`, `0xE8000..0xFC000`, `0xFF000`; erased/used map, stock-return behavior; no write. Gate for O9. |
 | F8 | Backup: add the FM6 voice bank and the SLICE records to the full backup inventory | Closes the two gaps in [2.1](#21-flash-map); independent of the rest. **Done in #321**: ids 20 and 21 behind `BACKUP_LIST 1`; the WebApp follow-up is #305. |
-| F9 | Build guard: fail when NOINIT spare drops below 100 B | `tools/build.py` already reads `app.ld`; add a check next to the RAM/POOL floors. |
+| F9 | Build guard: fail when NOINIT spare drops below 100 B | Done (#322): `tools/build.py` `check()` fails below `NOINIT_SPARE_MIN` = 100 B, next to the RAM/POOL floors; see [performance.md](performance.md#ram-and-stack). |
 
 ## 9. Unverified and how to check it
 
