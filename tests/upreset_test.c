@@ -9,6 +9,9 @@
 #include <string.h>
 #define __attribute__(x)
 #define UP_HOST 1
+/* This record-only host has no DSP tables; declare the portable type contract explicitly. */
+#define FS 44100
+#define CTL 32
 #include "../firmware/src/core.h"
 
 static uint8_t nor[0x100000];
