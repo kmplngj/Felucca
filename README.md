@@ -15,6 +15,7 @@ Want to look around first? [Try it in your browser](https://hugelton.github.io/F
   [Controls](https://github.com/hugelton/Felucca/wiki/Controls) · [Menu](https://github.com/hugelton/Felucca/wiki/Menu) ·
   [Engines](https://github.com/hugelton/Felucca/wiki/Engines) · [Release notes](https://github.com/hugelton/Felucca/wiki/Release-Notes) ·
   [Troubleshooting](https://github.com/hugelton/Felucca/wiki/Troubleshooting)
+- Development direction: [combined modularity, capacity and 1.6.1 plan](docs/modularity.md#combining-our-plan-with-felucca-161--2026-10-14)
 - Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build); clone with `git clone --recurse-submodules https://github.com/kmplngj/Felucca.git`
 - Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), without a local target toolchain; then follow the PR's hardware test instructions (CI does not validate the hardware)
 - Download: this fork's [Releases](https://github.com/kmplngj/Felucca/releases) and successful [Actions](https://github.com/kmplngj/Felucca/actions) artifacts; follow the [download and checksum guide](.github/CI.md#downloads-and-checksums)
@@ -30,11 +31,12 @@ per-track channels, MIDI LEARN) and USB audio. More: [Features](https://github.c
 
 ## New in 1.6.1
 
-- **MENU > LARGE keeps one size per knob** (#251): a value no longer jumps between sizes as you turn the knob
+- **MENU > LARGE keeps one size per knob** ([upstream #251](https://github.com/hugelton/Felucca/issues/251)): a value no longer jumps between sizes as you turn the knob
 - **Updates check the package's size on the FM-1**: a package made for another device is refused before anything is erased
 - **Second core (beta), off by default:** MENU > SYSTEM > 2ND CORE > ON (BETA), then restart: the FM-1's second core
-  renders some of the parts, same sound, more headroom (#247)
-- **Felucca-Engines:** ANALOG, LOFI, TRIO, WHEEL and NOISE now live in [their own repository](https://github.com/hugelton/Felucca-Engines)
+  renders some parts alongside the first core; unreliable units fall back to one core
+  ([upstream #247](https://github.com/hugelton/Felucca/pull/247)). Device qualification remains under [#44](https://github.com/kmplngj/Felucca/issues/44)
+- **Felucca-Engines:** ANALOG, LOFI, TRIO, WHEEL and NOISE now live in [our pinned engine fork](https://github.com/kmplngj/Felucca-Engines)
   under the MIT licence (a git submodule here); Felucca itself stays GPL-3.0-only
 
 ## New in 1.6

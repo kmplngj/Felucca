@@ -171,7 +171,7 @@ class CommandLineFixtures(unittest.TestCase):
         self.budget.unlink()
         result = self.cli()
         self.assert_status(result, 0)
-        self.assertEqual(result.stdout.count("no budget"), len(self.required))
+        self.assertEqual(result.stdout.count("no budget"), len(set(self.required) - set(ESTIMATOR["ONE_CORE"])))
         self.assertFalse(self.budget.exists())
 
     def test_undecoded_back_edge_fails_without_rewriting(self):

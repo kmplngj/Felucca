@@ -385,7 +385,7 @@ def disassembly_rows(text, label, empty_ok=False):
     for line in text.splitlines():
         m = LINE.match(line)
         if m and m.group(3).strip():
-            if label == ".ram_text" and re.match(r"^(?:\.\w+|\(bad\)|unknown\b)", m.group(3).strip(), re.I):
+            if label in (".ram_text", ".c1_text") and re.match(r"^(?:\.\w+|\(bad\)|unknown\b)", m.group(3).strip(), re.I):
                 errors.append(f"{label}: undecoded instruction row: {line.strip()}")
             rows.append(m)
         elif label == "app" and objdump_data_row(line):
@@ -396,7 +396,7 @@ def disassembly_rows(text, label, empty_ok=False):
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         header = any(re.fullmatch(r".*file format ELF32-pi32v2", line) for line in lines)
         header_only = all(re.fullmatch(r".*file format ELF32-pi32v2", line) or
-                          line == "Disassembly of section .ram_text:" for line in lines)
+                          line == f"Disassembly of section {label}:" for line in lines)
         if not (empty_ok and header and header_only and not errors):
             errors.append(f"missing or malformed {label} disassembly")
     return rows, errors
@@ -418,11 +418,11 @@ def check(img, hdr, syms, dis, rt):
             section = match.group(1)
         if section:
             sections.setdefault(section, []).append(line)
-    rt_text = "\n".join(sections.get(".ram_text", []))
+    rt_text = "\n".join(sections.get(".ram_text", [])) if sections else rt
     c1_text = "\n".join(sections.get(".c1_text", []))
     rt_rows, rt_errors = disassembly_rows(rt_text, ".ram_text", empty_ok=True)
-    c1_rows, c1_errors = disassembly_rows(c1_text, ".c1_text", empty_ok=not CPU2)
-    errors += rt_errors + c1_errors
+    c1_rows, c1_errors = disassembly_rows(c1_text, ".c1_text") if c1_text or CPU2 else ([], [])
+    errors += app_errors + rt_errors + c1_errors
     rt_calls = [ln for ln in rt_text.splitlines() if re.search(r"\bcall\b", ln)]
     c1_calls = [ln for ln in c1_text.splitlines() if re.search(r"\bcall\b", ln)
                 and not re.search(r"\bcall\s+r\d+\b", ln)]

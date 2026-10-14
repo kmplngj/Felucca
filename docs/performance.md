@@ -4,7 +4,9 @@
 Use this procedure for DSP, interrupt, memory, compiler, font/sample or firmware-size work.
 Build setup remains in [BUILDING.md](../BUILDING.md); the budget authorities are
 `firmware/app.ld`, `tools/build.py`, `tests/regress.c` and `tests/target_budget.py`.
-Re-read them if their behavior changes. Numbers below describe the default single-core build.
+Re-read them if their behavior changes. Dated resource figures below precede the 1.6.1 backport. The default now compiles second-core
+support while its runtime preference stays OFF; measure both that build and `FELUCCA_CPU2=0`
+under the current [modularity direction](modularity.md).
 
 ## Establish a comparable baseline
 

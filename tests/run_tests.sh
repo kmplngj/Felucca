@@ -472,6 +472,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -pthread -o "$OUT/dualcore_test" tests/dualcore_test.c -lm
     run "second core: 4 parts of every preset, mixes: bit for bit on one core and on two, every split" \
         "$OUT/dualcore_test"
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/dualcore_failure_test" tests/dualcore_failure_test.c -lm
+    run "second core failures: discard unfinished sums without replaying advanced state; serial recovery" "$OUT/dualcore_failure_test"
     if [ -n "$TSAN" ]; then                     # TSAN=1: the same under ThreadSanitizer (~6 min): shared state
         TSAN_CC="cc -O1 -g -w -Ibuild/gen -Ifirmware/src -fsanitize=thread -pthread"
         $TSAN_CC -o "$OUT/dualcore_tsan" tests/dualcore_test.c -lm

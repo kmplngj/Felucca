@@ -25,6 +25,27 @@ class Checks(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_engine_provenance_rejects_missing_mismatched_or_dirty_sources(self):
+        repo = self.root / "firmware/engines"
+        repo.mkdir(parents=True)
+        pin = "a" * 40
+        row = f"160000 commit {pin}\tfirmware/engines\n"
+        with patch.object(ci.build, "SRC", self.root):
+            with patch.object(ci.subprocess, "check_output", return_value=row):
+                with self.assertRaisesRegex(ValueError, "uninitialized"):
+                    ci.engine_provenance()
+            (repo / "src").mkdir()
+            (repo / "src/felucca_engine.h").touch()
+            for actual, dirty in (("b" * 40, ""), (pin, " M src/dsp.c\n"), (pin, "?? extra.c\n")):
+                with patch.object(ci.subprocess, "check_output", side_effect=[row, actual, dirty]):
+                    with self.assertRaisesRegex(ValueError, "committed pin"):
+                        ci.engine_provenance()
+            with patch.object(ci.subprocess, "check_output", side_effect=[row, pin, "", "https://example.com/engines.git"]):
+                self.assertEqual(ci.engine_provenance()["revision"], pin)
+            with patch.object(ci.subprocess, "check_output", return_value=""):
+                with self.assertRaisesRegex(ValueError, "gitlink"):
+                    ci.engine_provenance()
+
     def test_versions_follow_package_identity_limits(self):
         for value in ("1.6", "1.6.2", "1.6.2.1", "1.6-rc1"):
             self.assertEqual(ci.version(value), value)

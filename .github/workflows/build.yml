@@ -38,6 +38,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
       - name: Select validation from complete change range
         id: changes
@@ -78,6 +79,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -105,6 +107,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -131,6 +134,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -208,6 +212,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
       - name: Validate version and record checkout
         if: needs.workflow-checks.outputs.full == 'true'
@@ -305,7 +310,7 @@ jobs:
         run: |
           set -o pipefail
           # Local clone preserves this exact PR merge/tag commit and tracked sample assets.
-          git clone --no-local . "$RUNNER_TEMP/reproduce"
+          git clone --no-local --recurse-submodules . "$RUNNER_TEMP/reproduce"
           (
             cd "$RUNNER_TEMP/reproduce"
             if [ -n "$VERSION" ]; then ./build.sh --release "$VERSION"; else ./build.sh; fi

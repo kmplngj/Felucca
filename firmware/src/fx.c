@@ -1047,8 +1047,12 @@ static void mix_block(int32_t *out, uint32_t n)
             mix_part(&trk[i], n, &mx[0]);
     if (m) {
         const mixsum_t *sm = &mx[1];
-        if (C1_WAIT())                                  /* it stopped answering (held from now on): its parts here */
-            c1_parts(m | n << 8);
+        if (C1_WAIT()) {                                /* held: it may already have advanced part/engine state */
+            /* Drop its sums for this block. Never replay a possibly partial render or use its unfinished buffers.
+             * Subsequent blocks run serially; the HAL counts the failure and main.c clears the saved ON preference. */
+            for (i = 0; i < n; i++)
+                mx[1].l[i] = mx[1].r[i] = mx[1].c[i] = mx[1].d[i] = mx[1].v[i] = 0;
+        }
         for (i = 0; i < n; i++) {
             mix_l[i] += sm->l[i];
             mix_r[i] += sm->r[i];
