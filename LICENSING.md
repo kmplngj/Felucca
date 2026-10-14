@@ -32,7 +32,12 @@ Hügelton Instruments' own work and live in their own repository, Felucca-Engine
 Felucca's complete source includes that submodule: clone with `--recurse-submodules`, and
 give it along with the rest when you share the source. Each release also offers
 `felucca-X.Y.Z-source.tar.gz`, the whole source with the submodule's files in it (GitHub's
-own source archives leave the submodule empty).
+own source archives leave the submodule empty). The complete asset includes all
+tracked build inputs, source generators, fonts, samples, profile definitions and
+tests, with the Engines MIT license and all other attribution/license files. Its
+`SOURCE-PINS.json` identifies both commits and checks every source file; the
+[build guide](BUILDING.md#get-the-source) explains download verification and builds
+without Git. The JieLi toolchain and SDK remain separately obtained prerequisites.
 
 You may use, study, change and share Felucca under the GPL. If you distribute Felucca, or
 firmware derived from it, you must also give your recipients its complete corresponding

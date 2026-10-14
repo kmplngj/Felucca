@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build
 import fm1_install
+import source_archive
 
 SDK_REF = "d179b4484759423312073f5fbb232501aa491047"
 SDK_MIRROR = "https://raw.githubusercontent.com/Quixotic7/ChoralRootFM1/d09c687d8ee1850fc1360c080aca41763be998ca/tools/sdk"
@@ -243,6 +244,17 @@ def package(root, value):
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     if metadata.get("revision") != revision or metadata.get("version") != value:
         raise ValueError("release provenance does not match the checkout and version")
+    pin = subprocess.check_output(["git", "ls-tree", "HEAD", "firmware/engines"], text=True).split()
+    if (len(pin) != 4 or pin[:2] != ["160000", "commit"]
+            or metadata.get("engines", {}).get("revision") != pin[2]):
+        raise ValueError("release Engines provenance does not match the committed gitlink")
+    source = metadata.get("source_distribution", {})
+    if (source.get("archive") != f"felucca-{value}-source.tar.gz"
+            or source.get("firmware_revision") != metadata.get("revision")
+            or source.get("engines") != metadata.get("engines")
+            or not re.fullmatch(r"[0-9a-f]{64}", source.get("sha256", ""))
+            or not re.fullmatch(r"[0-9a-f]{64}", source.get("manifest_sha256", ""))):
+        raise ValueError("release source distribution provenance missing or inconsistent")
     raw = (root / f"felucca-{value}.fwsc").read_bytes()
     if len(raw) < fm1_install.BLOCKS * fm1_install.BLK:
         raise ValueError("release package is truncated")
@@ -260,6 +272,8 @@ def finalize(value):
     metadata = json.loads((build.OUT / "ci/provenance.json").read_text())
     # Keep the real build clock in diagnostics, outside reproducible release content.
     metadata.pop("built_at_utc", None)
+    metadata["source_distribution"] = source_archive.export(
+        build.SRC, build.OUT / f"felucca-{value}-source.tar.gz", value)
     (root / "BUILD-PROVENANCE.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
     write_checksums(root)
     package(root, value)
@@ -292,7 +306,14 @@ def stage_release(root, bundles, destination, value):
     if sidecar.read_text() != expected:
         raise ValueError("invalid release archive checksum")
     files = sorted(p for p in root.rglob("*") if p.is_file() and p != root / "SHA256SUMS")
-    files += [bundle, sidecar]
+    source = bundles / f"felucca-{value}-source.tar.gz"
+    source_sidecar = source.with_suffix(source.suffix + ".sha256")
+    metadata = json.loads((root / "BUILD-PROVENANCE.json").read_text())
+    source_archive.verify_archive(source, metadata["source_distribution"])
+    expected_source = f"{hashlib.sha256(source.read_bytes()).hexdigest()}  {source.name}\n"
+    if source_sidecar.read_text() != expected_source:
+        raise ValueError("invalid source archive checksum")
+    files += [bundle, sidecar, source, source_sidecar]
     if len({p.name for p in files}) != len(files) or any(p.name == "SHA256SUMS" for p in files):
         raise ValueError("release asset filenames collide after flattening")
     destination.mkdir()
