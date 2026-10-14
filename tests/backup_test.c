@@ -2,9 +2,10 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The editor's full backup (editor_backup.c: LIST / GET / PUT) against simulated NOR flash:
  * CRC before any write, stale runtime copies, USB resets and timeouts, malformed objects, older
- * project formats, settings values and user preset banks kept byte for byte. */
-static unsigned char host_samples[3][0x14000];
-#define SMP_USER_XIP(k) host_samples[k]
+ * project formats, settings values and user preset banks kept byte for byte; and (#321) the FM6 voice
+ * bank (id 20) and the SLICE records (id 21): LIST 1, round trips, refusals, power cuts. */
+static unsigned char nor[0x100000];                  /* the whole flash; the user sample slots (XIP) are 0xA0000.. of it */
+#define SMP_USER_XIP(k) (nor + 0xA0000u + (k) * 0x14000u)
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -23,12 +24,36 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #include "../firmware/src/ui.c"
 static void panel_setup(void) {}
 
-static uint8_t nor[0x100000], flash_ok = 1;
+static uint8_t flash_ok = 1;
 static int erase_error;
-static uint32_t erases;
+static uint32_t erases, progs;
+static long cut_bytes = -1, cut_erase = -1;      /* the power goes after that many programmed bytes / at that erase */
+static int dead;                                  /* .. and stays off: nothing more is written */
 static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
-static int st_erase(uint32_t off) { if (erase_error) return -8; memset(nor + off, 0xFF, 4096); erases++; return 0; }
-static int st_prog(uint32_t off, const void *src, uint32_t n) { memcpy(nor + off, src, n); return 0; }
+static int st_erase(uint32_t off)
+{
+    if (erase_error || dead) return -8;
+    erases++;
+    if (cut_erase >= 0 && cut_erase-- == 0) {    /* cut during the erase: half of it done */
+        memset(nor + off, 0xFF, 2048);
+        dead = 1;
+        return -8;
+    }
+    memset(nor + off, 0xFF, 4096);
+    return 0;
+}
+static int st_prog(uint32_t off, const void *src, uint32_t n)
+{
+    const uint8_t *s = src;
+    uint32_t i;
+    if ((off & 0xFFu) + n > 256u) { printf("page wrap at %#x\n", off); exit(1); }
+    for (i = 0; i < n; i++) {
+        if (dead || (cut_bytes >= 0 && cut_bytes-- == 0)) { dead = 1; return -9; }
+        nor[off + i] &= s[i];                    /* NOR: bits only go 1 -> 0 */
+        progs++;
+    }
+    return 0;
+}
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
 static uint32_t fl_jedec_ram(void) { return 0; }
@@ -60,7 +85,14 @@ static uint32_t ed_unpack7(const uint8_t *a, uint32_t na, uint8_t *out, uint32_t
 static uint8_t ed_smp_buf[512] __attribute__((aligned(4)));
 static void fm1_wdt_feed(void) {}
 static int ed_flash_stop(void) { return transport_busy(); }
+static void ed_str(const char *s, uint32_t max)
+{
+    uint32_t i;
+    for (i = 0; s && s[i] && i < max; i++) ed_b((uint8_t)s[i]);
+    ed_b(0);
+}
 #include "../firmware/src/editor_backup.c"
+#include "../firmware/src/editor_fm6.c"
 
 static int check(const char *what, int ok)
 {
@@ -87,7 +119,15 @@ static void reset(void)
     transport_req = 0;
     usb.resets = 0;
     erase_error = 0;
-    erases = 0;
+    erases = progs = 0;
+    dead = 0;
+    cut_bytes = cut_erase = -1;
+    memset(&fvb_tx, 0, sizeof fvb_tx);
+    memset(usr_nz, 0, sizeof usr_nz);
+#if FELUCCA_SLICE
+    slc_man_save = 0;
+    memset(slc_man, 0, sizeof slc_man);
+#endif
     ed_bk_valid = ed_bk_put = 0;
 }
 
@@ -166,6 +206,615 @@ static uint32_t get(uint32_t id, uint32_t off, uint32_t count)
     a[7] = (uint8_t)(count >> 7);
     call(ED_BACKUP_GET, a, sizeof a);
     return rep[1];
+}
+
+/* ---- #321: LIST 1, the FM6 voice bank (id 20) and the SLICE records (id 21) ---- */
+
+/* LIST 1: rc; the length and CRC of object id (found = 1 when it is in the list) */
+static uint32_t list1(uint32_t id, uint32_t *len, uint32_t *crc, int *found)
+{
+    uint8_t one = 1;
+    uint32_t i;
+    *found = 0;
+    call(ED_BACKUP_LIST, &one, 1);
+    if (rep[1])
+        return rep[1];
+    for (i = 0; i < rep[2]; i++) {
+        const uint8_t *o = rep + 3 + i * 11u;
+        if (o[0] == id) {
+            *len = ed_bk_r32(o + 1);
+            *crc = ed_bk_r32(o + 6);
+            *found = 1;
+        }
+    }
+    return 0;
+}
+/* GET of a whole object in 256-byte pieces: the first rc that was not 0 */
+static uint32_t get_all(uint32_t id, uint32_t len, uint8_t *out)
+{
+    uint32_t off, rc = 0;
+    for (off = 0; off < len && !rc; off += 256u) {
+        uint32_t n = len - off > 256u ? 256u : len - off;
+        rc = get(id, off, n);
+        if (!rc && ed_unpack7(rep + 9, rep_n - 9u, out + off, 256u) != n)
+            rc = 99;
+    }
+    return rc;
+}
+
+/* a bank: per voice a packed record (a factory patch renamed "<tag> k"), the used mask */
+typedef struct {
+    uint8_t v[FM6_NBANK][FM6_PACKED];
+    uint32_t used;
+    char name[11];
+} bank_t;
+static void make_bank(bank_t *b, char tag, uint32_t used, const char *name)
+{
+    uint32_t k;
+    memset(b, 0, sizeof *b);
+    for (k = 0; k < FM6_NBANK; k++) {
+        uint8_t v[FP_SIZE + 1u];
+        char nm[11];
+        fm6_unpack(FM6_FACTORY[(k + (uint32_t)tag) % FM6_NFACTORY], v);
+        snprintf(nm, sizeof nm, "%c VOICE %02u", tag, (unsigned)(k + 1u));
+        memcpy(v + FP_NAME, nm, 10);
+        v[FP_ALG] = (uint8_t)((k * 7u + (uint32_t)tag) % 32u);
+        v[FP_OP * 2u + FP_OL] = (uint8_t)(50u + k);
+        fm6_pack(v, b->v[k]);
+    }
+    b->used = used;
+    snprintf(b->name, sizeof b->name, "%s", name);
+}
+/* the editor's own transfer (FM6B_BEGIN, a WRITE per used voice, END): END's rc */
+static uint32_t send_bank(const bank_t *b)
+{
+    uint8_t a[1 + FM6_PACKED], e[15];
+    uint32_t k, c = 0xFFFFFFFFu;
+    rep_n = 0; ed_fm6_handle(ED_FM6B_BEGIN, a, 0);
+    if (rep[0]) return rep[0];
+    for (k = 0; k < FM6_NBANK; k++) {
+        if (!((b->used >> k) & 1u)) continue;
+        a[0] = (uint8_t)k;
+        memcpy(a + 1, b->v[k], FM6_PACKED);
+        rep_n = 0; ed_fm6_handle(ED_FM6B_WRITE, a, sizeof a);
+        if (rep[1]) return rep[1];
+        c = st_crc32_add(c, b->v[k], FM6_PACKED);
+    }
+    c = ~c;
+    memset(e, ' ', 10);
+    memcpy(e, b->name, strlen(b->name));
+    for (k = 0; k < 5u; k++) e[10 + k] = (uint8_t)((c >> (7u * k)) & 127u);
+    rep_n = 0; ed_fm6_handle(ED_FM6B_END, e, sizeof e);
+    return rep[0];
+}
+/* the bank the device holds now equals b (its voices, the used mask, the name) */
+static int bank_is(const bank_t *b)
+{
+    uint8_t pk[FM6_PACKED];
+    const fvb_info_t *in = fvb_info();
+    char nm[11] = {0};
+    uint32_t k;
+    if (!in || fm6_bank_used != b->used) return 0;
+    memcpy(nm, in->name, 10);
+    for (k = 10; k && nm[k - 1] == ' '; k--) nm[k - 1] = 0;
+    if (strcmp(nm, b->name)) return 0;
+    for (k = 0; k < FM6_NBANK; k++) {
+        int has = !fvb_read(k, pk);
+        if (has != (int)((b->used >> k) & 1u) || (has && memcmp(pk, b->v[k], FM6_PACKED))) return 0;
+    }
+    return 1;
+}
+static int autosave_is(char tag)
+{
+    uint8_t got[600], want[600];
+    memset(want, tag, sizeof want);
+    return st_load(OBJ_AUTOSAVE, got, sizeof got) == (int)sizeof got && !memcmp(got, want, sizeof want);
+}
+static void power_on(void)                          /* RAM lost, the stores read again */
+{
+    memset(&fvb_tx, 0, sizeof fvb_tx);
+    fm6_bank_used = 0;
+    fvb_boot();
+}
+
+static int plain_list_tests(void)
+{
+    int bad = 0, ok, found;
+    uint32_t i, len = 0, crc = 0;
+    uint8_t a[2] = {1, 1};
+    reset();
+    call(ED_BACKUP_LIST, 0, 0);
+    ok = rep[1] == 0 && rep[2] == 13u && rep_n == 3u + 13u * 11u;
+    for (i = 0; i < rep[2]; i++) ok &= rep[3 + i * 11u] != 20u && rep[3 + i * 11u] != 21u;
+    bad += check("plain LIST: still the 13 objects of 1.0.3 (an editor that counts them keeps working)", ok);
+    bad += check("LIST 1 on an empty device: 15 objects, 20 and 21 last, both 0 bytes (CRC 0)",
+                 list1(20, &len, &crc, &found) == 0 && rep[2] == 13u + ED_BK_XN && found && !len && !crc &&
+                 rep[3 + 13 * 11] == 20u && (!FELUCCA_SLICE || rep[3 + 14 * 11] == 21u) &&
+                 (!FELUCCA_SLICE || (list1(21, &len, &crc, &found) == 0 && found && !len && !crc)));
+    a[0] = 2;
+    call(ED_BACKUP_LIST, a, 1);
+    ok = rep[1] == 1u && rep[2] == 0;
+    a[0] = 1;
+    call(ED_BACKUP_LIST, a, 2);
+    ok &= rep[1] == 1u && rep[2] == 0;
+    bad += check("LIST with another argument, or two: rc 1, as firmware without LIST 1 answers", ok);
+    bad += check("INFO's 58 01 caps (editor.c) with the flash store and SLICE: 7 = LIST 1, id 20, id 21",
+                 ED_BK_XCAPS == (FELUCCA_SLICE ? 7u : 3u) && ED_BK_XN == (FELUCCA_SLICE ? 2u : 1u) && sizeof ED_BK_XIDS == 2u && ED_BK_XIDS[0] == 20u && ED_BK_XIDS[1] == 21u);
+    return bad;
+}
+
+static int bank_tests(void)
+{
+    int bad = 0, ok, found;
+    static bank_t a, b, c;
+    static uint8_t objA[FVB_LEN], got[FVB_LEN], m[FVB_LEN], snap[0x100000], pre[0x3000];
+    uint32_t len = 0, crc = 0, k, e0;
+    uint8_t as_data[600];
+    memset(as_data, 'S', sizeof as_data);
+    make_bank(&a, 'A', 0xFFFFFFFFu, "BANK A");
+    make_bank(&b, 'B', 0x0000FFFFu, "BANK B");
+
+    /* LIST 1 and GET of a bank */
+    reset();
+    fvb_boot();
+    st_save(OBJ_AUTOSAVE, as_data, sizeof as_data);      /* an autosave (copy A) */
+    ok = send_bank(&a) == 0 && bank_is(&a);
+    bad += check("setup: a bank A written over the editor's FM6B commands", ok);
+    ok = list1(20, &len, &crc, &found) == 0 && found && len == FVB_LEN && len == 3616u &&
+         crc == st_crc32(nor + 0xE7000u + FVB_INFO, FVB_LEN);
+    bad += check("LIST 1: id 20 is 3616 bytes, its CRC the bank payload's", ok);
+    ok = get_all(20, len, objA) == 0 && !memcmp(objA, nor + 0xE7000u + FVB_INFO, FVB_LEN) && st_crc32(objA, len) == crc;
+    bad += check("GET in 256-byte pieces: the payload as stored at 0xE7000, CRC as listed", ok);
+    ok = !memcmp(objA, "FM6V", 4) && ((fvb_info_t *)objA)->used == 0xFFFFFFFFu && !memcmp(objA + 12, "BANK A", 6);
+    bad += check("  .. it begins with the bank header (FM6V, ver 1, used mask, name)", ok);
+    bad += check("GET at and past the end, and of 0 bytes: rc 1",
+                 get(20, len, 1) == 1u && get(20, len - 1u, 2) == 1u && get(20, 0, 0) == 1u && get(20, 0, 256) == 0);
+    project_save(0);                                       /* (the staging RAM is not used by id 20) */
+    bad += check("a project save after LIST makes the runtime copy stale (5) but not id 20 (read from flash)",
+                 get(0, 0, 16) == 5u && get(20, 0, 16) == 0);
+
+    /* a restore on a device with no bank */
+    reset();
+    fvb_boot();
+    st_save(OBJ_AUTOSAVE, as_data, sizeof as_data);
+    memcpy(snap, nor, sizeof nor);
+    ok = put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN)) == 0 && bank_is(&a);
+    bad += check("PUT id 20 on a device with no bank: rc 0, the bank loads (32 voices, name) and reads back exactly", ok);
+    ok = !memcmp(nor + 0xE7000u + FVB_INFO, objA, FVB_LEN);
+    for (k = 0xE7F00u; k < 0xE8000u; k++) ok &= nor[k] == 0xFFu;
+    bad += check("  .. 0xE7000 holds the object byte for byte, its tail (0xE7F00..) erased", ok);
+    ok = 1;
+    for (k = 0; k < 0x100000u; k++)
+        if (nor[k] != snap[k] && !(k >= 0xE6000u && k < 0xE8000u)) ok = 0;
+    bad += check("  .. only 0xE7000 (the bank) and 0xE6000 (the autosave's older copy, staged) were written",
+                 ok && ((st_hdr_t *)(nor + 0xE6000u))->type == OBJ_FM6VB && autosave_is('S'));
+    power_on();
+    bad += check("  .. after a power-on: the same bank", bank_is(&a));
+    ok = list1(20, &len, &crc, &found) == 0 && found && len == FVB_LEN && crc == st_crc32(objA, FVB_LEN);
+    bad += check("  .. LIST 1 lists it again with the CRC of the archive's object (a full round trip)", ok);
+
+    /* a restore over another bank */
+    ok = send_bank(&b) == 0 && bank_is(&b) && !bank_is(&a);
+    ok &= put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN)) == 0 && bank_is(&a) && autosave_is('S');
+    bad += check("PUT id 20 over another bank (16 voices): replaced by A, the autosave kept", ok);
+
+    /* an empty object changes nothing */
+    memcpy(snap, nor, sizeof nor);
+    e0 = erases;
+    ok = put_all(20, 0, 0, st_crc32(0, 0)) == 0 && !memcmp(snap, nor, sizeof nor) && erases == e0 && bank_is(&a);
+    bad += check("an empty id 20 is taken and ignored (rc 0): the device's bank is never deleted", ok);
+
+    /* malformed and newer objects: nothing written */
+#define REFUSED(what, expr_before) do { memcpy(m, objA, sizeof m); expr_before; \
+        ok = put_all(20, m, FVB_LEN, st_crc32(m, FVB_LEN)) == 2u && !memcmp(snap, nor, sizeof nor) && erases == e0 && bank_is(&a); \
+        bad += check(what, ok); } while (0)
+    REFUSED("id 20 with another magic is refused (2), nothing written", m[0] ^= 1);
+    REFUSED("id 20 of a newer version (ver 2) is refused (2)", m[4] = 2);
+    REFUSED("id 20 with 31 voices in its layout is refused (2)", m[6] = 31);
+    REFUSED("id 20 with the reserved words set is refused (2)", m[24] = 1);
+    REFUSED("id 20 with a control character in the name is refused (2)", m[12 + 3] = 7);
+    REFUSED("id 20 with the name's terminator set is refused (2)", m[12 + 10] = 'x');
+    make_bank(&c, 'C', 0x0000FFFFu, "BANK C");
+    send_bank(&c);
+    list1(20, &len, &crc, &found);
+    get_all(20, len, got);
+    memcpy(snap, nor, sizeof nor);
+    e0 = erases;
+    memcpy(m, got, sizeof m);
+    m[FVB_VOICES - FVB_INFO + 20 * UPF_PK + 5] = 0;       /* a voice slot of an unused voice that is not erased */
+    ok = put_all(20, m, FVB_LEN, st_crc32(m, FVB_LEN)) == 2u && !memcmp(snap, nor, sizeof nor) && erases == e0 && bank_is(&c);
+    bad += check("id 20 with data in the slot of a voice that is not used is refused (2)", ok);
+    ok = put_all(20, got, FVB_LEN, st_crc32(got, FVB_LEN) ^ 1u) == 2u && !memcmp(snap, nor, sizeof nor) && erases == e0;
+    bad += check("id 20 with a wrong CRC is refused at commit (2), nothing written", ok);
+    ok = put_begin(20, FVB_LEN - 4u, 0) == 1u && put_begin(20, FVB_LEN + 4u, 0) == 1u && put_begin(20, 3840u, 0) == 1u &&
+         put_begin(20, 4000u, 0) == 1u;
+    bad += check("id 20 of another length is refused at begin (1)", ok);
+    put_begin(20, FVB_LEN, st_crc32(got, FVB_LEN));
+    put_chunk(20, 0, got, 64);
+    ok = put_end(20, 2) == 2u && !memcmp(snap, nor, sizeof nor) && erases == e0;
+    bad += check("a commit before all bytes arrived is refused (2), nothing written", ok);
+    put_begin(20, FVB_LEN, st_crc32(got, FVB_LEN));
+    usb.resets++;
+    ok = put_chunk(20, 0, got, 64) == 5u;
+    transport_req = 1;
+    ok &= put_begin(20, FVB_LEN, 0) == 3u;
+    transport_req = 0;
+    bad += check("a USB reset during PUT ends it (5); PUT while starting PLAY is refused (3)", ok && bank_is(&c));
+
+    /* a flash error: the old bank stays */
+    erase_error = 1;
+    ok = put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN)) == 4u && bank_is(&c);
+    erase_error = 0;
+    bad += check("a flash error (the stage's erase) answers 4; the old bank stays", ok);
+    flash_ok = 0;
+    ok = put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN)) == 4u;
+    flash_ok = 1;
+    bad += check("no flash: rc 4", ok);
+
+    /* an FM6B transfer open in the editor: the restore takes the stage, the transfer ends (5) */
+    {
+        uint8_t w[1 + FM6_PACKED];
+        rep_n = 0; ed_fm6_handle(ED_FM6B_BEGIN, w, 0);
+        w[0] = 0; memcpy(w + 1, a.v[0], FM6_PACKED);
+        rep_n = 0; ed_fm6_handle(ED_FM6B_WRITE, w, sizeof w);
+        ok = rep[1] == 0;
+        ok &= put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN)) == 0 && bank_is(&a);
+        w[0] = 1; memcpy(w + 1, a.v[1], FM6_PACKED);
+        rep_n = 0; ed_fm6_handle(ED_FM6B_WRITE, w, sizeof w);
+        ok &= rep[1] == 5u && bank_is(&a);
+        bad += check("a restore during an FM6B transfer: restored; the transfer's next WRITE answers 5, the bank is A", ok);
+    }
+    /* the autosave takes the staged sector later: the bank stays */
+    {
+        uint8_t t_data[600];
+        memset(t_data, 'T', sizeof t_data);
+        st_save(OBJ_AUTOSAVE, t_data, sizeof t_data);
+        st_save(OBJ_AUTOSAVE, t_data, sizeof t_data);
+        power_on();
+        bad += check("autosaves into the staged sector afterwards (both copies): the bank at 0xE7000 and the autosave stand",
+                     bank_is(&a) && autosave_is('T'));
+    }
+    /* GET after the bank changed: stale (5) */
+    list1(20, &len, &crc, &found);
+    send_bank(&c);
+    ok = get(20, 0, 16) == 5u;
+    list1(20, &len, &crc, &found);
+    ok &= get(20, 0, 16) == 0;
+    bad += check("GET of id 20 after the bank was replaced since LIST: rc 5; after a new LIST: rc 0", ok);
+    transport_req = 1;
+    ok = get(20, 0, 16) == 3u;
+    transport_req = 0;
+    bad += check("GET of id 20 while starting PLAY: rc 3", ok);
+
+    /* power cuts: after every programmed byte, and in each erase, of a restore */
+    {
+        uint32_t n, total, old = 0, nw = 0, other = 0, eold = 0, enew = 0;
+        reset();
+        fvb_boot();
+        st_save(OBJ_AUTOSAVE, as_data, sizeof as_data);
+        send_bank(&b);                                     /* the device holds B (16 voices); A (32) is restored */
+        memcpy(pre, nor + 0xE5000u, sizeof pre);
+        progs = 0;
+        put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN));
+        total = progs;
+        for (n = 0; n < total; n++) {
+            memcpy(nor + 0xE5000u, pre, sizeof pre);
+            power_on();
+            dead = 0;
+            cut_bytes = (long)n;
+            put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN));
+            dead = 0;
+            cut_bytes = -1;
+            power_on();
+            if (bank_is(&b)) old++;
+            else if (bank_is(&a)) nw++;
+            else other++;
+            if (!autosave_is('S')) other++;
+        }
+        for (k = 0; k < 2u; k++) {                         /* the stage's erase, the copy's erase */
+            memcpy(nor + 0xE5000u, pre, sizeof pre);
+            power_on();
+            dead = 0;
+            cut_erase = (long)k;
+            put_all(20, objA, FVB_LEN, st_crc32(objA, FVB_LEN));
+            dead = 0;
+            cut_erase = -1;
+            power_on();
+            eold += bank_is(&b);
+            enew += bank_is(&a);
+            if (!autosave_is('S')) other++;
+        }
+        printf("backup:   %u cut points (bytes): %u the old bank, %u the new one, %u anything else\n", (unsigned)total,
+               (unsigned)old, (unsigned)nw, (unsigned)other);
+        bad += check("a power cut after any programmed byte of a restore: the old bank or the new one, never half",
+                     !other && old && nw && old + nw == total && total > 7000u);
+        bad += check("  .. a cut in the stage's erase: the old bank; in the copy's erase: the new one (finished at boot)",
+                     eold == 1u && enew == 1u && !other);
+    }
+    return bad;
+}
+
+#if FELUCCA_FLASH && FELUCCA_SLICE
+/* a slot k: a sample of nsamp samples (ADPCM from a seed), header and data in the flash image, scanned */
+static void make_sample(uint32_t k, uint32_t nsamp, uint32_t seed)
+{
+    uint8_t *slot = nor + SMP_USER_BASE + k * SMP_USER_SIZE;
+    smp_user_hdr_t h;
+    uint32_t bytes = (nsamp + 1u) / 2u, i;
+    memset(slot, 0xFF, SMP_USER_SIZE);
+    for (i = 0; i < bytes; i++)
+        slot[SMP_USER_DATA + i] = (uint8_t)(i * 131u + seed * 17u + (i >> 3));
+    memset(&h, 0, sizeof h);
+    h.magic = SMP_USER_MAGIC;
+    h.version = 1;
+    h.nz = 1;
+    memcpy(h.name, "TEST", 4);
+    h.data_len = bytes;
+    h.crc = st_crc32(slot + SMP_USER_DATA, bytes);
+    h.zone[0].n = nsamp;
+    h.zone[0].le = nsamp - 1u;
+    h.zone[0].rate = 32768u;
+    h.zone[0].root16 = 60 * 16;
+    h.zone[0].hi = 127;
+    memcpy(slot, &h, sizeof h);
+    smp_user_scan(k);
+}
+static const uint32_t POS_A[4] = {0, 1000, 2500, 4000}, POS_B[3] = {200, 3000, 7000};
+static int slices_are(uint32_t k, uint32_t n, uint32_t end, const uint32_t *pos)
+{
+    const slc_man_t *m = slc_man_of(slc_get(k + 1u));
+    return n ? m && m->n == n && m->end == end && !memcmp(m->pos, pos, n * 4u) : !m;
+}
+/* the SLICE state of the three slots: for a snapshot */
+static void slot_slices(uint32_t k, slc_man_t *o)
+{
+    const slc_man_t *m = slc_man_of(slc_get(k + 1u));
+    memset(o, 0, sizeof *o);
+    if (m) *o = *m;
+}
+static void fix_rec(slc_rec_t *r) { r->rcrc = st_crc32(r, sizeof *r - 4u); }
+/* the object in o as the device would send it now */
+static uint32_t slc_object(uint8_t *o)
+{
+    uint32_t len = 0, crc = 0;
+    int found;
+    if (list1(21, &len, &crc, &found) || !found) return 0xFFFFFFFFu;
+    if (len && get_all(21, len, o)) return 0xFFFFFFFEu;
+    return len;
+}
+
+static int slice_tests(void)
+{
+    int bad = 0, ok;
+    static uint8_t obj[sizeof(slc_bk_t)] __attribute__((aligned(4))), m[sizeof(slc_bk_t)] __attribute__((aligned(4))), snap[0x100000];
+    slc_bk_t *o = (slc_bk_t *)(void *)obj, *x = (slc_bk_t *)(void *)m;
+    uint32_t len = 0, crc = 0, e0;
+    int found;
+    slc_man_t keep0, keep2;
+
+    if ((uintptr_t)nor < (uintptr_t)SMP_DATA || (uintptr_t)nor - (uintptr_t)SMP_DATA > 0xF0000000u) {
+        printf("backup: the flash image must lie above SMP_DATA within 4 GiB (32-bit offsets)\n");
+        return 1;
+    }
+    reset();
+    slc_store_boot();                                      /* (persist_boot: the scans read the records) */
+    make_sample(0, 12000, 1);
+    make_sample(2, 9000, 2);
+    ok = usr_nz[0] && usr_nz[2] && !usr_nz[1] && slc_get(1) && slc_get(3) && slc_rec_room(0) && slc_rec_room(2);
+    bad += check("setup: samples in USR1 and USR3, scanned", ok);
+    ok = list1(21, &len, &crc, &found) == 0 && found && !len && !crc;
+    bad += check("LIST 1: samples without slices: id 21 is 0 bytes", ok);
+
+    ok = slc_man_restore(0, 4, 5000, POS_A) == 0 && slc_man_restore(2, 3, 0, POS_B) == 0 && slc_store_write(0) == 3 &&
+         slc_store_write(2) == 3;
+    bad += check("setup: MAN slices on USR1 (4, end 5000) and USR3 (3), their records stored", ok);
+    len = slc_object(obj);
+    ok = len == sizeof(slc_bk_t) && len == 472u && o->magic == SLC_BK_MAGIC && o->ver == 1 && o->rsize == 152u &&
+         o->n == 3u && o->r[0].n == 4u && o->r[0].end == 5000u && o->r[1].n == 0 && o->r[1].len == 0 && o->r[2].n == 3u &&
+         !memcmp(o->r[0].pos, POS_A, sizeof POS_A) && o->r[0].rcrc == st_crc32(&o->r[0], 148u);
+    ok &= list1(21, &len, &crc, &found) == 0 && crc == st_crc32(obj, 472u);
+    bad += check("LIST 1 / GET: id 21 is 472 bytes: header SLB1, the three records (slot 2 empty), CRC as listed", ok);
+    ok = !memcmp(&o->r[0], nor + SMP_USER_BASE + SLC_REC_OFF, sizeof(slc_rec_t)) &&
+         !memcmp(&o->r[2], nor + SMP_USER_BASE + 2u * SMP_USER_SIZE + SLC_REC_OFF, sizeof(slc_rec_t));
+    bad += check("  .. the records are those stored in the slots' last sectors", ok);
+
+    /* the slices are lost (a new device: the samples restored, the last sectors erased): PUT brings them back */
+    slot_slices(0, &keep0);
+    slot_slices(2, &keep2);
+    memset(nor + SMP_USER_BASE + SLC_REC_OFF, 0xFF, 0x1000u);
+    memset(nor + SMP_USER_BASE + 2u * SMP_USER_SIZE + SLC_REC_OFF, 0xFF, 0x1000u);
+    smp_user_scan(0);
+    smp_user_scan(2);
+    ok = slices_are(0, 0, 0, 0) && slices_are(2, 0, 0, 0) && !slc_object(m);
+    ok &= put_all(21, obj, 472u, crc) == 0;
+    bad += check("PUT id 21 after the samples are back: rc 0", ok);
+    ok = slices_are(0, 4, 5000, POS_A) && slices_are(2, 3, 0, POS_B);
+    {
+        slc_man_t g0, g2;
+        slot_slices(0, &g0);
+        slot_slices(2, &g2);
+        ok &= !memcmp(&g0, &keep0, sizeof g0) && !memcmp(&g2, &keep2, sizeof g2);   /* (starts, end and decoder states) */
+    }
+    bad += check("  .. the slices are in use again, starts, end and decoder states as before", ok);
+    ok = !memcmp(&o->r[0], nor + SMP_USER_BASE + SLC_REC_OFF, sizeof(slc_rec_t)) &&
+         !memcmp(&o->r[2], nor + SMP_USER_BASE + 2u * SMP_USER_SIZE + SLC_REC_OFF, sizeof(slc_rec_t));
+    smp_user_scan(0);
+    smp_user_scan(2);
+    ok &= slices_are(0, 4, 5000, POS_A) && slices_are(2, 3, 0, POS_B);
+    bad += check("  .. and in the slots' last sectors: a slot scan (a power-on) finds them", ok);
+    ok = slc_object(m) == 472u && !memcmp(m, obj, 472u);
+    bad += check("  .. a new LIST / GET gives the archive's object byte for byte (a full round trip)", ok);
+    memcpy(snap, nor, sizeof nor);
+    e0 = erases;
+    ok = put_all(21, obj, 472u, crc) == 0 && erases == e0 && !memcmp(snap, nor, sizeof nor);
+    bad += check("the same object again writes nothing (records unchanged: no erase)", ok);
+
+    /* empty object / empty records change nothing */
+    ok = put_all(21, 0, 0, st_crc32(0, 0)) == 0 && erases == e0 && slices_are(0, 4, 5000, POS_A);
+    bad += check("an empty id 21 is taken and ignored (rc 0): no slice is deleted", ok);
+    memcpy(m, obj, 472u);
+    memset(&x->r[0], 0, sizeof x->r[0]);
+    x->r[0].magic = SLC_REC_MAGIC;
+    fix_rec(&x->r[0]);                                     /* slot 1: no slices in the archive */
+    x->r[2].pos[1] += 10u;                                 /* slot 3: others (valid) */
+    fix_rec(&x->r[2]);
+    ok = put_all(21, m, 472u, st_crc32(m, 472u)) == 0 && slices_are(0, 4, 5000, POS_A) &&
+         slices_are(2, 3, 0, (const uint32_t[]){200, 3010, 7000});
+    bad += check("an empty record leaves that slot's slices; a record with slices replaces them", ok);
+    ok = put_all(21, obj, 472u, crc) == 0 && slices_are(2, 3, 0, POS_B);
+    bad += check("  .. and the archive's object puts the first ones back", ok);
+
+    /* the sample must be there: nothing is applied or written */
+    memset(nor + SMP_USER_BASE + 2u * SMP_USER_SIZE, 0xFF, 0x1000u);   /* USR3's header sector erased (SMP_BEGIN) */
+    smp_user_scan(2);
+    memcpy(m, obj, 472u);
+    x->r[0].pos[1] = 1100;                                 /* (slot 1: a change that would be applied) */
+    fix_rec(&x->r[0]);
+    memcpy(snap, nor, sizeof nor);
+    e0 = erases;
+    ok = !usr_nz[2] && put_all(21, m, 472u, st_crc32(m, 472u)) == 2u && erases == e0 && !memcmp(snap, nor, sizeof nor) &&
+         slices_are(0, 4, 5000, POS_A);
+    bad += check("a record whose slot has no sample yet: refused (2), no record of the object is applied or written", ok);
+    make_sample(2, 9000, 7);                               /* another sample in USR3 */
+    memcpy(snap, nor, sizeof nor);
+    ok = put_all(21, obj, 472u, crc) == 2u && erases == e0 && !memcmp(snap, nor, sizeof nor) && slices_are(0, 4, 5000, POS_A);
+    bad += check("a record for another sample (data CRC differs): refused (2), nothing written", ok);
+    make_sample(2, 9000, 2);                               /* the sample is back */
+    ok = put_all(21, obj, 472u, crc) == 0 && slices_are(2, 3, 0, POS_B);
+    bad += check("  .. with the same sample restored again the object is taken", ok);
+
+    /* malformed objects: all refused (2), nothing written */
+    memcpy(snap, nor, sizeof nor);
+    e0 = erases;
+#define SREFUSED(what, stmt) do { memcpy(m, obj, 472u); stmt; \
+        ok = put_all(21, m, 472u, st_crc32(m, 472u)) == 2u && erases == e0 && !memcmp(snap, nor, sizeof nor) && \
+             slices_are(0, 4, 5000, POS_A); \
+        bad += check(what, ok); } while (0)
+    SREFUSED("id 21 with another magic is refused (2)", x->magic ^= 1);
+    SREFUSED("id 21 of a newer version (ver 2) is refused (2)", x->ver = 2);
+    SREFUSED("id 21 with another record size is refused (2)", x->rsize = 156);
+    SREFUSED("id 21 with 2 records is refused (2)", x->n = 2);
+    SREFUSED("id 21 with the reserved word set is refused (2)", x->rsv = 1);
+    SREFUSED("a record with another magic is refused (2)", (x->r[0].magic ^= 1, fix_rec(&x->r[0])));
+    SREFUSED("a record whose own CRC fails is refused (2)", x->r[0].pos[2] ^= 1);
+    SREFUSED("a record with 33 slices is refused (2)", (x->r[0].n = 33, fix_rec(&x->r[0])));
+    SREFUSED("slices out of order are refused (2)", (x->r[0].pos[2] = 900, fix_rec(&x->r[0])));
+    SREFUSED("slices closer than SLC_MIN are refused (2)", (x->r[0].pos[1] = 30, fix_rec(&x->r[0])));
+    SREFUSED("an end past the material is refused (2)", (x->r[0].end = 12001, fix_rec(&x->r[0])));
+    SREFUSED("a start past the end is refused (2)", (x->r[0].pos[3] = 5000, fix_rec(&x->r[0])));
+    SREFUSED("a start after the last slice that is not 0 is refused (2)", (x->r[0].pos[7] = 1, fix_rec(&x->r[0])));
+    SREFUSED("an empty record with a length set is refused (2)", (x->r[1].len = 5, fix_rec(&x->r[1])));
+    SREFUSED("slices of another length of material are refused (2)", (x->r[0].len += 2, fix_rec(&x->r[0])));
+    ok = put_begin(21, 471u, 0) == 1u && put_begin(21, 473u, 0) == 1u && put_begin(21, 3840u, 0) == 1u;
+    bad += check("id 21 of another length is refused at begin (1)", ok);
+    memcpy(m, obj, 472u);
+    ok = put_all(21, m, 472u, st_crc32(m, 472u) ^ 1u) == 2u && erases == e0 && !memcmp(snap, nor, sizeof nor);
+    bad += check("id 21 with a wrong CRC is refused at commit (2), nothing written", ok);
+
+    /* a sample that reaches the last sector: no room for a record, none in the backup, none accepted */
+    make_sample(1, 156000u, 3);
+    ok = usr_nz[1] && !slc_rec_room(1) && slc_man_restore(1, 2, 0, (const uint32_t[]){0, 5000}) == 0;
+    ok &= slc_object(m) == 472u && x->r[1].n == 0;
+    bad += check("slices on a sample that leaves no room (TOO LONG TO SAVE): not in the object (they die with the power)", ok);
+    memcpy(m, obj, 472u);
+    x->r[1] = o->r[0];
+    x->r[1].len = slc_get(2)->len;
+    x->r[1].crc = ((const smp_user_hdr_t *)smp_user_xip(1))->crc;
+    fix_rec(&x->r[1]);
+    memcpy(snap, nor, sizeof nor);
+    e0 = erases;
+    ok = put_all(21, m, 472u, st_crc32(m, 472u)) == 2u && erases == e0 && !memcmp(snap, nor, sizeof nor);
+    bad += check("a record for a sample that leaves no room is refused (2): its last sector is the sample's", ok);
+
+    /* flash errors */
+    make_sample(1, 100, 4);
+    memset(nor + SMP_USER_BASE + SLC_REC_OFF, 0xFF, 0x1000u);
+    smp_user_scan(0);
+    erase_error = 1;
+    ok = put_all(21, obj, 472u, crc) == 4u;
+    erase_error = 0;
+    bad += check("a flash error (the record's erase): rc 4", ok);
+    flash_ok = 0;
+    ok = put_all(21, obj, 472u, crc) == 4u;
+    flash_ok = 1;
+    bad += check("no flash: rc 4", ok);
+    ok = put_all(21, obj, 472u, crc) == 0 && slices_are(0, 4, 5000, POS_A);
+    bad += check("  .. and with flash again the object is taken", ok);
+
+    /* power cuts: the sample is never touched, the slices are the old, the new, or none */
+    {
+        static uint8_t base[3u * 0x14000u], objN[472] __attribute__((aligned(4)));
+        slc_bk_t *n = (slc_bk_t *)(void *)objN;
+        uint32_t i, total, so = 0, sn = 0, sz = 0, other = 0, bytes_ok = 1;
+        make_sample(1, 100, 4);                            /* (a small one, the cut points are the two records') */
+        memset(nor + SMP_USER_BASE + SLC_REC_OFF, 0xFF, 0x1000u);
+        smp_user_scan(0);
+        slc_man_restore(0, 4, 5000, POS_A);
+        slc_man_restore(2, 3, 0, POS_B);
+        slc_store_write(0);
+        slc_store_write(2);
+        slc_object(m);
+        memcpy(objN, m, 472u);                             /* N: slot 1 gets 3 slices, slot 3 gets 4 */
+        n->r[0].n = 3;
+        memset(n->r[0].pos, 0, sizeof n->r[0].pos);
+        memcpy(n->r[0].pos, POS_B, sizeof POS_B);
+        n->r[0].end = 0;
+        fix_rec(&n->r[0]);
+        n->r[2].n = 4;
+        n->r[2].end = 5000;
+        memset(n->r[2].pos, 0, sizeof n->r[2].pos);
+        memcpy(n->r[2].pos, POS_A, sizeof POS_A);
+        fix_rec(&n->r[2]);
+        memcpy(base, nor + SMP_USER_BASE, sizeof base);
+        progs = 0;
+        put_all(21, objN, 472u, st_crc32(objN, 472u));
+        total = progs;
+        ok = slices_are(0, 3, 0, POS_B) && slices_are(2, 4, 5000, POS_A);
+        bad += check("setup for power cuts: object N (other slices on USR1 and USR3) restores", ok);
+        for (i = 0; i < total + 2u; i++) {
+            uint32_t j;
+            memcpy(nor + SMP_USER_BASE, base, sizeof base);
+            for (j = 0; j < 3u; j++) smp_user_scan(j);     /* (the old slices, from the flash) */
+            dead = 0;
+            if (i < total) cut_bytes = (long)i;
+            else cut_erase = (long)(i - total);
+            put_all(21, objN, 472u, st_crc32(objN, 472u));
+            dead = 0;
+            cut_bytes = cut_erase = -1;
+            for (j = 0; j < 3u; j++) {                      /* the next power-on: the RAM lost, the slots scanned */
+                slc_man[j][0].n = slc_man[j][1].n = 0;
+                smp_user_scan(j);
+                if (memcmp(nor + SMP_USER_BASE + j * SMP_USER_SIZE, base + j * SMP_USER_SIZE, SLC_REC_OFF)) bytes_ok = 0;
+            }
+            /* USR1 had POS_A (4) and gets POS_B (3); USR3 had POS_B (3) and gets POS_A (4): each old, new or none */
+            if (slices_are(0, 4, 5000, POS_A)) so++;
+            else if (slices_are(0, 3, 0, POS_B)) sn++;
+            else if (slices_are(0, 0, 0, 0)) sz++;
+            else other++;
+            if (slices_are(2, 3, 0, POS_B)) so++;
+            else if (slices_are(2, 4, 5000, POS_A)) sn++;
+            else if (slices_are(2, 0, 0, 0)) sz++;
+            else other++;
+            if (!slices_are(1, 0, 0, 0)) other++;          /* (USR2 has no slices and gets none) */
+        }
+        printf("backup:   %u cut points (bytes + 2 erases), two slots each: %u old, %u new, %u without slices, %u anything else\n",
+               (unsigned)total, (unsigned)so, (unsigned)sn, (unsigned)sz, (unsigned)other);
+        bad += check("a power cut anywhere in a restore: each slot has its old slices, the new, or none; never a half record",
+                     !other && so && sn && sz && so + sn + sz == 2u * (total + 2u));
+        bad += check("  .. and no sample byte (header, data) of any slot changes", bytes_ok);
+    }
+    return bad;
+}
+
+#endif /* FELUCCA_FLASH && FELUCCA_SLICE */
+
+static int ext_tests(void)
+{
+    int bad = plain_list_tests() + bank_tests();
+#if FELUCCA_SLICE
+    bad += slice_tests();
+#endif
+    return bad;
 }
 
 int main(void)
@@ -420,6 +1069,7 @@ int main(void)
         b.nslot = 3;
         bad += check("a bank with the wrong slot count is refused", put_all(7, &b, sizeof b, st_crc32(&b, sizeof b)) == 2u);
     }
+    bad += ext_tests();
     printf("backup test %s\n", bad ? "FAILED" : "passed");
     return bad != 0;
 }

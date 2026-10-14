@@ -6,8 +6,9 @@ flash sector and retained-RAM object, estimates what the planned persistent feat
 among the ways to make room, and gives each consumer an allocation or a "blocked" verdict that its
 own issue can cite. It also fixes the rules every new persistent object follows.
 
-Nothing here is implemented. No firmware, flash map, protocol or device behavior changes with this
-page, and no flash or device action was taken to write it. Allocation decisions are **proposed**; they
+Nothing here is implemented, with one exception: [F8](#8-follow-up-issues) ([#321](https://github.com/kmplngj/Felucca/issues/321))
+adds backup ids 20 and 21, and the two gap statements below record that. No flash map change, no new flash object and
+no other behavior changes with this page, and no flash or device action was taken to write it. Allocation decisions are **proposed**; they
 become the plan when the page is merged, and each follow-up issue in [section 8](#8-follow-up-issues)
 still needs its own review, tests and device validation. When this page and the source disagree, the
 source wins and this page needs a fix.
@@ -75,11 +76,11 @@ sector; "ver" is the on-flash identification.
 | `0x97000..0x9F000` | 8 | Projects 1-4 (types 1-4) | [project.c](../firmware/src/project.c) | A/B pair per slot, 2 sectors | 3,840 of 3,840 (full); `FUNA` "FUN10", reads FUN1..FUN9 | ids 2-5 |
 | `0x9F000` + `0xFE000` | 2 | User-preset FM6 patches `OBJ_UPFM6` (8), the retired FM6 bank `OBJ_FM6BANK` (7) shares the pair | [up_fm6.c](../firmware/src/up_fm6.c) | A/B, the two sectors are far apart | 3,728 of 3,840; `UPF6` ver 1 | id 9 (id 8, the old bank, imports only) |
 | `0xA0000..0xDC000` | 60 | User sample slots USR1-USR3, 20 sectors (80 KiB) each: `0xA0000`, `0xB4000`, `0xC8000` | [eng_sample.c:40-60](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/eng_sample.c#L40-L60) | Single copy; header written last, CRC; an interrupted upload loses that sample | 512 B header + up to 81,408 B ADPCM; `FSMP` | ids 32-34 (header + data) |
-| last sector of each slot (`0xB3000`, `0xC7000`, `0xDB000`) | (in the 60) | SLICE MAN record, only if the sample leaves it free | [slice_store.c:21](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/slice_store.c#L21) | Single copy, CRC; torn = slices lost, sample kept | 152 B; `SLM1` | **not covered** (outside `512 + data_len`) |
+| last sector of each slot (`0xB3000`, `0xC7000`, `0xDB000`) | (in the 60) | SLICE MAN record, only if the sample leaves it free | [slice_store.c:21](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/slice_store.c#L21) | Single copy, CRC; torn = slices lost, sample kept | 152 B; `SLM1` | id 21 (all three records, 472 B; #321). Not in ids 32-34 (outside `512 + data_len`). MAN slices are user work, not derived, so they are backed up |
 | `0xDC000..0xE0000` | 4 | User preset banks 1-2 (types 5, 6): 16 slots of 192 B each | [upreset.c:48-65](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/upreset.c#L48-L65) | A/B pair per bank | 3,080 of 3,840; `UPB1`, record ver 4 / 5 | ids 6, 7 |
 | `0xE0000..0xE5000` | 5 | OTA loader staging; update record at `0xE4F00` | [ota.c:24-27](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/ota.c#L24-L27) | Erased at boot if non-blank ([ota.c `ota_boot_cleanup`](../firmware/src/ota.c)) | not data space | n/a |
 | `0xE5000`, `0xE6000` | 2 | Autosave `OBJ_AUTOSAVE` (9); also the staging copy for a new FM6 voice bank | [project.c:1308-1424](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/project.c#L1308-L1424) | A/B; the older copy stages the voice bank | 3,840 of 3,840; a FUN10 project | via id 0 (the live music), not as an object |
-| `0xE7000` | 1 | FM6 voice bank (commit-record type 32, not an `st_load` object) | [fm6_vbank.c:24-37](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/fm6_vbank.c#L24-L37) | Single copy, staged first in the autosave's older sector, copied after the CRC passes | 3,616 B (tail from `+0xF00` kept erased); `FM6V` ver 1 | **not covered** (editor commands 74-77 write it, nothing reads it back) |
+| `0xE7000` | 1 | FM6 voice bank (commit-record type 32, not an `st_load` object) | [fm6_vbank.c:24-37](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/fm6_vbank.c#L24-L37) | Single copy, staged first in the autosave's older sector, copied after the CRC passes | 3,616 B (tail from `+0xF00` kept erased); `FM6V` ver 1 | id 20 (the payload, 3,616 B; #321). Restore reuses the `FM6B` stage-and-copy path |
 | `0xFC000`, `0xFD000` | 2 | Settings `OBJ_SETTINGS` (0) | [settings_persist.c](../firmware/src/settings_persist.c) | A/B | 572 B (PER4) or up to 2,688 B (PER6, 64 favourite rows); see [3](#3-settings-headroom) | id 1 |
 
 Total Felucca-writable flash: `FL_DATA` 73 sectors (`0x97000..0xE0000`) + `FL_GLOB` 3 (`0xFC000..0xFF000`) +
@@ -352,12 +353,17 @@ Every persistent object, in this order of decision:
    A single-copy object (the SLICE record) is allowed only for data that can be rebuilt.
 5. **Ties.** A sidecar carries a tag of its parent inside its own payload (so a backup of the payload keeps
    it), is ignored when the tag does not match, and is never applied to a different parent. See [6](#6-what-the-prx-sidecar-needs).
-6. **Backup and restore.** An object has a `BACKUP_LIST` id (ids 10-31 are free; the existing ones are 0-9
-   and 32-34) or it is documented as rebuildable. Restore validates content before writing, refuses a
+6. **Backup and restore.** An object has a `BACKUP_LIST` id (ids 10-31 are free except 20 and 21; the existing
+   ones are 0-9 and 32-34) or it is documented as rebuildable. Restore validates content before writing, refuses a
    newer version, and keeps the commit order of rule 4: it stages and validates the sidecar first and commits the parent last, so every interrupted prefix leaves the old complete pair. INFO advertises a capability tag; older
    firmware answers rc 1 and the editor skips it. Update `web/EDITOR_PROTOCOL.md`, `tests/backup_test.c` and
-   the editor tests together. **Existing gaps this page records**: the FM6 voice bank at `0xE7000` and the
-   SLICE records are not in the full backup ([F8](#8-follow-up-issues)).
+   the editor tests together. A new id is listed only behind an INFO capability (a manifest whose count an
+   editor does not know is refused by the in-repo reader), so `BACKUP_LIST 1` (INFO `58 01`) lists the 13 objects and the
+   extended ones; the plain list stays as it was. Ids: 10-14 PRX (F3), 15-16 DEEP (F4), 17-18 FVL (F5) are
+   reserved by this plan; **20 is the FM6 voice bank and 21 the SLICE records** (F8, delivered in #321); 19, 22-31 are
+   free. A restore never deletes: an empty object leaves what the device has. **The two gaps this page recorded
+   are closed**: neither store is rebuildable (the voice bank is the user's loaded voices; MAN slices are slices set
+   by hand), so both have ids. Id 21 needs the samples (ids 32-34) restored first.
 7. **Downgrade.** State for every object what firmware that predates it does: ignores it, refuses it, or
    resets (PER6 resets settings on firmware <= 1.6; a FUN10 is refused before 1.2). Silent truncation
    of stored data is not allowed. A sidecar whose parent is re-saved by older firmware becomes stale and is
@@ -381,7 +387,7 @@ Every persistent object, in this order of decision:
 
 ## 8. Follow-up issues
 
-Proposed, not created (F9 is implemented, #322). Each carries legacy, malformed, torn-write, backup and downgrade tests
+Proposed (F8 and F9 are implemented: #321, #322). Each carries legacy, malformed, torn-write, backup and downgrade tests
 as in rule 11.
 
 | ID | Title | Scope |
@@ -393,7 +399,7 @@ as in rule 11.
 | F5 | Native FM6 voice library (FVL), 64 voices | Two 32-voice objects, names, replace/delete, backup ids 17-18, interaction with the 32-voice bank at `0xE7000`. |
 | F6 | Design a variable-length pattern-bank store (#62) | Measured capacity from real projects, encoding, "bank store full" policy, RAM residency against #20, the extra trade (O5b), song references; blocks #66. |
 | F7 | Survey and classify the unclaimed flash on stock-flashed FM-1s | Read-only dumps of `0x93000..0x97000`, `0xE8000..0xFC000`, `0xFF000`; erased/used map, stock-return behavior; no write. Gate for O9. |
-| F8 | Backup: add the FM6 voice bank and the SLICE records to the full backup inventory | Closes the two gaps in [2.1](#21-flash-map); independent of the rest. |
+| F8 | Backup: add the FM6 voice bank and the SLICE records to the full backup inventory | Closes the two gaps in [2.1](#21-flash-map); independent of the rest. **Done in #321**: ids 20 and 21 behind `BACKUP_LIST 1`; the WebApp follow-up is #305. |
 | F9 | Build guard: fail when NOINIT spare drops below 100 B | Done (#322): `tools/build.py` `check()` fails below `NOINIT_SPARE_MIN` = 100 B, next to the RAM/POOL floors; see [performance.md](performance.md#ram-and-stack). |
 
 ## 9. Unverified and how to check it

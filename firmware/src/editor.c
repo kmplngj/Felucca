@@ -500,6 +500,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                 b |= (uint32_t)(eng_ok(7u * i + k) != 0) << k;
             ed_b(b);
         }
+        ed_b(0x58); ed_b(1); ed_b(ED_BK_XCAPS);   /* #321: bit 0 BACKUP_LIST 1 (the 13 objects + the next), bit 1 backup id 20 (the
+                                                   * FM6 voice bank), bit 2 id 21 (the SLICE records); editor_backup.c */
         break;
     case ED_GET:
     case ED_SET:

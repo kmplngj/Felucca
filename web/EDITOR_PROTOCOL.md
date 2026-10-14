@@ -185,7 +185,7 @@ at 1..3 and hides 6 5 8: what it sets still plays the right kit, and the device 
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
-| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v6) CHAIN_ROWS (16), then the tagged blocks `55 01 uiCaps`, `4D 01 64 01`, `42 01 3`, `46 01 nfactory nbank`, `53 01 3`, (1.0.3) `50 01 3` and (1.0.4) `4E 01 count` (MENU settings; 12, 1.1: 15, 1.2: 17, 1.1.5: 18, 1.2: 23, 1.3: 24, 1.5: 25, 1.5.5: 32) and (1.0.5) `52 01 4` (ratchet) and (1.1) `4C 01 1` (parameter locks) and (1.2) `41 01 00 01` (128 motion records: two 7-bit bytes, LSB first; `4D 01 64 01` keeps saying 64) and `54 01 16` (a step's nudge, 1/16 of a step) and `57 01 4` (song sections: a slot per track, SONG ops 4..7) and (1.4.1) `56 01 32` (FM6's voice bank: cmds 74..77, SLOT 9..40) and (1.5) `43 01 16` (MIDI LEARN's map: cmds 78, 79) and (1.5.5) `4B 01 NCOND` (a step's condition) and (1.6) `45 01 5` (CUSTOM palette: cmds 80, 81) and (#212) `49 01 64 7F` + 10 bitmap bytes (the engine id space, FAV's user marker, the ids this build plays: "Engine ids" below) (below); older firmware ends earlier. The old prefix stays as it was: NENGINES is the length of the name list (ids 0..NENGINES−1), a name `-` an id this build cannot play (DIGITAL's 1, an id its catalog leaves out) |
+| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v6) CHAIN_ROWS (16), then the tagged blocks `55 01 uiCaps`, `4D 01 64 01`, `42 01 3`, `46 01 nfactory nbank`, `53 01 3`, (1.0.3) `50 01 3` and (1.0.4) `4E 01 count` (MENU settings; 12, 1.1: 15, 1.2: 17, 1.1.5: 18, 1.2: 23, 1.3: 24, 1.5: 25, 1.5.5: 32) and (1.0.5) `52 01 4` (ratchet) and (1.1) `4C 01 1` (parameter locks) and (1.2) `41 01 00 01` (128 motion records: two 7-bit bytes, LSB first; `4D 01 64 01` keeps saying 64) and `54 01 16` (a step's nudge, 1/16 of a step) and `57 01 4` (song sections: a slot per track, SONG ops 4..7) and (1.4.1) `56 01 32` (FM6's voice bank: cmds 74..77, SLOT 9..40) and (1.5) `43 01 16` (MIDI LEARN's map: cmds 78, 79) and (1.5.5) `4B 01 NCOND` (a step's condition) and (1.6) `45 01 5` (CUSTOM palette: cmds 80, 81) and (#212) `49 01 64 7F` + 10 bitmap bytes (the engine id space, FAV's user marker, the ids this build plays: "Engine ids" below) and (#321) `58 01 caps` (the full backup's `BACKUP_LIST 1` and ids 20, 21: bit 0 / 1 / 2, "v7: full backup" below) (below); older firmware ends earlier. The old prefix stays as it was: NENGINES is the length of the name list (ids 0..NENGINES−1), a name `-` an id this build cannot play (DIGITAL's 1, an id its catalog leaves out) |
 | 2 GET | scope, id | scope, id, v14 |
 | 3 SET | scope, id, v14 | scope, id, v14 (the value after clamping). Setting global `G_ENGSEL` (id from DESC label "ENG") changes the engine: its defaults, then its first preset (as on the device) |
 | 4 DUMP | — | engine, preset, then P_COUNT × v14 (the selected track), then G_COUNT × v14 (globals) |
@@ -227,7 +227,7 @@ at 1..3 and hides 6 5 8: what it sets still plays the right kit, and the device 
 | cmd (v7) | Request args | Reply args |
 | --- | --- | --- |
 | 64 MOTION | track (query); track, 1, on 0/1 (play on / off); track, 2 (clear); track, 3, step, id, v14 (set an event); track, 4, step, id (delete an event or a lock); (1.1) track, 5, step, id, v14 (set a lock); track, 6, step (clear the step's locks; step 127: every step's); track, 7 (query with the kinds); (1.2) track, 8 (every record, with the kinds) | track, rc, on (0/1), count (this track's events and locks), max (64), then count × (step, id, v14); after ops 5..7 (1.1) then count × kind (0 automation, 1 lock), in the same order. 1.2: ops 1..7 list at most the track's first 64 records (count ≤ 64, max 64: as before); op 8 answers track, rc, on, count lo, count hi, max lo, max hi (two 7-bit bytes each, LSB first; max 128), count × (step, id, v14), count × kind |
-| 65 BACKUP_LIST | — | 1, rc, count (11), then per object: id, size u32, crc u32 |
+| 65 BACKUP_LIST | — ; (#321, INFO `58 01` bit 0) 1 | 1, rc, count (13 since 1.0.3, 12 up to 1.0.2, 11 before; with the argument 1: those 13 and the objects of #321, up to 15), then per object: id, size u32, crc u32. Any other argument: rc 1, count 0 |
 | 66 BACKUP_GET | id, offset u32, count lo, count hi (≤ 256) | id, rc, offset u32, count lo, count hi, pack7 data |
 | 67 BACKUP_PUT | op 0 begin: 0, id, size u32, crc u32; op 1 data: 1, id, offset u32, pack7 data; op 2 commit: 2, id; op 3 abort: 3, id | op, id, rc |
 
@@ -256,6 +256,8 @@ All little endian.
 The slot's last 4 KiB sector (offset 0x13000) holds SLICE's slices set by hand on the device (`src/slice_store.c`:
 magic `"SLM1"`, the sample's length and data CRC, the slice starts) when the data leaves it free (at most 77,312
 bytes). An upload writes over it like any other data; a record that is not the slot's sample's is ignored.
+The full backup carries these records as object 21 ("The FM6 voice bank and the SLICE records" below); the sample
+objects 32..34 do not (their size is the header and the data only).
 
 `fmt` values (`firmware/src/core.h`):
 
@@ -816,6 +818,8 @@ this firmware sends 3. Requests name objects, never flash addresses.
 | 8 | the FM6 patch bank of 1.0..1.0.2 (B1..B27). Since 1.0.3 always listed empty (see below) | 3472, or 0 if empty |
 | 9 | the user presets' FM6 patches (1.0.3; `up_fm6.c`: per slot a tag and the packed patch) | 3728, or 0 if none |
 | 32..34 | user sample slots 1..3: header (512 bytes) then ADPCM data | 512 + data length, or 0 if empty |
+| 20 | (#321, `BACKUP_LIST 1` only) the FM6 voice bank (1.4.1, "FM6 voice bank"), as stored at 0xE7000: see below | 3616, or 0 if there is no bank |
+| 21 | (#321, `BACKUP_LIST 1` only) the SLICE records of the user slots 1..3 (MAN slices, `src/slice_store.c`): see below | 472, or 0 if no slot has slices |
 
 Reading: `BACKUP_LIST` (no arguments) stops the transport, then takes a snapshot of the runtime object and
 answers `1, rc, count` (13 since 1.0.3, 12 with FM6 up to 1.0.2, 11 before) and, per object in the order above, `id, size u32, crc u32` (CRC-32, zlib). The other objects are read as
@@ -839,8 +843,8 @@ and at most 256 decoded bytes (256-byte pieces are fine at full speed, one reque
 the editor"; a piece that gets no reply was not taken: abort and begin the object again). Commit: `2, id`: the device checks the length and the CRC, validates the
 content, and then writes. Abort: `3, id`. Id 0 replaces the music now playing (RAM only, no flash);
 ids 1..9 are written to flash (settings and presets are applied too). Nothing is written before the commit.
-The web editor sends ids 2..7 and the samples first, then 1, then 0 last. A failed restore can leave
-earlier objects restored; the file is still the source.
+The web editor sends ids 2..7 and the samples first, then 1, then 0 last (for the objects of #321, ids 20 and 21, see below: 21
+after the samples). A failed restore can leave earlier objects restored; the file is still the source.
 
 | rc | Meaning |
 | --- | --- |
@@ -853,6 +857,71 @@ earlier objects restored; the file is still the source.
 
 `BACKUP_LIST` answers `1, rc, 0` when rc is not 0. `GET` and `PUT` answer id 127 when they got no arguments.
 A `LIST` replaces the snapshot, and a `PUT` begin ends it: a `GET` after a begin gets rc 5.
+
+### The FM6 voice bank and the SLICE records (#321, ids 20, 21)
+
+Two stores that were outside the full backup are in it, behind a new capability so that existing editors see exactly
+the list they know. INFO advertises `58 01 caps` (last of the tagged blocks): bit 0 = `BACKUP_LIST` takes the
+argument `1`, bit 1 = backup id 20, bit 2 = id 21. This firmware sends 7 (3 in a build without SLICE; 0 without the
+flash store, which then answers like older firmware). `BACKUP_LIST` without an argument is unchanged: the 13 objects
+of 1.0.3, ids 0..9 and 32..34, in that order. `BACKUP_LIST 1` takes the same snapshot and lists those 13 and then, in
+this order, 20 and 21 (count 15). Ids 10..19 and 22..31 stay free (10..18 are planned for other objects,
+[flash-capacity.md](../docs/flash-capacity.md)); an id without an object in this build answers rc 1. `GET`, `PUT` and the rc codes
+are those above; both objects are at most 3840 bytes, and `PUT` begin takes exactly the size below or 0.
+
+**Id 20, the FM6 voice bank** (`firmware/src/fm6_vbank.c`; the editor's own transfer is `FM6B_BEGIN / WRITE / END`,
+cmds 74..77): the payload of the bank's commit record, byte for byte: the header at offset 0 (u32 `"FM6V"`
+0x56364D46, u16 version 1, u16 voices 32, u32 used mask (bit k: voice B k+1 is there), 12 bytes of name (10 ASCII
+bytes, space padded, then 0 0), two reserved u32 = 0; 32 bytes) and 32 voice slots of 112 bytes (a voice's 128-byte
+packed record, 7-bit bytes, 8 to 7). A slot of a voice that is not there is 0xFF. The CRC is the CRC-32 of the 3616
+bytes (the commit record's). `GET` reads the bank from flash, a piece at a time; if the
+bank is replaced after the `LIST` (an `FM6B_END`, a restore) the next `GET` answers rc 5.
+Restore (`PUT` 20, any time in the restore order) checks the whole object before it writes: size 3616, CRC, magic,
+version 1 (a newer version is refused, rc 2), 32 voices, reserved words 0, a printable name, the slots of unused voices
+erased. It then writes through the same path as `FM6B_BEGIN / WRITE / END`: the voices into the autosave's older
+sector (the one `st_save` writes next, never the one the power-on restore reads), the commit record there last and only
+after the voices' CRC matches, then the copy to 0xE7000 (erase, payload, commit record, read back). A power cut leaves
+the old bank (nothing committed) or the new one (committed: the next power-on finishes the copy); never half of one,
+and the autosave's current copy is never touched. The restore is one request on the main loop, so the autosave cannot
+take the stage in between; an `FM6B` transfer that was open ends (its next `WRITE` / `END` answers rc 5). The tracks
+that play a bank slot keep their voice as their own patch (SLOT OWN), as after `FM6B_END`. rc: 1 at begin for another
+size, 2 for a refused object or a CRC that does not match, 4 for a flash error (the old bank stays).
+**An empty object (size 0) is accepted and changes nothing**: the bank can only be replaced, not deleted, so an
+archive without a bank never removes the device's.
+
+**Id 21, the SLICE records**: SLICE's MAN slices (the slice starts set by hand on the SLICES page of the EDIT family) are the user's
+work, kept per user slot in the last sector of the slot (`src/slice_store.c`). They are not rebuilt from the sample: the
+AUTO slices are, the MAN ones are not, so they are backed up. The object is a header (16 bytes: u32 `"SLB1"`
+0x31424C53, u16 version 1, u16 record size 152, u32 count 3, u32 0) and three 152-byte records, one per slot, little
+endian, each as stored: u32 `"SLM1"` 0x314D4C53, u32 material length (samples), u32 the slot header's data CRC, u32 n
+(1..32; 0 = none), u32 end (0 = the material's end), 32 × u32 slice starts (0 past n), u32 CRC-32 of the 148 bytes
+before. A slot without slices, or whose sample leaves no room for the record (more than 77,312 bytes of ADPCM: its
+slices only live until the power goes, "TOO LONG TO SAVE"), has the empty record (n 0, every field 0). The object is 0
+bytes when no slot has slices. It is built from the slices in use, so it also holds edits not yet written to flash.
+Restore (`PUT` 21) needs the samples first: **restore ids 32..34 (`SMP_BEGIN / WRITE / END`) before id 21.** The
+whole object is checked before anything is written: size 472, CRC, header (a newer version is refused), every record's
+CRC, and for each record with slices the sample that is in its slot now (same length and data CRC, room for the record)
+and starts that fit it (sorted, 64 samples apart, inside the material). Any failure (rc 2, also a slot whose sample is
+not there yet or is another) writes nothing and applies nothing. Then each record with slices is written to its slot's
+last sector (erase, program; skipped if the flash already holds it) and put in use. Each record stands alone: a power
+cut loses that slot's slices (the CRC fails), never its sample, and no sample byte is touched. rc: 1 at begin for
+another size, 2 refused, 4 flash error (slots before it are done). **An empty object, or an empty record, changes
+nothing**: slices are never deleted by a restore.
+
+**Older firmware.** Firmware without this change does not send `58 01`, answers `BACKUP_LIST` with an argument rc 1
+(`1, 1, 0`: send the plain `LIST`, as the web editor does for any capability it lacks), and answers `BACKUP_PUT` begin
+of 20 / 21 rc 1 (nothing written; firmware before 1.4.1 has no voice bank at all). An editor skips the two objects of
+an archive on rc 1, as it skips id 9 on firmware before 1.0.3. Nothing in flash changes format: the bank has been
+at 0xE7000 since 1.4.1 and the records in the slots' last sectors since SLICE's MAN slices, so a downgrade keeps both,
+and older firmware reads them as it always did. An archive with ids 20 / 21 restored there loses only those two objects.
+
+**Felucca-WebApp (follow-up, #305).** Existing clients are unaffected: they send `LIST` without an argument and
+get the 13 objects. The in-repo reader (`web/fm1backup.js`) refuses a manifest with a count other than 11, 12 or 13,
+which is why the new ids are behind `LIST 1` rather than appended to every list. A client that wants the two objects
+reads INFO's `58 01` (bit 0 for `LIST 1`, bits 1 and 2 for the ids), asks `LIST 1`, reads 15 (or 14) objects with
+`GET` as the others, and keeps them in the archive under their ids; an archive may have 13, 14 or 15 objects. On restore
+it sends 20 any time and 21 after the samples, and skips an object on rc 1. The client does not need to understand the
+bytes (they are kept as they are); the device validates them.
 
 ## FM6 patches (68-71)
 
@@ -944,6 +1013,8 @@ the device's autosave took the transfer's flash between two requests, after 10 s
 - The editor's import (6-OP FM tab): a 32-voice file's voices, each packed as for a single voice (every value into
   its range); an empty slot of a shorter file is not written. Flash: the bank is at 0xE7000; a transfer is staged in
   the autosave's older sector first (0xE5000 / 0xE6000), which the next autosave writes over anyway.
+- A full backup carries the bank as object 20 (#321, `BACKUP_LIST 1`; "v7: full backup" above); its restore uses this same
+  staged transfer inside one request.
 
 ## MIDI LEARN (78-79; 1.5)
 

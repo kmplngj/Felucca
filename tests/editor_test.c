@@ -170,6 +170,9 @@ static int preferences(void)
     uint8_t a[4] = {0, 7, 0, 0};
     reset();
     uint32_t n = request(ED_INFO, a, 0);
+    bad += check("INFO #321: 58 01 caps, last (the full backup's LIST 1 and ids 20 / 21; 0 here: no flash in this build)",
+        host_wire[n - 4] == 0x58 && host_wire[n - 3] == 1 && host_wire[n - 2] == ED_BK_XCAPS && ED_BK_XCAPS == 0);
+    n -= 3u;                                              /* (the tags before it, as before) */
     {   /* #212: the engine id space, last: 49 01 ENG_ID_MAX ENG_USER_WIRE, then a bit per id this build plays */
         uint32_t i, ok = host_wire[n - 15] == 0x49 && host_wire[n - 14] == 1 && host_wire[n - 13] == ENG_ID_MAX &&
                          host_wire[n - 12] == ENG_USER_WIRE;
@@ -1336,9 +1339,30 @@ static int custom_palette(void)
 }
 
 #ifndef EDITOR_TEST_NO_MAIN                              /* (robust_test.c, fuzz_*.c: this file is their base) */
+/* #321: the objects of "BACKUP_LIST 1" (ids 20, 21) need the flash store; this build has none, so it answers as firmware
+ * that predates them (rc 1, nothing offered) and INFO's 58 01 says 0. backup_test.c runs them against flash. */
+static int backup_extended_absent(void)
+{
+    int bad = 0;
+    uint8_t one = 1, put[12] = {0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    reset();
+    request(ED_BACKUP_LIST, &one, 1);
+    bad += check("BACKUP_LIST 1 without the flash store: rc 1, no objects (as older firmware)",
+        host_wire[5] == 1 && host_wire[6] == 1 && host_wire[7] == 0);
+    request(ED_BACKUP_PUT, put, sizeof put);
+    bad += check("BACKUP_PUT of id 20 without the flash store: rc 1", host_wire[5] == 0 && host_wire[6] == 20 && host_wire[7] == 1);
+    put[1] = 21;
+    request(ED_BACKUP_PUT, put, sizeof put);
+    bad += check("BACKUP_PUT of id 21 without the flash store: rc 1", host_wire[6] == 21 && host_wire[7] == 1);
+    put[1] = 10;
+    request(ED_BACKUP_PUT, put, sizeof put);
+    bad += check("BACKUP_PUT of an unassigned id (10) still answers rc 1", host_wire[6] == 10 && host_wire[7] == 1);
+    return bad;
+}
+
 int main(void)
 {
-    int bad = preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
+    int bad = backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + usb_burst() + menu_protocol() + drum_kit_retired() +
               learn_protocol() + custom_palette();
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
