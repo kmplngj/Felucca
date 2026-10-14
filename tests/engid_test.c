@@ -257,6 +257,9 @@ static int projects(void)
         song.sel = 1;
         peak = play_peak();                           /* silent, never another engine's sound */
         ok = ENGINES[trk[1].engine] == &ENG_NONE && peak == 0 && trk[1].eng_req == ids[e];
+        trk[1].xp_n = 0;                              /* (the switch is done: a note is not queued behind one forever, */
+        trk_note_on(&trk[1], 60, 100);                /*  eng_req is an id, engine its index) */
+        ok &= trk[1].xp_n == 0u && !trk[1].xf_on;
         bad += check(e ? "  .. id 40 plays nothing" : "  .. it plays nothing (ENG_NONE), the id stays", ok);
         ok = 1;
         set_engine_of(&trk[1], ids[e]); clean_engine_of(&trk[1]);   /* (a request for it: refused, the sound kept) */

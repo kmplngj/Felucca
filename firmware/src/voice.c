@@ -365,7 +365,7 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
     uint32_t any = 0, i, mode = trk_vmode(t);
     if (t->p[P_MUTE])
         return;
-    if (t->xf_on || t->eng_req != t->engine) {          /* engine switch under way: after the fade */
+    if (t->xf_on || eng_idx(t->eng_req) != t->engine) {          /* engine switch under way: after the fade */
         for (i = 0; i < t->xp_n && t->xp_note[i] != note; i++)
             ;
         if (i == t->xp_n && t->xp_n < 4u)
@@ -462,7 +462,7 @@ static void trk_all_off(track_t *t)
 static void engine_block(track_t *t)
 {
     uint32_t i, any = 0;
-    if (t->xf_on || t->eng_req != t->engine) {
+    if (t->xf_on || eng_idx(t->eng_req) != t->engine) {
         if (!t->xf_on) {
             for (i = 0; i < NVOICE; i++)
                 any |= t->v[i].active;

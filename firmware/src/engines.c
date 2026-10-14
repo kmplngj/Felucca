@@ -147,7 +147,7 @@ static const engine_t *const ENGINES[] = {
     &ENG_NONE,                   /* 13: SLICE, left out of this build's catalog (FELUCCA_SLICE=0; #212: its id stays) */
 #endif
 #if FELUCCA_ENG_TEST14
-    &ENG_TEST14,                 /* 14: host tests only */
+    ENG_AT(14, &ENG_TEST14),     /* 14: host tests only */
 #endif
     &ENG_NONE,                   /* ENG_IDX_NONE */
 };
@@ -241,7 +241,7 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
 #if FELUCCA_SLICE && FELUCCA_ENG_OMIT != 13
     13,                          /* SLICE */
 #endif
-#if FELUCCA_ENG_TEST14
+#if FELUCCA_ENG_TEST14 && FELUCCA_ENG_OMIT != 14
     14,                          /* TEST14 (host tests) */
 #endif
 #if FELUCCA_ENG_OMIT != 10
