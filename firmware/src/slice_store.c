@@ -17,7 +17,9 @@
  * Saving: the SLICES page marks the slot (slc_man_save, eng_slice.c) when one leaves it after an edit; slc_store_poll
  * writes when the transport is stopped (no erase while playing, as settings_poll), only if the flash holds something
  * else ("SLICES SAVED").
- * Flash access through storage.c's hooks (st_erase / st_prog); the host tests give their own. */
+ * Flash access through storage.c's hooks (st_erase / st_prog); the host tests give their own.
+ * The full backup carries the records as one object (id 21, below; editor_backup.c): MAN slices are the user's work,
+ * not derived from the sample, so they are backed up and restored after the samples. */
 #define SLC_REC_OFF (SMP_USER_SIZE - 0x1000u)        /* the slot's last sector */
 #define SLC_REC_MAGIC 0x314D4C53u                    /* "SLM1" */
 typedef struct {
@@ -68,21 +70,27 @@ static void slc_store_load(uint32_t k)
     slc_man_restore(k, c.n, c.end, c.pos);
 }
 
+/* slot k's record r into the flash if the flash holds something else: 0 nothing to do, 2 flash error, 3 written */
+static int slc_store_put(uint32_t k, const slc_rec_t *r)
+{
+    uint32_t off = SMP_USER_BASE + k * SMP_USER_SIZE + SLC_REC_OFF;
+    if (!memcmp(r, smp_user_xip(k) + SLC_REC_OFF, sizeof *r))
+        return 0;                                    /* unchanged: no erase cycle */
+    if (st_erase(off) || st_prog(off, r, sizeof *r))
+        return 2;
+    return 3;
+}
+
 /* write slot k's record if the flash holds something else: 0 nothing to do, 1 no room, 2 flash error, 3 written */
 static int slc_store_write(uint32_t k)
 {
     slc_rec_t r;
-    uint32_t off = SMP_USER_BASE + k * SMP_USER_SIZE + SLC_REC_OFF;
     if (!usr_nz[k])                                  /* emptied or being uploaded meanwhile: nothing to keep */
         return 0;
     if (!slc_rec_room(k))
         return 1;
     slc_rec_make(k, &r);
-    if (!memcmp(&r, smp_user_xip(k) + SLC_REC_OFF, sizeof r))
-        return 0;                                    /* unchanged: no erase cycle */
-    if (st_erase(off) || st_prog(off, &r, sizeof r))
-        return 2;
-    return 3;
+    return slc_store_put(k, &r);
 }
 
 /* main loop: the slices asked for, once the transport stops */
@@ -106,3 +114,91 @@ static void slc_store_poll(void)
 }
 
 static void slc_store_boot(void) { slc_man_load = slc_store_load; }   /* persist_boot: before the slot scans */
+
+/* ---- the full backup's object (editor_backup.c, id 21): the stored records of the three user slots, as they are in
+ * RAM now (the MAN slices in use), one object so the editor restores them after the samples (ids 32..34) they belong
+ * to. Header (magic "SLB1", ver 1, the record size and count), then the three slc_rec_t. A slot without slices
+ * (or without room for the record: its slices are lost with the power) has the canonical empty record: magic, n 0,
+ * the rest 0, the CRC. The object is 0 bytes long when no slot has slices.
+ * Restore needs each slice record's sample in its slot already (same samples, same data CRC: the material the
+ * record is tied to) and never deletes: an empty record, or an empty object, changes nothing. */
+#define SLC_BK_MAGIC 0x31424C53u                     /* "SLB1" */
+typedef struct {
+    uint32_t magic;
+    uint16_t ver, rsize;                             /* 1, sizeof(slc_rec_t) */
+    uint32_t n, rsv;                                 /* SMP_USER_SLOTS records, 0 */
+    slc_rec_t r[SMP_USER_SLOTS];
+} slc_bk_t;
+_Static_assert(sizeof(slc_bk_t) == 16u + 3u * 152u, "SLICE backup object layout");
+
+static void slc_bk_empty(slc_rec_t *r)
+{
+    memset(r, 0, sizeof *r);
+    r->magic = SLC_REC_MAGIC;
+    r->rcrc = st_crc32(r, sizeof *r - 4u);
+}
+
+/* the object into o: its length (0 = no slot has slices) */
+static uint32_t slc_bk_make(slc_bk_t *o)
+{
+    uint32_t k, any = 0;
+    memset(o, 0, sizeof *o);
+    o->magic = SLC_BK_MAGIC;
+    o->ver = 1;
+    o->rsize = sizeof(slc_rec_t);
+    o->n = SMP_USER_SLOTS;
+    for (k = 0; k < SMP_USER_SLOTS; k++) {
+        if (slc_rec_room(k))                         /* (a slot with a sample, and room for the record) */
+            slc_rec_make(k, &o->r[k]);
+        if (!slc_rec_room(k) || !o->r[k].n)
+            slc_bk_empty(&o->r[k]);
+        else
+            any = 1;
+    }
+    return any ? (uint32_t)sizeof *o : 0u;
+}
+
+/* an object to restore: 0 = every record is whole and, if it has slices, fits the sample in its slot now; 2 = refused
+ * (nothing is written before this passes) */
+static int slc_bk_check(const slc_bk_t *o, uint32_t len)
+{
+    uint32_t k, i;
+    if (len != sizeof *o || o->magic != SLC_BK_MAGIC || o->ver != 1u || o->rsize != sizeof(slc_rec_t) ||
+        o->n != SMP_USER_SLOTS || o->rsv)
+        return 2;
+    for (k = 0; k < SMP_USER_SLOTS; k++) {
+        const slc_rec_t *r = &o->r[k];
+        const slc_src_t *s = slc_get(k + 1u);
+        if (r->magic != SLC_REC_MAGIC || r->rcrc != st_crc32(r, sizeof *r - 4u) || r->n > SLC_AUTO)
+            return 2;
+        for (i = r->n; i < SLC_AUTO; i++)            /* (the slices past n are 0, as slc_rec_make writes them) */
+            if (r->pos[i])
+                return 2;
+        if (!r->n) {                                 /* canonical empty: nothing else set */
+            if (r->len || r->crc || r->end)
+                return 2;
+            continue;
+        }
+        if (!s || !slc_rec_room(k) || r->len != s->len || r->crc != ((const smp_user_hdr_t *)smp_user_xip(k))->crc ||
+            !slc_man_fits(s, r->n, r->end, r->pos))
+            return 2;
+    }
+    return 0;
+}
+
+/* a checked object: each record with slices into the flash, then in use. 0, or 4 = a flash error (the slots before
+ * it are done: each record stands alone, a torn write loses that slot's slices, never its sample) */
+static uint32_t slc_bk_apply(const slc_bk_t *o)
+{
+    uint32_t k;
+    for (k = 0; k < SMP_USER_SLOTS; k++) {
+        const slc_rec_t *r = &o->r[k];
+        if (!r->n)
+            continue;
+        if (slc_store_put(k, r) == 2)
+            return 4;
+        (void)slc_man_restore(k, r->n, r->end, r->pos);   /* (it fits: checked) */
+        slc_man_save &= (uint8_t)~(1u << k);
+    }
+    return 0;
+}

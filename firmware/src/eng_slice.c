@@ -405,19 +405,29 @@ static uint32_t slc_man_join(slc_man_t *m, uint32_t j)
     return j - 1u;
 }
 
+/* stored slices (n starts pos[], end; 0 = the material's end) fit the material s: in range, SLC_MIN apart, sorted.
+ * Junk is refused: no sums that can wrap. Pure: nothing changes (slc_man_restore, the backup's check) */
+static int slc_man_fits(const slc_src_t *s, uint32_t n, uint32_t end, const uint32_t *pos)
+{
+    uint32_t i, e;
+    if (!s || !n || n > SLC_AUTO || end > s->len)
+        return 0;
+    e = end ? end : s->len;
+    for (i = 0; i < n; i++)
+        if (pos[i] >= e || e - pos[i] < SLC_MIN || (i && pos[i] < pos[i - 1u]) || (i && pos[i] - pos[i - 1u] < SLC_MIN))
+            return 0;
+    return 1;
+}
+
 /* put stored slices in use for user slot k (n starts pos[], end; 0 = the material's end); 0 = done, -1 = they do
- * not fit its material (nothing changes). Junk is refused: no sums that can wrap */
+ * not fit its material (nothing changes) */
 static int slc_man_restore(uint32_t k, uint32_t n, uint32_t end, const uint32_t *pos)
 {
     const slc_src_t *s = k < SMP_USER_SLOTS ? slc_get(k + 1u) : 0;
     slc_man_t *m;
-    uint32_t i, e;
-    if (!s || !n || n > SLC_AUTO || end > s->len)
+    uint32_t i;
+    if (!slc_man_fits(s, n, end, pos))
         return -1;
-    e = end ? end : s->len;
-    for (i = 0; i < n; i++)
-        if (pos[i] >= e || e - pos[i] < SLC_MIN || (i && pos[i] < pos[i - 1u]) || (i && pos[i] - pos[i - 1u] < SLC_MIN))
-            return -1;
     m = slc_man_begin(k);
     m->n = n;
     m->end = end;
