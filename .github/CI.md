@@ -205,6 +205,34 @@ does not flash a device or deploy the web installer or Pages site. The upstream
 and [editor](https://hugelton.github.io/Felucca/webapp/editor/) are maintained separately;
 check their displayed versions before assuming they contain this fork's changes.
 
+## Exact PR revision builds
+
+The [PR firmware helper](../BUILDING.md#test-a-pull-request-on-hardware) uses
+manual `CI` dispatch with `pr` and a full `commit` SHA. A short resolver job
+checks the PR and verifies that the commit is reachable from its current head.
+The reusable validation workflow checks out that SHA in every job; manual
+dispatch still selects the complete pipeline, including target guards, host,
+sanitizer, emulator and clean-checkout package reproducibility. Ordinary PR
+events keep the GitHub merge checkout and existing check names; ordinary manual
+CI remains available with empty inputs. Exact-revision requests have separate
+concurrency groups from automatic PR and main runs.
+
+Run titles include `PR firmware #NUMBER @ SHA`. The helper matches that title
+and the workflow branch, requires a successful run and a nonexpired
+`firmware-RUN_ID` artifact, then verifies `provenance.json`, `package.sha256` and
+the FWSC structure before invoking the existing installer. Failed validation,
+missing artifacts or mismatched provenance/checksums prevent installation.
+Checksums detect corruption, not trustworthiness of PR code; choose the revision
+you intend to run. Both current and reachable historical PR revisions use their
+own firmware sources and build defaults.
+
+The resolver has only `contents: read` and `pull-requests: read`, uses the job token only in its GitHub
+API step, and does not retain checkout credentials. Build jobs retain existing
+permissions and pinned dependencies. Dispatch requires Actions write access;
+artifact reads require sign-in and appropriate repository access. No release,
+Pages deployment or remote flashing occurs. The helper runs on the computer
+connected to the FM-1 and preserves the installer's interactive confirmation.
+
 ## Releasing
 
 Push a `vX.Y`, `vX.Y.Z`, `vX.Y.Z.W` or `vX.Y-suffix` tag; each numeric component
