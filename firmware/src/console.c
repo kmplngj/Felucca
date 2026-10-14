@@ -330,6 +330,9 @@ static void con_crash(void)
         return;
     }
     con_kv("count", (int32_t)c.count);
+#if FELUCCA_CPU2
+    con_kv("core", (int32_t)c.core);
+#endif
     con_kx("vec", c.vec);
     con_kx("pc", c.pc);
     con_kx("rets", c.rets);

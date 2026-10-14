@@ -11,10 +11,14 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 
 from crash_record_test import ROOT, function_source, recorder_source
+
+sys.path.insert(0, str(ROOT / "tools"))
+import fm1_diagnostics as diag
 
 
 def reader_source():
@@ -98,6 +102,9 @@ static void reset(void) {
 static void con_kv(const char *name, int32_t value) {
     uint32_t expected = 0;
     if (!strcmp(name, "count")) expected = old_record.count;
+#if FM1_CPU1_USED
+    else if (!strcmp(name, "core")) expected = old_record.core;
+#endif
     else if (!strcmp(name, "uptime_ms")) expected = old_record.uptime_ms;
     else if (!strcmp(name, "early")) expected = old_record.early;
     else if (!strcmp(name, "vec")) expected = old_record.vec;
@@ -161,11 +168,11 @@ int main(void) {
     reset();
     serial_changes = 1;
     con_crash();
-    if (console_words != 9 || absent) return 2;
+    if (console_words != 9 + FM1_CPU1_USED || absent) return 2;
     reset();
     fm1_crash.magic = 0;
     con_crash();
-    if (console_words != 9 || absent != 1) return 3;
+    if (console_words != 9 + FM1_CPU1_USED || absent != 1) return 3;
     /* Valid boot history remains unchanged; failed reads never use live count. */
     reset();
 #if FM1_CPU1_USED
@@ -191,7 +198,105 @@ int main(void) {
 '''
 
 
+SERIAL_HARNESS = r'''
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#define FM1_CRASH_MAGIC 0x43525348u
+#define FELUCCA_CPU2 FM1_CPU1_USED
+@RECORD@
+static fm1_crash_t fm1_crash, replacement;
+static unsigned replace_during_output;
+@READER@
+static void con_putc(char c) {
+    putchar(c);
+    /* Even the first byte may yield to publication of another core's record. */
+    if (replace_during_output) {
+        fm1_crash = replacement;
+        replace_during_output = 0;
+    }
+}
+@FORMATTERS@
+@CONSOLE@
+int main(int argc, char **argv) {
+    if (argc != 4) return 1;
+    fm1_crash.magic = atoi(argv[3]) ? FM1_CRASH_MAGIC : 0;
+    fm1_crash.count = 100;
+    fm1_crash.vec = 11;
+    fm1_crash.pc = 0x02001234u;
+    fm1_crash.rets = 0x02005678u;
+    fm1_crash.emu = 0x12345678u;
+    fm1_crash.sp = 0x01C60000u;
+    fm1_crash.psr = 0x87654321u;
+    fm1_crash.uptime_ms = 4000;
+    fm1_crash.early = 0;
+#if FM1_CPU1_USED
+    fm1_crash.core = (uint32_t)atoi(argv[1]);
+#endif
+    replacement = fm1_crash;
+    replacement.count = 101;
+    replacement.vec = 12;
+    replacement.pc = 0x02009000u;
+    replacement.rets = 0;
+    replacement.emu = 0;
+    replacement.sp = 0x01C61000u;
+    replacement.psr = 0;
+    replacement.uptime_ms = 5000;
+    replacement.early = 1;
+#if FM1_CPU1_USED
+    replacement.core = 1u - fm1_crash.core;
+#endif
+    replace_during_output = (unsigned)atoi(argv[2]);
+    con_crash();
+    return 0;
+}
+'''
+
+
 class CrashSnapshot(unittest.TestCase):
+    def test_actual_console_serialization_and_parser(self):
+        record, _ = recorder_source()
+        console = (ROOT / "firmware/src/console.c").read_text()
+        formatters = "\n".join(function_source(console, signature) for signature in (
+            "static void con_puts(const char *s)",
+            "static void con_hex(uint32_t v, uint32_t digits)",
+            "static void con_dec(int32_t v)",
+            "static void con_kv(const char *k, int32_t v)",
+            "static void con_kx(const char *k, uint32_t v)"))
+        source = (SERIAL_HARNESS.replace("@RECORD@", record)
+                  .replace("@READER@", reader_source().replace(
+                      '__asm__ volatile("csync" ::: "memory");',
+                      '__asm__ volatile("" ::: "memory");'))
+                  .replace("@FORMATTERS@", formatters)
+                  .replace("@CONSOLE@", function_source(console, "static void con_crash(void)")))
+        expected = {"count": 100, "vec": 11, "pc": 0x02001234, "rets": 0x02005678,
+                    "emu": 0x12345678, "sp": 0x01C60000, "psr": 0x87654321,
+                    "uptime_ms": 4000, "early": 0, "record_present": True}
+        payload = ("vec 0x0000000B\r\npc 0x02001234\r\nrets 0x02005678\r\n"
+                   "emu 0x12345678\r\nsp 0x01C60000\r\npsr 0x87654321\r\n"
+                   "uptime_ms 4000\r\nearly 0\r\n")
+        with tempfile.TemporaryDirectory(prefix="felucca-crash-console-") as temporary:
+            path = Path(temporary)
+            (path / "fixture.c").write_text(source)
+            for cpu1 in (0, 1):
+                executable = path / f"console-{cpu1}"
+                subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-std=c11", "-O2",
+                                "-Wall", "-Wextra", "-Werror", f"-DFM1_CPU1_USED={cpu1}",
+                                str(path / "fixture.c"), "-o", str(executable)], check=True)
+                for core in range(cpu1 + 1):
+                    for replace in (0, 1):
+                        for valid in (0, 1):
+                            with self.subTest(cpu1=cpu1, core=core, replace=replace, valid=valid):
+                                result = subprocess.run([str(executable), str(core), str(replace),
+                                                         str(valid)], capture_output=True, check=True)
+                                raw = ("count 100\r\n" + (f"core {core}\r\n" if cpu1 else "") +
+                                       payload) if valid else "no crash record\r\n"
+                                self.assertEqual(result.stdout, raw.encode())
+                                parsed = diag.parse_response("crash", result.stdout)
+                                fields = dict(expected, **({"core": core} if cpu1 else {})) if valid else {
+                                    "record_present": False}
+                                self.assertEqual(parsed, {"fields": fields, "unknown_lines": [], "issues": []})
+
     def test_emulator_shim_validity_and_local_copy(self):
         emulator = (ROOT / "web/emu/felucca_web.c").read_text()
         start = emulator.index("#if FELUCCA_CPU2\ntypedef struct { uint32_t magic, count")
