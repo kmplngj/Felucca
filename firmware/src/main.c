@@ -139,12 +139,14 @@ static uint8_t boot_clean;                    /* no crash, hang (WDT) or failed 
                                                * the sweep runs and the autosave is restored (project.c autosave_boot) */
 static void boot_leds(void)
 {
-    uint32_t crashed = fm1_crash.magic == FM1_CRASH_MAGIC && fm1_crash.count != crash_seen
+    fm1_crash_t c;
+    uint32_t present = fm1_crash_read(&c);
+    uint32_t crashed = present && c.count != crash_seen
 #if FELUCCA_CPU2
-                       && fm1_crash.core != 1u    /* (the second core's own fault left core 0 playing) */
+                       && c.core != 1u    /* (the second core's own fault left core 0 playing) */
 #endif
                        ;
-    crash_seen = fm1_crash.count;
+    crash_seen = present ? c.count : 0;
     boot_clean = !crashed && !bootguard.failed && !(fm1_boot.p3_rst & 4u);
     fm1_led_dim_level(settings_leds == LEDS_DIM_LO);
     if (boot_clean && !(ui_prefs & PREF_ANIM_OFF))

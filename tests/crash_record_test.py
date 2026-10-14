@@ -17,11 +17,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def recorder_source():
-    header = (ROOT / "firmware/hal/fm1_irq.h").read_text()
-    record = re.search(r"typedef struct \{.*?\} fm1_crash_t;", header, re.S).group()
-    start = header.index("void fm1_fault_c(uint32_t *f)")
-    body = header[start:]
+def function_source(header, signature):
+    body = header[header.index(signature):]
     depth = 0
     for pos in range(body.index("{"), len(body)):
         if body[pos] == "{":
@@ -31,6 +28,13 @@ def recorder_source():
             if depth == 0:
                 body = body[:pos + 1]
                 break
+    return body
+
+
+def recorder_source():
+    header = (ROOT / "firmware/hal/fm1_irq.h").read_text()
+    record = re.search(r"typedef struct \{.*?\} fm1_crash_t;", header, re.S).group()
+    body = function_source(header, "void fm1_fault_c(uint32_t *f)")
     body = body.replace('__asm__ volatile("csync" ::: "memory");', "observe_barrier();")
     body = body.replace("*(volatile uint32_t *)0x10804u", "test_timer_ticks")
     body = body.replace("*(volatile uint32_t *)0x10000u", "test_reset")
