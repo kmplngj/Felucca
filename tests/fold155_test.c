@@ -87,7 +87,7 @@ static void ref_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const v
 /* ------------------------------------------------- one voice, the engine alone --- */
 #define NV (FS / 4u / CTL * CTL)                     /* a quarter second */
 static int32_t buf[NV], buf2[NV];
-static track_t tt;
+#define tt (trk[0])                                /* PHASE's crossing scratch belongs to a real part */
 static int32_t vr_amp = 32767;                       /* voice_run's amplitude (Q15) */
 
 static void setp(int32_t w, int32_t w2, int32_t dcw, int32_t env, int32_t dtn, int32_t line, int32_t sub, int32_t fold)
@@ -408,7 +408,7 @@ static void fresh(uint32_t pi)                         /* the boot state, track 
     rng_state = 0x1234567u;
     mod_seed = 0x2545F491u;
     memset(trk, 0, sizeof trk);
-    memset(&mod, 0, sizeof mod);
+    MOD_W_CLEAR();
     memset(sl, 0, sizeof sl);
     host_tracks_init();
     for (k = 0; k < NPART; k++)

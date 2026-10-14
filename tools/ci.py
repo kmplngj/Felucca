@@ -134,6 +134,26 @@ def host_cpu_provenance():
     }
 
 
+def engine_provenance():
+    """Require the exact committed, clean engine source used by this build."""
+    root = build.SRC
+    path = root / "firmware/engines"
+    row = subprocess.check_output(
+        ["git", "-C", str(root), "ls-tree", "HEAD", "firmware/engines"], text=True).split()
+    if len(row) != 4 or row[:2] != ["160000", "commit"]:
+        raise ValueError("missing committed Felucca-Engines gitlink")
+    if not (path / "src/felucca_engine.h").is_file():
+        raise ValueError("Felucca-Engines is uninitialized; run git submodule update --init --recursive")
+    revision = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
+    dirty = subprocess.check_output(["git", "-C", str(path), "status", "--porcelain"], text=True).strip()
+    if revision != row[2] or dirty:
+        raise ValueError("Felucca-Engines differs from the committed pin or has local changes")
+    url = subprocess.check_output(
+        ["git", "-C", str(root), "config", "-f", ".gitmodules", "submodule.firmware/engines.url"],
+        text=True).strip()
+    return {"path": "firmware/engines", "repository": url, "revision": revision, "license": "MIT"}
+
+
 def provenance(out):
     from PIL import features
     import PIL
@@ -154,6 +174,7 @@ def provenance(out):
         "sdk_reference": SDK_REF, "sdk_sha256": build.SDK_SHA256,
         "build_flags": build.CFLAGS, "selective_minsize": "tools/size_fns.py defaults",
         "host_cpu": host_cpu_provenance(),
+        "engines": engine_provenance(),
         "version": os.environ.get("VERSION", ""),
         "node": subprocess.check_output(["node", "--version"], text=True).strip(),
         "emscripten": subprocess.check_output(["emcc", "--version"], text=True).splitlines()[0],

@@ -2,15 +2,70 @@
 # Modular builds and usage modes
 
 This is the consolidated plan for build-time engine/effect selection and startup usage
-modes, and for adopting ideas from other FM-1 firmwares through them. Nothing here is
-implemented: it records vocabulary, ownership, current source constraints, the issue map
-and the open decisions. Acceptance criteria live in the linked issues; when a decision is
+modes, and for adopting ideas from other FM-1 firmwares through them. The profile resolver
+and startup modes remain planned; implemented prerequisites are identified below. This page
+records vocabulary, ownership, current source constraints, the issue map and open decisions. Acceptance criteria live in the linked issues; when a decision is
 made or an issue changes scope, update this page in the same PR.
 
 Plan date 2026-10-12. Source facts refer to `main` at
 [`b04f4fa`](https://github.com/kmplngj/Felucca/tree/b04f4fa720a4550c00f042a9eb67f26965784ae3)
 unless stated otherwise. Resource numbers are dated measurements, not current fit claims;
 no build, flash or device test was made for this document.
+
+## Combining our plan with Felucca 1.6.1 — 2026-10-14
+
+The 1.6.1 backport imports upstream
+[`a53ecf4`](https://github.com/hugelton/Felucca/commit/a53ecf428c29c780108fd70a31b71a32a6b5c313)
+on top of this fork's stable-id/settings/diagnostics/CI work. Its `firmware/engines`
+submodule points at [our Felucca-Engines fork](https://github.com/kmplngj/Felucca-Engines),
+pinned to `c46e0086f69bdc26df1cd144dca9e683cc4531dd`. ANALOG, LOFI, TRIO, WHEEL and NOISE,
+the portable `engine_t`/voice/parameter types, shared DSP and engine table generator live
+there under MIT. Other engines, registration, UI, voices/mixer, persistence and platform
+services remain in the GPL firmware. The source split preserves the existing sound IDs;
+it does not implement profile resolution, selective assets, effects modules or usage modes.
+
+| Order | Work | Existing owner / added integration task |
+| --- | --- | --- |
+| 1 | Land the pinned backport; preserve default sound/data behavior, recursive CI checkout and clean-clone reproduction | This backport; [#342](https://github.com/kmplngj/Felucca/issues/342) adds complete source release archives |
+| 2 | Decide the portable contract boundary, then consolidate host identity metadata | [#340](https://github.com/kmplngj/Felucca/issues/340), [#301](https://github.com/kmplngj/Felucca/issues/301) |
+| 3 | Resolve one standard/reduced selection for target, host and emulator, including source pins, assets, tests and licenses | [#28](https://github.com/kmplngj/Felucca/issues/28), [#341](https://github.com/kmplngj/Felucca/issues/341) |
+| 4 | Qualify sparse catalogs and client availability before new instrument variants | [#305](https://github.com/kmplngj/Felucca/issues/305), [#306](https://github.com/kmplngj/Felucca/issues/306), representative profile evidence |
+| 5 | Add the mandatory Felucca mode adapter, startup selection and Instrument pilot over that same sound catalog | [#203](https://github.com/kmplngj/Felucca/issues/203), [#204](https://github.com/kmplngj/Felucca/issues/204), [#205](https://github.com/kmplngj/Felucca/issues/205) |
+| Parallel | Qualify the optional second core against actual DMA deadlines, faults, saves/reset and device stress | [#44](https://github.com/kmplngj/Felucca/issues/44); no engine/profile/mode requires it |
+| Before new persistent formats | Allocate each proposed object under the capacity plan | [#213](https://github.com/kmplngj/Felucca/issues/213), [#314–#320](flash-capacity.md) |
+
+Keep firmware-specific identity metadata (tags/icons/categories/CC targets, order and stable
+IDs) in a host-owned adapter unless both repositories deliberately revise the portable
+contract. #301's earlier proposal to extend `engine_t` must account for its new MIT ownership
+before implementation; do not add GPL-only fields/code to that fork under an MIT header.
+Use **one shared Felucca-Engines fork** for additional reusable engines whose source can
+be distributed under MIT. A build profile selects individual engines from that repository;
+it does not need one Git repository or submodule per engine. Share the portable contract,
+DSP helpers, tables and standalone tests there, with engine-specific source/test files.
+Firmware-dependent engines (storage, samples, UI, arena lifecycle) and GPL-derived ports
+initially stay in `firmware/src/`. Do not label GPL-derived work MIT merely to move it into
+the library. If several additional engines later need an independently reusable GPL home,
+a single separate extra-engine repository can be evaluated then; no such repo is required
+or created by this plan. Repository placement never assigns or changes an engine's stable ID.
+
+Portable changes are committed and tested in Engines first, then consumed by an explicit
+Felucca gitlink update. Firmware builds never edit the checked-out dependency or fetch a
+floating branch. The full runner checks both standalone engine goldens and the same host
+using firmware-generated tables; CI records and checks the clean, committed engine pin.
+
+Second-core support is compiled by default (`FELUCCA_CPU2=1`) but its device preference is
+**OFF**. `ON (BETA)` applies after restart; `FELUCCA_CPU2=0` removes its code/stack/buffers/menu.
+Both builds remain required evidence. A failed worker is held; unfinished sums are dropped
+for that block instead of replaying potentially advanced part state. Later blocks render
+serially and the main loop clears the ON preference. Thread equivalence and failure fixtures
+do not prove hardware reliability, cache publication, flash quiescence or deadline headroom.
+No voltage/clock/FPU change is part of this direction. #44 remains open for those device gates.
+
+The capacity plan still applies: moving source does not free a storage sector or authorize
+new NOINIT objects. Report measured app/RAM/POOL/RAMTEXT/NOINIT/stack costs for each profile;
+the second core's static cost exists even with its runtime preference OFF. Saved mode state,
+large donor sample packs and deep patches keep their existing allocations and dependency order.
+
 
 ## Vocabulary: independent axes
 

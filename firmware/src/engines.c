@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Engine table (order = PRESETS browsing order and the engine numbers of the editor protocol), the
  * factory patterns (SAVE > PHRASES) and the parts' sounds at power-on. */
-#include "dsp.c"
+#include "../engines/src/dsp.c"   /* Felucca-Engines (MIT): the shared DSP blocks */
 
 /* The parts' engine memory (1.5): a part plays one engine at a time, so the engines with large per-part state
  * (engine_t.mem: PHYS's slots, GRAIN's grains and index, DRUM's lanes, FM6's notes, SLICE's reverse windows)
@@ -59,17 +59,17 @@ static void *eng_mem_of(const track_t *t, uint32_t want)
 #define ENG_MEM_OF(t, e, p) ENG_MEM(p)         /* p: the part index the caller already derived */
 #endif
 
-#include "eng_analog.c"
+#include "../engines/src/eng_analog.c"   /* Felucca-Engines (MIT): ANALOG LOFI TRIO WHEEL NOISE */
 #include "eng_phase.c"
-#include "eng_lofi.c"
+#include "../engines/src/eng_lofi.c"
 #include "eng_sample.c"
 #include "eng_formant.c"
-#include "eng_trio.c"
-#include "eng_wheel.c"
+#include "../engines/src/eng_trio.c"
+#include "../engines/src/eng_wheel.c"
 #include "eng_grain.c"
 #include "eng_phys.c"           /* PHYS: DaisySP physical models (phys_dsp.c, MIT) */
 #include "eng_drum.c"           /* DRUM: the 8-lane kit (drum_voice.c) */
-#include "eng_noise.c"
+#include "../engines/src/eng_noise.c"
 #include "eng_fm6.c"            /* FM6: 6-operator FM, msfa ported (fm6_core.c, Apache-2.0) */
 #include "fm4_convert.c"        /* DIGITAL's tables, and its sounds -> FM6 */
 #if FELUCCA_FM4

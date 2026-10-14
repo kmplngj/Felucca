@@ -207,9 +207,23 @@ static void fl_plain_window_init(void) {}
 #include "../../firmware/src/project.c"
 
 /* ------------------------------------------------- main.c and its HAL --- */
+#if FELUCCA_CPU2
+typedef struct { uint32_t magic, count, vec, pc, emu, dbg, rets, core; } fm1_crash_t;
+#else
 typedef struct { uint32_t magic, count, vec, pc, emu, dbg, rets; } fm1_crash_t;
+#endif
 #define FM1_CRASH_MAGIC 0x43525348u
 static fm1_crash_t fm1_crash;                     /* (none: main.c boot_leds runs the sweep) */
+static int fm1_crash_read(fm1_crash_t *copy)
+{
+    /* The emulator HAL is single-threaded; no worker publishes a retained
+     * record here. Preserve the target snapshot API's validity contract. */
+    copy->magic = 0;
+    if (fm1_crash.magic != FM1_CRASH_MAGIC)
+        return 0;
+    *copy = fm1_crash;
+    return 1;
+}
 static struct { uint8_t p3_rst, wdt_con; uint32_t rst_src; } fm1_boot;
 uint32_t _data_start[1], _data_end[1], _data_load[1], _bss_start[1], _bss_end[1];
 uint32_t _pool_start[1], _pool_end[1], _rt_start[1], _rt_end[1], _rt_load[1];
@@ -231,6 +245,15 @@ static void fm1_wdt_arm(uint32_t v) { (void)v; }
 static void fm1_mailbox_clear(void) {}
 static void fm1_guard_enable(uint32_t m) { (void)m; }
 enum { FM1_GUARD_STACK = 1, FM1_GUARD_WRITE = 2, FM1_GUARD_BUS = 4, FM1_GUARD_PC = 8 };
+#if FELUCCA_CPU2
+/* the second core (hal/fm1_cpu1.h): none here, one core whatever MENU > 2ND CORE says (fx.c mix_block's C1_ON() is 0
+ * without felucca.c's macros) */
+uint32_t _c1_start[1], _c1_end[1], _c1_load[1];
+static uint8_t fm1_c1_on, fm1_c1_gave_up;
+static void fm1_cpu1_halt(void) {}
+static int fm1_cpu1_start(void) { return -1; }
+static void fm1_guard_pc_open(void) {}
+#endif
 #if FELUCCA_CDC
 static void cdc_task(void) {}
 #endif

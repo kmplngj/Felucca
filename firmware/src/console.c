@@ -200,6 +200,15 @@ static void con_status(void)
     con_kv("audio_max_us", (int32_t)felucca_dbg.max_us);
     con_kv("audio_late", (int32_t)felucca_dbg.late);
     con_kv("voices_shed", (int32_t)shed_count);
+#if FELUCCA_CPU2
+    con_kv("cpu2_set", (ui_prefs2 & (PREF_CPU2_ON >> 16)) != 0u);   /* MENU > 2ND CORE: 1 ON (from power-on), 0 OFF */
+    con_kv("cpu2", fm1_c1_on);                          /* the second core renders parts (hal/fm1_cpu1.h) */
+    con_kv("cpu2_gave_up", fm1_c1_gave_up);             /* 1: it misread a job, 2: one timed out (then one core) */
+    con_kv("cpu2_bad", (int32_t)fm1_c1_mb.bad);
+    con_kv("cpu2_blocks", (int32_t)c1_blocks);          /* blocks it took parts of (fx.c mix_block) */
+    con_kv("cpu2_wait_max_us", (int32_t)(fm1_c1_wait_max / 24u));
+    con_kv("cpu2_stack", (int32_t)fm1_cpu1_stack_used());
+#endif
     con_kv("voices_given_up", (int32_t)voice_kills);
     con_kv("track", (int32_t)song.sel + 1);
     con_kv("batt_raw", song.batt_raw);
@@ -315,19 +324,23 @@ static void con_inp(void)
 
 static void con_crash(void)
 {
-    if (fm1_crash.magic != FM1_CRASH_MAGIC) {
+    fm1_crash_t c;
+    if (!fm1_crash_read(&c)) {
         con_puts("no crash record\r\n");
         return;
     }
-    con_kv("count", (int32_t)fm1_crash.count);
-    con_kx("vec", fm1_crash.vec);
-    con_kx("pc", fm1_crash.pc);
-    con_kx("rets", fm1_crash.rets);
-    con_kx("emu", fm1_crash.emu);
-    con_kx("sp", fm1_crash.sp);
-    con_kx("psr", fm1_crash.psr);
-    con_kv("uptime_ms", (int32_t)fm1_crash.uptime_ms);
-    con_kv("early", (int32_t)fm1_crash.early);
+    con_kv("count", (int32_t)c.count);
+#if FELUCCA_CPU2
+    con_kv("core", (int32_t)c.core);
+#endif
+    con_kx("vec", c.vec);
+    con_kx("pc", c.pc);
+    con_kx("rets", c.rets);
+    con_kx("emu", c.emu);
+    con_kx("sp", c.sp);
+    con_kx("psr", c.psr);
+    con_kv("uptime_ms", (int32_t)c.uptime_ms);
+    con_kv("early", (int32_t)c.early);
 }
 
 static void con_params(void)

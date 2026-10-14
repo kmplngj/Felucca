@@ -38,6 +38,9 @@ def noinit_header(extent):
 
 class AppGuards(unittest.TestCase):
     def setUp(self):
+        cpu_patch = patch.object(B, "CPU2", False)
+        cpu_patch.start()
+        self.addCleanup(cpu_patch.stop)
         self.tmp = tempfile.TemporaryDirectory(dir=ROOT / "build")
         self.addCleanup(self.tmp.cleanup)
         fw = Path(self.tmp.name)
@@ -68,6 +71,17 @@ class AppGuards(unittest.TestCase):
     def test_valid_neighbors(self):
         self.assertEqual(self.check(), [])
         self.assertEqual(self.check(rt="file format ELF32-pi32v2\n"), [])  # explicitly empty RAM section
+
+    def test_second_core_ram_section_is_required_and_only_calls_the_job(self):
+        section = "Disassembly of section .c1_text:\n 1c01000: 00 00 \tcall r0\n"
+        ram = "Disassembly of section .ram_text:\n" + self.rt
+        with patch.object(B, "CPU2", True):
+            self.assertEqual(self.check(rt=ram + section), [])
+            self.assertIn("waiting loop is missing", " ".join(self.check(rt=ram)))
+            for instruction in ("call 4 <f: 2000120 >", ".word 0x1234", "unknown"):
+                self.assertTrue(self.check(rt=ram + section.replace("call r0", instruction)))
+            self.assertIn(".ram_text contains calls", " ".join(self.check(rt=ram.replace("ret", "call r0") + section)))
+        self.assertIn("second-core code or data", " ".join(self.check(rt=ram + section)))
 
     def test_entry_and_stub(self):
         self.values["_start"] += 2

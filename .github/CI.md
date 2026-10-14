@@ -266,3 +266,12 @@ without executing the publisher. Do not push a tag merely to test CI.
 Failure diagnostics and strict optional-suite coverage improve on these examples.
 Nightlies, extra firmware variants, reviewed Linux CPU baselines and Pages
 deployment are separate follow-ups rather than prerequisites for this gate.
+
+### Pinned synthesis engines (1.6.1)
+
+Every build/test checkout initializes `firmware/engines` recursively at the committed gitlink;
+the second clean checkout does the same. Provenance includes the Engines repository, exact
+revision and MIT license, and refuses missing, mismatched or dirty dependency sources.
+The full runner checks its standalone goldens and the same engine host against Felucca's tables.
+GitHub-generated source ZIP/tar files omit submodule contents; use a recursive Git clone for
+complete source until [#342](https://github.com/kmplngj/Felucca/issues/342) delivers a source archive.

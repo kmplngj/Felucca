@@ -102,6 +102,15 @@ static phys_slot_t *phys_slot_of(track_t *t, voice_t *v)
 }
 
 /* a clean state for model md */
+#if FELUCCA_CPU2
+_Static_assert(NTRK == 4, "phys_nz: a seed per part");
+/* Preserve part 0's reset sequence; distinct nonzero streams keep simultaneous MODEL changes from giving
+ * identical parts the same excitation, even while the second core is disabled at runtime. */
+static int32_t phys_nz[NTRK] = {0x6A09E667, 0x3C6EF372, 0x510E527F, 0x1F83D9AB};
+#define PHYS_RSEED(t) noise32(&phys_nz[(uint32_t)((t) - trk) % NTRK])   /* the part's own (not rng(), shared) */
+#else
+#define PHYS_RSEED(t) rng()                             /* (one core: as up to 1.6) */
+#endif
 static void phys_reset(phys_slot_t *S, uint32_t md, uint32_t seed)
 {
     uint32_t i, *w = (uint32_t *)&S->u;
@@ -168,7 +177,7 @@ static void phys_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     if (n > CTL)
         n = CTL;
     if (S->model != md)                                  /* MODEL changed under a sounding note */
-        phys_reset(S, md, rng());
+        phys_reset(S, md, PHYS_RSEED(t));
     switch (md) {
     case PM_MODAL: {
         px_modal_blk_t B;

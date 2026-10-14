@@ -4,7 +4,7 @@
 
 ![Felucca 1.0](docs/felucca-1.0.png)
 
-Multi-engine synthesizer firmware for the M-VAVE FM-1, **version 1.6**. Connect the FM-1 to a computer by USB, open the
+Multi-engine synthesizer firmware for the M-VAVE FM-1, **version 1.6.1**. Connect the FM-1 to a computer by USB, open the
 [web installer](https://hugelton.github.io/Felucca/) in Chrome or Edge and press Install; no extra hardware is needed.
 Installing is at your own risk: M-VAVE's updater or the installer's **Return to official V15** takes you back.
 Want to look around first? [Try it in your browser](https://hugelton.github.io/Felucca/webapp/try/), no FM-1 needed.
@@ -15,7 +15,8 @@ Want to look around first? [Try it in your browser](https://hugelton.github.io/F
   [Controls](https://github.com/hugelton/Felucca/wiki/Controls) · [Menu](https://github.com/hugelton/Felucca/wiki/Menu) ·
   [Engines](https://github.com/hugelton/Felucca/wiki/Engines) · [Release notes](https://github.com/hugelton/Felucca/wiki/Release-Notes) ·
   [Troubleshooting](https://github.com/hugelton/Felucca/wiki/Troubleshooting)
-- Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build)
+- Development direction: [combined modularity, capacity and 1.6.1 plan](docs/modularity.md#combining-our-plan-with-felucca-161--2026-10-14)
+- Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build); clone with `git clone --recurse-submodules https://github.com/kmplngj/Felucca.git`
 - Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), without a local target toolchain; then follow the PR's hardware test instructions (CI does not validate the hardware)
 - Download: this fork's [Releases](https://github.com/kmplngj/Felucca/releases) and successful [Actions](https://github.com/kmplngj/Felucca/actions) artifacts; follow the [download and checksum guide](.github/CI.md#downloads-and-checksums)
 - Diagnostics: [collect CDC console reports](docs/diagnostics.md) with USB SERIAL on and an explicitly selected port
@@ -27,6 +28,16 @@ Want to look around first? [Try it in your browser](https://hugelton.github.io/F
 Thirteen engines with factory presets, four tracks (8 voices shared), a 64-step sequencer (chords, ties, chance, conditions,
 ratchets, nudge, locks, automation, live and step recording), SEQ TOOLS, songs, effects, a MOD matrix, MIDI (USB and TRS,
 per-track channels, MIDI LEARN) and USB audio. More: [Features](https://github.com/hugelton/Felucca/wiki/Features).
+
+## New in 1.6.1
+
+- **MENU > LARGE keeps one size per knob** ([upstream #251](https://github.com/hugelton/Felucca/issues/251)): a value no longer jumps between sizes as you turn the knob
+- **Updates check the package's size on the FM-1**: a package whose firmware image size does not match is refused before anything is erased
+- **Second core (beta), off by default:** MENU > SYSTEM > 2ND CORE > ON (BETA), then restart: the FM-1's second core
+  renders some parts alongside the first core; unreliable units fall back to one core
+  ([upstream #247](https://github.com/hugelton/Felucca/pull/247)). Device qualification remains under [#44](https://github.com/kmplngj/Felucca/issues/44)
+- **Felucca-Engines:** ANALOG, LOFI, TRIO, WHEEL and NOISE now live in [our pinned engine fork](https://github.com/kmplngj/Felucca-Engines)
+  under the MIT licence (a git submodule here); Felucca itself stays GPL-3.0-only
 
 ## New in 1.6
 
@@ -99,7 +110,8 @@ icons or artwork. See [On AI-Assisted Development and Responsibility](https://gi
 
 ## Credits and licence
 
-Free software: [GPL-3.0-only](LICENSE), the Hügelton Sample Pack included; the bundled fonts and ported DSP keep their own licences
+Free software: [GPL-3.0-only](LICENSE), the Hügelton Sample Pack included; the bundled fonts and ported DSP keep their own licences,
+and five engines ([Felucca-Engines](https://github.com/hugelton/Felucca-Engines), `firmware/engines/`) are MIT
 ([LICENSES/](LICENSES/), [LICENSING.md](LICENSING.md)). Thanks to everyone whose work and contributions are in it: [CREDITS.md](CREDITS.md).
 
 M-VAVE and FM-1 are trademarks of their respective owners. Felucca is not affiliated with or endorsed by them.
