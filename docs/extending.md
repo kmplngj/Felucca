@@ -52,7 +52,8 @@ the portable host contract, never firmware engine IDs or storage versions.
   `ENG_NONE` there) and removes it from `ENGINE_ORDER[]`, so every other number stays.
 - Favourites have a row per id (`FAV_ROWS` = `ENG_ID_MAX`); MIDI Learn's map and the device bytes are
   `settings_ml` / `settings_dev`, not favourites rows. A first favourite on an id from 14 makes the settings
-  PER6 (`settings_persist.c`). Per-engine tables (`MIDI_CC_ENG[]`, `PRESET_CAT[]`) are sized by `ENG_ID_MAX`.
+  PER6 (`settings_persist.c`). Per-engine tables (`MIDI_CC_ENG[]`, `PRESET_CAT[]`) are sized by `ENG_ID_MAX`
+  and generated from `profiles/catalog.json`; `PRESET_CAT[]` uses each engine's `preset_categories` string.
 - The numbers are a wire contract: the engine byte table in
   [web/EDITOR_PROTOCOL.md](../web/EDITOR_PROTOCOL.md) lists them and must gain the new row.
 - `ENGINE_ORDER[]` (`engines.c`) is only the display order (PRESETS, EDIT layer, editor
@@ -144,8 +145,10 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
 
 ### 1.6 Presets, categories, UI and help
 
-- Factory `preset_t` arrays live in the engine's file. The host registry's `preset_categories`
-  needs one letter per preset; metadata and UI tests check it against `npresets`.
+- Factory `preset_t` arrays live in the engine's file. Each engine's `preset_categories` string in
+  `profiles/catalog.json` needs one letter per preset; `tools/profile.py` generates
+  `engine_categories.inc` for `PRESET_CAT[]` and `engine_metadata.inc` for `ENGINE_META` from it.
+  Metadata and UI tests check it against `npresets`.
   Its `category` and `kit` fields identify kit-style engines.
 - EDIT 1 / EDIT 2 and HOME are generated from `edit[]`, `page_title` and `knob[]`; a plain engine
   needs no new page. Engine-specific pages (`FILTER`, `LANES`, `OPERATOR`, `SLICES`) are gated by
