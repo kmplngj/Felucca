@@ -176,6 +176,18 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(result["validity"], "VALID")
         self.assertEqual(result["deltas"]["status"]["audio_late"], 1)
 
+    def test_crash_core_is_optional_and_historic(self):
+        self.assertNotIn("core", diag.parse_response("crash", CRASH.encode())["fields"])
+        for core in (0, 1):
+            crash = CRASH + f"core {core}\n"
+            parsed = diag.parse_response("crash", reply("crash", crash))
+            self.assertEqual(parsed["fields"]["core"], core)
+            self.assertEqual(parsed["issues"], [])
+            result = diag.compare(snapshot(crash=crash),
+                                  snapshot(status=STATUS.replace("10000", "11000"), crash=crash))
+            self.assertEqual(result["validity"], "VALID")
+            self.assertNotIn("core", result["deltas"]["crash"])
+
     def test_reset_wrap_and_boots(self):
         start = snapshot()
         for change in (STATUS.replace("audio_late 7", "audio_late 0"),
