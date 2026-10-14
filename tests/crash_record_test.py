@@ -55,12 +55,28 @@ static uint32_t worker_stacks[64];
 #define _c1_ustack worker_stacks
 #define _c1_sstack_top (worker_stacks + 64)
 #endif
-#define FM1_EMU_MSG 0x12345678u
-#define FM1_DBG_MSG 0x87654321u
-#define FM1_ETM_PC(i) (0x56780000u + (i))
-#define FM1_RESET_PREP() ((void)0)
-static unsigned phase, reports;
+static uint32_t test_emu = 0x12345678u, test_dbg = 0x87654321u;
+static uint32_t test_etm[4] = {0x56780000u, 0x56780001u, 0x56780002u, 0x56780003u};
+#define FM1_EMU_MSG test_emu
+#define FM1_DBG_MSG test_dbg
+#define FM1_ETM_PC(i) test_etm[i]
+static unsigned phase, reports, halts;
 static uint32_t expected_count, expected_early, expected_core;
+#if FM1_CPU1_USED
+static void test_halt(void) {
+    assert(!expected_core && phase == 0 && !halts);
+    halts++;
+    /* A last worker publication may finish before the hold. Main must read
+     * retained history after it, and preserve MMIO diagnostics before it. */
+    fm1_crash.count = 31u;
+    fm1_crash.early = 0;
+    test_emu = test_dbg = 0;
+    memset(test_etm, 0, sizeof(test_etm));
+}
+#define FM1_RESET_PREP() test_halt()
+#else
+#define FM1_RESET_PREP() ((void)0)
+#endif
 static void fm1_irq_off(void) {}
 static void complete_record(void) {
     assert(fm1_crash.count == expected_count);
@@ -72,10 +88,10 @@ static void complete_record(void) {
     assert(fm1_crash.icfg == frame[21]);
     assert(fm1_crash.uptime_ms == test_timer_ticks / 24000u);
     assert(fm1_crash.early == expected_early);
-    assert(fm1_crash.emu == (expected_core ? 0u : FM1_EMU_MSG));
-    assert(fm1_crash.dbg == (expected_core ? 0u : FM1_DBG_MSG));
+    assert(fm1_crash.emu == (expected_core ? 0u : 0x12345678u));
+    assert(fm1_crash.dbg == (expected_core ? 0u : 0x87654321u));
     for (unsigned i = 0; i < 4; i++)
-        assert(fm1_crash.etm[i] == (expected_core ? 0u : FM1_ETM_PC(i)));
+        assert(fm1_crash.etm[i] == (expected_core ? 0u : 0x56780000u + i));
 #if FM1_CPU1_USED
     assert(fm1_crash.core == expected_core);
 #endif
@@ -84,6 +100,7 @@ static void observe_barrier(void) {
     /* First invalidate the poisoned old record. Then all fields must be ready
      * while invalid, and only the final barrier may observe the valid marker. */
     assert(phase < 3);
+    assert(halts == (FM1_CPU1_USED && !expected_core));
     assert(fm1_crash.magic == (phase == 2 ? FM1_CRASH_MAGIC : 0u));
     if (phase)
         complete_record();
@@ -109,6 +126,12 @@ int main(int argc, char **argv) {
     fm1_crash.early = 7u;
     expected_count = valid ? 24u : 1u;
     expected_early = expected_core || ms >= 3000u ? 0u : valid ? 8u : 1u;
+#if FM1_CPU1_USED
+    if (!expected_core && valid) {
+        expected_count = 32u;
+        expected_early = ms < 3000u ? 1u : 0u;
+    }
+#endif
     test_timer_ticks = ms * 24000u;
     for (unsigned i = 0; i < 26; i++)
         frame[i] = 0xC0000000u + i;
