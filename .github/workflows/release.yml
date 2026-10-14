@@ -41,12 +41,13 @@ jobs:
         with:
           name: release-${{ github.run_id }}
           path: downloaded
-      - name: Verify downloaded bundle and publish
+      - name: Verify downloaded firmware and complete source bundles and publish
         shell: bash
         run: |
           set -euo pipefail
           # Upload paths share build/ as their root, preserving release-VERSION/.
           mv "downloaded/release-$VERSION" release
+          # Staging verifies both archives, source pins and all license/checksum assets.
           python3 tools/ci.py stage-release "$VERSION"
           (cd release-assets && sha256sum -c SHA256SUMS)
           # Preserve an existing release and its assets. Never silently replace a package.

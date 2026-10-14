@@ -67,8 +67,8 @@ pipeline retain full coverage and strict optional-suite verification.
 | Robustness | ASan/UBSan and fixed-seed parser/storage/sample fuzz runs |
 | References | Pinned DaisySP comparison and checked-in CC0 samples |
 | Web/emulator | Node tests and Emscripten build, followed by native/WASM song equality and emulator checks |
-| Delivery | Package byte equality from a second clean checkout; release archive equality for release builds; no tracked changes or baseline updates |
-| Release | Required files, attribution and every license, SHA-256 coverage of every bundle file, archive checksum |
+| Delivery | Package byte equality from a second clean checkout; firmware and source archive equality for release builds; identical package from unpacked complete source without Git; no tracked changes or baseline updates |
+| Release | Required files, attribution and every license, SHA-256 coverage of every bundle/asset file, firmware/source archive checksums and source pin/content verification |
 
 `tools/ci.py verify-tests` rejects skipped local optional suites, absent test
 outputs and missing target-budget entries even if the runner prints success.
@@ -122,7 +122,13 @@ two checkouts in one run; cross-runner byte identity is not promised. Updates to
 these pins must pass the same goldens and package checks without blanket updates.
 Diagnostics keep the actual `built_at_utc` clock. Release provenance omits that
 clock; tar/gzip metadata uses the source commit timestamp, with normalized
-ownership and permissions. Rebuilding unchanged content in the same environment
+ownership and permissions. Complete source preserves each committed executable bit
+and hashes every tracked firmware/Engines file in `SOURCE-PINS.json`; provenance
+records the source archive and manifest hashes plus both revisions. With profile
+definitions present, provenance resolves the selected profile directly from current
+inputs before building and records its IDs, source/asset/license selections and
+input hashes; it never reuses a previous generated profile manifest. Rebuilding
+unchanged content in the same environment
 therefore produces the same release archive even when local file metadata changes.
 
 ## Debug artifacts and cost
@@ -187,8 +193,8 @@ download corruption; they do not establish publisher authenticity or device comp
 If downloading individual release assets instead, save the complete asset set and the
 release-page `SHA256SUMS` together in a fresh directory, then run `shasum -a 256 -c SHA256SUMS`
 (macOS) or `sha256sum -c SHA256SUMS` (Linux) there. That manifest uses GitHub's flat asset
-filenames, including standalone license texts, the archive and its sidecar. The manifest
-inside the archive instead uses its unpacked directory structure, including `LICENSES/`
+filenames, including standalone license texts, both firmware/source archives and
+their sidecars. The manifest inside the firmware archive instead uses its unpacked directory structure, including `LICENSES/`
 paths. Keep each manifest with the files it describes; the sidecar checks the archive itself.
 
 For development builds, open a successful run in [Actions](https://github.com/kmplngj/Felucca/actions)
@@ -273,5 +279,25 @@ Every build/test checkout initializes `firmware/engines` recursively at the comm
 the second clean checkout does the same. Provenance includes the Engines repository, exact
 revision and MIT license, and refuses missing, mismatched or dirty dependency sources.
 The full runner checks its standalone goldens and the same engine host against Felucca's tables.
-GitHub-generated source ZIP/tar files omit submodule contents; use a recursive Git clone for
-complete source until [#342](https://github.com/kmplngj/Felucca/issues/342) delivers a source archive.
+GitHub-generated source ZIP/tar files omit submodule contents. Tagged and manual
+release builds now provide `felucca-VERSION-source.tar.gz` and its `.sha256`
+sidecar in the release artifact; tagged publication adds both to release assets.
+Use that complete source asset or a recursive Git clone. It exports only committed
+firmware blobs and the exact initialized, clean Engines gitlink, including all
+build generators/assets, profile definitions, tests and license texts. Firmware
+tracked changes and missing/wrong/dirty Engines sources fail export; local Git
+metadata, build output and untracked files never enter it.
+
+To verify and build the complete source, follow
+[Get the source](../BUILDING.md#get-the-source). `SOURCE-PINS.json` records both
+commits, the firmware commit timestamp, and each source file's SHA-256/executable
+mode. Builds of the extracted tree verify this manifest before generating outputs,
+without Git or a submodule fetch. Source verification rejects Python bytecode
+anywhere in the tree before loading repository helpers; archive build/CI tools
+load the verifier from source and suppress cache writes in child generators.
+Repeated archive builds remain valid. Toolchain/SDK prerequisites remain external.
+Release CI compares the source archive across two clean checkouts and rebuilds its
+unpacked contents to require byte equality with the original `.fwsc`. Publishing
+requires the source archive/manifest to match `BUILD-PROVENANCE.json` and checks the
+source sidecar before creating the flat `SHA256SUMS` asset. Existing firmware archive
+contents and nested licensing paths are retained.

@@ -30,10 +30,14 @@ Hügelton Instruments' own work and live in their own repository, Felucca-Engine
 (`SPDX-License-Identifier: MIT`, `firmware/engines/LICENSE`, also
 `LICENSES/MIT-Felucca-Engines.txt`). The firmware built with them is GPL-3.0-only as a whole.
 Felucca's complete source includes that submodule: clone with `--recurse-submodules`, and
-give it along with the rest when you share the source. A recursive Git clone is the
-current complete-source route; GitHub's generated source archives omit the submodule,
-and the firmware release bundle does not include its sources. Dedicated complete-source
-release assets are tracked in [#342](https://github.com/kmplngj/Felucca/issues/342).
+give it along with the rest when you share the source. Releases produced by our
+complete-source workflow also carry `felucca-VERSION-source.tar.gz`, which includes the
+pinned submodule (GitHub's generated source archives leave it empty). The complete asset includes all
+tracked build inputs, source generators, fonts, samples, profile definitions and
+tests, with the Engines MIT license and all other attribution/license files. Its
+`SOURCE-PINS.json` identifies both commits and checks every source file; the
+[build guide](BUILDING.md#get-the-source) explains download verification and builds
+without Git. The JieLi toolchain and SDK remain separately obtained prerequisites.
 
 You may use, study, change and share Felucca under the GPL. If you distribute Felucca, or
 firmware derived from it, you must also give your recipients its complete corresponding

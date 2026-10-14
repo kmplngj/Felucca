@@ -21,6 +21,11 @@ class Checks(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.engine = {"path": "firmware/engines", "repository": "https://example.invalid/engines",
+                       "revision": ci.subprocess.check_output(["git", "ls-tree", "HEAD", "firmware/engines"],
+                                                             text=True).split()[2], "license": "MIT"}
+        self.source_files = {"LICENSE": (0o644, b"GPL-3.0-only fixture"),
+                             "firmware/engines/LICENSE": (0o644, b"MIT fixture")}
 
     def tearDown(self):
         self.temp.cleanup()
@@ -171,7 +176,10 @@ class Checks(unittest.TestCase):
             raw[i * ci.fm1_install.BLK + ci.fm1_install.KEEP] = ord(char) + i + 1
         (root / "felucca-1.6.fwsc").write_bytes(raw + ci.fm1_install.LOADER_MARK)
         revision = ci.subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        (root / "BUILD-PROVENANCE.json").write_text(json.dumps({"revision": revision, "version": "1.6"}))
+        (root / "BUILD-PROVENANCE.json").write_text(json.dumps({"revision": revision, "version": "1.6", "engines": self.engine,
+            "source_distribution": {"archive": "felucca-1.6-source.tar.gz", "sha256": "0" * 64,
+                                    "manifest_sha256": "0" * 64, "firmware_revision": revision,
+                                    "engines": self.engine}}))
         for source in (ci.build.SRC / "LICENSES").glob("*.txt"):
             target = root / "LICENSES" / source.name
             target.parent.mkdir(exist_ok=True)
@@ -192,9 +200,15 @@ class Checks(unittest.TestCase):
         metadata = json.loads((root / "BUILD-PROVENANCE.json").read_text())
         metadata["built_at_utc"] = "2026-10-12T09:00:00+00:00"
         (output / "ci/provenance.json").write_text(json.dumps(metadata))
-        with patch.object(ci.build, "OUT", output):
-            ci.finalize("1.6")
+        self.finalize(output)
         return output, root
+
+    def finalize(self, output):
+        # Release fixtures isolate packaging from a mutable developer checkout;
+        # source_archive_test exercises exact blobs in real clean Git repositories.
+        with patch.object(ci.build, "OUT", output), patch.object(
+                ci.source_archive, "source_files", return_value=(self.engine, self.source_files)):
+            ci.finalize("1.6")
 
     def test_release_corruption_and_omitted_licenses_fail(self):
         self.release()
@@ -224,6 +238,17 @@ class Checks(unittest.TestCase):
         (self.root / "BUILD-PROVENANCE.json").write_text(json.dumps({"revision": "stale", "version": "1.6"}))
         self.checksums()
         with self.assertRaisesRegex(ValueError, "provenance does not match"):
+            ci.package(self.root, "1.6")
+
+    def test_wrong_source_pin_fails_even_with_consistent_source_metadata_and_checksums(self):
+        self.release()
+        path = self.root / "BUILD-PROVENANCE.json"
+        metadata = json.loads(path.read_text())
+        metadata["engines"]["revision"] = "b" * 40
+        metadata["source_distribution"]["engines"]["revision"] = "b" * 40
+        path.write_text(json.dumps(metadata))
+        self.checksums()
+        with self.assertRaisesRegex(ValueError, "committed gitlink"):
             ci.package(self.root, "1.6")
 
     def test_wrong_package_product_fails_even_with_valid_checksums(self):
@@ -260,8 +285,7 @@ class Checks(unittest.TestCase):
         for path in [root, *root.rglob("*")]:
             os.utime(path, (1_234_567, 1_234_567))
             path.chmod(0o700 if path.is_dir() else 0o600)
-        with patch.object(ci.build, "OUT", output):
-            ci.finalize("1.6")
+        self.finalize(output)
         self.assertEqual(bundle.read_bytes(), original)
         self.assertEqual(json.loads(diagnostic.read_text())["built_at_utc"], metadata["built_at_utc"])
         self.assertNotIn("built_at_utc", json.loads((root / "BUILD-PROVENANCE.json").read_text()))
@@ -282,6 +306,9 @@ class Checks(unittest.TestCase):
         ci.verify_checksums(assets)
         self.assertNotIn("LICENSES/", (assets / "SHA256SUMS").read_text())
         self.assertIn("felucca-1.6-release.tar.gz", (assets / "SHA256SUMS").read_text())
+        self.assertIn("felucca-1.6-source.tar.gz", (assets / "SHA256SUMS").read_text())
+        metadata = json.loads((root / "BUILD-PROVENANCE.json").read_text())
+        ci.source_archive.verify_archive(assets / "felucca-1.6-source.tar.gz", metadata["source_distribution"])
         with tarfile.open(assets / "felucca-1.6-release.tar.gz") as archive:
             manifest = archive.extractfile("felucca-1.6/SHA256SUMS").read().decode()
             self.assertIn("LICENSES/Apache-2.0.txt", manifest)
@@ -292,13 +319,37 @@ class Checks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid release archive checksum"):
             ci.stage_release(root, output, self.root / "assets", "1.6")
 
+    def test_release_page_staging_requires_intact_matching_source_archive(self):
+        output, root = self.bundle()
+        archive = output / "felucca-1.6-source.tar.gz"
+        original = archive.read_bytes()
+        archive.unlink()
+        with self.assertRaisesRegex(ValueError, "invalid source archive"):
+            ci.stage_release(root, output, self.root / "assets", "1.6")
+        archive.write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "invalid source archive"):
+            ci.stage_release(root, output, self.root / "assets", "1.6")
+        archive.write_bytes(original)
+        sidecar = archive.with_suffix(".gz.sha256")
+        sidecar.unlink()
+        with self.assertRaisesRegex(ValueError, "invalid source archive checksum"):
+            ci.stage_release(root, output, self.root / "assets", "1.6")
+        sidecar.write_text("invalid checksum")
+        with self.assertRaisesRegex(ValueError, "invalid source archive checksum"):
+            ci.stage_release(root, output, self.root / "assets", "1.6")
+        metadata = json.loads((root / "BUILD-PROVENANCE.json").read_text())
+        metadata["source_distribution"]["sha256"] = "1" * 64
+        (root / "BUILD-PROVENANCE.json").write_text(json.dumps(metadata))
+        self.checksums(root)
+        with self.assertRaisesRegex(ValueError, "source archive does not match build provenance"):
+            ci.stage_release(root, output, self.root / "assets", "1.6")
+
     def test_release_page_staging_rejects_colliding_asset_names(self):
         output, root = self.bundle()
         for name in ("LICENSE", "SHA256SUMS"):
             path = root / "LICENSES" / name
             path.write_text("collision")
-            with patch.object(ci.build, "OUT", output):
-                ci.finalize("1.6")
+            self.finalize(output)
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "filenames collide"):
                 ci.stage_release(root, output, self.root / "assets", "1.6")
             path.unlink()
@@ -308,8 +359,9 @@ class Checks(unittest.TestCase):
         shutil.copytree(root, self.root / "release")
         downloaded = self.root / "downloaded"
         downloaded.mkdir()
-        for suffix in (".tar.gz", ".tar.gz.sha256"):
-            shutil.copyfile(output / f"felucca-1.6-release{suffix}", downloaded / f"felucca-1.6-release{suffix}")
+        for kind in ("release", "source"):
+            for suffix in (".tar.gz", ".tar.gz.sha256"):
+                shutil.copyfile(output / f"felucca-1.6-{kind}{suffix}", downloaded / f"felucca-1.6-{kind}{suffix}")
         existing = self.root / "assets/keep.txt"
         existing.parent.mkdir()
         existing.write_text("original asset")

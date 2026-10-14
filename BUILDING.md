@@ -30,8 +30,51 @@ MIT), so clone with `--recurse-submodules`:
 git clone --recurse-submodules https://github.com/kmplngj/Felucca.git
 ```
 
-In a clone made without it, run `git submodule update --init` once. GitHub's "Download ZIP" and the source archives
-it adds to a release leave `firmware/engines/` empty; use a recursive Git clone for the complete source. The build stops with "firmware/engines is empty" when they are missing.
+In a clone made without it, run `git submodule update --init` once. Alternatively,
+use the complete `felucca-VERSION-source.tar.gz` asset from this fork's
+[Releases](https://github.com/kmplngj/Felucca/releases), with its matching `.sha256`
+sidecar. It includes the exact pinned Engines sources, fonts, samples, generators,
+profile definitions, tests and license texts. GitHub's automatic "Source code"
+ZIP/tar downloads and "Download ZIP" still leave `firmware/engines/` empty.
+
+For example, after downloading both source assets for `1.6-rc1`:
+
+```sh
+sha256sum -c felucca-1.6-rc1-source.tar.gz.sha256  # macOS: shasum -a 256 -c ...
+tar -xzf felucca-1.6-rc1-source.tar.gz
+cd felucca-1.6-rc1-source
+python3 tools/source_archive.py verify .
+./build.sh --release 1.6-rc1
+```
+
+Install the prerequisites below before building. The extracted source needs no
+Git checkout or submodule download; the JieLi toolchain and three SDK files remain
+external prerequisites. `SOURCE-PINS.json` records the firmware and Engines commits
+and hashes/modes of every source file. The build verifies those files and rejects
+additional source inputs before compilation. Generated files under `build/` and
+`firmware/engines/build/` are permitted. Python bytecode (`.pyc`/`.pyo`) and source-tree
+symlinks are rejected, including in generated directories. Extracted-source tools
+verify the source before importing repository helpers and disable bytecode writes
+for themselves and child generators, so repeated builds preserve the verified
+tree. If an older build left bytecode caches, use a fresh extraction. A symlink
+above the source directory, such as a linked workspace folder, is allowed. To
+develop modifications, use a recursive Git clone; an extracted
+release intentionally rejects modified source while its pin manifest is present.
+
+Maintainers can export any clean committed checkout, without building firmware:
+
+```sh
+python3 tools/source_archive.py export 1.6-rc1
+python3 tools/source_archive.py verify build/felucca-1.6-rc1-source.tar.gz
+```
+
+The exporter refuses missing, wrong or dirty Engines pins and modified tracked
+firmware files. Untracked firmware files, ignored build output and Git metadata
+are excluded. It preserves committed executable bits, orders all members, and
+normalizes tar/gzip ownership and times to the firmware commit timestamp.
+Release CI generates this source asset and sidecar, records both archive and pin
+manifest SHA-256 in build provenance, reproduces it from a second checkout, and
+builds the unpacked sources to compare the installable package byte for byte.
 
 The firmware explicitly requires portable Engine API revision 1. A missing or incompatible
 revision stops compilation with a contract diagnostic rather than silently accepting changed
@@ -159,6 +202,11 @@ The CC0 instrument samples that the SAMPLE engine uses are in `assets/samples-cc
 again from the source repositories. Without that folder the build still works, with no
 instrument sets in the SAMPLE engine and no PIANO in SLICE (the PIANO set's middle C): they play a plain sine
 at the note's pitch instead, and the screen says NO SAMPLE.
+
+The generated drum inputs use a private temporary directory per sample-generator
+invocation; stale `build/genwav/` files cannot change the header. Headers and their
+cache are published atomically for parallel invocations. The canonical WAV files
+remain under `build/genwav/` for the SLICE test loop.
 
 ## Browser emulator
 
