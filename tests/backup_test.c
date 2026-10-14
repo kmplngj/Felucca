@@ -1004,8 +1004,9 @@ int main(void)
         bad += check("  .. written to flash (the user presets' FM6 patches)",
                      st_load(OBJ_UPFM6, &got, sizeof got) == (int)sizeof got && !memcmp(&got, &upf, sizeof got));
         up_load(0);
-        bad += check("  .. and the B3 preset loads it, SLOT OWN", TSEL->eng_req == ENGI_FM6 &&
-                     !memcmp(fm6_patch[song.sel] + FP_NAME, "BANK B3", 7) && TSEL->p[P_E7] == FM6_OWN);
+        bad += check("  .. B3 preset keeps its patch; installed FM6 adopts OWN, unavailable SLOT stays", TSEL->eng_req == ENGI_FM6 &&
+                     !memcmp(fm6_patch[song.sel] + FP_NAME, "BANK B3", 7) &&
+                     TSEL->p[P_E7] == (eng_ok(ENGI_FM6) ? (int16_t)FM6_OWN : SL[0]));
         up_load(1);
         bad += check("  .. the F2 preset loads the factory patch, SLOT F2", TSEL->p[P_E7] == 1 &&
                      !memcmp(fm6_patch[song.sel] + FP_NAME, FM6_FACTORY[1] + 118, 10));

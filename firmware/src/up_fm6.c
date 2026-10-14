@@ -83,6 +83,7 @@ static uint32_t upf_tag(const up_rec_t *r)       /* FNV-1a of the record without
     return h;
 }
 
+/* Stored identity: omitted FM6 records still carry readable/migratable patch data. */
 static int upf_fm6(uint32_t k) { return up_used(k) && up_rec(k)->engine == ENGI_FM6; }
 
 /* a 128-byte packed record's 7-bit bytes, 8 to 7 bytes (UPF_PK) and back (the voice bank too, fm6_vbank.c) */
@@ -195,7 +196,8 @@ static void upf_boot(void)                       /* up_boot, after the user pres
 }
 
 /* up_load: track t (its values just loaded from slot k) gets the record's patch; without one, as before 1.0.3:
- * SLOT F n that factory patch, OWN the init voice. SLOT then shows F n or OWN (fm6_adopt) */
+ * SLOT F n that factory patch, OWN the init voice. Copy retained patches even without FM6; only
+ * SLOT adoption (F n or OWN, fm6_adopt) needs an installed engine. */
 static void upf_track_load(track_t *t, uint32_t k)
 {
     uint8_t pk[FM6_PACKED], v[FP_SIZE + 1u];

@@ -23,8 +23,8 @@
 # ENGINE IDS (tests/engid_test.c, #212): the id space (64) apart from the engines a build has: INFO's 49 01 bitmap,
 #                   FAV_GET / FAV_SET's user marker (127, and the old one: INFO's count), favourites past id 13 in the
 #                   settings (PER6), ids this build lacks kept in projects, user presets and backups (N/A, silent, never
-#                   another engine). Again on a test build with a placeholder engine 14 and a catalog without NOISE
-#                   (FELUCCA_ENG_TEST14=1 FELUCCA_ENG_OMIT=11), with the serializer tests and union_test's goldens.
+#                   another engine). Again with placeholder engine 14 and DRUM/NOISE/FM6/SLICE omitted (10..13),
+#                   including serializers, unavailable UI controls, owner checks and matching union workloads.
 # UI renders (tests/ui_render.c): every screen in every palette from the real drawing code: the layout lint (no text
 #                   off the screen, cut, hidden, overlapping or spilling out of its cell / card; only free text
 #                   ellipsised), GREY gray, MONO neutral, the draw cost, the text audit (build/ui_new/text_audit.tsv);
@@ -397,16 +397,32 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/engid_test" tests/engid_test.c -lm
     run "engine ids (#212): the catalog, INFO's id bitmap, FAV markers old / new, ids this build lacks kept in projects, presets, backups" \
         "$OUT/engid_test"
-    # #212: a test build with a placeholder engine 14 and a sparse catalog (NOISE, 11, left out): the id tests, the
-    # serializers and the engine-memory switches against the same goldens
-    ENGX="-DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=11"
-    for t in engid_test editor_test project_test upreset_test backup_test robust_test; do
-        $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/${t}_eng14" tests/$t.c -lm
-        run "test build, engine 14 + catalog without 11 (#212): $t" "$OUT/${t}_eng14"
+    # #212/#306: IDs and serializers run even when DRUM/FM6 are absent. Full-catalog union controls exclude
+    # the same engine from their workload, preserving the existing default 720 goldens without new golden files.
+    for omit in 10 11 12 13; do
+        ENGX="-DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit"
+        for t in engid_test editor_test project_test upreset_test backup_test robust_test; do
+            $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/${t}_omit$omit" tests/$t.c -lm
+            run "test build, engine 14 + catalog without $omit (#306): $t" "$OUT/${t}_omit$omit"
+        done
+        $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_omit$omit" tests/ui_test.c -lm
+        run "test build, catalog without $omit: page visibility, stale engine controls and N/A rendering" \
+            "$OUT/ui_test_omit$omit" --catalog
+        if [ "$omit" = 11 ]; then
+            union_ref=tests/union_golden.txt
+        else
+            union_ref="$OUT/union_control$omit.txt"
+            $CC -O2 -w -DFELUCCA_ENG_TEST14=1 -DFELUCCA_UNION_OMIT=$omit -Ibuild/gen -Ifirmware/src \
+                -o "$OUT/union_control$omit" tests/union_test.c -lm
+            "$OUT/union_control$omit" > "$union_ref"
+        fi
+        $CC -O2 -w $ENGX -DFELUCCA_ARENA_CHECK=1 -Ibuild/gen -Ifirmware/src \
+            -o "$OUT/union_test_omit$omit" tests/union_test.c -lm
+        run "test build, catalog without $omit: owner-checked engine switches against full-catalog control" \
+            "$OUT/union_test_omit$omit" "$union_ref"
     done
-    $CC -O2 -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/union_test_eng14" tests/union_test.c -lm
-    run "test build, engine 14 + catalog without 11 (#212): engine memory, the same 720 hashes" \
-        "$OUT/union_test_eng14" tests/union_golden.txt
+    $CC -w -DFELUCCA_SLICE=0 -Ibuild/gen -Ifirmware/src -o "$OUT/engid_test_noslice" tests/engid_test.c -lm
+    run "engine ids: FELUCCA_SLICE=0 retains unavailable SLICE records" "$OUT/engid_test_noslice"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/mod_test" tests/mod_test.c -lm
     mkdir -p build/mod_demo
     run "modulation matrix: off = bit-identical, the math, MIDI CC1 / CC11 / aftertouch, cost, demos" "$OUT/mod_test" build/mod_demo
@@ -541,8 +557,11 @@ else
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
     done
-    $SCC -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=11 -o "$A/engid_test_eng14" tests/engid_test.c -lm
-    run "ASan/UBSan: engid_test, test build (engine 14, catalog without 11)" "$A/engid_test_eng14"
+    for omit in 10 11 12 13; do
+        $SCC -DFELUCCA_ARENA_CHECK=1 -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit \
+            -o "$A/engid_test_omit$omit" tests/engid_test.c -lm
+        run "ASan/UBSan: engine ids + arena checks, catalog without $omit" "$A/engid_test_omit$omit"
+    done
     $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/arena_test" tests/arena_test.c -lm
     run "ASan/UBSan: engine memory owner checker (fixtures + 12 random runs)" "$A/arena_test" 12
     $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/union_test_chk" tests/union_test.c -lm

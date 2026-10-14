@@ -59,6 +59,9 @@ static void *eng_mem_of(const track_t *t, uint32_t want)
 #define ENG_MEM_OF(t, e, p) ENG_MEM(p)         /* p: the part index the caller already derived */
 #endif
 
+/* Engine-local control code is included before the catalog; the resolver is defined below it. */
+static inline __attribute__((always_inline)) int eng_is(uint32_t e, uint32_t id);
+
 #include "eng_analog.c"
 #include "eng_phase.c"
 #include "eng_lofi.c"
@@ -253,6 +256,9 @@ _Static_assert(NELEM(ENGINE_ORDER) == NENG_SHOWN, "ENGINE_ORDER: every engine on
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
 static int eng_ok(uint32_t e) { return e < NENGINES && ENGINES[e] != &ENG_NONE && (FELUCCA_FM4 || e != ENGI_DIGITAL); }
+/* Runtime identity: the requested/rendered id must name an installed engine. With a constant id, the
+ * catalog lookup folds at build time (including in voice allocation); stored-data identity checks stay raw. */
+static inline __attribute__((always_inline)) int eng_is(uint32_t e, uint32_t id) { return e == id && eng_ok(id); }
 static uint32_t eng_vis(uint32_t n) { return ENGINE_ORDER[n % NENG_SHOWN]; }
 static uint32_t eng_rank(uint32_t e)
 {

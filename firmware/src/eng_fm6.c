@@ -202,7 +202,7 @@ static void fm6_adopt(uint32_t tr)
     int32_t s = t->p[P_E7];
     tr %= NTRK;
     fm6_own_ok &= (uint8_t)~(1u << tr);
-    if (t->eng_req == ENGI_FM6) {
+    if (eng_is(t->eng_req, ENGI_FM6)) {
         uint8_t v[FP_SIZE + 1u];
         uint32_t k, f = s >= 0 && s < (int32_t)FM6_NFACTORY ? (uint32_t)s : 0u;
         for (k = 0; k < FM6_NFACTORY; k++) {
@@ -220,7 +220,7 @@ static void fm6_adopt(uint32_t tr)
 static void fm6_track_loaded(const track_t *t)
 {
     uint32_t tr = (uint32_t)(t - trk);
-    if (tr < NTRK && t->eng_req == ENGI_FM6) {
+    if (tr < NTRK && eng_is(t->eng_req, ENGI_FM6)) {
         fm6_own_ok &= (uint8_t)~(1u << tr);
         if (t->p[P_E7] >= 0 && t->p[P_E7] < (int32_t)FM6_NFACTORY)
             fm6_load_slot(tr, (uint32_t)t->p[P_E7]);
@@ -249,7 +249,7 @@ static void fm6_poll(void)
     uint32_t tr, bit;
     for (tr = 0; tr < NTRK; tr++) {
         int32_t s = trk[tr].p[P_E7];
-        if (trk[tr].eng_req != ENGI_FM6 || s == fm6_slot[tr])
+        if (!eng_is(trk[tr].eng_req, ENGI_FM6) || s == fm6_slot[tr])
             continue;
         bit = 1u << tr;
         if (s < 0 || (s >= (int32_t)FM6_NFACTORY && fm6_bank_slot(s) < 0)) {   /* OWN */

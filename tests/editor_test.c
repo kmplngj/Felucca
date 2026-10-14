@@ -219,9 +219,11 @@ static int preferences(void)
     bad += check("unsupported preference is reported without applying it", host_wire[5] == 2);
     a[0] = ENGI_DRUM; a[1] = 0; a[2] = 64; a[3] = 1;
     request(ED_FAV_SET, a, 4);
-    bad += check("FAV_SET marks DRUM as a normal engine", host_wire[5] == 3 && favorite_has(ENGI_DRUM, 0));
+    bad += check("FAV_SET marks installed DRUM; an unavailable DRUM is refused",
+                 host_wire[5] == (eng_ok(ENGI_DRUM) ? 3u : 1u) && favorite_has(ENGI_DRUM, 0) == eng_ok(ENGI_DRUM));
     request(ED_FAV_GET, a, 4);
-    bad += check("FAV_GET reads the bounded favorite range", host_wire[5] == 0 && host_wire[10] == 1);
+    bad += check("FAV_GET reads installed DRUM's bounded range; unavailable DRUM is refused",
+                 eng_ok(ENGI_DRUM) ? host_wire[5] == 0 && host_wire[10] == 1 : host_wire[5] == 1);
     a[0] = NENGINES; a[1] = 31; request(ED_FAV_SET, a, 4);   /* (the old marker: INFO's count, as editors up to 1.6) */
     bad += check("empty user slot cannot be starred", host_wire[5] == 1 && !favorite_has(ENG_USER, 31));
     up_store(31, "Saved"); request(ED_FAV_SET, a, 4);
@@ -544,9 +546,10 @@ static int fm6_patches(void)
     trk[2].p[P_E7] = 3;
     a[0] = ED_FM6_TRACK; a[1] = 2; memcpy(a + 2, pk, FM6_PACKED);
     n = request(ED_FM6_PUT, a, sizeof a);
-    bad += check("FM6_PUT track 3: rc 0, the track's patch, SLOT OWN (not F4: the name differs)", n == 9u &&
+    bad += check("FM6_PUT track 3: rc 0, patch kept; only installed FM6 adopts SLOT OWN", n == 9u &&
                  host_wire[7] == 0 && !memcmp(fm6_patch[2] + FP_NAME, "MY PATCH  ", 10) &&
-                 trk[2].p[P_E7] == FM6_OWN && fm6_slot[2] == FM6_OWN);
+                 trk[2].p[P_E7] == (eng_ok(ENGI_FM6) ? FM6_OWN : 3u) &&
+                 fm6_slot[2] == (eng_ok(ENGI_FM6) ? FM6_OWN : 3u));
     fm6_poll();
     bad += check("  .. the main loop keeps it", !memcmp(fm6_patch[2] + FP_NAME, "MY PATCH  ", 10));
     a[1] = 2;
@@ -554,13 +557,15 @@ static int fm6_patches(void)
     bad += check("FM6_GET track 3: as sent", host_wire[7] == 0 && !memcmp(host_wire + 8, pk, FM6_PACKED));
     a[0] = ED_FM6_TRACK; a[1] = 2; memcpy(a + 2, FM6_FACTORY[5], FM6_PACKED);
     request(ED_FM6_PUT, a, sizeof a);
-    bad += check("FM6_PUT of a factory patch unchanged: SLOT shows it (F6)", trk[2].p[P_E7] == 5 && fm6_slot[2] == 5u);
+    bad += check("FM6_PUT of a factory patch: installed FM6 shows F6; unavailable values stay",
+                 trk[2].p[P_E7] == (eng_ok(ENGI_FM6) ? 5 : 3) && fm6_slot[2] == (eng_ok(ENGI_FM6) ? 5u : 3u));
     trk[2].p[P_E7] = FM6_OWN;                            /* (back to MY PATCH for the SLOT trip below) */
     a[0] = ED_FM6_TRACK; a[1] = 2; memcpy(a + 2, pk, FM6_PACKED);
     request(ED_FM6_PUT, a, sizeof a);
     trk[2].p[P_E7] = 1;
     fm6_poll();
-    bad += check("SLOT OWN -> F2 loads the factory patch", !memcmp(fm6_patch[2] + FP_NAME, FM6_FACTORY[1] + 118, 10));
+    bad += check("SLOT OWN -> F2 loads only for installed FM6; unavailable patch stays",
+                 !memcmp(fm6_patch[2] + FP_NAME, eng_ok(ENGI_FM6) ? FM6_FACTORY[1] + 118 : pk + 118, 10));
     trk[2].p[P_E7] = 6;
     fm6_poll();
     trk[2].p[P_E7] = FM6_OWN;
@@ -569,7 +574,8 @@ static int fm6_patches(void)
                  fm6_slot[2] == FM6_OWN);
     trk[2].p[P_E7] = 20;                                 /* (a 1.0.2 B slot that escaped a clamp) */
     fm6_poll();
-    bad += check("a SLOT past OWN is OWN: the patch stays, nothing reloads", trk[2].p[P_E7] == FM6_OWN &&
+    bad += check("an empty bank SLOT becomes OWN only for installed FM6; the patch stays",
+                 trk[2].p[P_E7] == (eng_ok(ENGI_FM6) ? FM6_OWN : 20u) &&
                  !memcmp(fm6_patch[2] + FP_NAME, "MY PATCH  ", 10));
     for (i = 0; i < 3u; i++) {                           /* the bank: GET, PUT, ERASE answer "no bank" (3) */
         a[0] = ED_FM6_BANK; a[1] = 4; memcpy(a + 2, pk, FM6_PACKED);
@@ -609,8 +615,8 @@ static int fm6_patches(void)
                  host_wire[8 + 14] == 99 && !memcmp(host_wire + 8 + 118, "EDITOR    ", 10));
     fm6_load_slot(2, 0);
     up_load(5);
-    bad += check("  .. UP_LOAD 6 plays it, SLOT OWN", !memcmp(fm6_patch[2] + FP_NAME, "EDITOR    ", 10) &&
-                 trk[2].p[P_E7] == FM6_OWN);
+    bad += check("  .. UP_LOAD 6 keeps the patch; only installed FM6 adopts SLOT OWN", !memcmp(fm6_patch[2] + FP_NAME, "EDITOR    ", 10) &&
+                 trk[2].p[P_E7] == (eng_ok(ENGI_FM6) ? FM6_OWN : 20u));
     up_rename(5, "RENAMED");
     a[0] = ED_FM6_USER; a[1] = 5;
     request(ED_FM6_GET, a, 2);
@@ -1109,6 +1115,19 @@ static int drum_kit_retired(void)
     uint32_t r, i, k = 0, ok = 1;
     int bad = 0;
     reset();
+    if (!eng_ok(ENGI_DRUM)) {
+        static project_t p;
+        uint32_t before = TSEL->eng_req;
+        a[0] = 1; a[1] = G_ENGSEL; a[2] = (8192 + ENGI_DRUM) & 127; a[3] = (8192 + ENGI_DRUM) >> 7;
+        request(ED_SET, a, 4);
+        ok = TSEL->eng_req == before;
+        up_store(5, "OLDKIT"); up_rec(5)->engine = ENGI_DRUM; up_set_value(up_rec(5), P_E0, 3);
+        ok &= up_load(5) == 0 && TSEL->eng_req == ENGI_DRUM && TSEL->p[P_E0] == 3;
+        project_capture(&p);
+        proj_bound(&p);
+        ok &= p.t[song.sel].p[P_E0] == 3 && !project_restore_runtime(&p) && TSEL->p[P_E0] == 3;
+        return check("unavailable DRUM: SET selection refused; stored KIT 3 stays 3 through preset/project restore", ok);
+    }
     a[0] = 1; a[1] = G_ENGSEL; a[2] = (8192 + ENGI_DRUM) & 127; a[3] = (8192 + ENGI_DRUM) >> 7;
     request(ED_SET, a, 4);
     a[0] = 0; a[1] = P_E0;

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* The engine id space (#212): ids are stored and sent as they are, whatever engines a build has. Run on the default
  * build and on a test build with a placeholder engine 14 and a sparse catalog (FELUCCA_ENG_TEST14=1
- * FELUCCA_ENG_OMIT=11: NOISE left out; tests/run_tests.sh builds both):
+ * FELUCCA_ENG_OMIT=10/11/12: DRUM/NOISE/FM6 left out; tests/run_tests.sh builds each):
  *   - the catalog: eng_ok / eng_idx / eng_of, an unknown id never another engine, ENGINE_ORDER
  *   - INFO: the old prefix (NENGINES names, "-" for an id this build cannot play), the 49 01 block's bitmap
  *   - FAV_GET / FAV_SET: the new user marker (127), the old one (INFO's count), unavailable ids refused
@@ -127,11 +127,12 @@ static int catalog(void)
     ok = !eng_ok(ID_GONE) && !eng_ok(ID_FAR) && eng_of(ID_FAR) == &ENG_NONE && eng_of(ID_GONE) == &ENG_NONE;
     ok &= eng_ok(eng_step(ID_GONE, 1)) && eng_ok(eng_step(ID_FAR, -1));   /* (a step away from one: a real engine) */
 #if FELUCCA_ENG_TEST14
-    ok &= NENGINES == 15 && eng_ok(14) && str_eq(eng_of(14)->name, "TEST14") && eng_ok(10) && eng_ok(12);
+    ok &= NENGINES == 15 && eng_ok(14) && str_eq(eng_of(14)->name, "TEST14");
 #else
     ok &= NENGINES == 14 && !eng_ok(14);              /* (14 also with FELUCCA_SLICE=0: its 13 left out, kept) */
 #endif
-    ok &= (eng_ok(11) != 0) == (FELUCCA_ENG_OMIT != 11) && (eng_ok(13) != 0) == (FELUCCA_SLICE && FELUCCA_ENG_OMIT != 13);
+    for (e = 10; e <= 12u; e++) ok &= (eng_ok(e) != 0) == (FELUCCA_ENG_OMIT != (int)e);
+    ok &= (eng_ok(13) != 0) == (FELUCCA_SLICE && FELUCCA_ENG_OMIT != 13);
     bad += check("the id this build lacks and one past every table: unavailable, ENG_NONE (N/A, silent)", ok);
     bad += check("per-engine tables sized by the id space (MIDI_CC_ENG, PRESET_CAT)",
                  NELEM(MIDI_CC_ENG) == ENG_ID_MAX && NELEM(PRESET_CAT) == ENG_ID_MAX && !MIDI_CC_ENG[ID_FAR]);
@@ -317,7 +318,7 @@ static int presets(void)
         up_auto_name(b, ID_GONE, 4);
         ok = str_eq(b, "N/A 05");
         up_auto_name(b, ENGI_DIGITAL, 4);
-        ok &= str_eq(b, FELUCCA_FM4 ? "DIGITAL 05" : "FM6 05");
+        ok &= str_eq(b, FELUCCA_FM4 ? "DIGITAL 05" : eng_ok(ENGI_FM6) ? "FM6 05" : "N/A 05");
         bad += check("its automatic name says N/A (DIGITAL's still FM6)", ok);
     }
     {   /* UP_PUT to it: refused, the slot unchanged */
@@ -353,16 +354,16 @@ static int presets(void)
 /* the settings object of a full backup: PER4 while no favourite is past id 13, PER6 with one (an id this build may
  * lack: kept); restored (BACKUP_PUT) both ways; an extension it cannot read refused */
 static uint32_t bk_u32(uint8_t *a, uint32_t v) { for (uint32_t i = 0; i < 5u; i++) a[i] = (uint8_t)((v >> (7u * i)) & 127u); return 5; }
-static uint32_t bk_put(const uint8_t *data, uint32_t len)
+static uint32_t bk_put_object(uint32_t id, const uint8_t *data, uint32_t len)
 {
     uint8_t a[400];
     uint32_t off = 0, rc, n;
-    a[0] = 0; a[1] = 1; bk_u32(a + 2, len); bk_u32(a + 7, st_crc32(data, len));
+    a[0] = 0; a[1] = (uint8_t)id; bk_u32(a + 2, len); bk_u32(a + 7, st_crc32(data, len));
     if ((rc = ed_bk_write(a, 12)))
         return 100u + rc;
     while (off < len) {
         uint32_t k = len - off > 256u ? 256u : len - off, i, o = 0;
-        a[0] = 1; a[1] = 1; bk_u32(a + 2, off);
+        a[0] = 1; a[1] = (uint8_t)id; bk_u32(a + 2, off);
         n = 7;
         while (o < k) {                               /* pack7: a mask byte, then up to 7 low bytes */
             uint32_t g = k - o > 7u ? 7u : k - o, m = n++;
@@ -373,9 +374,10 @@ static uint32_t bk_put(const uint8_t *data, uint32_t len)
             return 200u + rc;
         off += k;
     }
-    a[0] = 2; a[1] = 1;
+    a[0] = 2; a[1] = (uint8_t)id;
     return ed_bk_write(a, 2);
 }
+static uint32_t bk_put(const uint8_t *data, uint32_t len) { return bk_put_object(1, data, len); }
 static int backup(void)
 {
     int bad = 0, ok;
@@ -412,9 +414,99 @@ static int backup(void)
     return bad;
 }
 
+/* Playback/control paths must not reinterpret the stored values of an unavailable DRUM/FM6 track. */
+static int unavailable_controls(void)
+{
+    int bad = 0, ok;
+    uint32_t e, i;
+    for (e = 10; e <= 12u; e += 2u) {
+        int16_t before[P_COUNT];
+        if (eng_ok(e)) continue;
+        reset();
+        TSEL->eng_req = (uint8_t)e;
+        TSEL->engine = (uint8_t)eng_idx(e);
+        for (i = 0; i < 8u; i++) TSEL->p[P_E0 + i] = (int16_t)(127u - i);
+        memcpy(before, TSEL->p, sizeof before);
+        ok = 1;
+        for (i = 0; i < NPAGES; i++)
+            if ((PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7) ||
+                (PAGES[i].graph >= GR_FMOP && PAGES[i].graph <= GR_FMENV))
+                ok &= !page_visible(i);
+        fm6_bank_used = 1u;
+        midi_pc_load(TSEL, 0);
+        ok &= !memcmp(before, TSEL->p, sizeof before);
+        bad += check("an unavailable DRUM/FM6 track has no lane/operator pages; Program Change keeps its values", ok);
+        /* Owner-checked sparse builds catch an accidental DRUM lane access from voice allocation. */
+        eng_mem_claim(TSEL);
+        (void)voice_alloc(TSEL, 36);
+    }
+    if (!eng_ok(ENGI_FM6)) {
+        uint8_t v[FP_SIZE + 1u], before[FP_SIZE + 1u];
+        reset();
+        TSEL->eng_req = ENGI_FM6;
+        fm6_unpack(FM6_FACTORY[3], v); memcpy(v + FP_NAME, "KEEP PATCH", 10);
+        fm6_set_patch(0, v); memcpy(before, fm6_patch[0], sizeof before);
+        TSEL->p[P_E7] = 127;
+        fm6_adopt(0);
+        ok = TSEL->p[P_E7] == 127;
+        TSEL->p[P_E7] = 0;
+        fm6_track_loaded(TSEL); fm6_poll();
+        ok &= TSEL->p[P_E7] == 0 && !memcmp(before, fm6_patch[0], sizeof before);
+        TSEL->p[P_E7] = 127; fm6_slot[0] = FM6_OWN + 1u;
+        fm6_bank_changed();
+        ok &= TSEL->p[P_E7] == 127 && !memcmp(before, fm6_patch[0], sizeof before);
+        bad += check("unavailable FM6: adopt, preset SLOT, poll and bank replacement leave its values/patch intact", ok);
+    }
+    return bad;
+}
+
+static int unavailable_storage(void)
+{
+    int bad = 0, ok;
+    static project_t p, q;
+    static project_store_t st, st2;
+    if (!eng_ok(ENGI_DRUM)) {
+        reset(); project_capture(&p);
+        p.t[3].engine = ENGI_DRUM; p.t[3].preset = PROJ_DEF_KEEP; p.sum = proj_sum(&p);
+        ok = project_restore_runtime(&p) == 0 && trk[3].eng_req == ENGI_DRUM &&
+             !memcmp(trk[3].p + P_E0, (int16_t[8])DRUM_KIT_E, 8u * sizeof(int16_t)) &&
+             trk[3].p[P_REL] == DRUM_PRESETS[0].env[3];
+        bad += check("a legacy drum part restores stable kit defaults while DRUM is unavailable (no catalog dereference)", ok);
+    }
+    if (!eng_ok(ENGI_FM6)) {
+        uint8_t pk[FM6_PACKED], got[FM6_PACKED], a[2] = {ED_FM6_USER, 5};
+        uint32_t len;
+        static upf_t saved;
+        reset(); upf_empty(); up_store(5, "KEPT");
+        up_rec(5)->engine = ENGI_FM6; up_set_value(up_rec(5), P_E7, 127);
+        memcpy(pk, FM6_FACTORY[3], sizeof pk); memcpy(pk + 118, "KEPT PATCH", 10);
+        upf_set(5, pk);
+        ok = up_load(5) == 0 && TSEL->eng_req == ENGI_FM6 && TSEL->p[P_E7] == 127;
+        fm6_pack(fm6_patch[0], got); ok &= !memcmp(pk, got, sizeof pk);
+        project_capture(&p);
+        ok &= proj_pack(&st, &p) && proj_import(&q, &st, sizeof st) && project_restore_runtime(&q) == 0;
+        project_capture(&q);
+        ok &= proj_pack(&st2, &q) && !memcmp(&st, &st2, sizeof st) && !memcmp(q.fm6[0], pk, sizeof pk);
+        up_store(5, "KEPT AGAIN");
+        ok &= !upf_get(5, got) && !memcmp(pk, got, sizeof pk);
+        request(ED_FM6_GET, a, sizeof a);
+        ok &= host_wire[7] == 0 && !memcmp(host_wire + 8, pk, sizeof pk);
+        bad += check("unavailable FM6: preset load -> project round trip -> preset save/editor GET preserves the patch", ok);
+        saved = upf;
+        ok = ed_bk_object(9, &len) == (const uint8_t *)&upf && len == sizeof upf;
+        upf_empty();
+        ok &= bk_put_object(9, (const uint8_t *)&saved, sizeof saved) == 0 && !memcmp(&saved, &upf, sizeof upf) &&
+              !upf_get(5, got) && !memcmp(pk, got, sizeof pk);
+        bad += check("unavailable FM6: backup id 9 restores retained user-preset patches byte for byte", ok);
+    }
+    return bad;
+}
+
 int main(void)
 {
-    int bad = catalog() + info() + fav() + projects() + presets() + backup();
+    int bad;
+    setvbuf(stdout, NULL, _IONBF, 0);
+    bad = catalog() + info() + fav() + projects() + presets() + backup() + unavailable_controls() + unavailable_storage();
     printf("%s (NENGINES %u, test engine 14 %d, catalog omits %d)\n", bad ? "ENGINE ID TEST FAILED" : "engine id test passed",
            (unsigned)NENGINES, FELUCCA_ENG_TEST14, FELUCCA_ENG_OMIT);
     return bad != 0;

@@ -774,7 +774,8 @@ static int proj_unpack(project_t *q, const uint8_t *b, uint32_t st)
 static void proj_legacy_drums(track_t *t)
 {
     static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
-    const preset_t *pr = &ENGINES[ENGI_DRUM]->presets[0];
+    /* Legacy data always means this kit, even in a catalog without DRUM. */
+    const preset_t *pr = &DRUM_PRESETS[0];
     uint32_t i;
     t->eng_req = ENGI_DRUM;
     t->preset = 0;

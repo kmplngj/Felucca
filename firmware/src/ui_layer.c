@@ -575,7 +575,7 @@ static uint32_t eqa_count(const track_t *t)        /* the actions of t's engine 
 {
     uint32_t i, e = t->eng_req;
     for (i = 0; i < NELEM(EQA); i++)
-        if (EQA[i].eng == e)
+        if (eng_is(e, EQA[i].eng))
             return EQA[i].n;
     return 0;
 }
@@ -583,7 +583,7 @@ static const eqa_t *eqa_of(const track_t *t, uint32_t p)   /* black key p's (0 =
 {
     uint32_t i, e = t->eng_req;
     for (i = 0; i < NELEM(EQA); i++)
-        if (EQA[i].eng == e)
+        if (eng_is(e, EQA[i].eng))
             return p < EQA[i].n ? &EQA[i].a[p] : 0;
     return 0;
 }
