@@ -1,14 +1,14 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Firmware safety guard fixtures
 
-`python3 tests/build_guard_test.py` runs 16 portable tests with positive/negative
+`python3 tests/build_guard_test.py` runs 19 portable tests with positive/negative
 subcases. They call the production `tools/build.py` guards against temporary
 images, symbols, disassembly and synthetic firmware/linker trees under ignored
 `build/`. No working firmware or SDK files are modified. The host runner includes
 these tests, independently of SDK/toolchain availability.
 
 Coverage includes entry/stub and app-slot boundaries, exact RAM/POOL minimum
-margins and one-byte failures, missing/malformed/reversed symbols and regions,
+margins and one-byte failures (including the 100 B NOINIT spare floor), missing/malformed/reversed symbols and regions,
 ROM range neighbors in signed/unsigned/hex assignments and annotated calls,
 missing disassembly and RAM-text calls, loader sections/symbols at RAM-window
 boundaries, HAL register/window literals, volatile casts, inline assembly and

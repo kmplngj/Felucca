@@ -37,6 +37,7 @@ import lz4blk  # noqa: E402
 
 APP_XIP = 0x02000120                # app.bin offset 0 in the XIP map; the SPL jumps here
 APP_SLOT = fm1pkg_make.APP_SLOT
+NOINIT_SPARE_MIN = 100              # B of app.ld's NOINIT region left unallocated (capacity plan rule A7, docs/flash-capacity.md)
 LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
@@ -269,6 +270,13 @@ def build_loader():
 
 # ---- app
 
+def noinit_used(syms, org):
+    """Bytes of the NOINIT region in use: the end of the highest .noinit object in `objdump -t`, or None"""
+    ends = [int(p[0], 16) + int(p[-2], 16) for p in map(str.split, syms.splitlines())
+            if len(p) >= 5 and p[-3] == ".noinit" and re.fullmatch(r"[0-9a-f]+", p[0] + p[-2])]
+    return max(ends) - org if ends else None
+
+
 def ld_regions():
     """firmware/app.ld's MEMORY regions: name -> (origin, length)"""
     regs = {}
@@ -409,24 +417,34 @@ def check(img, syms, dis, rt):
     except (OSError, ValueError) as e:
         errors.append(f"app.ld: invalid memory regions: {e}")
         return errors, notes
-    if any(name not in region or region[name][1] <= 0 for name in ("RAM", "POOL")):
-        errors.append("app.ld: missing or empty RAM/POOL region")
+    if any(name not in region or region[name][1] <= 0 for name in ("RAM", "POOL", "NOINIT")):
+        errors.append("app.ld: missing or empty RAM/POOL/NOINIT region")
         return errors, notes
     ram_org, ram_len = region["RAM"]
     pool_org, pool_len = region["POOL"]
+    noinit_org, noinit_len = region["NOINIT"]
     bss_end, pool_start, pool_end = sym("_bss_end"), sym("_pool_start"), sym("_pool_end")
     if None in (bss_end, pool_start, pool_end):
         return errors, notes
     bss, pool = bss_end - ram_org, pool_end - pool_start
     if bss < 0 or pool_start != pool_org or pool < 0:
         errors.append("RAM/POOL symbols are outside their regions or reversed")
-    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of {ram_len}; pool {pool} B of {pool_len}")
+    noinit = noinit_used(syms, noinit_org)      # app.ld defines no NOINIT symbols; its objects' ends give the extent
+    if noinit is None:
+        errors.append("missing .noinit symbols")
+        return errors, notes
+    if noinit < 0 or noinit > noinit_len:
+        errors.append("NOINIT symbols are outside their region")
+    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of {ram_len}; pool {pool} B of {pool_len}; "
+                 f"NOINIT {noinit} B of {noinit_len} ({noinit_len - noinit} B spare)")
     if region["RAM"][0] + ram_len != region["POOL"][0]:
         errors.append("app.ld: POOL does not start where RAM ends")
     if ram_len - bss < 4096:                      # keep >= 4 KiB of .bss spare (state the audio side touches)
         errors.append(f"RAM headroom {ram_len - bss} B < 4096 B")
     if pool_len - pool < 8192:                    # keep >= 8 KiB of the pool spare
         errors.append(f"pool headroom {pool_len - pool} B < 8192 B")
+    if noinit_len - noinit < NOINIT_SPARE_MIN:    # NOINIT gets no new users (A7): keep >= 100 B unallocated
+        errors.append(f"NOINIT headroom {noinit_len - noinit} B < {NOINIT_SPARE_MIN} B")
     return errors, notes
 
 
