@@ -192,6 +192,39 @@ int main(void) {
 
 
 class CrashSnapshot(unittest.TestCase):
+    def test_emulator_shim_validity_and_local_copy(self):
+        emulator = (ROOT / "web/emu/felucca_web.c").read_text()
+        start = emulator.index("#if FELUCCA_CPU2\ntypedef struct { uint32_t magic, count")
+        end = emulator.index("static struct { uint8_t p3_rst", start)
+        source = '''#include <stdint.h>
+#include <string.h>
+#include <assert.h>
+''' + emulator[start:end] + '''
+int main(void) {
+    fm1_crash_t copy, expected;
+    memset(&fm1_crash, 0xA5, sizeof(fm1_crash));
+    memset(&copy, 0xCC, sizeof(copy));
+    assert(!fm1_crash_read(&copy) && !copy.magic);
+    fm1_crash.magic = FM1_CRASH_MAGIC;
+    expected = fm1_crash;
+    assert(fm1_crash_read(&copy));
+    memset(&fm1_crash, 0, sizeof(fm1_crash));
+    assert(!memcmp(&copy, &expected, sizeof(copy)));
+    assert(!fm1_crash_read(&copy) && !copy.magic);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="felucca-crash-emu-") as temporary:
+            path = Path(temporary)
+            (path / "fixture.c").write_text(source)
+            for cpu1 in (0, 1):
+                executable = path / f"emulator-{cpu1}"
+                subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-std=c11",
+                                "-O2", "-Wall", "-Wextra", "-Werror",
+                                f"-DFELUCCA_CPU2={cpu1}", str(path / "fixture.c"),
+                                "-o", str(executable)], check=True)
+                subprocess.run([str(executable)], check=True)
+
     def compile_run(self, reader, cpu1):
         record, _ = recorder_source()
         console = function_source((ROOT / "firmware/src/console.c").read_text(),
