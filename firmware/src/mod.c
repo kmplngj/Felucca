@@ -225,6 +225,9 @@ static __attribute__((noinline)) int mod_begin(track_t *t)
         uint32_t id = mw->kid[j];
         const param_desc_t *pd = id >= P_E0 ? &ENGINES[t->engine]->edit[id - P_E0] : &TP[id];
         t->p[id] = (int16_t)clamp(mw->keep[j] + off[j], pd->min, pd->max);
+#ifdef C1_TEST_PARAMS
+        C1_TEST_PARAMS(t);                            /* host failure fixture: held in a partial parameter swap */
+#endif
     }
     return 1;
 }

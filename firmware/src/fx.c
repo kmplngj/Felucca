@@ -993,6 +993,28 @@ static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
 #endif
 static uint32_t c1_blocks;                              /* blocks the second core took parts of (console) */
 
+/* Only these parameters are temporary during rendering: mod_begin's per-block destinations and the engine
+ * fade's P_E0..P_E7 swap. Save them on core 0 before handing over any part (the worker may stop at any write).
+ * 15 int16_t per part, static rather than on the IRQ stack; no copying when the runtime preference is OFF. */
+#define C1_PARAM_N (MD_DEPTH - MD_PAN)
+static int16_t c1_param[NPART][C1_PARAM_N];
+static __attribute__((noinline)) void c1_params(uint32_t mask, uint32_t restore)
+{
+    uint32_t k, j;
+    for (k = 0; k < NPART; k++)
+        if (mask >> k & 1u) {
+            for (j = 0; j < C1_PARAM_N; j++) {
+                uint32_t id = mod_param(MD_PAN + j);
+                if (restore)
+                    trk[k].p[id] = c1_param[k][j];
+                else
+                    c1_param[k][j] = trk[k].p[id];
+            }
+            if (restore)
+                MOD(&trk[k]).on = 0;                   /* discard an incomplete mod_begin/mod_end transaction */
+        }
+}
+
 static void c1_parts(uint32_t arg)                      /* arg: the parts (bit k = part k) | n << 8 */
 {
     uint32_t i, n = arg >> 8;
@@ -1039,8 +1061,11 @@ static void mix_block(int32_t *out, uint32_t n)
     perf = perf_begin(n);                               /* the FX hold layer at work (perform.c) */
 #if FELUCCA_CPU2
     uint32_t m = C1_ON() ? C1_SPLIT() & ((1u << NPART) - 1u) : 0u;
-    if (m && !C1_RUN(c1_parts, m | n << 8))
-        m = 0;
+    if (m) {
+        c1_params(m, 0);                               /* canonical values after this block's serial events */
+        if (!C1_RUN(c1_parts, m | n << 8))
+            m = 0;
+    }
     c1_blocks += m != 0;
     for (i = 0; i < NPART; i++)
         if (!(m >> i & 1u))
@@ -1048,8 +1073,10 @@ static void mix_block(int32_t *out, uint32_t n)
     if (m) {
         const mixsum_t *sm = &mx[1];
         if (C1_WAIT()) {                                /* held: it may already have advanced part/engine state */
-            /* Drop its sums for this block. Never replay a possibly partial render or use its unfinished buffers.
+            /* The HAL has held the worker: restore canonical parameters before anything can save or read them.
+             * Drop its sums for this block. Never replay a possibly partial render or use its unfinished buffers.
              * Subsequent blocks run serially; the HAL counts the failure and main.c clears the saved ON preference. */
+            c1_params(m, 1);
             for (i = 0; i < n; i++)
                 mx[1].l[i] = mx[1].r[i] = mx[1].c[i] = mx[1].d[i] = mx[1].v[i] = 0;
         }

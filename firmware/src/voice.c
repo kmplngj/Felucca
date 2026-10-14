@@ -692,6 +692,9 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         for (i = 0; i < 8u; i++) {
             pe_new[i] = t->p[P_E0 + i];
             t->p[P_E0 + i] = t->pe_old[i];
+#ifdef C1_TEST_PARAMS
+            C1_TEST_PARAMS(t);                          /* host failure fixture: held during the old-engine swap */
+#endif
         }
 #if FELUCCA_CPU2
     track_lfo_adv(t);                                   /* (the rest of its block after the parts: fx.c mix_block) */
