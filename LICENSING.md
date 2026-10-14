@@ -30,9 +30,9 @@ Hügelton Instruments' own work and live in their own repository, Felucca-Engine
 (`SPDX-License-Identifier: MIT`, `firmware/engines/LICENSE`, also
 `LICENSES/MIT-Felucca-Engines.txt`). The firmware built with them is GPL-3.0-only as a whole.
 Felucca's complete source includes that submodule: clone with `--recurse-submodules`, and
-give it along with the rest when you share the source. Each release also offers
-`felucca-X.Y.Z-source.tar.gz`, the whole source with the submodule's files in it (GitHub's
-own source archives leave the submodule empty). The complete asset includes all
+give it along with the rest when you share the source. Releases produced by our
+complete-source workflow also carry `felucca-VERSION-source.tar.gz`, which includes the
+pinned submodule (GitHub's generated source archives leave it empty). The complete asset includes all
 tracked build inputs, source generators, fonts, samples, profile definitions and
 tests, with the Engines MIT license and all other attribution/license files. Its
 `SOURCE-PINS.json` identifies both commits and checks every source file; the
