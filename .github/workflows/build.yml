@@ -352,6 +352,7 @@ jobs:
             build/ci/
             build/*.elf
             build/*.dis
+            build/*.dis.profile.json
             build/*.map
             build/*.sym
             build/loader/*.elf

@@ -292,7 +292,10 @@ To verify and build the complete source, follow
 [Get the source](../BUILDING.md#get-the-source). `SOURCE-PINS.json` records both
 commits, the firmware commit timestamp, and each source file's SHA-256/executable
 mode. Builds of the extracted tree verify this manifest before generating outputs,
-without Git or a submodule fetch. Toolchain/SDK prerequisites remain external.
+without Git or a submodule fetch. Source verification rejects Python bytecode
+anywhere in the tree before loading repository helpers; archive build/CI tools
+load the verifier from source and suppress cache writes in child generators.
+Repeated archive builds remain valid. Toolchain/SDK prerequisites remain external.
 Release CI compares the source archive across two clean checkouts and rebuilds its
 unpacked contents to require byte equality with the original `.fwsc`. Publishing
 requires the source archive/manifest to match `BUILD-PROVENANCE.json` and checks the

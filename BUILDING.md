@@ -51,8 +51,13 @@ Install the prerequisites below before building. The extracted source needs no
 Git checkout or submodule download; the JieLi toolchain and three SDK files remain
 external prerequisites. `SOURCE-PINS.json` records the firmware and Engines commits
 and hashes/modes of every source file. The build verifies those files and rejects
-additional source inputs before compilation. Generated files under `build/` and `firmware/engines/build/`, plus
-`.pyc` files in `__pycache__/`, are permitted; unlisted symlinks are rejected. To
+additional source inputs before compilation. Generated files under `build/` and
+`firmware/engines/build/` are permitted. Python bytecode (`.pyc`/`.pyo`) and source-tree
+symlinks are rejected, including in generated directories. Extracted-source tools
+verify the source before importing repository helpers and disable bytecode writes
+for themselves and child generators, so repeated builds preserve the verified
+tree. If an older build left bytecode caches, use a fresh extraction. A symlink
+above the source directory, such as a linked workspace folder, is allowed. To
 develop modifications, use a recursive Git clone; an extracted
 release intentionally rejects modified source while its pin manifest is present.
 
@@ -197,6 +202,11 @@ The CC0 instrument samples that the SAMPLE engine uses are in `assets/samples-cc
 again from the source repositories. Without that folder the build still works, with no
 instrument sets in the SAMPLE engine and no PIANO in SLICE (the PIANO set's middle C): they play a plain sine
 at the note's pitch instead, and the screen says NO SAMPLE.
+
+The generated drum inputs use a private temporary directory per sample-generator
+invocation; stale `build/genwav/` files cannot change the header. Headers and their
+cache are published atomically for parallel invocations. The canonical WAV files
+remain under `build/genwav/` for the SLICE test loop.
 
 ## Browser emulator
 

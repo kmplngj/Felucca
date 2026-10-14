@@ -6,8 +6,10 @@ import io
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -64,6 +66,53 @@ class GeneratedInputs(unittest.TestCase):
         self.assertEqual(samples.gm_kit_sources()["kick"], self.waves / "D KICK.wav")
         self.assertFalse(extra.exists())
         self.assertIn("(cached)", output)
+
+    def test_parallel_processes_publish_complete_identical_headers_and_cache(self):
+        self.generate()
+        baseline = self.header.read_bytes()
+        cache = self.cache.read_text()
+        tooling = self.root / "tools"
+        tooling.mkdir()
+        for name in ("gen_samples.py", "gen_waves.py", "sampleio.py"):
+            shutil.copyfile(Path(samples.__file__).with_name(name), tooling / name)
+        environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+        for warm in (False, True):
+            self.poison()
+            if not warm:
+                self.cache.unlink()
+            self.header.unlink()
+            outputs = [self.header if i < 6 else self.root / f"build/parallel-{warm}-{i}.h" for i in range(12)]
+            processes = [subprocess.Popen([sys.executable, str(tooling / "gen_samples.py"), str(path)],
+                                          env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                         for path in outputs]
+            try:
+                deadline = time.monotonic() + 60
+                while any(process.poll() is None for process in processes):
+                    self.assertLess(time.monotonic(), deadline, "parallel sample generators timed out")
+                    # Observe the shared header/cache during publication, not merely
+                    # after writers finish; partial writes can otherwise go unnoticed.
+                    for path in set(outputs):
+                        if path.exists():
+                            self.assertEqual(path.read_bytes(), baseline)
+                    if self.cache.exists():
+                        self.assertEqual(self.cache.read_text(), cache)
+                    time.sleep(0.005)
+                for process in processes:
+                    stdout, stderr = process.communicate()
+                    self.assertEqual(process.returncode, 0, stdout + stderr)
+                    if warm:
+                        self.assertIn("(cached)", stdout)
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        process.kill()
+                    process.communicate()
+            for path in set(outputs):
+                self.assertEqual(path.read_bytes(), baseline)
+            self.assertEqual(self.cache.read_text(), cache)
+            self.assertFalse(list((self.root / "build").glob(".genwav-*")))
+            self.assertFalse(list((self.root / "build").glob(".samples-*")))
+            self.assertFalse((self.waves / "D 00 KICK.wav").exists())
 
     def test_contaminated_cache_is_replaced_then_clean_header_is_cached(self):
         self.generate()

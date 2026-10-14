@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Real Git fixtures for complete source export, integrity and Git-free rebuilding."""
 import hashlib
+import importlib.util
 import io
 import json
 import os
+import py_compile
 from pathlib import Path
 import shutil
 import subprocess
@@ -45,13 +47,30 @@ class Archives(unittest.TestCase):
         self.write(self.repo, "tools/source_archive.py", Path(source.__file__).read_bytes())
         # This fixture builds the tracked firmware+engine input, with the same
         # early source manifest guard as the real target build (tested in release CI).
-        self.write(self.repo, "tools/build.py", '''from pathlib import Path
-import hashlib
-import source_archive
+        self.write(self.repo, "tools/profile.py", 'PROFILE = "standard"\n')
+        self.write(self.repo, "tools/generate_fixture.py", '''from pathlib import Path
+import fixture_helper
 root = Path(__file__).resolve().parents[1]
-source_archive.verify_tree(root)
-inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
+(root / "build/child.txt").write_text(fixture_helper.VALUE)
+''')
+        self.write(self.repo, "tools/fixture_helper.py", 'VALUE = "verified child import"\n')
+        self.write(self.repo, "tools/build.py", '''import os
+import sys
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+from pathlib import Path
+import hashlib
+import subprocess
+root = Path(__file__).resolve().parents[1]
+verifier_path = root / "tools/source_archive.py"
+namespace = {"__name__": "felucca_source_verifier", "__file__": str(verifier_path)}
+exec(compile(verifier_path.read_bytes(), str(verifier_path), "exec"), namespace)
+namespace["verify_tree"](root)
+import profile
+assert profile.PROFILE == "standard"
 (root / "build").mkdir(exist_ok=True)
+subprocess.run([sys.executable, str(root / "tools/generate_fixture.py")], check=True)
+inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
 (root / "build/app.bin").write_bytes(hashlib.sha256(b"".join(p.read_bytes() for p in inputs)).digest())
 ''')
         self.write(self.repo, "build.sh", '#!/bin/sh\nexec python3 "$(dirname "$0")/tools/build.py"\n')
@@ -159,7 +178,7 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
             self.export()
 
     def test_committed_symlinks_and_reserved_paths_are_rejected(self):
-        for name in ("SOURCE-PINS.json", "build/secret", "link"):
+        for name in ("SOURCE-PINS.json", "build/secret", "tools/committed.pyc", "link"):
             if name == "link":
                 (self.repo / name).symlink_to("/etc/passwd")
             else:
@@ -219,13 +238,13 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
         with self.assertRaisesRegex(ValueError, "unmanifested source file: assets/samples-cc0/PIANO/05_extra_C4.wav"):
             source.verify_tree(root)
 
-    def test_unmanifested_sources_and_symlinks_fail_but_generated_outputs_and_caches_pass(self):
+    def test_unmanifested_sources_and_symlinks_fail_but_generated_outputs_pass(self):
         root = self.unpack()
-        for name in ("build/gen/generated.h", "firmware/engines/build/standalone-test", "tools/__pycache__/module.cpython-312.pyc"):
+        for name in ("build/gen/generated.h", "firmware/engines/build/standalone-test"):
             self.write(root, name, "generated output")
         source.verify_tree(root)
         for name in ("firmware/src/extra.h", "firmware/engines/src/extra.h", "tools/extra.py",
-                     "tools/__pycache__/extra.py", "tools/unlisted.pyc"):
+                     "tools/__pycache__/extra.py"):
             self.write(root, name, "extra build input")
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "unmanifested source file"):
                 source.verify_tree(root)
@@ -236,6 +255,96 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
                 source.verify_tree(root)
             (root / name).unlink()
         source.verify_tree(root)
+
+    def unchecked_cache(self, root, module, marker):
+        path = root / "tools" / (module + ".py")
+        payload = self.base / "poison.py"
+        payload.write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\nraise RuntimeError('poisoned bytecode executed')\n")
+        cache = Path(importlib.util.cache_from_source(str(path)))
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        py_compile.compile(str(payload), cfile=str(cache), doraise=True,
+                           invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+        return cache
+
+    def test_bytecode_caches_are_rejected_even_inside_generated_outputs(self):
+        root = self.unpack()
+        for name in ("tools/__pycache__/profile.cpython-312.pyc", "tools/profile.pyc",
+                     "tools/profile.pyo", "build/__pycache__/profile.cpython-312.pyc",
+                     "firmware/engines/build/importable.pyc", "build/importable.PYC", "build/importable.PYO"):
+            self.write(root, name, b"malformed bytecode")
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "bytecode|unmanifested"):
+                source.verify_tree(root)
+            (root / name).unlink()
+        source.verify_tree(root)
+
+    def test_unchecked_profile_and_verifier_bytecode_rejects_before_side_effects(self):
+        root = self.unpack()
+        for module in ("profile", "source_archive"):
+            marker = self.base / (module + "-executed")
+            cache = self.unchecked_cache(root, module, marker)
+            result = subprocess.run([str(root / "build.sh")], cwd=root, text=True, capture_output=True)
+            with self.subTest(module=module):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertRegex(result.stderr, "bytecode|unmanifested")
+                self.assertFalse(marker.exists(), "cached module ran before source verification")
+                self.assertFalse((root / "build/app.bin").exists())
+            cache.unlink()
+        result = subprocess.run([str(root / "build.sh")], cwd=root, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(list(root.rglob("*.pyc")))
+
+    def test_actual_tool_entrypoints_reject_cached_repository_helpers_before_import(self):
+        # Exercise the real tools: checking the tree after a helper import is too late.
+        tooling = Path(__file__).resolve().parents[1] / "tools"
+        for name in ("build.py", "profile.py", "ci.py", "fm1pkg_make.py", "lz4blk.py", "fm1_install.py"):
+            self.write(self.repo, "tools/" + name, (tooling / name).read_bytes())
+        self.commit(self.repo)
+        root = self.unpack()
+        commands = (("build.py", ["--help"], "fm1pkg_make"),
+                    ("profile.py", ["--help"], "source_archive"),
+                    ("ci.py", ["version", "1.6"], "build"))
+        for script, arguments, module in commands:
+            marker = self.base / (script + "-executed")
+            cache = self.unchecked_cache(root, module, marker)
+            result = subprocess.run([sys.executable, str(root / "tools" / script), *arguments],
+                                    cwd=root, text=True, capture_output=True)
+            with self.subTest(script=script):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertRegex(result.stderr, "bytecode|unmanifested")
+                self.assertFalse(marker.exists(), "entry point imported poisoned cached helper")
+            cache.unlink()
+            result = subprocess.run([sys.executable, str(root / "tools" / script), *arguments],
+                                    cwd=root, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(list(root.rglob("*.pyc")))
+
+    def test_actual_entrypoints_do_not_import_unlisted_stdlib_shadow_modules(self):
+        tooling = Path(__file__).resolve().parents[1] / "tools"
+        for name in ("build.py", "profile.py", "ci.py", "fm1pkg_make.py", "lz4blk.py", "fm1_install.py"):
+            self.write(self.repo, "tools/" + name, (tooling / name).read_bytes())
+        self.commit(self.repo)
+        root = self.unpack()
+        marker = self.base / "stdlib-shadow-executed"
+        self.write(root, "tools/json.py", f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n")
+        for script, args in (("build.py", ["--help"]), ("profile.py", ["--help"]), ("ci.py", ["version", "1.6"]),
+                             ("source_archive.py", ["verify", "."])):
+            result = subprocess.run([sys.executable, str(root / "tools" / script), *args],
+                                    cwd=root, text=True, capture_output=True)
+            with self.subTest(script=script):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("unmanifested source file: tools/json.py", result.stderr)
+                self.assertFalse(marker.exists(), "bootstrap imported an unlisted stdlib shadow")
+
+    def test_symlink_above_source_root_is_allowed_and_internal_symlinks_are_rejected(self):
+        root = self.unpack()
+        alias = self.base / "unpacked-alias"
+        alias.symlink_to(root.parent, target_is_directory=True)
+        through_alias = alias / root.name
+        self.assertEqual(source.verify_tree(through_alias), source.verify_tree(root))
+        extra = root / "tools/unlisted-link"
+        extra.symlink_to(self.engine, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            source.verify_tree(through_alias)
 
     def test_unpacked_sources_build_without_git_and_reject_changed_missing_or_unsafe_files(self):
         root = self.unpack()
@@ -249,6 +358,10 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
         env = dict(os.environ, PATH=str(blocker) + os.pathsep + os.environ["PATH"])
         subprocess.run([str(root / "build.sh")], cwd=root, env=env, check=True, capture_output=True)
         self.assertEqual(len((root / "build/app.bin").read_bytes()), 32)
+        self.assertEqual((root / "build/child.txt").read_text(), "verified child import")
+        self.assertFalse(list(root.rglob("*.pyc")))
+        subprocess.run([str(root / "build.sh")], cwd=root, env=env, check=True, capture_output=True)
+        self.assertFalse(list(root.rglob("*.pyc")))
         source.verify_tree(root)  # Generated files do not invalidate the source marker.
         path = root / source.ENGINE / "src/dsp.c"
         original = path.read_bytes()
