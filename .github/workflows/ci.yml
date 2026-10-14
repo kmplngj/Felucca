@@ -1,19 +1,55 @@
 # SPDX-License-Identifier: GPL-3.0-only
 name: CI
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' && inputs.pr != '' && format('PR firmware #{0} @ {1}', inputs.pr, inputs.commit) || '' }}
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      pr:
+        description: Optional PR number for an exact revision build
+        default: ''
+        type: string
+      commit:
+        description: Full commit SHA reachable from that PR head (required with pr)
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ inputs.pr != '' && format('pr-{0}-{1}', inputs.pr, inputs.commit) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  revision:
+    name: Resolve requested PR revision
+    if: github.event_name == 'workflow_dispatch' && inputs.pr != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify commit belongs to PR history
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+          PR_COMMIT: ${{ inputs.commit }}
+        run: |
+          test -n "$PR_COMMIT"
+          sha=$(python3 tools/fm1_pr.py "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --commit "$PR_COMMIT" --resolve-only)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
   firmware:
+    needs: revision
+    if: always() && (needs.revision.result == 'success' || needs.revision.result == 'skipped')
     uses: ./.github/workflows/build.yml
+    with:
+      source_ref: ${{ needs.revision.outputs.sha }}

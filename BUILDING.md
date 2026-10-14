@@ -254,6 +254,88 @@ differing PCM/state word appear in the output; fixture code is in
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
 
+## Test a pull request on hardware
+
+`tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a full
+CI build of that exact revision, downloads its firmware artifact, verifies the
+recorded revision, SHA-256 and package structure, then starts the existing
+USB-MIDI installer. You do not need the JieLi toolchain, SDK or Docker locally.
+Normal automatic PR CI continues to build the merge with the target branch;
+this helper requests a separate, exact-commit build.
+
+Install Python 3 and the [GitHub CLI](https://cli.github.com/), sign in with
+`gh auth login`, and get this fork's sources. Flashing also needs
+`python3 -m pip install mido python-rtmidi` and an FM-1 connected with a USB data
+cable. Close other applications using the FM-1's MIDI ports. From the checkout:
+
+```sh
+# Replace 123 with the intended PR number.
+python3 tools/fm1_pr.py 123
+```
+
+The command prints the fixed commit and Actions run URL, waits for all selected
+validation to pass, and downloads into a fresh directory under
+`build/pr-123/COMMIT/`. Keep the provenance and license files with the package.
+The installer asks for confirmation before flashing; `--yes` explicitly skips
+that confirmation and `--port NAME` selects its USB-MIDI port. The installer
+checks the device identity after reboot. Development builds may share a display
+version: retain the printed commit and run URL to identify the tested firmware.
+
+To pin an older state, supply its complete, lowercase 40-character SHA with
+`--commit SHA`. It must be reachable from the PR's current head; commits removed
+by a force-push are rejected. A subsequent push does not change the selected
+commit. The firmware and build defaults come from that revision.
+
+```sh
+# Build/download/verify without an FM-1 or MIDI dependencies.
+python3 tools/fm1_pr.py 123 --download-only
+
+# Reuse a successful or running exact-commit build without requesting a new one.
+python3 tools/fm1_pr.py 123 --commit FULL_40_CHARACTER_SHA --no-build --download-only
+```
+
+GitHub sign-in and artifact read access are required. Requesting a missing build
+also requires Actions write access (typically a maintainer or collaborator).
+Read-only testers use `--no-build` after a maintainer starts **Actions > CI >
+Run workflow** on the default branch, with `pr` and `commit` filled in. Leave
+both empty for ordinary manual CI. Firmware artifacts expire after 30 days;
+an expired or failed build requires a fresh run. The helper retains full CI
+validation, so it saves local setup but does not shorten the validation pipeline.
+See [CI delivery details](.github/CI.md#exact-pr-revision-builds).
+
+The default wait is one hour; `--timeout SECONDS` changes it. Interrupting or
+timing out does not cancel CI: rerun with the printed `--commit` to resume.
+`--out DIRECTORY` changes the download parent and `--repo OWNER/NAME` selects
+another fork with this workflow. Maintainers can use `--workflow-ref BRANCH`
+to rehearse workflow changes before merging; normally omit it.
+
+### Hardware verification after installing a PR
+
+A successful CI build or download is not an FM-1 hardware test. A successful
+installer run checks the update and reported device identity, but it does not
+test sound, controls or the PR's behavior. **Hardware validation remains pending
+until the chosen revision and scenarios have been exercised on a real FM-1.**
+
+1. Read the selected PR's **User test instructions** before installing. They
+   should identify the starting device state, required host/MIDI/audio setup,
+   exact panel actions, expected results and any backup or downgrade constraints.
+   If those instructions are missing, request them from the PR author before
+   treating that PR as ready for user hardware testing.
+2. Record the printed PR commit, Actions run URL, host OS, FM-1 model and downloaded
+   `provenance.json`. Flash the verified `.fwsc`; require the installer to finish
+   successfully and the FM-1 to restart. Run `python3 tools/fm1_install.py --info`
+   to record its device identity. That identity/display version alone does not
+   identify the source commit; retain the build provenance as well.
+3. Follow the PR's numbered hardware scenarios on the FM-1. Check each stated
+   expected result, including sound, physical controls or USB/MIDI behavior where
+   relevant. CI, simulated-device installer tests and the browser emulator do
+   not establish those results. Follow the PR's cleanup/restore instructions.
+4. Report the commit/run, host and device identity, scenarios performed and
+   observed versus expected results in the PR. Label unperformed scenarios
+   **Pending hardware validation**. For failed updates, retain the installer
+   error and follow [installation recovery](#install); for performance scenarios,
+   use the PR's workload and [diagnostics guide](docs/diagnostics.md).
+
 ## Install
 
 Use the web installer in Chrome or Edge:
