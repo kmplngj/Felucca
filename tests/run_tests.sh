@@ -483,6 +483,7 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "second core under ThreadSanitizer: 4 parts of every preset, mixes" \
             env TSAN_OPTIONS=halt_on_error=1 "$OUT/dualcore_tsan"
     fi
+    run "Felucca-Engines contract: real firmware host accepts v1 and rejects old/future APIs" python3 tests/engine_contract_test.py
     # Felucca-Engines (firmware/engines, MIT): its own test, then its standalone host built with Felucca's generated
     # tables against its golden renders (the same hashes: build/gen/felucca_tables.h has the engines' tables)
     run "Felucca-Engines: its own tables, host and golden renders" sh firmware/engines/tests/run.sh

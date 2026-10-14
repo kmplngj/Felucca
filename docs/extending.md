@@ -27,7 +27,11 @@ The 1.6.1 source split is recorded in [modularity.md](modularity.md#combining-ou
 Shared DSP helpers are in `firmware/engines/src/dsp.c`; the firmware table generator imports
 `firmware/engines/tools/gen_engine_tables.py`. Commit portable MIT work in the Engines fork and
 consume it with a reviewed gitlink update. Fork-specific GPL engines can remain in firmware.
-A submodule change requires both standalone engine tests and the complete firmware suite.
+A submodule change requires both standalone engine tests and the complete firmware suite. The host defines
+`FELUCCA_ENGINE_API_REQUIRED=1` before the portable header and checks its declared
+`FELUCCA_ENGINE_API_VERSION`. The contract requires 44.1 kHz, 32-sample blocks and positive
+part/voice counts; `out[]` must be independent of voice/engine state. API revisions describe
+the portable host contract, never firmware engine IDs or storage versions.
 
 
 ## 1. Adding an engine
@@ -62,7 +66,7 @@ A submodule change requires both standalone engine tests and the complete firmwa
 An engine is a `static const engine_t ENG_X`. Firmware-native engines live in `firmware/src/eng_x.c`;
 ANALOG, LOFI, TRIO, WHEEL and NOISE live in the pinned MIT submodule `firmware/engines/src/`.
 The shared types now come from its
-[felucca_engine.h](https://github.com/kmplngj/Felucca-Engines/blob/c46e0086f69bdc26df1cd144dca9e683cc4531dd/src/felucca_engine.h)
+[felucca_engine.h](https://github.com/kmplngj/Felucca-Engines/blob/2d8853ad9a58759c15a560ad339a58f42b6be4fb/src/felucca_engine.h)
 via `core.h`; the small `ENG_NOISE` there is a minimal example. Host identity metadata remains
 firmware-owned; coordinate portable layout changes under #340/#301. Fields:
 
@@ -187,7 +191,7 @@ retain unaffected entries.
 
 ### 1.9 Worked example: the existing NOISE engine
 
-Follow [eng_noise.c](https://github.com/kmplngj/Felucca-Engines/blob/c46e0086f69bdc26df1cd144dca9e683cc4531dd/src/eng_noise.c), rather than copying a separate DSP:
+Follow [eng_noise.c](https://github.com/kmplngj/Felucca-Engines/blob/2d8853ad9a58759c15a560ad339a58f42b6be4fb/src/eng_noise.c), rather than copying a separate DSP:
 `ENG_NOISE` supplies eight descriptors, two page titles, four presets, HOME knob bindings,
 `noise_note_on`, `noise_render`, `noise_desc` and `.keep=0xF3`. It has no per-part arena
 (`mem` defaults to zero); its filter, RNG, colour poles and clock live in `voice_t.s[]`/`ph[]`.
@@ -349,7 +353,7 @@ to speaker/headphone output. `FELUCCA_UAC=1` and `FELUCCA_UAC_48K=1` are current
 ([felucca.c](../firmware/src/felucca.c), [usb.c](../firmware/src/usb.c),
 [BUILDING.md](../BUILDING.md#build)).
 
-[dsp.c](https://github.com/kmplngj/Felucca-Engines/blob/c46e0086f69bdc26df1cd144dca9e683cc4531dd/src/dsp.c) and `core.h` define the arithmetic: sample/amplitude values
+[dsp.c](https://github.com/kmplngj/Felucca-Engines/blob/2d8853ad9a58759c15a560ad339a58f42b6be4fb/src/dsp.c) and `core.h` define the arithmetic: sample/amplitude values
 use Q15 (32767 near unity); gain/cutoff coefficients also use named Q12 scales (4096 =
 unity); `voice_t.env` is Q24; pitch is 1/16 semitone. Conventional oscillator `ph`/`inc`
 are unsigned 32-bit phase (one full wrap per cycle), while sampled engines and FM6 have

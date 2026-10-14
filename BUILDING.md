@@ -33,6 +33,11 @@ git clone --recurse-submodules https://github.com/kmplngj/Felucca.git
 In a clone made without it, run `git submodule update --init` once. GitHub's "Download ZIP" and the source archives
 it adds to a release leave `firmware/engines/` empty; use a recursive Git clone for the complete source. The build stops with "firmware/engines is empty" when they are missing.
 
+The firmware explicitly requires portable Engine API revision 1. A missing or incompatible
+revision stops compilation with a contract diagnostic rather than silently accepting changed
+shared types. Update the engine pin and host requirement together after reviewing the portable
+contract; run `python3 tests/engine_contract_test.py` and the Engines standalone tests.
+
 ## Prerequisites (macOS)
 
 - Python 3 with Pillow and fontTools: `pip3 install Pillow 'fonttools[woff]'` (the UI font and icons are
