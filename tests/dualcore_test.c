@@ -9,7 +9,8 @@
  * (mix_split) and fixed splits. The outputs must be bit for bit the same; built with -fsanitize=thread
  * (run_tests.sh TSAN=1), nothing two parts share may be touched by both at once.
  * Identical FORMANT parts also check that random vowels and breath use different per-part streams, separately;
- * synchronized RAND-only / breath-only scenes compare the serial schedule with every threaded split.
+ * synchronized RAND-only / breath-only scenes compare the serial schedule with every threaded split. PHASE FOLD
+ * crossings on all parts use distinct waves; synchronized PHYS model changes keep reset excitation separated.
  *   build/host/dualcore_test          SCENE=text: only the scenes whose name holds it */
 #include "c1_host.h"
 #define main hostsim_main
@@ -58,14 +59,52 @@ static int formant_separation(uint32_t breath)
     return 0;
 }
 
-static int formant_separation_fork(uint32_t breath)
+/* A MODEL change resets the previous voice's state: identical held parts still need distinct excitation.
+ * Exercise both STRNG and MODAL, including the auxiliary excitation mixed before the voice amplitude. */
+static int phys_separation(void)
 {
-    pid_t pid = fork();
+    int32_t out[NPART][CTL * 8];
+    uint32_t k, j, i, md;
+    vmod_t m = {0};
+    host_tracks_init();
+    m.inc = pitch_inc(60u * 16u);
+    m.pitch16 = 60 * 16;
+    m.amp0 = m.amp1 = m.envq15 = 32768;
+    m.shape = 64 << 8;
+    for (k = 0; k < NPART; k++) {
+        voice_t *v = &trk[k].v[0];
+        host_preset(&trk[k], ENGI_PHYS, 0);
+        trk[k].p[P_E6] = trk[k].p[P_E7] = 127; /* sustained noise and audible auxiliary excitation */
+        v->note = 60;
+        v->vel = 96;
+        v->active = v->gate = v->stage = 1;
+        v->pitch16 = v->pitch_cur = 60 * 16;
+        ENG_PHYS.note_on(&trk[k], v);
+    }
+    for (md = 0; md < 2; md++) {
+        memset(out, 0, sizeof out);
+        for (k = 0; k < NPART; k++) {
+            trk[k].p[P_E0] = md ? PM_MODAL : PM_STRING;
+            for (i = 0; i < 8; i++)
+                ENG_PHYS.render(&trk[k], &trk[k].v[0], out[k] + i * CTL, CTL, &m);
+            for (j = 0; j < k; j++)
+                if (!memcmp(out[k], out[j], sizeof out[k]))
+                    return 1;
+        }
+    }
+    return 0;
+}
+
+static int separation_fork(uint32_t kind)
+{
+    pid_t pid;
     int status;
+    fflush(stdout);                                  /* sanitizer exit hooks must not flush copied parent output */
+    pid = fork();
     if (pid < 0)
         return 1;
     if (!pid)
-        _exit(formant_separation(breath));
+        _exit(kind == 2 ? phys_separation() : formant_separation(kind));
     if (waitpid(pid, &status, 0) != pid)
         return 1;
     return !WIFEXITED(status) || WEXITSTATUS(status) != 0;
@@ -118,8 +157,12 @@ static uint64_t render(const scen_t *sc, int dual, const char *mask)
             /* Same patch, pitch, velocity and event times: RNG separation cannot hide behind track settings. */
             trk[k].p[P_CHOR] = trk[k].p[P_DLY] = trk[k].p[P_REV] = 0;
             trk[k].p[P_ATK] = 0;
-            trk[k].p[P_E5] = sc->identical == 2 ? 120 : 0;
-            trk[k].p[P_E7] = sc->identical == 2 ? 0 : 127;
+            if (sc->identical == 3) {
+                trk[k].p[P_E6] = trk[k].p[P_E7] = 127; /* PHYS: excitation after every MODEL reset */
+            } else {
+                trk[k].p[P_E5] = sc->identical == 2 ? 120 : 0;
+                trk[k].p[P_E7] = sc->identical == 2 ? 0 : 127;
+            }
         } else {
             part_setup(&trk[k], k, sc->eng[k]);
         }
@@ -136,8 +179,14 @@ static uint64_t render(const scen_t *sc, int dual, const char *mask)
                 for (i = 0; i < 3u; i++)
                     trk_note_off(&trk[k], base + CH[i]);
         }
-        if (sc->morph && ms == 600u)                /* PHYS: MODEL changed under a sounding note (phys_render) */
+        if (sc->morph == 1 && ms == 600u)           /* PHYS: MODEL changed under a sounding note (phys_render) */
             trk[0].p[P_E0] = (int16_t)((trk[0].p[P_E0] + 1) % PM_COUNT);
+        if (sc->morph == 2 && (f / CTL) % 7u == 0) /* PHASE: every part crosses FOLD 0 on the same block */
+            for (k = 0; k < NPART; k++)
+                trk[k].p[P_E7] = trk[k].p[P_E7] ? 0 : (int16_t)(21 + 35 * k);
+        if (sc->morph == 3 && f && (f / CTL) % 400u == 0)
+            for (k = 0; k < NPART; k++)
+                trk[k].p[P_E0] = (int16_t)((trk[k].p[P_E0] + 1) % PM_COUNT);
         mix_block(o, CTL);
         for (k = 0; k < NPART; k++)
             if (trk[k].peak > peak[k])
@@ -161,6 +210,7 @@ static uint64_t render_fork(const scen_t *sc, int dual, const char *mask, uint32
     pid_t pid;
     if (pipe(fd))
         return 0;
+    fflush(stdout);
     pid = fork();
     if (!pid) {
         h = render(sc, dual, mask);
@@ -185,8 +235,13 @@ int main(void)
     static const char *const MASKS[] = {"rot", "auto", "5", "10", "3", "12", "1"};
     uint32_t n = 0, e, i, k, g, fail = 0;
     for (i = 0; i < 2; i++) {
-        uint32_t bad = (uint32_t)formant_separation_fork(i);
+        uint32_t bad = (uint32_t)separation_fork(i);
         printf("dualcore: identical VOICE parts, %-6s streams separated   %s\n", i ? "breath" : "RAND", bad ? "FAIL" : "ok");
+        fail += bad;
+    }
+    {
+        uint32_t bad = (uint32_t)separation_fork(2);
+        printf("dualcore: identical PHYS parts, MODEL reset streams separated   %s\n", bad ? "FAIL" : "ok");
         fail += bad;
     }
     for (e = 0; e < NENGINES; e++) {                    /* every preset: four parts at a time */
@@ -208,6 +263,8 @@ int main(void)
     sc[n++] = (scen_t){"PHYS morph + DRUM GRAIN ANALOG", {ENGI_PHYS, ENGI_DRUM, 8, 0}, {2, 1, 3, 5}, 1};
     sc[n++] = (scen_t){"VOICE identical RAND", {5, 5, 5, 5}, {0, 0, 0, 0}, 0, 1};
     sc[n++] = (scen_t){"VOICE identical breath", {5, 5, 5, 5}, {0, 0, 0, 0}, 0, 2};
+    sc[n++] = (scen_t){"PHASE simultaneous FOLD crossings", {2, 2, 2, 2}, {0, 1, 3, 5}, 2};
+    sc[n++] = (scen_t){"PHYS identical MODEL changes", {ENGI_PHYS, ENGI_PHYS, ENGI_PHYS, ENGI_PHYS}, {0, 0, 0, 0}, 3, 3};
 #if FELUCCA_SLICE
     sc[n++] = (scen_t){"SAMPLE SLICE GRAIN PHASE", {ENGI_SAMPLE, 13, 8, 2}, {2, 1, 3, 5}, 0};
     sc[n++] = (scen_t){"SLICE FM6 SAMPLE DRUM", {13, ENGI_FM6, ENGI_SAMPLE, ENGI_DRUM}, {0, 2, 3, 4}, 0};
