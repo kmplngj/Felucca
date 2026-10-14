@@ -187,7 +187,7 @@ retain unaffected entries.
 
 ### 1.9 Worked example: the existing NOISE engine
 
-Follow [eng_noise.c](../firmware/src/eng_noise.c), rather than copying a separate DSP:
+Follow [eng_noise.c](https://github.com/kmplngj/Felucca-Engines/blob/c46e0086f69bdc26df1cd144dca9e683cc4531dd/src/eng_noise.c), rather than copying a separate DSP:
 `ENG_NOISE` supplies eight descriptors, two page titles, four presets, HOME knob bindings,
 `noise_note_on`, `noise_render`, `noise_desc` and `.keep=0xF3`. It has no per-part arena
 (`mem` defaults to zero); its filter, RNG, colour poles and clock live in `voice_t.s[]`/`ph[]`.
@@ -349,7 +349,7 @@ to speaker/headphone output. `FELUCCA_UAC=1` and `FELUCCA_UAC_48K=1` are current
 ([felucca.c](../firmware/src/felucca.c), [usb.c](../firmware/src/usb.c),
 [BUILDING.md](../BUILDING.md#build)).
 
-[dsp.c](../firmware/src/dsp.c) and `core.h` define the arithmetic: sample/amplitude values
+[dsp.c](https://github.com/kmplngj/Felucca-Engines/blob/c46e0086f69bdc26df1cd144dca9e683cc4531dd/src/dsp.c) and `core.h` define the arithmetic: sample/amplitude values
 use Q15 (32767 near unity); gain/cutoff coefficients also use named Q12 scales (4096 =
 unity); `voice_t.env` is Q24; pitch is 1/16 semitone. Conventional oscillator `ph`/`inc`
 are unsigned 32-bit phase (one full wrap per cycle), while sampled engines and FM6 have

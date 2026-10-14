@@ -163,7 +163,7 @@ static inline int fm1_cpu1_run(void (*fn)(uint32_t), uint32_t arg)
 }
 
 /* 0 = done; -1 = it read a wrong job or did not finish in time: core 1 is held from now on (the
- * caller does the work) */
+ * caller drops the unfinished sums; later blocks run serially) */
 static inline int fm1_cpu1_wait(void)
 {
     uint32_t t0 = FM1_C1_T4;

@@ -38,6 +38,16 @@ Keep firmware-specific identity metadata (tags/icons/categories/CC targets, orde
 IDs) in a host-owned adapter unless both repositories deliberately revise the portable
 contract. #301's earlier proposal to extend `engine_t` must account for its new MIT ownership
 before implementation; do not add GPL-only fields/code to that fork under an MIT header.
+Use **one shared Felucca-Engines fork** for additional reusable engines whose source can
+be distributed under MIT. A build profile selects individual engines from that repository;
+it does not need one Git repository or submodule per engine. Share the portable contract,
+DSP helpers, tables and standalone tests there, with engine-specific source/test files.
+Firmware-dependent engines (storage, samples, UI, arena lifecycle) and GPL-derived ports
+initially stay in `firmware/src/`. Do not label GPL-derived work MIT merely to move it into
+the library. If several additional engines later need an independently reusable GPL home,
+a single separate extra-engine repository can be evaluated then; no such repo is required
+or created by this plan. Repository placement never assigns or changes an engine's stable ID.
+
 Portable changes are committed and tested in Engines first, then consumed by an explicit
 Felucca gitlink update. Firmware builds never edit the checked-out dependency or fetch a
 floating branch. The full runner checks both standalone engine goldens and the same host
