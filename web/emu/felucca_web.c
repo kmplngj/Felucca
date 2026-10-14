@@ -214,6 +214,16 @@ typedef struct { uint32_t magic, count, vec, pc, emu, dbg, rets; } fm1_crash_t;
 #endif
 #define FM1_CRASH_MAGIC 0x43525348u
 static fm1_crash_t fm1_crash;                     /* (none: main.c boot_leds runs the sweep) */
+static int fm1_crash_read(fm1_crash_t *copy)
+{
+    /* The emulator HAL is single-threaded; no worker publishes a retained
+     * record here. Preserve the target snapshot API's validity contract. */
+    copy->magic = 0;
+    if (fm1_crash.magic != FM1_CRASH_MAGIC)
+        return 0;
+    *copy = fm1_crash;
+    return 1;
+}
 static struct { uint8_t p3_rst, wdt_con; uint32_t rst_src; } fm1_boot;
 uint32_t _data_start[1], _data_end[1], _data_load[1], _bss_start[1], _bss_end[1];
 uint32_t _pool_start[1], _pool_end[1], _rt_start[1], _rt_end[1], _rt_load[1];
