@@ -166,9 +166,12 @@ def main():
             f.write("# FELUCCA target cost budget (tests/target_budget.py): instructions in the loops of each\n"
                     f"# function in build/felucca.dis, x{NEST} per nesting level, divides x{1 + DIV_W}. The check allows "
                     f"+{TOL * 100:.0f} %.\n# Rewritten by BUDGET_UPDATE=1.\n")
-            for n, r in res.items():
-                if n not in OPTIONAL:
-                    f.write(f"{n} {r['cost']}\n")
+            for n in FUNCS:
+                # Sparse artifacts cannot measure excluded engines; retain their shared baselines.
+                if n in excluded and n in base:
+                    f.write(f"{n} {base[n]}\n")
+                elif n in res and n not in OPTIONAL:
+                    f.write(f"{n} {res[n]['cost']}\n")
         print(f"target: budget {budget} rewritten ({len(res)} functions)")
     fail = 0
     for n in missing:

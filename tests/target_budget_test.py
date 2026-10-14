@@ -295,6 +295,27 @@ class CommandLineFixtures(unittest.TestCase):
         self.assertIn("analog_render 12\n", self.budget.read_text())
         self.assert_status(self.cli(), 0)
 
+    def test_sparse_updates_retain_excluded_budget_and_standard_enforcement(self):
+        self.write_budget(overrides={"lofi_render": 10})
+        for analog_cost in (12, 14):
+            with self.subTest(analog_cost=analog_cost):
+                self.write_dis(omit=("lofi_render",), loops={"analog_render": analog_cost})
+                self.profile_sidecar(["lofi_render"])
+                self.assert_status(self.cli(update="1"), 0)
+                self.assertIn(f"analog_render {analog_cost}\n", self.budget.read_text())
+                self.assertIn("lofi_render 10\n", self.budget.read_text())
+                self.assert_status(self.cli(), 0)
+
+        self.write_dis(loops={"analog_render": 14, "lofi_render": 11})
+        self.profile_sidecar([])
+        self.assert_status(self.cli(), 0)  # Standard artifact accepts the preserved tolerance limit.
+        self.write_dis(loops={"analog_render": 14, "lofi_render": 12})
+        self.profile_sidecar([])
+        result = self.cli()
+        self.assert_status(result, 1)
+        row = next(line for line in result.stdout.splitlines() if "lofi_render" in line)
+        self.assertIn("(budget 10) OVER BUDGET (+20 %", row)
+
     def test_missing_disassembly_skips_without_updating(self):
         self.dis.unlink()
         before = self.budget.read_bytes()
