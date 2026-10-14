@@ -68,7 +68,9 @@ typedef struct { int32_t a, b, c; } fres_t;
 #if FELUCCA_CPU2
 /* breath noise: an xorshift for all a part's voices (one per part, as the two cores render parts at once) */
 _Static_assert(NTRK == 4, "formant_nz: a seed per part");
-static int32_t formant_nz[NTRK] = {0x2545F491, 0x2545F491, 0x2545F491, 0x2545F491};
+/* Keep part 0's historical stream; distinct nonzero seeds separate simultaneous identical parts' breath / RAND
+ * even with the second core disabled at runtime. The state stays part-owned for either render schedule. */
+static int32_t formant_nz[NTRK] = {0x2545F491, 0x3F7130DE, 0x599C6D2B, 0x73C7A978};
 #define FORMANT_NZ(t) formant_nz[C1_PI(t)]
 #else
 static int32_t formant_nz = 0x2545F491;                 /* breath noise, one xorshift for all voices (one core) */
