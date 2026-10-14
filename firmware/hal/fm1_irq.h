@@ -107,7 +107,11 @@ void fm1_fault_c(uint32_t *f)
         /* the second core faulted (after Jangada): this runs on it. Its record only, no screen and no reset from
          * here (a reset from core 1 would hold core 1 first, itself: a frozen FM-1). It stops; core 0's next wait
          * times out (fm1_cpu1_wait), holds it, and the FM-1 goes on with one core */
-        fm1_crash.magic = FM1_CRASH_MAGIC;
+        /* Invalidate the retained record before replacing it. The CPU0 diagnostic
+         * registers below cannot describe this worker fault; clear their fields
+         * and the boot-crash streak (the worker parks, it does not reboot). */
+        fm1_crash.magic = 0;
+        __asm__ volatile("csync" ::: "memory");
         fm1_crash.count = count + 1u;
         fm1_crash.core = 1;
         fm1_crash.vec = (f[19] - (uint32_t)(uintptr_t)fm1_fatal_stubs) / 6u - 1u;
@@ -117,6 +121,13 @@ void fm1_fault_c(uint32_t *f)
         fm1_crash.psr = f[20];
         fm1_crash.icfg = f[21];
         fm1_crash.uptime_ms = *(volatile uint32_t *)0x10804u / 24000u;
+        fm1_crash.emu = 0;
+        fm1_crash.dbg = 0;
+        for (i = 0; i < 4u; i++)
+            fm1_crash.etm[i] = 0;
+        fm1_crash.early = 0;
+        __asm__ volatile("csync" ::: "memory");
+        fm1_crash.magic = FM1_CRASH_MAGIC;
         __asm__ volatile("csync" ::: "memory");
         for (;;)
             ;
@@ -127,7 +138,8 @@ void fm1_fault_c(uint32_t *f)
         FM1_RESET_PREP();
         *(volatile uint32_t *)0x10000u |= 1u << 4;
     }
-    fm1_crash.magic = FM1_CRASH_MAGIC;
+    fm1_crash.magic = 0;
+    __asm__ volatile("csync" ::: "memory");
     fm1_crash.count = count + 1u;
     fm1_crash.vec = (f[19] - (uint32_t)(uintptr_t)fm1_fatal_stubs) / 6u - 1u;
     fm1_crash.pc = f[16];
@@ -144,6 +156,9 @@ void fm1_fault_c(uint32_t *f)
 #if FM1_CPU1_USED
     fm1_crash.core = 0;
 #endif
+    __asm__ volatile("csync" ::: "memory");
+    fm1_crash.magic = FM1_CRASH_MAGIC;
+    __asm__ volatile("csync" ::: "memory");
     fm1_fault(&fm1_crash);
     for (;;)
         ;

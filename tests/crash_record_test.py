@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Execute the real exception recorder with retained-RAM and MMIO fixtures.
+
+Only target barriers, fixed MMIO addresses and the terminal park are replaced.
+Each barrier observes whether the record is invalid or completely published.
+This checks record semantics on the host, not device exception delivery.
+"""
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def recorder_source():
+    header = (ROOT / "firmware/hal/fm1_irq.h").read_text()
+    record = re.search(r"typedef struct \{.*?\} fm1_crash_t;", header, re.S).group()
+    start = header.index("void fm1_fault_c(uint32_t *f)")
+    body = header[start:]
+    depth = 0
+    for pos in range(body.index("{"), len(body)):
+        if body[pos] == "{":
+            depth += 1
+        elif body[pos] == "}":
+            depth -= 1
+            if depth == 0:
+                body = body[:pos + 1]
+                break
+    body = body.replace('__asm__ volatile("csync" ::: "memory");', "observe_barrier();")
+    body = body.replace("*(volatile uint32_t *)0x10804u", "test_timer_ticks")
+    body = body.replace("*(volatile uint32_t *)0x10000u", "test_reset")
+    body, parks = re.subn(r"for \(;;\)\s*;", "return;", body)
+    if parks != 2:
+        raise AssertionError("exception recorder must retain both terminal parks")
+    return record, body
+
+
+HARNESS = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#define FM1_CRASH_MAGIC 0x43525348u
+@RECORD@
+fm1_crash_t fm1_crash;
+static const char fm1_fatal_stubs[256];
+static uint32_t test_timer_ticks, test_reset, frame[26];
+#if FM1_CPU1_USED
+static uint32_t worker_stacks[64];
+#define _c1_ustack worker_stacks
+#define _c1_sstack_top (worker_stacks + 64)
+#endif
+#define FM1_EMU_MSG 0x12345678u
+#define FM1_DBG_MSG 0x87654321u
+#define FM1_ETM_PC(i) (0x56780000u + (i))
+#define FM1_RESET_PREP() ((void)0)
+static unsigned phase, reports;
+static uint32_t expected_count, expected_early, expected_core;
+static void fm1_irq_off(void) {}
+static void complete_record(void) {
+    assert(fm1_crash.count == expected_count);
+    assert(fm1_crash.vec == 11u);
+    assert(fm1_crash.pc == frame[16]);
+    assert(fm1_crash.rets == frame[25]);
+    assert(fm1_crash.sp == frame[24]);
+    assert(fm1_crash.psr == frame[20]);
+    assert(fm1_crash.icfg == frame[21]);
+    assert(fm1_crash.uptime_ms == test_timer_ticks / 24000u);
+    assert(fm1_crash.early == expected_early);
+    assert(fm1_crash.emu == (expected_core ? 0u : FM1_EMU_MSG));
+    assert(fm1_crash.dbg == (expected_core ? 0u : FM1_DBG_MSG));
+    for (unsigned i = 0; i < 4; i++)
+        assert(fm1_crash.etm[i] == (expected_core ? 0u : FM1_ETM_PC(i)));
+#if FM1_CPU1_USED
+    assert(fm1_crash.core == expected_core);
+#endif
+}
+static void observe_barrier(void) {
+    /* First invalidate the poisoned old record. Then all fields must be ready
+     * while invalid, and only the final barrier may observe the valid marker. */
+    assert(phase < 3);
+    assert(fm1_crash.magic == (phase == 2 ? FM1_CRASH_MAGIC : 0u));
+    if (phase)
+        complete_record();
+    else
+        assert(fm1_crash.pc == 0xA5A5A5A5u);
+    phase++;
+}
+static void fm1_fault(const fm1_crash_t *c) {
+    assert(c == &fm1_crash);
+    assert(phase == 3 && c->magic == FM1_CRASH_MAGIC);
+    complete_record();
+    reports++;
+}
+@RECORDER@
+int main(int argc, char **argv) {
+    assert(argc == 4);
+    expected_core = (uint32_t)atoi(argv[1]);
+    const unsigned valid = (unsigned)atoi(argv[2]);
+    const uint32_t ms = (uint32_t)atoi(argv[3]);
+    memset(&fm1_crash, 0xA5, sizeof(fm1_crash));
+    fm1_crash.magic = valid ? FM1_CRASH_MAGIC : 0xA5A5A5A5u;
+    fm1_crash.count = 23u;
+    fm1_crash.early = 7u;
+    expected_count = valid ? 24u : 1u;
+    expected_early = expected_core || ms >= 3000u ? 0u : valid ? 8u : 1u;
+    test_timer_ticks = ms * 24000u;
+    for (unsigned i = 0; i < 26; i++)
+        frame[i] = 0xC0000000u + i;
+    frame[19] = (uint32_t)(uintptr_t)fm1_fatal_stubs + 6u * 12u;
+    frame[24] = 0;
+#if FM1_CPU1_USED
+    if (expected_core)
+        frame[24] = (uint32_t)(uintptr_t)(worker_stacks + 32);
+    assert(sizeof(fm1_crash_t) == 68u);
+#else
+    assert(!expected_core && sizeof(fm1_crash_t) == 64u);
+#endif
+    fm1_fault_c(frame);
+    assert(phase == 3 && reports == !expected_core && !test_reset);
+    assert(fm1_crash.magic == FM1_CRASH_MAGIC);
+    complete_record();
+    return 0;
+}
+'''
+
+
+class CrashRecord(unittest.TestCase):
+    def test_poisoned_record_and_publication_order(self):
+        record, recorder = recorder_source()
+        source = HARNESS.replace("@RECORD@", record).replace("@RECORDER@", recorder)
+        with tempfile.TemporaryDirectory(prefix="felucca-crash-record-") as temporary:
+            path = Path(temporary)
+            (path / "fixture.c").write_text(source)
+            for cpu1 in (0, 1):
+                executable = path / f"crash-{cpu1}"
+                subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-std=c11",
+                                "-Wall", "-Wextra", "-Werror", "-O2",
+                                f"-DFM1_CPU1_USED={cpu1}", str(path / "fixture.c"),
+                                "-o", str(executable)], check=True)
+                for core in range(cpu1 + 1):
+                    for valid in (0, 1):
+                        for uptime in (100, 3000):
+                            with self.subTest(cpu1=cpu1, core=core, valid=valid, uptime=uptime):
+                                subprocess.run([str(executable), str(core), str(valid),
+                                                str(uptime)], check=True)
+
+
+if __name__ == "__main__":
+    unittest.main()
