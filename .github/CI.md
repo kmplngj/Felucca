@@ -124,7 +124,10 @@ Diagnostics keep the actual `built_at_utc` clock. Release provenance omits that
 clock; tar/gzip metadata uses the source commit timestamp, with normalized
 ownership and permissions. Complete source preserves each committed executable bit
 and hashes every tracked firmware/Engines file in `SOURCE-PINS.json`; provenance
-records the source archive and manifest hashes plus both revisions. Rebuilding
+records the source archive and manifest hashes plus both revisions. With profile
+definitions present, provenance resolves the selected profile directly from current
+inputs before building and records its IDs, source/asset/license selections and
+input hashes; it never reuses a previous generated profile manifest. Rebuilding
 unchanged content in the same environment
 therefore produces the same release archive even when local file metadata changes.
 

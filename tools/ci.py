@@ -186,6 +186,11 @@ def provenance(out):
                         "Target instruction budget is static, not FM-1 cycle timing",
                         "No real-device audio, panel, USB/MIDI or flashing validation"],
     }
+    if (build.SRC / "profiles/catalog.json").is_file():
+        import profile
+        # Resolve before the target build; never reuse stale generated profile outputs.
+        data["profile"] = json.loads(profile.generated(
+            build.SRC, os.environ.get("FELUCCA_PROFILE", "standard"))["resolved-profile.json"])
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(data, indent=2) + "\n")
 
