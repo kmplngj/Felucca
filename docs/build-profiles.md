@@ -78,7 +78,7 @@ integration checks recorded in the implementation PR, without golden/budget rege
 ### Review fixes qualification
 
 The later #343 review fixes were measured independently at firmware commit
-`94d221d4fcc8fcd621200a64fb5e5be096fe341e`, before the profile/metadata adapter.
+`d43860e290f122e7b7bba3448110711f494de231`, before the profile/metadata adapter.
 These measurements use the same Linux x86-64, JieLi Clang 4.0.1/pi32v2, pinned SDK,
 M8Stealth and selective minsize configuration, with only `FELUCCA_CPU2` varied.
 The historical table above remains evidence for the initial profile implementation;
@@ -86,26 +86,36 @@ it does not include these later DSP review fixes.
 
 | Region (bytes) | Reviewed #343, CPU2=1 | Reviewed #343, CPU2=0 |
 | --- | ---: | ---: |
-| App | 475912 | 472228 |
-| Allocated RAM | 61800 | 55412 |
+| App | 476132 | 472260 |
+| Allocated RAM | 61928 | 55412 |
 | POOL | 336436 | 336436 |
 | RAMTEXT `.ram_text` | 2924 | 2924 |
 | RAMTEXT `.c1_text` | 160 | 0 |
 | NOINIT | 15568 | 15564 |
 
-PHASE's render scratch is now owned by each part when the second core is compiled,
-adding 768 B of allocated RAM to CPU2=1. The reviewed CPU2=1 app adds 100 B relative
-to its matched pre-review baseline. CPU2=0 retains its single-core scratch and its app
-is byte-identical to its matched pre-review baseline. These changes are separate from
-the historical 728 B app cost of the profile/metadata adapter. The combined reviewed
+The reviewed CPU2=1 target adds 320 app bytes and 896 B of allocated RAM over the
+initial `037d2c6` baseline. FORMANT, PHYS and PHASE review fixes account for 100 app
+bytes; PHASE's render scratch is now owned by each part when the second core is
+compiled, adding 768 B of allocated RAM. Worker-timeout recovery retains a canonical
+state snapshot in 120 B of storage, plus 8 B of alignment in the allocated RAM span.
+The remaining code changes include that recovery and complete crash-record
+initialization/publication: worker diagnostics unavailable on that core are cleared,
+and the main core preserves its diagnostic registers before holding the worker and
+replacing their shared retained record. CPU2=0 retains its single-core scratch and
+adds 32 app bytes for the cold fault path relative to its matched pre-review baseline
+(472228 B); it is no longer byte-identical to that baseline. These changes are separate
+from the historical 728 B app cost of the profile/metadata adapter. The combined reviewed
 standard/reduced profile sizes require their own direct integration measurements;
 no combined value is inferred from those deltas here.
 
 Both reviewed targets passed the existing render budgets and RAMTEXT no-call check
 (916 instructions). CPU2=1 retains the 50-instruction worker text; CPU2=0 contains no
-second-core code, stack or mailbox. Allocated RAM margins are 11928/18316 B for
-CPU2=1/0; POOL and NOINIT allocations stay as reported above. These are target static
-measurements, not live stack, deadline or FM-1 reliability observations.
+second-core code, stack or mailbox. Allocated RAM margins are 11800/18316 B for
+CPU2=1/0; POOL and NOINIT allocations stay as reported above. The worker exception
+path uses 164 B of its 256 B stack window: 104 B for the assembly save and 60 B for
+the compiled C frame, with no calls on that path and 92 B spare. This is a static
+target estimate, not a physical stack watermark. These measurements do not establish
+live deadlines or FM-1 reliability.
 
 ## User test instructions and remaining gates
 
