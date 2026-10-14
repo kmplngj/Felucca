@@ -123,6 +123,14 @@ class Selection(unittest.TestCase):
                 [], 1, "", "HTTP 403: Resource not accessible")), self.assertRaisesRegex(ValueError, "403"):
             P.gh("api", "endpoint")
 
+    def test_download_errors_do_not_expose_signed_url_queries(self):
+        with patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], 1, "", "GET https://example.invalid/artifact.zip?sig=secret&se=time: Forbidden")):
+            with self.assertRaises(ValueError) as error:
+                P.gh("run", "download")
+        self.assertIn("Forbidden", str(error.exception))
+        self.assertNotIn("sig=secret", str(error.exception))
+
 
 class Download(unittest.TestCase):
     @classmethod

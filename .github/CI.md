@@ -226,7 +226,7 @@ Checksums detect corruption, not trustworthiness of PR code; choose the revision
 you intend to run. Both current and reachable historical PR revisions use their
 own firmware sources and build defaults.
 
-The resolver has only `contents: read`, uses the job token only in its GitHub
+The resolver has only `contents: read` and `pull-requests: read`, uses the job token only in its GitHub
 API step, and does not retain checkout credentials. Build jobs retain existing
 permissions and pinned dependencies. Dispatch requires Actions write access;
 artifact reads require sign-in and appropriate repository access. No release,

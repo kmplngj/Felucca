@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ inputs.pr != '' && format('pr-{0}-{1}', inputs.pr, inputs.commit) || github.event.pull_request.number || github.ref }}
@@ -28,7 +29,7 @@ concurrency:
 jobs:
   revision:
     name: Resolve requested PR revision
-    if: github.event_name == 'workflow_dispatch' && inputs.pr != ''
+    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:

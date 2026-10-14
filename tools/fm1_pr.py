@@ -25,7 +25,10 @@ def gh(*args, payload=None):
         capture_output=True, text=True,
     )
     if result.returncode:
-        raise ValueError(f"GitHub CLI failed: {result.stderr.strip()}")
+        # Download failures can contain signed artifact URLs. Keep their query
+        # credentials out of terminal output and shared test reports.
+        message = re.sub(r"(https?://[^\s?]+)\?[^\s]+", r"\1?[query redacted]", result.stderr.strip())
+        raise ValueError(f"GitHub CLI failed: {message}")
     return result.stdout
 
 
