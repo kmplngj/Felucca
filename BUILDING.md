@@ -50,8 +50,10 @@ python3 tools/source_archive.py verify .
 Install the prerequisites below before building. The extracted source needs no
 Git checkout or submodule download; the JieLi toolchain and three SDK files remain
 external prerequisites. `SOURCE-PINS.json` records the firmware and Engines commits
-and hashes/modes of every source file. The build verifies those files before
-compilation. To develop modifications, use a recursive Git clone; an extracted
+and hashes/modes of every source file. The build verifies those files and rejects
+additional source inputs before compilation. Generated files under `build/` and `firmware/engines/build/`, plus
+`.pyc` files in `__pycache__/`, are permitted; unlisted symlinks are rejected. To
+develop modifications, use a recursive Git clone; an extracted
 release intentionally rejects modified source while its pin manifest is present.
 
 Maintainers can export any clean committed checkout, without building firmware:

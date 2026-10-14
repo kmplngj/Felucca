@@ -146,6 +146,24 @@ def verify_tree(root):
     root = Path(root)
     try:
         metadata = validate_manifest(json.loads((root / MANIFEST).read_text()))
+        # Glob-based asset generators can consume files absent from the manifest.
+        # Permit only known generated output locations and Python import caches.
+        for path in root.rglob("*"):
+            name = path.relative_to(root).as_posix()
+            if path.is_symlink():
+                raise ValueError(f"source path is a symlink: {name}")
+            if name in metadata["files"] or name == MANIFEST:
+                continue
+            parts = path.relative_to(root).parts
+            generated = parts[0] == "build" or parts[:3] == ("firmware", "engines", "build")
+            if generated:
+                continue
+            safe_path(name)
+            if path.is_dir():
+                continue
+            if path.is_file() and path.parent.name == "__pycache__" and path.suffix == ".pyc":
+                continue
+            raise ValueError(f"unmanifested source file: {name}")
         for name, entry in metadata["files"].items():
             path = root / name
             if any(parent.is_symlink() for parent in [path, *path.parents] if parent != root.parent):

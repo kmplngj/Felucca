@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import source_archive as source
@@ -200,6 +201,41 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
             with self.subTest(name=name, kind=kind), self.assertRaises(ValueError):
                 source.verify_archive(self.bundle)
         self.assertFalse((self.base / "escape").exists())
+
+    def test_unmanifested_real_sample_changes_generator_inputs_and_is_rejected(self):
+        import gen_samples
+        original = Path(source.__file__).resolve().parents[1] / "assets/samples-cc0/PIANO/03_GPiano_sus_C4_v2_rr1_Player.wav"
+        self.write(self.repo, "assets/samples-cc0/PIANO/03_Piano_C4.wav", original.read_bytes())
+        self.commit(self.repo)
+        root = self.unpack()
+        metadata = source.verify_tree(root)
+        with patch.object(gen_samples, "SRC", root), patch.object(gen_samples, "CC0", root / "assets/samples-cc0"), \
+                patch.object(gen_samples, "GENDIR", root / "build/genwav"):
+            key = gen_samples.input_key(True)
+            shutil.copyfile(root / "assets/samples-cc0/PIANO/03_Piano_C4.wav",
+                            root / "assets/samples-cc0/PIANO/05_extra_C4.wav")
+            self.assertNotEqual(gen_samples.input_key(True), key)
+        self.assertEqual(json.loads((root / source.MANIFEST).read_text()), metadata)
+        with self.assertRaisesRegex(ValueError, "unmanifested source file: assets/samples-cc0/PIANO/05_extra_C4.wav"):
+            source.verify_tree(root)
+
+    def test_unmanifested_sources_and_symlinks_fail_but_generated_outputs_and_caches_pass(self):
+        root = self.unpack()
+        for name in ("build/gen/generated.h", "firmware/engines/build/standalone-test", "tools/__pycache__/module.cpython-312.pyc"):
+            self.write(root, name, "generated output")
+        source.verify_tree(root)
+        for name in ("firmware/src/extra.h", "firmware/engines/src/extra.h", "tools/extra.py",
+                     "tools/__pycache__/extra.py", "tools/unlisted.pyc"):
+            self.write(root, name, "extra build input")
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "unmanifested source file"):
+                source.verify_tree(root)
+            (root / name).unlink()
+        for name in ("extra", "build/unsafe", "firmware/engines/build/unsafe", "tools/__pycache__/unsafe.pyc"):
+            (root / name).symlink_to(self.engine, target_is_directory=True)
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "symlink"):
+                source.verify_tree(root)
+            (root / name).unlink()
+        source.verify_tree(root)
 
     def test_unpacked_sources_build_without_git_and_reject_changed_missing_or_unsafe_files(self):
         root = self.unpack()
