@@ -68,7 +68,9 @@ static void union_engines(void)
 {
     uint32_t e;
     for (e = 0; e < NENGINES; e++)
-        if (eng_ok(e) && (eng_of(e)->mem || e == 0 || e == ENGI_SAMPLE || e == 7))
+        /* Filter before indexing accompaniment: full and sparse controls need the same order/count. */
+        if ((int)e != FELUCCA_UNION_OMIT && eng_ok(e) &&
+            (eng_of(e)->mem || e == 0 || e == ENGI_SAMPLE || e == 7))
             UE[UNE++] = e;
 }
 
@@ -86,7 +88,6 @@ static uint64_t useq(const uint32_t *e, uint32_t n, uint32_t pi, uint32_t wait_m
         for (k = 0; k < n; k++) {
             uplay(&trk[0], e[k], pi + k, 60, wait_ms);
             uint32_t other = UE[(k + 3u) % UNE];
-            if ((int)other == FELUCCA_UNION_OMIT) other = 0;   /* same ANALOG accompaniment in sparse/control builds */
             uplay(&trk[2], other, pi, 55, 10);   /* another part busy alongside */
         }
         urun(1000);
@@ -115,8 +116,6 @@ int main(int argc, char **argv)
                 for (b = 0; b < UNE; b++) {
                     uint32_t s2[2] = {UE[a], UE[b]}, s3[3] = {UE[b], UE[a], UE[b]};
                     uint32_t wait = w ? 0u : 10u;
-                    if ((int)UE[a] == FELUCCA_UNION_OMIT || (int)UE[b] == FELUCCA_UNION_OMIT)
-                        continue;
                     snprintf(got[n++], 64, "%u-%u p%u w%u %016llx", UE[a], UE[b], pi, wait,
                              (unsigned long long)useq(s2, 2, pi, wait));
                     if (a != b)
