@@ -522,6 +522,10 @@ if [ -f build/gen/felucca_tables.h ]; then
     else
         echo "== skip PHYS reference test (no DaisySP: set DAISYSP to a checkout)"
     fi
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/tom_tail_test" tests/tom_tail_test.c -lm
+    run "TOM TAIL: exact-zero boundary, PCM and complete voice state" "$OUT/tom_tail_test"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/tom_tail_test_os" tests/tom_tail_test.c -lm
+    run "TOM TAIL (-Os, no vectorising): exact-zero boundary, PCM and complete voice state" "$OUT/tom_tail_test_os"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/drum_test" tests/drum_test.c -lm
     mkdir -p build/drum_demo
     run "DRUM: voice targets, controls, no clipping, retrigger, hat choke, the kick on a small speaker, keys, 8 lanes, cost, demos" "$OUT/drum_test" build/drum_demo
