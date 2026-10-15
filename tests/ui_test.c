@@ -133,14 +133,26 @@ static void lcd_power(uint32_t s) { host_pw_log(s); }
 static void lcd_wake_now(void) { host_pw_log(3u); }
 /* (the HOME oscilloscope's buffer, scope_buf: fx.c, with hostsim.c) */
 static uint32_t host_blit_rows;                    /* rows blitted (what a frame draws) */
+static struct { uint32_t stage; } felucca_dbg;
+#ifndef UI_TEST_NO_MAIN
+/* Optional LCD submission trace, omitted from the render/timing harness. */
+static uint32_t host_blit_watch, host_blit_n;
+static struct { uint32_t y, h, stage; } host_blit_log[16];
+#endif
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
     uint32_t i, j;
     host_blit_rows += h;
+#ifndef UI_TEST_NO_MAIN
+    if (host_blit_watch && host_blit_n < NELEM(host_blit_log)) {
+        host_blit_log[host_blit_n].y = y;
+        host_blit_log[host_blit_n].h = h;
+        host_blit_log[host_blit_n++].stage = felucca_dbg.stage;
+    }
+#endif
     for (j = 0; j < h && y + j < 240u; j++)
         for (i = 0; i < w && x + i < 240u; i++) host_put((y + j) * 240u + x + i, p[j * w + i]);
 }
-static struct { uint32_t stage; } felucca_dbg;
 #define FELUCCA_FLASH 0
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "TEST"
@@ -9592,6 +9604,96 @@ static int help_fits(const char *s)
     if (!ok || w > 224) printf("  help: \"%s\" %u hints, %d px of 224\n", s, n, w);
     return ok && w <= 224;
 }
+/* Ordinary-page reference order before #9: the graph sees the pre-decrement hot timer,
+ * the header sees the current message, and the footer sees the expired help timer. */
+static void draw_graph_first(void)
+{
+    cursor_fix();
+    if (ui.force)
+        draw_frame();
+    draw_head();
+    draw_columns();
+    draw_graph();
+    if (ui.msg_t && !--ui.msg_t && ui.msg2[0]) {
+        str_cpy(ui.msg, ui.msg2, sizeof ui.msg);
+        ui.msg2[0] = 0;
+        ui.msg_t = 60;
+    }
+    if (ui.bpm_t) ui.bpm_t--;
+    if (ui.hot_t) ui.hot_t--;
+    if (ui.help_t) ui.help_t--;
+    draw_foot();
+    ui.force = 0;
+}
+static int test_footer_first(void)
+{
+    static uint16_t expected[240 * 240], previous[240 * 240];
+    uint8_t before[sizeof ui], after[sizeof ui];
+    static const uint8_t TIMER[] = {0, 1, 2, 40};
+    uint32_t k, queued, large, j, foot, graph;
+    int bad = 0, pixels = 1, state = 1, order = 1, timers = 1;
+    for (large = 0; large < 2u; large++)
+        for (queued = 0; queued < 2u; queued++)
+            for (k = 0; k < NELEM(TIMER); k++) {
+                ui_power_on();
+                ui_prefs = large ? PREF_LARGE : 0;
+                track_select(1);                      /* FM6: the graph highlights the hot knob too */
+                go_title("EDIT 1");
+                ui.hot_col = 2;
+                ui.msg_t = ui.hot_t = ui.bpm_t = ui.help_t = TIMER[k];
+                str_cpy(ui.msg, "FIRST", sizeof ui.msg);
+                str_cpy(ui.msg2, queued ? "SECOND" : "", sizeof ui.msg2);
+                ui.force = 1;
+                ui.frame = 10;
+                memcpy(before, &ui, sizeof ui);
+                memset(host_screen, 0, sizeof host_screen);
+                draw_graph_first();
+                memcpy(expected, host_screen, sizeof expected);
+                memcpy(after, &ui, sizeof ui);
+
+                memcpy(&ui, before, sizeof ui);
+                memset(host_screen, 0, sizeof host_screen);
+                host_blit_n = 0; host_blit_watch = 1;
+                ui_draw_page(0);
+                host_blit_watch = 0;
+                pixels &= !memcmp(expected, host_screen, sizeof expected);
+                state &= !memcmp(after, &ui, sizeof ui);
+                timers &= ui.hot_t == (TIMER[k] ? TIMER[k] - 1u : 0u) && ui.bpm_t == ui.hot_t && ui.help_t == ui.hot_t;
+                timers &= ui.msg_t == (TIMER[k] == 1u && queued ? 60u : TIMER[k] ? TIMER[k] - 1u : 0u);
+                timers &= str_eq(ui.msg, TIMER[k] == 1u && queued ? "SECOND" : "FIRST") &&
+                          str_eq(ui.msg2, queued && TIMER[k] != 1u ? "SECOND" : "");
+                foot = graph = NELEM(host_blit_log);
+                for (j = 0; j < host_blit_n; j++) {
+                    if (host_blit_log[j].y == Y_FOOT && host_blit_log[j].h == H_FOOT) {
+                        foot = j;
+                        order &= host_blit_log[j].stage == 6u;
+                    }
+                    if (host_blit_log[j].y == graph_y() && host_blit_log[j].h == graph_h()) {
+                        graph = j;
+                        order &= host_blit_log[j].stage == 5u;
+                    }
+                }
+                order &= foot < graph && graph < host_blit_n;
+                /* A queued message enters the following header, with identical cached redraws. */
+                memcpy(before, &ui, sizeof ui);
+                memcpy(previous, host_screen, sizeof previous);
+                ui.frame++; draw_graph_first();
+                memcpy(expected, host_screen, sizeof expected);
+                memcpy(after, &ui, sizeof ui);
+                memcpy(&ui, before, sizeof ui);
+                memcpy(host_screen, previous, sizeof previous);
+                ui.frame++; ui_draw_page(0);
+                pixels &= !memcmp(expected, host_screen, sizeof expected);
+                state &= !memcmp(after, &ui, sizeof ui);
+            }
+    bad += check("#9 footer submitted before graph; stages 6 footer, 5 graph (normal and LARGE)", order);
+    bad += check("#9 timer expiry and queued message: same whole framebuffer on both frames", pixels);
+    bad += check("#9 hot/BPM/help decrement once; queued message promotes only on expiry", state && timers);
+    ui_prefs = 0;
+    ui_power_on();
+    return bad;
+}
+
 static int test_help(void)
 {
     int bad = 0, ok;
@@ -10434,6 +10536,7 @@ int main(void)
     bad += test_fx_map_columns();
     bad += test_help();
     bad += test_prev_page();
+    bad += test_footer_first();
     bad += test_no_flash();
 #if FELUCCA_FM4
     bad += test_fm_charts();                        /* (DIGITAL's charts: built with FELUCCA_FM4=1 only) */
