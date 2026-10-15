@@ -398,6 +398,10 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "metronome and count-in: beats sample for sample (internal and external clock), accent, level, MASTER, not in USB, count-in timing, notes onto step 1" "$OUT/click_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test" tests/persistence_test.c -lm
     run "persistence: deferred settings, retry and failed-save rollback" "$OUT/persistence_test"
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/autosave_audio_test" tests/autosave_audio_test.c -lm
+    run "autosave: real stereo FX tails, quiet window, short bursts, USB FIXED and wrap/retry" "$OUT/autosave_audio_test"
+    $CC -Os -w -Ibuild/gen -Ifirmware/src -o "$OUT/autosave_audio_test_os" tests/autosave_audio_test.c -lm
+    run "autosave audio (-Os)" "$OUT/autosave_audio_test_os"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/backup_test" tests/backup_test.c -lm
     run "full backup: CRC before writes, stale runtime, USB reset / timeout, malformed objects, older projects" "$OUT/backup_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6bank_test" tests/fm6bank_test.c -lm
@@ -466,10 +470,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/perform_test" tests/perform_test.c -lm
     mkdir -p build/perform_demo build/fx_demo build/throw_demo
     run "FX layer effects: on the 1/16, stereo, too-long REPEAT, SLICER, silent keys, idle bit-identical, clicks, OCT UP / DN, FLANGER, PHASER, the key map, dotted TIME, REV / ECHO THROW, cost, demos" "$OUT/perform_test" build/perform_demo build/fx_demo build/throw_demo
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/stage_unroll_test" tests/stage_unroll_test.c -lm
+    run "SPRING and both PHASER callers: original-loop PCM/state equivalence and mutation sensitivity (-O2)" "$OUT/stage_unroll_test"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/reverb_test" tests/reverb_test.c -lm
     mkdir -p build/reverb_demo
     run "REVERB TYPE: ROOM / SPRING bit-identical, SPRING and HALL decay / stability / level, HALL silence / stereo / ringing, model changes, cost, demos" "$OUT/reverb_test" build/fx_demo build/reverb_demo
-    run "FX rest: burst/silence audio and state equivalence (-O2/-Os; dependency skip before #41)" python3 tests/fx_rest_test.py
+    run "FX rest: burst/silence audio and state equivalence (-O2/-Os)" python3 tests/fx_rest_test.py --require-rest
     # Probe the actual CC (including wrappers), never the executable's alias.
     CPU_PATHS=$(python3 tests/cpu_baseline.py $CC)
     CPU_B=$(printf '%s\n' "$CPU_PATHS" | sed -n '1p')
@@ -481,6 +487,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt "$CPU_B"
     NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
     echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/stage_unroll_test_os" tests/stage_unroll_test.c -lm
+    run "SPRING and both PHASER callers: original-loop PCM/state equivalence and mutation sensitivity (-Os, no SIMD)" "$OUT/stage_unroll_test_os"
     $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
     run "regression built as the target (-Os, no vectorising): the same goldens, CPU budget" \
         "$OUT/regress_os" tests/golden.txt "$CPU_B_OS"
@@ -602,7 +610,7 @@ else
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
-    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test; do
+    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test; do
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
     done

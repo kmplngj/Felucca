@@ -56,6 +56,10 @@ Use this fork's `.fwsc` package with the installer for a fork build; raw `.bin` 
 CI diagnostics are build material. The command-line installer validates package structure
 and CRCs before opening MIDI ports; see [package validation and file-error recovery](BUILDING.md#package-validation-and-file-errors).
 
+- **Automatic project saves:** with RESTORE LAST on, autosave waits for stopped transport,
+  idle controls and voices, and ten seconds of quiet stereo output. Long effect tails
+  keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
+  [autosave contract](docs/extending.md#41-flash-map-and-deferred-save-example).
 - **UI fonts:** source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects
   `m8stealth`, `tamzen` or `inter-tight` at build time; keycaps retain Inter Tight.
   The [controlled font comparison](docs/font-experiment.md) records about 39 KB less

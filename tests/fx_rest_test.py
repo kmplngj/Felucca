@@ -4,7 +4,7 @@
 
 The source adapter adds force-off and skip counters only to ignored host copies.
 Every insertion is exact-count checked; changed DSP requires adapter review.
-Default: current firmware/src/fx.c. --fx-source accepts PR #41/#172 sources.
+Default: current firmware/src/fx.c. --fx-source accepts PR #41/#159/#172 sources.
 """
 import argparse
 import hashlib
@@ -38,9 +38,15 @@ def instrument(source):
                           "fx_test_skips[2]++; hl.ph += HL_LFO;\n    return 1;")
     spring = "sp_live" in source
     if spring:
-        source = replace_once(source, "if (!fx.sp_live", "if (!fx_test_force && !fx.sp_live")
-        source = replace_once(source, "fx.sp_w = (uint16_t)(fx.sp_w + n);\n        return;",
-                              "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n);\n        return;")
+        if "static __attribute__((noinline)) int spring_rest(" in source:
+            source = replace_once(source, "if (!spring_rest(rev_in, n))",
+                                  "if (fx_test_force || !spring_rest(rev_in, n))")
+            source = replace_once(source, "fx.sp_w = (uint16_t)(fx.sp_w + n);\n    return 1;",
+                                  "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n);\n    return 1;")
+        else:
+            source = replace_once(source, "if (!fx.sp_live", "if (!fx_test_force && !fx.sp_live")
+            source = replace_once(source, "fx.sp_w = (uint16_t)(fx.sp_w + n);\n        return;",
+                                  "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n);\n        return;")
     return "static int fx_test_force;\nstatic uint64_t fx_test_skips[4];\n" + source, spring
 
 
@@ -92,7 +98,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fx-source", type=Path, default=ROOT / "firmware/src/fx.c")
     parser.add_argument("--require-rest", action="store_true", help="fail instead of skip if dependency is absent")
-    parser.add_argument("--mutation-check", action="store_true", help="verify that a broken HALL drift is detected")
+    parser.add_argument("--mutation-check", action="store_true", help="verify broken HALL/SPRING advances are detected")
     parser.add_argument("--cc", default=os.environ.get("CC", "cc"))
     args = parser.parse_args()
     raw = args.fx_source.read_text()
@@ -116,17 +122,22 @@ def main():
     if not spring:
         print("FX rest: SPRING skip assertion pending #39/#172 (SPRING sound/state comparison ran)")
     if args.mutation_check:
-        broken = replace_once(source, "fx_test_skips[2]++; hl.ph += HL_LFO;",
-                               "fx_test_skips[2]++; hl.ph += HL_LFO - 1u;")
-        binary = build(broken, out / "mutation", cc, ["-O2"])
-        try:
-            compare(binary, spring)
-        except ValueError as error:
-            if "audio/state differs" not in str(error):
-                raise
-            print("FX rest: deliberate hall_rest drift mutation detected")
-        else:
-            raise ValueError("deliberately broken hall_rest passed")
+        mutations = [("HALL", "fx_test_skips[2]++; hl.ph += HL_LFO;",
+                      "fx_test_skips[2]++; hl.ph += HL_LFO - 1u;")]
+        if spring:
+            mutations.append(("SPRING", "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n);",
+                              "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n - 1u);"))
+        for name, old, new in mutations:
+            broken = replace_once(source, old, new)
+            binary = build(broken, out / ("mutation_" + name.lower()), cc, ["-O2"])
+            try:
+                compare(binary, spring)
+            except ValueError as error:
+                if "audio/state differs" not in str(error):
+                    raise
+                print(f"FX rest: deliberate {name} rest advance mutation detected")
+            else:
+                raise ValueError(f"deliberately broken {name} rest advance passed")
     return 0
 
 

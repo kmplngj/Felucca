@@ -5,14 +5,15 @@
 fresh host binaries at `-O2` and `-Os` with vectorization disabled for the latter.
 It requires generated headers from `./build.sh`, as the other DSP tests do.
 
-The optimization is not in the current `main`: #153 depends on PR #41, with the
-SPRING skip added by PR #172 (#39). The default run explicitly skips when all
-rest paths are absent. No optimization or hardware-dependent DSP change is
-pulled into `main` by this test. Once #41 lands, change the suite invocation to
-`python3 tests/fx_rest_test.py --require-rest` so removal of the optimization
-also fails the suite.
+The chorus, delay and HALL rest paths come from PR #41. The suite invokes
+`python3 tests/fx_rest_test.py --require-rest`, so removal of the optimization
+fails instead of silently skipping. SPRING's skip assertion becomes active
+with the combined #159/#172 (#39) implementation. Direct invocation
+without `--require-rest` can still inspect older sources and explicitly skips
+when all rest paths are absent. The adapter also supports PR #159's external
+`spring_rest`/`spring_live` gate and asserts its actual skip execution.
 
-To validate the dependency before it merges, provide its checked-out `fx.c`:
+To validate another compatible FX revision, provide its checked-out `fx.c`:
 
 ```sh
 python3 tests/fx_rest_test.py --fx-source /path/to/pr41/firmware/src/fx.c \
@@ -37,18 +38,23 @@ every pair, all three). Corner settings vary SIZE, DAMP, chorus depth/rate,
 delay color and dotted delay time. A loud burst is followed by 20 seconds of
 silence, signed sends of amplitude 1 and 4, a SIZE/DAMP change while silent,
 a burst three blocks into the SIZE glide, model switches, and actual ECHO
-THROW send injection via `perf_throw`.
+THROW and REV THROW send injection via `perf_throw`.
 
 The comparison covers wet and effective stereo-side samples and persistent
 FX/HALL state after every block. Full line buffers are checked every 257
 blocks and at the end. Cached HALL gains and block scratch arrays are masked:
 the regular path recomputes them even during silence, while rest skips them.
 Each trajectory must actually skip chorus/delay, its initial HALL model, and
-its initial SPRING model when PR #172 is present. Forced-off runs must report
+its initial SPRING model when PR #159 or #172 is present. Forced-off runs must report
 zero skips. ROOM has no skip assertion: its floored comb feedback can retain
 an offset. Counters assert branch execution, not a timing or CPU improvement.
 
-`--mutation-check` deliberately changes the HALL rest phase advance in another
-temporary copy and requires an audio/state mismatch. This validates that
-`hall_rest` drifting from `rev_hall` is caught. The check is optional because
-it adds another pair of complete renders.
+`--mutation-check` deliberately changes the HALL rest phase advance and, when
+present, the SPRING rest write-index advance in separate temporary copies.
+Each must produce an audio/state mismatch. The check is optional because it
+adds complete pairs of renders.
+
+The merged SPRING path retains #159's external `spring_rest`/`spring_live`
+helpers and #172's generalized exact filter fixed-point predicate. Liveness
+updates occur once per rendered block; skipped blocks advance state once.
+The reverb harness also covers nonzero low-cut fixed points at high DAMP.

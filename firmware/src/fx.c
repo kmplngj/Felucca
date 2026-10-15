@@ -24,6 +24,8 @@ static struct {
     int32_t sp_lp, sp_hp, sp_he, sp_size;   /* .. its loop low-pass, low cut (and its remainder), the loop
                                              * length (Q8, glides) */
     uint32_t sp_ph;                      /* .. the output tap's wobble */
+    uint32_t cho_live, dly_live;         /* samples until cho_buf / dly_buf hold only zeros (0: they do; fx_buses) */
+    uint16_t sp_live;                    /* .. until SPRING's line and allpasses hold only zeros (spring_rest) */
 } fx;
 
 /* SPRING (G_RTYPE 1): one spring of a spring tank, mono like the other buses, in the ROOM's own buffers (no
@@ -69,7 +71,8 @@ _Static_assert(sizeof rev_comb / 2u >= SP_LEN && sizeof rev_u.sp / 4u >= 4u * (S
 #define HL_KD(d) (32767 - (d) * 180)     /* its coefficient (Q15) for DAMP d: none at 0 .. ~1 kHz at 127 */
 #define HL_LOUD 32                       /* a line this loud (two samples' sum) rounds its gain to the nearest */
 #define HL_OUT 4                         /* the outputs' gain: the level of ROOM's tail */
-static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};   /* (+1 each: the mirror) */
+static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};   /* (+1 each: the mirror;
+                                                                                 * rising: hl.live) */
 static const uint16_t HL_AP[HL_NAP] = {131, 307};
 static const int16_t HL_APG[HL_NAP] = {11469, 10240};               /* Q14: 0.7, 0.625 */
 _Static_assert(467 + 509 + 547 + 593 + 631 + 673 + 709 + 743 + HL_NL <= sizeof rev_comb / 2u &&
@@ -83,6 +86,8 @@ static struct {                          /* HALL's state (in the pool: no .bss) 
     int16_t g[HL_NL], sz;                /* the lines' gains / sqrt(7) (Q14), for SIZE sz - 1 (0: none yet) */
     uint32_t ph;                         /* the taps' drift */
     uint8_t side;                        /* sd holds this block's stereo difference (HALL running) */
+    uint16_t live;                       /* samples (half rate) until the lines hold only zeros (0: they do; the
+                                          * diffusers are scanned; hall_rest: a new state above goes there too) */
     int32_t sd[CTL];                     /* the block's left minus right (mix_block: rev_side_mix) */
     int32_t bx[HL_NC], l[HL_NC], r[HL_NC];   /* the block at half the rate: the diffused send, left, right */
     int16_t y[HL_NL][HL_NC];             /* the lines' ends, then what goes back into them */
@@ -239,42 +244,69 @@ static uint32_t delay_samples(void)
     return s < 16u ? 16u : s >= DLY_LEN ? DLY_LEN - 1u : s;
 }
 
+/* ROOM's comb: its line c (len samples), write index *j and low-pass *lp, the input in; its output. Inlined,
+ * the four written out: constant lengths and offsets, the states in locals for the block (through fx, every
+ * sample: the int16 stores into the lines may alias the uint16 indices, and the low-passes were indexed by k) */
+static inline __attribute__((always_inline)) int32_t room_comb(int16_t *c, uint32_t len, uint32_t *j, int32_t *lp, int32_t in, int32_t kd,
+                                int32_t size)
+{
+    int32_t o = c[*j];
+    *lp = o + mulq15(*lp - o, kd);
+    c[*j] = (int16_t)clamp(in + mulq15(*lp, size), -32768, 32767);
+    if (++*j >= len)
+        *j = 0;
+    return o;
+}
+/* ROOM's allpass: its line c (len samples), write index *j, the input a; its output */
+static inline __attribute__((always_inline)) int32_t room_ap(int16_t *c, uint32_t len, uint32_t *j, int32_t a)
+{
+    int32_t o = c[*j];
+    int32_t v = a + (o >> 1);
+    c[*j] = (int16_t)clamp(v, -32768, 32767);
+    if (++*j >= len)
+        *j = 0;
+    return o - a;                                       /* Freeverb: out = buf - in (o - v is a notch comb) */
+}
+
 /* ROOM (G_RTYPE 0): 4 damped combs + 2 allpasses (Freeverb-like, mono), added to out */
 static __attribute__((noinline)) void rev_room(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
-    uint32_t i, k;
-    int32_t size = 25000 + song.g[G_RSIZE] * 50, damp = 32767 - song.g[G_RDAMP] * 200;
+    uint32_t i, j0 = fx.comb_i[0], j1 = fx.comb_i[1], j2 = fx.comb_i[2], j3 = fx.comb_i[3];
+    uint32_t d0 = fx.ap_i[0], d1 = fx.ap_i[1];
+    int32_t l0 = fx.comb_lp[0], l1 = fx.comb_lp[1], l2 = fx.comb_lp[2], l3 = fx.comb_lp[3];
+    int32_t size = 25000 + song.g[G_RSIZE] * 50, kd = song.g[G_RDAMP] * 200;   /* (32767 - damp: the low-pass) */
+    int16_t *c1 = rev_comb + REV_COMB[0], *c2 = c1 + REV_COMB[1], *c3 = c2 + REV_COMB[2], *p1 = rev_ap + REV_AP[0];
     for (i = 0; i < n; i++) {
-        int32_t a = 0;
-        int16_t *c = rev_comb;
         int32_t in = mulq15(rev_in[i], 2580);           /* 1/8 at -4 dB: level as before the allpass fix */
-        for (k = 0; k < 4u; k++) {
-            int32_t o = c[fx.comb_i[k]];
-            fx.comb_lp[k] = o + mulq15(fx.comb_lp[k] - o, 32767 - damp);
-            c[fx.comb_i[k]] = (int16_t)clamp(in + mulq15(fx.comb_lp[k], size), -32768, 32767);
-            if (++fx.comb_i[k] >= REV_COMB[k])
-                fx.comb_i[k] = 0;
-            a += o;
-            c += REV_COMB[k];
-        }
-        c = rev_ap;
-        for (k = 0; k < 2u; k++) {
-            int32_t o = c[fx.ap_i[k]];
-            int32_t v = a + (o >> 1);
-            c[fx.ap_i[k]] = (int16_t)clamp(v, -32768, 32767);
-            a = o - a;                                  /* Freeverb: out = buf - in (o - v is a notch comb) */
-            if (++fx.ap_i[k] >= REV_AP[k])
-                fx.ap_i[k] = 0;
-            c += REV_AP[k];
-        }
-        out[i] += a;
+        int32_t a = room_comb(rev_comb, REV_COMB[0], &j0, &l0, in, kd, size);
+        a += room_comb(c1, REV_COMB[1], &j1, &l1, in, kd, size);
+        a += room_comb(c2, REV_COMB[2], &j2, &l2, in, kd, size);
+        a += room_comb(c3, REV_COMB[3], &j3, &l3, in, kd, size);
+        a = room_ap(rev_ap, REV_AP[0], &d0, a);
+        out[i] += room_ap(p1, REV_AP[1], &d1, a);
     }
+    fx.comb_i[0] = (uint16_t)j0, fx.comb_i[1] = (uint16_t)j1, fx.comb_i[2] = (uint16_t)j2, fx.comb_i[3] = (uint16_t)j3;
+    fx.ap_i[0] = (uint16_t)d0, fx.ap_i[1] = (uint16_t)d1;
+    fx.comb_lp[0] = l0, fx.comb_lp[1] = l1, fx.comb_lp[2] = l2, fx.comb_lp[3] = l3;
+}
+
+/* SPRING's allpass stage: its state *a (its output 4 samples ago), the input x, *p the stage before's state (in:
+ * its old value; out: this one's); its output. Inline, the SP_N written out: no loop overhead (the states stay in
+ * memory: ap[j + k] is a different slot every sample) */
+_Static_assert(SP_N == 10u, "rev_spring writes the SP_N stages out");
+static inline int32_t sp_ap(int32_t *a, int32_t x, int32_t *p)
+{
+    int32_t o = *a, v = (x - o) * SP_A;                 /* (lossless: bounded by the loop's input, no clamp) */
+    x = ((v + ((v >> 31) & 4095)) >> 12) + *p;          /* towards 0, as the loop's gain: floors would feed */
+    *p = o;                                             /* the loop a little offset and noise for ever */
+    *a = x;
+    return x;
 }
 
 /* SPRING (see the top), added to out */
 static __attribute__((noinline)) void rev_spring(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
-    uint32_t i, k, s = (uint32_t)song.g[G_RSIZE];
+    uint32_t i, s = (uint32_t)song.g[G_RSIZE];
     int32_t g = 19661 + (int32_t)s * 85;                /* the loop's gain: 0.6 .. 0.93 */
     int32_t kl = 26000 - song.g[G_RDAMP] * 160;         /* its low-pass: ~9 kHz .. ~1.3 kHz */
     int32_t len = (int32_t)(1323u + ((s * 1323u) >> 7)) << 8, L, L2, L3, f, w;
@@ -302,13 +334,16 @@ static __attribute__((noinline)) void rev_spring(const int32_t *rev_in, int32_t 
         x -= fx.sp_hp;
         p = ap[j];                                      /* the chain: ap[j + k], stage k's output 4 samples ago */
         ap[j] = x;
-        for (k = 1; k <= SP_N; k++) {                   /* (lossless: bounded by the loop's input, no clamp) */
-            int32_t v = (x - ap[j + k]) * SP_A;         /* towards 0, as the loop's gain: floors would feed */
-            o = ap[j + k];                              /* the loop a little offset and noise for ever */
-            x = ((v + ((v >> 31) & 4095)) >> 12) + p;
-            p = o;
-            ap[j + k] = x;
-        }
+        x = sp_ap(ap + j + 1u, x, &p);                  /* the SP_N stages written out (sp_ap) */
+        x = sp_ap(ap + j + 2u, x, &p);
+        x = sp_ap(ap + j + 3u, x, &p);
+        x = sp_ap(ap + j + 4u, x, &p);
+        x = sp_ap(ap + j + 5u, x, &p);
+        x = sp_ap(ap + j + 6u, x, &p);
+        x = sp_ap(ap + j + 7u, x, &p);
+        x = sp_ap(ap + j + 8u, x, &p);
+        x = sp_ap(ap + j + 9u, x, &p);
+        x = sp_ap(ap + j + 10u, x, &p);
         ln[wp & SP_MASK] = (int16_t)clamp(x, -32768, 32767);
         fx.sp_w = (uint16_t)(wp + 1u);
         out[i] += (t0 + (((t1 - t0) * f) >> 8)) * 4 + ln[(wp - (uint32_t)L3) & SP_MASK] * 2;
@@ -385,6 +420,29 @@ static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t
     *lp = l;
     *le = r;
 }
+/* the buses at rest: a line that holds only zeros, its states at rest and its send silent for the block would
+ * write zeros and add nothing; it is skipped and only its indices and phases move on as the block would move them
+ * (bit for bit the same sound when a send comes). Idle, that is most of the buses' cost. The chorus, the delay and
+ * HALL; never ROOM (its combs floor: a -1 circulates for ever) and the delay while its low-pass, floored too, rests
+ * at -1 with FDBK feeding it back; SPRING too. zeros32, hall_rest, spring_rest and spring_live noinline: their
+ * loops stay out of the audio ISR's (inlined, its layout and target budget as before) */
+static __attribute__((noinline)) int zeros32(const int32_t *x, uint32_t n)    /* a send's block all 0? */
+{
+    uint32_t i;
+    int32_t z = 0;
+    for (i = 0; i < n; i++)
+        z |= x[i];
+    return !z;
+}
+/* Return 1 if all n samples in x are zero, otherwise 0; stop at the first nonzero sample. */
+static int zeros16(const int16_t *x, uint32_t n)
+{
+    uint32_t i;
+    for (i = 0; i < n && !x[i]; i++)
+        ;
+    return i == n;
+}
+
 /* the block's HL_NC samples of a circular buffer of len from index d in at most two runs, no wrap inside them:
  * body with s (the run's start in the block) and k (its length); d moves on */
 #define HL_RUNS(d, len, k, s, body)                                                         \
@@ -394,12 +452,13 @@ static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t
         d = (d) + k >= (len) ? 0u : (d) + k;                                                \
     }
 
+#define HL_LFO ((uint32_t)(0.37 * CTL / FS * 4294967296.0))   /* the drift: 0.37 Hz (even lines), 0.74 Hz (odd) */
+
 /* HALL (see the top): a block of the send (n = CTL samples: audio.c) -> the mid added to out, the side into
  * rev_side. At half the rate (HL_NC samples) in passes over the block, each with few states (every line is
  * longer than a block: what the lines give in this block was written before it): the send, every other
  * sample, low cut, diffusers (hl.bx); the lines' ends at their drifting taps, low-passed, scaled (hl.y); the
  * outputs and the matrix; back into the lines; the outputs back to 44.1 kHz. */
-#define HL_LFO ((uint32_t)(0.37 * CTL / FS * 4294967296.0))   /* the drift: 0.37 Hz (even lines), 0.74 Hz (odd) */
 static __attribute__((noinline)) void rev_hall(const int32_t *rev_in, int32_t *out, uint32_t n)
 {
     int16_t *b = rev_comb, *a = rev_ap;
@@ -486,6 +545,63 @@ static __attribute__((noinline)) void rev_hall(const int32_t *rev_in, int32_t *o
     }
     hl.m = mp, hl.s = sp;
     hl.side = 1;
+    if (!zeros16(&hl.y[0][0], HL_NL * HL_NC) || !zeros16(rev_ap, HL_AP[0] + HL_AP[1]))
+        hl.live = HL_LEN[HL_NL - 1u];                   /* (the longest line: written over once, it holds zeros) */
+    else
+        hl.live = (uint16_t)(hl.live > HL_NC ? hl.live - HL_NC : 0u);
+}
+
+/* HALL at rest (zeros32): lines and diffusers all 0 (hl.live), the states 0, the send silent: the block's indices
+ * and drift move on as rev_hall moves them; hl.side stays 0 (rev_side_mix not run). 0: HALL must run. (The low-pass
+ * steps' remainders he, le need not be 0: on silence they stay as they are and move nothing) */
+static __attribute__((noinline)) int hall_rest(const int32_t *rev_in, uint32_t n)
+{
+    uint32_t k, d;
+    int32_t z = hl.live | hl.x | hl.hp | hl.m | hl.s;
+    for (k = 0; k < HL_NL; k++)
+        z |= hl.lp[k];
+    if (z || !zeros32(rev_in, n))
+        return 0;
+    for (k = 0; k < HL_NL; k++) {
+        d = hl.i[k] + HL_NC;
+        hl.i[k] = (uint16_t)(d >= HL_LEN[k] ? d - HL_LEN[k] : d);
+    }
+    for (k = 0; k < HL_NAP; k++) {
+        d = hl.d[k] + HL_NC;
+        hl.d[k] = (uint16_t)(d >= HL_AP[k] ? d - HL_AP[k] : d);
+    }
+    hl.ph += HL_LFO;
+    return 1;
+}
+
+/* SPRING at rest: keep #159's out-of-line gate/liveness helpers and #172's exact filter fixed-point
+ * predicate. The line/allpasses and send are zero; the low-pass does not move, and its rounded feedback
+ * equals the low cut. Their difference is zero, so any valid low-cut remainder 0..63 remains unchanged.
+ * Advance SIZE, wobble and write index exactly once, as rev_spring would. */
+static __attribute__((noinline)) int spring_rest(const int32_t *rev_in, uint32_t n)
+{
+    int32_t len, g = 19661 + song.g[G_RSIZE] * 85, kl = 26000 - song.g[G_RDAMP] * 160;
+    int32_t z = fx.sp_lp * g;
+    if (fx.sp_live || mulq15(-fx.sp_lp, kl) ||
+        fx.sp_hp != (z + ((z >> 31) & 32767)) >> 15 || !zeros32(rev_in, n))
+        return 0;
+    len = (int32_t)(1323u + (((uint32_t)song.g[G_RSIZE] * 1323u) >> 7)) << 8;   /* (as rev_spring) */
+    if (!fx.sp_size)
+        fx.sp_size = len;
+    fx.sp_size += clamp(len - fx.sp_size, -256, 256);
+    fx.sp_ph += 2u * LFO_INC[24];
+    fx.sp_w = (uint16_t)(fx.sp_w + n);
+    return 1;
+}
+/* after rev_spring ran: the block wrote only zeros into the line and left the allpasses at 0? fx.sp_live counts down
+ * (written over with zeros once: all 0), else it starts again */
+static __attribute__((noinline)) void spring_live(uint32_t n)
+{
+    uint32_t a = (uint32_t)(fx.sp_w - n) & SP_MASK, m = SP_LEN - a < n ? SP_LEN - a : n, k;
+    int32_t z = !zeros16(rev_comb + a, m) || !zeros16(rev_comb, n - m);
+    for (k = 0; k < 4u * (SP_N + 1u) && !z; k++)
+        z = rev_u.sp[k];
+    fx.sp_live = (uint16_t)(z ? SP_LEN : fx.sp_live > n ? fx.sp_live - n : 0u);
 }
 
 /* the reverb's buffers and states to silence (the model changed) */
@@ -502,6 +618,8 @@ static void rev_clear(void)
         hl.lp[i] = hl.le[i] = 0;
     fx.sp_lp = fx.sp_hp = fx.sp_he = 0;
     hl.x = hl.m = hl.s = hl.hp = hl.he = 0;
+    hl.live = 0;
+    fx.sp_live = 0;
 }
 
 #if FELUCCA_CPU2
@@ -561,43 +679,63 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
     uint32_t i, dl = delay_samples();
     int32_t fb = song.g[G_DFDBK] * 230, col = 2000 + song.g[G_DCOLOR] * 240;
     int32_t dmix = song.g[G_DMIX] * 258;
-    int32_t cdepth = song.g[G_CDEPTH] * 6, rt;
+    int32_t cdepth = song.g[G_CDEPTH] * 6, rt, zc = 0, zd = 0;
     uint32_t cinc = LFO_INC[song.g[G_CRATE] & 127] / CTL;
+    int rc, rd;
     if (pf.ew1 && fb < THR_FB)
         fb += mulq16(THR_FB - fb, (uint32_t)pf.ew1 << 1);   /* ECHO THROW (perform.c): more feedback while held, 0.7
                                                              * at most (the loop's gain below 1: it never runs away) */
-    for (i = 0; i < n; i++) {
-        int32_t y = 0, x, r;
-        /* chorus: modulated short delay, 5..15 ms */
-        cho_buf[fx.cho_w & (CHO_LEN - 1u)] = (int16_t)clamp(cho_in[i] >> 1, -32768, 32767);
-        fx.cho_ph += cinc;
-        r = (400 << 8) + ((osc_sine(fx.cho_ph) + 32768) * cdepth >> 8);   /* Q8 delay: read between samples */
-        {
-            uint32_t ri = (uint32_t)r >> 8;
-            int32_t f = r & 255, c0 = cho_buf[(fx.cho_w - ri) & (CHO_LEN - 1u)];
-            int32_t c1 = cho_buf[(fx.cho_w - ri - 1u) & (CHO_LEN - 1u)];
-            y += (c0 + (((c1 - c0) * f) >> 8)) << 1;
+    rc = fx.cho_live || !zeros32(cho_in, n);           /* at rest (zeros32): only the indices and phases move */
+    rd = fx.dly_live || mulq15(-fx.dly_lp, col) || mulq15(fx.dly_lp, fb) || !zeros32(dly_in, n);   /* (its low-pass
+                                                         * at rest: kept by a silent line, feeding nothing back) */
+    if (rc) {
+        for (i = 0; i < n; i++) {                       /* chorus: modulated short delay, 5..15 ms */
+            int32_t x = clamp(cho_in[i] >> 1, -32768, 32767), r;
+            zc |= x;
+            cho_buf[fx.cho_w & (CHO_LEN - 1u)] = (int16_t)x;
+            fx.cho_ph += cinc;
+            r = (400 << 8) + ((osc_sine(fx.cho_ph) + 32768) * cdepth >> 8);   /* Q8 delay: read between samples */
+            {
+                uint32_t ri = (uint32_t)r >> 8;
+                int32_t f = r & 255, c0 = cho_buf[(fx.cho_w - ri) & (CHO_LEN - 1u)];
+                int32_t c1 = cho_buf[(fx.cho_w - ri - 1u) & (CHO_LEN - 1u)];
+                wet[i] = (c0 + (((c1 - c0) * f) >> 8)) << 1;
+            }
+            fx.cho_w++;
         }
-        fx.cho_w++;
-        /* delay with a low-passed feedback */
-        x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)];
-        fx.dly_lp += mulq15(x - fx.dly_lp, col);
-        dly_buf[fx.dly_w & (DLY_LEN - 1u)] =
-            (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
-        fx.dly_w++;
-        y += mulq15(x << 1, dmix);
-        wet[i] = y;
+        fx.cho_live = zc ? CHO_LEN : fx.cho_live > n ? fx.cho_live - n : 0u;   /* (written over with zeros: all 0) */
+    } else {
+        for (i = 0; i < n; i++)
+            wet[i] = 0;
+        fx.cho_ph += n * cinc, fx.cho_w += n;
     }
+    if (rd) {
+        for (i = 0; i < n; i++) {                       /* delay with a low-passed feedback */
+            int32_t x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)], w;
+            fx.dly_lp += mulq15(x - fx.dly_lp, col);
+            w = clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
+            zd |= w;
+            dly_buf[fx.dly_w & (DLY_LEN - 1u)] = (int16_t)w;
+            fx.dly_w++;
+            wet[i] += mulq15(x << 1, dmix);
+        }
+        fx.dly_live = zd ? DLY_LEN : fx.dly_live > n ? fx.dly_live - n : 0u;
+    } else
+        fx.dly_w += n;
     rt = song.g[G_RTYPE];
     rt = rt == 1 || rt == 2 ? rt : 0;
     hl.side = 0;
     if (rt != fx.rtype)
         rev_switch(rev_in, wet, n, rt);
-    else if (rt == 2)
-        rev_hall(rev_in, wet, n);
-    else if (rt)
-        rev_spring(rev_in, wet, n);
-    else
+    else if (rt == 2) {
+        if (!hall_rest(rev_in, n))
+            rev_hall(rev_in, wet, n);
+    } else if (rt) {
+        if (!spring_rest(rev_in, n)) {
+            rev_spring(rev_in, wet, n);
+            spring_live(n);
+        }
+    } else
         rev_room(rev_in, wet, n);
 }
 
@@ -651,11 +789,11 @@ typedef struct {
 static ins_t ins[NTRK] __attribute__((section(".pool")));
 
 static inline int32_t ins_mixq(int32_t m) { return m >= 127 ? 32768 : m <= 0 ? 0 : m * 258; }   /* MIX -> Q15 */
-/* the one-pole low-pass (topology-preserving) coefficient of cutoff index c, Q16: G = g / (1 + g), g = tan(pi fc / FS) */
-static int32_t ins_lpk(int32_t c)
+/* the one-pole low-pass (topology-preserving) coefficient of cutoff index c, Q16: G = g / (1 + g), g = tan(pi fc / FS);
+ * INS_LPK = (SVF_G << 16) / (4096 + SVF_G), exactly, from tools/gen_tables.py */
+static inline int32_t ins_lpk(int32_t c)
 {
-    uint32_t g = SVF_G[clamp(c, 0, 127)];
-    return (int32_t)((g << 16) / (4096u + g));
+    return INS_LPK[clamp(c, 0, 127)];
 }
 /* the drives' and CRUSH's shape of v (a voice's full scale 32768; v already through DRIVE): the curve the INSERT
  * graph draws too */
@@ -729,21 +867,21 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
         uint32_t tr = pf_tri(s->ph + (n >> 1) * inc), q = 32768u + (uint32_t)(((int32_t)tr - 32768) * (int32_t)dep / 127);
         int32_t a = PH_A[q >> 11] + (((PH_A[(q >> 11) + 1u] - PH_A[q >> 11]) * (int32_t)(q & 2047u)) >> 11);
         int32_t fbk = c * 180;                          /* 0 .. 0.7, Q15 */
+        int32_t fb = s->fb, w = s->w, dc = s->dc;      /* in locals for the block (the stores into b could alias
+                                                         * them); the stages' 8 stay in s (in locals: spills) */
         for (i = 0; i < n; i++) {
-            int32_t x = b[i], xs = clamp((x + 4) >> 3, -16383, 16383), u = xs + ((s->fb * fbk + 16384) >> 15), y = u;
-            uint32_t st;
-            s->w += clamp(tw - s->w, -SL_SLOPE, SL_SLOPE);
-            for (st = 0; st < PH_ST; st++) {            /* y = a (u - y1) + u1 */
-                y = clamp(s->px[st] + ((a * (u - s->py[st]) + 8192) >> 14), -65535, 65535);
-                s->px[st] = u;
-                s->py[st] = y;
-                u = y;
-            }
-            s->fb = clamp(y, -32767, 32767);
+            int32_t x = b[i], xs = clamp((x + 4) >> 3, -16383, 16383), y = xs + ((fb * fbk + 16384) >> 15);
+            w += clamp(tw - w, -SL_SLOPE, SL_SLOPE);
+            y = ph_ap(&s->px[0], &s->py[0], y, a);      /* the PH_ST stages written out (perform.c) */
+            y = ph_ap(&s->px[1], &s->py[1], y, a);
+            y = ph_ap(&s->px[2], &s->py[2], y, a);
+            y = ph_ap(&s->px[3], &s->py[3], y, a);
+            fb = clamp(y, -32767, 32767);
             y <<= 2;                                    /* (y: at an eighth) */
-            s->dc += ((y << 8) - s->dc) >> 9;           /* DC blocker, ~14 Hz (a clipped loud input is lopsided) */
-            b[i] = pf_mix(x, (x >> 1) + y - (s->dc >> 8), s->w);   /* (dry + all-passed) / 2 */
+            dc += ((y << 8) - dc) >> 9;                 /* DC blocker, ~14 Hz (a clipped loud input is lopsided) */
+            b[i] = pf_mix(x, (x >> 1) + y - (dc >> 8), w);   /* (dry + all-passed) / 2 */
         }
+        s->fb = fb, s->w = w, s->dc = dc;
         s->ph += n * inc;
         return;
     }
@@ -954,10 +1092,29 @@ static __attribute__((noinline)) void scope_take_mix(uint32_t n)
         scope_buf[scope_w++ & (SCOPE_N - 1u)] = (int16_t)clamp(mix_l[i] + wet[i], -32767, 32767);
 }
 
+/* Automatic project saves observe both final master channels, Q15, independent of the HOME scope.
+ * Audio alone increments this aligned scalar, once per block whose per-channel RMS exceeds 32
+ * (~-60 dBFS); main only reads it. There is no associated payload to publish. The generation retains
+ * short bursts between polls; main supplies the full quiet interval. Block energy avoids indefinite
+ * holds from quiet rounded FX residuals. master_out bounds samples to signed Q15: a square fits
+ * int32, at most CTL=32 squares need 36 bits. Compare energy without division or square root.
+ * USB LEVEL FIXED observes the full USB source before DAC attenuation, conservatively even without
+ * a stream. The DAC-only click is excluded: transport already holds autosave, and its <35 ms residual
+ * fits inside the idle wait. */
+/* Standalone DSP fixtures omit the storage feature define; use the firmware's enabled default. */
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+static volatile uint32_t fx_audio_activity;
+#else
+#define fx_audio_activity 0u
+#endif
+
 /* the master with the FX layer's effects between its level and master_out (perform.c) */
 static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
 {
     uint32_t i;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    uint64_t energy_l = 0, energy_r = 0;
+#endif
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++) {
         mix_l[i] = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
@@ -969,7 +1126,15 @@ static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
         master_out(&l, &r);
         out[2u * i] = l;
         out[2u * i + 1u] = r;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+        energy_l += (uint32_t)(l * l);
+        energy_r += (uint32_t)(r * r);
+#endif
     }
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    if (energy_l > 1024u * n || energy_r > 1024u * n)
+        fx_audio_activity++;
+#endif
 }
 
 /* ---- the second core (hal/fm1_cpu1.h; after Jangada's, github.com/zednaked/jangada, GPL-3.0) renders some of
@@ -1053,6 +1218,9 @@ static uint32_t mix_split(void)
 static void mix_block(int32_t *out, uint32_t n)
 {
     uint32_t i;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    uint64_t energy_l = 0, energy_r = 0;
+#endif
     int perf;
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++)
@@ -1111,5 +1279,13 @@ static void mix_block(int32_t *out, uint32_t n)
         master_out(&l, &r);
         out[2u * i] = l;
         out[2u * i + 1u] = r;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+        energy_l += (uint32_t)(l * l);
+        energy_r += (uint32_t)(r * r);
+#endif
     }
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    if (energy_l > 1024u * n || energy_r > 1024u * n)
+        fx_audio_activity++;
+#endif
 }

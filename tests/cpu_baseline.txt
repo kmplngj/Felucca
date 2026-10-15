@@ -80,7 +80,7 @@ cpu/FM6/06_ORGAN 1433
 cpu/FM6/07_PLUCK 886
 cpu/SLICE/00_CHOP 982
 cpu/SLICE/01_STUTTER 1008
-cpu/mix/idle 286
-cpu/mix/idle_drums 552
+cpu/mix/idle 251
+cpu/mix/idle_drums 495
 cpu/mix/3parts_full_drums 1574
-cpu/mix/idle_click 334
+cpu/mix/idle_click 275

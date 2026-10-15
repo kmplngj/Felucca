@@ -704,17 +704,26 @@ static int32_t ph_coef(uint32_t q)
     uint32_t t = pf_tri(q), i = t >> 11;
     return PH_A[i] + (((PH_A[i + 1u] - PH_A[i]) * (int32_t)(t & 2047u)) >> 11);
 }
-/* PHASER on one side c: x in, the stages' coefficient a (rounded: no DC creeping in through the low breaks) */
+/* PHASER's all-pass stage (and the INSERT's, fx.c): its last input *x1 and output *y1, the input u, the
+ * coefficient a (rounded: no DC creeping in through the low breaks); its output. Inline, the PH_ST written out
+ * (clang at -Os keeps a loop of 4 a loop) */
+_Static_assert(PH_ST == 4u, "ph_side and ins_swept write the PH_ST stages out");
+static inline int32_t ph_ap(int32_t *x1, int32_t *y1, int32_t u, int32_t a)
+{
+    int32_t y = clamp(*x1 + ((a * (u - *y1) + 8192) >> 14), -65535, 65535);   /* y = a (u - y1) + u1 */
+    *x1 = u;
+    *y1 = y;
+    return y;
+}
+/* PHASER on one side c: x in, the stages' coefficient a */
 static inline int32_t ph_side(uint32_t c, int32_t x, int32_t a)
 {
-    int32_t xs = clamp((x + 2) >> 2, -16383, 16383), u = xs + ((pf.pfb[c] * PH_FB + 16384) >> 15), y = u;
-    uint32_t s;
-    for (s = 0; s < PH_ST; s++) {                       /* y = a (u - y1) + u1 */
-        y = clamp(pf.px[c][s] + ((a * (u - pf.py[c][s]) + 8192) >> 14), -65535, 65535);
-        pf.px[c][s] = u;
-        pf.py[c][s] = y;
-        u = y;
-    }
+    int32_t xs = clamp((x + 2) >> 2, -16383, 16383), y = xs + ((pf.pfb[c] * PH_FB + 16384) >> 15);
+    int32_t *px = pf.px[c], *py = pf.py[c], u;
+    y = ph_ap(px, py, y, a);
+    y = ph_ap(px + 1, py + 1, y, a);
+    y = ph_ap(px + 2, py + 2, y, a);
+    y = ph_ap(px + 3, py + 3, y, a);
     pf.pfb[c] = clamp(y, -32767, 32767);
     u = xs + y;                                         /* (x + y) / 2 * 0.9, x 4 (>> 2 above): (x + y) * 1.8 */
     return pf_mix(x, u + mulq16(u, 52429u), pf.pw);
