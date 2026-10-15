@@ -20,12 +20,14 @@
         "portable-dsp"
       ],
       "tests": [
-        "tests/regress.c"
+        "tests/regress.c",
+        "tests/analog_mix0_test.c"
       ],
       "assets": [],
       "render": "analog_render",
       "budget_functions": [
-        "analog_render"
+        "analog_render",
+        "analog_render_1"
       ]
     },
     {

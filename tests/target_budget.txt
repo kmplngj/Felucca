@@ -2,6 +2,8 @@
 # function in build/felucca.dis, x4 per nesting level, divides x9. The check allows +10 %.
 # Rewritten by BUDGET_UPDATE=1.
 analog_render 585
+# MIX 0 helper: measured JieLi Clang 4.0.1 default M8Stealth build; static loop heuristic, not cycles.
+analog_render_1 702
 phase_render 79
 phase_render_f 102
 lofi_render 123
@@ -30,7 +32,9 @@ dv_kick_run 153
 dv_snare_run 158
 dv_clap_run 74
 dv_hat_run 61
-dv_tom_run 75
+# Exact-zero stick split: exclusive attack/tail spans are 75/64 instructions.
+# The estimator conservatively adds both (139); this is not an execution-time claim.
+dv_tom_run 139
 dv_rim_run 61
 dv_bell_run 52
 dv_cym_run 67
