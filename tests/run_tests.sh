@@ -227,6 +227,8 @@ run "package flash boundaries (synthetic SDK)" python3 tests/fm1pkg_test.py
 run "package flash boundaries (Python -O, synthetic SDK)" python3 -O tests/fm1pkg_test.py
 run "host CPU baselines: compiler, version and platform separation" python3 tests/cpu_baseline_test.py
 run "timestamped interaction replay: portable scenario validation" python3 tests/replay_validation_test.py
+$CC -O2 -fstrict-aliasing -fno-builtin -o "$OUT/libc_test" tests/libc_test.c
+run "firmware libc: copy/fill sizes, alignments, sentinels and typed objects" "$OUT/libc_test"
 run "exact PR firmware: selection, download integrity and installer handoff" python3 tests/fm1_pr_test.py
 
 $CC -o "$OUT/storage_test" tests/storage_test.c
@@ -572,6 +574,10 @@ else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    # The libc harness needs none of the DSP sanitizer exclusions above.
+    ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined \
+        -fno-sanitize-recover=all -fno-builtin -o "$A/libc_test" tests/libc_test.c
+    run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
     $SCC -o "$A/ldr_test" tests/ldr_test.c
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
