@@ -59,6 +59,8 @@ rev_spring 161
 rev_hall 1995
 zeros32 4
 hall_rest 27
+spring_rest 0
+spring_live 15
 rev_side_mix 9
 track_insert 3
 ins_drive 277
