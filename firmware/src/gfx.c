@@ -37,6 +37,9 @@ typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #define GFX_HOOK_BEGIN() ((void)0)
 #define GFX_HOOK_PIXELS(n) ((void)0)
 #endif
+#ifndef GFX_HOOK_BLIT_RECT
+#define GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h) ((void)0)
+#endif
 #ifndef GFX_HOOKS
 #define GFX_HOOKS 1
 #endif
@@ -70,7 +73,8 @@ typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #define AL_N(n) ((uint32_t)(n) << 8)
 
 #define CV_MAX (240u * 124u)      /* the graph strip is 240 x 124 */
-static uint16_t cv_px[CV_MAX] __attribute__((section(".pool")));
+static uint16_t cv_px[CV_MAX] __attribute__((aligned(4), section(".pool")));
+typedef uint32_t cv_pair_t __attribute((__may_alias__));   /* two pixels; spelling also retained by the host stubs */
 static uint32_t cv_w, cv_h;
 static uint16_t cv_bg;           /* what cv_begin cleared the canvas to */
 static uint8_t cv_scroll;        /* 1: drawing a scrolled view (its text may run past the canvas) */
@@ -191,6 +195,8 @@ static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
 {
     uint32_t i, n;
     uint16_t s = swap16(bg);
+    uint32_t pair = (uint32_t)s | ((uint32_t)s << 16);
+    cv_pair_t *p = (cv_pair_t *)cv_px;
     if (w * h > CV_MAX)
         h = CV_MAX / w;
     lcd_sync();                     /* the last blit may still read cv_px */
@@ -201,8 +207,10 @@ static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
     cv_cy1 = (int16_t)h;
     cv_bg = bg;
     n = w * h;
-    for (i = 0; i < n; i++)
-        cv_px[i] = s;
+    for (i = 0; i < n / 2u; i++)
+        p[i] = pair;
+    if (n & 1u)
+        cv_px[n - 1u] = s;
 }
 
 static void cv_blit(uint32_t x, uint32_t y)
@@ -217,6 +225,24 @@ static void cv_blit_from(uint32_t x, uint32_t y, uint32_t r0)
     GFX_HOOK_BLIT(x, y, r0);
     if (r0 < cv_h)
         lcd_blit(x, y + r0, cv_w, cv_h - r0, cv_px + r0 * cv_w);
+}
+
+/* Submit a rectangle from a freshly rendered canvas. Packing forward is safe:
+ * each destination precedes its source, including within a row. The canvas is
+ * consumed; cv_begin must wait for this DMA before any following drawing. */
+static void cv_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h)
+{
+    uint32_t r, c, dst = 0;
+    if (x0 >= cv_w || y0 >= cv_h || !w || !h)
+        return;
+    if (w > cv_w - x0) w = cv_w - x0;
+    if (h > cv_h - y0) h = cv_h - y0;
+    lcd_sync();                                   /* never overwrite a running DMA's source */
+    GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h);         /* before packing changes canvas coordinates */
+    for (r = 0; r < h; r++)
+        for (c = 0; c < w; c++)
+            cv_px[dst++] = cv_px[(y0 + r) * cv_w + x0 + c];
+    lcd_blit(x + x0, y + y0, w, h, cv_px);
 }
 
 static inline void cv_pset(int32_t x, int32_t y, uint16_t c)

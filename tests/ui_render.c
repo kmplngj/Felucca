@@ -194,6 +194,7 @@ static void hk_cell(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
     }
 }
 static void hk_blit(uint32_t x, uint32_t y, uint32_t r0, uint32_t w, uint32_t h);
+static void hk_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h);
 static void hk_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 /* STYLE LINE: the dividers drawn on the screen (ui_draw.c lcd_rule) while no later blit or fill covers them */
 static int16_t rules[32][4];
@@ -216,6 +217,7 @@ static void rules_cover(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
 }
 #define GFX_HOOK_TEXT(x0, y0, x1, y1, s, flags) hk_text(x0, y0, x1, y1, s, flags)
 #define GFX_HOOK_BLIT(x, y, r0) hk_blit(x, y, r0, cv_w, cv_h)
+#define GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h) hk_blit_rect(x, y, x0, y0, w, h)
 #define GFX_HOOK_BEGIN() (npend = ncells = 0, al_flush())
 #define GFX_HOOK_CELL(x0, y0, x1, y1) hk_cell(x0, y0, x1, y1)
 #define GFX_HOOK_RULE(x, y, w, h) hk_rule(x, y, w, h)
@@ -505,26 +507,33 @@ static void contain(int32_t x, int32_t y)
         }
     }
 }
-static void hk_blit(uint32_t x, uint32_t y, uint32_t r0, uint32_t w, uint32_t h)
+/* Layout/alignment lint inspects the whole render; only submitted damage
+ * covers prior screen boxes/rules and contributes to transfer accounting. */
+static void hk_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h)
 {
-    uint32_t i, k = 0;
+    uint32_t i, k = 0, x1 = x0 + w, y1 = y0 + h;
     al_flush();
     contain((int32_t)x, (int32_t)y);
     ncells = 0;
-    blit_px += (uint64_t)w * (h > r0 ? h - r0 : 0u);
+    blit_px += (uint64_t)w * h;
     for (i = 0; i < npend; i++) {
         rbox_t b = pend[i];
-        if (b.y1 <= (int32_t)r0) continue;           /* rows not blitted */
-        if (b.y0 < (int32_t)r0) b.flags |= 2u;
+        if (b.y1 <= (int32_t)y0 || b.y0 >= (int32_t)y1 || b.x1 <= (int32_t)x0 || b.x0 >= (int32_t)x1) continue;
+        if (b.y0 < (int32_t)y0 || b.y1 > (int32_t)y1 || b.x0 < (int32_t)x0 || b.x1 > (int32_t)x1) b.flags |= 2u;
         b.x0 += (int16_t)x; b.x1 += (int16_t)x; b.y0 += (int16_t)y; b.y1 += (int16_t)y;
         if (!split_pair(&b)) pend[k++] = b;
     }
-    cover((int32_t)x, (int32_t)(y + r0), (int32_t)(x + w), (int32_t)(y + h));
-    rules_cover((int32_t)x, (int32_t)(y + r0), (int32_t)(x + w), (int32_t)(y + h));
+    cover((int32_t)(x + x0), (int32_t)(y + y0), (int32_t)(x + x1), (int32_t)(y + y1));
+    rules_cover((int32_t)(x + x0), (int32_t)(y + y0), (int32_t)(x + x1), (int32_t)(y + y1));
     for (i = 0; i < k && nscr < 1200u; i++)
         scr[nscr++] = pend[i];
     npend = 0;
 }
+static void hk_blit(uint32_t x, uint32_t y, uint32_t r0, uint32_t w, uint32_t h)
+{
+    hk_blit_rect(x, y, 0, r0, w, h > r0 ? h - r0 : 0u);
+}
+
 
 /* SONG (ui_graph.c graph_song): its texts only in the lanes (their cushions, the slots' letters, + ADD), the ruler's
  * numbers under its line and ONE line at the panel's foot (at most a text left and one right, on one baseline) */
@@ -2166,7 +2175,7 @@ static void align_sweeps(void)
         for (v = 0; v + PR_ROWS <= 128; v++) {
             proll.lo = (uint8_t)v;
             cv_begin(240, H_GRAPH, T_SURF);
-            graph_roll(TSEL, T_THEME);
+            graph_roll(TSEL, T_THEME, pr_playhead(TSEL));
         }
         state(); pal(UI_GREY_INDEX);
         cur_name = st ? "sweep LINE: drum kits" : "sweep FLAT: drum kits";
@@ -2494,6 +2503,22 @@ int main(int argc, char **argv)
                 ti = (double)(clock() - c0) / CLOCKS_PER_SEC / (N * 4) * 1e6;
                 fprintf(rep, "  %s: the panel redrawn %.1f us; an unchanged frame (signature only) %.2f us\n", S_NAME[G[k]], tg, ti);
             }
+        }
+        {
+            uint64_t sent;
+            setup(S_ROLL_PLAYING); pal(1); draw(S_ROLL_PLAYING);
+            song.playing = 1; TSEL->seq_idx = ui.bank * 16u + 1u;
+            ui.force = 1; draw_graph(); ui.force = 0;
+            TSEL->seq_idx++;
+            blit_px = host_blit_pixels = host_blit_calls = 0;
+            draw_graph();
+            sent = (PR_CW + 1u) * PR_ROWS * PR_RH;
+            if (blit_px != sent || host_blit_pixels != sent || host_blit_calls != 1u) {
+                fprintf(stderr, "ui_render: STEP damage hook/physical transfer mismatch\n"); return 1;
+            }
+            fprintf(rep, "  STEP adjacent playhead: %llu pixels (%llu bytes), one transfer; full panel %u bytes\n",
+                    (unsigned long long)sent, (unsigned long long)(sent * 2u), 240u * H_GRAPH * 2u);
+            nscr = npend = 0;
         }
         roll_cost();
         {   /* MENU > LARGE: the same full redraws, tall cards and the strip */

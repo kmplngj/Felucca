@@ -926,8 +926,9 @@ int main(void)
     trk[1].step[3] = (step_t){{64}, 1, ST_NOTE, 0, 96, 0, 0};
     project_capture(&proj_scratch);
     proj_pack(&st, &proj_scratch);
+    ui.force = 0;
     bad += check("a FUN10 project restores into slot 3 (flash and RAM)",
-                 put_all(4, &st, sizeof st, st_crc32(&st, sizeof st)) == 0 && project_used(2) &&
+                 put_all(4, &st, sizeof st, st_crc32(&st, sizeof st)) == 0 && project_used(2) && ui.force &&
                  !memcmp(&proj_slot[2], &st, sizeof st) && st_load(OBJ_PROJECT0 + 2, &proj_wire, sizeof proj_wire) == (int)sizeof st);
     {   /* FUN8 of 1.0.x (3584 bytes, 91 parameters) and FUN9 of 1.1 (3648, 99): restore as FUN10, E0 at P_E0, lanes
          * 100 %, the four 1.2 parameters at their defaults; a FUN9 with 64 motion records keeps them all */
@@ -1036,7 +1037,9 @@ int main(void)
     bad += check("a flash error on commit (4) keeps the slot's RAM copy",
                  put_all(4, &st, sizeof st, st_crc32(&st, sizeof st)) == 4u && !memcmp(&proj_slot[2], &v6, sizeof v6));
     erase_error = 0;
-    bad += check("an empty project object clears the slot", put_all(4, 0, 0, st_crc32(0, 0)) == 0 && !project_used(2));
+    ui.force = 0;
+    bad += check("an empty project object clears the slot and forces a redraw",
+                 put_all(4, 0, 0, st_crc32(0, 0)) == 0 && !project_used(2) && ui.force);
     st.raw[200] ^= 1;                                    /* hash no longer matches */
     bad += check("a project whose own hash fails is refused", put_all(4, &st, sizeof st, st_crc32(&st, sizeof st)) == 2u);
 
