@@ -246,6 +246,11 @@ $CC -O2 -DT_CDC=1 -DHALF_FRAMES=$HALF -o "$OUT/uac_test" tests/uac_test.c -lm
 run "USB audio input: descriptors (with CDC), ring and packets, 44.1 -> 48 kHz resampler, 48 kHz stream" "$OUT/uac_test"
 $CC -O2 -DT_CDC=0 -DHALF_FRAMES=$HALF -o "$OUT/uac_test_nocdc" tests/uac_test.c -lm
 run "USB audio input: descriptors (without CDC), ring and packets, resampler, 48 kHz stream" "$OUT/uac_test_nocdc"
+
+for opt in O2 Os; do
+    $CC -$opt -DHALF_FRAMES=$HALF -o "$OUT/uac_fir_bounds_test_$opt" tests/uac_fir_bounds_test.c
+    run "USB FIR: channel/coefficient bounds, exact stereo PCM and complete state (-$opt)" "$OUT/uac_fir_bounds_test_$opt"
+done
 # USB descriptor layouts (#67): CDC UAC LAYOUT CDC-presented 48K; layout 0 and the console left out = 1.0's bytes
 # (+ the 48 kHz rate with 48K = 1, the default; 48K = 0: byte for byte; + the AC collection's audio streaming
 # interface first, FELUCCA_UAC_AS_FIRST = 1, the default since 1.6)
@@ -587,8 +592,12 @@ elif ! san_ok; then
 else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
-    SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
+    # Unlike the general DSP harness below, retain every UBSan bounds/pointer/shift check here.
+    ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined -fno-sanitize-recover=all \
+        -DHALF_FRAMES=$HALF -o "$A/uac_fir_bounds_test" tests/uac_fir_bounds_test.c
+    run "ASan/UBSan (all checks): USB FIR channel/coefficient bounds and exact PCM/state" "$A/uac_fir_bounds_test"
+    SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     $SCC -o "$A/ldr_test" tests/ldr_test.c
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
