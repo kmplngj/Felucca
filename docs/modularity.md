@@ -33,7 +33,7 @@ remain on their existing owners.
 | 3 | Resolve one standard/reduced selection for target, host and emulator, including source pins, assets, tests and licenses | [#28](https://github.com/kmplngj/Felucca/issues/28), [#341](https://github.com/kmplngj/Felucca/issues/341) |
 | 4 | Qualify sparse catalogs and client availability before new instrument variants | [#305](https://github.com/kmplngj/Felucca/issues/305), [#306](https://github.com/kmplngj/Felucca/issues/306), representative profile evidence |
 | 5 | Add the mandatory Felucca mode adapter, startup selection and Instrument pilot over that same sound catalog | [#203](https://github.com/kmplngj/Felucca/issues/203), [#204](https://github.com/kmplngj/Felucca/issues/204), [#205](https://github.com/kmplngj/Felucca/issues/205) |
-| Parallel | Qualify the optional second core against actual DMA deadlines, faults, saves/reset and device stress | [#44](https://github.com/kmplngj/Felucca/issues/44); no engine/profile/mode requires it |
+| Baseline | Continue with the integrated upstream 1.6.1 optional second-core worker | The independent [#44 experiment](https://github.com/kmplngj/Felucca/issues/44) is retired; no engine/profile/mode requires CPU1 |
 | Before new persistent formats | Allocate each proposed object under the capacity plan | [#213](https://github.com/kmplngj/Felucca/issues/213), [#314–#320](flash-capacity.md) |
 
 Keep firmware-specific identity metadata (tags/icons/categories/CC targets, order and stable
@@ -61,7 +61,11 @@ Both builds remain required evidence. A failed worker is held; unfinished sums a
 for that block instead of replaying potentially advanced part state. Later blocks render
 serially and the main loop clears the ON preference. Thread equivalence and failure fixtures
 do not prove hardware reliability, cache publication, flash quiescence or deadline headroom.
-No voltage/clock/FPU change is part of this direction. #44 remains open for those device gates.
+No voltage/clock/FPU change is part of this direction. The independent #44 experiment is
+cancelled in favor of continuing with the integrated upstream 1.6.1 approach, including
+the backport's reviewed correctness fixes. Its archived hardware checks remain unverified;
+closing the experiment does not establish device reliability. It is no longer an active
+dependency of engine, profile or mode work.
 
 The capacity plan still applies: moving source does not free a storage sector or authorize
 new NOINIT objects. Report measured app/RAM/POOL/RAMTEXT/NOINIT/stack costs for each profile;

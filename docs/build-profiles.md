@@ -128,9 +128,11 @@ LOFI unavailable while keeping all remaining IDs. Restore standard, load the sam
 and preset, and confirm the original LOFI sound and star return. Compare PRESETS tags,
 icons, categories and CC74/CC71 controls across all installed engines with standard.
 Exercise saves/backups through the actual editor before promoting sparse releases.
-Keep #305/#306 client catalog delivery and #44 dual-core device reliability open; these
+Keep #305/#306 client catalog delivery separate from CPU2. The independent #44 dual-core
+experiment is retired in favor of the integrated upstream 1.6.1 approach. These
 host/Wasm/static checks do not qualify FM-1 deadlines, cache publication, flash quiescence
-or hardware recovery. CPU2 remains independent and OFF at runtime by default.
+or hardware recovery; that hardware evidence remains unverified. CPU2 remains independent
+and OFF at runtime by default.
 
 README assessment: the Build link now exposes profiles. The thirteen-engine feature list
 still describes the default standard release; the profile guide explains custom omissions,
