@@ -28,20 +28,24 @@ low/high pitch, shape modulation, bend, glide, retrigger, legato and three summe
 voices. Reference SYNC/SUB implementations are independent, rather than delegating
 to the candidate's unchanged renderer.
 
-Target coverage includes the new `analog_render_1` helper. Its measured default
-JieLi Clang 4.0.1 M8Stealth static cost is 671: 807 total instructions, 543 loop
-instructions, 16 weighted divides, no calls inside loops. This row counts both
-LP and BP/HP copies and branch-layout loop spans; it does not measure one executed
-sample path or device cycles. Existing entries retain their original budgets.
-The default target build uses `-Os` with selective main-loop `minsize`; the new
-helper remains reachable from audio and is not selected for `minsize`.
+The implementation lives in the pinned MIT Engines submodule. It was implemented
+against its current MIT source; this GPL test retains the old two-oscillator
+reference for independent output/state comparisons. The portable contract, engine
+IDs, stored data and user controls remain unchanged.
 
-The new helper saves `rets,r15-r4` (52 bytes) and reserves 80 stack bytes. Its
-caller retains its 52-byte save plus 108-byte allocation and calls the helper
-once per block. Thus the MIX-zero LP path adds a 132-byte frame compared with
-its formerly inlined loop. This renderer pair's additive frames (292 bytes)
-remain below the existing SYNC path (328 bytes); outgoing arguments, enclosing
-callers and interrupt nesting still require real-device guard/timing checks.
-Host equivalence and a static budget pass do not establish FM-1 timing or stack
-high-water use. Device listening, MIX re-entry, USB streaming and diagnostics
-remain pending in the PR description.
+Target coverage includes the new `analog_render_1` helper, including profile
+metadata so profiles that omit ANALOG omit this helper too. At the integrated
+1.6.1 revision, its measured default JieLi Clang 4.0.1 M8Stealth static cost is
+702: 838 total instructions, 558 loop instructions, 18 weighted divides and no
+calls inside loops. This row counts both LP and BP/HP copies and branch-layout
+loop spans; it does not measure one executed sample path or device cycles.
+Existing entries retain their original budgets. The default target build uses
+`-Os` with selective main-loop `minsize`; the new helper remains reachable from
+audio and is not selected for `minsize`.
+
+The helper saves `rets,r15-r4` (52 bytes) and reserves 84 stack bytes. Its caller
+saves 52 bytes and reserves 112 bytes, and calls it once per block. The pair's
+additive frames total 300 bytes; outgoing arguments, enclosing callers and
+interrupt nesting still require real-device guard/timing checks. Host equivalence
+and a static budget pass do not establish FM-1 timing or stack high-water use.
+Device listening, MIX re-entry, USB streaming and diagnostics remain pending.

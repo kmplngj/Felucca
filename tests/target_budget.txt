@@ -3,7 +3,7 @@
 # Rewritten by BUDGET_UPDATE=1.
 analog_render 585
 # MIX 0 helper: measured JieLi Clang 4.0.1 default M8Stealth build; static loop heuristic, not cycles.
-analog_render_1 671
+analog_render_1 702
 phase_render 79
 phase_render_f 102
 lofi_render 123
