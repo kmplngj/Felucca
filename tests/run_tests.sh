@@ -445,6 +445,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/perform_test" tests/perform_test.c -lm
     mkdir -p build/perform_demo build/fx_demo build/throw_demo
     run "FX layer effects: on the 1/16, stereo, too-long REPEAT, SLICER, silent keys, idle bit-identical, clicks, OCT UP / DN, FLANGER, PHASER, the key map, dotted TIME, REV / ECHO THROW, cost, demos" "$OUT/perform_test" build/perform_demo build/fx_demo build/throw_demo
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/stage_unroll_test" tests/stage_unroll_test.c -lm
+    run "SPRING and both PHASER callers: original-loop PCM/state equivalence and mutation sensitivity (-O2)" "$OUT/stage_unroll_test"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/reverb_test" tests/reverb_test.c -lm
     mkdir -p build/reverb_demo
     run "REVERB TYPE: ROOM / SPRING bit-identical, SPRING and HALL decay / stability / level, HALL silence / stereo / ringing, model changes, cost, demos" "$OUT/reverb_test" build/fx_demo build/reverb_demo
@@ -460,6 +462,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt "$CPU_B"
     NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
     echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/stage_unroll_test_os" tests/stage_unroll_test.c -lm
+    run "SPRING and both PHASER callers: original-loop PCM/state equivalence and mutation sensitivity (-Os, no SIMD)" "$OUT/stage_unroll_test_os"
     $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
     run "regression built as the target (-Os, no vectorising): the same goldens, CPU budget" \
         "$OUT/regress_os" tests/golden.txt "$CPU_B_OS"
