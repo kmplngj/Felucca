@@ -70,11 +70,21 @@ static volatile struct {
     uint32_t dim_n, dim_sum;
 } fm1_in_stat = {.gap_max = 3120, .cost_sum = 1680000, .cost_max = 240, .ticks = 10000};
 static uint32_t fm1__dim_k = 4;
-static struct {
+typedef struct {
     uint32_t magic, count, vec, pc, rets, emu, dbg, sp, psr, icfg, uptime_ms;
     uint32_t etm[4], early;
-} fm1_crash = {.magic = FM1_CRASH_MAGIC, .count = 2, .vec = 4, .pc = 0x02001234,
+} fm1_crash_t;
+static fm1_crash_t fm1_crash = {.magic = FM1_CRASH_MAGIC, .count = 2, .vec = 4, .pc = 0x02001234,
                .sp = 0x01C60000, .uptime_ms = 50};
+
+/* The console consumes a validated snapshot through the HAL accessor. The
+ * fixture supplies fixed host state; retained-RAM publication has its own tests. */
+static int fm1_crash_read(fm1_crash_t *copy)
+{
+    if (fm1_crash.magic != FM1_CRASH_MAGIC) return 0;
+    *copy = fm1_crash;
+    return 1;
+}
 
 static uint32_t fm1_ticks(void) { return 24000000u; }
 static uint32_t fm1__lock(void) { return 0; }
