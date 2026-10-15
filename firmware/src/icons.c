@@ -200,10 +200,12 @@ static uint32_t param_icon(const param_desc_t *d, int32_t v)
         return ICON_CUTOFF;                   /* ANALOG's filter TYPE (1.5): "TYPE" is also the reverb's */
     if (d == &TP[P_ESYNC])
         return ICON_TEMPO;                    /* ENV SYNC (1.5): as LFO 2's SYNC */
+#if FELUCCA_PROFILE_ENGINE_11 && FELUCCA_ENG_OMIT != 11
     if (d->names == N_NOISE_MODE)
         return ICON_NOISE;                    /* NOISE's MODE is the source; its CLK the register clock */
     if (d == &NOISE_CLK)
         return ICON_RATE;
+#endif
 #if FELUCCA_SLICE
     if (d->names == N_SLC_DIV)
         return ICON_SLICE;                    /* SLICE: DIV is the slicing, MODE the gate, REV the direction */

@@ -117,7 +117,32 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
         for (i = 0; i < w && x + i < 240u; i++)
             host_put((y + j) * 240u + x + i, (uint16_t)((c >> 8) | (c << 8)));
 }
-static void lcd_sync(void) {}
+static void lcd_sync(void);
+static void (*host_lcd_sync_hook)(void);
+static int host_lcd_async;
+static uint32_t host_dma_bad, host_blit_pixels, host_blit_calls;
+static struct { uint32_t x, y, w, h, hash; const uint16_t *p; } host_dma;
+static uint32_t host_lcd_hash(const uint16_t *p, uint32_t n)
+{
+    uint32_t h = 2166136261u;
+    while (n--) h = (h ^ *p++) * 16777619u;
+    return h;
+}
+static void host_lcd_copy(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
+{
+    uint32_t i, j;
+    for (j = 0; j < h && y + j < 240u; j++)
+        for (i = 0; i < w && x + i < 240u; i++) host_put((y + j) * 240u + x + i, p[j * w + i]);
+}
+static void lcd_sync(void)
+{
+    if (host_dma.p) {
+        host_dma_bad += host_dma.hash != host_lcd_hash(host_dma.p, host_dma.w * host_dma.h);
+        host_lcd_copy(host_dma.x, host_dma.y, host_dma.w, host_dma.h, host_dma.p);
+        host_dma.p = 0;
+    }
+    if (host_lcd_sync_hook) host_lcd_sync_hook();
+}
 /* MENU > SCREEN OFF (lcd.c lcd_power / lcd_wake_now): what the panel was told, in order (0 off: DISPOFF, SLPIN;
  * 1 SLPOUT; 2 DISPON; 3 lcd_wake_now), with the time; host_bl the panel showing (the backlight itself stays on: PA2 is
  * the key matrix's /OE too, lcd.c lcd_power) */
@@ -133,14 +158,31 @@ static void lcd_power(uint32_t s) { host_pw_log(s); }
 static void lcd_wake_now(void) { host_pw_log(3u); }
 /* (the HOME oscilloscope's buffer, scope_buf: fx.c, with hostsim.c) */
 static uint32_t host_blit_rows;                    /* rows blitted (what a frame draws) */
+static struct { uint32_t stage; } felucca_dbg;
+#ifndef UI_TEST_NO_MAIN
+/* Optional LCD submission trace, omitted from the render/timing harness. */
+static uint32_t host_blit_watch, host_blit_n;
+static struct { uint32_t y, h, stage; } host_blit_log[16];
+#endif
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
-    uint32_t i, j;
+    lcd_sync();
     host_blit_rows += h;
-    for (j = 0; j < h && y + j < 240u; j++)
-        for (i = 0; i < w && x + i < 240u; i++) host_put((y + j) * 240u + x + i, p[j * w + i]);
+#ifndef UI_TEST_NO_MAIN
+    if (host_blit_watch && host_blit_n < NELEM(host_blit_log)) {
+        host_blit_log[host_blit_n].y = y;
+        host_blit_log[host_blit_n].h = h;
+        host_blit_log[host_blit_n++].stage = felucca_dbg.stage;
+    }
+#endif
+    host_blit_pixels += w * h;
+    host_blit_calls++;
+    if (host_lcd_async) {
+        host_dma.x = x; host_dma.y = y; host_dma.w = w; host_dma.h = h; host_dma.p = p;
+        host_dma.hash = host_lcd_hash(p, w * h);
+    } else
+        host_lcd_copy(x, y, w, h, p);
 }
-static struct { uint32_t stage; } felucca_dbg;
 #define FELUCCA_FLASH 0
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "TEST"
@@ -150,7 +192,15 @@ static struct { uint32_t stage; } felucca_dbg;
 #include "../firmware/src/ui.c"
 #include "../firmware/src/menu_items.c"
 #include "../firmware/src/icons.c"
+static uint32_t host_project_reads;
+static int host_project_info(uint32_t slot, char *b, uint16_t *len48, uint32_t *den, uint8_t *n)
+{
+    host_project_reads++;
+    return project_info(slot, b, len48, den, n);
+}
+#define project_info host_project_info
 #include "../firmware/src/ui_graph.c"
+#undef project_info
 #include "../firmware/src/ui_draw.c"
 #include "../firmware/src/ui_menu.c"
 #include "../firmware/src/ui_input.c"
@@ -162,6 +212,28 @@ static int check(const char *what, int ok)
 {
     printf("ui: %-74s %s\n", what, ok ? "ok" : "FAIL");
     return ok ? 0 : 1;
+}
+
+static int test_canvas_clear(void)
+{
+    static const uint32_t widths[] = { 0, 1, 2, 3, 7, 8, 9, 17, 239, 240, 241 };
+    static const uint32_t heights[] = { 0, 1, 2, 3, 7, 8, 9, 123, 124, 125 };
+    static const uint16_t colors[] = { 0x1234, 0, 0xffff };
+    uint32_t wi, hi, ci, i, failures = 0;
+    for (wi = 0; wi < sizeof widths / sizeof widths[0]; wi++)
+        for (hi = 0; hi < sizeof heights / sizeof heights[0]; hi++)
+            for (ci = 0; ci < sizeof colors / sizeof colors[0]; ci++) {
+                uint32_t w = widths[wi], h = heights[hi], n;
+                uint16_t expected = swap16(colors[ci]);
+                for (i = 0; i < CV_MAX; i++) cv_px[i] = 0x5aa5;
+                if (w * h > CV_MAX) h = CV_MAX / w;
+                n = w * h;
+                cv_begin(w, heights[hi], colors[ci]);
+                failures += cv_w != w || cv_h != h || cv_bg != colors[ci] || cv_cy0 != 0 || cv_cy1 != (int16_t)h;
+                for (i = 0; i < CV_MAX; i++)
+                    failures += cv_px[i] != (i < n ? expected : 0x5aa5);
+            }
+    return check("canvas clear: empty, odd/even dimensions, byte order, clipped height and untouched tail", !failures);
 }
 
 /* main.c felucca_init */
@@ -4917,6 +4989,190 @@ static int test_piano_roll(void)
     return bad;
 }
 
+/* Partial STEP transfers must assemble exactly the same screen as a fresh
+ * full graph, including the notes/ties/slides that obscure the playhead. */
+static uint16_t pr_damage_shot[240 * 240];
+static int pr_damage_compare(uint32_t pixels)
+{
+    uint32_t sent = host_blit_pixels, calls = host_blit_calls;
+    int ok;
+    lcd_sync();
+    memcpy(pr_damage_shot, host_screen, sizeof pr_damage_shot);
+    ui.force = 1; draw_graph(); lcd_sync(); ui.force = 0;
+    ok = !memcmp(pr_damage_shot, host_screen, sizeof pr_damage_shot);
+    return ok && sent == pixels && calls == (pixels != 0u);
+}
+static void pr_damage_draw(void) { host_blit_pixels = host_blit_calls = 0; draw_graph(); }
+static void pr_damage_advance(void)
+{
+    TSEL->seq_idx++;
+    host_lcd_sync_hook = 0;
+}
+static void pr_damage_edit_during_draw(void)
+{
+    TSEL->step[0].note[0]++;
+    host_lcd_sync_hook = 0;
+}
+static void pr_damage_force_during_draw(void)
+{
+    ui.force = 1;
+    host_lcd_sync_hook = 0;
+}
+static int test_piano_roll_damage(void)
+{
+    uint32_t pal, style, large, i, k, adjacent = (PR_CW + 1u) * PR_ROWS * PR_RH, full = 240u * H_GRAPH;
+    int bad = 0, ok = 1;
+    ui_power_on(); go_page(GR_ROLL);
+    TSEL->p[P_SLEN] = 32;
+    TSEL->p[P_VOICE] = V_POLY;
+    for (i = 0; i < NSTEP; i++) {
+        step_t *s = &TSEL->step[i];
+        step_clear(s);
+        if (i % 4u != 1u) {
+            s->time = ST_NOTE; s->n = 4;
+            for (k = 0; k < 4u; k++) s->note[k] = (uint8_t)(30u + i % 7u + k * 22u);
+            s->flags = SF_SLIDE | (i % 3u ? SF_ACCENT : 0u);
+            if (i % 4u == 3u) step_set_ratchet(s, 4);
+        } else s->time = ST_TIE;
+    }
+    host_lcd_async = 1; host_dma_bad = 0;
+    for (pal = 0; pal < NPALETTES; pal++)
+        for (style = 0; style < 2u; style++)
+            for (large = 0; large < 2u; large++) {
+                ux.style = (uint8_t)style; palette_set(pal);
+                ui_prefs = PREF_ANIM_OFF | (large ? PREF_LARGE : 0u);
+                ui.bank = 0; ui.cursor = 5; song.playing = 1; TSEL->seq_idx = 0;
+                ui.force = 1; draw_graph(); ui.force = 0;
+                for (i = 1; i < 16u; i++) {
+                    TSEL->seq_idx = i; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+                }
+                TSEL->seq_idx = 14; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+                /* last -> first, skipped steps, off-bank, transport: conservative full fallback */
+                TSEL->seq_idx = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 6; pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 16; pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 17; pr_damage_draw(); ok &= pr_damage_compare(0);
+                TSEL->seq_idx = 8; pr_damage_draw(); ok &= pr_damage_compare(full);
+                song.playing = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+                song.playing = 1; pr_damage_draw(); ok &= pr_damage_compare(full);
+                ui.bank = 1; ui.cursor = 20; TSEL->seq_idx = 16;
+                pr_damage_draw(); ok &= pr_damage_compare(full);
+                TSEL->seq_idx = 17; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+            }
+    bad += check("STEP damage: every palette/style/LARGE, chords, ties, slides, ratchets, out-of-view notes; exact full-redraw pixels", ok);
+    ok = 1;
+    ui.bank = 0; ui.cursor = 4; TSEL->seq_idx = 4; ui.force = 1; draw_graph(); ui.force = 0;
+    /* Audio advances after capture, when cv_begin waits for the preceding DMA. */
+    TSEL->seq_idx = 5; host_lcd_sync_hook = pr_damage_advance;
+    pr_damage_draw(); lcd_sync();
+    ok &= pr_shown == 5u && TSEL->seq_idx == 6u;
+    TSEL->seq_idx = 5; ok &= pr_damage_compare(adjacent);
+    TSEL->seq_idx = 6; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+    for (i = 0; i < 8u; i++) {
+        TSEL->seq_idx = i + 7u;
+        switch (i) {
+        case 0: ui.cursor++; break;
+        case 1: TSEL->step[0].note[0]++; break;
+        case 2: TSEL->p[P_SCALE]++; break;
+        case 3: TSEL->p[P_SLEN] = 15; break;
+        case 4: palette_set((pal + 1u) % NPALETTES); break;
+        case 5: proll.lo++; break;
+        case 6: kb_chn[0] = 1; kb_trk[0] = song.sel; kb_chord[0][0] = proll.lo; break;
+        case 7: ui.force = 1; break;
+        }
+        pr_damage_draw(); ui.force = 0; ok &= pr_damage_compare(full);
+    }
+    kb_chn[0] = 0;
+    pr_damage_draw();
+    TSEL->seq_idx = 13; host_lcd_sync_hook = pr_damage_edit_during_draw;
+    pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 12; host_lcd_sync_hook = pr_damage_force_during_draw;
+    pr_damage_draw(); ui.force = 0; ok &= pr_damage_compare(full);
+    motion_set_lock(TSEL, 0, P_ATK, 3);
+    TSEL->seq_idx = 11; pr_damage_draw(); ok &= pr_damage_compare(full);
+    go_title("DETAIL"); ui.force = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 10; pr_damage_draw(); ok &= pr_damage_compare(full);
+    go_page(GR_ROLL); ui.force = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 9; pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+    TSEL->eng_req = ENGI_DRUM; TSEL->seq_idx = 8;
+    pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->seq_idx = 7; pr_damage_draw(); ok &= pr_damage_compare(full);
+    TSEL->eng_req = 0; TSEL->seq_idx = 6;             /* ANALOG */
+    pr_damage_draw(); ok &= pr_damage_compare(full);
+    track_select(1); go_page(GR_ROLL); TSEL->seq_idx = 1;
+    ui.force = 0; pr_damage_draw(); ok &= pr_damage_compare(full);
+    ok &= host_dma_bad == 0u;
+    host_lcd_async = 0;
+    bad += check("STEP damage: captured playhead survives audio advance; concurrent static edits and force send full; DMA source remains owned", ok);
+    ui_power_on();
+    return bad;
+}
+
+/* The current roll follows the playing bank, then holds the cursor's bank
+ * while editing. A changing pitch viewport also invalidates all graph pixels. */
+static int test_piano_roll_damage_follow(void)
+{
+    uint32_t i, frames_moving = 0, old_lo;
+    const uint32_t adjacent = (PR_CW + 1u) * PR_ROWS * PR_RH, full = 240u * H_GRAPH;
+    int bad = 0, ok = 1;
+    ui_power_on(); go_page(GR_ROLL);
+    ui_prefs = 0;
+    TSEL->p[P_SLEN] = 32;
+    for (i = 0; i < NSTEP; i++) {
+        step_clear(&TSEL->step[i]);
+        TSEL->step[i].time = ST_NOTE; TSEL->step[i].n = 1;
+        TSEL->step[i].note[0] = (uint8_t)(i < 16u ? 48u : 72u);
+    }
+    ui.cursor = 0; ui.bank = 0; song.playing = 1; TSEL->seq_idx = 14;
+    host_lcd_async = 1; host_dma_bad = 0;
+    proll.init = 0;
+    ui.force = 1; draw_graph(); ui.force = 0;
+    TSEL->seq_idx = 15; follow_poll(); ui.frame++;
+    pr_damage_draw(); ok &= pr_damage_compare(adjacent);
+    TSEL->seq_idx = 16; follow_poll(); ui.frame++;
+    pr_damage_draw(); ok &= ui.bank == 1u && ui.cursor == 0u && pr_damage_compare(full);
+    /* Even an adjacent playhead needs full pixels on every animated pitch scroll. */
+    while (proll.moving && frames_moving < 32u) {
+        old_lo = proll.lo;
+        TSEL->seq_idx = TSEL->seq_idx == 30u ? 29u : TSEL->seq_idx + 1u;
+        ui.frame++; pr_damage_draw();
+        ok &= proll.lo != old_lo && pr_damage_compare(full);
+        frames_moving++;
+    }
+    ok &= frames_moving > 2u && !proll.moving;
+    TSEL->seq_idx++; ui.frame++; pr_damage_draw();
+    ok &= pr_damage_compare(adjacent);
+    /* Cursor touch returns to its bank, hiding this bank's playhead. */
+    follow_hold(); ui.frame++; pr_damage_draw();
+    ok &= ui.bank == 0u && ui.cursor == 0u && pr_damage_compare(full);
+    for (i = 0; proll.moving && i < 32u; i++) { ui.frame++; pr_damage_draw(); ok &= pr_damage_compare(full); }
+    ok &= !proll.moving;
+    TSEL->seq_idx = 30; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= follow.hold && ui.bank == 0u && pr_damage_compare(0);
+    fm1_ms += FOLLOW_MS; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= !follow.hold && ui.bank == 1u && pr_damage_compare(full);
+    for (i = 0; proll.moving && i < 32u; i++) { ui.frame++; pr_damage_draw(); ok &= pr_damage_compare(full); }
+    ok &= !proll.moving;
+    TSEL->seq_idx = 31; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= pr_damage_compare(adjacent);
+    TSEL->seq_idx = 0; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= ui.bank == 0u && ui.cursor == 0u && pr_damage_compare(full);
+    /* A complete lap also releases editing's hold before its timeout. */
+    follow_hold();
+    TSEL->seq_idx = 16; follow_poll();
+    ok &= follow.hold && ui.bank == 0u;
+    TSEL->seq_idx = 31; follow_poll();
+    TSEL->seq_idx = 0; follow_poll();
+    ok &= !follow.hold && follow.steps == 32u;
+    song.playing = 0; follow_poll(); ui.frame++; pr_damage_draw();
+    ok &= !follow.hold && pr_damage_compare(full);
+    ok &= !host_dma_bad;
+    host_lcd_async = 0;
+    bad += check("STEP damage: play-position bank follow, animated pitch scroll, cursor hold/timeout/lap and wrap keep full-redraw pixels and DMA ownership", ok);
+    ui_power_on();
+    return bad;
+}
+
 /* bug fixes, second round (UI) */
 static uint32_t accent_in(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
 {
@@ -9592,6 +9848,96 @@ static int help_fits(const char *s)
     if (!ok || w > 224) printf("  help: \"%s\" %u hints, %d px of 224\n", s, n, w);
     return ok && w <= 224;
 }
+/* Ordinary-page reference order before #9: the graph sees the pre-decrement hot timer,
+ * the header sees the current message, and the footer sees the expired help timer. */
+static void draw_graph_first(void)
+{
+    cursor_fix();
+    if (ui.force)
+        draw_frame();
+    draw_head();
+    draw_columns();
+    draw_graph();
+    if (ui.msg_t && !--ui.msg_t && ui.msg2[0]) {
+        str_cpy(ui.msg, ui.msg2, sizeof ui.msg);
+        ui.msg2[0] = 0;
+        ui.msg_t = 60;
+    }
+    if (ui.bpm_t) ui.bpm_t--;
+    if (ui.hot_t) ui.hot_t--;
+    if (ui.help_t) ui.help_t--;
+    draw_foot();
+    ui.force = 0;
+}
+static int test_footer_first(void)
+{
+    static uint16_t expected[240 * 240], previous[240 * 240];
+    uint8_t before[sizeof ui], after[sizeof ui];
+    static const uint8_t TIMER[] = {0, 1, 2, 40};
+    uint32_t k, queued, large, j, foot, graph;
+    int bad = 0, pixels = 1, state = 1, order = 1, timers = 1;
+    for (large = 0; large < 2u; large++)
+        for (queued = 0; queued < 2u; queued++)
+            for (k = 0; k < NELEM(TIMER); k++) {
+                ui_power_on();
+                ui_prefs = large ? PREF_LARGE : 0;
+                track_select(1);                      /* FM6: the graph highlights the hot knob too */
+                go_title("EDIT 1");
+                ui.hot_col = 2;
+                ui.msg_t = ui.hot_t = ui.bpm_t = ui.help_t = TIMER[k];
+                str_cpy(ui.msg, "FIRST", sizeof ui.msg);
+                str_cpy(ui.msg2, queued ? "SECOND" : "", sizeof ui.msg2);
+                ui.force = 1;
+                ui.frame = 10;
+                memcpy(before, &ui, sizeof ui);
+                memset(host_screen, 0, sizeof host_screen);
+                draw_graph_first();
+                memcpy(expected, host_screen, sizeof expected);
+                memcpy(after, &ui, sizeof ui);
+
+                memcpy(&ui, before, sizeof ui);
+                memset(host_screen, 0, sizeof host_screen);
+                host_blit_n = 0; host_blit_watch = 1;
+                ui_draw_page(0);
+                host_blit_watch = 0;
+                pixels &= !memcmp(expected, host_screen, sizeof expected);
+                state &= !memcmp(after, &ui, sizeof ui);
+                timers &= ui.hot_t == (TIMER[k] ? TIMER[k] - 1u : 0u) && ui.bpm_t == ui.hot_t && ui.help_t == ui.hot_t;
+                timers &= ui.msg_t == (TIMER[k] == 1u && queued ? 60u : TIMER[k] ? TIMER[k] - 1u : 0u);
+                timers &= str_eq(ui.msg, TIMER[k] == 1u && queued ? "SECOND" : "FIRST") &&
+                          str_eq(ui.msg2, queued && TIMER[k] != 1u ? "SECOND" : "");
+                foot = graph = NELEM(host_blit_log);
+                for (j = 0; j < host_blit_n; j++) {
+                    if (host_blit_log[j].y == Y_FOOT && host_blit_log[j].h == H_FOOT) {
+                        foot = j;
+                        order &= host_blit_log[j].stage == 6u;
+                    }
+                    if (host_blit_log[j].y == graph_y() && host_blit_log[j].h == graph_h()) {
+                        graph = j;
+                        order &= host_blit_log[j].stage == 5u;
+                    }
+                }
+                order &= foot < graph && graph < host_blit_n;
+                /* A queued message enters the following header, with identical cached redraws. */
+                memcpy(before, &ui, sizeof ui);
+                memcpy(previous, host_screen, sizeof previous);
+                ui.frame++; draw_graph_first();
+                memcpy(expected, host_screen, sizeof expected);
+                memcpy(after, &ui, sizeof ui);
+                memcpy(&ui, before, sizeof ui);
+                memcpy(host_screen, previous, sizeof previous);
+                ui.frame++; ui_draw_page(0);
+                pixels &= !memcmp(expected, host_screen, sizeof expected);
+                state &= !memcmp(after, &ui, sizeof ui);
+            }
+    bad += check("#9 footer submitted before graph; stages 6 footer, 5 graph (normal and LARGE)", order);
+    bad += check("#9 timer expiry and queued message: same whole framebuffer on both frames", pixels);
+    bad += check("#9 hot/BPM/help decrement once; queued message promotes only on expiry", state && timers);
+    ui_prefs = 0;
+    ui_power_on();
+    return bad;
+}
+
 static int test_help(void)
 {
     int bad = 0, ok;
@@ -10344,10 +10690,271 @@ static int test_unknown_engine(void)
     return bad;
 }
 
-int main(void)
+/* Run on the default catalog and with DRUM/FM6 omitted. A stale engine page/layer must also be inert. */
+static int test_catalog_controls(void)
+{
+    int bad = 0, ok;
+    uint32_t e, i, sig;
+    uint8_t patch[FP_SIZE + 1u];
+    for (e = 10; e <= 12u; e += 2u) {
+        ui_power_on();
+        TSEL->eng_req = (uint8_t)e;
+        ok = 1;
+        for (i = 0; i < NPAGES; i++) {
+            if (PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7)
+                ok &= page_visible(i) == (e == ENGI_DRUM && eng_ok(e));
+            if (fop_page(PAGES[i].graph))
+                ok &= page_visible(i) == (e == ENGI_FM6 && eng_ok(e));
+        }
+        ok &= eqa_count(TSEL) == (e == ENGI_DRUM && eng_ok(e) ? NLANE : 0u);
+        ok &= (eqa_of(TSEL, 0) != 0) == (e == ENGI_DRUM && eng_ok(e));
+        ok &= fop_ok() == (e == ENGI_FM6 && eng_ok(e));
+        bad += check("catalog: lane/operator pages and EDIT actions belong only to installed DRUM/FM6", ok);
+        if (eng_ok(e)) continue;
+        memcpy(patch, fm6_patch[0], sizeof patch);
+        for (i = 0; i < NPAGES && PAGES[i].graph != GR_FMOP; i++) ;
+        ui.home = 0; ui.page = (uint8_t)i;
+        fop_knob(1, 1); fop_knob(2, 1); fop_knob(3, 1);
+        ok = !memcmp(patch, fm6_patch[0], sizeof patch);
+        eqa_key(0, 0);
+        ok &= !drum_mute[0];
+        /* Hidden FM6 patch changes must not invalidate an unavailable engine's generic EDIT graph. */
+        for (i = 0; i < NPAGES && PAGES[i].scope != SC_ENGINE; i++) ;
+        ui.page = (uint8_t)i;
+        sig = graph_signature(); fm6_pgen[0]++;
+        ok &= sig == graph_signature();
+        bad += check("catalog: stale operator/lane controls are inert; hidden FM6 patch changes do not redraw EDIT", ok);
+    }
+    return bad;
+}
+
+/* Reference scope renderer before #8: compare full canvas pixels, not only the signature's y values. */
+static void scope_reference(uint16_t c)
+{
+    int16_t snap[SCOPE_N];
+    uint32_t w = scope_w, i, trig = 0;
+    int32_t cy = (int32_t)cv_h / 2, py = cy, x, peak = 1500, a = cv_h == H_GRAPH ? 46 : cy - 6;
+    for (i = 0; i < SCOPE_N; i++) {
+        snap[i] = scope_buf[(w + i) & (SCOPE_N - 1u)];
+        if (snap[i] > peak) peak = snap[i];
+        else if (-snap[i] > peak) peak = -snap[i];
+    }
+    for (i = 1; i < SCOPE_N - 240u; i++)
+        if (snap[i - 1] < 0 && snap[i] >= 0) { trig = i; break; }
+    cv_rect(PANEL_X0, cy, PANEL_W, 1, T_RAISE);
+    for (x = 0; x < PANEL_W; x++) {
+        int32_t y = cy - snap[trig + (uint32_t)x] * a / peak;
+        if (x) cv_line_t(PANEL_X0 - 1 + x, py, PANEL_X0 + x, y, c, 2);
+        py = y;
+    }
+}
+static int test_scope_redraw(void)
+{
+    static uint16_t ref[CV_MAX];
+    uint32_t mode, pal, kind, i, rows, sig, rng = 19u;
+    int bad = 0, ok = 1;
+    ui_power_on();
+    ui_home_view = HV_SCOPE;
+    for (mode = 0; mode < 2u; mode++) {
+        ui_prefs = mode ? PREF_LARGE : 0;
+        for (pal = 0; pal < NPALETTES; pal++) {
+            palette_set(pal);
+            for (kind = 0; kind < 8u; kind++) {
+                scope_w = 0xFFFFFF00u + kind * 73u;
+                for (i = 0; i < SCOPE_N; i++) {
+                    rng = rng * 1664525u + 1013904223u;
+                    scope_buf[i] = kind == 0 ? 0 : kind == 1 ? 1 : kind == 2 ? -1 :
+                                   kind == 3 ? (int16_t)(i * 101u - 25000u) :
+                                   kind == 4 ? (i & 1u ? -32768 : 32767) :
+                                   kind == 5 ? (int16_t)((i % 64u) * 300u - 9600u) :
+                                   kind == 6 ? -1500 : (int16_t)(rng >> 16);
+                }
+                cv_begin(240, graph_h(), T_SURF);
+                scope_reference(ACC);
+                memcpy(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+                (void)graph_signature();
+                cv_begin(240, graph_h(), T_SURF);
+                graph_scope(ACC);
+                ok &= !memcmp(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+                /* The producer may advance after signature calculation: drawing keeps the captured trace. */
+                memset(scope_buf, 0, sizeof scope_buf);
+                scope_w += SCOPE_N;
+                cv_begin(240, graph_h(), T_SURF);
+                graph_scope(ACC);
+                ok &= !memcmp(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+            }
+        }
+    }
+    bad += check("#8 scope: exact reference pixels, all palettes/heights/signals; one snapshot per draw", ok);
+    for (mode = 0; mode < 2u; mode++) {
+        ui_power_on(); ui_home_view = HV_SCOPE; ui_prefs = mode ? PREF_LARGE : 0;
+        memset(scope_buf, 0, sizeof scope_buf); scope_w = 0;
+        ui_draw();
+        rows = host_blit_rows;
+        for (i = 0; i < 120u; i++) ui_draw();
+        ok = host_blit_rows == rows;
+        bad += check("#8 scope: silence skips graph transfers across 120 frames", ok);
+        ui.frame &= ~1u;                         /* a frame eligible for the scope's 30 Hz cadence */
+        scope_buf[0] = 1;                          /* subpixel changes do not repaint the same line */
+        draw_graph(); ok = host_blit_rows == rows;
+        scope_buf[0] = 1000; draw_graph();
+        ok &= host_blit_rows == rows + graph_h();
+        rows = host_blit_rows; sig = ui.graph_sig;
+        scope_w += SCOPE_N; draw_graph();
+        ok &= host_blit_rows == rows && ui.graph_sig == sig;
+        bad += check("#8 scope: redraw only when displayed pixels change, independent of ring counter", ok);
+        /* Sustained signal, then one full ring of silence: one final flat-line transfer and no further churn. */
+        for (i = 0; i < SCOPE_N; i++) scope_buf[i] = (int16_t)((i % 64u) * 300u - 9600u);
+        draw_graph(); rows = host_blit_rows;
+        memset(scope_buf, 0, sizeof scope_buf); scope_w += SCOPE_N;
+        draw_graph(); ok = host_blit_rows == rows + graph_h(); rows = host_blit_rows;
+        for (i = 0; i < 120u; i++) { scope_w += 128u; ui_draw(); }
+        ok &= host_blit_rows == rows;
+        bad += check("#8 scope: sustained signal returns to silence once, then stays idle", ok);
+        ok = 1;
+        for (i = 0; i < 120u; i++) {
+            rows = host_blit_rows;
+            scope_buf[0] = (int16_t)(500 + (i / 2u % 2u) * 500u);
+            ui_draw();
+            ok &= host_blit_rows - rows == ((ui.frame & 1u) ? 0u : graph_h());
+        }
+        bad += check("#8 scope: changing audio keeps the maximum every-other-frame transfer cadence", ok);
+        rows = host_blit_rows;
+        ui.frame |= 1u;                          /* forced invalidation also works on a skipped scope frame */
+        ui.force = 1; draw_graph(); ok = host_blit_rows == rows + graph_h(); ui.force = 0;
+        memset(scope_buf, 0, sizeof scope_buf);
+        rows = host_blit_rows;
+        go_page(GR_ADSR); draw_graph(); ui.force = 0;
+        ui.home = 1; page_entered(); draw_graph(); ui.force = 0;
+        ok &= host_blit_rows == rows + 2u * graph_h();
+        rows = host_blit_rows;
+        menu_put(MI_COLOR, (settings.palette + 1u) % NPALETTES);
+        ui_draw(); ok &= host_blit_rows > rows;
+        bad += check("#8 scope: force, page re-entry and palette changes still repaint", ok);
+        ui.force = 1; ui_draw();
+        memcpy(ref, host_screen + graph_y() * 240u, graph_h() * 240u * sizeof host_screen[0]);
+        ok = 1;
+        for (kind = 0; kind < 4u; kind++) {
+            if (kind == 0) ui.menu = 1;
+            else if (kind == 1) ui.confirm = CF_CLEAR_SEQ;
+            else if (kind == 2) ui.layer = LAYER_FX;
+            else ui.uboot = 3;
+            ui.force = 1; ui_draw();
+            ui.menu = ui.confirm = ui.layer = ui.uboot = 0;
+            ui.force = 1; ui_draw();
+            ok &= !memcmp(ref, host_screen + graph_y() * 240u, graph_h() * 240u * sizeof host_screen[0]);
+        }
+        bad += check("#8 scope: HOME pixels restored after menu, confirmation, layer and update overlays", ok);
+        /* Existing non-HOME fallback scopes still take fresh samples when their graph redraws. */
+        ui.home = 0; memset(scope_buf, 0, sizeof scope_buf);
+        cv_begin(240, H_GRAPH, T_SURF); scope_reference(ACC);
+        memcpy(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+        cv_begin(240, H_GRAPH, T_SURF); graph_scope(ACC);
+        ok = !memcmp(ref, cv_px, cv_w * cv_h * sizeof cv_px[0]);
+        bad += check("#8 scope: non-HOME fallback captures its own current trace", ok);
+    }
+    ui_prefs = 0; ui_power_on();
+    return bad;
+}
+
+/* PROJECT display shares the graph's four-slot cache; actions must still inspect the actual slot. */
+static int test_project_readiness_cache(void)
+{
+    int bad = 0, ok;
+    uint32_t i, ms;
+    project_store_t saved;
+    ui_power_on();
+    project_save_as(0, "FIRST");
+    saved = proj_slot[0];
+    go_page(GR_SLOTS);
+    ui.act = 3; song.g[G_SLOT] = 1; ui.msg_t = 0;
+    ui.frame++; ui.force = 1;
+    host_project_reads = 0;
+    ok = act_ready() && host_project_reads == 4u;
+    ui.force = 0;
+    ms = fm1_ms;
+    proj_scratch.magic = 0;                         /* another full import would overwrite this */
+    for (i = 0; i < 20u; i++) {
+        ui.frame++;
+        ok &= act_ready();
+        (void)oct_leds();
+        draw_act_column(2, "LOAD", T_TEXT, ICON_AUTO);
+        draw_foot();
+    }
+    bad += check("PROJECT readiness: LEDs, action card and footer reuse four cached imports",
+                 ok && host_project_reads == 4u && proj_scratch.magic == 0);
+    song.g[G_SLOT] = 2;
+    ok = !act_ready() && host_project_reads == 4u;
+    song.g[G_SLOT] = 1;
+    bad += check("PROJECT readiness: a slot change selects its cached result immediately", ok && act_ready());
+    fm1_ms = ms + 499u;
+    ok = act_ready() && host_project_reads == 4u;
+    fm1_ms++;
+    ok &= act_ready() && host_project_reads == 8u;
+    (void)act_ready();
+    bad += check("PROJECT readiness: refresh at 500 ms, once for all consumers", ok && host_project_reads == 8u);
+    ui.frame++; ui.force = 1;
+    (void)act_ready(); (void)act_ready();
+    bad += check("PROJECT readiness: a forced frame refreshes once", host_project_reads == 12u);
+    ui.force = 0;
+
+    project_save_as(1, "SECOND");
+    song.g[G_SLOT] = 2;
+    ok = !act_ready();                              /* save/rename visible by the next periodic refresh */
+    fm1_ms += 500u;
+    ok &= act_ready() && str_eq(graph_project_name(1), "SECOND");
+    project_rename(1, "RENAMED");
+    fm1_ms += 500u;
+    ok &= act_ready() && str_eq(graph_project_name(1), "RENAMED");
+    bad += check("PROJECT readiness: save and rename appear on the next cache refresh", ok);
+    project_load(1);
+    ui.frame++; host_project_reads = 0;
+    (void)act_ready();
+    bad += check("PROJECT readiness: a load forces the next frame to refresh", ui.force && host_project_reads == 4u);
+    ui.force = 0;
+
+    song.g[G_SLOT] = 1;
+    proj_slot[0].raw[100] ^= 1;                      /* stale positive display must not authorize a corrupt load */
+    trk[0].p[P_LEVEL] = 11;
+    ok = act_ready();
+    act_do();
+    bad += check("PROJECT readiness: stale positive LOAD still validates and refuses a damaged slot",
+                 ok && trk[0].p[P_LEVEL] == 11 && msg_is("EMPTY SLOT") && ui.act == 3u);
+    fm1_ms += 500u;
+    ok = !act_ready();
+    proj_slot[0] = saved;                           /* stale negative display must not bypass overwrite */
+    ui.act = 4;
+    act_do();
+    bad += check("PROJECT readiness: stale empty SAVE still asks before overwriting",
+                 ok && ui.confirm == CF_OVR_PROJ && ui.confirm_trk == 0u && !name_on());
+    ui.confirm = CF_NONE;
+    ui.act = 3;
+    ui.frame++; ui.force = 1;
+    ok = act_ready();
+    memset(&proj_slot[0], 0, sizeof proj_slot[0]);    /* same invalidation used by backup import/delete */
+    ui.frame++; ui.force = 1;
+    bad += check("PROJECT readiness: forced restore/delete invalidation updates the display", ok && !act_ready());
+    ui.force = 0;
+    fm1_ms = UINT32_MAX - 100u;
+    (void)act_ready();
+    host_project_reads = 0;
+    fm1_ms += 499u;
+    (void)act_ready();
+    ok = host_project_reads == 0u;
+    fm1_ms++;
+    (void)act_ready();
+    bad += check("PROJECT readiness: the 500 ms interval survives clock wrap", ok && host_project_reads == 4u);
+    return bad;
+}
+
+int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     int bad = 0;
+    if (argc == 2 && !strcmp(argv[1], "--catalog"))
+        return test_catalog_controls() + test_unknown_engine() != 0;
+    bad += test_catalog_controls();
+    bad += test_canvas_clear();
     bad += test_large_face();
     bad += test_sound_loads();
     bad += test_patterns();
@@ -10359,6 +10966,7 @@ int main(void)
     bad += test_midi();
     bad += test_save();
     bad += test_actions();
+    bad += test_project_readiness_cache();
     bad += test_tracks();
     bad += test_grid();
     bad += test_screen();
@@ -10415,6 +11023,8 @@ int main(void)
     bad += test_bughunt_ui();
     bad += test_bughunt_ui2();
     bad += test_piano_roll();
+    bad += test_piano_roll_damage();
+    bad += test_piano_roll_damage_follow();
     bad += test_play_leds();
     bad += test_cursor_step_leds();
     bad += test_midi_leds();
@@ -10431,9 +11041,11 @@ int main(void)
     bad += test_fm6_charts();
     bad += test_fm6_ops();
     bad += test_home_tracks();
+    bad += test_scope_redraw();
     bad += test_fx_map_columns();
     bad += test_help();
     bad += test_prev_page();
+    bad += test_footer_first();
     bad += test_no_flash();
 #if FELUCCA_FM4
     bad += test_fm_charts();                        /* (DIGITAL's charts: built with FELUCCA_FM4=1 only) */

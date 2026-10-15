@@ -142,9 +142,10 @@ def source_pins(root):
     return {'firmware_revision': git(root, 'rev-parse', 'HEAD'), 'engines_gitlink': pin}
 
 
-def condition(e):
+def condition(e, *, honor_omit=True):
     extra = ' && FELUCCA_FM4' if e['id'] == 1 else ' && FELUCCA_SLICE' if e['id'] == 13 else ''
-    return f"FELUCCA_PROFILE_ENGINE_{e['id']}{extra} && FELUCCA_ENG_OMIT != {e['id']}"
+    omit = f" && FELUCCA_ENG_OMIT != {e['id']}" if honor_omit else ""
+    return f"FELUCCA_PROFILE_ENGINE_{e['id']}{extra}{omit}"
 
 
 def validate_selection(root, name):
@@ -219,7 +220,10 @@ def generated(root, name, font_variant=None):
         c, i = condition(e), e['id']
         # SILENT slots persist even when source is removed; order/names use the same selection.
         if i != 1:  # DIGITAL includes the retired-sound adapter first (engines.c).
-            out['engine_includes.inc'] += f'#if {c}\n#include "../../{e["source"]}"\n#endif\n'
+            # Host catalog-omit fixtures retain native migration/UI dependencies,
+            # while the registry below still marks that engine unavailable.
+            source_condition = condition(e, honor_omit=e['owner'] != 'firmware')
+            out['engine_includes.inc'] += f'#if {source_condition}\n#include "../../{e["source"]}"\n#endif\n'
         fallback = '&ENG_FM4_GONE' if i==1 else '&ENG_NONE'
         out['engine_registry.inc'] += f'#if {c}\n&{e["symbol"]},\n#else\n{fallback},\n#endif\n'
         out['engine_names.inc'] += f'#if {c}\n"{e["name"]}",\n#else\n"-",\n#endif\n'

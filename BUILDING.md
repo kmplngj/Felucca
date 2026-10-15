@@ -245,6 +245,13 @@ their floating-point originals; without it that test is skipped. Felucca-Engines
 (`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
 against the same golden renders.
 
+The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
+and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
+N/A tracks, retained project/preset/backup data, and serializers. Engine-memory switches
+compare each sparse workload with the same workload in a full catalog; the default build
+still checks all 720 existing union hashes. `FELUCCA_ENG_OMIT` is a host-test switch, not
+a supported target build profile.
+
 With Pillow, the real UI renders also include `manifest.json` with revision, compiler,
 font/generated-asset hashes and render settings. `tests/ui_compare.py BEFORE AFTER`
 produces exact pixel counts, bounds and before/after/diff sheets under `build/ui_compare`.
@@ -254,8 +261,11 @@ codes and the separate hardware readability check.
 
 The [silent FX bus regression](tests/fx_rest_test.md) compares bursts and long silences
 with the rest paths forced off, at `-O2` and `-Os`, including persistent state and
-actual skip counters. It explicitly skips while its DSP dependency (PR #41) is absent;
-the guide explains testing checked-out dependency sources before they merge.
+actual skip counters. The suite requires the chorus, delay and HALL rest paths;
+the guide also explains testing another compatible checked-out FX revision.
+
+The [autosave audio regression](tests/autosave_audio_test.md) exercises real stereo FX/master
+output and automatic saves against mocked NOR, including long tails and quiet residuals.
 
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU

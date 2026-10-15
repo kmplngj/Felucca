@@ -67,7 +67,7 @@ the portable host contract, never firmware engine IDs or storage versions.
 An engine is a `static const engine_t ENG_X`. Firmware-native engines live in `firmware/src/eng_x.c`;
 ANALOG, LOFI, TRIO, WHEEL and NOISE live in the pinned MIT submodule `firmware/engines/src/`.
 The shared types now come from its
-[felucca_engine.h](https://github.com/kmplngj/Felucca-Engines/blob/2d8853ad9a58759c15a560ad339a58f42b6be4fb/src/felucca_engine.h)
+[felucca_engine.h](https://github.com/kmplngj/Felucca-Engines/blob/9630426f5c4a34a209ca851356fbe8ba3c4c6d19/src/felucca_engine.h)
 via `core.h`; the small `ENG_NOISE` there is a minimal example. Host identity metadata lives in `profiles/catalog.json`, resolved to the const
 `ENGINE_META` adapter keyed by stable ID in `core.h`; portable `engine_t` has no
 Felucca icon/category/CC/order fields. Coordinate portable layout changes under #340. Fields:
@@ -194,7 +194,7 @@ retain unaffected entries.
 
 ### 1.9 Worked example: the existing NOISE engine
 
-Follow [eng_noise.c](https://github.com/kmplngj/Felucca-Engines/blob/2d8853ad9a58759c15a560ad339a58f42b6be4fb/src/eng_noise.c), rather than copying a separate DSP:
+Follow [eng_noise.c](https://github.com/kmplngj/Felucca-Engines/blob/9630426f5c4a34a209ca851356fbe8ba3c4c6d19/src/eng_noise.c), rather than copying a separate DSP:
 `ENG_NOISE` supplies eight descriptors, two page titles, four presets, HOME knob bindings,
 `noise_note_on`, `noise_render`, `noise_desc` and `.keep=0xF3`. It has no per-part arena
 (`mem` defaults to zero); its filter, RNG, colour poles and clock live in `voice_t.s[]`/`ph[]`.
@@ -356,7 +356,7 @@ to speaker/headphone output. `FELUCCA_UAC=1` and `FELUCCA_UAC_48K=1` are current
 ([felucca.c](../firmware/src/felucca.c), [usb.c](../firmware/src/usb.c),
 [BUILDING.md](../BUILDING.md#build)).
 
-[dsp.c](https://github.com/kmplngj/Felucca-Engines/blob/2d8853ad9a58759c15a560ad339a58f42b6be4fb/src/dsp.c) and `core.h` define the arithmetic: sample/amplitude values
+[dsp.c](https://github.com/kmplngj/Felucca-Engines/blob/9630426f5c4a34a209ca851356fbe8ba3c4c6d19/src/dsp.c) and `core.h` define the arithmetic: sample/amplitude values
 use Q15 (32767 near unity); gain/cutoff coefficients also use named Q12 scales (4096 =
 unity); `voice_t.env` is Q24; pitch is 1/16 semitone. Conventional oscillator `ph`/`inc`
 are unsigned 32-bit phase (one full wrap per cycle), while sampled engines and FM6 have
@@ -560,8 +560,29 @@ and is not a rate-limited API, so do not turn every new knob detent into a new c
 `autosave_poll()` runs in the main loop
 every 250 ms, after 10 s unchanged/quiet and at least 60 s between successful writes
 (30 s retry gap on failure). It requires stopped transport, no keys/buttons/active
-voices and honors editor transfer holds/RESTORE LAST OFF. Boot restoration also follows
-the existing clean-boot policy. Extend the same versioned records/defaults/tests instead
+voices and honors editor transfer holds/RESTORE LAST OFF. It also restarts the ten-second
+quiet interval whenever either final master channel exceeds 32 Q15 RMS (~-60 dBFS)
+over a CTL=32-frame block.
+`fx_audio_activity` is one aligned audio-owned generation, incremented at most once per
+rendered block, read as a scalar by main; `as.audio` is main-owned. This retains bursts
+between polls without a buffer scan or a shared multi-field snapshot. Comparing generations
+by inequality handles rollover; a full lap between polls needs over 36 days of continuous
+CTL-block rendering, beyond watchdog recovery. Main samples it after hashing the project,
+before deciding readiness; the existing event-versus-save race is not an atomic exclusion
+protocol. Do not treat this scalar as a published PCM buffer.
+
+The tap is after `master_out` in both regular and performance mix paths, independent of
+HOME/scope sampling. USB LEVEL FIXED observes the full-level USB source before DAC
+attenuation, conservatively even without an active USB stream. USB LEVEL MASTER follows
+MASTER. The DAC-only metronome is excluded: running transport already defers autosave,
+and its <35 ms release fits inside the ten-second idle interval. Output above the threshold
+continues holding without a forced timeout, including persistent varying effect output;
+rounded residuals at or below 32 Q15 block RMS do not hold. Each channel accumulates
+squared signed-Q15 samples separately in uint64 (at most 36 bits for 32 frames);
+readiness compares energy against `1024*n`, without division or square root.
+[Native audio/NOR regressions](../tests/autosave_audio_test.md) cover long tails and
+rounded residuals. Manual/settings save policies and the existing clean-boot
+restoration policy are unchanged. Extend the same versioned records/defaults/tests instead
 of bypassing these owners with a flash call from a callback.
 
 ## 5. Usage-mode coordination (proposed, not a current API)

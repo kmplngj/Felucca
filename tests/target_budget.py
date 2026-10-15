@@ -17,7 +17,7 @@ from pathlib import Path
 import re
 import sys
 
-FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_render_custom", "phase_render", "phase_render_f", "lofi_render", "sample_render", "formant_render",
+FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_legacy", "digital_render_custom", "phase_render", "phase_render_f", "lofi_render", "sample_render", "formant_render",
          "trio_render", "trio_pass", "wheel_render", "wheel_block",
          "grain_render", "grain_block", "phys_render", "drum_render", "noise_render", "fm6_render", "fm6_op_run", "fm6_op_fb", "px_modal_block", "px_modal_run", "px_memb_block",
          "px_string_excite", "px_string_run", "px_symp_run",
@@ -35,6 +35,8 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "perf_flanger", "perf_phaser",                     # .. FLANGER, PHASER (1.2), while held or fading
          "perf_throw",                                      # .. REV / ECHO THROW (1.5.1): per part, while held or gliding
          "rev_room", "rev_spring", "rev_hall", "rev_side_mix",   # the reverb bus (fx.c): REVERB TYPE ROOM / SPRING / HALL (and its stereo)
+         "zeros32", "hall_rest",                           # out-of-line silent-bus checks, not counted in callers
+         "spring_rest", "spring_live",                     # SPRING gate and line/allpass liveness scan (#39)
          "track_insert", "ins_drive", "ins_swept"]          # the per-track INSERT (fx.c, 1.5), while a TYPE plays
 # The artifact's hashed sidecar owns sparse engine coverage. A listing without a sidecar
 # retains the historical full checks; mutable build/gen outputs never select its functions.
@@ -42,7 +44,7 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
 # they are skipped; present, checked against these (their budget lines until the engine was retired in 1.0)
 OPTIONAL = {"digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,
             "uac_tap48": 504,           # (absent from a FELUCCA_UAC_48K=0 or FELUCCA_UAC=0 build)
-            "mix_part": 2800,           # (FELUCCA_CPU2=1, the default since 1.6.1: out of line, either core may run it)
+            "mix_part": 3549,           # CPU2 build: cold epilogue layout after word memset; see docs/performance.md
             "c1_params": 83}           # 15 temporary values per handed part; absent with FELUCCA_CPU2=0
 # a FELUCCA_CPU2=0 build (no mix_part: inlined into the audio ISR, as 1.6) has the one-core ISR, checked against this
 ONE_CORE = {"fm1_alnk0_irq": 37502}

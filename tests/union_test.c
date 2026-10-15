@@ -17,6 +17,12 @@
 #undef main
 #include <sys/wait.h>
 
+/* Sparse catalogs compare their remaining engines with a full-catalog control running exactly the same
+ * workload. Only the control defines FELUCCA_UNION_OMIT explicitly; default builds keep all 720 goldens. */
+#ifndef FELUCCA_UNION_OMIT
+#define FELUCCA_UNION_OMIT FELUCCA_ENG_OMIT
+#endif
+
 static uint64_t uh;
 static void ublock(void)
 {
@@ -62,7 +68,9 @@ static void union_engines(void)
 {
     uint32_t e;
     for (e = 0; e < NENGINES; e++)
-        if (eng_ok(e) && (eng_of(e)->mem || e == 0 || e == ENGI_SAMPLE || e == 7))
+        /* Filter before indexing accompaniment: full and sparse controls need the same order/count. */
+        if ((int)e != FELUCCA_UNION_OMIT && eng_ok(e) &&
+            (eng_of(e)->mem || e == 0 || e == ENGI_SAMPLE || e == 7))
             UE[UNE++] = e;
 }
 
@@ -79,7 +87,8 @@ static uint64_t useq(const uint32_t *e, uint32_t n, uint32_t pi, uint32_t wait_m
         uh = 0xcbf29ce484222325ull;
         for (k = 0; k < n; k++) {
             uplay(&trk[0], e[k], pi + k, 60, wait_ms);
-            uplay(&trk[2], UE[(k + 3u) % UNE], pi, 55, 10);   /* another part busy alongside */
+            uint32_t other = UE[(k + 3u) % UNE];
+            uplay(&trk[2], other, pi, 55, 10);   /* another part busy alongside */
         }
         urun(1000);
         if (write(fd[1], &uh, 8) != 8)
@@ -143,6 +152,6 @@ int main(int argc, char **argv)
         }
     }
     fclose(f);
-    printf("union_test: %u engine switch sequences, %u differ from 1.4: %s\n", n, bad, bad ? "FAIL" : "ok");
+    printf("union_test: %u engine switch sequences, %u hash mismatches: %s\n", n, bad, bad ? "FAIL" : "ok");
     return bad != 0;
 }

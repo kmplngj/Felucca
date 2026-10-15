@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Console-shaped fixtures and deterministic sessions; no device I/O."""
+"""Real firmware console contract, extensible fixtures and sessions; no device I/O."""
 import base64
 import json
+import os
 import re
+import shlex
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -138,6 +141,78 @@ def snapshot(status=STATUS, dbg=DBG, inp=INP, crash=CRASH):
     return {"complete": True, "commands": {
         cmd: diag.parse_response(cmd, text.encode()) for cmd, text in
         (("status", status), ("dbg", dbg), ("inp", inp), ("crash", crash))}}
+
+
+# A deliberate counter removal must update this contract explicitly, not silently
+# reduce the checks below. Other emitted fields remain extensible.
+EXPECTED_COUNTERS = {
+    "status": set("""audio_late voices_shed voices_given_up usb_resets usb_sof
+        usb_suspends usb_retries usb_frame_stalls midi_rx_pkts midi_tx_pkts
+        uart_rx_bytes uart_rx_msgs uart_rx_drops uac_rate_sets uac_starts
+        uac_pkts uac_underruns uac_overruns uac_missed uac_stalls
+        uac_adj_up uac_adj_down""".split()),
+    "dbg": {"halves", "nested", "late", "timer_irqs", "ui_frames"},
+    "inp": {"timer_irqs", "nested"},
+    "crash": {"count"},
+}
+OPTIONAL_COUNTERS = {name for name in EXPECTED_COUNTERS["status"]
+                     if name.startswith(("uart_", "uac_"))}
+
+
+class ConsoleContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory(prefix="felucca-console-")
+        cls.addClassCleanup(cls.directory.cleanup)
+        cls.binaries = {}
+        root = Path(__file__).resolve().parents[1]
+        for features in (True, False):
+            binary = Path(cls.directory.name) / ("console-full" if features else "console-minimal")
+            command = shlex.split(os.environ.get("CC", "cc")) + [
+                "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+                "-DFELUCCA_UAC=" + str(int(features)), "-DFELUCCA_UART=" + str(int(features)),
+                str(root / "tests/console_diagnostics.c"), "-o", str(binary)]
+            subprocess.run(command, check=True, timeout=30)
+            cls.binaries[features] = binary
+
+    def response(self, command, features=True, *arguments):
+        raw = subprocess.check_output([str(self.binaries[features]), command, *arguments], timeout=5)
+        self.assertTrue(raw.startswith((command + "\r\n").encode()), raw)
+        self.assertTrue(raw.endswith(b"> "), raw)
+        result = diag.parse_response(command, raw)
+        self.assertEqual(result["issues"], [])
+        return result["fields"]
+
+    def test_counter_membership(self):
+        self.assertEqual(set(diag.COMMANDS), set(EXPECTED_COUNTERS))
+        self.assertEqual({command: set(names) for command, names in diag.COUNTERS.items()}, EXPECTED_COUNTERS)
+
+    def test_real_console_counters(self):
+        for command, names in EXPECTED_COUNTERS.items():
+            fields = self.response(command)
+            for name in names:
+                with self.subTest(command=command, counter=name):
+                    self.assertIn(name, fields)
+                    self.assertIs(type(fields[name]), int)
+                    self.assertGreaterEqual(fields[name], 0)
+                    self.assertLessEqual(fields[name], 0xFFFFFFFF)
+        self.assertEqual(self.response("status").get("preset"), "BRASS ENSEMBLE")
+        self.assertEqual(self.response("status").get("usb_resets"), 1)
+        self.assertEqual(self.response("dbg").get("halves"), 8192)
+        self.assertEqual(self.response("inp").get("window_ms"), 1000)
+        self.assertEqual(self.response("crash").get("count"), 2)
+
+    def test_optional_features_absent(self):
+        for command in diag.COMMANDS:
+            fields = self.response(command, False)
+            self.assertTrue(OPTIONAL_COUNTERS.isdisjoint(fields))
+            for name in EXPECTED_COUNTERS[command] - OPTIONAL_COUNTERS:
+                self.assertIn(name, fields)
+            if command == "status":
+                self.assertEqual(fields["uart_enabled"], 0)
+
+    def test_real_console_without_crash(self):
+        self.assertEqual(self.response("crash", True, "no-crash"), {"record_present": False})
 
 
 class ParserTests(unittest.TestCase):

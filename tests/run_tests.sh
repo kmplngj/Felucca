@@ -25,8 +25,8 @@
 # ENGINE IDS (tests/engid_test.c, #212): the id space (64) apart from the engines a build has: INFO's 49 01 bitmap,
 #                   FAV_GET / FAV_SET's user marker (127, and the old one: INFO's count), favourites past id 13 in the
 #                   settings (PER6), ids this build lacks kept in projects, user presets and backups (N/A, silent, never
-#                   another engine). Again on a test build with a placeholder engine 14 and a catalog without NOISE
-#                   (FELUCCA_ENG_TEST14=1 FELUCCA_ENG_OMIT=11), with the serializer tests and union_test's goldens.
+#                   another engine). Again with placeholder engine 14 and DRUM/NOISE/FM6/SLICE omitted (10..13),
+#                   including serializers, unavailable UI controls, owner checks and matching union workloads.
 # UI renders (tests/ui_render.c): every screen in every palette from the real drawing code: the layout lint (no text
 #                   off the screen, cut, hidden, overlapping or spilling out of its cell / card; only free text
 #                   ellipsised), GREY gray, MONO neutral, the draw cost, the text audit (build/ui_new/text_audit.tsv);
@@ -124,6 +124,9 @@
 # PHASE FOLD 1.5.5 (tests/fold155_test.c; #104): E7 FOLD (0..127, default 0, the presets at 0), FOLD 0 bit for bit with
 #                   1.5.1's loop, bounded and without DC at FOLD 1..127 (every WAVE, MIX / RING, SUB, notes 12..127),
 #                   brighter with FOLD, the gain falling with the pitch above A4, the cost; build/fold155_demo/phase_fold.wav.
+# ANALOG MIX 0 (tests/analog_mix0_test.c, #138): the OSC 1 alone loop against a reference copy of the two-oscillator
+#                   one, call for call: PCM, phases, filter and noise state bit for bit (every WAVE x TYPE, MIX 0 / 1 / 64 /
+#                   127 and changes mid-phrase, glide, bend, PWM, retrigger, unison, the parameter corners).
 # PERFORM (tests/perform_test.c): the FX hold layer (src/perform.c): 1/16 starts, stereo buffer effects, the
 #                   too-long REPEAT, the SLICER interplay, silent layer keys, idle bit-identical, cost; build/perform_demo/;
 #                   OCT UP / DN (the harmonizer): pitch, stereo, clicks, the shimmer bounded, cost; FLANGER / PHASER (1.2): no DC,
@@ -213,6 +216,8 @@ mkdir -p "$OUT"
 python3 tools/profile.py --check
 python3 tests/profile_test.py
 CC="${CC:-cc} -O1 -Wall -Wno-unused-function -Ibuild/gen"
+NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
+echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
 
@@ -227,6 +232,8 @@ run "package flash boundaries (synthetic SDK)" python3 tests/fm1pkg_test.py
 run "package flash boundaries (Python -O, synthetic SDK)" python3 -O tests/fm1pkg_test.py
 run "host CPU baselines: compiler, version and platform separation" python3 tests/cpu_baseline_test.py
 run "timestamped interaction replay: portable scenario validation" python3 tests/replay_validation_test.py
+$CC -O2 -fstrict-aliasing -fno-builtin -o "$OUT/libc_test" tests/libc_test.c
+run "firmware libc: copy/fill sizes, alignments, sentinels and typed objects" "$OUT/libc_test"
 run "exact PR firmware: selection, download integrity and installer handoff" python3 tests/fm1_pr_test.py
 
 $CC -o "$OUT/storage_test" tests/storage_test.c
@@ -246,6 +253,11 @@ $CC -O2 -DT_CDC=1 -DHALF_FRAMES=$HALF -o "$OUT/uac_test" tests/uac_test.c -lm
 run "USB audio input: descriptors (with CDC), ring and packets, 44.1 -> 48 kHz resampler, 48 kHz stream" "$OUT/uac_test"
 $CC -O2 -DT_CDC=0 -DHALF_FRAMES=$HALF -o "$OUT/uac_test_nocdc" tests/uac_test.c -lm
 run "USB audio input: descriptors (without CDC), ring and packets, resampler, 48 kHz stream" "$OUT/uac_test_nocdc"
+
+for opt in O2 Os; do
+    $CC -$opt -DHALF_FRAMES=$HALF -o "$OUT/uac_fir_bounds_test_$opt" tests/uac_fir_bounds_test.c
+    run "USB FIR: channel/coefficient bounds, exact stereo PCM and complete state (-$opt)" "$OUT/uac_fir_bounds_test_$opt"
+done
 # USB descriptor layouts (#67): CDC UAC LAYOUT CDC-presented 48K; layout 0 and the console left out = 1.0's bytes
 # (+ the 48 kHz rate with 48K = 1, the default; 48K = 0: byte for byte; + the AC collection's audio streaming
 # interface first, FELUCCA_UAC_AS_FIRST = 1, the default since 1.6)
@@ -393,6 +405,10 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "metronome and count-in: beats sample for sample (internal and external clock), accent, level, MASTER, not in USB, count-in timing, notes onto step 1" "$OUT/click_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test" tests/persistence_test.c -lm
     run "persistence: deferred settings, retry and failed-save rollback" "$OUT/persistence_test"
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/autosave_audio_test" tests/autosave_audio_test.c -lm
+    run "autosave: real stereo FX tails, quiet window, short bursts, USB FIXED and wrap/retry" "$OUT/autosave_audio_test"
+    $CC -Os -w -Ibuild/gen -Ifirmware/src -o "$OUT/autosave_audio_test_os" tests/autosave_audio_test.c -lm
+    run "autosave audio (-Os)" "$OUT/autosave_audio_test_os"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/backup_test" tests/backup_test.c -lm
     run "full backup: CRC before writes, stale runtime, USB reset / timeout, malformed objects, older projects" "$OUT/backup_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6bank_test" tests/fm6bank_test.c -lm
@@ -408,16 +424,32 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/engid_test" tests/engid_test.c -lm
     run "engine ids (#212): the catalog, INFO's id bitmap, FAV markers old / new, ids this build lacks kept in projects, presets, backups" \
         "$OUT/engid_test"
-    # #212: a test build with a placeholder engine 14 and a sparse catalog (NOISE, 11, left out): the id tests, the
-    # serializers and the engine-memory switches against the same goldens
-    ENGX="-DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=11"
-    for t in engid_test editor_test project_test upreset_test backup_test robust_test; do
-        $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/${t}_eng14" tests/$t.c -lm
-        run "test build, engine 14 + catalog without 11 (#212): $t" "$OUT/${t}_eng14"
+    # #212/#306: IDs and serializers run even when DRUM/FM6 are absent. Full-catalog union controls exclude
+    # the same engine from their workload, preserving the existing default 720 goldens without new golden files.
+    for omit in 10 11 12 13; do
+        ENGX="-DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit"
+        for t in engid_test editor_test project_test upreset_test backup_test robust_test; do
+            $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/${t}_omit$omit" tests/$t.c -lm
+            run "test build, engine 14 + catalog without $omit (#306): $t" "$OUT/${t}_omit$omit"
+        done
+        $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_omit$omit" tests/ui_test.c -lm
+        run "test build, catalog without $omit: page visibility, stale engine controls and N/A rendering" \
+            "$OUT/ui_test_omit$omit" --catalog
+        if [ "$omit" = 11 ]; then
+            union_ref=tests/union_golden.txt
+        else
+            union_ref="$OUT/union_control$omit.txt"
+            $CC -O2 -w -DFELUCCA_ENG_TEST14=1 -DFELUCCA_UNION_OMIT=$omit -Ibuild/gen -Ifirmware/src \
+                -o "$OUT/union_control$omit" tests/union_test.c -lm
+            "$OUT/union_control$omit" > "$union_ref"
+        fi
+        $CC -O2 -w $ENGX -DFELUCCA_ARENA_CHECK=1 -Ibuild/gen -Ifirmware/src \
+            -o "$OUT/union_test_omit$omit" tests/union_test.c -lm
+        run "test build, catalog without $omit: owner-checked engine switches against full-catalog control" \
+            "$OUT/union_test_omit$omit" "$union_ref"
     done
-    $CC -O2 -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/union_test_eng14" tests/union_test.c -lm
-    run "test build, engine 14 + catalog without 11 (#212): engine memory, the same 720 hashes" \
-        "$OUT/union_test_eng14" tests/union_golden.txt
+    $CC -w -DFELUCCA_SLICE=0 -Ibuild/gen -Ifirmware/src -o "$OUT/engid_test_noslice" tests/engid_test.c -lm
+    run "engine ids: FELUCCA_SLICE=0 retains unavailable SLICE records" "$OUT/engid_test_noslice"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/mod_test" tests/mod_test.c -lm
     mkdir -p build/mod_demo
     run "modulation matrix: off = bit-identical, the math, MIDI CC1 / CC11 / aftertouch, cost, demos" "$OUT/mod_test" build/mod_demo
@@ -437,6 +469,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     mkdir -p build/fold155_demo
     run "PHASE FOLD (1.5.5): FOLD 0 bit for bit, bounded, no DC, brighter with FOLD, alias-aware gain, cost, demo" \
         "$OUT/fold155_test" build/fold155_demo
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/analog_mix0_test" tests/analog_mix0_test.c -lm
+    run "ANALOG MIX 0 (#138): OSC 2 left out, PCM and voice state as the two-oscillator reference (WAVE x TYPE x MIX)" \
+        "$OUT/analog_mix0_test"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/analog_mix0_test_os" tests/analog_mix0_test.c -lm
+    run "ANALOG MIX 0 (#138) built as the target (-Os, no vectorising): PCM/state reference and mutation sensitivity" \
+        "$OUT/analog_mix0_test_os"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/slicer_test" tests/slicer_test.c -lm
     mkdir -p build/slicer_demo
     run "SLICER: no clicks, timing, sync with the sequencer, STUT, cost, demos" "$OUT/slicer_test" build/slicer_demo
@@ -445,10 +483,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/perform_test" tests/perform_test.c -lm
     mkdir -p build/perform_demo build/fx_demo build/throw_demo
     run "FX layer effects: on the 1/16, stereo, too-long REPEAT, SLICER, silent keys, idle bit-identical, clicks, OCT UP / DN, FLANGER, PHASER, the key map, dotted TIME, REV / ECHO THROW, cost, demos" "$OUT/perform_test" build/perform_demo build/fx_demo build/throw_demo
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/stage_unroll_test" tests/stage_unroll_test.c -lm
+    run "SPRING and both PHASER callers: original-loop PCM/state equivalence and mutation sensitivity (-O2)" "$OUT/stage_unroll_test"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/reverb_test" tests/reverb_test.c -lm
     mkdir -p build/reverb_demo
     run "REVERB TYPE: ROOM / SPRING bit-identical, SPRING and HALL decay / stability / level, HALL silence / stereo / ringing, model changes, cost, demos" "$OUT/reverb_test" build/fx_demo build/reverb_demo
-    run "FX rest: burst/silence audio and state equivalence (-O2/-Os; dependency skip before #41)" python3 tests/fx_rest_test.py
+    run "FX rest: burst/silence audio and state equivalence (-O2/-Os)" python3 tests/fx_rest_test.py --require-rest
     # Probe the actual CC (including wrappers), never the executable's alias.
     CPU_PATHS=$(python3 tests/cpu_baseline.py $CC)
     CPU_B=$(printf '%s\n' "$CPU_PATHS" | sed -n '1p')
@@ -458,8 +498,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     [ -f "$CPU_B_OS" ] || [ -n "$BUDGET_UPDATE" ] || CPU_B_OS=-
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
     run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt "$CPU_B"
-    NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
-    echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/stage_unroll_test_os" tests/stage_unroll_test.c -lm
+    run "SPRING and both PHASER callers: original-loop PCM/state equivalence and mutation sensitivity (-Os, no SIMD)" "$OUT/stage_unroll_test_os"
     $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
     run "regression built as the target (-Os, no vectorising): the same goldens, CPU budget" \
         "$OUT/regress_os" tests/golden.txt "$CPU_B_OS"
@@ -520,6 +560,10 @@ if [ -f build/gen/felucca_tables.h ]; then
     else
         echo "== skip PHYS reference test (no DaisySP: set DAISYSP to a checkout)"
     fi
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/tom_tail_test" tests/tom_tail_test.c -lm
+    run "TOM TAIL: exact-zero boundary, PCM and complete voice state" "$OUT/tom_tail_test"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/tom_tail_test_os" tests/tom_tail_test.c -lm
+    run "TOM TAIL (-Os, no vectorising): exact-zero boundary, PCM and complete voice state" "$OUT/tom_tail_test_os"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/drum_test" tests/drum_test.c -lm
     mkdir -p build/drum_demo
     run "DRUM: voice targets, controls, no clipping, retrigger, hat choke, the kick on a small speaker, keys, 8 lanes, cost, demos" "$OUT/drum_test" build/drum_demo
@@ -571,18 +615,29 @@ elif ! san_ok; then
 else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
-    SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    # The libc harness needs none of the DSP sanitizer exclusions above.
+    ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined \
+        -fno-sanitize-recover=all -fno-builtin -o "$A/libc_test" tests/libc_test.c
+    run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
+    # Unlike the general DSP harness below, retain every UBSan bounds/pointer/shift check here.
+    ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined -fno-sanitize-recover=all \
+        -DHALF_FRAMES=$HALF -o "$A/uac_fir_bounds_test" tests/uac_fir_bounds_test.c
+    run "ASan/UBSan (all checks): USB FIR channel/coefficient bounds and exact PCM/state" "$A/uac_fir_bounds_test"
+    SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     $SCC -o "$A/ldr_test" tests/ldr_test.c
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
-    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test; do
+    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test; do
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
     done
-    $SCC -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=11 -o "$A/engid_test_eng14" tests/engid_test.c -lm
-    run "ASan/UBSan: engid_test, test build (engine 14, catalog without 11)" "$A/engid_test_eng14"
+    for omit in 10 11 12 13; do
+        $SCC -DFELUCCA_ARENA_CHECK=1 -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit \
+            -o "$A/engid_test_omit$omit" tests/engid_test.c -lm
+        run "ASan/UBSan: engine ids + arena checks, catalog without $omit" "$A/engid_test_omit$omit"
+    done
     $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/arena_test" tests/arena_test.c -lm
     run "ASan/UBSan: engine memory owner checker (fixtures + 12 random runs)" "$A/arena_test" 12
     $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/union_test_chk" tests/union_test.c -lm
@@ -599,7 +654,7 @@ run "regression: target cost of the render loops (pi32v2 disassembly)" python3 t
     build/felucca.dis tests/target_budget.txt
 
 run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
-run "CDC diagnostics: console fixtures, bounded transport and interval evidence" python3 tests/diagnostics_test.py
+run "CDC diagnostics: real console/parser contract, fixtures, bounded transport and interval evidence" python3 tests/diagnostics_test.py
 
 if command -v node >/dev/null 2>&1; then
     run "web pages: editor protocol + samples, package builder, update protocol" node web/test_web.mjs

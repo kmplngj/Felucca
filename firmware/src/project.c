@@ -774,7 +774,8 @@ static int proj_unpack(project_t *q, const uint8_t *b, uint32_t st)
 static void proj_legacy_drums(track_t *t)
 {
     static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
-    const preset_t *pr = &ENGINES[ENGI_DRUM]->presets[0];
+    /* Legacy data always means this kit, even in a catalog without DRUM. */
+    const preset_t *pr = &DRUM_PRESETS[0];
     uint32_t i;
     t->eng_req = ENGI_DRUM;
     t->preset = 0;
@@ -1298,8 +1299,8 @@ static int settings_unsaved(void)
  *   - something a project holds changed since the last one (autosave_sig: a hash of those values, no copy; not the
  *     selected track, nor the PROJECT page's own controls),
  *   - and it has stayed the same for AS_IDLE_MS (10 s) with the transport stopped, no key or button down, no voice
- *     sounding and no editor transfer (a backup or a sample: autosave_hold); an erase stops the audio for its
- *     ~40 ms, as every save does, so it never happens while anything plays,
+ *     sounding, no master block above 32 Q15 RMS and no editor transfer (a backup or a sample: autosave_hold);
+ *     an erase stops audio as every save does, so it waits for this documented quiet interval,
  *   - and at least AS_GAP_MS (60 s) after the one before (AS_RETRY_MS after a failed write).
  * So at most one write a minute while editing, none while playing or idle: about 100,000 erase cycles per sector
  * give over 200,000 writes, a write a minute for 8 hours a day for over a year, far more with real pauses.
@@ -1313,6 +1314,7 @@ static struct {
     uint32_t saved, seen;                        /* the signature written last (or loaded at power-on), seen last */
     uint32_t t, last, poll;                      /* fm1_ms: seen changed / busy, the last write, the last check */
     uint32_t writes;                             /* (written since power-on: the host tests count them) */
+    uint32_t audio;                              /* main-owned snapshot of fx_audio_activity */
     uint8_t wrote, err;                          /* a write since power-on (last is valid); the last one failed */
 } as __attribute__((section(".pool")));
 
@@ -1369,12 +1371,17 @@ static void autosave_hold(void) { as.t = fm1_ms; }   /* the editor's transfers: 
 static void autosave_poll(void)
 {
 #if FELUCCA_FLASH
-    uint32_t sig;
+    uint32_t sig, audio;
     if (!flash_ok || fm1_ms - as.poll < AS_POLL_MS)
         return;
     as.poll = fm1_ms;
     sig = autosave_sig();
-    if (sig != as.seen || !autosave_quiet()) {
+    /* One scalar read: audio can preempt main, but cannot tear this generation. At most one increment
+     * per rendered block; an entire 2^32-block lap between polls would take over 36 days even at n=32,
+     * far beyond the watchdog. Inequality also catches UINT32_MAX -> 0. */
+    audio = fx_audio_activity;
+    if (sig != as.seen || audio != as.audio || !autosave_quiet()) {
+        as.audio = audio;
         as.seen = sig;
         as.t = fm1_ms;
         return;
@@ -1417,6 +1424,7 @@ static int autosave_boot(int allowed)
     (void)allowed;
 #endif
     as.saved = as.seen = autosave_sig();
+    as.audio = fx_audio_activity;
     as.t = fm1_ms;
     return rc;
 }

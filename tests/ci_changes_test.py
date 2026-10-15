@@ -44,6 +44,12 @@ class SelectionTest(unittest.TestCase):
                                       "web/fm1backup.js", "web/emu/index.html"]),
                          {"python", "backup", "emulator"})
 
+    def test_console_parser_contract_inputs(self):
+        self.assertEqual(self.suites(["firmware/src/console.c"]), {"full"})
+        for path in ("tools/fm1_diagnostics.py", "tests/diagnostics_test.py", "tests/console_diagnostics.c"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), {"python"})
+
     def test_shared_inputs_and_unknown_files_run_full(self):
         for path in ("firmware/src/eng_fm6.c", "firmware/hal/regs.h", "firmware/app.ld",
                      "firmware/loader/start.s", "build.sh", "tools/build.py",

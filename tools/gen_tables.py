@@ -48,7 +48,24 @@ def main(path):
     # filter cutoff 30 Hz .. 16 kHz
     fc = fe.cutoff_hz()
     L += arr("CUTOFF_HZ", "uint16_t", [int(round(f)) for f in fc])
-    L += fe.svf_g()              # the trapezoidal SVF's g = tan(pi fc / FS), Q12
+    # trapezoidal (Simper) SVF: g = tan(pi fc / FS), Q12; stable at any cutoff/resonance
+    svf_g = [int(4096 * math.tan(math.pi * min(f, 0.45 * FS) / FS)) for f in fc]
+    engine_svf = fe.svf_g()
+    if arr("SVF_G", "uint16_t", svf_g) != engine_svf:
+        raise SystemExit("INS_LPK: local quantization differs from Felucca-Engines SVF_G")
+    L += engine_svf
+    # INSERT's one-pole low-pass coefficient (fx.c ins_lpk), Q16: G = g / (1 + g) from the SAME quantized g as SVF_G,
+    # the firmware's own unsigned integer quotient (g << 16) / (4096 + g); the bounds are checked, not assumed
+    ins_lpk = []
+    for g in svf_g:
+        num = g << 16
+        if not 0 <= num <= 0xFFFFFFFF:
+            raise SystemExit(f"INS_LPK: g << 16 = {num} does not fit uint32_t (g = {g})")
+        q = num // (4096 + g)
+        if not 0 <= q <= 0xFFFF:
+            raise SystemExit(f"INS_LPK: quotient {q} does not fit uint16_t (g = {g})")
+        ins_lpk.append(q)
+    L += arr("INS_LPK", "uint16_t", ins_lpk)
     # level: 0 = off, else dB = (v - 112) / 2  (112 = 0 dB, 127 = +7.5 dB)
     db = [None] + [(v - 112) / 2 for v in range(1, 128)]
     L += arr("LEVEL_Q12", "uint16_t", [0] + [int(round(4096 * 10 ** (d / 20))) for d in db[1:]])
