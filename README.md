@@ -35,7 +35,8 @@ per-track channels, MIDI LEARN) and USB audio. More: [Features](https://github.c
 - **Updates check the package's size on the FM-1**: a package whose firmware image size does not match is refused before anything is erased
 - **Second core (beta), off by default:** MENU > SYSTEM > 2ND CORE > ON (BETA), then restart: the FM-1's second core
   renders some parts alongside the first core; unreliable units fall back to one core
-  ([upstream #247](https://github.com/hugelton/Felucca/pull/247)). Device qualification remains under [#44](https://github.com/kmplngj/Felucca/issues/44)
+  ([upstream #247](https://github.com/hugelton/Felucca/pull/247)). The fork continues with this upstream approach;
+  the separate [#44 experiment](https://github.com/kmplngj/Felucca/issues/44) is retired. Device reliability remains unverified in this fork
 - **Felucca-Engines:** ANALOG, LOFI, TRIO, WHEEL and NOISE now live in [our pinned engine fork](https://github.com/kmplngj/Felucca-Engines)
   under the MIT licence (a git submodule here); Felucca itself stays GPL-3.0-only
 
