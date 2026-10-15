@@ -5,14 +5,14 @@
 fresh host binaries at `-O2` and `-Os` with vectorization disabled for the latter.
 It requires generated headers from `./build.sh`, as the other DSP tests do.
 
-The optimization is not in the current `main`: #153 depends on PR #41, with the
-SPRING skip added by PR #172 (#39). The default run explicitly skips when all
-rest paths are absent. No optimization or hardware-dependent DSP change is
-pulled into `main` by this test. Once #41 lands, change the suite invocation to
-`python3 tests/fx_rest_test.py --require-rest` so removal of the optimization
-also fails the suite.
+The chorus, delay and HALL rest paths come from PR #41. The suite invokes
+`python3 tests/fx_rest_test.py --require-rest`, so removal of the optimization
+fails instead of silently skipping. SPRING still runs normally; its skip
+assertion becomes active when PR #172 (#39) is present. Direct invocation
+without `--require-rest` can still inspect older sources and explicitly skips
+when all rest paths are absent.
 
-To validate the dependency before it merges, provide its checked-out `fx.c`:
+To validate another compatible FX revision, provide its checked-out `fx.c`:
 
 ```sh
 python3 tests/fx_rest_test.py --fx-source /path/to/pr41/firmware/src/fx.c \

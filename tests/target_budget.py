@@ -35,6 +35,7 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "perf_flanger", "perf_phaser",                     # .. FLANGER, PHASER (1.2), while held or fading
          "perf_throw",                                      # .. REV / ECHO THROW (1.5.1): per part, while held or gliding
          "rev_room", "rev_spring", "rev_hall", "rev_side_mix",   # the reverb bus (fx.c): REVERB TYPE ROOM / SPRING / HALL (and its stereo)
+         "zeros32", "hall_rest",                           # out-of-line silent-bus checks, not counted in callers
          "track_insert", "ins_drive", "ins_swept"]          # the per-track INSERT (fx.c, 1.5), while a TYPE plays
 # The artifact's hashed sidecar owns sparse engine coverage. A listing without a sidecar
 # retains the historical full checks; mutable build/gen outputs never select its functions.
