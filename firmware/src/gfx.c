@@ -70,7 +70,8 @@ typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #define AL_N(n) ((uint32_t)(n) << 8)
 
 #define CV_MAX (240u * 124u)      /* the graph strip is 240 x 124 */
-static uint16_t cv_px[CV_MAX] __attribute__((section(".pool")));
+static uint16_t cv_px[CV_MAX] __attribute__((aligned(4), section(".pool")));
+typedef uint32_t cv_pair_t __attribute((__may_alias__));   /* two pixels; spelling also retained by the host stubs */
 static uint32_t cv_w, cv_h;
 static uint16_t cv_bg;           /* what cv_begin cleared the canvas to */
 static uint8_t cv_scroll;        /* 1: drawing a scrolled view (its text may run past the canvas) */
@@ -191,6 +192,8 @@ static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
 {
     uint32_t i, n;
     uint16_t s = swap16(bg);
+    uint32_t pair = (uint32_t)s | ((uint32_t)s << 16);
+    cv_pair_t *p = (cv_pair_t *)cv_px;
     if (w * h > CV_MAX)
         h = CV_MAX / w;
     lcd_sync();                     /* the last blit may still read cv_px */
@@ -201,8 +204,10 @@ static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
     cv_cy1 = (int16_t)h;
     cv_bg = bg;
     n = w * h;
-    for (i = 0; i < n; i++)
-        cv_px[i] = s;
+    for (i = 0; i < n / 2u; i++)
+        p[i] = pair;
+    if (n & 1u)
+        cv_px[n - 1u] = s;
 }
 
 static void cv_blit(uint32_t x, uint32_t y)
