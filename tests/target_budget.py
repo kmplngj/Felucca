@@ -44,7 +44,7 @@ FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_l
 # they are skipped; present, checked against these (their budget lines until the engine was retired in 1.0)
 OPTIONAL = {"digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,
             "uac_tap48": 504,           # (absent from a FELUCCA_UAC_48K=0 or FELUCCA_UAC=0 build)
-            "mix_part": 2800,           # (FELUCCA_CPU2=1, the default since 1.6.1: out of line, either core may run it)
+            "mix_part": 3549,           # CPU2 build: cold epilogue layout after word memset; see docs/performance.md
             "c1_params": 83}           # 15 temporary values per handed part; absent with FELUCCA_CPU2=0
 # a FELUCCA_CPU2=0 build (no mix_part: inlined into the audio ISR, as 1.6) has the one-core ISR, checked against this
 ONE_CORE = {"fm1_alnk0_irq": 37502}

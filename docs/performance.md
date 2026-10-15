@@ -135,6 +135,23 @@ can escape the caller's count; keep coverage in `FUNCS` and inspect the callee a
 Missing budget entries are reported but do not themselves fail. Passing this check alone
 does not prove deadline headroom.
 
+The combined optimization integration calibrates only the optional `mix_part`
+score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
+the same JieLi Clang 4.0.1 default build has 679→684 total instructions and
+598→603 instructions in backward-branch spans; both have six divides and 18
+calls in those spans. Through offset `0x7a4`, the instruction operations and
+control flow are unchanged; addresses relocate and two UI-state field offsets
+move by four bytes. The five added instructions are in the silent
+part's cold epilogue: `ins_rest` now calls the word-based `memset` rather than
+inlining the byte loop, and the compiler duplicates a `mod_end` branch after
+that call. Crossing backward spans increase the estimator's nesting weights,
+producing the larger score despite unchanged hot loops. This is a narrow static
+coverage calibration; it does not claim a 27% runtime increase or a device speed
+improvement. This adjustment leaves the 10% tolerance, other function budgets and sound
+goldens unchanged; the separate ANALOG, TOM and FX calibrations belong to their
+original optimization changes and are recorded in `tests/target_budget.txt`.
+Real-device timing and nested-interrupt stack checks remain pending.
+
 ### Device timing and stress procedure
 
 When a device run is in scope, use the existing CDC console with USB SERIAL enabled and
