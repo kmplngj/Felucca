@@ -393,6 +393,10 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "metronome and count-in: beats sample for sample (internal and external clock), accent, level, MASTER, not in USB, count-in timing, notes onto step 1" "$OUT/click_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test" tests/persistence_test.c -lm
     run "persistence: deferred settings, retry and failed-save rollback" "$OUT/persistence_test"
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/autosave_audio_test" tests/autosave_audio_test.c -lm
+    run "autosave: real stereo FX tails, quiet window, short bursts, USB FIXED and wrap/retry" "$OUT/autosave_audio_test"
+    $CC -Os -w -Ibuild/gen -Ifirmware/src -o "$OUT/autosave_audio_test_os" tests/autosave_audio_test.c -lm
+    run "autosave audio (-Os)" "$OUT/autosave_audio_test_os"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/backup_test" tests/backup_test.c -lm
     run "full backup: CRC before writes, stale runtime, USB reset / timeout, malformed objects, older projects" "$OUT/backup_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6bank_test" tests/fm6bank_test.c -lm
@@ -581,7 +585,7 @@ else
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
-    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test; do
+    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test; do
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
     done

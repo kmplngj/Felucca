@@ -1092,10 +1092,29 @@ static __attribute__((noinline)) void scope_take_mix(uint32_t n)
         scope_buf[scope_w++ & (SCOPE_N - 1u)] = (int16_t)clamp(mix_l[i] + wet[i], -32767, 32767);
 }
 
+/* Automatic project saves observe both final master channels, Q15, independent of the HOME scope.
+ * Audio alone increments this aligned scalar, once per block whose per-channel RMS exceeds 32
+ * (~-60 dBFS); main only reads it. There is no associated payload to publish. The generation retains
+ * short bursts between polls; main supplies the full quiet interval. Block energy avoids indefinite
+ * holds from quiet rounded FX residuals. master_out bounds samples to signed Q15: a square fits
+ * int32, at most CTL=32 squares need 36 bits. Compare energy without division or square root.
+ * USB LEVEL FIXED observes the full USB source before DAC attenuation, conservatively even without
+ * a stream. The DAC-only click is excluded: transport already holds autosave, and its <35 ms residual
+ * fits inside the idle wait. */
+/* Standalone DSP fixtures omit the storage feature define; use the firmware's enabled default. */
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+static volatile uint32_t fx_audio_activity;
+#else
+#define fx_audio_activity 0u
+#endif
+
 /* the master with the FX layer's effects between its level and master_out (perform.c) */
 static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
 {
     uint32_t i;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    uint64_t energy_l = 0, energy_r = 0;
+#endif
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++) {
         mix_l[i] = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
@@ -1107,7 +1126,15 @@ static __attribute__((noinline)) void perf_master(int32_t *out, uint32_t n)
         master_out(&l, &r);
         out[2u * i] = l;
         out[2u * i + 1u] = r;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+        energy_l += (uint32_t)(l * l);
+        energy_r += (uint32_t)(r * r);
+#endif
     }
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    if (energy_l > 1024u * n || energy_r > 1024u * n)
+        fx_audio_activity++;
+#endif
 }
 
 /* ---- the second core (hal/fm1_cpu1.h; after Jangada's, github.com/zednaked/jangada, GPL-3.0) renders some of
@@ -1191,6 +1218,9 @@ static uint32_t mix_split(void)
 static void mix_block(int32_t *out, uint32_t n)
 {
     uint32_t i;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    uint64_t energy_l = 0, energy_r = 0;
+#endif
     int perf;
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++)
@@ -1249,5 +1279,13 @@ static void mix_block(int32_t *out, uint32_t n)
         master_out(&l, &r);
         out[2u * i] = l;
         out[2u * i + 1u] = r;
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+        energy_l += (uint32_t)(l * l);
+        energy_r += (uint32_t)(r * r);
+#endif
     }
+#if !defined(FELUCCA_FLASH) || FELUCCA_FLASH
+    if (energy_l > 1024u * n || energy_r > 1024u * n)
+        fx_audio_activity++;
+#endif
 }

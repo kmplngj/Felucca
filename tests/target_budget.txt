@@ -49,7 +49,8 @@ perf_begin 28
 perf_mute 21
 perf_pre 27
 perf_block 814
-perf_master 31
+# #178: per-channel block energy for autosave; JieLi 4.0.1 measured loop 32 -> 46.
+perf_master 46
 perf_flanger 368
 perf_phaser 448
 perf_throw 52

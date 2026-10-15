@@ -257,6 +257,9 @@ with the rest paths forced off, at `-O2` and `-Os`, including persistent state a
 actual skip counters. The suite requires the chorus, delay and HALL rest paths;
 the guide also explains testing another compatible checked-out FX revision.
 
+The [autosave audio regression](tests/autosave_audio_test.md) exercises real stereo FX/master
+output and automatic saves against mocked NOR, including long tails and quiet residuals.
+
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
 cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). It runs a second time built as
