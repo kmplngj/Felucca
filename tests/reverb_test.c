@@ -448,6 +448,40 @@ static void test_spring_rest(void)
         }
         check("  the gate shut for any other low-pass at rest (-3, -2, 1, 2)", ok);
     }
+    {                                                   /* #172 admits additional exact low-pass/low-cut fixed points
+                                                         * at high damping; preserve them with #159's helper gate. */
+        uint32_t sz, damp, rem, admitted = 0, ok = 1;
+        int32_t lp;
+        memset(r, 0, sizeof r);
+        for (sz = 0; sz < 2; sz++)
+            for (damp = 0; damp < 2; damp++)
+                for (lp = -6; lp <= 1; lp++)
+                    for (rem = 0; rem < 3; rem++) {
+                        int32_t g, z;
+                        song.g[G_RSIZE] = sz ? 127 : 0;
+                        song.g[G_RDAMP] = damp ? 127 : 0;
+                        rev_clear();
+                        fx.rtype = 1;
+                        fx.sp_lp = lp;
+                        g = 19661 + song.g[G_RSIZE] * 85;
+                        z = lp * g;
+                        fx.sp_hp = (z + ((z >> 31) & 32767)) >> 15;
+                        fx.sp_he = rem == 2 ? 63 : (int32_t)rem;
+                        fx.sp_w = UINT16_MAX - 1u;
+                        fx.sp_ph = UINT32_MAX - LFO_INC[24];
+                        sr_save(0), sr_save(1);
+                        memset(wa, 0, sizeof wa), memset(wb, 0, sizeof wb);
+                        if (!spring_rest(r, CTL))
+                            continue;
+                        admitted += fx.sp_hp != 0;
+                        sr_save(0);
+                        sr_load(1);
+                        rev_spring(r, wb, CTL);
+                        sr_save(1);
+                        ok &= !memcmp(wa, wb, sizeof wa) && !memcmp(&sr_st[0], &sr_st[1], sizeof sr_st[0]);
+                    }
+        check("  generalized SPRING filter fixed points match all rendered output/state", ok && admitted);
+    }
     {                                                   /* Residual low-cut error and wrapped indices still advance
                                                          * exactly as the regular SPRING renderer. */
         uint32_t lp, rem, block, ok = 1;

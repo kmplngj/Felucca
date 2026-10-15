@@ -8,7 +8,7 @@ It requires generated headers from `./build.sh`, as the other DSP tests do.
 The chorus, delay and HALL rest paths come from PR #41. The suite invokes
 `python3 tests/fx_rest_test.py --require-rest`, so removal of the optimization
 fails instead of silently skipping. SPRING's skip assertion becomes active
-when PR #159 or #172 (#39) is present. Direct invocation
+with the combined #159/#172 (#39) implementation. Direct invocation
 without `--require-rest` can still inspect older sources and explicitly skips
 when all rest paths are absent. The adapter also supports PR #159's external
 `spring_rest`/`spring_live` gate and asserts its actual skip execution.
@@ -53,3 +53,8 @@ an offset. Counters assert branch execution, not a timing or CPU improvement.
 present, the SPRING rest write-index advance in separate temporary copies.
 Each must produce an audio/state mismatch. The check is optional because it
 adds complete pairs of renders.
+
+The merged SPRING path retains #159's external `spring_rest`/`spring_live`
+helpers and #172's generalized exact filter fixed-point predicate. Liveness
+updates occur once per rendered block; skipped blocks advance state once.
+The reverb harness also covers nonzero low-cut fixed points at high DAMP.

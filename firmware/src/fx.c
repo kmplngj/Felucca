@@ -574,14 +574,16 @@ static __attribute__((noinline)) int hall_rest(const int32_t *rev_in, uint32_t n
     return 1;
 }
 
-/* SPRING at rest (as hall_rest): its line and allpasses all 0 (fx.sp_live), the low cut 0, the loop's low-pass
- * 0 or -1 (floored, it rests there: mulq15(1, kl) is 0, and -1 * g, rounded towards zero, feeds the loop nothing),
- * the send silent: the block's write index, SIZE's glide and the wobble move on as rev_spring moves them. 0: SPRING
- * must run. (The low cut's remainder sp_he need not be 0: on silence it stays as it is and moves nothing) */
+/* SPRING at rest: keep #159's out-of-line gate/liveness helpers and #172's exact filter fixed-point
+ * predicate. The line/allpasses and send are zero; the low-pass does not move, and its rounded feedback
+ * equals the low cut. Their difference is zero, so any valid low-cut remainder 0..63 remains unchanged.
+ * Advance SIZE, wobble and write index exactly once, as rev_spring would. */
 static __attribute__((noinline)) int spring_rest(const int32_t *rev_in, uint32_t n)
 {
-    int32_t len;
-    if (fx.sp_live || fx.sp_hp || (uint32_t)fx.sp_lp + 1u > 1u || !zeros32(rev_in, n))
+    int32_t len, g = 19661 + song.g[G_RSIZE] * 85, kl = 26000 - song.g[G_RDAMP] * 160;
+    int32_t z = fx.sp_lp * g;
+    if (fx.sp_live || mulq15(-fx.sp_lp, kl) ||
+        fx.sp_hp != (z + ((z >> 31) & 32767)) >> 15 || !zeros32(rev_in, n))
         return 0;
     len = (int32_t)(1323u + (((uint32_t)song.g[G_RSIZE] * 1323u) >> 7)) << 8;   /* (as rev_spring) */
     if (!fx.sp_size)

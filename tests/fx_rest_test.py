@@ -122,29 +122,22 @@ def main():
     if not spring:
         print("FX rest: SPRING skip assertion pending #39/#172 (SPRING sound/state comparison ran)")
     if args.mutation_check:
-        broken = replace_once(source, "fx_test_skips[2]++; hl.ph += HL_LFO;",
-                               "fx_test_skips[2]++; hl.ph += HL_LFO - 1u;")
-        binary = build(broken, out / "mutation", cc, ["-O2"])
-        try:
-            compare(binary, spring)
-        except ValueError as error:
-            if "audio/state differs" not in str(error):
-                raise
-            print("FX rest: deliberate hall_rest drift mutation detected")
-        else:
-            raise ValueError("deliberately broken hall_rest passed")
+        mutations = [("HALL", "fx_test_skips[2]++; hl.ph += HL_LFO;",
+                      "fx_test_skips[2]++; hl.ph += HL_LFO - 1u;")]
         if spring:
-            broken = replace_once(source, "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n);",
-                                   "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n - 1u);")
-            binary = build(broken, out / "spring_mutation", cc, ["-O2"])
+            mutations.append(("SPRING", "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n);",
+                              "fx_test_skips[3]++; fx.sp_w = (uint16_t)(fx.sp_w + n - 1u);"))
+        for name, old, new in mutations:
+            broken = replace_once(source, old, new)
+            binary = build(broken, out / ("mutation_" + name.lower()), cc, ["-O2"])
             try:
                 compare(binary, spring)
             except ValueError as error:
                 if "audio/state differs" not in str(error):
                     raise
-                print("FX rest: deliberate SPRING write-index mutation detected")
+                print(f"FX rest: deliberate {name} rest advance mutation detected")
             else:
-                raise ValueError("deliberately broken SPRING advance passed")
+                raise ValueError(f"deliberately broken {name} rest advance passed")
     return 0
 
 
