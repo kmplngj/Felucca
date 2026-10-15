@@ -95,6 +95,159 @@ static int ownership_test(void)
     bad += check("queue overflow recovers ownership and releases stuck notes", !midi_in_overflow && mi_r == mi_w && !midi_owners[0] && !gate_note(&trk[0], 67));
     return bad;
 }
+/* #307 characterizes the current source asymmetry, not a desired ownership policy.
+ * Both sources preserve a shared hold on release; only MIDI suppresses a note-on
+ * already held by the other source. A key still emits its MIDI OUT note-off while
+ * MIDI keeps the internal note held. With ARP on, MIDI then key also leaves one
+ * arp_phys count after both releases. Keep these doubtful results until the owner
+ * decides whether a separate behavior change is wanted (also relevant to #283). */
+static uint32_t ownership_gates(const track_t *t)
+{
+    uint32_t mask = 0, n = 0;
+    for (uint32_t i = 0; i < NVOICE; i++)
+        if (t->v[i].active && t->v[i].gate) {
+            uint32_t note = t->v[i].note;
+            if (note != 60u && note != 64u && note != 67u)
+                return ~0u;
+            mask |= 1u << (note - 60u);
+            n++;
+        }
+    /* Reject duplicate gated voices, too. */
+    return n == !!(mask & 1u) + !!(mask & 16u) + !!(mask & 128u) ? mask : ~0u;
+}
+static const voice_t *ownership_voice(const track_t *t, uint32_t note)
+{
+    for (uint32_t i = 0; i < NVOICE; i++)
+        if (t->v[i].active && t->v[i].gate && t->v[i].note == note)
+            return &t->v[i];
+    return NULL;
+}
+static uint32_t ownership_notes(const uint8_t *notes, uint32_t n)
+{
+    uint32_t mask = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        if (notes[i] != 60u && notes[i] != 64u && notes[i] != 67u)
+            return ~0u;
+        mask |= 1u << (notes[i] - 60u);
+    }
+    return n == !!(mask & 1u) + !!(mask & 16u) + !!(mask & 128u) ? mask : ~0u;
+}
+static int ownership_record(const track_t *t, const uint8_t *notes, uint32_t n, uint32_t vel)
+{
+    const step_t *s = &t->step[0];
+    if (s->time != ST_NOTE || s->n != n || memcmp(s->note, notes, n) || s->vel != vel ||
+        !!(s->flags & SF_ACCENT) != (vel > 110u))
+        return 0;
+    for (uint32_t i = 1; i < NSTEP; i++)
+        if (t->step[i].n || t->step[i].time != ST_REST)
+            return 0;
+    return 1;
+}
+static int ownership_output(uint32_t chord, uint32_t down, uint32_t up)
+{
+    /* Literal USB-MIDI packets: channel 1, velocity 67; MIDI IN is not echoed.
+     * Chord order is C4 E4 G4, including the E4 shared with MIDI IN. */
+    static const uint32_t SINGLE[] = {0x433C9009u, 0x003C8008u};
+    static const uint32_t CHORD[] = {
+        0x433C9009u, 0x43409009u, 0x43439009u,
+        0x003C8008u, 0x00408008u, 0x00438008u,
+    };
+    uint32_t tones = chord ? 3u : 1u, n = tones * (down + up);
+    const uint32_t *want = chord ? CHORD : SINGLE;
+    if (mo_r || mo_w != n)
+        return 0;
+    for (uint32_t i = 0; i < n; i++)
+        if (midi_out_q[i] != want[i])
+            return 0;
+    return 1;
+}
+static void ownership_key(uint32_t down)
+{
+    fm1_in.notes = down ? 1u << 7 : 0u;             /* C4 in the chromatic panel map */
+    events_block(CTL);
+}
+static int panel_midi_ownership_test(void)
+{
+    int bad = 0;
+    for (uint32_t chord = 0; chord < 2; chord++)
+        for (uint32_t arp = 0; arp < 2; arp++)
+            for (uint32_t midi_first = 0; midi_first < 2; midi_first++)
+                for (uint32_t key_up_first = 0; key_up_first < 2; key_up_first++) {
+                    uint32_t shared = chord ? 64u : 60u, shared_mask = chord ? 16u : 1u;
+                    uint32_t tones = chord ? 3u : 1u, all = chord ? (1u | 16u | 128u) : 1u; /* C E G */
+                    uint32_t first = midi_first ? shared : 60u, first_mask = 1u << (first - 60u);
+                    uint32_t age, record_n, record_vel, gate_mask, hold_mask;
+                    uint8_t recorded[3];
+                    const voice_t *v;
+                    track_t *t;
+                    printf("#307 %s, ARP %s, %s first, %s released first\n", chord ? "C/E/G + MIDI E" : "same C",
+                           arp ? "on" : "off", midi_first ? "MIDI" : "key", key_up_first ? "key" : "MIDI");
+                    midi_test_reset(); t = &trk[0];
+                    host_preset(t, 0, 0);
+                    t->p[P_VOICE] = V_POLY; t->p[P_SUS] = 127;
+                    t->p[P_SCALE] = t->p[P_ROOT] = t->p[P_QUANT] = t->p[P_TRANS] = 0;
+                    t->p[P_AMODE] = (int16_t)arp; t->p[P_AHOLD] = 0;
+                    t->p[P_ARATE] = 2; t->p[P_AGATE] = 120; t->p[P_AOCT] = 1;
+                    for (uint32_t i = 0; i < 4; i++) t->p[P_M1AMT + 3u * i] = 0;
+                    for (uint32_t i = 0; i < NSTEP; i++) t->step[i] = (step_t){{0}, 0, ST_REST, 0, 0};
+                    kb_vel = 67; mo_r = mo_w = 0; usb.config = 1;
+                    transport_req = 1; events_block(CTL); song.rec = 1;
+                    /* Only the panel makes a chord. A changed CHRD does not rewrite
+                     * the notes already owned by the first source. */
+                    t->p[P_CHRD] = midi_first || !chord ? CH_OFF : CH_MAJ;
+                    if (midi_first) queued(0x90, shared, 120, 1);
+                    else ownership_key(1);
+                    v = ownership_voice(t, first); age = v ? v->age : 0;
+                    recorded[0] = (uint8_t)first; recorded[1] = 64; recorded[2] = 67;
+                    record_n = arp || midi_first ? 1u : tones;
+                    record_vel = arp ? 100u : midi_first ? 120u : 67u;
+                    bad += check("  first press: voices, recorded notes and exact MIDI OUT", v &&
+                                 ownership_gates(t) == (arp || midi_first ? first_mask : all) &&
+                                 v->vel == record_vel && ownership_record(t, recorded, record_n, record_vel) &&
+                                 ownership_output(chord, !midi_first, 0));
+                    t->p[P_CHRD] = !midi_first || !chord ? CH_OFF : CH_MAJ;
+                    if (midi_first) ownership_key(1);
+                    else queued(0x90, shared, 120, 1);
+                    if (!arp) {
+                        record_n = tones;
+                        recorded[0] = (uint8_t)(midi_first ? shared : 60u);
+                        recorded[1] = (uint8_t)(midi_first ? 60u : 64u); recorded[2] = 67;
+                    }
+                    v = ownership_voice(t, first);
+                    bad += check("  both held: MIDI suppresses a retrigger; a later key retriggers without ARP",
+                                 v && (arp || !midi_first ? v->age == age : v->age > age) &&
+                                 v->vel == (arp ? 100u : 67u) && ownership_gates(t) == (arp ? first_mask : all));
+                    bad += check("  both held: recording and literal output preserve source asymmetry",
+                                 ownership_record(t, recorded, record_n, record_vel) && ownership_output(chord, 1, 0) &&
+                                 ownership_notes(t->rh_note, t->rh_n) == (arp ? first_mask : all) &&
+                                 midi_notes[0][shared] == 1u && midi_owners[0] == 1u && kb_chn[7] == tones);
+                    bad += check("  ARP deduplicates pitches but counts the later key again",
+                                 !arp || (ownership_notes(t->held, t->nheld) == all && t->arp_phys == tones + midi_first));
+                    if (key_up_first) ownership_key(0);
+                    else queued(0x80, shared, 0, 1);
+                    /* Key-first chord + ARP: C stops now, while MIDI keeps E in
+                     * held[]; E will not sound until the next ARP tick. */
+                    gate_mask = !key_up_first ? (arp ? first_mask : all) : arp && chord && !midi_first ? 0u : shared_mask;
+                    hold_mask = key_up_first ? shared_mask : all;
+                    bad += check("  first release: remaining source holds; key still sends its unconditional note-off",
+                                 ownership_gates(t) == gate_mask && ownership_output(chord, 1, key_up_first) &&
+                                 midi_owners[0] == key_up_first && kb_chn[7] == (key_up_first ? 0u : tones));
+                    bad += check("  first release: recording holds and ARP ownership match today's behavior",
+                                 ownership_record(t, recorded, record_n, record_vel) &&
+                                 ownership_notes(t->rh_note, t->rh_n) == (arp ? gate_mask : hold_mask) &&
+                                 (!arp || (ownership_notes(t->held, t->nheld) == hold_mask &&
+                                           t->arp_phys == (key_up_first ? 1u : tones) + midi_first)));
+                    if (key_up_first) queued(0x80, shared, 0, 1);
+                    else ownership_key(0);
+                    bad += check("  final release: gates/recording end, output is exact; MIDI-first ARP count remains",
+                                 !ownership_gates(t) && !t->rh_n && !t->nheld && !t->arp_note &&
+                                 t->arp_phys == (arp ? midi_first : 0u) && !midi_notes[0][shared] && !midi_owners[0] &&
+                                 !kb_chn[7] && ownership_output(chord, 1, 1) &&
+                                 ownership_record(t, recorded, record_n, record_vel));
+                }
+    kb_vel = 100; usb.config = 0;
+    return bad;
+}
 static void clock_setup(uint32_t mode)
 {
     midi_test_reset(); song.g[G_CLOCK] = (int16_t)mode;
@@ -1021,7 +1174,7 @@ static int pc_test(void)
 }
 int main(void)
 {
-    int bad = controls_test() + sustain_test() + ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
+    int bad = controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
               arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }
