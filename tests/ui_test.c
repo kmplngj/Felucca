@@ -10344,10 +10344,51 @@ static int test_unknown_engine(void)
     return bad;
 }
 
-int main(void)
+/* Run on the default catalog and with DRUM/FM6 omitted. A stale engine page/layer must also be inert. */
+static int test_catalog_controls(void)
+{
+    int bad = 0, ok;
+    uint32_t e, i, sig;
+    uint8_t patch[FP_SIZE + 1u];
+    for (e = 10; e <= 12u; e += 2u) {
+        ui_power_on();
+        TSEL->eng_req = (uint8_t)e;
+        ok = 1;
+        for (i = 0; i < NPAGES; i++) {
+            if (PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7)
+                ok &= page_visible(i) == (e == ENGI_DRUM && eng_ok(e));
+            if (fop_page(PAGES[i].graph))
+                ok &= page_visible(i) == (e == ENGI_FM6 && eng_ok(e));
+        }
+        ok &= eqa_count(TSEL) == (e == ENGI_DRUM && eng_ok(e) ? NLANE : 0u);
+        ok &= (eqa_of(TSEL, 0) != 0) == (e == ENGI_DRUM && eng_ok(e));
+        ok &= fop_ok() == (e == ENGI_FM6 && eng_ok(e));
+        bad += check("catalog: lane/operator pages and EDIT actions belong only to installed DRUM/FM6", ok);
+        if (eng_ok(e)) continue;
+        memcpy(patch, fm6_patch[0], sizeof patch);
+        for (i = 0; i < NPAGES && PAGES[i].graph != GR_FMOP; i++) ;
+        ui.home = 0; ui.page = (uint8_t)i;
+        fop_knob(1, 1); fop_knob(2, 1); fop_knob(3, 1);
+        ok = !memcmp(patch, fm6_patch[0], sizeof patch);
+        eqa_key(0, 0);
+        ok &= !drum_mute[0];
+        /* Hidden FM6 patch changes must not invalidate an unavailable engine's generic EDIT graph. */
+        for (i = 0; i < NPAGES && PAGES[i].scope != SC_ENGINE; i++) ;
+        ui.page = (uint8_t)i;
+        sig = graph_signature(); fm6_pgen[0]++;
+        ok &= sig == graph_signature();
+        bad += check("catalog: stale operator/lane controls are inert; hidden FM6 patch changes do not redraw EDIT", ok);
+    }
+    return bad;
+}
+
+int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     int bad = 0;
+    if (argc == 2 && !strcmp(argv[1], "--catalog"))
+        return test_catalog_controls() + test_unknown_engine() != 0;
+    bad += test_catalog_controls();
     bad += test_large_face();
     bad += test_sound_loads();
     bad += test_patterns();

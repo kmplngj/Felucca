@@ -217,7 +217,7 @@ static voice_t *voice_alloc(track_t *t, uint32_t note)
 {
     uint32_t i, np = trk_nvoice(t), best = np, low = np, nfree = 0;
     int32_t bd = 0x7FFFFFFF;
-    if (t->engine == ENGI_DRUM) {
+    if (eng_is(t->engine, ENGI_DRUM)) {
         voice_t *v = drum_reuse(t, note);
         if (v)
             return voice_reuse(t, v);

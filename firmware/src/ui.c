@@ -427,11 +427,11 @@ static uint32_t layer_btn(void);
 static int page_visible(uint32_t i)
 {
     if (PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7)
-        return TSEL->eng_req == ENGI_DRUM;
+        return eng_is(TSEL->eng_req, ENGI_DRUM);
     if (PAGES[i].id[0] == P_FTYPE)                    /* FILTER (1.5, #104): ANALOG's */
         return eng_of(TSEL->eng_req) == &ENG_ANALOG;
     if (PAGES[i].graph >= GR_FMOP && PAGES[i].graph <= GR_FMENV)
-        return TSEL->eng_req == ENGI_FM6;
+        return eng_is(TSEL->eng_req, ENGI_FM6);
 #if FELUCCA_SLICE
     if (PAGES[i].graph == GR_SLICES)
         return eng_of(TSEL->eng_req) == &ENG_SLICE;
@@ -1444,7 +1444,7 @@ static void clean_engine_of(track_t *t)
             t->p[i] = TP[i].def;
     for (i = 0; i < 8u; i++)
         t->p[P_E0 + i] = e->edit[i].def;
-    if (ei == ENGI_DRUM && e->npresets) {
+    if (eng_is(ei, ENGI_DRUM) && e->npresets) {
         t->p[P_ATK] = e->presets[0].env[0];
         t->p[P_DEC] = e->presets[0].env[1];
         t->p[P_SUS] = e->presets[0].env[2];
@@ -1455,7 +1455,7 @@ static void clean_engine_of(track_t *t)
         t->p[P_REL] = CLEAN_REL;
     }
     fm1_irq_on();
-    if (ei == ENGI_FM6) {                             /* the init voice as the track's own patch (SLOT: OWN) */
+    if (eng_is(ei, ENGI_FM6)) {                             /* the init voice as the track's own patch (SLOT: OWN) */
         uint8_t v[FP_SIZE + 1u];
         fm6_unpack(FM6_INIT, v);
         fm6_set_patch(trk_index(t), v);
@@ -1474,7 +1474,7 @@ static volatile uint8_t *const mpc_io = ui.mpc;
 static void midi_pc_load(track_t *t, uint32_t n)
 {
     uint32_t e = t->eng_req, k;                   /* (#212: an unavailable engine has no presets: ignored) */
-    if (e == ENGI_DRUM) {
+    if (eng_is(e, ENGI_DRUM)) {
         const param_desc_t *d = param_desc_of(e, P_E0);
         for (k = (uint32_t)d->min; k <= (uint32_t)d->max && (enum_orig(d, (int32_t)k) != (int32_t)k || n--); k++)
             ;
@@ -1484,7 +1484,7 @@ static void midi_pc_load(track_t *t, uint32_t n)
     }
     if (n >= preset_shown(e)) {
         int32_t s = (int32_t)(FM6_OWN + 1u + n - preset_shown(e));
-        if (e == ENGI_FM6 && fm6_bank_slot(s) >= 0 && fm6_slot_ok(s))
+        if (eng_is(e, ENGI_FM6) && fm6_bank_slot(s) >= 0 && fm6_slot_ok(s))
             t->p[P_E7] = (int16_t)s;
         return;
     }

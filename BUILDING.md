@@ -245,6 +245,13 @@ their floating-point originals; without it that test is skipped. Felucca-Engines
 (`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
 against the same golden renders.
 
+The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
+and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
+N/A tracks, retained project/preset/backup data, and serializers. Engine-memory switches
+compare each sparse workload with the same workload in a full catalog; the default build
+still checks all 720 existing union hashes. `FELUCCA_ENG_OMIT` is a host-test switch, not
+a supported target build profile.
+
 With Pillow, the real UI renders also include `manifest.json` with revision, compiler,
 font/generated-asset hashes and render settings. `tests/ui_compare.py BEFORE AFTER`
 produces exact pixel counts, bounds and before/after/diff sheets under `build/ui_compare`.
