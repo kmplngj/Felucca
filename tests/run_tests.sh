@@ -124,6 +124,9 @@
 # PHASE FOLD 1.5.5 (tests/fold155_test.c; #104): E7 FOLD (0..127, default 0, the presets at 0), FOLD 0 bit for bit with
 #                   1.5.1's loop, bounded and without DC at FOLD 1..127 (every WAVE, MIX / RING, SUB, notes 12..127),
 #                   brighter with FOLD, the gain falling with the pitch above A4, the cost; build/fold155_demo/phase_fold.wav.
+# ANALOG MIX 0 (tests/analog_mix0_test.c, #138): the OSC 1 alone loop against a reference copy of the two-oscillator
+#                   one, call for call: PCM, phases, filter and noise state bit for bit (every WAVE x TYPE, MIX 0 / 1 / 64 /
+#                   127 and changes mid-phrase, glide, bend, PWM, retrigger, unison, the parameter corners).
 # PERFORM (tests/perform_test.c): the FX hold layer (src/perform.c): 1/16 starts, stereo buffer effects, the
 #                   too-long REPEAT, the SLICER interplay, silent layer keys, idle bit-identical, cost; build/perform_demo/;
 #                   OCT UP / DN (the harmonizer): pitch, stereo, clicks, the shimmer bounded, cost; FLANGER / PHASER (1.2): no DC,
@@ -213,6 +216,8 @@ mkdir -p "$OUT"
 python3 tools/profile.py --check
 python3 tests/profile_test.py
 CC="${CC:-cc} -O1 -Wall -Wno-unused-function -Ibuild/gen"
+NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
+echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
 
@@ -439,6 +444,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     mkdir -p build/fold155_demo
     run "PHASE FOLD (1.5.5): FOLD 0 bit for bit, bounded, no DC, brighter with FOLD, alias-aware gain, cost, demo" \
         "$OUT/fold155_test" build/fold155_demo
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/analog_mix0_test" tests/analog_mix0_test.c -lm
+    run "ANALOG MIX 0 (#138): OSC 2 left out, PCM and voice state as the two-oscillator reference (WAVE x TYPE x MIX)" \
+        "$OUT/analog_mix0_test"
+    $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/analog_mix0_test_os" tests/analog_mix0_test.c -lm
+    run "ANALOG MIX 0 (#138) built as the target (-Os, no vectorising): PCM/state reference and mutation sensitivity" \
+        "$OUT/analog_mix0_test_os"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/slicer_test" tests/slicer_test.c -lm
     mkdir -p build/slicer_demo
     run "SLICER: no clicks, timing, sync with the sequencer, STUT, cost, demos" "$OUT/slicer_test" build/slicer_demo
@@ -460,8 +471,6 @@ if [ -f build/gen/felucca_tables.h ]; then
     [ -f "$CPU_B_OS" ] || [ -n "$BUDGET_UPDATE" ] || CPU_B_OS=-
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
     run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt "$CPU_B"
-    NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
-    echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
     $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
     run "regression built as the target (-Os, no vectorising): the same goldens, CPU budget" \
         "$OUT/regress_os" tests/golden.txt "$CPU_B_OS"
