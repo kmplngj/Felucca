@@ -37,7 +37,7 @@ The last note-offs are part of the workload; a missing release must fail health.
 | `step` | Step index / `{notes, ratchet, drums, velocity}` | Native `step_t`; up to four notes, x1–x4, eight-lane drum mask |
 | `transport` | 0 / 1 start, 0 stop; part 0 | `seq_start` / `seq_stop` |
 | `perform` | Default white-key map index 0–15 / down 0–1; part 0 | `perf_press(perf_map[index])`; 12/13 = REV/ECHO THROW |
-| `usb_midi` | Channel status / `data1 + (data2 << 8)` | Actual USB packet queue → `midi_poll`, fail on overflow |
+| `usb_midi` | Channel status / `data1 + (data2 << 8)` | Actual USB packet queue → `events_block`, fail on overflow |
 | `trs_byte` | 0 / byte 0–255 | Actual `um_byte` parser → shared MIDI queue; explicit/running status |
 
 The Python name map is the whitelist of supported base parameters. Values have

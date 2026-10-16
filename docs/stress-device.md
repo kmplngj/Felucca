@@ -18,7 +18,8 @@ The manual cases have separate IDs and are not the exact host/emulator workload.
    provenance manifest, profile/font/CPU2/FM4 and input-latency flags. Baseline and
    candidate must differ only by the experiment under study; enable FPU/CPU2
    independently. Local build metadata alone cannot identify connected firmware.
-2. Export a validated backup using the documented backup workflow before changing
+2. Export a validated backup using the connected editor’s full-backup workflow
+   ([firmware protocol and scope](../web/EDITOR_PROTOCOL.md#v7-full-backup-65-67)) before changing
    musical state. Use a disposable project and unused USER slot; do not overwrite
    stored music. Retain its slot, exported bytes/hash, settings and preset identities.
    Autosave and RESTORE LAST can preserve edits: absence of an explicit SAVE is
@@ -60,7 +61,9 @@ For `fm1_usb44100_midi_v1` and `fm1_usb48000_midi_v1`:
    **44,100 Hz** for the first case or **48,000 Hz** for the second. Confirm the
    endpoint's actual rate, disable host resampling/effects and record those settings.
    Start capture, warm up five seconds, and start the collector with that scenario
-   ID and the same 60-second/5-second settings above. Keep initial and end snapshots.
+   ID, `--duration 70 --interval 5`, and the same port/revision/manifest options
+   above. The extra collection margin contains the 60-second musical workload
+   after the initial snapshot. Keep initial and end snapshots.
 3. After the initial snapshot, play the declared chord on each source for ten seconds,
    send explicit note-offs, then allow 50 seconds of release/recovery. Record the
    actual onset/offset times relative to the diagnostic samples and WAV; extend

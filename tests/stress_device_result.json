@@ -55,7 +55,7 @@
       "uac_overruns": null,
       "uac_missed": null,
       "uac_stalls": null,
-      "uart_drops": null
+      "uart_rx_drops": null
     },
     "boot_audio_max_us": null,
     "end_audio_max_us": null,
