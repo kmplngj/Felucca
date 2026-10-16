@@ -153,6 +153,36 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 (`felucca-1.0-app.bin`), `SHA256SUMS`, the sample attribution, `LICENSE`, `LICENSING.md` and
 `LICENSES/` (the package contains Apache-2.0 SDK files, so the licence texts travel with it).
 
+### Build revision and PR identity
+
+Each build resolves its actual checkout into `build/gen/build_identity.h` and
+`build/build-identity.json`; the same version, eight-character commit, dirty flag and
+optional PR label appear at startup and MENU > SYSTEM > ABOUT (panel steps in
+[README](README.md)). No boot-time lookup or extra delay is involved. CI provenance
+includes the same `build_identity` object, and release folders include the JSON sidecar.
+The full revision remains in JSON; a short SHA is a readable identifier, not a checksum.
+
+Clean Git builds use HEAD; tracked changes, untracked nonignored files and changed
+submodules add `-dirty`. Commit changes before requesting a reproducible test artifact.
+Release builds keep this commit identity while `--release` sets the display version;
+package product IDs are independent. No wall-clock timestamp enters the display identity.
+Complete verified source archives use `SOURCE-PINS.json`'s firmware revision after
+verifying every source input; their app/package bytes match the corresponding clean
+release checkout. Other no-Git trees display `unknown` and no PR label. There is no
+branch-name inference or unchecked SHA/PR compiler override.
+
+Normal PR CI validates the event, checkout SHA and PR-head parent, displays the actual
+compiled merge SHA and labels `PR #N merge`. The exact-PR workflow verifies reachability
+before checkout, binds the selected commit and PR number to the build, and labels
+`PR #N head`; its SHA is that selected commit (possibly an older reachable PR commit).
+Both paths reject dirty sources and malformed PR inputs (positive, at most seven digits).
+No-Git archives cannot establish merge parentage and reject PR merge context; official
+source reproduction runs in non-PR release context. Local/non-PR builds omit the label.
+
+Metadata regenerates on every target/asset build. Host and emulator profile freshness
+checks also reject stale identity after switching commits or clean/dirty state; rebuild
+before compiling them. Generated source hashes continue to enforce input freshness.
+
 ### Build product identity (forks)
 
 `--product FM-1_XXX` sets the package identity explicitly, independent of the display version:

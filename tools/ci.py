@@ -189,7 +189,10 @@ def provenance(out):
     import fontTools
     import brotli
     tc = build.toolchain()
+    from build_identity import resolve as resolve_identity
+    identity = resolve_identity(build.SRC, "v" + os.environ["VERSION"] if os.environ.get("VERSION") else None)
     data = {
+        "build_identity": identity,
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "source_date": subprocess.check_output(["git", "show", "-s", "--format=%cI", "HEAD"], text=True).strip(),

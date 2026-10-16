@@ -1402,6 +1402,13 @@ static void draw_splash(void)
                 top + AF_M_CAP_Y + SPL_PITCH + AF_M_CAP_H, "splash name + version SPL_PAD from the top");
     splash_band(SPL_X0 + SPL_SQ - (uint32_t)h, (uint32_t)h, lb - SPL_PITCH, SPLASH_LINES + 2, AL_B, 0, h - SPL_PAD,
                 "splash maker's baseline SPL_PAD from the bottom");
+    /* The middle band uses S so the longest SHA + dirty marker fits every font.
+     * Keep attribution and the existing splash lifetime unchanged. */
+    cv_begin(SPL_SQ, 38, T_RAISE);
+    cv_text_on(SPL_PAD, 0, &AF_S, FELUCCA_BUILD_ID, T_TEXT, T_RAISE);
+    if (FELUCCA_BUILD_PR[0])
+        cv_text_on(SPL_PAD, 18, &AF_S, FELUCCA_BUILD_PR, T_TEXT, T_RAISE);
+    cv_blit(SPL_X0, SPL_X0 + 76);
     lcd_sync();
 }
 

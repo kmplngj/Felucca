@@ -265,7 +265,11 @@ def main():
         outputs=generated(ROOT,args.profile,font_variant)
         if args.check:
             check_outputs(outputs, args.out)
+            from build_identity import check as check_identity
+            check_identity(ROOT, args.out)
         else:
+            from build_identity import write as write_identity
+            write_identity(ROOT, args.out)
             args.out.mkdir(parents=True,exist_ok=True)
             for name, content in outputs.items():
                 (args.out/name).write_text(content)

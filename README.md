@@ -23,6 +23,15 @@ Want to look around first? [Try it in your browser](https://hugelton.github.io/F
 
 <a href="https://hugelton.itch.io/felucca"><img src="https://static.itch.io/images/badge-color.svg" alt="Available on itch.io" width="74"></a>
 
+The startup screen and **MENU > SYSTEM > ABOUT** show the display version and
+build commit (eight hexadecimal characters). `-dirty` marks modified local sources;
+`unknown` means the source has no verified revision. Verified CI PR builds also show
+`PR #123 merge` (the compiled test merge) or `PR #123 head` (the exact selected commit).
+Hold **HOME** until MENU appears, release it, turn **ALGORITHM** to SYSTEM, turn
+**PRESETS** to ABOUT and tap **OCT+**. Turn PRESETS to scroll; OCT− returns to the
+menu and HOME closes it. Keep the full artifact provenance with test reports.
+See [build identity](BUILDING.md#build-revision-and-pr-identity) for local/archive behavior.
+
 ## What it is
 
 Thirteen engines with factory presets, four tracks (8 voices shared), a 64-step sequencer (chords, ties, chance, conditions,
