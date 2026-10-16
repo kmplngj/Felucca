@@ -18,6 +18,7 @@ def git(root, *args):
 def resolve(root, version=None, env=None):
     root = Path(root)
     env = os.environ if env is None else env
+    version_source = 'source' if version is None else 'override'
     if version is None:
         version = re.search(r'^#define FELUCCA_VERSION "([^"]+)"',
                             (root / 'firmware/src/felucca.c').read_text(), re.M).group(1)
@@ -63,7 +64,8 @@ def resolve(root, version=None, env=None):
         if pr and (not PR.fullmatch(pr) or not SHA.fullmatch(head) or dirty):
             raise ValueError('invalid or modified PR build inputs')
     label = (revision[:8] if revision else 'unknown') + ('-dirty' if dirty else '')
-    return {'version': version, 'revision': revision, 'dirty': dirty, 'source': source,
+    return {'version': version, 'version_source': version_source,
+            'revision': revision, 'dirty': dirty, 'source': source,
             'build': label, 'pr': int(pr) if pr else None, 'pr_kind': kind, 'pr_head': head,
             'pr_label': f'PR #{pr} {kind}' if pr else ''}
 
@@ -90,6 +92,10 @@ def write(root, directory, version=None, data=None):
 
 def check(root, directory):
     recorded = json.loads((directory / 'build-identity.json').read_text())
-    for name, content in outputs(resolve(root, recorded['version'])).items():
+    origin = recorded.get('version_source')
+    if origin not in ('source', 'override'):
+        raise ValueError('stale generated build identity; rebuild with ./build.sh')
+    version = recorded['version'] if origin == 'override' else None
+    for name, content in outputs(resolve(root, version)).items():
         if (directory / name).read_text() != content:
             raise ValueError('stale generated build identity; rebuild with ./build.sh')

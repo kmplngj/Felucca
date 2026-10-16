@@ -136,6 +136,31 @@ class IdentityTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'parentage'):
                 identity.resolve(self.root, env=env)
 
+    def test_version_freshness_and_explicit_override(self):
+        import shutil
+        with patch.dict(os.environ, {}, clear=True):
+            directory = self.root / 'build/gen'
+            source = self.root / 'firmware/src/felucca.c'
+            # Already dirty: a second source edit must not hide behind -dirty.
+            (self.root / 'changed.c').write_text('dirty')
+            for no_git in (False, True):
+                if no_git:
+                    shutil.rmtree(self.root / '.git')
+                source.write_text('#define FELUCCA_VERSION "v1.6.1"\n')
+                identity.write(self.root, directory)
+                identity.check(self.root, directory)
+                source.write_text('#define FELUCCA_VERSION "v1.6.2"\n')
+                with self.assertRaisesRegex(ValueError, 'stale'):
+                    identity.check(self.root, directory)
+                identity.write(self.root, directory)
+                identity.check(self.root, directory)
+                # An explicit release remains authoritative over source defaults.
+                identity.write(self.root, directory, 'v2.0-rc1')
+                source.write_text('#define FELUCCA_VERSION "v1.6.3"\n')
+                identity.check(self.root, directory)
+                self.assertEqual(json.loads((directory / 'build-identity.json').read_text())['version'],
+                                 'v2.0-rc1')
+
     def test_bounds_and_injection(self):
         for version in ['', 'v' + 'a' * 31, 'v1"', 'v1\n', 'v日本']:
             with self.assertRaises(ValueError):
