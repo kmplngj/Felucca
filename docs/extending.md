@@ -700,8 +700,10 @@ Reusable MIT engines belong in the shared Felucca-Engines fork, with portable te
 DSP/tables and API contract changes committed there first. Then update Felucca's explicit
 gitlink and host registry/profile selection, rebuild, and run both portable conformance
 and firmware host/target/emulator tests. Builds never edit or fetch the dependency.
-Firmware-dependent and GPL-derived implementations remain in `firmware/src`; moving
-source does not change its licence or assign an engine ID. Firmware UI identity remains
+Existing firmware-dependent and GPL-derived implementations currently remain in
+`firmware/src`; moving source does not change its licence or assign an engine ID.
+The planned additional GPL collection below gives new reusable GPL ports their own home.
+Firmware UI identity remains
 in the GPL host adapter, never appended to the MIT `engine_t` merely for convenience.
 
 `profiles/catalog.json` is the source of host metadata and includes. New engines require
@@ -714,3 +716,25 @@ omitted. Add render/helper coverage to `budget_functions` and `tests/target_budg
 
 See [BUILDING.md](../BUILDING.md#engine-build-profiles) for generation/freshness and
 [profile evidence](build-profiles.md) for compatibility and device qualification gates.
+
+### Planned GPL collection and mixed profiles
+
+The authorized additional collection is `kmplngj/Felucca-Engines-GPL` (GPL-3.0-only),
+with WAVE as its first planned port. Its seed is prepared; remote creation, the WAVE
+implementation and firmware dependency/resolver integration are pending. See
+[modularity](modularity.md#gpl-collection-and-mixed-engine-builds--agreed-2026-10-16)
+and [#360](https://github.com/kmplngj/Felucca/issues/360). Do not add includes or a
+gitlink pointing to an unpublished repository as though the module already exists.
+
+New reusable GPL engine source/tests/assets belong in that collection; firmware keeps
+the host glue, stable IDs, UI metadata, voice/arena ownership and platform/persistence
+policy. Reuse the MIT engine contract/shared DSP rather than forking it. Both collections
+will use independent reviewed pins, with one firmware resolver selecting modules across
+them and the native catalog. The linked firmware is GPL; MIT sources keep their terms.
+
+Update source-archive/release inventory, CI and profile provenance with the second pin,
+including required sources/generators/notices. Profiles excluding GPL engines must not
+require their checkout; selected modules must fail clearly on absent/dirty/wrong pins.
+Commit and test engine changes in their owning collection before the firmware pin PR.
+The current two-repository commands and profiles above remain the delivered workflow
+until this integration is implemented; no new working build command is implied here.

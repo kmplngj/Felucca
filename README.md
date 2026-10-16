@@ -16,6 +16,7 @@ Want to look around first? [Try it in your browser](https://hugelton.github.io/F
   [Engines](https://github.com/hugelton/Felucca/wiki/Engines) · [Release notes](https://github.com/hugelton/Felucca/wiki/Release-Notes) ·
   [Troubleshooting](https://github.com/hugelton/Felucca/wiki/Troubleshooting)
 - Development direction: [combined modularity, capacity and 1.6.1 plan](docs/modularity.md#combining-our-plan-with-felucca-161--2026-10-14)
+- Planned engine collections: [select MIT, GPL and native engines in one firmware build](docs/modularity.md#gpl-collection-and-mixed-engine-builds--agreed-2026-10-16); the additional GPL collection and WAVE integration are pending
 - Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build) and [engine build profiles](BUILDING.md#engine-build-profiles); clone with `git clone --recurse-submodules https://github.com/kmplngj/Felucca.git`; complete release sources include the pinned engines in `felucca-VERSION-source.tar.gz` ([details](BUILDING.md#get-the-source))
 - Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), without a local target toolchain; then follow the PR's hardware test instructions (CI does not validate the hardware)
 - Download: this fork's [Releases](https://github.com/kmplngj/Felucca/releases) and successful [Actions](https://github.com/kmplngj/Felucca/actions) artifacts; follow the [download and checksum guide](.github/CI.md#downloads-and-checksums)
