@@ -4,6 +4,8 @@
  * Flat: SURF cards and panels on the palette's background, no rules, one type family (Inter Tight, three sizes), tracks
  * named by their numbers 1..4 on a cushion (icons.c trk_icon). Four columns <-> KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
+#include "build_identity.h"             /* shared by target, host and emulator UI */
+
 static int project_save(uint32_t slot);
 static void panel_setup(void);
 static void project_load(uint32_t slot);

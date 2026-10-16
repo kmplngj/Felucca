@@ -54,3 +54,4 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       source_ref: ${{ needs.revision.outputs.sha }}
+      verified_pr: ${{ needs.revision.result == 'success' && inputs.pr || '' }}

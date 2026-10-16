@@ -214,6 +214,7 @@ cd "$(dirname "$0")/.."
 OUT=build/host
 mkdir -p "$OUT"
 python3 tools/profile.py --check
+python3 tests/build_identity_test.py
 python3 tests/profile_test.py
 CC="${CC:-cc} -O1 -Wall -Wno-unused-function -Ibuild/gen"
 NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
@@ -382,6 +383,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     if python3 -c "import PIL" 2>/dev/null; then
         run "UI renders: real renderer, layout lint, alignment, PNGs and comparison manifest" \
             python3 tests/ui_render.py build/ui_new build/ui_slot --renderer "$OUT/ui_render" --cc "$CC"
+        run "Build identity UI: bounded metadata in all fonts and palettes" python3 tests/build_identity_ui_test.py
         run "UI comparison: exact pixels, scene matching, settings and strict gate fixtures" python3 tests/ui_compare_test.py
     else
         $CC -O1 -w "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render" tests/ui_render.c -lm

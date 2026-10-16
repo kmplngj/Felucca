@@ -81,6 +81,7 @@ SDK_SHA256 = {
 
 DEV_PRODUCT = "FM-1_900"            # the development default identity; release builds are FM-1_9XY
 PRODUCT = DEV_PRODUCT               # this build's package identity, set by main()
+BUILD_IDENTITY = None               # one resolved input shared by generated UI and artifact sidecar
 VERSION = None                      # FELUCCA_VERSION for release builds (default: firmware/src/felucca.c)
 # FELUCCA_CPU2 (firmware/src/felucca.c), unset or 1, the default (1.6.1): the second core is built in, its entry and
 # stacks (firmware/hal/fm1_cpu1.S) linked and its waiting loop (.c1_text) checked; MENU > SYSTEM > 2ND CORE starts it
@@ -183,6 +184,8 @@ def generate():
     font = os.environ.get("FELUCCA_FONT", "m8stealth")
     if font not in ("inter-tight", "tamzen", "m8stealth"):
         raise SystemExit("FELUCCA_FONT must be inter-tight, tamzen or m8stealth")
+    from build_identity import write as write_identity
+    write_identity(SRC, GEN, VERSION, BUILD_IDENTITY)
     from profile import generated
     for name, content in generated(SRC, os.environ.get("FELUCCA_PROFILE", "standard")).items():
         GEN.mkdir(parents=True, exist_ok=True)
@@ -586,7 +589,7 @@ def mmio_check():
 
 
 def main(argv=None):
-    global PRODUCT, VERSION
+    global PRODUCT, VERSION, BUILD_IDENTITY
     c = resolve(sys.argv[1:] if argv is None else argv)     # validated before any job starts
     PRODUCT, VERSION, name = c["product"], c["version"], c["name"]
     if _source_verifier is not None:
@@ -596,6 +599,8 @@ def main(argv=None):
         validate_selection(SRC, os.environ.get("FELUCCA_PROFILE", "standard"))  # before jobs/writes
     except (ValueError, KeyError, OSError) as error:
         raise SystemExit(f"profile: {error}")
+    from build_identity import resolve as resolve_identity
+    BUILD_IDENTITY = resolve_identity(SRC, VERSION)  # reject unverified PR metadata before jobs/writes
     fm1pkg_make.SDK = c["sdk"]
     if not (FW / "engines" / "src" / "felucca_engine.h").exists():
         raise SystemExit("firmware/engines is empty: the Felucca-Engines submodule "
@@ -625,6 +630,11 @@ def main(argv=None):
     att = SRC / "assets" / "samples-cc0" / "ATTRIBUTION.txt"
     if att.exists():
         shutil.copy(att, OUT / "ATTRIBUTION.txt")
+    if os.environ.get("GITHUB_ACTIONS") == "true" and (OUT / "ci/provenance.json").is_file():
+        recorded = json.loads((OUT / "ci/provenance.json").read_text())
+        if recorded.get("build_identity") != BUILD_IDENTITY:
+            raise SystemExit("CI provenance differs from the compiled build identity")
+    shutil.copy(GEN / "build-identity.json", OUT / "build-identity.json")
     print(f"app      {OUT / 'felucca.bin'}  {len(img)} B")
     print(f"loader   {LDR / 'ota.bin'}  {len(ota)} B")
     print(f"package  {OUT / name}  {len(pkg)} B, identity {PRODUCT}" + (" (--product)" if c["explicit"] else ""))
@@ -633,6 +643,7 @@ def main(argv=None):
         shutil.rmtree(rel, ignore_errors=True)
         (rel / "LICENSES").mkdir(parents=True)
         shutil.copy(GEN / "resolved-profile.json", rel / "resolved-profile.json")
+        shutil.copy(GEN / "build-identity.json", rel / "build-identity.json")
         app = c["app"]
         (rel / name).write_bytes(pkg)
         (rel / app).write_bytes(img)
