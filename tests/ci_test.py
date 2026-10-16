@@ -58,6 +58,13 @@ class Checks(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 ci.version(value)
 
+    def test_release_display_identity_uses_target_version_normalization(self):
+        for release in ("1.0-RC1", "1.6.1", "1.6-rc2"):
+            with self.subTest(release=release), patch.dict(os.environ, {"VERSION": release}):
+                self.assertEqual(ci.resolved_identity()["version"], ci.build.resolve(["--release", release])["version"])
+        with patch.dict(os.environ, {"VERSION": "1.0-RC1"}):
+            self.assertEqual(ci.resolved_identity()["version"], "v1.0-rc1")
+
     def test_cached_sdk_corruption_is_rejected(self):
         with patch.dict(ci.build.SDK_SHA256, {"uboot.boot": hashlib.sha256(b"good").hexdigest()}, clear=True):
             path = self.root / "cpu/wl82/tools/uboot.boot"
