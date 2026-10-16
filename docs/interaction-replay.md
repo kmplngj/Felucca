@@ -4,6 +4,12 @@
 Replay panel gestures and channel MIDI through Felucca's real integrated emulator,
 capturing the DAC audio and LCD on a declared timeline. This is the native capture
 slice of the shared scenario matrix in #46, and the tooling requested in #112.
+The [stress catalogue](../tests/stress_catalog.json) reuses this adapter for
+continuous panel/throw and separate stopped USER-save timelines; run
+`python3 tests/stress_replay.py` for repeated PCM/LCD/state and activity checks.
+The manifest also reports read-only `user_presets` occupancy; this does not prove
+power-cycle persistence or hardware flash timing.
+
 It measures host/emulator behavior; it does not measure CPU instructions, target
 deadlines, or real FM-1 timing.
 

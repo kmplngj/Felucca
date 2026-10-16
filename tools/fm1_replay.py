@@ -25,7 +25,7 @@ BUTTONS = ("FX", "SCL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ
 ENCODERS = ("SELECT", "ALGORITHM", "PRESETS", "KNOB 1", "KNOB 2", "KNOB 3", "KNOB 4")
 STATE_FIELDS = ("device_ms", "produced_samples", "consumed_samples", "keys_mask", "buttons_mask",
                 "gated_voices", "active_voices", "selected_track", "engine_requested", "octave",
-                "page", "screen_draws", "playing", "click", "usb_level", "home", "graph", "engine_active")
+                "page", "screen_draws", "playing", "click", "usb_level", "home", "graph", "engine_active", "user_presets")
 FLAGS = ("-O2", "-ffp-contract=off", "-std=gnu99", "-w", "-fPIC", "-shared",
          "-Ibuild/gen", "-Ifirmware/src")
 

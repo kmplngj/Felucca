@@ -14,6 +14,7 @@ from unittest import mock
 
 import stress_matrix
 from stress_matrix import health, validate
+import stress_replay
 
 
 class StressContractTest(unittest.TestCase):
@@ -21,7 +22,8 @@ class StressContractTest(unittest.TestCase):
         self.matrix = json.loads(Path(__file__).with_name("stress_scenarios.json").read_text())
 
     def test_checked_in_timeline(self):
-        self.assertTrue({"idle", "shared_eight", "voice_pressure", "active_effects", "engine_switch_tails"}
+        self.assertTrue({"idle", "shared_eight", "voice_pressure", "active_effects", "engine_switch_tails",
+                         "dense_ratchets_modulation", "effects_throws", "usb_trs_midi"}
                         <= {s["name"] for s in validate(self.matrix)})
 
     def test_tempo_uses_firmware_units_not_midi_data_range(self):
@@ -77,6 +79,47 @@ class StressContractTest(unittest.TestCase):
         result["parts"].pop()
         with self.assertRaises(ValueError):
             health(s, result)
+
+    def test_catalogue_inputs_and_device_null_template(self):
+        root = Path(__file__).parent
+        catalog = json.loads((root / "stress_catalog.json").read_text())
+        self.assertEqual(set(catalog["direct_scenarios"]), {s["name"] for s in validate(self.matrix)})
+        for case in catalog["integrated"]:
+            self.assertTrue((root / case["input"]).is_file())
+        streams = [c for c in catalog["device"] if c["audio_capture_rate"]]
+        self.assertEqual({c["audio_capture_rate"] for c in streams}, {44100, 48000})
+        template = json.loads((root / "stress_device_result.json").read_text())
+        self.assertEqual(template["status"], "unmeasured")
+        self.assertTrue(all(v is None for v in template["diagnostics"]["deltas"].values()))
+
+    def test_new_event_bounds_and_signedness(self):
+        events = [[0, "step", 0, 64, {"notes": [60], "drums": 0, "ratchet": 4, "velocity": 96}],
+                  [0, "step", 0, 0, {"notes": [60], "drums": 0, "ratchet": 5, "velocity": 96}],
+                  [0, "step", 0, 0, {"notes": [128], "drums": 0, "ratchet": 4, "velocity": 96}],
+                  [0, "transport", 1, 0, 1], [0, "perform", 0, 16, 1],
+                  [0, "usb_midi", 0, 0x90, 0x80], [0, "usb_midi", 0, 0xc0, 0x100],
+                  [0, "trs_byte", 0, 0, 256]]
+        for event in events:
+            m = copy.deepcopy(self.matrix)
+            m["scenarios"][0]["events"] = [event]
+            with self.subTest(event=event), self.assertRaises(ValueError):
+                validate(m)
+
+    def test_integrated_health_refuses_no_save_or_missing_load(self):
+        final = dict(playing=0, active_voices=0, gated_voices=0, keys_mask=0,
+                     buttons_mask=0, user_presets=1, screen_draws=12)
+        manifest = {"final_state": final, "timeline_origin": {"screen_draws": 0},
+                    "events": [{"state": {"gated_voices": 1}}]}
+        checks = dict(min_gates=1, min_draws=3, user_presets=1)
+        stress_replay.health(manifest, checks)
+        for field, value in (("user_presets", 0), ("screen_draws", 2), ("active_voices", 1)):
+            bad = copy.deepcopy(manifest)
+            bad["final_state"][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                stress_replay.health(bad, checks)
+        manifest["events"][0]["state"]["gated_voices"] = 0
+        with self.assertRaises(ValueError):
+            stress_replay.health(manifest, checks)
 
     def test_stalled_compiler_metadata_and_probe_retain_failure_report(self):
         build = stress_matrix.ROOT / "build"

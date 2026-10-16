@@ -5,8 +5,10 @@
 #include "hostsim.c"
 #undef main
 
-enum { EV_PRESET, EV_PARAM, EV_GLOBAL, EV_ON, EV_OFF };
-typedef struct { uint32_t frame, op, part, a, b; } stress_event_t;
+#include "host_instructions.h"
+enum { EV_PRESET, EV_PARAM, EV_GLOBAL, EV_ON, EV_OFF, EV_STEP, EV_TRANSPORT,
+       EV_PERFORM, EV_USB_MIDI, EV_TRS_BYTE };
+typedef struct { uint32_t frame, op, part, a, b; step_t step; } stress_event_t;
 typedef struct {
     const char *name;
     uint32_t frames, seed, count;
@@ -17,20 +19,23 @@ typedef struct {
 int main(int argc, char **argv)
 {
     uint32_t frame, next = 0, i, p, max_voices = 0, peak = 0, tail_peak = 0;
-    uint64_t render_ns = 0;
+    uint64_t render_ns = 0, pcm_fnv = UINT64_C(0xcbf29ce484222325);
     char *end;
     unsigned long index;
-    FILE *raw, *wav;
+    FILE *raw = NULL, *wav = NULL;
+    int count_only = argc == 3 && !strcmp(argv[2], "--count"), counted = 0;
+    uint64_t i0 = 0, i1 = 0;
+    char why[512] = "not requested";
     const stress_scenario_t *s;
-    if (argc != 4)
+    if (argc != 4 && !count_only)
         return 2;
     index = strtoul(argv[1], &end, 10);
     if (!*argv[1] || *end || index >= sizeof STRESS_SCENARIOS / sizeof STRESS_SCENARIOS[0])
         return 2;
     s = &STRESS_SCENARIOS[index];
-    if (!(raw = fopen(argv[2], "wb")))
+    if (!count_only && !(raw = fopen(argv[2], "wb")))
         return 2;
-    if (!(wav = fopen(argv[3], "wb"))) {
+    if (!count_only && !(wav = fopen(argv[3], "wb"))) {
         fclose(raw);
         return 2;
     }
@@ -43,7 +48,10 @@ int main(int argc, char **argv)
         trk[p].p[P_CHOR] = trk[p].p[P_DLY] = trk[p].p[P_REV] = 0;
         trk[p].p[P_REL] = 24;
     }
-    wav_hdr(wav, s->frames);
+    if (!count_only)
+        wav_hdr(wav, s->frames);
+    else
+        counted = instr_begin(why, sizeof why) && instr_now(&i0, why, sizeof why);
     for (frame = 0; frame < s->frames; frame += CTL) {
         int32_t out[2 * CTL];
         uint32_t voices = 0;
@@ -75,16 +83,34 @@ int main(int argc, char **argv)
                 song.g[e->a] = (int16_t)e->b;
             } else if (e->op == EV_ON)
                 input_on(t, e->a, e->b);
-            else
+            else if (e->op == EV_OFF)
                 input_off(t, e->a);
+            else if (e->op == EV_STEP)
+                t->step[e->a] = e->step;
+            else if (e->op == EV_TRANSPORT) {
+                if (e->b) seq_start(); else seq_stop();
+            } else if (e->op == EV_PERFORM)
+                perf_press(perf_map[e->a], e->b);
+            else if (e->op == EV_USB_MIDI) {
+                uint32_t packet = (e->a >> 4) | (e->a << 8) | ((e->b & 127u) << 16) | ((e->b >> 8) << 24);
+                if (!midi_enqueue(packet, 1u)) return 1;
+            } else if (e->op == EV_TRS_BYTE) {
+                if (mi_w - mi_r >= MQ) return 1;
+                um_byte(e->b);
+            }
         }
         start = now_ns();
         mix_block(out, CTL);
         render_ns += now_ns() - start;         /* mix only; excludes files/events/checks */
-        if (fwrite(out, sizeof out, 1, raw) != 1)
+        if (!count_only && fwrite(out, sizeof out, 1, raw) != 1)
             return 2;
         for (i = 0; i < 2u * CTL; i++) {
             int64_t x = out[i], a = x < 0 ? -x : x;
+            uint32_t byte;
+            for (byte = 0; byte < 4u; byte++) {
+                pcm_fnv ^= ((uint32_t)out[i] >> (8u * byte)) & 255u;
+                pcm_fnv *= UINT64_C(0x100000001b3);
+            }
             if (a > 32767)
                 return 1;                     /* before 16-bit WAV saturation */
             if ((uint32_t)a > peak)
@@ -92,7 +118,7 @@ int main(int argc, char **argv)
             if (frame >= s->frames - FS / CTL * CTL / 4u && (uint32_t)a > tail_peak)
                 tail_peak = (uint32_t)a;
         }
-        for (i = 0; i < CTL; i++)
+        for (i = 0; !count_only && i < CTL; i++)
             wav_put(wav, out[2u * i], out[2u * i + 1u]);
         for (p = 0; p < NPART; p++)
             for (i = 0; i < NVOICE; i++)
@@ -102,12 +128,31 @@ int main(int argc, char **argv)
         if (voices > NVOICE)
             return 1;
     }
-    {
+    if (next != s->count || midi_in_overflow || um.drops) return 1;
+    if (counted)
+        counted = instr_now(&i1, why, sizeof why) && i1 > i0;
+    if (!count_only) {
         int raw_error = fclose(raw), wav_error = fclose(wav);
         if (raw_error || wav_error || next != s->count)
             return 2;
     }
-    printf("{\"frames\":%u,\"peak\":%u,\"tail_peak\":%u,\"max_voices\":%u,"
+    if (counted)
+        printf("{\"instructions\":%llu,\"instruction_skip\":null,", (unsigned long long)(i1 - i0));
+    else {
+        /* OS error text may contain quotes; JSON-escape rather than interpolate it. */
+        const unsigned char *c = (const unsigned char *)why;
+        printf("{\"instructions\":null,\"instruction_skip\":\"");
+        for (; *c; c++) {
+            if (*c == '"' || *c == '\\') putchar('\\');
+            if (*c < 32 || *c >= 127) printf("\\u%04x", *c); else putchar(*c);
+        }
+        printf("\",");
+    }
+    printf("\"counter_source\":\"" CPU_SRC "\",");
+    printf("\"pcm_fnv\":\"%016llx\",", (unsigned long long)pcm_fnv);
+    printf("\"midi_pending\":%u,\"uart_drops\":%u,\"uart_messages\":%u,\"performance_held\":%u,",
+           mi_w - mi_r, um.drops, um.msgs, perf_held);
+    printf("\"frames\":%u,\"peak\":%u,\"tail_peak\":%u,\"max_voices\":%u,"
            "\"voice_starts\":%u,\"rng\":%u,\"playing\":%u,\"parts\":[",
            s->frames, peak, tail_peak, max_voices, vage, rng_state, song.playing);
     for (p = 0; p < NPART; p++) {

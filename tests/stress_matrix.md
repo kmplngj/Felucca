@@ -1,13 +1,15 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
-# Reproducible host stress replay
+# Reproducible stress scenario matrix
 
-First increment of [#46](https://github.com/kmplngj/Felucca/issues/46): a bounded,
-data-driven workload foundation using the real DSP, with no device access or
-firmware changes. Run after generating fresh assets with `./build.sh`:
+The [#46](https://github.com/kmplngj/Felucca/issues/46) matrix combines bounded
+direct DSP workloads and the existing integrated interaction replay. There are no
+firmware changes. The [catalogue](stress_catalog.json) records both executable
+inputs and separately named physical cases, including 44.1/48 kHz capture. Run after generating fresh assets with `./build.sh`:
 
 ```sh
 python3 tests/stress_matrix.py
 python3 tests/stress_matrix.py --out build/stress/my-baseline
+python3 tests/stress_replay.py --out build/stress/my-integrated-baseline
 ```
 
 The full host runner also runs the matrix. Default output is a fresh
@@ -32,10 +34,16 @@ The last note-offs are part of the workload; a missing release must fail health.
 | `global` | Named global parameter / value; part 0 | Global base parameter, descriptor range checked |
 | `on` | MIDI note / nonzero velocity | `input_on` on the named track |
 | `off` | MIDI note / zero | `input_off` on the named track |
+| `step` | Step index / `{notes, ratchet, drums, velocity}` | Native `step_t`; up to four notes, x1–x4, eight-lane drum mask |
+| `transport` | 0 / 1 start, 0 stop; part 0 | `seq_start` / `seq_stop` |
+| `perform` | Default white-key map index 0–15 / down 0–1; part 0 | `perf_press(perf_map[index])`; 12/13 = REV/ECHO THROW |
+| `usb_midi` | Channel status / `data1 + (data2 << 8)` | Actual USB packet queue → `midi_poll`, fail on overflow |
+| `trs_byte` | 0 / byte 0–255 | Actual `um_byte` parser → shared MIDI queue; explicit/running status |
 
 The Python name map is the whitelist of supported base parameters. Values have
-their firmware descriptor units. This adapter calls native musical input directly;
-it does not exercise the USB/TRS parsers, interrupt queues or physical arrival jitter.
+their firmware descriptor units. The original `on`/`off` operations call native musical input directly.
+The traffic case exercises packet routing and the TRS byte parser, not USB endpoints,
+UART DMA, scan interrupts, physical wire speed or arrival jitter. It is not UAC coverage.
 Engine/preset IDs are explicit, never resolved to a measured "heaviest" preset.
 Sample-dependent workloads require separately recorded assets.
 
@@ -54,8 +62,12 @@ when comparing an optimization; matrix hashes must match between baseline/candid
 | `voice_pressure` | Eight held notes followed by four additional note requests; fade victims excluded from the eight sounding-voice bound |
 | `active_effects` | Three notes through INSERT, chorus, delay and HALL; twelve-second render including release/tail |
 | `engine_switch_tails` | Another part keeps playing while part 0 requests ANALOG → FM6 → PHYS → ANALOG, with notes at the switch boundary |
+| `dense_ratchets_modulation` | Four native four-step tracks, DRUM kick/closed-hat masks, x4 ratchets, 240 BPM / 1/32, LFO→CUT, explicit transport stop |
+| `effects_throws` | Original INSERT/chorus/delay/HALL notes plus overlapping REV/ECHO THROW gestures and 18-second tail |
+| `usb_trs_midi` | 24 paired note/CC/release cycles through USB packet routing and TRS parsing, including running status |
 
-The other scenarios last eight seconds. `checks` fixes minimum signal, observed
+The original idle/voice/switch scenarios last eight seconds; new traffic/dense cases
+last twelve seconds. Existing schedules remain unchanged. `checks` fixes minimum signal, observed
 voice load and voice starts, final engine identities and maximum tail magnitude.
 All parts must finish with no active/gated/held voices or unfinished fade, and the
 last quarter-second must settle within six Q15 units. Output must remain in signed
@@ -67,11 +79,13 @@ comparison; they are not a listening-quality assessment.
 Each scenario runs twice at `-O2` and twice at `-Os` with vectorization disabled,
 all with host arena-owner checks enabled. Repeat runs and the two builds must
 have identical raw stereo int32 PCM hashes and reported checkpoints. These
-checkpoints cover voice load/starts, final engine/request/voice ownership, transport
-and shared RNG; they do not serialize all future DSP/filter state. Existing goldens,
+checkpoints cover voice load/starts, final engine/request/voice ownership, transport,
+MIDI pending/drop/message counts, released performance keys and shared RNG; they do not serialize all future DSP/filter state. Existing goldens,
 union and partition tests remain the authorities for their broader contracts.
 Negative controls remove note-ons (must change PCM) and note-offs (must leave gated
-voices and fail health); renderer crashes cannot count as successful controls.
+voices and fail health); renderer crashes cannot count as successful controls. Additional controls remove
+transport, performance gestures or MIDI traffic: missing required input fails health,
+and every removal must change PCM.
 
 `report.json` retains results, compiler commands/version, host byte order, revision,
 source/generated-asset hashes, matrix hash and explicit measurement availability.
@@ -86,31 +100,61 @@ Generated assets are hashed, not archived: use the build provenance and matching
 inputs to regenerate them when reconstructing a measurement.
 
 `ns_per_frame` is informational host wall time of `mix_block` calls only, including
-owner-check overhead and two clock reads per block. There is no warm-up exclusion,
-instruction-counter adapter, cost budget or FM-1 utilization claim in this increment.
-Instruction counts and all device measurements are explicitly unmeasured. Compare
+owner-check overhead and two clock reads per block. A separate fresh `--count` replay uses the shared `host_instructions.h` policy
+already used by `regress.c`: macOS process instructions or Linux user-thread perf
+instructions; missing, short or multiplexed counters produce null plus a reason.
+`instructions_per_frame` covers the whole count-only loop (event dispatch, DSP, clocks,
+PCM checksum and health checks), excluding WAV/PCM file IO and setup, with no warmup exclusion.
+It is a host workload count, not isolated DSP cost or FM-1 utilization. Count-only
+checkpoint state must equal the captured run. Instruction counts are informational,
+not part of bit-exact comparison or a cost gate. All device measurements are unmeasured. Compare
 only identical timelines, flags, compiler, assets and instrumentation. No golden or
 CPU baseline is generated or updated by this runner.
 
-## Shared adapters and remaining issue #46 work
+## Integrated panel and save cases
 
-The JSON is the shared replay input for future emulator/device adapters; neither
-adapter is implemented here. Retain event order and timestamps and report the first
-boundary at which each adapter can publish an event. Do not call a manual approximation
-the same workload. Hardware runs must use an adapter that applies explicit presets,
-parameters and notes, and verify timing and routing before cost comparisons.
+`stress_replay.py` invokes `tools/fm1_replay.py` in fresh processes twice for each
+checked-in interaction timeline. It requires identical PCM24 WAV, LCD hashes,
+publication/checkpoint state and final state, with minimum note/redraw activity
+and complete release. The panel case requests eight factory-track notes (six gated
+voices observed with the factory sounds), edits ENV and overlaps FX-held throws.
+The separate stopped save case requires USER occupancy to move 0→1, then a played
+and released note. Read-only `user_presets` observations count validated in-memory
+records; they do not establish power-cycle persistence or real flash timing.
 
-For a future FM-1 run, capture the same revision/build configuration, matrix hash,
-scenario/seed, actual event publication timeline and duration. Follow
-[device timing and stress procedure](../docs/performance.md#device-timing-and-stress-procedure)
-and the [diagnostics collector](../docs/diagnostics.md). Retain start/end `status`,
-`dbg`, `inp` and `crash`, plus WAV/listening observations. The result record must name
-counter deltas for `audio_late`, `voices_shed`, UAC errors, UART drops and scan gaps;
-separate boot maxima from interval measurements and record collector overhead.
-Until such a run occurs, device evidence stays `unmeasured`.
+The existing replay's factory state, clock, native firmware/UI/storage integration,
+publication latency, output bounds and provenance contract remain authoritative:
+see [interaction replay](../docs/interaction-replay.md). This adapter never presents
+its fake clock as CPU cost. These panel/save timelines have different initial state
+and audio tap from the direct DSP schedules; their hashes are not interchangeable.
+The catalogue keeps them separate instead of translating events approximately.
 
-Remaining work: host instruction-count adapter, measured heaviest-preset selection,
-dense sequencer/ratchet/modulation and performance-throw scenarios, panel redraws,
-USB 44.1/48 kHz and USB/TRS traffic, separate save-operation scenarios, emulator and
-device adapters, and optional DSP-stage measurements with quantified overhead.
-This first increment leaves #46 open and makes no target speed or memory claim.
+## Heaviest presets and physical observations
+
+The catalogue includes every stable engine ID and the existing `regress.c` CPU
+survey contract for selecting its heaviest factory preset. After fresh O2/Os builds,
+run `build/host/regress tests/golden.txt -` and
+`build/host/regress_os tests/golden.txt -`, retaining stdout/compiler/flags/assets.
+Only use the printed per-engine ranking when **all** counts are available and the
+run succeeds. Keep O2/Os rankings independently; a host ranking is not a pi32v2
+ranking. Pin the resulting explicit engine/preset IDs in a new scenario rather than
+silently replacing an old workload. On this environment perf is unavailable, so
+selection is explicitly unmeasured, with no invented default winner or wall-time
+ranking. DIGITAL and SLICE additionally depend on their build features; sample
+assets must match. Existing CPU baselines are not evidence for the current host.
+
+The [FM-1 procedure](../docs/stress-device.md) gives concrete collection commands,
+USB44.1/48+USB/TRS cases, a stopped save route and interpretation/cleanup steps.
+[stress_device_result.json](stress_device_result.json) is the reusable result template:
+revision/flags, workload/duration/scheduling, start/end diagnostics, UAC/UART/scan
+observations, WAV/listening and restoration, with unmeasured values null.
+#56 owns collection; #57 owns exact hardware musical delivery/capture/restoration.
+Manual device case IDs are deliberately distinct from exact direct/emulator replays.
+Optional DSP-stage timing remains unimplemented and requires quantified overhead.
+
+The [fresh unchanged baseline](../docs/stress-baseline-2026-10-16.md) records the
+current revision, exact PCM hashes and measurement availability. Retain raw reports,
+WAVs and logs under ignored `build/`; CI's existing diagnostics artifact includes
+`build/stress/`, including the integrated captures and failures. This completes the
+scenario/runner, reproducibility, procedure/template and baseline implementation
+acceptance for #46; physical observations and automatic #57 delivery remain pending.

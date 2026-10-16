@@ -99,7 +99,10 @@ It works without hardware on Linux/macOS; its audio captures the DAC output afte
 MASTER and the metronome, and its manifest records the emulator's delivery timing.
 
 The [host stress matrix](tests/stress_matrix.md) replays fixed voice-load, effect and
-engine-switch workloads and retains exact PCM, WAVs and health results without an FM-1.
+engine-switch, dense ratchet/modulation, throw and MIDI-parser workloads, plus real
+emulator panel/save timelines. It retains exact PCM, WAVs, LCD captures and health
+results without an FM-1, with a separate [FM-1 capture procedure](docs/stress-device.md)
+and result template for pending physical observations.
 
 ## Support and contributing
 
