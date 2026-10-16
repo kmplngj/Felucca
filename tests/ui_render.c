@@ -169,7 +169,7 @@ static uint8_t pen_h;                           /* GFX_HOOK_PEN: the line height
 #define GFX_HOOK_PEN(y, f) (pen_h = (f)->h, al_n ? (al_cy0 = (y) + cv_oy + (f)->g[glyph((f), 'H')].by, al_cy1 = al_cy0 + (f)->g[glyph((f), 'H')].bh) : 0)
 #define GFX_HOOK_ITEM(x0, y0, x1, y1) al_item(x0, (y0) + cv_oy, x1, (y1) + cv_oy, 1, "cushion")
 #define GFX_HOOK_ICON(x, y, size, id) hk_icon(x, (y) + cv_oy, size, id)
-static char splash_seen[96];                    /* the splash scene: its texts as drawn, '|' between (draw) */
+static char splash_seen[160];                    /* the splash scene: its texts as drawn, '|' between (draw) */
 static uint8_t in_splash;
 static void hk_text(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const char *s, uint32_t flags)
 {
@@ -1695,8 +1695,11 @@ static void draw(int s)
                 nfind++;
             }
         }
-        if (strcmp(splash_seen, WANT)) {
-            if (rep) fprintf(rep, "FIND %-26s the splash shows '%s', not '%s'\n", cur_name, splash_seen, WANT);
+        char expected[160];
+        snprintf(expected, sizeof expected, "%s|%s%s%s", WANT, FELUCCA_BUILD_ID,
+                 FELUCCA_BUILD_PR[0] ? "|" : "", FELUCCA_BUILD_PR);
+        if (strcmp(splash_seen, expected)) {
+            if (rep) fprintf(rep, "FIND %-26s the splash shows '%s', not '%s'\n", cur_name, splash_seen, expected);
             nfind++;
         } else {
             static uint8_t said;
@@ -2249,6 +2252,7 @@ static void al_table(void)
             al_count, al_nst, al_fail, al_lost);
 }
 
+#ifndef IDENTITY_UI_RENDER
 int main(int argc, char **argv)
 {
     const char *out = argc > 1 ? argv[1] : "build/ui_new";
@@ -2586,3 +2590,5 @@ int main(int argc, char **argv)
            al_fail ? " (see align.txt)" : "");
     return nfind || nink || mono_bad || al_fail ? 1 : 0;
 }
+
+#endif /* IDENTITY_UI_RENDER */

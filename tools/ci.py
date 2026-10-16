@@ -183,13 +183,23 @@ def engine_provenance():
     return {"path": "firmware/engines", "repository": url, "revision": revision, "license": "MIT"}
 
 
+def resolved_identity():
+    from build_identity import resolve as resolve_identity
+    release = os.environ.get("VERSION")
+    # Use the target resolver's normalization, including uppercase release suffixes.
+    display = build.resolve(["--release", release])["version"] if release else None
+    return resolve_identity(build.SRC, display)
+
+
 def provenance(out):
     from PIL import features
     import PIL
     import fontTools
     import brotli
     tc = build.toolchain()
+    identity = resolved_identity()
     data = {
+        "build_identity": identity,
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "source_date": subprocess.check_output(["git", "show", "-s", "--format=%cI", "HEAD"], text=True).strip(),

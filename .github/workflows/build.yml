@@ -8,6 +8,10 @@ on:
         description: Verified exact PR commit; empty keeps normal event checkout
         default: ''
         type: string
+      verified_pr:
+        description: PR number verified by the calling revision job
+        default: ''
+        type: string
       version:
         description: Empty for development, otherwise the build.py release version
         default: ''
@@ -186,6 +190,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     env:
       VERSION: ${{ inputs.version }}
+      FELUCCA_VERIFIED_PR: ${{ inputs.verified_pr }}
+      FELUCCA_VERIFIED_COMMIT: ${{ inputs.source_ref }}
       CC: clang
       SANITIZE: '1'
     steps:
@@ -375,6 +381,7 @@ jobs:
             build/felucca*.fwsc
             build/felucca.bin
             build/ci/provenance.json
+            build/build-identity.json
             build/ci/package.sha256
             LICENSE
             LICENSING.md

@@ -99,6 +99,7 @@ class NoJobs(unittest.TestCase):
         out.mkdir()
         gen = Path(self.tmp.name) / "gen"
         gen.mkdir()
+        (gen / "build-identity.json").write_text('{}\n')
         (gen / "resolved-profile.json").write_text('{"profile":"standard"}\n')
         self.m = {n: MagicMock(name=n) for n in ("generate", "build_loader", "build_app", "check", "mmio_check",
                                                  "tc_all", "run", "Pool")}
@@ -112,7 +113,7 @@ class NoJobs(unittest.TestCase):
             p = patch.object(B, n, new)
             p.start()
             self.addCleanup(p.stop)
-        for p in (patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"), patch.object(B, "GEN", gen),
+        for p in (patch("build_identity.resolve", return_value={}), patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"), patch.object(B, "GEN", gen),
                   patch.object(B.subprocess, "run", self.m["run"]),
                   patch.object(B.fm1pkg_make, "sdk_file", lambda rel: b""),
                   patch.object(B.fm1pkg_make, "flash_image", lambda img, key: img),

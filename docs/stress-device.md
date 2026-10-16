@@ -80,7 +80,8 @@ and ensure the first available USER slot is empty. Tap/release **SAVE** once to
 open **USER** (SLOT/LOAD/ERASE/SAVE), verify the chosen SLOT, then tap/release
 **OCT+** to open NAME and tap/release **OCT+** again to save the suggested name.
 A populated slot opens an overwrite dialog: tap **OCT−** to cancel and choose an
-unused slot with **KNOB 1** before retrying. Observe the documented stopped flash
+unused slot with **KNOB 1**, then turn **KNOB 4** clockwise to highlight **SAVE**
+before tapping/releasing **OCT+** to reopen NAME and **OCT+** again to save. Observe the documented stopped flash
 pause, successful saved indication and recovery; tap/release HOME, press/release
 C4 and listen for a clean note/release. Collect before/after diagnostics as a
 separate interval; never compare this deliberate pause with steady-playback misses.
