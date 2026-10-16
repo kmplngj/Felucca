@@ -47,8 +47,11 @@ def resolve(root, version=None, env=None):
             kind = 'merge'
             if source != 'git':
                 raise ValueError('PR merge identity requires a Git checkout to verify parentage')
+            # %P obeys shallow grafts and hides valid parents in depth-1 CI.
+            # Raw commit headers retain the actual parent hashes without a fetch.
+            headers = git(root, 'show', '-s', '--format=raw', 'HEAD').split('\n\n', 1)[0].splitlines()
             if (env.get('GITHUB_REF') != f'refs/pull/{pr}/merge' or revision != env.get('GITHUB_SHA')
-                    or head not in git(root, 'show', '-s', '--format=%P', 'HEAD').split()):
+                    or f'parent {head}' not in headers):
                 raise ValueError('PR merge identity does not match compiled checkout')
         elif event.get('inputs', {}).get('pr'):
             pr = str(event['inputs']['pr'])

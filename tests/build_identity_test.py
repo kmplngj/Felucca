@@ -100,6 +100,12 @@ class IdentityTest(unittest.TestCase):
         self.assertEqual(got['revision'], merge)
         self.assertEqual(got['pr_head'], head)
         self.assertEqual(got['pr_label'], 'PR #123 merge')
+        shallow = self.root / 'build/shallow'
+        subprocess.run(['git', 'clone', '-q', '--depth', '1', self.root.as_uri(), str(shallow)], check=True)
+        # Focused emulator CI uses a depth-1 checkout. Git's %P is empty there,
+        # but the compiled merge object still carries its authenticated parents.
+        self.assertEqual(identity.resolve(shallow, env=env)['revision'], merge)
+        self.assertEqual(identity.resolve(shallow, env=env)['pr_label'], 'PR #123 merge')
         env['GITHUB_SHA'] = head
         with self.assertRaisesRegex(ValueError, 'checkout'):
             identity.resolve(self.root, env=env)
