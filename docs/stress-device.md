@@ -82,7 +82,7 @@ open **USER** (SLOT/LOAD/ERASE/SAVE), verify the chosen SLOT, then tap/release
 A populated slot opens an overwrite dialog: tap **OCT−** to cancel and choose an
 unused slot with **KNOB 1** before retrying. Observe the documented stopped flash
 pause, successful saved indication and recovery; tap/release HOME, press/release
-G3 and listen for a clean note/release. Collect before/after diagnostics as a
+C4 and listen for a clean note/release. Collect before/after diagnostics as a
 separate interval; never compare this deliberate pause with steady-playback misses.
 The executable emulator equivalent is `tests/scenarios/stress-save.json`; real NOR
 latency, pause length, wear and preservation remain physical checks.

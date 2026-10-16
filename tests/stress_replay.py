@@ -16,6 +16,8 @@ CASES = {"panel": ("stress-panel.json", {"min_gates": 6, "min_draws": 12, "user_
 
 def signature(manifest):
     return {"scenario_sha256": manifest["scenario_sha256"], "audio": manifest["audio"],
+            "provenance": manifest["provenance"], "initial": manifest["initial"],
+            "timeline_origin": manifest["timeline_origin"],
             "frames": manifest["screen"]["frames"], "events": manifest["events"],
             "final_state": manifest["final_state"], "timing": manifest["timing"]}
 

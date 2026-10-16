@@ -121,6 +121,17 @@ class StressContractTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             stress_replay.health(manifest, checks)
 
+    def test_integrated_comparison_rejects_different_build_inputs(self):
+        keys = ("scenario_sha256", "audio", "screen", "events", "final_state", "timing",
+                "provenance", "initial", "timeline_origin")
+        manifest = {key: {} for key in keys}
+        manifest["screen"] = {"frames": []}
+        baseline = stress_replay.signature(manifest)
+        for key in ("provenance", "initial", "timeline_origin"):
+            changed = copy.deepcopy(manifest)
+            changed[key] = {"changed": True}
+            self.assertNotEqual(baseline, stress_replay.signature(changed))
+
     def test_stalled_compiler_metadata_and_probe_retain_failure_report(self):
         build = stress_matrix.ROOT / "build"
         build.mkdir(exist_ok=True)
