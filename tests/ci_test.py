@@ -60,9 +60,9 @@ class Checks(unittest.TestCase):
 
     def test_release_display_identity_uses_target_version_normalization(self):
         for release in ("1.0-RC1", "1.6.1", "1.6-rc2"):
-            with self.subTest(release=release), patch.dict(os.environ, {"VERSION": release}):
+            with self.subTest(release=release), patch.dict(os.environ, {"VERSION": release, "GITHUB_ACTIONS": "false"}):
                 self.assertEqual(ci.resolved_identity()["version"], ci.build.resolve(["--release", release])["version"])
-        with patch.dict(os.environ, {"VERSION": "1.0-RC1"}):
+        with patch.dict(os.environ, {"VERSION": "1.0-RC1", "GITHUB_ACTIONS": "false"}):
             self.assertEqual(ci.resolved_identity()["version"], "v1.0-rc1")
 
     def test_cached_sdk_corruption_is_rejected(self):
