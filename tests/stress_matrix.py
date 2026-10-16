@@ -19,12 +19,16 @@ METADATA_TIMEOUT = 15
 TRACK_PARAMS = {
     "level": "P_LEVEL", "voice": "P_VOICE", "release": "P_REL",
     "chorus": "P_CHOR", "delay": "P_DLY", "reverb": "P_REV",
+    "seq_length": "P_SLEN", "seq_div": "P_SDIV", "seq_gate": "P_SGATE",
+    "mod_source": "P_M1SRC", "mod_dest": "P_M1DST", "mod_amount": "P_M1AMT",
     "insert_type": "P_ITYPE", "insert_mix": "P_IMIX", "insert_a": "P_IA",
 }
 GLOBAL_PARAMS = {"bpm": "G_BPM", "reverb_type": "G_RTYPE", "reverb_size": "G_RSIZE",
                  "delay_feedback": "G_DFDBK"}
 OPS = {"preset": "EV_PRESET", "param": "EV_PARAM", "global": "EV_GLOBAL",
-       "on": "EV_ON", "off": "EV_OFF"}
+       "on": "EV_ON", "off": "EV_OFF", "step": "EV_STEP",
+       "transport": "EV_TRANSPORT", "perform": "EV_PERFORM",
+       "usb_midi": "EV_USB_MIDI", "trs_byte": "EV_TRS_BYTE"}
 
 
 def integer(value, low, high):
@@ -62,6 +66,30 @@ def validate(matrix):
                     raise ValueError(f"unknown {op} parameter {a!r}")
                 if op == "global" and part != 0:
                     raise ValueError("global events use part 0")
+            elif op == "step":
+                integer(a, 0, 63)
+                if not isinstance(b, dict) or set(b) != {"notes", "ratchet", "drums", "velocity"}:
+                    raise ValueError("step requires notes/ratchet/drums/velocity")
+                if not isinstance(b["notes"], list) or not 0 <= len(b["notes"]) <= 4:
+                    raise ValueError("step needs at most four notes")
+                for note in b["notes"]:
+                    integer(note, 0, 127)
+                integer(b["ratchet"], 1, 4)
+                integer(b["drums"], 0, 255)
+                integer(b["velocity"], 1, 127)
+            elif op == "usb_midi":
+                integer(a, 0x80, 0xef)
+                integer(b, 0, 0x7f7f)
+                if b & 0x8080 or a >> 4 in (0xc, 0xd) and b >> 8:
+                    raise ValueError("invalid MIDI data bytes")
+            elif op == "trs_byte":
+                integer(a, 0, 0)
+                integer(b, 0, 255)
+            elif op in ("transport", "perform"):
+                integer(a, 0, 0 if op == "transport" else 15)
+                integer(b, 0, 1)
+                if part != 0:
+                    raise ValueError("transport/performance events use part 0")
             else:
                 integer(b, 0, 127)
                 integer(a, 0, 127)
@@ -92,7 +120,12 @@ def header(scenarios):
                 a = TRACK_PARAMS[a]
             elif op == "global":
                 a = GLOBAL_PARAMS[a]
-            rows.append(f"    {{{frame}u, {OPS[op]}, {part}u, {a}, {b}u}},")
+            extra = ""
+            if op == "step":
+                notes = ",".join(map(str, b["notes"])) or "0"
+                extra = f", {{{{{notes}}}, {len(b['notes'])}, ST_NOTE, {(b['ratchet']-1)<<3}, {b['velocity']}, {b['drums']}, 0}}"
+                b = 0
+            rows.append(f"    {{{frame}u, {OPS[op]}, {part}u, {a}, {b}u{extra}}},")
         rows.append("    {0, 0, 0, 0, 0}\n};")  # portable nonempty array for idle
     rows.append("static const stress_scenario_t STRESS_SCENARIOS[] = {")
     for i, s in enumerate(scenarios):
@@ -134,11 +167,13 @@ def run(binary, index, directory):
 
 
 def stable(result):
-    return {k: v for k, v in result.items() if k != "render_ns"}
+    return {k: v for k, v in result.items() if k not in ("render_ns", "instructions", "instruction_skip")}
 
 
 def health(s, result):
     c = s["checks"]
+    if any(result.get(k, 0) for k in ("midi_pending", "uart_drops", "performance_held")):
+        raise ValueError("pending/dropped MIDI or unreleased performance effect")
     if result["frames"] != s["frames"] or result["playing"] or len(result["parts"]) != 4:
         raise ValueError("wrong duration or running transport")
     if (result["peak"] == 0) != c["silent"] or result["peak"] < c["min_peak"]:
@@ -180,7 +215,7 @@ def main():
               "compiler": None,
               "matrix_sha256": hashlib.sha256(matrix_bytes).hexdigest(),
               "source_sha256": {}, "builds": [], "results": [],
-              "instructions_per_sample": None, "instruction_skip": "first-stage replay has no instruction-counter adapter",
+              "instruction_scope": "count-only fresh replay loop: events, DSP, clocks, PCM checksum and health checks; no PCM/WAV file IO; no warmup exclusion",
               "device": "unmeasured", "status": "running"}
     try:
         revision = logged_run(["git", "rev-parse", "HEAD"], out / "revision.log", timeout=METADATA_TIMEOUT)
@@ -193,13 +228,13 @@ def main():
                    text=False, timeout=METADATA_TIMEOUT).check_returncode()
         logged_run(["git", "status", "--porcelain"], out / "status.txt", out / "status-stderr.txt",
                    text=False, timeout=METADATA_TIMEOUT).check_returncode()
-        for pattern in ("firmware/**/*", "build/gen/*", "tests/hostsim.c", "tests/stress_render.c", "tests/stress_matrix.py"):
+        for pattern in ("firmware/**/*", "build/gen/*", "tests/hostsim.c", "tests/stress_render.c", "tests/stress_matrix.py", "tests/host_instructions.h"):
             for path in ROOT.glob(pattern):
                 if path.is_file():
                     report["source_sha256"][str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
         # These test sources may be untracked during a local experiment. Keep their
         # contents as well as hashes so the recorded revision is not the only input.
-        for name in ("stress_render.c", "stress_matrix.py", "hostsim.c"):
+        for name in ("stress_render.c", "stress_matrix.py", "hostsim.c", "host_instructions.h"):
             (out / name).write_bytes((ROOT / "tests" / name).read_bytes())
         # Compiler probe follows the host runner's Clang/GCC policy.
         probe = logged_run(cc + ["-fno-vectorize", "-fno-slp-vectorize", "-x", "c", "-c", "-o", os.devnull, "-"],
@@ -224,7 +259,18 @@ def main():
                     reference[s["name"]] = stable(runs[0])
                 elif reference[s["name"]] != stable(runs[0]):
                     raise ValueError(f'{s["name"]}: O2/Os PCM or checkpoint differs')
+                cost_dir = out / label / s["name"] / "cost"
+                cost_dir.mkdir()
+                cost = logged_run([str(binary), str(i), "--count"], cost_dir / "stdout.txt", cost_dir / "stderr.txt", timeout=90)
+                cost.check_returncode()
+                cost_state = json.loads(cost.stdout)
+                health(s, cost_state)
+                if {k: v for k, v in stable(cost_state).items() if k != "pcm_sha256"} != {k: v for k, v in reference[s["name"]].items() if k != "pcm_sha256"}:
+                    raise ValueError("count replay changed checkpoint state")
                 report["results"].append({"scenario": s["name"], "build": label, "runs": runs,
+                                          "instructions_per_frame": cost_state["instructions"] / s["frames"] if cost_state["instructions"] is not None else None,
+                                          "instruction_skip": cost_state["instruction_skip"],
+                                          "instruction_source": cost_state["counter_source"],
                                           "ns_per_frame": [r["render_ns"] / s["frames"] for r in runs]})
                 print(f'stress: {label} {s["name"]}: repeated PCM/state and health ok', flush=True)
         # Negative controls: the comparator must notice missing sound; health
@@ -234,8 +280,15 @@ def main():
         changed["events"] = [e for e in changed["events"] if e[1] != "on"]
         stuck = copy.deepcopy(original)
         stuck["events"] = [e for e in stuck["events"] if e[1] != "off"]
-        (out / "negative_scenarios.json").write_text(json.dumps([changed, stuck], indent=2) + "\n")
-        (out / "stress_schedule.h").write_text(header([changed, stuck]))
+        controls = [changed, stuck]
+        for name, operations in (("dense_ratchets_modulation", {"transport"}),
+                                 ("effects_throws", {"perform"}), ("usb_trs_midi", {"usb_midi", "trs_byte"})):
+            if name in reference:
+                control = copy.deepcopy(next(s for s in scenarios if s["name"] == name))
+                control["events"] = [e for e in control["events"] if e[1] not in operations]
+                controls.append(control)
+        (out / "negative_scenarios.json").write_text(json.dumps(controls, indent=2) + "\n")
+        (out / "stress_schedule.h").write_text(header(controls))
         negative = out / "stress_negative"
         command = report["builds"][0].copy()
         command[command.index("-o") + 1] = str(negative)
@@ -254,6 +307,17 @@ def main():
             pass
         else:
             raise ValueError("missing note-off negative control passed health")
+        for i, control in enumerate(controls[2:], 2):
+            result = run(negative, i, out / "negative" / control["name"])
+            if result["pcm_sha256"] == reference[control["name"]]["pcm_sha256"]:
+                raise ValueError(f"{control['name']}: removed stress events were invisible")
+            if control["name"] != "effects_throws":
+                try:
+                    health(control, result)
+                except ValueError:
+                    pass
+                else:
+                    raise ValueError("removed required input passed health")
         report["negative_controls"] = "passed"
         report["status"] = "passed"
     except (ValueError, OSError, subprocess.SubprocessError) as error:

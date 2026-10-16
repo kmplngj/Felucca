@@ -322,6 +322,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "stress replay: bounded schedule and health guard fixtures" python3 tests/stress_matrix_test.py
     run "stress matrix: repeated PCM/state, voice load, effects and switches (-O2/-Os)" python3 tests/stress_matrix.py
     mkdir -p build/tracks_demo
+    run "stress integrated: repeated panel redraw/throw and stopped save PCM/LCD/state" python3 tests/stress_replay.py
     run "TRACKS: 4-track pattern, live recording (lengths, swing), voice budget, engine switch, cost" env TRACKS=build/tracks_demo "$OUT/hostsim" 0 0 1 "$OUT/tracks.wav"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/project_test" tests/project_test.c -lm
     run "project formats (FUN1..FUN5 -> FUN6, the grid and song chain; DIGITAL tracks -> FM6, SAMPLE PERC -> DRUM)" "$OUT/project_test"

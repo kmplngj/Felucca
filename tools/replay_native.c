@@ -70,6 +70,8 @@ EXPORT void replay_observe(uint32_t *v)
     v[15] = ui.home;
     v[16] = cur_page()->graph;
     v[17] = TSEL->engine;
+    v[18] = 0;
+    for (i = 0; i < UP_SLOTS; i++) v[18] += up_used(i) != 0;
 }
 
 EXPORT void replay_features(uint32_t *v)

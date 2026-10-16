@@ -1,0 +1,395 @@
+{
+  "schema": 1,
+  "name": "Eight factory-track note requests with continuous redraws and REV/ECHO throws",
+  "sample_rate": 44100,
+  "initial": {
+    "state": "factory",
+    "seed": 70,
+    "warmup_samples": 22050,
+    "master": 700,
+    "click": 0,
+    "usb_level": 0
+  },
+  "events": [
+    {
+      "sample": 0,
+      "type": "capture"
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 144,
+      "data1": 48,
+      "data2": 96
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 144,
+      "data1": 52,
+      "data2": 96
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 145,
+      "data1": 53,
+      "data2": 96
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 145,
+      "data1": 57,
+      "data2": 96
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 146,
+      "data1": 58,
+      "data2": 96
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 146,
+      "data1": 62,
+      "data2": 96
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 147,
+      "data1": 63,
+      "data2": 96
+    },
+    {
+      "sample": 4410,
+      "type": "midi",
+      "status": 147,
+      "data1": 67,
+      "data2": 96
+    },
+    {
+      "sample": 8820,
+      "type": "button",
+      "id": "ENV",
+      "down": true
+    },
+    {
+      "sample": 10584,
+      "type": "button",
+      "id": "ENV",
+      "down": false
+    },
+    {
+      "sample": 17640,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": 1
+    },
+    {
+      "sample": 20286,
+      "type": "capture"
+    },
+    {
+      "sample": 21168,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": 1
+    },
+    {
+      "sample": 24696,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": 1
+    },
+    {
+      "sample": 28224,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": 1
+    },
+    {
+      "sample": 31752,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": -1
+    },
+    {
+      "sample": 35280,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": -1
+    },
+    {
+      "sample": 38808,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": -1
+    },
+    {
+      "sample": 42336,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": -1
+    },
+    {
+      "sample": 44100,
+      "type": "button",
+      "id": "FX",
+      "down": true
+    },
+    {
+      "sample": 45864,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": 1
+    },
+    {
+      "sample": 48510,
+      "type": "capture"
+    },
+    {
+      "sample": 48510,
+      "type": "key",
+      "id": 21,
+      "down": true
+    },
+    {
+      "sample": 49392,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": 1
+    },
+    {
+      "sample": 52920,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": 1
+    },
+    {
+      "sample": 56448,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": 1
+    },
+    {
+      "sample": 59975,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": -1
+    },
+    {
+      "sample": 61739,
+      "type": "key",
+      "id": 23,
+      "down": true
+    },
+    {
+      "sample": 63504,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": -1
+    },
+    {
+      "sample": 67032,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": -1
+    },
+    {
+      "sample": 70560,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": -1
+    },
+    {
+      "sample": 74088,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": 1
+    },
+    {
+      "sample": 76734,
+      "type": "capture"
+    },
+    {
+      "sample": 77616,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": 1
+    },
+    {
+      "sample": 81144,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": 1
+    },
+    {
+      "sample": 84672,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": 1
+    },
+    {
+      "sample": 88200,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": -1
+    },
+    {
+      "sample": 88200,
+      "type": "key",
+      "id": 21,
+      "down": false
+    },
+    {
+      "sample": 91728,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": -1
+    },
+    {
+      "sample": 95256,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": -1
+    },
+    {
+      "sample": 98784,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": -1
+    },
+    {
+      "sample": 102312,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": 1
+    },
+    {
+      "sample": 104958,
+      "type": "capture"
+    },
+    {
+      "sample": 105840,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": 1
+    },
+    {
+      "sample": 105840,
+      "type": "key",
+      "id": 23,
+      "down": false
+    },
+    {
+      "sample": 109368,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": 1
+    },
+    {
+      "sample": 110250,
+      "type": "button",
+      "id": "FX",
+      "down": false
+    },
+    {
+      "sample": 112896,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": 1
+    },
+    {
+      "sample": 116424,
+      "type": "encoder",
+      "id": "KNOB 1",
+      "delta": -1
+    },
+    {
+      "sample": 119951,
+      "type": "encoder",
+      "id": "KNOB 2",
+      "delta": -1
+    },
+    {
+      "sample": 123479,
+      "type": "encoder",
+      "id": "KNOB 3",
+      "delta": -1
+    },
+    {
+      "sample": 127008,
+      "type": "encoder",
+      "id": "KNOB 4",
+      "delta": -1
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 128,
+      "data1": 48,
+      "data2": 0
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 128,
+      "data1": 52,
+      "data2": 0
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 129,
+      "data1": 53,
+      "data2": 0
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 129,
+      "data1": 57,
+      "data2": 0
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 130,
+      "data1": 58,
+      "data2": 0
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 130,
+      "data1": 62,
+      "data2": 0
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 131,
+      "data1": 63,
+      "data2": 0
+    },
+    {
+      "sample": 141120,
+      "type": "midi",
+      "status": 131,
+      "data1": 67,
+      "data2": 0
+    },
+    {
+      "sample": 661500,
+      "type": "capture"
+    },
+    {
+      "sample": 661500,
+      "type": "end"
+    }
+  ]
+}
