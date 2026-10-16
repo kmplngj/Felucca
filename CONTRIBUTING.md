@@ -45,9 +45,10 @@ The ANALOG, LOFI, TRIO, WHEEL and NOISE engines and the code they share (`firmwa
 [Felucca-Engines](https://github.com/kmplngj/Felucca-Engines), under the MIT licence: changes to them go there, as
 pull requests to that repository.
 
-New reusable GPL engines are planned for the separate `kmplngj/Felucca-Engines-GPL`
-collection. Its seed is prepared; remote creation and firmware integration remain
-pending under [#360](https://github.com/kmplngj/Felucca/issues/360). Keep host-specific
+New reusable GPL engines belong in the separate
+[Felucca-Engines-GPL](https://github.com/kmplngj/Felucca-Engines-GPL) collection.
+Its seed is published; engine implementation and firmware integration remain pending
+under [#360](https://github.com/kmplngj/Felucca/issues/360). Keep host-specific
 glue in Felucca and follow the [collection/profile ownership plan](docs/extending.md#planned-gpl-collection-and-mixed-profiles).
 Existing native engines stay here until a separately qualified extraction. GPL additions
 must not be submitted to the MIT collection under an MIT header.

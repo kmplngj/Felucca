@@ -75,11 +75,15 @@ large donor sample packs and deep patches keep their existing allocations and de
 ## GPL collection and mixed engine builds — agreed 2026-10-16
 
 The user requested one additional shared engine collection, named
-`kmplngj/Felucca-Engines-GPL`, for GPL engines. Its initial license, contribution rules
-and integration design are prepared; remote repository creation and the first firmware
-pin are pending. This page does not add a dependency or implement GPL collection loading.
+[`kmplngj/Felucca-Engines-GPL`](https://github.com/kmplngj/Felucca-Engines-GPL), for GPL
+engines. Its license, contribution rules, empty design-only catalog and integration
+design are published. No engine is implemented there yet; the first firmware pin
+and resolver support remain pending. This page does not add a dependency or implement
+GPL collection loading.
 [Integration #360](https://github.com/kmplngj/Felucca/issues/360) owns that work;
-[WAVE #354](https://github.com/kmplngj/Felucca/issues/354) is the first planned port.
+[collection #1](https://github.com/kmplngj/Felucca-Engines-GPL/issues/1) owns the first
+WAVE implementation and [Felucca #354](https://github.com/kmplngj/Felucca/issues/354)
+owns its host integration/qualification.
 
 The intended arrangement is one firmware build selecting individual engines across the
 MIT collection at `firmware/engines/`, the GPL collection at `firmware/engines-gpl/`, and
@@ -102,8 +106,8 @@ main-loop generation/cancellation/publication needs an explicit host bridge. Do 
 the engine collection a second HAL, mixer, MIDI consumer or storage stack. Existing native
 engines need no immediate move, and collection discovery cannot change the standard set.
 
-Delivery: publish the GPL seed, qualify its reusable WAVE implementation/service contract,
-then pin it into the multi-collection resolver and add an opt-in mixed profile. Require
+The GPL seed is published. Next qualify its reusable WAVE implementation/service
+contract, then pin it into the multi-collection resolver and add an opt-in mixed profile. Require
 standard/mixed/omitted builds, stable unavailable-sound round trips, target/host/Wasm
 parity, source-archive reproduction and all resource/real-device gates. Collection setup
 alone supplies neither a playable WAVE instrument nor target-fit/performance evidence.
