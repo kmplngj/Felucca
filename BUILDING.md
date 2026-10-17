@@ -421,6 +421,62 @@ timing out does not cancel CI: rerun with the printed `--commit` to resume.
 another fork with this workflow. Maintainers can use `--workflow-ref BRANCH`
 to rehearse workflow changes before merging; normally omit it.
 
+### Optional isolated PR sources
+
+The CI install path above needs no local checkout change. To also inspect or work
+on the matching sources, add `--worktree`; Git must be installed and this helper
+must be run from a Git clone. It fetches the PR into a temporary private ref,
+creates a **detached worktree at the selected commit**, and runs
+`git submodule update --init --recursive --checkout` there. Submodules use the
+committed pins, rather than their latest branches. CI still builds the selected
+commit remotely; preparing sources does not build local edits or change which
+firmware is installed. Local builds need the toolchain and SDK described above.
+
+```sh
+# Prepare sources, then continue through CI/download/confirmed install.
+python3 tools/fm1_pr.py 123 --worktree
+
+# Only prepare sources: no CI build, download or MIDI access.
+python3 tools/fm1_pr.py 123 --prepare-only --worktree-dir ../Felucca-pr-123
+```
+
+The default directory is a sibling named `CHECKOUT-pr-123-FULL_SHA`. A new PR
+revision gets a different directory; `--worktree-dir PATH` chooses a fixed path
+and implies `--worktree`. An existing directory is reused only if this helper
+created it for the same PR/revision and its detached HEAD and local files are
+unchanged. Failed preparation retains the worktree for inspection or retry;
+build/download/install do not proceed if source preparation fails.
+
+The original branch, index, staged/unstaged edits and untracked/ignored files
+stay in their original checkout, including local submodule edits. There is no
+automatic stash, reset or branch switch. Worktrees share Git objects, refs and
+repository configuration; their files, indexes and detached HEADs are separate.
+The helper prints `cd` commands to enter the PR directory and return to the
+original directory. A Python child process cannot change your shell's directory.
+To retain edits made in the PR worktree, create a branch there with
+`git switch -c my-pr-experiment` and commit them. Switching branches or changing
+HEAD prevents helper reuse/removal until you explicitly resolve that state.
+
+By comparison, `gh pr checkout 123` switches the current checkout's branch.
+Compatible staged/unstaged edits may follow that switch; Git normally refuses
+when it would overwrite local edits or untracked files. Uncommitted edits do
+not belong to a branch. Existing commits stay reachable through their branches.
+Use the isolated worktree when your current checkout has ongoing work.
+
+From the **original checkout**, remove a finished helper-created worktree with:
+
+```sh
+python3 tools/fm1_pr.py 123 --remove-worktree ../Felucca-pr-123
+```
+
+Removal needs no GitHub access and does not contact CI or MIDI. It refuses foreign
+worktrees, changed HEADs, local edits, and additional files, including ignored
+build output and files inside nested submodules. Preserve or remove those files
+yourself before retrying; it does not automatically clean or stash them. Keep
+firmware artifacts outside the disposable worktree if you need them later.
+Returning to your original directory or removing PR sources does **not** revert
+the FM-1: reinstall the previously saved firmware package to restore that build.
+
 ### Hardware verification after installing a PR
 
 A successful CI build or download is not an FM-1 hardware test. A successful

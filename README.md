@@ -17,7 +17,7 @@ Want to look around first? [Try it in your browser](https://hugelton.github.io/F
   [Troubleshooting](https://github.com/hugelton/Felucca/wiki/Troubleshooting)
 - Development direction: [combined modularity, capacity and 1.6.1 plan](docs/modularity.md#combining-our-plan-with-felucca-161--2026-10-14)
 - Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build) and [engine build profiles](BUILDING.md#engine-build-profiles); clone with `git clone --recurse-submodules https://github.com/kmplngj/Felucca.git`; complete release sources include the pinned engines in `felucca-VERSION-source.tar.gz` ([details](BUILDING.md#get-the-source))
-- Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), without a local target toolchain; then follow the PR's hardware test instructions (CI does not validate the hardware)
+- Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), without a local target toolchain, with an optional isolated source worktree; then follow the PR's hardware test instructions (CI does not validate the hardware)
 - Download: this fork's [Releases](https://github.com/kmplngj/Felucca/releases) and successful [Actions](https://github.com/kmplngj/Felucca/actions) artifacts; follow the [download and checksum guide](.github/CI.md#downloads-and-checksums)
 - Diagnostics: [collect CDC console reports](docs/diagnostics.md) with USB SERIAL on and an explicitly selected port
 
