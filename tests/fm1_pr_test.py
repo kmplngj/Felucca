@@ -325,7 +325,8 @@ class Worktrees(unittest.TestCase):
         self.assertEqual(self.git(self.source, "for-each-ref", "refs/felucca-pr"), "")
 
     def test_cli_prepare_and_cleanup_skip_ci_download_and_installer(self):
-        with patch.object(P, "resolve_revision", return_value=self.revision), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=self.revision), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "remove_worktree") as remove, \
                 patch.object(P, "ensure_run") as build, patch.object(P, "download") as download, \
@@ -338,7 +339,8 @@ class Worktrees(unittest.TestCase):
                 call.assert_not_called()
 
     def test_cli_preparation_failure_blocks_build_and_install(self):
-        with patch.object(P, "resolve_revision", return_value=self.revision), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=self.revision), \
                 patch.object(P, "prepare_worktree", side_effect=ValueError("submodule failed")), \
                 patch.object(P, "ensure_run") as build, patch.object(P, "install") as install:
             self.assertEqual(P.main(["333", "--worktree"]), 2)
@@ -346,7 +348,8 @@ class Worktrees(unittest.TestCase):
         install.assert_not_called()
 
     def test_cli_resolve_only_has_no_git_mutations(self):
-        with patch.object(P, "resolve_revision", return_value=self.revision), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=self.revision), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "remove_worktree") as remove, patch.object(P, "ensure_run") as build:
             self.assertEqual(P.main(["333", "--resolve-only", "--worktree"]), 0)
@@ -355,7 +358,8 @@ class Worktrees(unittest.TestCase):
 
     def test_cli_worktree_keeps_pinned_ci_download_and_installer_flow(self):
         package = self.base / "firmware.fwsc"
-        with patch.object(P, "resolve_revision", return_value=self.revision), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=self.revision), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()) as build, \
@@ -365,7 +369,7 @@ class Worktrees(unittest.TestCase):
         prepare.assert_called_once_with(REPO, "333", self.revision, None)
         build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False, "full")
         self.assertEqual(download.call_args.args[2], self.revision)
-        install.assert_called_once_with(package, None, False)
+        install.assert_called_once_with(package, None, False, command=["flasher", "midi", "firmware"])
 
 
 class Download(unittest.TestCase):
@@ -415,7 +419,8 @@ class Download(unittest.TestCase):
 
     def test_target_cli_warns_and_downloads_without_installing(self):
         output = io.StringIO()
-        with patch.object(P, "resolve_revision", return_value=SHA), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=SHA), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()) as build, \
                 patch.object(P, "download", return_value=self.root / "felucca.fwsc") as download, \
@@ -457,7 +462,8 @@ class Download(unittest.TestCase):
         def download(*args, **kwargs):
             self.artifact(Path(args[args.index("--dir") + 1]))
             return ""
-        with patch.object(P, "resolve_revision", return_value=SHA), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=SHA), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
                 patch.object(P, "gh", side_effect=download), patch.object(P, "install") as install:
@@ -466,7 +472,8 @@ class Download(unittest.TestCase):
         self.assertEqual(len(list((self.root / "out").rglob("*.fwsc"))), 1)
 
     def test_verification_error_blocks_installer(self):
-        with patch.object(P, "resolve_revision", return_value=SHA), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=SHA), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
                 patch.object(P, "download", side_effect=ValueError("SHA-256 mismatch")), \
@@ -484,14 +491,16 @@ class Download(unittest.TestCase):
 
     def test_successful_install_reports_pending_hardware_scenarios(self):
         output = io.StringIO()
-        with patch.object(P, "resolve_revision", return_value=SHA), \
+        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                patch.object(P, "resolve_revision", return_value=SHA), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
                 patch.object(P, "download", return_value=self.root / "felucca.fwsc"), \
                 patch.object(P, "install", return_value=0) as install, \
                 contextlib.redirect_stdout(output):
             self.assertEqual(P.main(["333", "--port", "Felucca"]), 0)
-        install.assert_called_once_with(self.root / "felucca.fwsc", "Felucca", False)
+        install.assert_called_once_with(self.root / "felucca.fwsc", "Felucca", False,
+                                        command=["flasher", "midi", "firmware"])
         self.assertIn("still require hardware validation", output.getvalue())
 
 

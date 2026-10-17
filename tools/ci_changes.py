@@ -13,11 +13,11 @@ SUITES = ("full", "python", "backup", "emulator")
 PORTABLE_TESTS = (
     "build_identity_test.py",
     "bitmap_font_test.py", "build_guard_test.py", "build_product_test.py",
-    "cpu_baseline_test.py", "diagnostics_test.py", "gen_samples_test.py", "fm1pkg_test.py", "fm1_pr_test.py", "replay_validation_test.py",
+    "cpu_baseline_test.py", "diagnostics_test.py", "gen_samples_test.py", "fm1pkg_test.py", "fm1_pr_test.py", "m_flasher_test.py", "replay_validation_test.py",
     "size_fns_test.py", "target_budget_test.py", "ui_compare_test.py",
 )
 PYTHON_INPUTS = {f"tests/{name}" for name in PORTABLE_TESTS} | {
-    "tools/fm1_diagnostics.py", "tools/fm1_pr.py", "tests/console_diagnostics.c", "tests/ui_compare.py",
+    "tools/fm1_diagnostics.py", "tools/fm1_pr.py", "tools/m_flasher.py", "tests/console_diagnostics.c", "tests/ui_compare.py",
 }
 BACKUP_INPUTS = {"web/fm1backup.js", "web/test_backup.mjs"}
 REVIEW_INPUTS = {"AGENTS.md", ".coderabbit.yaml", ".github/CODERABBIT.md"}
