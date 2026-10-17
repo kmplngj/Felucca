@@ -117,6 +117,28 @@ class Target(unittest.TestCase):
         (self.root / "tools/get_toolchain.sh").write_text("new installer recipe")
         self.assertNotEqual(T.cache_key(self.ci), key)
 
+    def test_cache_key_step_stops_on_failed_or_empty_helper_output(self):
+        script = step_script("Validate version and record checkout")
+        subprocess.run(["git", "init", str(self.root)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "tools/get_toolchain.sh"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "-c", "user.name=Fixture",
+                        "-c", "user.email=fixture@example.invalid", "commit", "--no-gpg-sign", "-m", "fixture"],
+                       check=True, capture_output=True)
+        helper = self.root / "felucca-ci-target.py"
+        output = self.root / "outputs"
+        env = dict(os.environ, RUNNER_TEMP=str(self.root), GITHUB_EVENT_NAME="workflow_dispatch",
+                   GITHUB_REF_TYPE="branch", VERSION="", GITHUB_OUTPUT=str(output),
+                   GITHUB_ENV=str(self.root / "environment"))
+        for source, succeeds in (("raise SystemExit(3)", False), ("print('')", False),
+                                 ("print('a' * 64)", True)):
+            with self.subTest(source=source):
+                output.unlink(missing_ok=True)
+                helper.write_text(source)
+                result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script],
+                                        cwd=self.root, env=env, capture_output=True)
+                self.assertEqual(result.returncode == 0, succeeds)
+                self.assertEqual("target_cache_key=" in output.read_text(), succeeds)
+
     def test_target_preflight_needs_no_host_emulator_or_browser_dependencies(self):
         features = SimpleNamespace(check=lambda feature: True)
         piano = self.root / "assets/samples-cc0/PIANO"

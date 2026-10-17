@@ -303,7 +303,9 @@ jobs:
           if [ -n "$VERSION" ]; then python3 tools/ci.py version "$VERSION"; fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "target_cache_key=$(python3 "$RUNNER_TEMP/felucca-ci-target.py" cache-key)" >> "$GITHUB_OUTPUT"
+          target_cache_key=$(python3 "$RUNNER_TEMP/felucca-ci-target.py" cache-key)
+          test -n "$target_cache_key"
+          echo "target_cache_key=$target_cache_key" >> "$GITHUB_OUTPUT"
           {
             echo "JIELI_TOOLCHAIN=$RUNNER_TEMP/jieli/toolchain"
             echo "AC79_SDK=$RUNNER_TEMP/sdk"
