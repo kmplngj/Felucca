@@ -271,6 +271,10 @@ delivery without modifying their sources, provided their CI exposes build-identi
 and pinned-engine provenance APIs (as #392 does). Earlier revisions fail target
 preflight with an explicit `--validation full` instruction; full delivery retains
 their original provenance format and checks without requiring these newer APIs.
+Full validation checks for the selected source's browser package/lock files before
+building, so historical revisions lacking that required harness fail promptly
+instead of after the host suite. Use compatible sources/workflows; tests are not
+silently skipped to make such a full request succeed.
 Their firmware, build tools and budgets
 still come from that selected revision. This helper records only target dependencies
 and limitations; full/release provenance and reproducibility remain unchanged.

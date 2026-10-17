@@ -401,6 +401,9 @@ recorded in the target artifact's `provenance.json`.
 Historical sources without build-identity/pinned-engine provenance APIs cannot
 use target-only mode; the helper reports this explicitly. Use `--validation full`
 for those revisions. Existing full builds remain supported without those newer APIs.
+The selected sources must still contain the tests required by the chosen workflow.
+Full validation reports a missing browser harness before building or running host
+tests; rebase the PR or select a compatible workflow if it predates that harness.
 
 Use `--validation full` (the default) for the complete pipeline. Modes have
 separate run titles, concurrency groups and artifact names; a target-only run

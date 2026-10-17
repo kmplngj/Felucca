@@ -286,6 +286,13 @@ jobs:
           persist-credentials: false
           submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
+      - name: Check full browser prerequisites
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
+        run: |
+          if [ ! -f web/emu/package.json ] || [ ! -f web/emu/package-lock.json ]; then
+            echo 'Full validation requires the browser harness in the selected sources. Rebase onto current sources, use a compatible workflow, or select --validation target when supported.' >&2
+            exit 1
+          fi
       - name: Validate version and record checkout
         if: needs.workflow-checks.outputs.full == 'true'
         id: version

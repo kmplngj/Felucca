@@ -175,6 +175,20 @@ class Target(unittest.TestCase):
             capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_full_workflow_reports_missing_browser_harness_before_build_and_tests(self):
+        script = step_script("Check full browser prerequisites")
+        result = subprocess.run(["bash", "-e", "-c", script], cwd=self.root, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Full validation requires the browser harness", result.stderr)
+        root = self.root / "web/emu"
+        root.mkdir(parents=True)
+        (root / "package.json").write_text('{}')
+        result = subprocess.run(["bash", "-e", "-c", script], cwd=self.root, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        (root / "package-lock.json").write_text('{}')
+        result = subprocess.run(["bash", "-e", "-c", script], cwd=self.root, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_target_summary_explicitly_discloses_omitted_validation(self):
         script = step_script("Summarize validation and limits").replace("${{ job.status }}", "success").replace(
             "${{ needs.workflow-checks.outputs.full }}", "true")
