@@ -6,17 +6,121 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 import fm1_install
 
 
 DEFAULT_REPO = "kmplngj/Felucca"
 WORKFLOW = "ci.yml"
+SOURCE = Path(__file__).resolve().parents[1]
+
+
+def git(root, *args):
+    result = subprocess.run(["git", "-C", str(root), *map(str, args)],
+                            capture_output=True, text=True)
+    if result.returncode:
+        detail = result.stderr.strip() or f"{args[0]} exited with status {result.returncode}"
+        raise ValueError(f"Git failed: {detail}")
+    return result.stdout.rstrip("\n")
+
+
+def worktree_record(source, path):
+    # Each linked worktree has a private Git directory; never mark the main one.
+    common = Path(git(source, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    private = Path(git(path, "rev-parse", "--absolute-git-dir"))
+    if (private == common or
+            Path(git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")) != common or
+            Path(git(path, "rev-parse", "--show-toplevel")).resolve() != path):
+        raise ValueError("Path is not a linked worktree of this repository")
+    return private / "felucca-pr.json"
+
+
+def check_worktree(source, path, repository, number, revision=None, removing=False):
+    record = worktree_record(source, path)
+    if not record.is_file():
+        raise ValueError("Worktree was not created by this helper")
+    data = json.loads(record.read_text())
+    if (data.get("path") != str(path) or data.get("repo") != repository or
+            data.get("pr") != str(number) or
+            (revision is not None and data.get("revision") != revision)):
+        raise ValueError("Worktree belongs to another path, repository, PR or revision")
+    head = git(path, "rev-parse", "HEAD")
+    if (head != data.get("revision") or
+            git(path, "rev-parse", "--abbrev-ref", "HEAD") != "HEAD"):
+        raise ValueError("Worktree HEAD changed; keep or move your commits before cleanup/reuse")
+    status = ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]
+    if removing:
+        status.append("--ignored=matching")
+        # Status deliberately hides files flagged assume-unchanged/skip-worktree.
+        # Refuse such indexes, and submodule-only refs/stashes that removal would lose.
+        indexes = git(path, "ls-files", "-v") + "\n" + git(
+            path, "submodule", "foreach", "--quiet", "--recursive", "git ls-files -v")
+        local_refs = git(path, "submodule", "foreach", "--quiet", "--recursive",
+                         "git rev-list --all --not --remotes HEAD")
+        if any(line and (line[0].islower() or line[0] == "S") for line in indexes.splitlines()) or local_refs:
+            raise ValueError("Worktree has hidden index entries or local submodule commits/stashes; preserve them first")
+    # The parent status omits ignored files inside submodules. Inspect those too.
+    nested = git(path, "submodule", "foreach", "--quiet", "--recursive",
+                 "git " + " ".join(status))
+    if git(path, *status) or nested:
+        raise ValueError("Worktree has local changes or extra files; preserve/remove them before cleanup/reuse")
+    return record
+
+
+def prepare_worktree(repository, number, revision, destination=None, source=SOURCE):
+    source = source.resolve()
+    path = (destination if destination is not None else
+            source.parent / f"{source.name}-pr-{number}-{revision}").expanduser().resolve()
+    if path == source or path in source.parents or source in path.parents:
+        raise ValueError("Use a separate directory outside the current checkout")
+    if path.exists():
+        check_worktree(source, path, repository, number, revision)
+    else:
+        # A private temporary ref leaves branches, index and FETCH_HEAD untouched.
+        ref = f"refs/felucca-pr/{uuid.uuid4().hex}"
+        try:
+            git(source, "fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules",
+                f"https://github.com/{repository}.git", f"refs/pull/{number}/head:{ref}")
+            try:
+                git(source, "merge-base", "--is-ancestor", revision, ref)
+            except ValueError as error:
+                raise ValueError("Selected commit is not reachable from the fetched PR head; "
+                                 "the PR may have been force-pushed. No revision was substituted.") from error
+            git(source, "worktree", "add", "--detach", path, revision)
+            worktree_record(source, path).write_text(json.dumps({
+                "path": str(path), "repo": repository, "pr": str(number), "revision": revision,
+            }) + "\n")
+        finally:
+            git(source, "update-ref", "-d", ref)
+    print(f"Source worktree: {path}\nEnter: cd {shlex.quote(str(path))}\n"
+          f"Return: cd {shlex.quote(str(source))}", flush=True)
+    # Explicit --checkout respects gitlink pins even if shared config requests rebase/merge.
+    # Never run the PR's helper: the caller's installer and CI verification stay in control.
+    print("Initializing pinned submodules (a failed preparation leaves the worktree for inspection)...",
+          flush=True)
+    git(path, "submodule", "update", "--init", "--recursive", "--checkout")
+    if any(line and line[0] != " " for line in
+           git(path, "submodule", "status", "--recursive").splitlines()):
+        raise ValueError("Submodule revisions do not match the selected commit")
+    return path
+
+
+def remove_worktree(repository, number, path, source=SOURCE):
+    source, path = source.resolve(), path.expanduser().resolve()
+    if path == source:
+        raise ValueError("Cannot remove the current source checkout")
+    check_worktree(source, path, repository, number, removing=True)
+    # Git requires one --force for initialized submodules, even when entirely clean.
+    # The ownership and recursive checks above also reject ignored build/user files.
+    git(source, "worktree", "remove", "--force", path)
+    print(f"Removed source worktree: {path}; installed firmware was not changed.")
 
 
 def gh(*args, payload=None):
@@ -46,7 +150,7 @@ def pages(endpoint, key):
     raise ValueError("GitHub result exceeds pagination limit")
 
 
-def resolve_revision(repository, number, revision=None):
+def validate_selection(repository, number, revision=None):
     if (not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
             or any(part in (".", "..") for part in repository.split("/"))):
         raise ValueError("--repo must be owner/name")
@@ -54,6 +158,10 @@ def resolve_revision(repository, number, revision=None):
         raise ValueError("PR must be a positive number")
     if revision is not None and not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("--commit must be a full lowercase 40-character commit SHA")
+
+
+def resolve_revision(repository, number, revision=None):
+    validate_selection(repository, number, revision)
     pull = api(f"repos/{repository}/pulls/{number}")
     head = pull["head"]["sha"]
     if not re.fullmatch(r"[0-9a-f]{40}", head):
@@ -177,23 +285,41 @@ def main(argv=None):
     parser.add_argument("pr", help="PR number")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub owner/name")
     parser.add_argument("--commit", help="full SHA; default snapshots the current PR head")
-    parser.add_argument("--download-only", action="store_true", help="verify without accessing MIDI")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--download-only", action="store_true", help="verify without accessing MIDI")
+    mode.add_argument("--prepare-only", action="store_true",
+                      help="prepare a source worktree only; no CI build, download or MIDI")
+    mode.add_argument("--remove-worktree", type=Path, metavar="PATH",
+                      help="remove a helper-created clean worktree; no CI or MIDI")
+    mode.add_argument("--resolve-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--worktree", action="store_true",
+                        help="also prepare isolated PR sources with pinned recursive submodules")
+    parser.add_argument("--worktree-dir", type=Path, metavar="PATH",
+                        help="source worktree destination (implies --worktree); default sibling PR/SHA directory")
     parser.add_argument("--no-build", action="store_true", help="reuse a run without dispatching a build")
     parser.add_argument("--out", type=Path, help="download parent; default build/pr-PR/SHA")
     parser.add_argument("--port", help="USB-MIDI port name passed to the installer")
     parser.add_argument("--yes", action="store_true", help="skip the installer's flash confirmation")
     parser.add_argument("--timeout", type=int, default=3600, help="maximum CI wait in seconds")
     parser.add_argument("--workflow-ref", help="maintainer workflow branch; default repository default branch")
-    parser.add_argument("--resolve-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
         if args.timeout <= 0:
             raise ValueError("--timeout must be positive")
+        if args.remove_worktree:
+            validate_selection(args.repo, args.pr, args.commit)
+            remove_worktree(args.repo, args.pr, args.remove_worktree)
+            return 0
         revision = resolve_revision(args.repo, args.pr, args.commit)
         if args.resolve_only:
             print(revision)
             return 0
         print(f"Repository: {args.repo}\nPR: #{args.pr}\nCommit: {revision}", flush=True)
+        if args.worktree or args.worktree_dir is not None or args.prepare_only:
+            prepare_worktree(args.repo, args.pr, revision, args.worktree_dir)
+        if args.prepare_only:
+            print("Sources prepared; no CI build, download or hardware access.")
+            return 0
         workflow_ref = args.workflow_ref or api(f"repos/{args.repo}")["default_branch"]
         run = ensure_run(args.repo, args.pr, revision, workflow_ref, args.timeout, args.no_build)
         output = args.out or Path(__file__).resolve().parents[1] / "build" / f"pr-{args.pr}" / revision

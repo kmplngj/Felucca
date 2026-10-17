@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -130,6 +131,220 @@ class Selection(unittest.TestCase):
                 P.gh("run", "download")
         self.assertIn("Forbidden", str(error.exception))
         self.assertNotIn("sig=secret", str(error.exception))
+
+
+class Worktrees(unittest.TestCase):
+    """Exercise real indexes, linked worktrees and nested gitlinks, without GitHub."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="PR worktrees ")
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.environment = patch.dict(os.environ, {"GIT_ALLOW_PROTOCOL": "file"})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        leaf = self.repo("leaf")
+        module = self.repo("module")
+        self.git(module, "submodule", "add", str(leaf), "nested")
+        self.commit(module)
+        self.pin = self.git(module, "rev-parse", "HEAD")
+        self.source = self.repo("source")
+        (self.source / ".gitignore").write_text("generated/\n")
+        self.git(self.source, "submodule", "add", str(module), "engine")
+        self.commit(self.source)
+        self.original = self.git(self.source, "rev-parse", "HEAD")
+        (self.source / "tracked").write_text("PR version\n")
+        self.commit(self.source)
+        self.revision = self.git(self.source, "rev-parse", "HEAD")
+        self.git(self.source, "update-ref", "refs/pull/333/head", self.revision)
+        self.git(self.source, "checkout", "--detach", self.original)
+        # Rewrite only this fixture's GitHub URL; production never enables file transport.
+        self.git(self.source, "config", f"url.file://{self.source}.insteadOf",
+                 f"https://github.com/{REPO}.git")
+        self.path = self.base / "PR source"
+
+    def git(self, root, *args):
+        return subprocess.run(["git", "-C", str(root), *args], check=True,
+                              capture_output=True, text=True).stdout.rstrip("\n")
+
+    def commit(self, root):
+        self.git(root, "add", "-A")
+        self.git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                 "commit", "--no-gpg-sign", "-m", "fixture")
+
+    def repo(self, name):
+        root = self.base / name
+        root.mkdir()
+        self.git(root, "init")
+        (root / "tracked").write_text("original\n")
+        self.commit(root)
+        return root
+
+    def prepare(self):
+        return P.prepare_worktree(REPO, 333, self.revision, self.path, self.source)
+
+    def remove(self):
+        P.remove_worktree(REPO, 333, self.path, self.source)
+
+    def test_dirty_source_unchanged_exact_detached_head_and_recursive_pins(self):
+        (self.source / "tracked").write_text("staged\n")
+        self.git(self.source, "add", "tracked")
+        (self.source / "tracked").write_text("unstaged\n")
+        (self.source / "untracked").write_text("keep\n")
+        (self.source / "generated").mkdir()
+        (self.source / "generated/output").write_text("keep ignored\n")
+        (self.source / "engine/tracked").write_text("local engine edits\n")
+        self.git(self.source, "update-ref", "refs/heads/keep", self.original)
+        before = {command: self.git(self.source, *command.split()) for command in
+                  ("status --porcelain --ignored", "diff", "diff --cached", "show-ref", "rev-parse HEAD")}
+        index = (self.source / ".git/index").read_bytes()
+        self.assertEqual(self.prepare(), self.path)
+        self.assertEqual(self.git(self.path, "rev-parse", "HEAD"), self.revision)
+        self.assertEqual(self.git(self.path, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
+        self.assertEqual(self.git(self.path / "engine", "rev-parse", "HEAD"), self.pin)
+        self.assertTrue((self.path / "engine/nested/tracked").is_file())
+        self.assertEqual((self.path / "tracked").read_text(), "PR version\n")
+        for command, output in before.items():
+            self.assertEqual(self.git(self.source, *command.split()), output)
+        self.assertEqual((self.source / ".git/index").read_bytes(), index)
+        self.assertEqual((self.source / "untracked").read_text(), "keep\n")
+        self.assertEqual((self.source / "generated/output").read_text(), "keep ignored\n")
+        self.assertEqual(self.git(self.source, "for-each-ref", "refs/felucca-pr"), "")
+        self.assertEqual(self.prepare(), self.path)
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertEqual((self.source / "tracked").read_text(), "unstaged\n")
+
+    def test_reuse_refuses_modified_or_switched_head(self):
+        self.prepare()
+        (self.path / "tracked").write_text("keep edits\n")
+        with self.assertRaisesRegex(ValueError, "local changes"):
+            self.prepare()
+        self.git(self.path, "restore", "tracked")
+        self.git(self.path, "checkout", "--detach", self.original)
+        with self.assertRaisesRegex(ValueError, "HEAD changed"):
+            self.prepare()
+        with self.assertRaisesRegex(ValueError, "HEAD changed"):
+            self.remove()
+
+    def test_cleanup_refuses_extra_files_including_ignored_nested_files(self):
+        self.prepare()
+        for name in ("tracked", "untracked", "generated/output", "engine/nested/extra"):
+            file = self.path / name
+            original = file.read_bytes() if file.exists() else None
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("keep this file\n")
+            with self.assertRaisesRegex(ValueError, "local changes"):
+                self.remove()
+            self.assertEqual(file.read_text(), "keep this file\n")
+            if original is None:
+                file.unlink()
+                if name == "generated/output":
+                    file.parent.rmdir()
+            else:
+                file.write_bytes(original)
+        # An ignored file inside a submodule must also prevent deletion.
+        self.git(self.path / "engine/nested", "config", "core.excludesFile", str(self.base / "ignores"))
+        (self.base / "ignores").write_text("ignored\n")
+        extra = self.path / "engine/nested/ignored"
+        extra.write_text("keep ignored nested output\n")
+        with self.assertRaisesRegex(ValueError, "local changes"):
+            self.remove()
+        extra.unlink()
+        self.remove()
+
+    def test_existing_directory_foreign_worktree_and_source_are_preserved(self):
+        self.path.mkdir()
+        (self.path / "keep").write_text("keep\n")
+        with self.assertRaises(ValueError):
+            self.prepare()
+        self.assertEqual((self.path / "keep").read_text(), "keep\n")
+        self.path.joinpath("keep").unlink()
+        self.path.rmdir()
+        self.git(self.source, "worktree", "add", "--detach", str(self.path), self.revision)
+        with self.assertRaisesRegex(ValueError, "not created"):
+            self.prepare()
+        with self.assertRaisesRegex(ValueError, "not created"):
+            self.remove()
+        with self.assertRaises(ValueError):
+            P.remove_worktree(REPO, 333, self.source, self.source)
+        with self.assertRaisesRegex(ValueError, "outside"):
+            P.prepare_worktree(REPO, 333, self.revision, self.source / "inside", self.source)
+
+    def test_cleanup_preserves_hidden_edits_and_submodule_local_branches(self):
+        self.prepare()
+        self.git(self.path, "update-index", "--assume-unchanged", "tracked")
+        (self.path / "tracked").write_text("hidden edit\n")
+        with self.assertRaisesRegex(ValueError, "hidden index"):
+            self.remove()
+        self.git(self.path, "update-index", "--no-assume-unchanged", "tracked")
+        self.git(self.path, "restore", "tracked")
+        nested = self.path / "engine/nested"
+        pinned = self.git(nested, "rev-parse", "HEAD")
+        self.git(nested, "checkout", "-b", "my-work")
+        (nested / "tracked").write_text("local commit\n")
+        self.commit(nested)
+        self.git(nested, "checkout", "--detach", pinned)
+        with self.assertRaisesRegex(ValueError, "local submodule commits"):
+            self.remove()
+        self.assertTrue(self.path.exists())
+        self.git(nested, "branch", "-D", "my-work")
+        self.remove()
+
+    def test_wrong_pr_and_force_push_do_not_reuse_unrelated_sources(self):
+        self.prepare()
+        with self.assertRaisesRegex(ValueError, "another"):
+            P.prepare_worktree(REPO, 334, self.revision, self.path, self.source)
+        self.remove()
+        # Simulate a force-push between API resolution and fetching.
+        self.git(self.source, "update-ref", "refs/pull/333/head", self.original)
+        with self.assertRaises(ValueError):
+            self.prepare()
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.git(self.source, "for-each-ref", "refs/felucca-pr"), "")
+
+    def test_cli_prepare_and_cleanup_skip_ci_download_and_installer(self):
+        with patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "prepare_worktree") as prepare, \
+                patch.object(P, "remove_worktree") as remove, \
+                patch.object(P, "ensure_run") as build, patch.object(P, "download") as download, \
+                patch.object(P, "install") as install, patch.object(P, "api") as api:
+            self.assertEqual(P.main(["333", "--prepare-only", "--worktree-dir", str(self.path)]), 0)
+            prepare.assert_called_once_with(REPO, "333", self.revision, self.path)
+            self.assertEqual(P.main(["333", "--remove-worktree", str(self.path)]), 0)
+            remove.assert_called_once_with(REPO, "333", self.path)
+            for call in (build, download, install, api):
+                call.assert_not_called()
+
+    def test_cli_preparation_failure_blocks_build_and_install(self):
+        with patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "prepare_worktree", side_effect=ValueError("submodule failed")), \
+                patch.object(P, "ensure_run") as build, patch.object(P, "install") as install:
+            self.assertEqual(P.main(["333", "--worktree"]), 2)
+        build.assert_not_called()
+        install.assert_not_called()
+
+    def test_cli_resolve_only_has_no_git_mutations(self):
+        with patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "prepare_worktree") as prepare, \
+                patch.object(P, "remove_worktree") as remove, patch.object(P, "ensure_run") as build:
+            self.assertEqual(P.main(["333", "--resolve-only", "--worktree"]), 0)
+        for call in (prepare, remove, build):
+            call.assert_not_called()
+
+    def test_cli_worktree_keeps_pinned_ci_download_and_installer_flow(self):
+        package = self.base / "firmware.fwsc"
+        with patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "prepare_worktree") as prepare, \
+                patch.object(P, "api", return_value={"default_branch": "main"}), \
+                patch.object(P, "ensure_run", return_value=run()) as build, \
+                patch.object(P, "download", return_value=package) as download, \
+                patch.object(P, "install", return_value=0) as install:
+            self.assertEqual(P.main(["333", "--worktree"]), 0)
+        prepare.assert_called_once_with(REPO, "333", self.revision, None)
+        build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False)
+        self.assertEqual(download.call_args.args[2], self.revision)
+        install.assert_called_once_with(package, None, False)
 
 
 class Download(unittest.TestCase):
