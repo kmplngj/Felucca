@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 name: CI
 run-name: >-
-  ${{ github.event_name == 'workflow_dispatch' && inputs.pr != '' && format('PR firmware #{0} @ {1}{2}', inputs.pr, inputs.commit, inputs.validation == 'target' && ' (target)' || '') || '' }}
+  ${{ inputs.benchmark_commit != '' && format('Runner trial {0} @ {1}', inputs.runner, inputs.benchmark_commit) || github.event_name == 'workflow_dispatch' && inputs.pr != '' && format('PR firmware #{0} @ {1}{2}', inputs.pr, inputs.commit, inputs.validation == 'target' && ' (target)' || '') || '' }}
 
 on:
   pull_request:
@@ -9,6 +9,15 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      runner:
+        description: GitHub-hosted, or a manual home-server benchmark of trusted main sources
+        default: github
+        type: choice
+        options: [github, home]
+      benchmark_commit:
+        description: Optional full SHA from main history for a same-source runner comparison (required for home)
+        default: ''
+        type: string
       validation:
         description: Full validation, or target-only firmware for hardware iteration (requires pr/commit)
         default: full
@@ -28,13 +37,13 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ci-${{ inputs.pr != '' && format('pr-{0}-{1}-{2}', inputs.pr, inputs.commit, inputs.validation || 'full') || github.event.pull_request.number || github.ref }}
+  group: ci-${{ inputs.runner || 'github' }}-${{ inputs.benchmark_commit }}-${{ inputs.pr != '' && format('pr-{0}-{1}-{2}', inputs.pr, inputs.commit, inputs.validation || 'full') || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   revision:
-    name: Resolve requested PR revision
-    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '' || inputs.validation == 'target')
+    name: Resolve requested source revision
+    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '' || inputs.validation == 'target' || inputs.benchmark_commit != '' || inputs.runner == 'home')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -43,13 +52,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Verify commit belongs to PR history
+          fetch-depth: 0
+      - name: Verify requested source history
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr }}
           PR_COMMIT: ${{ inputs.commit }}
+          BENCHMARK_COMMIT: ${{ inputs.benchmark_commit }}
+          VALIDATION: ${{ inputs.validation }}
         run: |
+          if [ -n "$BENCHMARK_COMMIT" ]; then
+            test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+            test -z "$PR_NUMBER$PR_COMMIT"
+            test "$VALIDATION" = full
+            python3 -c 'import os,re; assert re.fullmatch(r"[0-9a-f]{40}", os.environ["BENCHMARK_COMMIT"]), "Expected a full lowercase commit SHA"'
+            git merge-base --is-ancestor "$BENCHMARK_COMMIT" origin/main
+            echo "sha=$BENCHMARK_COMMIT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           test -n "$PR_COMMIT"
           sha=$(python3 tools/fm1_pr.py "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --commit "$PR_COMMIT" --resolve-only)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -62,3 +83,4 @@ jobs:
       source_ref: ${{ needs.revision.outputs.sha }}
       verified_pr: ${{ needs.revision.result == 'success' && inputs.pr || '' }}
       validation: ${{ inputs.validation || 'full' }}
+      runner: ${{ inputs.runner || 'github' }}

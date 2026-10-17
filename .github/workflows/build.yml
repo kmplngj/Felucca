@@ -4,6 +4,10 @@ name: Firmware validation
 on:
   workflow_call:
     inputs:
+      runner:
+        description: github, or home for an owner-triggered benchmark of trusted main sources
+        default: github
+        type: string
       validation:
         description: full, or target-only for a verified manual PR revision
         default: full
@@ -30,6 +34,9 @@ permissions:
 defaults:
   run:
     shell: bash
+
+env:
+  FELUCCA_CI_RUNNER: ${{ inputs.runner }}
 
 jobs:
   workflow-checks:
@@ -60,6 +67,25 @@ jobs:
               not re.fullmatch(r'[1-9][0-9]*', os.environ['VERIFIED_PR'])
           ):
               raise SystemExit('Target-only scope requires a verified manual PR revision and no release version')
+          PY
+      - name: Validate runner trust boundary
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          VERIFIED_PR: ${{ inputs.verified_pr }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          runner = os.environ['FELUCCA_CI_RUNNER']
+          if runner not in ('github', 'home'):
+              raise SystemExit('Unknown runner selection')
+          if runner == 'home' and (
+              os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or
+              os.environ['GITHUB_ACTOR'] != os.environ['GITHUB_REPOSITORY_OWNER'] or
+              os.environ['VERSION'] or os.environ['VERIFIED_PR'] or
+              not re.fullmatch(r'[0-9a-f]{40}', os.environ['SOURCE_REF'])
+          ):
+              raise SystemExit('Home runner requires an owner-triggered main-history benchmark, without PR or release inputs')
           PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,6 +118,9 @@ jobs:
           else
             echo 'Historical sources predate target helper fixtures; the workflow scope guard still runs.' | tee build/ci/target-helper-tests.log
           fi
+          if [ -f tests/ci_runner_test.py ]; then
+            python3 -m unittest discover -s tests -p ci_runner_test.py -v 2>&1 | tee build/ci/runner-guard-tests.log
+          fi
           python3 tests/source_archive_test.py -v 2>&1 | tee build/ci/source-tests.log
           python3 -m unittest discover -s tests -p ci_changes_test.py -v 2>&1 | tee build/ci/selection-tests.log
           python3 -m unittest discover -s tests -p branch_cleanup_test.py -v 2>&1 | tee build/ci/branch-cleanup-tests.log
@@ -106,7 +135,7 @@ jobs:
     name: Portable Python tests
     needs: workflow-checks
     if: needs.workflow-checks.outputs.python == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(inputs.runner == 'home' && '["self-hosted","Linux","X64","home-ubuntu"]' || '["ubuntu-24.04"]') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -136,7 +165,7 @@ jobs:
     name: Web backup tests
     needs: workflow-checks
     if: needs.workflow-checks.outputs.backup == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(inputs.runner == 'home' && '["self-hosted","Linux","X64","home-ubuntu"]' || '["ubuntu-24.04"]') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,7 +192,7 @@ jobs:
     name: Browser emulator tests
     needs: workflow-checks
     if: needs.workflow-checks.outputs.emulator == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(inputs.runner == 'home' && '["self-hosted","Linux","X64","home-ubuntu"]' || '["ubuntu-24.04"]') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -191,8 +220,10 @@ jobs:
           EMSDK: ${{ runner.temp }}/emsdk
         run: |
           mkdir -p build/ci
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
+          if [ "$FELUCCA_CI_RUNNER" = github ]; then
+            sudo apt-get update -q
+            sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
+          fi
           python3 -m pip install -r tools/ci-requirements.txt
           if [ ! -d "$EMSDK/.git" ]; then
             git init "$EMSDK"
@@ -213,7 +244,9 @@ jobs:
       - name: Install pinned browser test dependencies
         run: |
           npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
-          npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
+          args=(--with-deps)
+          if [ "$FELUCCA_CI_RUNNER" = home ]; then args=(); fi
+          npm exec --prefix web/emu -- playwright install "${args[@]}" --only-shell chromium
       - name: Generate fresh assets and compare native with WASM
         env:
           EMSDK: ${{ runner.temp }}/emsdk
@@ -239,7 +272,7 @@ jobs:
     needs: [workflow-checks, python-checks, backup-checks, emulator-checks]
     # Preserve the existing required check and fail if a selected suite fails.
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(inputs.runner == 'home' && '["self-hosted","Linux","X64","home-ubuntu"]' || '["ubuntu-24.04"]') }}
     timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -307,6 +340,8 @@ jobs:
           test -n "$target_cache_key"
           echo "target_cache_key=$target_cache_key" >> "$GITHUB_OUTPUT"
           {
+            # Large SDK/compiler downloads must use disk rather than container tmpfs.
+            echo "TMPDIR=$RUNNER_TEMP"
             echo "JIELI_TOOLCHAIN=$RUNNER_TEMP/jieli/toolchain"
             echo "AC79_SDK=$RUNNER_TEMP/sdk"
             echo "DAISYSP=$RUNNER_TEMP/DaisySP"
@@ -327,10 +362,12 @@ jobs:
       - name: Install pinned image-generation dependencies
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
-          sudo apt-get update -q
-          packages=(libfribidi0 libraqm0)
-          if [ "$VALIDATION" = full ]; then packages+=(clang); fi
-          sudo apt-get install -y --no-install-recommends "${packages[@]}"
+          if [ "$FELUCCA_CI_RUNNER" = github ]; then
+            sudo apt-get update -q
+            packages=(libfribidi0 libraqm0)
+            if [ "$VALIDATION" = full ]; then packages+=(clang); fi
+            sudo apt-get install -y --no-install-recommends "${packages[@]}"
+          fi
           python3 -m pip install -r tools/ci-requirements.txt
       - name: Cache target inputs
         if: needs.workflow-checks.outputs.full == 'true'
@@ -436,7 +473,9 @@ jobs:
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
           npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
-          npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
+          args=(--with-deps)
+          if [ "$FELUCCA_CI_RUNNER" = home ]; then args=(); fi
+          npm exec --prefix web/emu -- playwright install "${args[@]}" --only-shell chromium
           npm test --prefix web/emu
       - name: Reproduce package from a clean checkout
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'

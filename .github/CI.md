@@ -364,3 +364,41 @@ unpacked contents to require byte equality with the original `.fwsc`. Publishing
 requires the source archive/manifest to match `BUILD-PROVENANCE.json` and checks the
 source sidecar before creating the flat `SHA256SUMS` asset. Existing firmware archive
 contents and nested licensing paths are retained.
+
+
+## Manual home-runner trial
+
+The `kori/home-runner-trial` branch adds a manual `runner` choice (`github` by
+default, or `home`) and `benchmark_commit`. Regular pushes, PR validation and
+releases keep GitHub-hosted runners. The trial's revision and workflow checks
+also run on GitHub; only selected validation jobs move to the home server.
+
+For an equal-source full comparison, dispatch the same workflow branch twice
+with `validation=full`, the same full lowercase SHA from `main` history in
+`benchmark_commit`, and `runner=github` or `runner=home`. Do not set `pr` or
+`commit`. The resolver verifies that the SHA is an ancestor of `origin/main`.
+The home option requires an owner-triggered manual run, without PR or release
+inputs. External PR code must stay on GitHub-hosted runners.
+
+```sh
+gh workflow run ci.yml --ref kori/home-runner-trial \
+  -f runner=home -f validation=full \
+  -f benchmark_commit=d4d9f2a861e988b92a770638adbcc01a2381ad45
+```
+
+The `home-ubuntu` runner is an unprivileged Ubuntu 24.04 Docker container with
+preinstalled system dependencies. It cannot run runtime `sudo`, install OS
+packages or start Docker/container actions. Python/Node setup and package installs
+use writable tool caches; Emscripten/SDK temporary files use disk. Playwright
+installs its pinned browser without trying to install OS libraries at runtime.
+Its image must supply the browser's system libraries first.
+
+The three repository registrations on the host share a single job slot, a two-CPU
+budget and 2560 MiB of RAM (2048 MiB per container). Time spent waiting for the slot
+is part of end-to-end duration. Compare step durations, cache hits, actual compiler
+versions and output hashes as well as total time. A first run includes tool-cache
+and browser downloads. Repeat a successful home run to distinguish that setup cost
+from warmed execution; a small number of runs is indicative, not a stable benchmark.
+Full target guards, host/sanitizer/golden tests, browser checks and package
+reproducibility remain required. Host instruction counters can be unavailable in
+Docker; a disclosed skip is not a pass. Hardware behavior is outside this CI trial.
