@@ -410,6 +410,8 @@ workflow branches can still be selected with `--workflow-ref BRANCH`.
 Use `--validation full` (the default) for the complete pipeline. Modes have
 separate run titles, concurrency groups and artifact names; a target-only run
 can never satisfy a full request. Older fully validated artifacts remain usable.
+Manual Actions checks have separate names from automatic PR/main checks, so a
+manual target or exact-PR build cannot stand in for the required PR validation.
 The helper reuses a live successful or running exact-commit build only for the
 requested mode and workflow branch, avoiding repeat builds. Full validation
 never cancels a target run, or vice versa. Both can also be requested manually

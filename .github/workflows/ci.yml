@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   revision:
-    name: Resolve requested PR revision
+    name: ${{ github.event_name == 'workflow_dispatch' && format('Resolve manual PR revision ({0})', inputs.validation || 'full') || 'Resolve requested PR revision' }}
     if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '' || inputs.validation == 'target')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
