@@ -22,6 +22,7 @@ import fm1pkg_make as M
 SHA = "a" * 40
 OLD = "b" * 40
 REPO = "kmplngj/Felucca"
+TITLE = "Sequencer: Wiedergabe & Übergänge"
 
 
 def run(state="completed", conclusion="success", number=42):
@@ -32,26 +33,26 @@ def run(state="completed", conclusion="success", number=42):
 
 class Selection(unittest.TestCase):
     def test_current_head_and_reachable_old_commit(self):
-        with patch.object(P, "api", return_value={"head": {"sha": SHA}}) as api:
-            self.assertEqual(P.resolve_revision(REPO, "333"), SHA)
+        with patch.object(P, "api", return_value={"head": {"sha": SHA}, "title": TITLE}) as api:
+            self.assertEqual(P.resolve_pr(REPO, "333"), (SHA, TITLE))
             api.assert_called_once()
         for state in ("ahead", "identical"):
-            with patch.object(P, "api", side_effect=[{"head": {"sha": SHA}}, {"status": state}]):
-                self.assertEqual(P.resolve_revision(REPO, "333", OLD), OLD)
+            with patch.object(P, "api", side_effect=[{"head": {"sha": SHA}, "title": TITLE}, {"status": state}]):
+                self.assertEqual(P.resolve_pr(REPO, "333", OLD), (OLD, TITLE))
 
     def test_bad_inputs_fail_before_api(self):
         for repo, number, sha in (("../repo", "333", SHA), (REPO, "--help", SHA),
                                   (REPO, "0", SHA), (REPO, "333", "abc"),
                                   (REPO, "333", "a" * 40 + "\n")):
             with patch.object(P, "api") as api, self.assertRaises(ValueError):
-                P.resolve_revision(repo, number, sha)
+                P.resolve_pr(repo, number, sha)
             api.assert_not_called()
 
     def test_unrelated_or_newer_commit_rejected(self):
         for state in ("behind", "diverged"):
-            with patch.object(P, "api", side_effect=[{"head": {"sha": SHA}}, {"status": state}]), \
+            with patch.object(P, "api", side_effect=[{"head": {"sha": SHA}, "title": TITLE}, {"status": state}]), \
                     self.assertRaisesRegex(ValueError, "not reachable"):
-                P.resolve_revision(REPO, 333, OLD)
+                P.resolve_pr(REPO, 333, OLD)
 
     def test_paginated_selection_ignores_other_pr_commit_and_branch(self):
         wrong_pr = run(number=100) | {"display_title": P.run_title(334, SHA)}
@@ -326,7 +327,7 @@ class Worktrees(unittest.TestCase):
 
     def test_cli_prepare_and_cleanup_skip_ci_download_and_installer(self):
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "remove_worktree") as remove, \
                 patch.object(P, "ensure_run") as build, patch.object(P, "download") as download, \
@@ -340,7 +341,7 @@ class Worktrees(unittest.TestCase):
 
     def test_cli_preparation_failure_blocks_build_and_install(self):
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree", side_effect=ValueError("submodule failed")), \
                 patch.object(P, "ensure_run") as build, patch.object(P, "install") as install:
             self.assertEqual(P.main(["333", "--worktree"]), 2)
@@ -348,18 +349,21 @@ class Worktrees(unittest.TestCase):
         install.assert_not_called()
 
     def test_cli_resolve_only_has_no_git_mutations(self):
+        output = io.StringIO()
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree") as prepare, \
-                patch.object(P, "remove_worktree") as remove, patch.object(P, "ensure_run") as build:
+                patch.object(P, "remove_worktree") as remove, patch.object(P, "ensure_run") as build, \
+                contextlib.redirect_stdout(output):
             self.assertEqual(P.main(["333", "--resolve-only", "--worktree"]), 0)
+        self.assertEqual(output.getvalue(), self.revision + "\n")
         for call in (prepare, remove, build):
             call.assert_not_called()
 
     def test_cli_worktree_keeps_pinned_ci_download_and_installer_flow(self):
         package = self.base / "firmware.fwsc"
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=self.revision), \
+                patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()) as build, \
@@ -420,7 +424,7 @@ class Download(unittest.TestCase):
     def test_target_cli_warns_and_downloads_without_installing(self):
         output = io.StringIO()
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=SHA), \
+                patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()) as build, \
                 patch.object(P, "download", return_value=self.root / "felucca.fwsc") as download, \
@@ -463,7 +467,7 @@ class Download(unittest.TestCase):
             self.artifact(Path(args[args.index("--dir") + 1]))
             return ""
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=SHA), \
+                patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
                 patch.object(P, "gh", side_effect=download), patch.object(P, "install") as install:
@@ -473,7 +477,7 @@ class Download(unittest.TestCase):
 
     def test_verification_error_blocks_installer(self):
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=SHA), \
+                patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
                 patch.object(P, "download", side_effect=ValueError("SHA-256 mismatch")), \
@@ -490,18 +494,39 @@ class Download(unittest.TestCase):
             self.assertEqual(call.call_args.args[0][-3:], ["--port", "Felucca", "--yes"])
 
     def test_successful_install_reports_pending_hardware_scenarios(self):
+        for repository in (REPO, "another/fork"):
+            with self.subTest(repository=repository):
+                output = io.StringIO()
+                def installed(*args, **kwargs):
+                    # GitHub may be unavailable once the device update finishes.
+                    api.side_effect = ValueError("GitHub unavailable after installation")
+                    return 0
+                with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                        patch.object(P, "api", side_effect=[{"head": {"sha": SHA}, "title": TITLE},
+                                                          {"default_branch": "main"}]) as api, \
+                        patch.object(P, "ensure_run", return_value=run()), \
+                        patch.object(P, "download", return_value=self.root / "felucca.fwsc"), \
+                        patch.object(P, "install", side_effect=installed) as install, \
+                        contextlib.redirect_stdout(output):
+                    self.assertEqual(P.main(["333", "--repo", repository, "--port", "Felucca"]), 0)
+                install.assert_called_once_with(self.root / "felucca.fwsc", "Felucca", False,
+                                                command=["flasher", "midi", "firmware"])
+                self.assertIn("still require hardware validation", output.getvalue())
+                self.assertTrue(output.getvalue().endswith(
+                    f"PR #333: {TITLE}\nhttps://github.com/{repository}/pull/333\n"))
+
+    def test_failed_installer_has_no_success_summary(self):
         output = io.StringIO()
         with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
-                patch.object(P, "resolve_revision", return_value=SHA), \
+                patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
                 patch.object(P, "download", return_value=self.root / "felucca.fwsc"), \
-                patch.object(P, "install", return_value=0) as install, \
-                contextlib.redirect_stdout(output):
-            self.assertEqual(P.main(["333", "--port", "Felucca"]), 0)
-        install.assert_called_once_with(self.root / "felucca.fwsc", "Felucca", False,
-                                        command=["flasher", "midi", "firmware"])
-        self.assertIn("still require hardware validation", output.getvalue())
+                patch.object(P, "install", return_value=5), contextlib.redirect_stdout(output):
+            self.assertEqual(P.main(["333"]), 5)
+        self.assertNotIn("Installer finished", output.getvalue())
+        self.assertNotIn(TITLE, output.getvalue())
+        self.assertNotIn("/pull/333", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -161,7 +161,7 @@ def validate_selection(repository, number, revision=None):
         raise ValueError("--commit must be a full lowercase 40-character commit SHA")
 
 
-def resolve_revision(repository, number, revision=None):
+def resolve_pr(repository, number, revision=None):
     validate_selection(repository, number, revision)
     pull = api(f"repos/{repository}/pulls/{number}")
     head = pull["head"]["sha"]
@@ -172,7 +172,7 @@ def resolve_revision(repository, number, revision=None):
         comparison = api(f"repos/{repository}/compare/{revision}...{head}")
         if comparison["status"] not in ("ahead", "identical"):
             raise ValueError("Requested commit is not reachable from the current PR head")
-    return revision
+    return revision, pull["title"]
 
 
 def run_title(number, revision, validation="full"):
@@ -350,7 +350,7 @@ def main(argv=None):
         installer_command = None
         if not (args.download_only or args.prepare_only or args.resolve_only):
             installer_command = prepare_installer(args.installer, args.m_flasher)
-        revision = resolve_revision(args.repo, args.pr, args.commit)
+        revision, title = resolve_pr(args.repo, args.pr, args.commit)
         if args.resolve_only:
             print(revision)
             return 0
@@ -375,6 +375,7 @@ def main(argv=None):
         if result == 0:
             print("Installer finished. Verify the installed build commit in ABOUT and follow the PR's User test instructions on the FM-1; "
                   "sound, controls and PR behavior still require hardware validation.")
+            print(f"PR #{args.pr}: {title}\nhttps://github.com/{args.repo}/pull/{args.pr}")
         return result
     except KeyboardInterrupt:
         print("Interrupted; the remote build was not canceled. Resume using --commit.", file=sys.stderr)

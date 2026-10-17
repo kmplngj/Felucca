@@ -372,7 +372,9 @@ The client needs Python 3 on macOS/Linux and an explicitly selected serial port;
 `tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a CI
 build of that exact revision (full validation by default), downloads its firmware artifact, verifies the
 recorded revision, SHA-256 and package structure, then starts the existing
-native `m-flasher` USB-MIDI installer. You do not need the JieLi toolchain, SDK or Docker locally.
+native `m-flasher` USB-MIDI installer. After the installer succeeds, the helper
+prints the PR title and GitHub link so you can open its **User test instructions**.
+You do not need the JieLi toolchain, SDK or Docker locally.
 Normal automatic PR CI continues to build the merge with the target branch;
 this helper requests a separate, exact-commit build.
 
