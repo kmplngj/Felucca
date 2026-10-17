@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   revision:
-    name: ${{ github.event_name == 'workflow_dispatch' && format('Resolve manual PR revision ({0})', inputs.validation || 'full') || 'Resolve requested PR revision' }}
+    name: Resolve requested PR revision
     if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '' || inputs.validation == 'target')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -54,6 +54,7 @@ jobs:
           sha=$(python3 tools/fm1_pr.py "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --commit "$PR_COMMIT" --resolve-only)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
   firmware:
+    name: ${{ github.event_name == 'workflow_dispatch' && format('Manual {0}', inputs.validation || 'full') || 'firmware' }}
     needs: revision
     if: ${{ !cancelled() && (needs.revision.result == 'success' || needs.revision.result == 'skipped') }}
     uses: ./.github/workflows/build.yml

@@ -265,8 +265,9 @@ concurrency groups prevent the two modes canceling each other. The helper never
 substitutes a target run for full validation and checks the scope recorded in
 target provenance. `--no-build` and resume must use the same mode.
 
-All manual-dispatch jobs also use distinct `Manual target …` / `Manual full …`
-check names. Automatic PR/main check names stay unchanged. GitHub attaches manual
+Manual CI validation jobs use distinct `Manual target / …` / `Manual full / …`
+check prefixes set by the reusable-workflow caller; child job names stay static,
+including when skipped. Automatic PR/main check names stay unchanged. GitHub attaches manual
 checks to the workflow branch commit, which can differ from the selected firmware
 commit; reusing the automatic required-check names here could incorrectly satisfy
 a PR check with a build of another revision or validation scope.

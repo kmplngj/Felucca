@@ -33,7 +33,7 @@ defaults:
 
 jobs:
   workflow-checks:
-    name: ${{ github.event_name == 'workflow_dispatch' && format('Manual {0} workflow checks', inputs.validation) || 'Workflow and CI helper checks' }}
+    name: Workflow and CI helper checks
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -103,7 +103,7 @@ jobs:
           retention-days: 14
           path: build/ci/
   python-checks:
-    name: ${{ github.event_name == 'workflow_dispatch' && format('Manual {0} portable Python tests', inputs.validation) || 'Portable Python tests' }}
+    name: Portable Python tests
     needs: workflow-checks
     if: needs.workflow-checks.outputs.python == 'true'
     runs-on: ubuntu-24.04
@@ -133,7 +133,7 @@ jobs:
           retention-days: 14
           path: build/ci/
   backup-checks:
-    name: ${{ github.event_name == 'workflow_dispatch' && format('Manual {0} web backup tests', inputs.validation) || 'Web backup tests' }}
+    name: Web backup tests
     needs: workflow-checks
     if: needs.workflow-checks.outputs.backup == 'true'
     runs-on: ubuntu-24.04
@@ -160,7 +160,7 @@ jobs:
           retention-days: 14
           path: build/ci/
   emulator-checks:
-    name: ${{ github.event_name == 'workflow_dispatch' && format('Manual {0} browser emulator tests', inputs.validation) || 'Browser emulator tests' }}
+    name: Browser emulator tests
     needs: workflow-checks
     if: needs.workflow-checks.outputs.emulator == 'true'
     runs-on: ubuntu-24.04
@@ -235,7 +235,7 @@ jobs:
             build/host/emu_native.f32
             build/browser/
   build:
-    name: ${{ github.event_name == 'workflow_dispatch' && format('Manual {0} firmware', inputs.validation) || 'Target, host and emulator' }}
+    name: Target, host and emulator
     needs: [workflow-checks, python-checks, backup-checks, emulator-checks]
     # Preserve the existing required check and fail if a selected suite fails.
     if: always()
