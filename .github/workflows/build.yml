@@ -202,6 +202,7 @@ jobs:
           fi
           test "$(git -C "$EMSDK" rev-parse HEAD)" = dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
           git -C "$EMSDK" diff --exit-code
+          git -C "$EMSDK" diff --cached --exit-code
           "$EMSDK/emsdk" install 6.0.11
           "$EMSDK/emsdk" activate 6.0.11
       - name: Cache Playwright browser downloads
@@ -237,7 +238,7 @@ jobs:
     name: Target, host and emulator
     needs: [workflow-checks, python-checks, backup-checks, emulator-checks]
     # Preserve the existing required check and fail if a selected suite fails.
-    if: always()
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
@@ -365,6 +366,7 @@ jobs:
             fi
             test "$(git -C "$EMSDK" rev-parse HEAD)" = dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
             git -C "$EMSDK" diff --exit-code
+            git -C "$EMSDK" diff --cached --exit-code
             "$EMSDK/emsdk" install 6.0.11
             "$EMSDK/emsdk" activate 6.0.11
             source "$EMSDK/emsdk_env.sh"
