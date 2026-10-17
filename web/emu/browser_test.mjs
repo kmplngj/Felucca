@@ -187,7 +187,10 @@ try {
   report.status = "pass";
 } catch (e) {
   report.checks.push({ name: current, status: "fail", error: String(e.message || e).slice(0, 2000) });
-  report.errors = messages;
+  // Startup/input failures can precede the normal error check. Keep the worklet's
+  // actual cause in the small report even when the visible failure is a timeout.
+  const probeErrors = page ? await page.evaluate(() => globalThis.__feluccaTest?.errors || []).catch(() => []) : [];
+  report.errors = [...new Set([...probeErrors, ...messages])].slice(0, 20).map((s) => String(s).slice(0, 1000));
 } finally {
   if (page && (report.status === "fail" || keepMedia)) {
     try {
