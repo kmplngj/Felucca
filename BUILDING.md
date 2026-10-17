@@ -3,8 +3,9 @@
 Pull requests and `main` select the [CI checks](.github/CI.md#change-based-validation)
 affected by their complete change range. Firmware/build inputs run the full suite;
 known independent Python, backup and emulator inputs use focused checks, and
-documentation-only changes skip builds. Manual CI and releases always validate
-everything. That guide also explains failure diagnostics, dependency pins and
+documentation-only changes skip builds. Manual CI defaults to full validation;
+an explicit target-only mode is available for exact PR hardware-test builds.
+Releases always validate everything. That guide also explains failure diagnostics, dependency pins and
 tagged/manual release packaging.
 
 For engine, effect and platform changes, read the
@@ -254,6 +255,10 @@ MIDI out, the editor, updates), TRS MIDI and the user sample slots. A build of i
 
 ## Tests
 
+For the short real-Chromium UI/audio gate and compact reports, see
+[Cloud browser testing](docs/cloud-testing.md). It complements the native/Wasm
+checks below and needs Playwright's pinned browser, without an FM-1 or target SDK.
+
 For timestamped panel/MIDI replay with synchronized PCM24 WAV, LCD PPM frames and
 provenance, see [Interaction replay](docs/interaction-replay.md). After the asset
 build, run `python3 tools/fm1_replay.py tests/scenarios/interaction.json --out build/replay/example`.
@@ -364,22 +369,96 @@ The client needs Python 3 on macOS/Linux and an explicitly selected serial port;
 
 ## Test a pull request on hardware
 
-`tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a full
-CI build of that exact revision, downloads its firmware artifact, verifies the
+`tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a CI
+build of that exact revision (full validation by default), downloads its firmware artifact, verifies the
 recorded revision, SHA-256 and package structure, then starts the existing
-USB-MIDI installer. You do not need the JieLi toolchain, SDK or Docker locally.
+native `m-flasher` USB-MIDI installer. After the installer succeeds, the helper
+prints the PR title and GitHub link so you can open its **User test instructions**.
+You do not need the JieLi toolchain, SDK or Docker locally.
 Normal automatic PR CI continues to build the merge with the target branch;
 this helper requests a separate, exact-commit build.
 
 Install Python 3 and the [GitHub CLI](https://cli.github.com/), sign in with
-`gh auth login`, and get this fork's sources. Flashing also needs
-`python3 -m pip install mido python-rtmidi` and an FM-1 connected with a USB data
-cable. Close other applications using the FM-1's MIDI ports. From the checkout:
+`gh auth login`, and get this fork's sources. The default installer is our native MIDI-capable `m-flasher`. On first use the
+helper downloads a successful Actions artifact for a reviewed, pinned m-flasher
+commit, checks its source/platform and executable SHA-256, and installs it under
+`~/.local/share/felucca/m-flasher/COMMIT/PLATFORM/`. Later runs reuse it. No Rust,
+Python MIDI packages, GUI installation or administrator access is needed on macOS.
+The macOS CLI is universal for Apple silicon and Intel; Linux x86-64 and Windows
+x86-64 are also available. The source pin and setup live in `tools/m_flasher.py`,
+from the trusted checkout running this helper, never the PR being tested.
+
+Connect one FM-1 with running firmware using a USB data cable. Close other
+applications using its MIDI ports; do not enter ROM download mode. From the checkout:
 
 ```sh
 # Replace 123 with the intended PR number.
 python3 tools/fm1_pr.py 123
+
+# Faster firmware for hardware iteration, with isolated PR sources:
+python3 tools/fm1_pr.py 123 --validation target --worktree-dir ../Felucca-pr123
 ```
+
+`--validation target` uses the same target build and flags as full validation:
+it checks the pinned SDK/toolchain, source and Engines identity, app/loader and
+resource guards, static target instruction budgets, FWSC structure/CRCs and
+SHA-256. It omits host goldens, sanitizers, web/emulator/browser tests and the
+second clean-checkout build. Those tests still belong to full PR validation;
+**target-only success is for hardware iteration, not merge/release readiness**.
+It does not install a different firmware variant. Build defaults still come from
+the chosen revision; the validation scope is printed before CI/install and
+recorded in the target artifact's `provenance.json`.
+Historical sources without build-identity/pinned-engine provenance APIs cannot
+use target-only mode; the helper reports this explicitly. Use `--validation full`
+for those revisions. Existing full builds remain supported without those newer APIs.
+The selected sources must still contain the tests required by the chosen workflow.
+Full validation reports a missing browser harness before building or running host
+tests; rebase the PR or select a compatible workflow if it predates that harness.
+Full requests retain the original dispatch inputs, so older compatible maintainer
+workflow branches can still be selected with `--workflow-ref BRANCH`.
+
+Use `--validation full` (the default) for the complete pipeline. Modes have
+separate run titles, concurrency groups and artifact names; a target-only run
+can never satisfy a full request. Older fully validated artifacts remain usable.
+Manual Actions checks have separate names from automatic PR/main checks, so a
+manual target or exact-PR build cannot stand in for the required PR validation.
+The helper reuses a live successful or running exact-commit build only for the
+requested mode and workflow branch, avoiding repeat builds. Full validation
+never cancels a target run, or vice versa. Both can also be requested manually
+under **Actions > CI > Run workflow**, selecting `validation` and filling in
+`pr` and `commit`; target-only mode requires both fields and cannot make a release.
+
+Before source preparation or any firmware CI request, the helper sets up/checks
+the selected installer's **offline** capabilities. It does not probe or open MIDI
+until the verified package is handed off for installation. `--download-only`,
+`--prepare-only`, cleanup and resolve-only modes skip installer setup entirely.
+
+To install the native tool ahead of time, without accessing a device:
+
+```sh
+python3 tools/m_flasher.py
+# If the pinned CI artifact expired, build the same commit with existing Rust:
+python3 tools/m_flasher.py --from-source
+# Select an already built MIDI-capable executable explicitly:
+python3 tools/fm1_pr.py 123 --m-flasher /absolute/path/to/m-flasher
+```
+
+The CI artifacts are development builds, not releases. Retain their `source.json`.
+An expired/missing artifact fails before firmware CI; it never downloads an
+unreviewed latest binary. Source builds require Cargo/Rust and, on Linux, ALSA
+development headers. Installation writes only the user cache and does not change
+PATH, install a system service, or touch the FM-1. `--from-source` reuses an already
+valid cached installation too. For the original Python backend, explicitly choose
+`--installer python` and install `mido`/`python-rtmidi` in the same interpreter
+(prefer a virtual environment). Its dependencies are checked before CI as well.
+
+Native MIDI OTA validates the Felucca package and delegates loader staging and
+writes to the device; it creates no raw backup or verified preboot checkpoint.
+It does not silently fall back to m-flasher's ROM USB route. Firmware/settings
+compatibility and backups remain part of the selected hardware test. The native
+MIDI implementation's real FM-1/macOS validation is pending; host tests and a
+successful build do not establish physical data preservation or rollback.
+See [m-flasher MIDI OTA](https://github.com/kmplngj/m-flasher/blob/main/docs/midi-ota.md).
 
 The command prints the fixed commit and Actions run URL, waits for all selected
 validation to pass, and downloads into a fresh directory under
@@ -406,16 +485,72 @@ GitHub sign-in and artifact read access are required. Requesting a missing build
 also requires Actions write access (typically a maintainer or collaborator).
 Read-only testers use `--no-build` after a maintainer starts **Actions > CI >
 Run workflow** on the default branch, with `pr` and `commit` filled in. Leave
-both empty for ordinary manual CI. Firmware artifacts expire after 30 days;
+both empty and select `full` for ordinary manual CI. Firmware artifacts expire after 30 days;
 an expired or failed build requires a fresh run. The helper retains full CI
-validation, so it saves local setup but does not shorten the validation pipeline.
+validation in the default mode; select `target` explicitly for faster hardware iteration.
 See [CI delivery details](.github/CI.md#exact-pr-revision-builds).
 
 The default wait is one hour; `--timeout SECONDS` changes it. Interrupting or
-timing out does not cancel CI: rerun with the printed `--commit` to resume.
+timing out does not cancel CI: rerun with the printed `--commit` and the same `--validation` to resume.
 `--out DIRECTORY` changes the download parent and `--repo OWNER/NAME` selects
 another fork with this workflow. Maintainers can use `--workflow-ref BRANCH`
 to rehearse workflow changes before merging; normally omit it.
+
+### Optional isolated PR sources
+
+The CI install path above needs no local checkout change. To also inspect or work
+on the matching sources, add `--worktree`; Git must be installed and this helper
+must be run from a Git clone. It fetches the PR into a temporary private ref,
+creates a **detached worktree at the selected commit**, and runs
+`git submodule update --init --recursive --checkout` there. Submodules use the
+committed pins, rather than their latest branches. CI still builds the selected
+commit remotely; preparing sources does not build local edits or change which
+firmware is installed. Local builds need the toolchain and SDK described above.
+
+```sh
+# Prepare sources, then continue through CI/download/confirmed install.
+python3 tools/fm1_pr.py 123 --worktree
+
+# Only prepare sources: no CI build, download or MIDI access.
+python3 tools/fm1_pr.py 123 --prepare-only --worktree-dir ../Felucca-pr-123
+```
+
+The default directory is a sibling named `CHECKOUT-pr-123-FULL_SHA`. A new PR
+revision gets a different directory; `--worktree-dir PATH` chooses a fixed path
+and implies `--worktree`. An existing directory is reused only if this helper
+created it for the same PR/revision and its detached HEAD and local files are
+unchanged. Failed preparation retains the worktree for inspection or retry;
+build/download/install do not proceed if source preparation fails.
+
+The original branch, index, staged/unstaged edits and untracked/ignored files
+stay in their original checkout, including local submodule edits. There is no
+automatic stash, reset or branch switch. Worktrees share Git objects, refs and
+repository configuration; their files, indexes and detached HEADs are separate.
+The helper prints `cd` commands to enter the PR directory and return to the
+original directory. A Python child process cannot change your shell's directory.
+To retain edits made in the PR worktree, create a branch there with
+`git switch -c my-pr-experiment` and commit them. Switching branches or changing
+HEAD prevents helper reuse/removal until you explicitly resolve that state.
+
+By comparison, `gh pr checkout 123` switches the current checkout's branch.
+Compatible staged/unstaged edits may follow that switch; Git normally refuses
+when it would overwrite local edits or untracked files. Uncommitted edits do
+not belong to a branch. Existing commits stay reachable through their branches.
+Use the isolated worktree when your current checkout has ongoing work.
+
+From the **original checkout**, remove a finished helper-created worktree with:
+
+```sh
+python3 tools/fm1_pr.py 123 --remove-worktree ../Felucca-pr-123
+```
+
+Removal needs no GitHub access and does not contact CI or MIDI. It refuses foreign
+worktrees, changed HEADs, local edits, and additional files, including ignored
+build output and files inside nested submodules. Preserve or remove those files
+yourself before retrying; it does not automatically clean or stash them. Keep
+firmware artifacts outside the disposable worktree if you need them later.
+Returning to your original directory or removing PR sources does **not** revert
+the FM-1: reinstall the previously saved firmware package to restore that build.
 
 ### Hardware verification after installing a PR
 

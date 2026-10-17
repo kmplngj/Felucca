@@ -236,6 +236,7 @@ run "timestamped interaction replay: portable scenario validation" python3 tests
 $CC -O2 -fstrict-aliasing -fno-builtin -o "$OUT/libc_test" tests/libc_test.c
 run "firmware libc: copy/fill sizes, alignments, sentinels and typed objects" "$OUT/libc_test"
 run "exact PR firmware: selection, download integrity and installer handoff" python3 tests/fm1_pr_test.py
+run "native MIDI installer: pinned setup, cache integrity and early preflight" python3 tests/m_flasher_test.py
 
 $CC -o "$OUT/storage_test" tests/storage_test.c
 run "flash storage (A/B, torn writes)" "$OUT/storage_test"

@@ -17,7 +17,7 @@ Want to look around first? [Try it in your browser](https://hugelton.github.io/F
   [Troubleshooting](https://github.com/hugelton/Felucca/wiki/Troubleshooting)
 - Development direction: [combined modularity, capacity and 1.6.1 plan](docs/modularity.md#combining-our-plan-with-felucca-161--2026-10-14)
 - Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build) and [engine build profiles](BUILDING.md#engine-build-profiles); clone with `git clone --recurse-submodules https://github.com/kmplngj/Felucca.git`; complete release sources include the pinned engines in `felucca-VERSION-source.tar.gz` ([details](BUILDING.md#get-the-source))
-- Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), without a local target toolchain; then follow the PR's hardware test instructions (CI does not validate the hardware)
+- Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), with full validation by default or explicit faster `--validation target`, without a local target toolchain, using an automatically installed pinned native MIDI flasher (or explicit `--installer python`), with an optional isolated source worktree; then follow the PR's hardware test instructions (CI does not validate the hardware)
 - Download: this fork's [Releases](https://github.com/kmplngj/Felucca/releases) and successful [Actions](https://github.com/kmplngj/Felucca/actions) artifacts; follow the [download and checksum guide](.github/CI.md#downloads-and-checksums)
 - Diagnostics: [collect CDC console reports](docs/diagnostics.md) with USB SERIAL on and an explicitly selected port
 
@@ -108,6 +108,12 @@ timestamped key, button, encoder and MIDI sequence through the native emulator,
 with synchronized WAV audio, LCD frames and a provenance manifest under `build/`.
 It works without hardware on Linux/macOS; its audio captures the DAC output after
 MASTER and the metronome, and its manifest records the emulator's delivery timing.
+
+The [cloud browser test](docs/cloud-testing.md) drives this checkout's emulator in
+Chromium and checks LCD updates, keyboard/pointer/encoder input, stereo audio,
+portrait layout and browser saves. It runs without an FM-1 or model calls, writes a
+compact report and retains screenshots/WAV on failure. GitHub Actions runs it for
+emulator changes and full validation.
 
 The [host stress matrix](tests/stress_matrix.md) replays fixed voice-load, effect and
 engine-switch, dense ratchet/modulation, throw and MIDI-parser workloads, plus real
