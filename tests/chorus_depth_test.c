@@ -30,15 +30,18 @@ static int32_t delay_at(uint32_t phase, int32_t depth)
 
 static void trajectory(int from, int to, int rate, int partition, int rapid)
 {
-    uint32_t t = 0, ph = UINT32_MAX - 100u, wp = UINT32_MAX - 100u;
+    uint32_t t = 0, block = 0, sizes = 0, ph = UINT32_MAX - 100u, wp = UINT32_MAX - 100u;
     int32_t depth = from * 6 * 256, input[CTL], wet[CTL];
     clear();
     fx.cho_ph = ph;
     fx.cho_w = wp;
     song.g[G_CDEPTH] = from;
     while (t < 8192u) {
-        uint32_t n = partition ? 1u + (t * 13u % CTL) : CTL, i;
+        uint32_t n = partition ? 1u + (block++ * 13u % CTL) : CTL, i;
         int target = t < 1024u ? from : rapid && t < 4096u ? ((t / 32u) & 1u ? to : from) : to;
+        /* Keep every size recurring during edits, independently of accumulated time. */
+        if (partition && t >= 1024u && t < 4096u)
+            sizes |= UINT32_C(1) << (n - 1u);
         /* Each parameter change happens at a block boundary, just like all control sources. */
         song.g[G_CDEPTH] = target;
         song.g[G_CRATE] = t >= 2048u ? 127 - rate : rate;
@@ -66,10 +69,18 @@ static void trajectory(int from, int to, int rate, int partition, int rapid)
 #endif
         t += n;
     }
+    if (partition)
+        assert(sizes == UINT32_MAX);    /* all 1..32-frame blocks occur during the edit interval */
     assert(depth == to * 6 * 256);
-    /* Drain a tail with a new target, then start directly at another target. */
+    /* Retarget while the tail is still live, then start directly at another target. */
+    song.g[G_CDEPTH] = from;
     for (t = 0; t < CHO_LEN / CTL + 1u; t++) fx_buses(zero, zero, zero, wet, CTL);
     assert(!fx.cho_live);
+    for (t = 0; t < CTL; t++)
+        assert(!wet[t]);
+#ifdef CHORUS_DEPTH_TEST_SMOOTH
+    assert(fx.cho_depth == from * 6 * 256);
+#endif
     song.g[G_CDEPTH] = 127 - to;
     fx_buses(input, zero, zero, wet, CTL);
     assert(chorus_test_tap[0] == delay_at(fx.cho_ph - (CTL - 1u) * (LFO_INC[song.g[G_CRATE]] / CTL),
