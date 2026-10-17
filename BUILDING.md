@@ -254,6 +254,10 @@ MIDI out, the editor, updates), TRS MIDI and the user sample slots. A build of i
 
 ## Tests
 
+For the short real-Chromium UI/audio gate and compact reports, see
+[Cloud browser testing](docs/cloud-testing.md). It complements the native/Wasm
+checks below and needs Playwright's pinned browser, without an FM-1 or target SDK.
+
 For timestamped panel/MIDI replay with synchronized PCM24 WAV, LCD PPM frames and
 provenance, see [Interaction replay](docs/interaction-replay.md). After the asset
 build, run `python3 tools/fm1_replay.py tests/scenarios/interaction.json --out build/replay/example`.

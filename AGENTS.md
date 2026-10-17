@@ -118,6 +118,14 @@ check, especially unavailable host instruction counters, DaisySP or browser tool
 For UI changes, inspect the generated `build/ui_new/` images and the actual panel behavior;
 for USB/MIDI changes, exercise the affected host configuration and hardware path.
 
+For browser UI/audio changes, use the [cloud browser gate](docs/cloud-testing.md)
+after a fresh emulator build: `npm test --prefix web/emu`. Read its one-line result
+and `build/browser/run-*/summary.json` first; open only media relevant to a failure.
+The gate makes no model calls and keeps screenshots/WAV only on failure by default.
+Reuse existing replay scenarios and deterministic comparisons before requesting
+visual/audio model review. Do not stream full logs, PCM or repeated screenshots
+into agent context. Browser/emulator evidence remains separate from FM-1 evidence.
+
 `GOLDEN_UPDATE=1` and `BUDGET_UPDATE=1` intentionally rewrite baselines. Use them only for
 explained changes in sound or cost, review every changed entry, and retain unaffected entries.
 A failed budget is a finding to investigate, not a reason to regenerate all baselines.

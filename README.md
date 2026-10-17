@@ -107,6 +107,12 @@ with synchronized WAV audio, LCD frames and a provenance manifest under `build/`
 It works without hardware on Linux/macOS; its audio captures the DAC output after
 MASTER and the metronome, and its manifest records the emulator's delivery timing.
 
+The [cloud browser test](docs/cloud-testing.md) drives this checkout's emulator in
+Chromium and checks LCD updates, keyboard/pointer/encoder input, stereo audio,
+portrait layout and browser saves. It runs without an FM-1 or model calls, writes a
+compact report and retains screenshots/WAV on failure. GitHub Actions runs it for
+emulator changes and full validation.
+
 The [host stress matrix](tests/stress_matrix.md) replays fixed voice-load, effect and
 engine-switch, dense ratchet/modulation, throw and MIDI-parser workloads, plus real
 emulator panel/save timelines. It retains exact PCM, WAVs, LCD captures and health

@@ -161,6 +161,10 @@ jobs:
           git -C "$EMSDK" checkout --detach FETCH_HEAD
           "$EMSDK/emsdk" install 6.0.11
           "$EMSDK/emsdk" activate 6.0.11
+      - name: Install pinned browser test dependencies
+        run: |
+          npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
+          npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
       - name: Generate fresh assets and compare native with WASM
         env:
           EMSDK: ${{ runner.temp }}/emsdk
@@ -168,6 +172,7 @@ jobs:
           set -o pipefail
           source "$EMSDK/emsdk_env.sh"
           python3 tools/ci.py emulator-tests 2>&1 | tee build/ci/emulator-tests.log
+          npm test --prefix web/emu
           git diff --exit-code
       - name: Upload emulator diagnostics
         if: always()
@@ -179,6 +184,7 @@ jobs:
             build/ci/
             build/emu/
             build/host/emu_native.f32
+            build/browser/
   build:
     name: Target, host and emulator
     needs: [workflow-checks, python-checks, backup-checks, emulator-checks]
@@ -312,6 +318,12 @@ jobs:
           set -o pipefail
           sh tests/run_tests.sh 2>&1 | tee build/ci/tests.log
           python3 tools/ci.py verify-tests build/ci/tests.log
+      - name: Browser UI and AudioWorklet smoke test
+        if: needs.workflow-checks.outputs.full == 'true'
+        run: |
+          npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
+          npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
+          npm test --prefix web/emu
       - name: Reproduce package from a clean checkout
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
@@ -365,6 +377,7 @@ jobs:
             build/loader/*.dis
             build/host/*.wav
             build/stress/
+            build/browser/
             build/host/asan/*.log
             build/ui_new/**/*.png
             build/ui_fm4/**/*.png

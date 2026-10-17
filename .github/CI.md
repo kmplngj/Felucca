@@ -65,6 +65,13 @@ The emulator command regenerates assets and compiles both peers. It does not
 reuse a previous firmware build. The normal `tests/run_tests.sh` and release
 pipeline retain full coverage and strict optional-suite verification.
 
+Emulator-only and full validation also run the [Chromium UI/audio gate](../docs/cloud-testing.md)
+once, using the pinned Playwright lockfile under `web/emu/`. It tests the actual
+page, AudioWorklet, LCD, keyboard/pointer/encoder input, portrait layout and browser
+saves. `build/browser/run-*/summary.json` is the first file an agent should read;
+screenshots and a bounded PCM WAV are retained only on failure by default. Browser
+diagnostics join the existing 14-day artifacts. No model/API calls are needed.
+
 ## Required checks and evidence
 
 | Check | Required evidence |
