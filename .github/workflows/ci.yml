@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 name: CI
 run-name: >-
-  ${{ github.event_name == 'workflow_dispatch' && inputs.pr != '' && format('PR firmware #{0} @ {1}', inputs.pr, inputs.commit) || '' }}
+  ${{ github.event_name == 'workflow_dispatch' && inputs.pr != '' && format('PR firmware #{0} @ {1}{2}', inputs.pr, inputs.commit, inputs.validation == 'target' && ' (target)' || '') || '' }}
 
 on:
   pull_request:
@@ -9,6 +9,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      validation:
+        description: Full validation, or target-only firmware for hardware iteration (requires pr/commit)
+        default: full
+        type: choice
+        options: [full, target]
       pr:
         description: Optional PR number for an exact revision build
         default: ''
@@ -23,13 +28,13 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ci-${{ inputs.pr != '' && format('pr-{0}-{1}', inputs.pr, inputs.commit) || github.event.pull_request.number || github.ref }}
+  group: ci-${{ inputs.pr != '' && format('pr-{0}-{1}-{2}', inputs.pr, inputs.commit, inputs.validation || 'full') || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   revision:
     name: Resolve requested PR revision
-    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '')
+    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '' || inputs.validation == 'target')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -55,3 +60,4 @@ jobs:
     with:
       source_ref: ${{ needs.revision.outputs.sha }}
       verified_pr: ${{ needs.revision.result == 'success' && inputs.pr || '' }}
+      validation: ${{ inputs.validation || 'full' }}
