@@ -13,8 +13,9 @@ import sys
 import tempfile
 
 REPOSITORY = 'kmplngj/m-flasher'
-REVISION = 'ed44c15d5f9b049fd326a1331953c7bf4a1c87e2'
+REVISION = '5652a511631dcd4b4ac7216efadbf653ffad0abd'
 PROTOCOL = 'felucca-device-pull-v1'
+SOURCE_BINARY = 'm-flasher-midi.exe' if os.name == 'nt' else 'm-flasher-midi'
 
 
 def host_platform():
@@ -101,7 +102,7 @@ def build_source(directory):
     run(['cargo', 'install', '--git', f'https://github.com/{REPOSITORY}.git', '--rev', REVISION,
          '--locked', '--root', str(directory / 'cargo'), 'm-flasher-midi'], timeout=1200)
     binary = directory / binary_name()
-    os.replace(directory / 'cargo' / 'bin' / binary_name(), binary)
+    os.replace(directory / 'cargo' / 'bin' / SOURCE_BINARY, binary)
     source = {'repository': REPOSITORY, 'revision': REVISION, 'platform': host_platform(),
               'binary': binary_name(), 'sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
     (directory / 'source.json').write_text(json.dumps(source, indent=2) + '\n')

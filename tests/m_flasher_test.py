@@ -109,7 +109,7 @@ class Setup(unittest.TestCase):
             self.assertIn('--locked', arguments)
             destination = Path(arguments[arguments.index('--root') + 1]) / 'bin'
             destination.mkdir(parents=True)
-            (destination / F.binary_name()).write_bytes(b'inert compiled binary')
+            (destination / F.SOURCE_BINARY).write_bytes(b'inert compiled binary')
             return ''
         self.destination.mkdir(parents=True)
         with patch.object(F, 'run', side_effect=cargo):

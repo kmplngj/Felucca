@@ -373,7 +373,7 @@ def main(argv=None):
             return 0
         result = install(package, args.port, args.yes, command=installer_command)
         if result == 0:
-            print("Installation complete. Follow the PR's User test instructions on the FM-1; "
+            print("Installer finished. Verify the installed build commit in ABOUT and follow the PR's User test instructions on the FM-1; "
                   "sound, controls and PR behavior still require hardware validation.")
         return result
     except KeyboardInterrupt:
