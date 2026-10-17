@@ -37,7 +37,8 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(self.suites([path]), {"backup"})
         for path in ("web/emu/felucca_web.c", "web/emu/build.sh", "web/emu/emu_test.mjs",
                      "web/emu/native_check.c", "web/emu/worklet.js", "web/emu/index.html",
-                     "web/emu/fonts/DotGothic16-subset.woff"):
+                     "web/emu/fonts/DotGothic16-subset.woff", "web/emu/browser_test.mjs",
+                     "web/emu/browser_probe.js", "web/emu/package.json", "web/emu/package-lock.json"):
             with self.subTest(path=path):
                 self.assertEqual(self.suites([path]), {"emulator"})
         self.assertEqual(self.suites(["README.md", "tests/diagnostics_test.py",
