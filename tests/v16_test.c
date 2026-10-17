@@ -35,6 +35,7 @@ static track_t *pattern(uint32_t len, uint32_t cur, uint32_t idx)
     go_page(GR_ROLL);
     ui.cursor = (uint8_t)cur;
     ui.bank = (uint8_t)(cur / 16u);
+    follow.hold = 0;                                  /* fresh boot; ui_power_on does not reset this UI static */
     song.playing = 1;
     t->seq_idx = (uint16_t)idx;
     frame();
@@ -193,6 +194,48 @@ static int holds(void)
     return bad;
 }
 
+static int stopped_cursor(void)
+{
+    int bad = 0;
+    uint32_t detail;
+    for (detail = 0; detail < 2u; detail++) {
+        track_t *t = pattern(40, 1, 36);
+        int ok;
+        t->step[1] = (step_t){{60}, 1, ST_NOTE, 0, 100};
+        t->step[1].vel = 96;
+        if (detail)
+            go_detail();
+        ok = ui.bank == 2u && ui.cursor == 1u;
+        song.playing = 0;
+        frame();
+        ok &= ui.bank == 0u && ui.cursor == 1u && !follow.hold;
+        if (detail) {
+            kt(EN_K4, 1);                            /* VEL of the visible cursor step, not bank 3. */
+            ok &= t->step[1].vel == 97u && !t->step[33].vel && ui.bank == 0u;
+        } else {
+            kt(EN_K2, 1);                            /* NOTE creates/edits the visible cursor step. */
+            ok &= t->step[1].n == 1u && t->step[1].note[0] == 61u && !t->step[33].n && ui.bank == 0u;
+        }
+        bad += check(detail ? "stop on DETAIL: cursor bank restored before editing" :
+                              "stop on STEP: cursor bank restored before editing", ok);
+    }
+    track_t *t = pattern(40, 1, 36);
+    ui.menu = 1;
+    song.playing = 0;
+    frame();
+    int ok = ui.bank == 2u;
+    ui.menu = 0;
+    frame();
+    ok &= ui.bank == 0u;
+    bad += check("stop inside MENU: bank left alone until returning to the roll", ok);
+    t = pattern(40, 1, 36);
+    t->eng_req = t->engine = ENGI_DRUM;
+    song.playing = 0;
+    frame();
+    bad += check("stop on DRUM: retain its independently selected grid bank", ui.bank == 2u);
+    return bad;
+}
+
 static int resets(void)
 {
     int bad = 0, ok;
@@ -308,7 +351,7 @@ static int custom_palette_ui(void)
 
 int main(void)
 {
-    int bad = follows() + leaves() + holds() + resets() + custom_palette_ui();
+    int bad = follows() + leaves() + holds() + stopped_cursor() + resets() + custom_palette_ui();
     printf("%s\n", bad ? "1.6 TEST FAILED" : "1.6 tests passed");
     return bad != 0;
 }
