@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 REPOSITORY = 'kmplngj/m-flasher'
-REVISION = '7a39136d1a6de11f09e7a9072fdc9c9214abae91'
+REVISION = 'ed44c15d5f9b049fd326a1331953c7bf4a1c87e2'
 PROTOCOL = 'felucca-device-pull-v1'
 
 
