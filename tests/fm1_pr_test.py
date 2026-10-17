@@ -132,6 +132,27 @@ class Selection(unittest.TestCase):
         self.assertIn("Forbidden", str(error.exception))
         self.assertNotIn("sig=secret", str(error.exception))
 
+    def test_target_and_full_runs_and_artifacts_never_overlap(self):
+        full = run()
+        target = run(number=43) | {"display_title": P.run_title(333, SHA, "target")}
+        with patch.object(P, "pages", return_value=[full, target]):
+            self.assertEqual(P.matching_runs(REPO, 333, SHA, "main"), [full])
+            self.assertEqual(P.matching_runs(REPO, 333, SHA, "main", "target"), [target])
+        with patch.object(P, "pages", return_value=[{"name": "firmware-target-42", "expired": False}]):
+            self.assertIsNone(P.firmware_artifact(REPO, full))
+            self.assertIsNotNone(P.firmware_artifact(REPO, full, "target"))
+
+    def test_target_dispatch_resume_and_reuse_keep_scope(self):
+        target = run() | {"display_title": P.run_title(333, SHA, "target")}
+        with patch.object(P, "matching_runs", side_effect=[[], [target]]) as matching, \
+                patch.object(P, "firmware_artifact", return_value={"name": "firmware-target-42"}) as artifact, \
+                patch.object(P, "gh") as gh:
+            self.assertEqual(P.ensure_run(REPO, 333, SHA, "main", 30, False, "target"), target)
+        self.assertEqual(gh.call_args.kwargs["payload"]["inputs"]["validation"], "target")
+        for call in matching.call_args_list:
+            self.assertEqual(call.args[-1], "target")
+        self.assertEqual(artifact.call_args.args[-1], "target")
+
 
 class Worktrees(unittest.TestCase):
     """Exercise real indexes, linked worktrees and nested gitlinks, without GitHub."""
@@ -342,7 +363,7 @@ class Worktrees(unittest.TestCase):
                 patch.object(P, "install", return_value=0) as install:
             self.assertEqual(P.main(["333", "--worktree"]), 0)
         prepare.assert_called_once_with(REPO, "333", self.revision, None)
-        build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False)
+        build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False, "full")
         self.assertEqual(download.call_args.args[2], self.revision)
         install.assert_called_once_with(package, None, False)
 
@@ -378,6 +399,32 @@ class Download(unittest.TestCase):
         self.assertEqual(P.verify_download(self.root, SHA), self.root / "felucca.fwsc")
         with self.assertRaisesRegex(ValueError, "provenance"):
             P.verify_download(self.root, OLD)
+
+    def test_target_scope_is_required_and_cannot_satisfy_full_validation(self):
+        with self.assertRaisesRegex(ValueError, "validation scope"):
+            P.verify_download(self.root, SHA, "target")
+        record = self.root / "provenance.json"
+        record.write_text(json.dumps({"revision": SHA, "validation": {"scope": "target"}}))
+        self.assertEqual(P.verify_download(self.root, SHA, "target"), self.root / "felucca.fwsc")
+        with self.assertRaisesRegex(ValueError, "validation scope"):
+            P.verify_download(self.root, SHA, "full")
+        for validation in ({"scope": "unknown"}, "target", None):
+            record.write_text(json.dumps({"revision": SHA, "validation": validation}))
+            with self.assertRaisesRegex(ValueError, "validation scope"):
+                P.verify_download(self.root, SHA, "target")
+
+    def test_target_cli_warns_and_downloads_without_installing(self):
+        output = io.StringIO()
+        with patch.object(P, "resolve_revision", return_value=SHA), \
+                patch.object(P, "api", return_value={"default_branch": "main"}), \
+                patch.object(P, "ensure_run", return_value=run()) as build, \
+                patch.object(P, "download", return_value=self.root / "felucca.fwsc") as download, \
+                patch.object(P, "install") as install, contextlib.redirect_stdout(output):
+            self.assertEqual(P.main(["333", "--validation", "target", "--download-only"]), 0)
+        build.assert_called_once_with(REPO, "333", SHA, "main", 3600, False, "target")
+        self.assertEqual(download.call_args.args[-1], "target")
+        install.assert_not_called()
+        self.assertIn("does not replace full PR validation", output.getvalue())
 
     def test_corruption_wrong_manifest_and_duplicate_packages(self):
         package = self.root / "felucca.fwsc"

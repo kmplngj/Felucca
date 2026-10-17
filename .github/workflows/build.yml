@@ -4,6 +4,10 @@ name: Firmware validation
 on:
   workflow_call:
     inputs:
+      validation:
+        description: full, or target-only for a verified manual PR revision
+        default: full
+        type: string
       source_ref:
         description: Verified exact PR commit; empty keeps normal event checkout
         default: ''
@@ -38,6 +42,25 @@ jobs:
       backup: ${{ steps.changes.outputs.backup }}
       emulator: ${{ steps.changes.outputs.emulator }}
     steps:
+      - name: Validate requested scope
+        env:
+          VALIDATION: ${{ inputs.validation }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          VERIFIED_PR: ${{ inputs.verified_pr }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          scope = os.environ['VALIDATION']
+          if scope not in ('full', 'target'):
+              raise SystemExit('Unknown validation scope')
+          if scope == 'target' and (
+              os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or os.environ['VERSION'] or
+              not re.fullmatch(r'[0-9a-f]{40}', os.environ['SOURCE_REF']) or
+              not re.fullmatch(r'[1-9][0-9]*', os.environ['VERIFIED_PR'])
+          ):
+              raise SystemExit('Target-only scope requires a verified manual PR revision and no release version')
+          PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -64,6 +87,11 @@ jobs:
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" 2>&1 | tee build/ci/actionlint.log
           python3 -m unittest discover -s tests -p ci_test.py -v 2>&1 | tee build/ci/helper-tests.log
+          if [ -f tests/ci_target_test.py ]; then
+            python3 -m unittest discover -s tests -p ci_target_test.py -v 2>&1 | tee build/ci/target-helper-tests.log
+          else
+            echo 'Historical sources predate target helper fixtures; the workflow scope guard still runs.' | tee build/ci/target-helper-tests.log
+          fi
           python3 tests/source_archive_test.py -v 2>&1 | tee build/ci/source-tests.log
           python3 -m unittest discover -s tests -p ci_changes_test.py -v 2>&1 | tee build/ci/selection-tests.log
           python3 -m unittest discover -s tests -p branch_cleanup_test.py -v 2>&1 | tee build/ci/branch-cleanup-tests.log
@@ -89,6 +117,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/ci-requirements.txt
       - name: Run portable fixtures without firmware outputs
         run: |
           set -o pipefail
@@ -144,9 +174,18 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/ci-requirements.txt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: web/emu/package-lock.json
+      - name: Cache Emscripten
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emsdk
+          key: emsdk-${{ runner.os }}-${{ runner.arch }}-dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72-6.0.11-v1
       - name: Install pinned generation and emulator dependencies
         env:
           EMSDK: ${{ runner.temp }}/emsdk
@@ -155,12 +194,22 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
           python3 -m pip install -r tools/ci-requirements.txt
-          git init "$EMSDK"
-          git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
-          git -C "$EMSDK" fetch --depth 1 origin dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
-          git -C "$EMSDK" checkout --detach FETCH_HEAD
+          if [ ! -d "$EMSDK/.git" ]; then
+            git init "$EMSDK"
+            git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
+            git -C "$EMSDK" fetch --depth 1 origin dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+            git -C "$EMSDK" checkout --detach FETCH_HEAD
+          fi
+          test "$(git -C "$EMSDK" rev-parse HEAD)" = dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+          git -C "$EMSDK" diff --exit-code
+          git -C "$EMSDK" diff --cached --exit-code
           "$EMSDK/emsdk" install 6.0.11
           "$EMSDK/emsdk" activate 6.0.11
+      - name: Cache Playwright browser downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/emu/package-lock.json') }}
       - name: Install pinned browser test dependencies
         run: |
           npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
@@ -196,6 +245,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     env:
       VERSION: ${{ inputs.version }}
+      VALIDATION: ${{ inputs.validation }}
       FELUCCA_VERIFIED_PR: ${{ inputs.verified_pr }}
       FELUCCA_VERIFIED_COMMIT: ${{ inputs.source_ref }}
       CC: clang
@@ -220,6 +270,15 @@ jobs:
               if os.environ[suite + '_RESULT'] != expected:
                   raise SystemExit(suite + ' validation did not complete as selected')
           PY
+      - name: Check out workflow orchestration
+        if: needs.workflow-checks.outputs.full == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+      - name: Preserve target orchestration outside PR sources
+        if: needs.workflow-checks.outputs.full == 'true'
+        run: cp tools/ci_target.py "$RUNNER_TEMP/felucca-ci-target.py"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.workflow-checks.outputs.full == 'true'
         with:
@@ -227,6 +286,13 @@ jobs:
           persist-credentials: false
           submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
+      - name: Check full browser prerequisites
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
+        run: |
+          if [ ! -f web/emu/package.json ] || [ ! -f web/emu/package-lock.json ]; then
+            echo 'Full validation requires the browser harness in the selected sources. Rebase onto current sources, use a compatible workflow, or select --validation target when supported.' >&2
+            exit 1
+          fi
       - name: Validate version and record checkout
         if: needs.workflow-checks.outputs.full == 'true'
         id: version
@@ -237,6 +303,9 @@ jobs:
           if [ -n "$VERSION" ]; then python3 tools/ci.py version "$VERSION"; fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          target_cache_key=$(python3 "$RUNNER_TEMP/felucca-ci-target.py" cache-key)
+          test -n "$target_cache_key"
+          echo "target_cache_key=$target_cache_key" >> "$GITHUB_OUTPUT"
           {
             echo "JIELI_TOOLCHAIN=$RUNNER_TEMP/jieli/toolchain"
             echo "AC79_SDK=$RUNNER_TEMP/sdk"
@@ -247,15 +316,21 @@ jobs:
         if: needs.workflow-checks.outputs.full == 'true'
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/ci-requirements.txt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: needs.workflow-checks.outputs.full == 'true'
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: web/emu/package-lock.json
       - name: Install pinned image-generation dependencies
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
+          packages=(libfribidi0 libraqm0)
+          if [ "$VALIDATION" = full ]; then packages+=(clang); fi
+          sudo apt-get install -y --no-install-recommends "${packages[@]}"
           python3 -m pip install -r tools/ci-requirements.txt
       - name: Cache target inputs
         if: needs.workflow-checks.outputs.full == 'true'
@@ -264,7 +339,7 @@ jobs:
           path: |
             ${{ runner.temp }}/jieli
             ${{ runner.temp }}/sdk
-          key: target-${{ runner.os }}-${{ runner.arch }}-20260730.1-${{ hashFiles('tools/get_toolchain.sh', 'tools/ci.py', 'tools/build.py') }}
+          key: target-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.target_cache_key }}
       - name: Fetch and verify target inputs
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
@@ -275,31 +350,57 @@ jobs:
             fi
             python3 tools/ci.py sdk
           } 2>&1 | tee build/ci/dependencies.log
+      - name: Cache Emscripten
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emsdk
+          key: emsdk-${{ runner.os }}-${{ runner.arch }}-dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72-6.0.11-v1
+      - name: Cache DaisySP reference sources
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/DaisySP
+          key: daisysp-${{ runner.os }}-${{ runner.arch }}-2c72eaf9eac5fc0dca1919d65d606da907832618-v1
       - name: Pin Emscripten and DaisySP reference sources
-        if: needs.workflow-checks.outputs.full == 'true'
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
           set -o pipefail
           {
-            git init "$EMSDK"
-            git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
-            git -C "$EMSDK" fetch --depth 1 origin dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
-            git -C "$EMSDK" checkout --detach FETCH_HEAD
+            if [ ! -d "$EMSDK/.git" ]; then
+              git init "$EMSDK"
+              git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
+              git -C "$EMSDK" fetch --depth 1 origin dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+              git -C "$EMSDK" checkout --detach FETCH_HEAD
+            fi
+            test "$(git -C "$EMSDK" rev-parse HEAD)" = dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+            git -C "$EMSDK" diff --exit-code
+            git -C "$EMSDK" diff --cached --exit-code
             "$EMSDK/emsdk" install 6.0.11
             "$EMSDK/emsdk" activate 6.0.11
             source "$EMSDK/emsdk_env.sh"
             echo "$EMSDK/upstream/emscripten" >> "$GITHUB_PATH"
             echo "EM_CONFIG=$EMSDK/.emscripten" >> "$GITHUB_ENV"
-            git init "$DAISYSP"
-            git -C "$DAISYSP" remote add origin https://github.com/electro-smith/DaisySP.git
-            git -C "$DAISYSP" fetch --depth 1 origin 2c72eaf9eac5fc0dca1919d65d606da907832618
-            git -C "$DAISYSP" checkout --detach FETCH_HEAD
+            if [ ! -d "$DAISYSP/.git" ]; then
+              git init "$DAISYSP"
+              git -C "$DAISYSP" remote add origin https://github.com/electro-smith/DaisySP.git
+              git -C "$DAISYSP" fetch --depth 1 origin 2c72eaf9eac5fc0dca1919d65d606da907832618
+              git -C "$DAISYSP" checkout --detach FETCH_HEAD
+            fi
+            test "$(git -C "$DAISYSP" rev-parse HEAD)" = 2c72eaf9eac5fc0dca1919d65d606da907832618
+            test -z "$(git -C "$DAISYSP" status --porcelain)"
           } 2>&1 | tee build/ci/reference-dependencies.log
       - name: Check prerequisites and capture provenance
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
           set -o pipefail
-          python3 tools/ci.py preflight 2>&1 | tee build/ci/preflight.log
-          python3 tools/ci.py provenance 2>&1 | tee build/ci/provenance.log
+          if [ "$VALIDATION" = target ]; then
+            python3 "$RUNNER_TEMP/felucca-ci-target.py" preflight 2>&1 | tee build/ci/preflight.log
+            python3 "$RUNNER_TEMP/felucca-ci-target.py" provenance 2>&1 | tee build/ci/provenance.log
+          else
+            python3 tools/ci.py preflight 2>&1 | tee build/ci/preflight.log
+            python3 tools/ci.py provenance 2>&1 | tee build/ci/provenance.log
+          fi
       - name: Target build and resource guards
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
@@ -312,20 +413,33 @@ jobs:
             ./build.sh 2>&1 | tee build/ci/build.log
           fi
           test -s build/felucca.dis
-      - name: Host, sanitizer, web and emulator tests
+      - name: Target instruction budget and package validation
         if: needs.workflow-checks.outputs.full == 'true'
+        run: |
+          set -o pipefail
+          python3 tests/target_budget.py build/felucca.dis tests/target_budget.txt 2>&1 | tee build/ci/target-budget.log
+          python3 "$RUNNER_TEMP/felucca-ci-target.py" package --validation "$VALIDATION" 2>&1 | tee build/ci/package.log
+          git diff --exit-code
+      - name: Host, sanitizer, web and emulator tests
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
           set -o pipefail
           sh tests/run_tests.sh 2>&1 | tee build/ci/tests.log
           python3 tools/ci.py verify-tests build/ci/tests.log
+      - name: Cache Playwright browser downloads
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/emu/package-lock.json') }}
       - name: Browser UI and AudioWorklet smoke test
-        if: needs.workflow-checks.outputs.full == 'true'
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
           npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
           npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
           npm test --prefix web/emu
       - name: Reproduce package from a clean checkout
-        if: needs.workflow-checks.outputs.full == 'true'
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
           set -o pipefail
           # Local clone preserves this exact PR merge/tag commit and tracked sample assets.
@@ -387,7 +501,7 @@ jobs:
         if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: firmware-${{ github.run_id }}
+          name: firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ github.run_id }}
           retention-days: 30
           if-no-files-found: error
           path: |
@@ -419,9 +533,12 @@ jobs:
           {
             echo '### Felucca firmware validation'
             echo "Result: ${{ job.status }}. Diagnostics retain available outputs for 14 days."
-            echo "Full firmware validation selected: ${{ needs.workflow-checks.outputs.full }}."
+            echo "Validation scope: ${VALIDATION:-full}. Firmware build selected: ${{ needs.workflow-checks.outputs.full }}."
+            if [ "$VALIDATION" = target ]; then
+              echo 'TARGET ONLY: build/resource/loader guards, static target budgets and package integrity. Host, sanitizer, browser/emulator and reproducibility tests were omitted; full PR validation is still required.'
+            fi
             echo 'Known independent inputs use focused checks; docs/review-only changes complete this check without building firmware. Selection details are in the workflow-checks summary and diagnostics.'
-            echo 'Full validation retains target/resource guards, host goldens and engine switches, ASan/UBSan fuzz, DaisySP, web, native/WASM comparison and package reproducibility.'
+            echo 'The full scope retains target/resource guards, host goldens and engine switches, ASan/UBSan fuzz, DaisySP, web, native/WASM comparison and package reproducibility.'
             echo 'Host CPU budgets require available counters and matching host/compiler baselines; ns/sample is informational. Target budgets are static estimates. FM-1 audio deadlines, USB/MIDI, panel behavior and flashing remain device checks.'
             if [ -f build/ci/tests.log ]; then
               echo ''

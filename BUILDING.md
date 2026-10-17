@@ -3,8 +3,9 @@
 Pull requests and `main` select the [CI checks](.github/CI.md#change-based-validation)
 affected by their complete change range. Firmware/build inputs run the full suite;
 known independent Python, backup and emulator inputs use focused checks, and
-documentation-only changes skip builds. Manual CI and releases always validate
-everything. That guide also explains failure diagnostics, dependency pins and
+documentation-only changes skip builds. Manual CI defaults to full validation;
+an explicit target-only mode is available for exact PR hardware-test builds.
+Releases always validate everything. That guide also explains failure diagnostics, dependency pins and
 tagged/manual release packaging.
 
 For engine, effect and platform changes, read the
@@ -368,8 +369,8 @@ The client needs Python 3 on macOS/Linux and an explicitly selected serial port;
 
 ## Test a pull request on hardware
 
-`tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a full
-CI build of that exact revision, downloads its firmware artifact, verifies the
+`tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a CI
+build of that exact revision (full validation by default), downloads its firmware artifact, verifies the
 recorded revision, SHA-256 and package structure, then starts the existing
 USB-MIDI installer. You do not need the JieLi toolchain, SDK or Docker locally.
 Normal automatic PR CI continues to build the merge with the target branch;
@@ -383,7 +384,39 @@ cable. Close other applications using the FM-1's MIDI ports. From the checkout:
 ```sh
 # Replace 123 with the intended PR number.
 python3 tools/fm1_pr.py 123
+
+# Faster firmware for hardware iteration, with isolated PR sources:
+python3 tools/fm1_pr.py 123 --validation target --worktree-dir ../Felucca-pr123
 ```
+
+`--validation target` uses the same target build and flags as full validation:
+it checks the pinned SDK/toolchain, source and Engines identity, app/loader and
+resource guards, static target instruction budgets, FWSC structure/CRCs and
+SHA-256. It omits host goldens, sanitizers, web/emulator/browser tests and the
+second clean-checkout build. Those tests still belong to full PR validation;
+**target-only success is for hardware iteration, not merge/release readiness**.
+It does not install a different firmware variant. Build defaults still come from
+the chosen revision; the validation scope is printed before CI/install and
+recorded in the target artifact's `provenance.json`.
+Historical sources without build-identity/pinned-engine provenance APIs cannot
+use target-only mode; the helper reports this explicitly. Use `--validation full`
+for those revisions. Existing full builds remain supported without those newer APIs.
+The selected sources must still contain the tests required by the chosen workflow.
+Full validation reports a missing browser harness before building or running host
+tests; rebase the PR or select a compatible workflow if it predates that harness.
+Full requests retain the original dispatch inputs, so older compatible maintainer
+workflow branches can still be selected with `--workflow-ref BRANCH`.
+
+Use `--validation full` (the default) for the complete pipeline. Modes have
+separate run titles, concurrency groups and artifact names; a target-only run
+can never satisfy a full request. Older fully validated artifacts remain usable.
+Manual Actions checks have separate names from automatic PR/main checks, so a
+manual target or exact-PR build cannot stand in for the required PR validation.
+The helper reuses a live successful or running exact-commit build only for the
+requested mode and workflow branch, avoiding repeat builds. Full validation
+never cancels a target run, or vice versa. Both can also be requested manually
+under **Actions > CI > Run workflow**, selecting `validation` and filling in
+`pr` and `commit`; target-only mode requires both fields and cannot make a release.
 
 The command prints the fixed commit and Actions run URL, waits for all selected
 validation to pass, and downloads into a fresh directory under
@@ -410,13 +443,13 @@ GitHub sign-in and artifact read access are required. Requesting a missing build
 also requires Actions write access (typically a maintainer or collaborator).
 Read-only testers use `--no-build` after a maintainer starts **Actions > CI >
 Run workflow** on the default branch, with `pr` and `commit` filled in. Leave
-both empty for ordinary manual CI. Firmware artifacts expire after 30 days;
+both empty and select `full` for ordinary manual CI. Firmware artifacts expire after 30 days;
 an expired or failed build requires a fresh run. The helper retains full CI
-validation, so it saves local setup but does not shorten the validation pipeline.
+validation in the default mode; select `target` explicitly for faster hardware iteration.
 See [CI delivery details](.github/CI.md#exact-pr-revision-builds).
 
 The default wait is one hour; `--timeout SECONDS` changes it. Interrupting or
-timing out does not cancel CI: rerun with the printed `--commit` to resume.
+timing out does not cancel CI: rerun with the printed `--commit` and the same `--validation` to resume.
 `--out DIRECTORY` changes the download parent and `--repo OWNER/NAME` selects
 another fork with this workflow. Maintainers can use `--workflow-ref BRANCH`
 to rehearse workflow changes before merging; normally omit it.

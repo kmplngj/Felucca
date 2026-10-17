@@ -174,45 +174,54 @@ def resolve_revision(repository, number, revision=None):
     return revision
 
 
-def run_title(number, revision):
-    return f"PR firmware #{number} @ {revision}"
+def run_title(number, revision, validation="full"):
+    return f"PR firmware #{number} @ {revision}" + (" (target)" if validation == "target" else "")
 
 
-def matching_runs(repository, number, revision, workflow_ref):
+def matching_runs(repository, number, revision, workflow_ref, validation="full"):
     runs = pages(f"repos/{repository}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch",
                  "workflow_runs")
     return sorted((run for run in runs
-                   if run["display_title"] == run_title(number, revision)
+                   if run["display_title"] == run_title(number, revision, validation)
                    and run["head_branch"] == workflow_ref), key=lambda run: run["id"], reverse=True)
 
 
-def firmware_artifact(repository, run):
+def artifact_name(run, validation="full"):
+    return f"firmware-{'target-' if validation == 'target' else ''}{run['id']}"
+
+
+def firmware_artifact(repository, run, validation="full"):
     artifacts = pages(f"repos/{repository}/actions/runs/{run['id']}/artifacts", "artifacts")
     live = [item for item in artifacts
-            if item["name"] == f"firmware-{run['id']}" and not item["expired"]]
+            if item["name"] == artifact_name(run, validation) and not item["expired"]]
     return live[0] if len(live) == 1 else None
 
 
-def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=False):
+def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=False, validation="full"):
     endpoint = f"repos/{repository}/actions/workflows/{WORKFLOW}/dispatches"
-    runs = matching_runs(repository, number, revision, workflow_ref)
+    runs = matching_runs(repository, number, revision, workflow_ref, validation)
     run = next((item for item in runs if item["status"] != "completed" or
-                (item["conclusion"] == "success" and firmware_artifact(repository, item))), None)
+                (item["conclusion"] == "success" and firmware_artifact(repository, item, validation))), None)
     existing = {item["id"] for item in runs}
     if run is None:
         if no_build:
             raise ValueError("No successful exact-commit build with a live firmware artifact. "
                              "Ask a maintainer to run CI with the printed PR/commit, or omit --no-build "
                              "if you have Actions write access.")
-        print("Requesting full validation (requires Actions write access)...", flush=True)
+        print(f"Requesting {validation} validation (requires Actions write access)...", flush=True)
+        inputs = {"pr": str(number), "commit": revision}
+        # Full is the default in both new and historical workflows. Older
+        # maintainer workflow refs reject unknown dispatch inputs.
+        if validation == "target":
+            inputs["validation"] = "target"
         gh("api", "--method", "POST", endpoint, "--input", "-", payload={
-            "ref": workflow_ref, "inputs": {"pr": str(number), "commit": revision},
+            "ref": workflow_ref, "inputs": inputs,
         })
     deadline = time.monotonic() + timeout
     last_status = None
     while True:
         if run is None:
-            run = next((item for item in matching_runs(repository, number, revision, workflow_ref)
+            run = next((item for item in matching_runs(repository, number, revision, workflow_ref, validation)
                         if item["id"] not in existing), None)
         else:
             run = api(f"repos/{repository}/actions/runs/{run['id']}")
@@ -224,12 +233,12 @@ def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=Fal
             if run["status"] == "completed":
                 if run["conclusion"] != "success":
                     raise ValueError(f"Build {run['conclusion']}; no firmware installed. {run['html_url']}")
-                if not firmware_artifact(repository, run):
+                if not firmware_artifact(repository, run, validation):
                     raise ValueError("Successful run has no live firmware artifact; request a fresh build")
                 return run
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise ValueError("Timed out waiting for CI; rerun with the same --commit to resume. "
+            raise ValueError("Timed out waiting for CI; rerun with the same --commit and --validation to resume. "
                              "The remote build was not canceled.")
         time.sleep(min(15, remaining))
 
@@ -241,10 +250,17 @@ def unique_file(root, pattern):
     return matches[0]
 
 
-def verify_download(root, revision):
+def verify_download(root, revision, validation="full"):
     provenance = json.loads(unique_file(root, "provenance.json").read_text())
     if provenance["revision"] != revision:
         raise ValueError("Firmware provenance does not match the requested commit")
+    # Legacy full runs predate the scope field. Target artifacts must declare it.
+    validation_record = provenance.get("validation", {})
+    if not isinstance(validation_record, dict):
+        raise ValueError("Invalid firmware validation scope record")
+    scope = validation_record.get("scope", "full")
+    if scope != validation:
+        raise ValueError("Firmware validation scope does not match the requested mode")
     package = unique_file(root, "*.fwsc")
     checksum = unique_file(root, "package.sha256").read_text().strip().split()
     if (len(checksum) != 2 or not re.fullmatch(r"[0-9a-f]{64}", checksum[0])
@@ -257,13 +273,13 @@ def verify_download(root, revision):
     return package
 
 
-def download(repository, run, revision, output):
+def download(repository, run, revision, output, validation="full"):
     output.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix=f"run-{run['id']}-", dir=output)).resolve()
     try:
         gh("run", "download", str(run["id"]), "--repo", repository,
-           "--name", f"firmware-{run['id']}", "--dir", str(root))
-        package = verify_download(root, revision)
+           "--name", artifact_name(run, validation), "--dir", str(root))
+        package = verify_download(root, revision, validation)
     except Exception:
         shutil.rmtree(root)
         raise
@@ -285,6 +301,8 @@ def main(argv=None):
     parser.add_argument("pr", help="PR number")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub owner/name")
     parser.add_argument("--commit", help="full SHA; default snapshots the current PR head")
+    parser.add_argument("--validation", choices=("full", "target"), default="full",
+                        help="full (default), or faster target-only checks for hardware iteration")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--download-only", action="store_true", help="verify without accessing MIDI")
     mode.add_argument("--prepare-only", action="store_true",
@@ -320,10 +338,14 @@ def main(argv=None):
         if args.prepare_only:
             print("Sources prepared; no CI build, download or hardware access.")
             return 0
+        print(f"Validation: {args.validation}", flush=True)
+        if args.validation == "target":
+            print("Target-only build: host, sanitizer, browser and reproducibility tests are omitted; "
+                  "this does not replace full PR validation.", flush=True)
         workflow_ref = args.workflow_ref or api(f"repos/{args.repo}")["default_branch"]
-        run = ensure_run(args.repo, args.pr, revision, workflow_ref, args.timeout, args.no_build)
+        run = ensure_run(args.repo, args.pr, revision, workflow_ref, args.timeout, args.no_build, args.validation)
         output = args.out or Path(__file__).resolve().parents[1] / "build" / f"pr-{args.pr}" / revision
-        package = download(args.repo, run, revision, output)
+        package = download(args.repo, run, revision, output, args.validation)
         if args.download_only:
             print("Download verified; no hardware was accessed.")
             return 0
