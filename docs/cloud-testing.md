@@ -36,7 +36,8 @@ isolated browser context, then closes the browser and server. It tests:
   followed by a quiet release.
 - Pointer navigation to ENV and a keyboard encoder edit changing the LCD.
 - A playable key in the portrait layout.
-- Panel save reaching localStorage and saved sectors reaching the restarted worklet.
+- Panel save reaching localStorage, saved sectors reaching the restarted worklet,
+  and loading USER slot 1 restoring the edited attack's exact envelope graph.
 - Browser, network, console and AudioWorklet errors.
 
 The test-only probe observes the existing worklet's messages and taps its actual

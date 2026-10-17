@@ -17,7 +17,7 @@ await mkdir(resolve(build, "browser"), { recursive: true });
 const out = await mkdtemp(resolve(build, "browser/run-"));
 const report = { schema: 1, status: "fail", checks: [], errors: [], evidence: [], scope: "Chromium emulator; no physical FM-1" };
 const hash = (data) => createHash("sha256").update(data).digest("hex");
-let browser, page, server, capturedAudio, current = "setup";
+let browser, page, server, capturedAudio, factoryEnvelope, current = "setup";
 const screenshots = new Map();
 const messages = [];
 
@@ -39,7 +39,9 @@ async function screen(name) {
   });
   assert(pixels.colors > 4, `${name}: blank or incomplete LCD (${pixels.colors} colors)`);
   screenshots.set(name, await page.locator("#screen").screenshot());
-  return { sha256: hash(Buffer.from(pixels.pixels)), colors: pixels.colors };
+  // ui.c's default graph panel is y=76..197; exclude transient header/card highlights.
+  return { sha256: hash(Buffer.from(pixels.pixels)), colors: pixels.colors,
+    graph_sha256: hash(Buffer.from(pixels.pixels.slice(76 * 240 * 4, 198 * 240 * 4))) };
 }
 async function waitFor(fn, arg) {
   const handle = await page.waitForFunction(fn, arg, { timeout: 8000 });
@@ -136,10 +138,12 @@ try {
     await page.getByRole("button", { name: "ENV", exact: true }).click();
     await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
     const env = await screen("env");
+    factoryEnvelope = env.graph_sha256;
     assert.notEqual(env.sha256, before.sha256, "ENV did not change the LCD");
     // Capture the count before input; LED/load messages are not LCD updates.
     const draws = await page.evaluate(() => __feluccaTest.draws);
-    await page.getByRole("slider", { name: "KNOB 1", exact: true }).press("ArrowUp");
+    // A distinctive attack change must affect the graph, not just knob emphasis.
+    for (let i = 0; i < 24; i++) await page.getByRole("slider", { name: "KNOB 1", exact: true }).press("ArrowUp");
     await waitFor((n) => __feluccaTest.draws > n, draws);
     const edited = await screen("env-edited");
     assert.notEqual(edited.sha256, env.sha256, "encoder did not change the LCD");
@@ -163,6 +167,8 @@ try {
   await check("panel save reaches browser storage and reload", async () => {
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 1000);
+    const expected = await screen("before-save");
+    assert.notEqual(expected.graph_sha256, factoryEnvelope, "saved attack must differ from factory state");
     await tap("SAVE"); await tap("OCT+"); await tap("OCT+");
     const saved = await waitFor(() => {
       const value = localStorage.getItem("felucca-emu-flash");
@@ -178,7 +184,15 @@ try {
     assert.equal(await page.evaluate(() => __feluccaTest.restoredSectors), Object.keys(JSON.parse(saved)).length,
       "saved sectors were not delivered to the restarted worklet");
     await screen("reloaded");
-    return { sectors: Object.keys(JSON.parse(saved)).length, storage_sha256: hash(saved) };
+    // Load USER slot 1 through the real panel and observe the applied parameters.
+    await tap("SAVE");
+    await page.getByRole("slider", { name: "KNOB 2", exact: true }).press("ArrowUp");
+    await tap("OCT+"); await tap("HOME"); await tap("ENV");
+    await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
+    const restored = await screen("restored-env");
+    assert.equal(restored.graph_sha256, expected.graph_sha256, "saved envelope was not restored and applied");
+    return { sectors: Object.keys(JSON.parse(saved)).length, storage_sha256: hash(saved),
+      restored_graph_sha256: restored.graph_sha256 };
   });
   await check("no browser or worklet errors", async () => {
     messages.push(...await page.evaluate(() => __feluccaTest.errors));
