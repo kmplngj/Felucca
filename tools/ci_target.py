@@ -16,7 +16,14 @@ import subprocess
 import sys
 
 
+def require_target_support(ci):
+    if not all(callable(getattr(ci, name, None)) for name in ("engine_provenance", "resolved_identity")):
+        raise ValueError("This historical revision lacks build-identity/pinned-engine provenance APIs; "
+                         "use --validation full instead of target")
+
+
 def preflight(ci):
+    require_target_support(ci)
     from PIL import features
     if not features.check("raqm"):
         raise ValueError("Pillow needs Raqm for the reference font layout")
@@ -32,6 +39,7 @@ def preflight(ci):
 
 
 def provenance(ci):
+    require_target_support(ci)
     import PIL
     import fontTools
     import brotli
@@ -69,13 +77,23 @@ def package(ci, scope):
     output = ci.build.OUT
     record = output / "ci/provenance.json"
     data = json.loads(record.read_text())
-    if (data["build_identity"] != ci.resolved_identity() or
-            data["engines"] != ci.engine_provenance() or
-            data["revision"] != data["build_identity"]["revision"]):
+    if scope == "target":
+        require_target_support(ci)
+    identity_api = getattr(ci, "resolved_identity", None)
+    engine_api = getattr(ci, "engine_provenance", None)
+    identity = identity_api() if callable(identity_api) else None
+    revision = (identity["revision"] if identity is not None else
+                subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
+    if (data["revision"] != revision or
+            (identity is not None and data.get("build_identity") != identity) or
+            (callable(engine_api) and data.get("engines") != engine_api())):
         raise ValueError("Package provenance differs from the selected sources")
-    built = json.loads((output / "build-identity.json").read_text())
-    if built != data["build_identity"]:
-        raise ValueError("Package build identity differs from provenance")
+    # Legacy full CI predates compiled identity and modular Engines provenance.
+    # Keep its existing guarantees, but never silently weaken a target request.
+    if identity is not None:
+        built = json.loads((output / "build-identity.json").read_text())
+        if built != identity:
+            raise ValueError("Package build identity differs from provenance")
     # fwsc is the installable app + loader, never the raw firmware binary.
     path = output / "felucca.fwsc"
     ci.fm1_install.load_package(path, False)

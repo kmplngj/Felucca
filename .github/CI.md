@@ -267,7 +267,11 @@ target provenance. `--no-build` and resume must use the same mode.
 
 The workflow retains `tools/ci_target.py` from its own revision outside the source
 checkout before checking out the selected SHA. Thus older PRs can use target-only
-delivery without modifying their sources. Their firmware, build tools and budgets
+delivery without modifying their sources, provided their CI exposes build-identity
+and pinned-engine provenance APIs (as #392 does). Earlier revisions fail target
+preflight with an explicit `--validation full` instruction; full delivery retains
+their original provenance format and checks without requiring these newer APIs.
+Their firmware, build tools and budgets
 still come from that selected revision. This helper records only target dependencies
 and limitations; full/release provenance and reproducibility remain unchanged.
 

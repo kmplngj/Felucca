@@ -398,6 +398,9 @@ second clean-checkout build. Those tests still belong to full PR validation;
 It does not install a different firmware variant. Build defaults still come from
 the chosen revision; the validation scope is printed before CI/install and
 recorded in the target artifact's `provenance.json`.
+Historical sources without build-identity/pinned-engine provenance APIs cannot
+use target-only mode; the helper reports this explicitly. Use `--validation full`
+for those revisions. Existing full builds remain supported without those newer APIs.
 
 Use `--validation full` (the default) for the complete pipeline. Modes have
 separate run titles, concurrency groups and artifact names; a target-only run

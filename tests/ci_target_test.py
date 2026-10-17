@@ -72,6 +72,22 @@ class Target(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Cannot label"):
             T.package(self.ci, "full")
 
+    def test_legacy_ci_without_identity_or_engine_apis_keeps_full_build_support(self):
+        del self.ci.resolved_identity
+        del self.ci.engine_provenance
+        legacy = {"revision": "a" * 40, "version": ""}
+        self.record.write_text(json.dumps(legacy))
+        (self.output / "build-identity.json").unlink()
+        with patch.object(T.subprocess, "check_output", return_value="a" * 40):
+            T.package(self.ci, "full")
+        self.assertEqual(json.loads(self.record.read_text()), legacy)
+        with patch.object(T.subprocess, "check_output", return_value="b" * 40), \
+                self.assertRaisesRegex(ValueError, "provenance"):
+            T.package(self.ci, "full")
+        for check in (T.preflight, T.provenance, lambda ci: T.package(ci, "target")):
+            with self.assertRaisesRegex(ValueError, "use --validation full"):
+                check(self.ci)
+
     def test_corrupt_package_or_identity_and_pin_mismatches_prevent_delivery(self):
         (self.output / "felucca.fwsc").write_bytes(b"corrupt")
         with self.assertRaises(ci.fm1_install.InstallError):
