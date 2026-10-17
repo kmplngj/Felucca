@@ -52,7 +52,7 @@ per-track channels, MIDI LEARN) and USB audio. More: [Features](https://github.c
 ## New in 1.6
 
 - **Your own UI colours:** COLOR has an eleventh value, CUSTOM, set in the web editor with a live preview on the FM-1
-- **The SEQ piano roll follows the play position** when the pattern is longer than one screen
+- **The SEQ piano roll follows the play position** when the pattern is longer than one screen; stopping returns it to the cursor's bank
 - **Conditional steps** (1:2 … 4:4, FILL), **EUCLID, DOUBLE and HALF**, **a MIDI channel per track**, PHASE FOLD, three more drum kits and humanize in the MOD matrix (1.5.5 and 1.5.6 were never released: 1.6 carries them)
 - ⚠ A project with conditional steps does not open on 1.5 or 1.5.1; projects saved by 1.4 or later do not open on 1.1.5.x
 
@@ -95,7 +95,9 @@ apply TRN before scale snap, without rewriting stored steps. Existing QNT modes 
 their behavior; engines with their own key maps (DRUM and SLICE) are exempt. Older
 firmware reads SEQ+T as SEQ. **SEQ TOOLS > EUCLID** exposes HITS, STEPS and ROT and
 one undo and a live, reversible preview (OCT+ applies; OCT− cancels); seeded drop
-remains future work.
+remains future work. Cancelling retires the preview's undo entry without clearing
+a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
+An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
 The [emulator partition regression](BUILDING.md#emulator-partition-regression) checks
 that equivalent scheduled MIDI/panel input produces exactly the same audio and state

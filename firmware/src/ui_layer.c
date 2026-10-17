@@ -402,6 +402,7 @@ static void tools_key(uint32_t p)
         }
     }
     if (p == TL_EUCLID) {                               /* (its message: eu_say; one undo copy for all of it) */
+        eu.loaded = lys.loaded;
         eu_open(TSEL);
         if (!lys.loaded)
             str_cpy(ui.msg2, "[SAVE] HOLD TO UNDO", sizeof ui.msg2);
@@ -772,6 +773,8 @@ static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
     mine = oct & lys.oct;
     if ((mine & 3u) && eu.on && lys.l == LAYER_SEQ) {   /* EUCLID open: OCT+ applies, OCT- cancels (only that) */
         eu_close(&trk[lys.trk % NTRK], mine & 2u);
+        if (!(mine & 2u))
+            lys.loaded = eu.loaded;                    /* earlier tools still belong to the layer's OCT- */
         ui_message(mine & 2u ? "EUCLID APPLIED" : "EUCLID CANCELLED");
         ui.force = 1;
         mine = 0;
