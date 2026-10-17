@@ -404,6 +404,8 @@ for those revisions. Existing full builds remain supported without those newer A
 The selected sources must still contain the tests required by the chosen workflow.
 Full validation reports a missing browser harness before building or running host
 tests; rebase the PR or select a compatible workflow if it predates that harness.
+Full requests retain the original dispatch inputs, so older compatible maintainer
+workflow branches can still be selected with `--workflow-ref BRANCH`.
 
 Use `--validation full` (the default) for the complete pipeline. Modes have
 separate run titles, concurrency groups and artifact names; a target-only run

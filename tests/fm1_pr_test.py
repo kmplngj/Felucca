@@ -87,7 +87,7 @@ class Selection(unittest.TestCase):
                 patch.object(P.time, "sleep"), patch.object(P, "gh") as gh:
             self.assertEqual(P.ensure_run(REPO, 333, SHA, "main", 30), run())
             self.assertEqual(gh.call_args.kwargs["payload"],
-                             {"ref": "main", "inputs": {"pr": "333", "commit": SHA, "validation": "full"}})
+                             {"ref": "main", "inputs": {"pr": "333", "commit": SHA}})
         with patch.object(P, "matching_runs", return_value=[active]), \
                 patch.object(P, "api", return_value=run()), \
                 patch.object(P, "firmware_artifact", return_value={"name": "firmware-42"}), \

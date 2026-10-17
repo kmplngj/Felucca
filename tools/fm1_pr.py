@@ -209,8 +209,13 @@ def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=Fal
                              "Ask a maintainer to run CI with the printed PR/commit, or omit --no-build "
                              "if you have Actions write access.")
         print(f"Requesting {validation} validation (requires Actions write access)...", flush=True)
+        inputs = {"pr": str(number), "commit": revision}
+        # Full is the default in both new and historical workflows. Older
+        # maintainer workflow refs reject unknown dispatch inputs.
+        if validation == "target":
+            inputs["validation"] = "target"
         gh("api", "--method", "POST", endpoint, "--input", "-", payload={
-            "ref": workflow_ref, "inputs": {"pr": str(number), "commit": revision, "validation": validation},
+            "ref": workflow_ref, "inputs": inputs,
         })
     deadline = time.monotonic() + timeout
     last_status = None
