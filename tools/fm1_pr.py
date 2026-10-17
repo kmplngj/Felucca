@@ -15,6 +15,7 @@ import time
 import uuid
 
 import fm1_install
+import m_flasher
 
 
 DEFAULT_REPO = "kmplngj/Felucca"
@@ -287,8 +288,21 @@ def download(repository, run, revision, output, validation="full"):
     return package
 
 
-def install(package, port=None, yes=False):
-    command = [sys.executable, str(Path(__file__).with_name("fm1_install.py")), str(package)]
+def prepare_installer(installer, executable=None):
+    if installer == "native":
+        return [str(m_flasher.ensure(executable)), "midi", "firmware"]
+    if executable:
+        raise ValueError("--m-flasher requires --installer native")
+    check = subprocess.run([sys.executable, "-c", "import mido, rtmidi"], capture_output=True, text=True)
+    if check.returncode:
+        raise ValueError("Python MIDI installer needs mido and python-rtmidi in this interpreter. "
+                         "Use --installer native or install them in a virtual environment before starting CI.")
+    return [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]
+
+
+def install(package, port=None, yes=False, command=None):
+    command = [*(command if command is not None else
+                 [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]), str(package)]
     if port:
         command.extend(["--port", port])
     if yes:
@@ -316,6 +330,10 @@ def main(argv=None):
                         help="source worktree destination (implies --worktree); default sibling PR/SHA directory")
     parser.add_argument("--no-build", action="store_true", help="reuse a run without dispatching a build")
     parser.add_argument("--out", type=Path, help="download parent; default build/pr-PR/SHA")
+    parser.add_argument("--installer", choices=("native", "python"), default="native",
+                        help="native m-flasher MIDI OTA (default), or the Python MIDI installer")
+    parser.add_argument("--m-flasher", type=Path, metavar="PATH",
+                        help="explicit MIDI-capable executable; default installs/reuses the pinned user-local CLI")
     parser.add_argument("--port", help="USB-MIDI port name passed to the installer")
     parser.add_argument("--yes", action="store_true", help="skip the installer's flash confirmation")
     parser.add_argument("--timeout", type=int, default=3600, help="maximum CI wait in seconds")
@@ -328,6 +346,10 @@ def main(argv=None):
             validate_selection(args.repo, args.pr, args.commit)
             remove_worktree(args.repo, args.pr, args.remove_worktree)
             return 0
+        validate_selection(args.repo, args.pr, args.commit)
+        installer_command = None
+        if not (args.download_only or args.prepare_only or args.resolve_only):
+            installer_command = prepare_installer(args.installer, args.m_flasher)
         revision = resolve_revision(args.repo, args.pr, args.commit)
         if args.resolve_only:
             print(revision)
@@ -349,9 +371,9 @@ def main(argv=None):
         if args.download_only:
             print("Download verified; no hardware was accessed.")
             return 0
-        result = install(package, args.port, args.yes)
+        result = install(package, args.port, args.yes, command=installer_command)
         if result == 0:
-            print("Installation complete. Follow the PR's User test instructions on the FM-1; "
+            print("Installer finished. Verify the installed build commit in ABOUT and follow the PR's User test instructions on the FM-1; "
                   "sound, controls and PR behavior still require hardware validation.")
         return result
     except KeyboardInterrupt:
