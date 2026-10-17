@@ -175,14 +175,14 @@ class Handoff(unittest.TestCase):
 
     def test_missing_native_blocks_all_ci_work(self):
         with patch.object(F, 'ensure', side_effect=ValueError('installer missing')), \
-                patch.object(P, 'resolve_revision') as resolve, patch.object(P, 'ensure_run') as build, \
+                patch.object(P, 'resolve_pr') as resolve, patch.object(P, 'ensure_run') as build, \
                 patch.object(P, 'install') as install, contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(P.main(['392','--validation','target']),2)
         for call in (resolve,build,install):
             call.assert_not_called()
 
     def test_noninstall_modes_skip_setup(self):
-        with patch.object(F, 'ensure') as ensure, patch.object(P,'resolve_revision',return_value='a'*40), \
+        with patch.object(F, 'ensure') as ensure, patch.object(P,'resolve_pr',return_value=('a'*40, 'PR title')), \
                 patch.object(P,'prepare_worktree'), patch.object(P,'remove_worktree'), \
                 patch.object(P,'api',return_value={'default_branch':'main'}), \
                 patch.object(P,'ensure_run',return_value={}), patch.object(P,'download',return_value=Path('file.fwsc')):
