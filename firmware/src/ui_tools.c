@@ -347,7 +347,7 @@ static void tl_cook_notes(track_t *t, uint32_t len, uint32_t g)
  * steps lose their locks when it is applied. The values stay for the next one (until the power goes). The track's steps
  * as it opened are its own copy (eu_from; the undo copy is the next load's, a MIDI Program Change or the editor's on
  * another track meanwhile), and it stays on the track it opened on */
-static struct { uint8_t on, hits, steps, rot, trk; } eu;
+static struct { uint8_t on, hits, steps, rot, trk, loaded; } eu;
 static step_t eu_from[NSTEP] __attribute__((section(".pool")));   /* the steps as EUCLID opened (the pool: .bss is tight) */
 static track_t *eu_track(void) { return &trk[eu.trk % NTRK]; }
 static int eu_hit(uint32_t i)                           /* step i (0..) of the cycle repeated, turned by rot */
@@ -426,6 +426,7 @@ static void eu_say(void)                               /* "EUCLID 5/16" ("+2": t
 static void eu_open(track_t *t)
 {
     tl_undo_take(t);
+    undo.what |= UNDO_EUCLID;
     memcpy(eu_from, t->step, sizeof eu_from);
     eu.trk = (uint8_t)trk_index(t);
     if (!eu.steps) {                                    /* (the first since the power came: 4 / 16) */
@@ -467,6 +468,11 @@ static void eu_close(track_t *t, int apply)
     t = eu_track();
     len = tl_len(t);
     eu.on = 0;
+    if (undo.what & UNDO_EUCLID) {                      /* a later load/edit replaces the tag with its own kind */
+        undo.what &= (uint8_t)~UNDO_EUCLID;
+        if (!apply && undo.trk == trk_index(t) + 1u)
+            undo.trk = 0;                              /* cancelled preview is not a real undo operation */
+    }
     if (apply) {
         tl_unlock(t, tl_used_of(eu_from, len), len);
         return;

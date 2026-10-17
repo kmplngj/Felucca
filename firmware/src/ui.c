@@ -732,8 +732,13 @@ static void follow_hold(void)
 static void follow_poll(void)
 {
     uint32_t len = (uint32_t)TSEL->p[P_SLEN], want;
-    if (!song.playing || ui.home || ui.menu || ui.confirm || cur_page()->graph != GR_ROLL || drum_track(TSEL)) {
+    if (ui.home || ui.menu || ui.confirm || cur_page()->graph != GR_ROLL || drum_track(TSEL)) {
         follow.hold = 0;
+        return;
+    }
+    if (!song.playing) {
+        follow.hold = 0;
+        ui.bank = (uint8_t)(ui.cursor / 16u);            /* stopped edits must be on the visible bank */
         return;
     }
     if (len <= 16u)
@@ -867,7 +872,7 @@ static int seq_is_empty(const track_t *t)
  * takes the copy too (UNDO_MOT: SAVE held puts the track's motion back, the sound and the steps stay; motion_undo_take).
  * A sound load keeps the track's motion on the parameters every engine has (load_end, motion.c motion_sound_loaded);
  * a pattern load drops it all (the steps it was on are gone) */
-enum { UNDO_SOUND = 1, UNDO_PAT = 2, UNDO_MOT = 4 };
+enum { UNDO_SOUND = 1, UNDO_PAT = 2, UNDO_MOT = 4, UNDO_EUCLID = 8 }; /* EUCLID: cancellable preview owns this copy */
 static struct {
     uint8_t trk;                 /* track + 1, 0 = nothing to undo */
     uint8_t keep;                /* the track is as the last load left it (undo.after): a next load keeps the copy */
