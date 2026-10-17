@@ -238,7 +238,7 @@ jobs:
     name: Target, host and emulator
     needs: [workflow-checks, python-checks, backup-checks, emulator-checks]
     # Preserve the existing required check and fail if a selected suite fails.
-    if: ${{ always() && !cancelled() }}
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
