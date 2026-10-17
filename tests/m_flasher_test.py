@@ -20,11 +20,16 @@ CAPABILITIES = {'schema': 1, 'midi_ota': True, 'protocol': F.PROTOCOL}
 
 
 class Setup(unittest.TestCase):
+    REAL_HOST_PLATFORM = staticmethod(F.host_platform)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
         self.destination = self.base / 'managed' / 'install'
+        host = patch.object(F, 'host_platform', return_value='linux-x86_64')
+        host.start()
+        self.addCleanup(host.stop)
 
     def artifact(self, directory):
         directory.mkdir(parents=True, exist_ok=True)
@@ -40,9 +45,9 @@ class Setup(unittest.TestCase):
         for system, arch, expected in [('Darwin','arm64','macos'), ('Darwin','x86_64','macos'),
                                       ('Linux','x86_64','linux-x86_64'), ('Windows','AMD64','windows-x86_64')]:
             with patch.object(F.platform, 'system', return_value=system), patch.object(F.platform, 'machine', return_value=arch):
-                self.assertEqual(F.host_platform(), expected)
+                self.assertEqual(self.REAL_HOST_PLATFORM(), expected)
         with patch.object(F.platform, 'system', return_value='Other'), self.assertRaises(ValueError):
-            F.host_platform()
+            self.REAL_HOST_PLATFORM()
 
     def test_manifest_source_platform_hash_and_symlinks_checked_before_execution(self):
         binary = self.artifact(self.destination)
@@ -116,8 +121,10 @@ class Setup(unittest.TestCase):
         binary.write_bytes(b'corrupt')
         with patch.object(F, 'cache_directory', return_value=self.destination), \
                 patch.object(F, 'check_capabilities') as execute, patch.object(F, 'download') as download, \
-                self.assertRaisesRegex(ValueError, 'SHA-256'):
+                self.assertRaisesRegex(ValueError, 'SHA-256') as error:
             F.ensure()
+        self.assertIn(str(self.destination), str(error.exception))
+        self.assertIn('tools/m_flasher.py', str(error.exception))
         execute.assert_not_called()
         download.assert_not_called()
 

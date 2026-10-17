@@ -112,7 +112,12 @@ def ensure(executable=None, from_source=False):
         return check_capabilities(Path(executable).expanduser().resolve())
     destination = cache_directory()
     if destination.exists():
-        return check_capabilities(verify_directory(destination))
+        try:
+            return check_capabilities(verify_directory(destination))
+        except (ValueError, OSError) as error:
+            raise ValueError(f'{error}. Cached install: {destination}. Remove this managed '
+                             'cache directory and rerun python3 tools/m_flasher.py to reinstall '
+                             'the pinned CLI') from error
     destination.parent.mkdir(parents=True, exist_ok=True)
     print(f'Installing native MIDI CLI ({REPOSITORY}@{REVISION[:12]})...', flush=True)
     with tempfile.TemporaryDirectory(prefix='m-flasher-', dir=destination.parent) as temporary:
