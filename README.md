@@ -60,6 +60,14 @@ All changes and what to know before going back: [Release notes](https://github.c
 
 ## This fork
 
+Shared chorus Depth changes glide while the bus sounds: tap and release **FX**
+repeatedly until **CHORUS**, then turn **KNOB2 (CDP)**. Cycle FX to the **FX** page
+and turn **KNOB2 (CHO)** for each track's send. Depth edits use the same glide
+regardless of control source (one detent takes about
+0.36 ms, a full-range jump at most 46.1 ms). After the chorus tail drains, the next
+sound starts at the selected Depth. Static settings and saved project/settings
+formats are unchanged; INSERT CHOR retains its existing behavior.
+
 The web installer, browser demo, editor and wiki linked above are upstream Hügelton services.
 Their hosted versions are updated independently of this fork's builds and releases.
 Use this fork's `.fwsc` package with the installer for a fork build; raw `.bin` files and

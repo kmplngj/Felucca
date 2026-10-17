@@ -25,6 +25,7 @@ static struct {
                                              * length (Q8, glides) */
     uint32_t sp_ph;                      /* .. the output tap's wobble */
     uint32_t cho_live, dly_live;         /* samples until cho_buf / dly_buf hold only zeros (0: they do; fx_buses) */
+    int32_t cho_depth;                  /* transient chorus coefficient, Q8; target is G_CDEPTH * 6 */
     uint16_t sp_live;                    /* .. until SPRING's line and allpasses hold only zeros (spring_rest) */
 } fx;
 
@@ -676,6 +677,8 @@ static __attribute__((noinline)) void rev_switch(const int32_t *rev_in, int32_t 
 static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t *rev_in, int32_t *wet,
                      uint32_t n)
 {
+    if (!n)
+        return;                         /* no samples, no state change (rev_switch divides by n) */
     uint32_t i, dl = delay_samples();
     int32_t fb = song.g[G_DFDBK] * 230, col = 2000 + song.g[G_DCOLOR] * 240;
     int32_t dmix = song.g[G_DMIX] * 258;
@@ -686,6 +689,8 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
         fb += mulq16(THR_FB - fb, (uint32_t)pf.ew1 << 1);   /* ECHO THROW (perform.c): more feedback while held, 0.7
                                                              * at most (the loop's gain below 1: it never runs away) */
     rc = fx.cho_live || !zeros32(cho_in, n);           /* at rest (zeros32): only the indices and phases move */
+    if (!fx.cho_live)
+        fx.cho_depth = cdepth << 8;      /* reset or genuinely drained: start at the current setting */
     rd = fx.dly_live || mulq15(-fx.dly_lp, col) || mulq15(fx.dly_lp, fb) || !zeros32(dly_in, n);   /* (its low-pass
                                                          * at rest: kept by a silent line, feeding nothing back) */
     if (rc) {
@@ -694,7 +699,16 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
             zc |= x;
             cho_buf[fx.cho_w & (CHO_LEN - 1u)] = (int16_t)x;
             fx.cho_ph += cinc;
-            r = (400 << 8) + ((osc_sine(fx.cho_ph) + 32768) * cdepth >> 8);   /* Q8 delay: read between samples */
+            if (fx.cho_depth != cdepth << 8) {
+                int32_t s = osc_sine(fx.cho_ph) + 32768;
+                /* At most 3/8 sample of edit-induced tap movement per sample, independent of
+                 * block length. Full range lands in 2032 samples (~46 ms), a detent in 16.
+                 * Split the Q8 product: s <= 65535, coefficient <= 762; both products fit
+                 * signed 32 bits. This is exactly (s * cho_depth) >> 16 without a wide multiply. */
+                fx.cho_depth += clamp((cdepth << 8) - fx.cho_depth, -96, 96);
+                r = (400 << 8) + ((s * (fx.cho_depth >> 8) + ((s * (fx.cho_depth & 255)) >> 8)) >> 8);
+            } else
+                r = (400 << 8) + ((osc_sine(fx.cho_ph) + 32768) * cdepth >> 8);   /* legacy stationary Q8 delay */
             {
                 uint32_t ri = (uint32_t)r >> 8;
                 int32_t f = r & 255, c0 = cho_buf[(fx.cho_w - ri) & (CHO_LEN - 1u)];

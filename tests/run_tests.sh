@@ -493,6 +493,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     mkdir -p build/reverb_demo
     run "REVERB TYPE: ROOM / SPRING bit-identical, SPRING and HALL decay / stability / level, HALL silence / stereo / ringing, model changes, cost, demos" "$OUT/reverb_test" build/fx_demo build/reverb_demo
     run "FX rest: burst/silence audio and state equivalence (-O2/-Os)" python3 tests/fx_rest_test.py --require-rest
+    run "Chorus depth: continuity, exact PCM, short blocks and restart" python3 tests/chorus_depth_test.py
     # Probe the actual CC (including wrappers), never the executable's alias.
     CPU_PATHS=$(python3 tests/cpu_baseline.py $CC)
     CPU_B=$(printf '%s\n' "$CPU_PATHS" | sed -n '1p')
