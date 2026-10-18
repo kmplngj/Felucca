@@ -213,8 +213,10 @@ The linker script defines no symbols for this section, so the used size is the l
 section's end in `objdump -h` (which also covers allocations without a sized symbol, such as `.space` data or
 tail padding) and the end of the highest `.noinit` object in `objdump -t` (the snippet below lists the same
 rows); the linker itself already refuses an overflow. The v1.6 baseline uses 15,564 B (132 B spare). In the 1.6.1 backport, the default
-`FELUCCA_CPU2=1` build uses 15,568 B (128 B spare): the existing crash record gains a
-4-byte core identifier. `FELUCCA_CPU2=0` retains 15,564 B (132 B spare).
+`FELUCCA_CPU2=1` build used 15,568 B (128 B spare): the existing crash record gains a
+4-byte core identifier. The retained CPU1 exclusion guard (#410, 8 B, `fm1_c1_guard` in
+`hal/fm1_sys.h`) brings the default build to 15,576 B (120 B spare); `FELUCCA_CPU2=0`
+retains 15,564 B (132 B spare).
 `tests/build_guard_test.py` covers the exact 100 B boundary, the one-byte failure and padding without a symbol. Raising the floor or
 adding a `.noinit` user needs the plan's rule A7 review first.
 
