@@ -55,6 +55,10 @@ class IdentityTest(unittest.TestCase):
             verify.assert_called_once_with(self.root)
             self.assertEqual(got['build'], self.sha[:8])
             self.assertEqual(got['source'], 'verified archive')
+            self.assertIsNone(got['repository'])
+        with patch('source_archive.verify_tree', return_value={
+                'firmware_revision': self.sha, 'repository': 'archive/Felucca'}):
+            self.assertEqual(identity.resolve(self.root, env={})['repository'], 'archive/Felucca')
         with patch('source_archive.verify_tree', side_effect=ValueError('tampered')):
             with self.assertRaisesRegex(ValueError, 'tampered'):
                 identity.resolve(self.root, env={})
@@ -167,6 +171,42 @@ class IdentityTest(unittest.TestCase):
                 identity.resolve(self.root, version, {})
         self.assertEqual(identity.outputs(identity.resolve(self.root, env={})),
                          identity.outputs(identity.resolve(self.root, env={})))
+
+    def test_fork_repository_and_remote_freshness(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(identity.resolve(self.root)['repository'])
+            for remote in ('https://github.com/kmplngj/Felucca.git',
+                           'git@github.com:kmplngj/Felucca.git',
+                           'ssh://git@github.com/kmplngj/Felucca.git',
+                           'ssh://git@ssh.github.com:443/kmplngj/Felucca.git',
+                           'https://github.com/kmplngj/Felucca/'):
+                self.run_git('config', 'remote.origin.url', remote)
+                self.assertEqual(identity.resolve(self.root)['repository'], 'kmplngj/Felucca')
+            directory = self.root / 'build/gen'
+            identity.write(self.root, directory)
+            self.run_git('config', 'remote.origin.url', 'https://github.com/another/Renamed.git')
+            with self.assertRaisesRegex(ValueError, 'stale'):
+                identity.check(self.root, directory)
+            identity.write(self.root, directory)
+            self.assertIn('github.com/another/Renamed', (directory / 'build_identity.h').read_text())
+            identity.check(self.root, directory)
+
+    def test_repository_ci_and_unsupported_origins(self):
+        self.run_git('config', 'remote.origin.url', 'https://github.com/upstream/Felucca.git')
+        env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'fork/New-name'}
+        self.assertEqual(identity.resolve(self.root, env=env)['repository'], 'fork/New-name')
+        for value in ('bad/repo\n', 'bad/repo"', '../repo', 'owner/../repo', 'owner/日本'):
+            env['GITHUB_REPOSITORY'] = value
+            self.assertIsNone(identity.resolve(self.root, env=env)['repository'])
+        for remote in ('https://example.com/owner/repo', '/tmp/repo',
+                       'https://github.com.evil.test/owner/repo',
+                       'ssh://git@ssh.github.com.evil.test:443/owner/repo.git',
+                       'ssh://git@ssh.github.com:444/owner/repo.git',
+                       'https://token@github.com/owner/repo', 'https://github.com/owner/repo?token=secret'):
+            self.run_git('config', 'remote.origin.url', remote)
+            data = identity.resolve(self.root, env={})
+            self.assertIsNone(data['repository'])
+            self.assertIn('Source repository unavailable', identity.outputs(data)['build_identity.h'])
 
     def test_splash_uses_release_version_only_for_clean_identified_releases(self):
         def label(data):

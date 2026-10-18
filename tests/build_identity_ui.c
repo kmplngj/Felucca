@@ -25,13 +25,20 @@ int main(int argc, char **argv)
             style_apply();
             draw((int)scenes[s]);
             {
-                uint32_t k, id_seen = 0, pr_seen = 0;
+                uint32_t k, id_seen = 0, pr_seen = 0, source_seen = 0;
                 for (k = 0; k < nscr; k++) {
                     id_seen |= !strcmp(scr[k].s, FELUCCA_BUILD_ID);
                     pr_seen |= !strcmp(scr[k].s, FELUCCA_BUILD_PR);
+                    /* The text hook truncates each line; match its source prefix. */
+                    source_seen |= strlen(scr[k].s) >= 12u &&
+                                   !strncmp(FELUCCA_SOURCE_REPOSITORY, scr[k].s, strlen(scr[k].s));
                 }
                 if (scenes[s] == S_ABOUT && (!id_seen || (FELUCCA_BUILD_PR[0] && !pr_seen))) {
                     fprintf(stderr, "identity UI: missing build/PR in %s\n", cur_name);
+                    return 1;
+                }
+                if (scenes[s] == S_ABOUT && !source_seen) {
+                    fprintf(stderr, "identity UI: missing source repository in ABOUT\n");
                     return 1;
                 }
             }

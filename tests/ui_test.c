@@ -2148,8 +2148,8 @@ static int test_information(void)
 {
     uint16_t header[240 * H_HEAD], footer[240 * 19], battery[240 * H_HEAD];
     track_t sounds[NTRK];
-    int bad = 0, quiet = 1;
-    uint32_t x, y;
+    int bad = 0;
+    uint32_t x;
     ui_power_on();
     memcpy(sounds, trk, sizeof sounds);
     hold(B_HOME);
@@ -2157,11 +2157,6 @@ static int test_information(void)
     press(B_OCTUP);
     ui_draw();
     bad += check("ABOUT opens one document with scrollable license text and credits", ui.menu == 2 && !ui.menu_scroll && menu_scroll_max() > MENU_DOC_H);
-    for (y = 146; y < 220; y++)
-        for (x = 158; x < 232; x++)
-            if (x < 166 || x >= 224 || y < 154 || y >= 212)
-                quiet &= host_screen[y * 240 + x] == swap16(UI_QR_LIGHT);
-    bad += check("ABOUT QR keeps its complete white quiet zone above the fixed footer", quiet);
     memcpy(header, host_screen, sizeof header);
     memcpy(footer, host_screen + 221 * 240, sizeof footer);
     turn(EN_PRESET, 3);

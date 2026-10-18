@@ -39,7 +39,10 @@ def run():
             data = {'version': 'v1.0-' + 'w' * 26 if name == 'long-release' else 'v1.6.1',
                     'build': revision, 'pr_label': pr,
                     'version_source': origin, 'revision': None if revision == 'unknown' else 'f' * 40,
-                    'dirty': revision.endswith('-dirty')}
+                    'dirty': revision.endswith('-dirty'),
+                    'repository': (None if name == 'unknown' else
+                                   'o' * 39 + '/' + 'r' * 100 if name == 'boundary' else
+                                   'fixture/Felucca')}
             (case / 'build_identity.h').write_text(build_identity.outputs(data)['build_identity.h'])
             exe = case / 'render'
             subprocess.run(shlex.split(os.environ.get('CC', 'clang')) +

@@ -193,6 +193,15 @@ Metadata regenerates on every target/asset build. Host and emulator profile fres
 checks also reject stale identity after switching commits or clean/dirty state; rebuild
 before compiling them. Generated source hashes continue to enforce input freshness.
 
+ABOUT's source repository is also resolved at build time: GitHub Actions builds use
+`GITHUB_REPOSITORY`, and local Git builds use the GitHub `origin` remote (HTTPS or
+SSH). Forking and cloning your fork therefore updates the displayed owner/repository
+without editing firmware. The readable source URL replaces the fixed upstream QR
+code; upstream copyright and third-party credits remain. No network lookup or extra
+dependency is needed. Complete source archives preserve this repository in
+`SOURCE-PINS.json`; older archives, non-Git trees and unsupported/missing remotes show
+`Source repository unavailable`. Changing `origin` requires an asset rebuild too.
+
 ### Build product identity (forks)
 
 `--product FM-1_XXX` sets the package identity explicitly, independent of the display version:
