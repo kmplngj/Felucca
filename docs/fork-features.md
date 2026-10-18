@@ -81,10 +81,27 @@ before downgrading, alongside the fork-specific limitations above.
 
 ## Identify the installed build
 
-The startup screen and **MENU > SYSTEM > ABOUT** show the display version and
-build commit (eight hexadecimal characters). `-dirty` marks modified local sources;
-`unknown` means the source has no verified revision. Verified CI PR builds also show
-`PR #123 merge` (the compiled test merge) or `PR #123 head` (the exact selected commit).
+The startup screen uses your saved colors, including CUSTOM, with the same minimal
+layout in FLAT and LINE. Beneath the name it shows one identity line at the normal
+version size (very long release labels use the smaller font, then explicit ellipsis
+if still too wide; the full version remains in build provenance):
+
+- Clean, identified `--release` builds show their version.
+- Verified CI PR builds show `PR #123 merge` or `PR #123 head`.
+- Development builds show the compiled commit (eight hexadecimal characters).
+  `-dirty` marks modified local sources, including dirty `--release` builds;
+  `unknown` means the source has no verified revision.
+
+Every build keeps the same 430 ms automatic deadline from the input scanner's start;
+required initialization and session restoration can take longer. Press any button or
+piano key to skip the splash once initialization is ready. The dismissal is consumed
+through release, so it cannot also play a note, start playback or open a menu. Release
+all held controls, then press again for normal input. Knob turns do not dismiss the
+splash and are discarded during it; MASTER remains live. The existing LED sweep adds
+no startup delay. Startup calibration/recovery gestures retain precedence.
+
+**MENU > SYSTEM > ABOUT** retains the full version, compiled commit and optional PR
+label, along with maker and community credits. It remains available after the short splash.
 Hold **HOME** until MENU appears, release it, turn **ALGORITHM** to SYSTEM, turn
 **PRESETS** to ABOUT and tap **OCT+**. Turn PRESETS to scroll; OCT− returns to the
 menu and HOME closes it. Keep the full artifact provenance with test reports.

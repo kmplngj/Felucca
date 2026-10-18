@@ -86,13 +86,13 @@ class IdentityTest(unittest.TestCase):
             identity.resolve(self.root, env=env)
 
     def test_merge_pr_compiles_merge_revision(self):
-        self.run_git('checkout', '-qb', 'head')
+        self.run_git('checkout', '-qb', 'pr-head')
         (self.root / 'head.c').write_text('head')
         self.run_git('add', '.')
         self.run_git('commit', '-qm', 'PR head')
         head = self.run_git('rev-parse', 'HEAD')
         self.run_git('checkout', '-q', '-')
-        self.run_git('merge', '--no-ff', '-qm', 'test merge', 'head')
+        self.run_git('merge', '--no-ff', '-qm', 'test merge', 'pr-head')
         merge = self.run_git('rev-parse', 'HEAD')
         env = self.event_env({'number': 123, 'pull_request': {'head': {'sha': head}}}, 'pull_request')
         env.update(GITHUB_SHA=merge, GITHUB_REF='refs/pull/123/merge')
@@ -167,6 +167,26 @@ class IdentityTest(unittest.TestCase):
                 identity.resolve(self.root, version, {})
         self.assertEqual(identity.outputs(identity.resolve(self.root, env={})),
                          identity.outputs(identity.resolve(self.root, env={})))
+
+    def test_splash_uses_release_version_only_for_clean_identified_releases(self):
+        def label(data):
+            header = identity.outputs(data)['build_identity.h']
+            return next(line for line in header.splitlines() if line.startswith('#define FELUCCA_SPLASH_ID '))
+
+        self.assertEqual(label(identity.resolve(self.root, env={})),
+                         f'#define FELUCCA_SPLASH_ID "{self.sha[:8]}"')
+        self.assertEqual(label(identity.resolve(self.root, 'v2.0', {})),
+                         '#define FELUCCA_SPLASH_ID "v2.0"')
+        data = identity.resolve(self.root, 'v2.0', {})
+        data['pr_label'] = 'PR #123 merge'
+        self.assertEqual(label(data), '#define FELUCCA_SPLASH_ID "PR #123 merge"')
+        (self.root / 'changed.c').write_text('dirty')
+        self.assertEqual(label(identity.resolve(self.root, 'v2.0', {})),
+                         f'#define FELUCCA_SPLASH_ID "{self.sha[:8]}-dirty"')
+        import shutil
+        shutil.rmtree(self.root / '.git')
+        self.assertEqual(label(identity.resolve(self.root, 'v2.0', {})),
+                         '#define FELUCCA_SPLASH_ID "unknown"')
 
 
 if __name__ == '__main__':
