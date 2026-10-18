@@ -17,8 +17,10 @@
 #include "fm1_time.h"
 #include "fm1_sys.h"
 /* the loader may write the app area and erase update records; never the head, nor Felucca's store
- * [0x97000, 0xE0000) (user data, never a record: ldr_core.c) */
-#define FL_RANGE_OK(off, n) (FL_IN(off, n, 0x4000u, 0x97000u) || FL_IN(off, n, 0xE0000u, 0xFC000u))
+ * [0x97000, 0xE0000), the autosave and the FM6 voice bank [0xE5000, 0xE8000) (user data, never a record:
+ * ldr_core.c). The records it clears are at 0xE4F00 (staging sector 0xE4000) and 0xE8F00 (0xE8000). */
+#define FL_RANGE_OK(off, n) (FL_IN(off, n, 0x4000u, 0x97000u) || FL_IN(off, n, 0xE0000u, 0xE5000u) || \
+                             FL_IN(off, n, 0xE8000u, 0xFC000u))
 #include "fm1_flash.h"
 #include "../src/libc.c"
 #include "../src/usb.c"
@@ -74,6 +76,8 @@ static void ldr_record_clear(void)
 }
 static void ldr_progress(uint32_t done, uint32_t total) { (void)done; (void)total; ldr_poll(); }
 #include "ldr_core.c"
+_Static_assert(LDR_AUTO_LO == FL_AUTO_LO && LDR_AUTO_HI == FL_VBANK_HI && FL_AUTO_HI == FL_VBANK_LO,
+               "the loader's protected window is the autosave pair plus the voice bank");
 
 extern uint32_t _bss_start[], _bss_end[];
 
