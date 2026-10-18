@@ -45,6 +45,11 @@ slice_render 453
 slc_rev 120
 fm1_alnk0_irq 8285
 fm1_timer5_irq 33387
+# #278: explicitly cover outlined mixer/send loops; JieLi 4.0.1, standard M8Stealth.
+# These are static loop scores, not cycles or an aggregate speedup; see send_gain_test.md.
+mix_spread 73
+send_begin 16
+send_add 88
 click_render 30
 mod_begin 158
 mod_voice 30
