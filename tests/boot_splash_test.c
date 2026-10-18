@@ -14,8 +14,10 @@ static int run_case(uint32_t scenario)
 {
     uint32_t id = scenario % 41u, late = scenario >= 41u;
     if (scenario == 83u) fm1_ms = ~0u - 200u; /* wrap-safe automatic deadline */
+    if (scenario == 85u) web_ticks = ~0u - 200u * 1000u * FM1_TICKS_PER_US;
     web_nor_erase();
     web_boot();
+    if (scenario == 84u) fm1_ms += 5000u;     /* target TIMER5's first tick can publish pre-scan uptime */
     if (scenario >= 82u) {
         step(BOOT_SPLASH_MS - 1u);
         CHECK(web_splash && kb_boot_hold);
@@ -67,13 +69,13 @@ static int run_case(uint32_t scenario)
 int main(void)
 {
     uint32_t s;
-    for (s = 0; s < 84u; s++) {
+    for (s = 0; s < 86u; s++) {
         int status;
         pid_t pid = fork();
         if (pid == 0) _exit(run_case(s));
         if (pid < 0 || waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status))
             return 1;
     }
-    puts("boot splash: 84 cases, all 41 buttons/keys, early/late/held/released, MIDI/MASTER and timer wrap: ok");
+    puts("boot splash: 86 cases, all 41 buttons/keys, early/late/held/released, MIDI/MASTER, clock jump/wrap: ok");
     return 0;
 }

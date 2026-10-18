@@ -163,7 +163,7 @@ static int boot_splash_wait(uint32_t start)
     uint32_t notes = fm1_input_note_edges();
     enc_drop();                              /* no accumulated knob change on HOME */
     return !(pressed | notes | fm1_in.buttons | fm1_in.notes) &&
-           (uint32_t)(fm1_ms - start) < BOOT_SPLASH_MS;
+           (uint32_t)(fm1_ticks() - start) < BOOT_SPLASH_MS * 1000u * FM1_TICKS_PER_US;
 }
 
 static void fm1_main(void)
@@ -220,7 +220,7 @@ static void fm1_main(void)
     timer5_start();
     fm1_guard_lock_top();
     fm1_irq_enable_all();
-    splash_start = fm1_ms;
+    splash_start = fm1_ticks();               /* fm1_ms may jump when TIMER5 first seeds its clock */
     fm1_delay_ms(BOOT_SCAN_MS);
     if ((fm1_in.buttons & 3u) == 3u) {
         panel_setup();                        /* OCT- + OCT+ held at power-on */

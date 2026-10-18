@@ -62,7 +62,8 @@ before downgrading, alongside the fork-specific limitations above.
 
 The startup screen uses your saved colors, including CUSTOM, with the same minimal
 layout in FLAT and LINE. Beneath the name it shows one identity line at the normal
-version size (very long release labels use the smaller font to fit):
+version size (very long release labels use the smaller font, then explicit ellipsis
+if still too wide; the full version remains in build provenance):
 
 - Clean, identified `--release` builds show their version.
 - Verified CI PR builds show `PR #123 merge` or `PR #123 head`.

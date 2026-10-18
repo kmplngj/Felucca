@@ -1669,7 +1669,16 @@ static void draw(int s)
         in_splash = 1;
         draw_splash();
         in_splash = 0;
-        if (strcmp(splash_seen, WANT)) {
+        int matches = !strcmp(splash_seen, WANT);
+        if (text_w(&AF_S, FELUCCA_SPLASH_ID) > 224) {
+            const char *start = splash_seen + strlen("Felucca|");
+            const char *end = strchr(start, '|');
+            matches = !strncmp(splash_seen, "Felucca|", strlen("Felucca|")) && end && end > start &&
+                      (uint8_t)end[-1] == (uint8_t)ELLIPSIS &&
+                      !strncmp(start, FELUCCA_SPLASH_ID, (size_t)(end - start - 1)) &&
+                      !strcmp(end, "|Press any button to continue");
+        }
+        if (!matches) {
             if (rep) fprintf(rep, "FIND %-26s splash shows '%s', expected '%s'\n", cur_name, splash_seen, WANT);
             nfind++;
         }

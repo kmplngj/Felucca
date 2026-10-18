@@ -14,6 +14,9 @@ int main(int argc, char **argv)
     for (st = 0; st < 2u; st++)
     for (p = 0; p < NPALETTES; p++)
         for (s = 0; s < NELEM(scenes); s++) {
+#ifdef IDENTITY_SPLASH_ONLY
+            if (scenes[s] != S_SPLASH) continue;
+#endif
             char palette[48];
             cur_name = S_NAME[scenes[s]];
             setup((int)scenes[s]);

@@ -1347,10 +1347,12 @@ static void draw_columns(void)
 static void draw_splash(void)
 {
     const aafont_t *f = text_w(&AF_M, FELUCCA_SPLASH_ID) <= 224 ? &AF_M : &AF_S;
+    char label[32];
     int32_t cap_y = f == &AF_M ? AF_M_CAP_Y : AF_S_CAP_Y;
+    text_fit(label, sizeof label, FELUCCA_SPLASH_ID, f, 224);
     lcd_fill(0, 0, 240, 240, T_BG);
     draw_text_line(8, 60 - AF_L_CAP_Y, 224, &AF_L, "Felucca", T_TEXT, T_BG, 1);
-    draw_text_line(8, 96 - cap_y, 224, f, FELUCCA_SPLASH_ID, T_TEXT, T_BG, 1);
+    draw_text_line(8, 96 - cap_y, 224, f, label, T_TEXT, T_BG, 1);
     draw_text_line(8, 220 - AF_S_CAP_Y, 224, &AF_S, "Press any button to continue", T_TEXT, T_BG, 1);
 }
 

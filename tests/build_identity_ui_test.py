@@ -14,6 +14,7 @@ import build_identity
 
 CASES = {
     'release': ('1234abcd', '', 'override'),
+    'long-release': ('1234abcd', '', 'override'),
     'commit': ('1234abcd', '', 'source'),
     'pr-head': ('1234abcd', 'PR #407 head', 'source'),
     'pr-merge': ('1234abcd', 'PR #407 merge', 'source'),
@@ -35,13 +36,15 @@ def run():
         for name, (revision, pr, origin) in CASES.items():
             case = directory / name
             (case / 'ppm').mkdir(parents=True, exist_ok=True)
-            data = {'version': 'v1.6.1', 'build': revision, 'pr_label': pr,
+            data = {'version': 'v1.0-' + 'w' * 26 if name == 'long-release' else 'v1.6.1',
+                    'build': revision, 'pr_label': pr,
                     'version_source': origin, 'revision': None if revision == 'unknown' else 'f' * 40,
                     'dirty': revision.endswith('-dirty')}
             (case / 'build_identity.h').write_text(build_identity.outputs(data)['build_identity.h'])
             exe = case / 'render'
             subprocess.run(shlex.split(os.environ.get('CC', 'clang')) +
-                           ['-O1', '-w', '-I' + str(case), '-I' + str(directory),
+                           ['-O1', '-w', *(['-DIDENTITY_SPLASH_ONLY'] if name == 'long-release' else []),
+                            '-I' + str(case), '-I' + str(directory),
                             '-Ibuild/gen', '-Ifirmware/src', '-Itests',
                             'tests/build_identity_ui.c', '-lm', '-o', str(exe)], cwd=ROOT, check=True)
             subprocess.run([str(exe.resolve()), str(case)], cwd=ROOT, check=True)
