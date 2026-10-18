@@ -28,27 +28,11 @@ source markers to recover interrupted issue writes. Link existing issues wheneve
 already own the finding. Create/update GitHub findings only for justified new work or
 material evidence; routine progress and negative findings belong in the repository.
 
-Route implementation findings by the skill and AGENTS repository-ownership table:
-portable MIT-compatible engines/DSP/assets/generators/tests to kmplngj/Felucca-Engines;
-GPL-derived portable engine work to kmplngj/Felucca-Engines-GPL; host IDs/profiles/pins,
-voices/services, native UI, persistence/producer protocol, emulator and qualification
-to kmplngj/Felucca; editor/installer client work to kmplngj/Felucca-WebApp. Check actual
-file/dependency/asset licenses and live Issues settings. While WebApp Issues is disabled,
-use an explicitly prefixed `Felucca-WebApp:` fallback ticket in Felucca naming the client
-implementation repo and producer dependency. Do not change settings. Inventory and
-deduplicate open/closed issues, comments, markers, transfers and relevant PRs across all
-four repositories before writes. Link collection/host/client owners without duplicates;
-record the returned destination URLs accepted by sources.json.issue_repositories.
-Preserve historical journal evidence/URLs. Read each affected implementation repo's
-current main and pin its comparison evidence, retaining the Felucca comparison SHA.
-
 Validate and commit/push only the ledger to the canonical state branch at bounded
 intervals and before stopping, verifying the remote commit. Never force-push or skip
 history holes. Preserve pending registrations, immutable targets, old review evidence
 and explicit source blockers. Retain unpushed commits for recovery and report a failed
-push. Release the lease on completion. Justified issue writes in the four named repos
-are in scope; implementation and repository-setting changes are not. Do not change
-engine, firmware or client code, regenerate baselines,
+push. Release the lease on completion. Do not change firmware, regenerate baselines,
 flash devices, publish releases or modify unrelated repositories. Stay quiet on ordinary
 progress; notify only for actionable findings, meaningful blockers, completion of
 historical coverage or required user input.
