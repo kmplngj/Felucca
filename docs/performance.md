@@ -152,6 +152,10 @@ goldens unchanged; the separate ANALOG, TOM and FX calibrations belong to their
 original optimization changes and are recorded in `tests/target_budget.txt`.
 Real-device timing and nested-interrupt stack checks remain pending.
 
+`tests/mul64_hload_check.py` is a separate, informational target listing check: it counts 64-bit
+multiplies and 16-bit loads per function and their ISR reachability (issue #425). It is not part of
+the budget and gates nothing; see [the audit](mul64-hload-audit.md).
+
 ### Device timing and stress procedure
 
 When a device run is in scope, use the existing CDC console with USB SERIAL enabled and
