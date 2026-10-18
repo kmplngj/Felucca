@@ -69,6 +69,15 @@ Hold **HOME** until MENU appears, release it, turn **ALGORITHM** to SYSTEM, turn
 menu and HOME closes it. Keep the full artifact provenance with test reports.
 See [build identity](../BUILDING.md#build-revision-and-pr-identity) for local/archive behavior.
 
+**MENU > SYSTEM > INFO** identifies the installed build using
+a verified PR label, otherwise a clean identified
+release's version, otherwise the compiled commit (including `-dirty` or `unknown`
+when applicable). PR builds also show a **COMMIT** row with the compiled revision;
+normal PR checks show the test merge's commit, exact-PR builds the selected head.
+From HOME, hold **HOME** until MENU appears, release it, turn **ALGORITHM** to
+SYSTEM, turn **PRESETS** to INFO and tap **OCT+**. USB state and CPU load remain
+below the identity. Tap **OCT−** to return to SYSTEM or **HOME** to close MENU.
+
 ## Testing without hardware
 
 The [emulator partition regression](../BUILDING.md#emulator-partition-regression) checks
