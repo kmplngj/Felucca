@@ -196,6 +196,11 @@
 #                   operator envelopes (stages, rates, the voice ending), bit-stable notes, a click-free retrigger, no DC /
 #                   clipping over the factory patches, the macros' directions, PTCH, pack / unpack and the SysEx
 #                   layouts, the 6-voice cap, the cost per voice; demos in build/fm6_demo/.
+# FM6 EFFECTIVE PATCH (tests/fm6_eff_test.c, #419): the audio side's copy of the patch through the macros against the
+#                   published patch after accepted editor FM6_PUTs, project loads and slot loads while the track ran
+#                   another engine (255+ updates: an eight-bit generation returns to the cache's), the switch back by the
+#                   UI's first preset load and the first note; 1-4 tracks, macros zero / nonzero, second core on / off,
+#                   CPU2=0 build, catalog without FM6; ThreadSanitizer too under TSAN=1.
 # ROBUST (tests/robust_test.c): damaged or crafted stored data and editor requests: a SLICE scan bounded by the slot,
 #                   a slot that fails its check leaves no zone, engine numbers past the last refused, a retained older
 #                   RAM project bounded, user preset patterns inside their fields, malformed requests never stop PLAY.
@@ -538,6 +543,9 @@ if [ -f build/gen/felucca_tables.h ]; then
         $TSAN_CC -o "$OUT/dualcore_tsan" tests/dualcore_test.c -lm
         run "second core under ThreadSanitizer: 4 parts of every preset, mixes" \
             env TSAN_OPTIONS=halt_on_error=1 "$OUT/dualcore_tsan"
+        $TSAN_CC -o "$OUT/fm6_eff_tsan" tests/fm6_eff_test.c -lm
+        run "FM6 effective patch with the second core under ThreadSanitizer" \
+            env TSAN_OPTIONS=halt_on_error=1 "$OUT/fm6_eff_tsan"
     fi
     run "Felucca-Engines contract: real firmware host accepts v1 and rejects old/future APIs" python3 tests/engine_contract_test.py
     # Felucca-Engines (firmware/engines, MIT): its own test, then its standalone host built with Felucca's generated
@@ -585,6 +593,15 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6_test" tests/fm6_test.c -lm
     mkdir -p build/fm6_demo
     run "FM6: algorithms, envelopes, retrigger, DC, clipping, macros, patch formats, voices, cost, demos" "$OUT/fm6_test" build/fm6_demo
+    # #419: the effective-patch cache across engine switches and eight-bit generation aliasing, the editor/UI/audio paths
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/fm6_eff_test" tests/fm6_eff_test.c -lm -lpthread
+    run "FM6 effective patch (#419): PUT / project / slot updates under another engine, 255+ updates, switch back, first note; second core on and off" \
+        "$OUT/fm6_eff_test"
+    $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/fm6_eff_test_c1" tests/fm6_eff_test.c -lm
+    run "FM6 effective patch, a FELUCCA_CPU2=0 build" "$OUT/fm6_eff_test_c1"
+    $CC -w -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=12 -Ibuild/gen -Ifirmware/src -o "$OUT/fm6_eff_test_omit12" \
+        tests/fm6_eff_test.c -lm -lpthread
+    run "FM6 effective patch, catalog without FM6: the latent patch is kept, nothing renders it" "$OUT/fm6_eff_test_omit12"
     # SLICE is in the standard build (firmware/src/core.h): its test always runs (after #22 by andreahaku)
     if grep -q '^#define SLC_BREAK_BPM ' build/gen/felucca_samples.h; then
         mkdir -p build/slice_demo
@@ -643,8 +660,8 @@ else
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
-    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test; do
-        $SCC -o "$A/$t" tests/$t.c -lm
+    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test fm6_eff_test; do
+        $SCC -o "$A/$t" tests/$t.c -lm -lpthread
         run "ASan/UBSan: $t" "$A/$t"
     done
     for omit in 10 11 12 13; do
