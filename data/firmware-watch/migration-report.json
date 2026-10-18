@@ -1,0 +1,15 @@
+{
+  "comments": 115,
+  "configured_branches": 29,
+  "configured_repositories": 26,
+  "issue_url": "https://github.com/kmplngj/Felucca/issues/152",
+  "journal_comments": 109,
+  "journal_records": 109,
+  "license": "GPL-3.0-only",
+  "nonterminal_pairs": 1,
+  "pending_sources": 1,
+  "schema_version": 1,
+  "snapshot_sha256": "789fffce9830132822df5e28750a745f73cf45d3e0505560e2107ee5d29bd42b",
+  "terminal_pairs": 108,
+  "unique_pairs": 109
+}

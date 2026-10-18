@@ -37,7 +37,8 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(self.suites([path]), {"backup"})
         for path in ("web/emu/felucca_web.c", "web/emu/build.sh", "web/emu/emu_test.mjs",
                      "web/emu/native_check.c", "web/emu/worklet.js", "web/emu/index.html",
-                     "web/emu/fonts/DotGothic16-subset.woff"):
+                     "web/emu/fonts/DotGothic16-subset.woff", "web/emu/browser_test.mjs",
+                     "web/emu/browser_probe.js", "web/emu/package.json", "web/emu/package-lock.json"):
             with self.subTest(path=path):
                 self.assertEqual(self.suites([path]), {"emulator"})
         self.assertEqual(self.suites(["README.md", "tests/diagnostics_test.py",
@@ -49,6 +50,15 @@ class SelectionTest(unittest.TestCase):
         for path in ("tools/fm1_diagnostics.py", "tests/diagnostics_test.py", "tests/console_diagnostics.c"):
             with self.subTest(path=path):
                 self.assertEqual(self.suites([path]), {"python"})
+
+    def test_firmware_watch_ledger_uses_portable_validation(self):
+        for path in ("data/firmware-watch/sources.json", "data/firmware-watch/state.json",
+                     "data/firmware-watch/reviews.jsonl", "data/firmware-watch/migration-report.json",
+                     "data/firmware-watch/legacy-issue-152.json"):
+            self.assertEqual(self.suites([path]), {"python"})
+        self.assertEqual(self.suites([".agents/skills/firmware-watch/SKILL.md"]), set())
+        self.assertEqual(self.suites(["data/firmware-watch/state.json", "firmware/src/audio.c"]),
+                         {"full"})
 
     def test_shared_inputs_and_unknown_files_run_full(self):
         for path in ("firmware/src/eng_fm6.c", "firmware/hal/regs.h", "firmware/app.ld",

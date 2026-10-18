@@ -214,6 +214,7 @@ cd "$(dirname "$0")/.."
 OUT=build/host
 mkdir -p "$OUT"
 python3 tools/profile.py --check
+python3 tests/build_identity_test.py
 python3 tests/profile_test.py
 CC="${CC:-cc} -O1 -Wall -Wno-unused-function -Ibuild/gen"
 NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
@@ -223,6 +224,7 @@ run() { echo "== $1"; shift; "$@" || fail=1; }
 
 run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
 run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
+run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py
 run "generated sample inputs: stale/extra WAVs and header cache" python3 tests/gen_samples_test.py
 run "build --product: precedence, validation, no job on bad input (mocked)" python3 tests/build_product_test.py
 run "JieLi 64-bit arithmetic compile/link smoke (explicit skip without toolchain)" python3 tests/build_guard_target_test.py
@@ -235,6 +237,7 @@ run "timestamped interaction replay: portable scenario validation" python3 tests
 $CC -O2 -fstrict-aliasing -fno-builtin -o "$OUT/libc_test" tests/libc_test.c
 run "firmware libc: copy/fill sizes, alignments, sentinels and typed objects" "$OUT/libc_test"
 run "exact PR firmware: selection, download integrity and installer handoff" python3 tests/fm1_pr_test.py
+run "native MIDI installer: pinned setup, cache integrity and early preflight" python3 tests/m_flasher_test.py
 
 $CC -o "$OUT/storage_test" tests/storage_test.c
 run "flash storage (A/B, torn writes)" "$OUT/storage_test"
@@ -321,6 +324,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "stress replay: bounded schedule and health guard fixtures" python3 tests/stress_matrix_test.py
     run "stress matrix: repeated PCM/state, voice load, effects and switches (-O2/-Os)" python3 tests/stress_matrix.py
     mkdir -p build/tracks_demo
+    run "stress integrated: repeated panel redraw/throw and stopped save PCM/LCD/state" python3 tests/stress_replay.py
     run "TRACKS: 4-track pattern, live recording (lengths, swing), voice budget, engine switch, cost" env TRACKS=build/tracks_demo "$OUT/hostsim" 0 0 1 "$OUT/tracks.wav"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/project_test" tests/project_test.c -lm
     run "project formats (FUN1..FUN5 -> FUN6, the grid and song chain; DIGITAL tracks -> FM6, SAMPLE PERC -> DRUM)" "$OUT/project_test"
@@ -368,6 +372,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     fi
     $CC -O1 -w -Ibuild/gen -o "$OUT/settings_test" tests/settings_test.c
     run "settings: PER1..PER4 migration, PER6 (#212: engine ids to 63, PER4 <-> PER6, malformed, PER5), palette ids and preference preservation" "$OUT/settings_test"
+    $CC -w -ffp-contract=off -Ibuild/gen -Ifirmware/src -o "$OUT/boot_splash_test" tests/boot_splash_test.c -lm
+    run "startup splash: all buttons/keys, dismissal through release, MIDI/MASTER, timeout and wrap" "$OUT/boot_splash_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test" tests/ui_test.c -lm
     run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"
     $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_c1" tests/ui_test.c -lm
@@ -382,6 +388,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     if python3 -c "import PIL" 2>/dev/null; then
         run "UI renders: real renderer, layout lint, alignment, PNGs and comparison manifest" \
             python3 tests/ui_render.py build/ui_new build/ui_slot --renderer "$OUT/ui_render" --cc "$CC"
+        run "Build identity UI: bounded metadata in all fonts and palettes" python3 tests/build_identity_ui_test.py
+        run "Settings identity: release, commit and PR in all fonts, palettes, styles and sizes" python3 tests/settings_identity_test.py
         run "UI comparison: exact pixels, scene matching, settings and strict gate fixtures" python3 tests/ui_compare_test.py
     else
         $CC -O1 -w "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render" tests/ui_render.c -lm
@@ -461,6 +469,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     mkdir -p build/insert_demo
     run "INSERT (1.5): OFF / MIX 0 bit for bit, each TYPE (no DC, bounded, dry / wet), MIX glide, automation, stored, cost, demos" \
         "$OUT/insert_test" build/insert_demo
+    run "INSERT coefficient table: generator guards, original-formula PCM/state and mutation sensitivity" \
+        python3 tests/insert_lpk_test.py --mutation-check
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/sound15_test" tests/sound15_test.c -lm
     mkdir -p build/sound15_demo
     run "1.5 sound items: ANALOG filter TYPE LP / BP / HP (responses, LP and other engines bit for bit), ENV SYNC (times at several tempi), cost, demos" \
@@ -489,6 +499,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     mkdir -p build/reverb_demo
     run "REVERB TYPE: ROOM / SPRING bit-identical, SPRING and HALL decay / stability / level, HALL silence / stereo / ringing, model changes, cost, demos" "$OUT/reverb_test" build/fx_demo build/reverb_demo
     run "FX rest: burst/silence audio and state equivalence (-O2/-Os)" python3 tests/fx_rest_test.py --require-rest
+    run "Chorus depth: continuity, exact PCM, short blocks and restart" python3 tests/chorus_depth_test.py
+    run "Shared sends: exact steady PCM, all transitions/short blocks, MOD, loads and worker fallback" python3 tests/send_gain_test.py
     # Probe the actual CC (including wrappers), never the executable's alias.
     CPU_PATHS=$(python3 tests/cpu_baseline.py $CC)
     CPU_B=$(printf '%s\n' "$CPU_PATHS" | sed -n '1p')
@@ -620,6 +632,8 @@ else
         -fno-sanitize-recover=all -fno-builtin -o "$A/libc_test" tests/libc_test.c
     run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
+    run "ASan/UBSan: INSERT coefficient table against the original formula" \
+        python3 tests/insert_lpk_test.py --sanitize
     # Unlike the general DSP harness below, retain every UBSan bounds/pointer/shift check here.
     ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined -fno-sanitize-recover=all \
         -DHALF_FRAMES=$HALF -o "$A/uac_fir_bounds_test" tests/uac_fir_bounds_test.c

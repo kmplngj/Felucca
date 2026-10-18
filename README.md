@@ -1,125 +1,109 @@
-# Felucca
+# Felucca — personal fork
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
-![Felucca 1.0](docs/felucca-1.0.png)
+![Felucca on the M-VAVE FM-1](docs/felucca-1.0.png)
 
-Multi-engine synthesizer firmware for the M-VAVE FM-1, **version 1.6.1**. Connect the FM-1 to a computer by USB, open the
-[web installer](https://hugelton.github.io/Felucca/) in Chrome or Edge and press Install; no extra hardware is needed.
-Installing is at your own risk: M-VAVE's updater or the installer's **Return to official V15** takes you back.
-Want to look around first? [Try it in your browser](https://hugelton.github.io/Felucca/webapp/try/), no FM-1 needed.
+This is my personal fork of [Hügelton's Felucca](https://github.com/hugelton/Felucca),
+multi-engine synthesizer firmware for the **M-VAVE FM-1**. The goal is to bring together
+recent features and optimizations from upstream and other forks, collect and integrate
+additional synthesis engines, and improve CPU efficiency, RAM use and firmware size.
 
-- Install: [web installer](https://hugelton.github.io/Felucca/), or `tools/fm1_install.py` from a terminal
-- Edit: [web editor](https://hugelton.github.io/Felucca/webapp/editor/) (developed in [Felucca-WebApp](https://github.com/hugelton/Felucca-WebApp))
-- Read: the manual is in the [wiki](https://github.com/hugelton/Felucca/wiki/Home): [Installation](https://github.com/hugelton/Felucca/wiki/Installation) ·
-  [Controls](https://github.com/hugelton/Felucca/wiki/Controls) · [Menu](https://github.com/hugelton/Felucca/wiki/Menu) ·
-  [Engines](https://github.com/hugelton/Felucca/wiki/Engines) · [Release notes](https://github.com/hugelton/Felucca/wiki/Release-Notes) ·
-  [Troubleshooting](https://github.com/hugelton/Felucca/wiki/Troubleshooting)
-- Development direction: [combined modularity, capacity and 1.6.1 plan](docs/modularity.md#combining-our-plan-with-felucca-161--2026-10-14)
-- Engine collection direction: [select MIT, GPL and native engines in one firmware build](docs/modularity.md#gpl-collection-and-mixed-engine-builds--agreed-2026-10-16); the GPL collection is initialized, with WAVE and mixed-build integration still pending
-- Build: [BUILDING.md](BUILDING.md), including [UI font choices](BUILDING.md#build) and [engine build profiles](BUILDING.md#engine-build-profiles); clone with `git clone --recurse-submodules https://github.com/kmplngj/Felucca.git`; complete release sources include the pinned engines in `felucca-VERSION-source.tar.gz` ([details](BUILDING.md#get-the-source))
-- Test a PR on your FM-1: [one-command PR build and install](BUILDING.md#test-a-pull-request-on-hardware), without a local target toolchain; then follow the PR's hardware test instructions (CI does not validate the hardware)
-- Download: this fork's [Releases](https://github.com/kmplngj/Felucca/releases) and successful [Actions](https://github.com/kmplngj/Felucca/actions) artifacts; follow the [download and checksum guide](.github/CI.md#downloads-and-checksums)
-- Diagnostics: [collect CDC console reports](docs/diagnostics.md) with USB SERIAL on and an explicitly selected port
+This is ongoing integration and experimentation. Features are adopted as they are
+reviewed and tested; the fork does not automatically include every upstream or fork change.
 
-<a href="https://hugelton.itch.io/felucca"><img src="https://static.itch.io/images/badge-color.svg" alt="Available on itch.io" width="74"></a>
+## What it offers
 
-## What it is
+Felucca combines thirteen engines with factory presets, four tracks sharing eight voices,
+a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
+The [fork feature guide](docs/fork-features.md) covers controls, defaults,
+compatibility limits and build identification. The
+[upstream manual](https://github.com/hugelton/Felucca/wiki/Home) documents the shared
+instrument; some details may differ in this fork.
 
-Thirteen engines with factory presets, four tracks (8 voices shared), a 64-step sequencer (chords, ties, chance, conditions,
-ratchets, nudge, locks, automation, live and step recording), SEQ TOOLS, songs, effects, a MOD matrix, MIDI (USB and TRS,
-per-track channels, MIDI LEARN) and USB audio. More: [Features](https://github.com/hugelton/Felucca/wiki/Features).
+This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
+pixel-font options, performance diagnostics and broader host/emulator regression coverage.
+Five portable engines live in the pinned
+[Felucca-Engines fork](https://github.com/kmplngj/Felucca-Engines); initial standard/reduced
+engine build profiles are implemented. Broader engine selection and startup usage modes
+remain planned. The optional second-core worker is beta, off by default, and still needs
+real-device reliability validation in this fork. Shared effect-control smoothing
+experiments are implemented, with FM-1 listening and timing qualification pending.
 
-## New in 1.6.1
+## Development direction and process
 
-- **MENU > LARGE keeps one size per knob** ([upstream #251](https://github.com/hugelton/Felucca/issues/251)): a value no longer jumps between sizes as you turn the knob
-- **Updates check the package's size on the FM-1**: a package whose firmware image size does not match is refused before anything is erased
-- **Second core (beta), off by default:** MENU > SYSTEM > 2ND CORE > ON (BETA), then restart: the FM-1's second core
-  renders some parts alongside the first core; unreliable units fall back to one core
-  ([upstream #247](https://github.com/hugelton/Felucca/pull/247)). The fork continues with this upstream approach;
-  the separate [#44 experiment](https://github.com/kmplngj/Felucca/issues/44) is retired. Device reliability remains unverified in this fork
-- **Felucca-Engines:** ANALOG, LOFI, TRIO, WHEEL and NOISE now live in [our pinned engine fork](https://github.com/kmplngj/Felucca-Engines)
-  under the MIT licence (a git submodule here); Felucca itself stays GPL-3.0-only
+- **Gather and review:** follow upstream and related forks for useful features, engines
+  and optimizations, preserving attribution and checking licences and compatibility.
+  The [firmware watch](docs/firmware-watch.md) keeps the source registry, commit reviews
+  and historical backfill in a queryable repository ledger.
+- **Integrate engines:** use the shared engine library where appropriate and build profiles
+  to fit the FM-1's limits. Keep sound IDs, saved projects and editor behavior compatible.
+- **Measure and optimize:** compare CPU cost, RAM use and firmware size against a baseline,
+  while preserving sound, responsive controls and audio deadlines.
+- **Validate and document:** use host tests, target builds and emulator replay, then check
+  hardware-dependent behavior on an FM-1. Keep planned work and pending device checks explicit.
 
-## New in 1.6
+The [engine collection plan](docs/modularity.md#gpl-collection-and-mixed-engine-builds--agreed-2026-10-16)
+describes selecting MIT, GPL and native engines in one firmware build. The GPL collection
+is initialized; WAVE implementation and mixed-build integration remain pending.
 
-- **Your own UI colours:** COLOR has an eleventh value, CUSTOM, set in the web editor with a live preview on the FM-1
-- **The SEQ piano roll follows the play position** when the pattern is longer than one screen
-- **Conditional steps** (1:2 … 4:4, FILL), **EUCLID, DOUBLE and HALF**, **a MIDI channel per track**, PHASE FOLD, three more drum kits and humanize in the MOD matrix (1.5.5 and 1.5.6 were never released: 1.6 carries them)
-- ⚠ A project with conditional steps does not open on 1.5 or 1.5.1; projects saved by 1.4 or later do not open on 1.1.5.x
+The [modularity roadmap](docs/modularity.md) and [capacity plan](docs/flash-capacity.md)
+track the larger work. The [performance guide](docs/performance.md) explains measurements;
+[engine extension contracts](docs/extending.md) describe integration boundaries.
+This README summarizes the overall direction and meaningful milestones. Detailed changes
+belong in focused guides, issues, PRs and release notes.
 
-All changes and what to know before going back: [Release notes](https://github.com/hugelton/Felucca/wiki/Release-Notes) · [Upgrading from 1.1.5](https://github.com/hugelton/Felucca/wiki/Upgrading-from-1.1.5).
+## Try, install or build
 
-## This fork
+- **Fork builds:** download this fork's [Releases](https://github.com/kmplngj/Felucca/releases)
+  or [CI artifacts](https://github.com/kmplngj/Felucca/actions), following the
+  [download and checksum guide](.github/CI.md#downloads-and-checksums).
+- **Install:** use the fork's **`.fwsc` package** with the
+  [fork web installer](https://kmplngj.github.io/Felucca/webapp/installer/) in Chrome or Edge, or follow the
+  [command-line instructions](BUILDING.md#install). Raw `.bin` files are build material.
+  Installation is at your own risk; M-VAVE's updater or the installer's
+  **Return to official V15** restores stock firmware.
+- **Explore:** try the [fork browser demo](https://kmplngj.github.io/Felucca/webapp/try/)
+  or [fork web editor](https://kmplngj.github.io/Felucca/webapp/editor/).
+- **Build and test:** start with [BUILDING.md](BUILDING.md), including
+  [engine profiles](BUILDING.md#engine-build-profiles) and
+  [testing a PR on hardware](BUILDING.md#test-a-pull-request-on-hardware).
+  For device reports, use the [diagnostics guide](docs/diagnostics.md).
 
-The web installer, browser demo, editor and wiki linked above are upstream Hügelton services.
-Their hosted versions are updated independently of this fork's builds and releases.
-Use this fork's `.fwsc` package with the installer for a fork build; raw `.bin` files and
-CI diagnostics are build material. The command-line installer validates package structure
-and CRCs before opening MIDI ports; see [package validation and file-error recovery](BUILDING.md#package-validation-and-file-errors).
+```sh
+git clone --recurse-submodules https://github.com/kmplngj/Felucca.git
+cd Felucca
+# Install the prerequisites in BUILDING.md, then:
+./build.sh
+```
 
-- **Automatic project saves:** with RESTORE LAST on, autosave waits for stopped transport,
-  idle controls and voices, and ten seconds of quiet stereo output. Long effect tails
-  keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
-  [autosave contract](docs/extending.md#41-flash-map-and-deferred-save-example).
-- **UI fonts:** source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects
-  `m8stealth`, `tamzen` or `inter-tight` at build time; keycaps retain Inter Tight.
-  The [controlled font comparison](docs/font-experiment.md) records about 39 KB less
-  firmware flash and 1,032 B less POOL RAM for pixel-font decode caches than Inter Tight.
-  Physical FM-1 readability and redraw checks remain pending. [Compare real renderer captures](docs/ui-comparison.md).
-- **RECENT sounds:** on SAVE > PRESETS, turn KNOB 4 (LIST) past OTHER to RECENT for
-  the last eight loaded sounds, newest first. PRESETS browses them; loading from RECENT
-  keeps the list order, and SAVE held undoes the audition. Deleted or replaced user
-  sounds are skipped. The list is per session, excludes patterns/projects, and is not
-  stored in a project or backup.
-- **MOMENTARY status:** hold LFO and turn a knob on HOME or a sound/FX page; releasing
-  LFO restores the value, or OCT+ while holding keeps it. The header shows MOMENTARY
-  TURN, how many values will restore, or KEPT until LFO is released. Messages and
-  quick-layer labels take priority.
-- **Previous page:** on a family's page, hold OCT− and tap its family button to go
-  back one page, wrapping from first to last. It consumes the octave modifier and
-  preserves sounding notes' pitch. Press OCT− first for FX, GLO, SCL, EDIT and SEQ;
-  their quick layers use OCT− pressed afterward for UNDO. Other-family buttons,
-  dialogs and MIDI LEARN retain their normal behavior.
+The fork site follows successful full builds of `main`: the demo and installer use
+that firmware revision, and the editor comes from a pinned revision of
+[our WebApp fork](https://github.com/kmplngj/Felucca-WebApp). Check the site's
+[source revisions](https://kmplngj.github.io/Felucca/sources.html) before testing;
+the live site can lag behind this checkout.
+See [site deployment](.github/CI.md#fork-site-deployment) and review
+[project compatibility](docs/fork-features.md#project-compatibility) before downgrading.
 
-For the new playback transpose, select **SCL > QNT SEQ+T**: melodic sequencer notes
-apply TRN before scale snap, without rewriting stored steps. Existing QNT modes keep
-their behavior; engines with their own key maps (DRUM and SLICE) are exempt. Older
-firmware reads SEQ+T as SEQ. **SEQ TOOLS > EUCLID** exposes HITS, STEPS and ROT and
-one undo and a live, reversible preview (OCT+ applies; OCT− cancels); seeded drop
-remains future work.
+## Development status
 
-The [emulator partition regression](BUILDING.md#emulator-partition-regression) checks
-that equivalent scheduled MIDI/panel input produces exactly the same audio and state
-through the browser bridge with different render partitions, without an FM-1.
+For now, I manage this fork's development and issues on my own, following my own
+priorities and wishes. This could change once the larger tasks I want to complete
+are done, with more room for community input and contributions.
 
-The [interaction replay guide](docs/interaction-replay.md) shows how to run a
-timestamped key, button, encoder and MIDI sequence through the native emulator,
-with synchronized WAV audio, LCD frames and a provenance manifest under `build/`.
-It works without hardware on Linux/macOS; its audio captures the DAC output after
-MASTER and the metronome, and its manifest records the emulator's delivery timing.
-
-The [host stress matrix](tests/stress_matrix.md) replays fixed voice-load, effect and
-engine-switch workloads and retains exact PCM, WAVs and health results without an FM-1.
-
-## Support and contributing
-
-Please report what you find in [Issues](https://github.com/hugelton/Felucca/issues) (reproducible bugs, one per issue). Ideas and
-requests go to [Discussions](https://github.com/hugelton/Felucca/discussions). Pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
-Felucca is GPLv3 and you are free to fork it; before starting yet another fork, please consider whether a PR would do.
-
-## AI disclaimer
-
-Felucca is developed with the assistance of AI coding agents (code, tests, documentation, translation, maintenance). The
-design, features, sound design and direction are the maintainer's or the community's, and no generative AI is used for music,
-icons or artwork. See [On AI-Assisted Development and Responsibility](https://github.com/hugelton/Felucca/discussions/166).
+This fork uses AI coding assistance for code, tests, documentation and maintenance.
+Design, sound design and direction remain mine; generative AI is not used for music,
+icons or artwork.
 
 ## Credits and licence
 
-Free software: [GPL-3.0-only](LICENSE), the Hügelton Sample Pack included; the bundled fonts and ported DSP keep their own licences,
-and five engines ([Felucca-Engines](https://github.com/hugelton/Felucca-Engines), `firmware/engines/`) are MIT
-([LICENSES/](LICENSES/), [LICENSING.md](LICENSING.md)). Thanks to everyone whose work and contributions are in it: [CREDITS.md](CREDITS.md).
+Based on the work of Leo Kuroshita (@kurogedelic), Hügelton Instruments and the
+contributors credited in [CREDITS.md](CREDITS.md). Contributions from upstream and
+other forks retain their attribution and licences.
 
-M-VAVE and FM-1 are trademarks of their respective owners. Felucca is not affiliated with or endorsed by them.
+Felucca is [GPL-3.0-only](LICENSE), including the Hügelton Sample Pack. Bundled fonts,
+ported DSP and the five MIT-licensed engines in `firmware/engines/` retain their own
+licences; see [LICENSING.md](LICENSING.md) and [LICENSES/](LICENSES/).
+M-VAVE and FM-1 are trademarks of their owners; this project is not affiliated with them.
 
 Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments

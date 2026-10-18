@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "license": "GPL-3.0-only",
+  "direct_matrix": "stress_scenarios.json",
+  "direct_scenarios": [
+    "idle",
+    "shared_eight",
+    "voice_pressure",
+    "active_effects",
+    "engine_switch_tails",
+    "dense_ratchets_modulation",
+    "effects_throws",
+    "usb_trs_midi"
+  ],
+  "integrated": [
+    {
+      "id": "panel_redraws",
+      "input": "scenarios/stress-panel.json",
+      "runner": "stress_replay.py",
+      "adapter": "tools/fm1_replay.py",
+      "duration_frames": 661500
+    },
+    {
+      "id": "save_stopped",
+      "input": "scenarios/stress-save.json",
+      "runner": "stress_replay.py",
+      "adapter": "tools/fm1_replay.py",
+      "duration_frames": 352800
+    }
+  ],
+  "heaviest_per_engine": {
+    "method": "Existing tests/regress.c CPU survey; fresh O2 and Os/no-SIMD builds; 0.5 s warmup then 1 s user-space instructions, POLY/SUS127/no ARP, eight requested notes (VOICE cap four), repeated oneshot hits. Rank only complete available counts from the same host/compiler/flags/assets; keep each build ranking independently.",
+    "selection": "unmeasured: current environment has no PMU; no preset is asserted heaviest",
+    "engines": [
+      {
+        "id": 0,
+        "name": "ANALOG",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 1,
+        "name": "DIGITAL",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 2,
+        "name": "PHASE",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 3,
+        "name": "LOFI",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 4,
+        "name": "SAMPLE",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 5,
+        "name": "VOICE",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 6,
+        "name": "TRIO",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 7,
+        "name": "WHEEL",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 8,
+        "name": "GRAIN",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 9,
+        "name": "PHYS",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 10,
+        "name": "DRUM",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 11,
+        "name": "NOISE",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 12,
+        "name": "FM6",
+        "preset": null,
+        "host_instructions_per_frame": null
+      },
+      {
+        "id": 13,
+        "name": "SLICE",
+        "preset": null,
+        "host_instructions_per_frame": null
+      }
+    ],
+    "optional_engines": {
+      "1": "requires FELUCCA_FM4=1; retired/default unavailable",
+      "13": "requires FELUCCA_SLICE=1"
+    }
+  },
+  "device": [
+    {
+      "id": "fm1_idle_v1",
+      "kind": "manual-device",
+      "duration_seconds": 60,
+      "warmup_seconds": 5,
+      "transport": "stopped",
+      "midi": "none",
+      "audio_capture_rate": null,
+      "procedure": "../docs/stress-device.md"
+    },
+    {
+      "id": "fm1_usb44100_midi_v1",
+      "kind": "manual-device",
+      "duration_seconds": 60,
+      "warmup_seconds": 5,
+      "transport": "stopped",
+      "midi": {
+        "usb": {
+          "channel": 1,
+          "notes": [
+            60,
+            64,
+            67
+          ],
+          "velocity": 96
+        },
+        "trs": {
+          "channel": 2,
+          "notes": [
+            48,
+            55
+          ],
+          "velocity": 96
+        },
+        "hold_seconds": 10,
+        "release_tail_seconds": 50
+      },
+      "audio_capture_rate": 44100,
+      "audio_channels": 2,
+      "procedure": "../docs/stress-device.md"
+    },
+    {
+      "id": "fm1_usb48000_midi_v1",
+      "kind": "manual-device",
+      "duration_seconds": 60,
+      "warmup_seconds": 5,
+      "transport": "stopped",
+      "midi": {
+        "usb": {
+          "channel": 1,
+          "notes": [
+            60,
+            64,
+            67
+          ],
+          "velocity": 96
+        },
+        "trs": {
+          "channel": 2,
+          "notes": [
+            48,
+            55
+          ],
+          "velocity": 96
+        },
+        "hold_seconds": 10,
+        "release_tail_seconds": 50
+      },
+      "audio_capture_rate": 48000,
+      "audio_channels": 2,
+      "procedure": "../docs/stress-device.md"
+    }
+  ],
+  "device_adapter": "#57 owns automatic preset/settings/note delivery, capture, scheduling jitter and restoration; manual cases above have their own IDs and are not identical to direct/integrated timelines",
+  "optional_stage_timing": "not implemented; quantify instrumentation overhead independently before comparing stage costs"
+}

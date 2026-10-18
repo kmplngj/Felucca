@@ -28,6 +28,11 @@ static void ublock(void)
 {
     int32_t o[2 * CTL];
     uint32_t i;
+    /* This is the historical engine-arena oracle: snapshot sends isolate its 1.4 PCM hashes from
+     * the new control glide. Keep rendering the real mixer and all engine fades/arena ownership.
+     * Actual gliding preset/project/engine loads are covered by send_gain_load_test.c. */
+    for (i = 0; i < NPART; i++)
+        trk[i].send_valid = 0;
     mix_block(o, CTL);
     for (i = 0; i < 2u * CTL; i++) {
         uh ^= (uint32_t)o[i];

@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Resolve bounded, reproducible display identity from the sources being compiled."""
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+
+SHA = re.compile(r'[0-9a-f]{40}')
+PR = re.compile(r'[1-9][0-9]{0,6}')
+REPOSITORY = re.compile(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9_.-]{1,100}')
+
+
+def repository(root, env=None):
+    """Use the CI repository or GitHub origin, without a network lookup."""
+    env = os.environ if env is None else env
+    if env.get('GITHUB_ACTIONS') == 'true':
+        value = env.get('GITHUB_REPOSITORY', '')
+    else:
+        try:
+            remote = git(root, 'config', '--get', 'remote.origin.url')
+        except subprocess.CalledProcessError:
+            return None
+        match = re.fullmatch(r'(?:https://github\.com/|ssh://git@github\.com/|ssh://git@ssh\.github\.com:443/|git@github\.com:)([^\s]+?)(?:\.git)?/?', remote)
+        value = match[1] if match else ''
+    return value if REPOSITORY.fullmatch(value) else None
+
+
+def git(root, *args):
+    return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+
+
+def resolve(root, version=None, env=None):
+    root = Path(root)
+    env = os.environ if env is None else env
+    version_source = 'source' if version is None else 'override'
+    if version is None:
+        version = re.search(r'^#define FELUCCA_VERSION "([^"]+)"',
+                            (root / 'firmware/src/felucca.c').read_text(), re.M).group(1)
+    if not re.fullmatch(r'v[0-9A-Za-z.+_-]{1,30}', version):
+        raise ValueError('invalid build display version')
+    revision, dirty, source, repo = None, False, 'unknown', None
+    if (root / '.git').exists():
+        revision = git(root, 'rev-parse', 'HEAD')
+        dirty = bool(git(root, 'status', '--porcelain', '--untracked-files=normal'))
+        source = 'git'
+        repo = repository(root, env)
+    elif (root / 'SOURCE-PINS.json').is_file():
+        # Verify before trusting the manifest, including when called by CI helpers.
+        from source_archive import verify_tree
+        pins = verify_tree(root)
+        revision = pins['firmware_revision']
+        source = 'verified archive'
+        repo = pins.get('repository')
+        if repo is not None and (not isinstance(repo, str) or not REPOSITORY.fullmatch(repo)):
+            raise ValueError('invalid source repository')
+    if revision is not None and not SHA.fullmatch(revision):
+        raise ValueError('build revision must be a full lowercase Git SHA')
+    pr, kind, head = None, None, None
+    if env.get('GITHUB_ACTIONS') == 'true' and env.get('GITHUB_EVENT_NAME') in ('pull_request', 'workflow_dispatch'):
+        event = json.loads(Path(env['GITHUB_EVENT_PATH']).read_text())
+        if event.get('repository', {}).get('full_name') != env.get('GITHUB_REPOSITORY'):
+            raise ValueError('PR event repository mismatch')
+        if env['GITHUB_EVENT_NAME'] == 'pull_request':
+            pr = str(event['number'])
+            head = event['pull_request']['head']['sha']
+            kind = 'merge'
+            if source != 'git':
+                raise ValueError('PR merge identity requires a Git checkout to verify parentage')
+            # %P obeys shallow grafts and hides valid parents in depth-1 CI.
+            # Raw commit headers retain the actual parent hashes without a fetch.
+            headers = git(root, 'show', '-s', '--format=raw', 'HEAD').split('\n\n', 1)[0].splitlines()
+            if (env.get('GITHUB_REF') != f'refs/pull/{pr}/merge' or revision != env.get('GITHUB_SHA')
+                    or f'parent {head}' not in headers):
+                raise ValueError('PR merge identity does not match compiled checkout')
+        elif event.get('inputs', {}).get('pr'):
+            pr = str(event['inputs']['pr'])
+            head = event['inputs'].get('commit', '')
+            kind = 'head'
+            # The CI revision job verifies reachability with fm1_pr before checkout.
+            if revision != head or env.get('FELUCCA_VERIFIED_PR') != pr or env.get('FELUCCA_VERIFIED_COMMIT') != head:
+                raise ValueError('exact PR identity requires verified workflow checkout')
+        if pr and (not PR.fullmatch(pr) or not SHA.fullmatch(head) or dirty):
+            raise ValueError('invalid or modified PR build inputs')
+    label = (revision[:8] if revision else 'unknown') + ('-dirty' if dirty else '')
+    return {'version': version, 'version_source': version_source, 'repository': repo,
+            'revision': revision, 'dirty': dirty, 'source': source,
+            'build': label, 'pr': int(pr) if pr else None, 'pr_kind': kind, 'pr_head': head,
+            'pr_label': f'PR #{pr} {kind}' if pr else ''}
+
+
+def outputs(data):
+    # A source default is not a release. Only clean, identified --release builds
+    # use their version on the splash; verified PR identity takes precedence.
+    release = data.get('version_source') == 'override' and data.get('revision') and not data.get('dirty')
+    splash = data['pr_label'] or (data['version'] if release else data['build'])
+    header = '/* SPDX-License-Identifier: GPL-3.0-only; generated by build_identity.py */\n'
+    header += '#ifndef FELUCCA_BUILD_IDENTITY_H\n#define FELUCCA_BUILD_IDENTITY_H\n'
+    header += '#undef FELUCCA_VERSION\n'
+    for name, value in [('FELUCCA_VERSION', data['version']), ('FELUCCA_BUILD_ID', data['build']),
+                        ('FELUCCA_BUILD_PR', data['pr_label']), ('FELUCCA_SPLASH_ID', splash),
+                        ('FELUCCA_SOURCE_REPOSITORY', 'github.com/' + data['repository']
+                         if data.get('repository') else 'Source repository unavailable')]:
+        header += f'#define {name} {json.dumps(value)}\n'
+    header += '#endif\n'
+    return {'build_identity.h': header, 'build-identity.json': json.dumps(data, indent=2, sort_keys=True) + '\n'}
+
+
+def write(root, directory, version=None, data=None):
+    if data is None:
+        data = resolve(root, version)
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, content in outputs(data).items():
+        (directory / name).write_text(content)
+    return data
+
+
+def check(root, directory):
+    recorded = json.loads((directory / 'build-identity.json').read_text())
+    origin = recorded.get('version_source')
+    if origin not in ('source', 'override'):
+        raise ValueError('stale generated build identity; rebuild with ./build.sh')
+    version = recorded['version'] if origin == 'override' else None
+    for name, content in outputs(resolve(root, version)).items():
+        if (directory / name).read_text() != content:
+            raise ValueError('stale generated build identity; rebuild with ./build.sh')

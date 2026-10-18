@@ -25,7 +25,7 @@ BUTTONS = ("FX", "SCL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ
 ENCODERS = ("SELECT", "ALGORITHM", "PRESETS", "KNOB 1", "KNOB 2", "KNOB 3", "KNOB 4")
 STATE_FIELDS = ("device_ms", "produced_samples", "consumed_samples", "keys_mask", "buttons_mask",
                 "gated_voices", "active_voices", "selected_track", "engine_requested", "octave",
-                "page", "screen_draws", "playing", "click", "usb_level", "home", "graph", "engine_active")
+                "page", "screen_draws", "playing", "click", "usb_level", "home", "graph", "engine_active", "user_presets")
 FLAGS = ("-O2", "-ffp-contract=off", "-std=gnu99", "-w", "-fPIC", "-shared",
          "-Ibuild/gen", "-Ifirmware/src")
 
@@ -158,10 +158,12 @@ def build_adapter():
         raise ValueError("run ./build.sh first to generate build/gen assets")
     if sys.platform not in ("linux", "darwin"):
         raise ValueError("native replay currently supports Linux/macOS")
+    subprocess.run([sys.executable, str(ROOT / "tools/profile.py"), "--check"], cwd=ROOT, check=True)
+    identity = json.loads((ROOT / "build/gen/build-identity.json").read_text())
     compiler = shlex.split(os.environ.get("CC", "cc"))
     version = subprocess.check_output([*compiler, "--version"], text=True).splitlines()[0]
     inputs = source_inputs()
-    provenance = {"compiler": version, "compiler_command": compiler, "flags": list(FLAGS), "inputs": inputs}
+    provenance = {"compiler": version, "compiler_command": compiler, "flags": list(FLAGS), "inputs": inputs, "build_identity": identity}
     cache_key = digest(json.dumps(provenance, sort_keys=True).encode())
     build_dir = ROOT / "build/replay-native"
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -240,7 +242,7 @@ def replay(scenario, raw, out, library, provenance, estimate):
     features = (ctypes.c_uint32 * 8)()
     adapter.lib.replay_features(features)
     provenance["features"] = dict(zip(("fm4", "slice", "icons", "cdc", "flash", "ota", "uac", "uart"), features))
-    provenance["version"] = "WEB"
+    provenance["version"] = provenance["build_identity"]["version"]
     out.mkdir(parents=True)
     (out / "scenario.json").write_bytes(raw)
     frames = []

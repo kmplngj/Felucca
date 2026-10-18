@@ -1,29 +1,25 @@
 # Contributing to Felucca
 
-Thanks for helping! To keep things easy to follow, please use the right place:
+For now, I manage this personal fork's development and issues on my own, following
+my own priorities and wishes. Broader community input and contributions may become
+part of the process once the larger tasks I want to complete are done. See the
+[README development status](README.md#development-status) for the current policy.
 
-| What | Where |
-|---|---|
-| A bug you can reproduce | [Issues](https://github.com/hugelton/Felucca/issues/new/choose): one issue per bug |
-| A feature idea or request | [Discussions › Ideas](https://github.com/hugelton/Felucca/discussions/categories/ideas) (no promise it will be added) |
-| How to use it, or how something works | [Discussions › Q&A](https://github.com/hugelton/Felucca/discussions/categories/q-a) |
-| Forks, mods, music, demos | [Discussions › Show and tell](https://github.com/hugelton/Felucca/discussions/categories/show-and-tell) |
-| Anything else | [Discussions › General](https://github.com/hugelton/Felucca/discussions/categories/general) |
+The requirements below guide my development work and any future contributions.
 
-Feature requests posted as issues will be moved to Discussions or closed.
+## Issue notes
 
-## Reporting a bug
-
-Please include the Felucca version (hold HOME > ABOUT), your computer's OS and browser if the editor or
-installer is involved, the steps to reproduce it, what you expected and what happened. A photo or a short
-video helps.
+When recording a bug, include the build commit, Felucca version, relevant host OS
+and browser, reproduction steps, and expected versus observed behavior. Include
+diagnostics, photos or recordings when they help explain the problem.
 
 ## Pull requests
 
 For engine, effect, platform or persistence work, start with the
 [native extension contracts](docs/extending.md) and [development guide](AGENTS.md).
 
-Pull requests are welcome, including AI-assisted ones, with the same bar for all:
+Maintainer-led pull requests and any future contributions, including AI-assisted
+work, use the same requirements:
 
 - keep it small and focused on one thing;
 - make sure you understand the change and can explain it;
@@ -53,4 +49,4 @@ glue in Felucca and follow the [collection/profile ownership plan](docs/extendin
 Existing native engines stay here until a separately qualified extraction. GPL additions
 must not be submitted to the MIT collection under an MIT header.
 
-The web editor and installer live in [Felucca-WebApp](https://github.com/hugelton/Felucca-WebApp).
+The web editor and installer live in [Felucca-WebApp](https://github.com/kmplngj/Felucca-WebApp).

@@ -34,7 +34,7 @@ static const uint16_t SCALE_MASK[] = {
 
 #define KB_SILENT 255u
 static uint32_t kb_prev;
-static volatile uint8_t kb_boot_hold;    /* #137: set from power-on to the end of the splash (main.c): the keys sound nothing,
+static volatile uint8_t kb_boot_hold;    /* #137, #407: power-on through dismissal release: the keys sound nothing,
                                           * and one held across its end stays silent until it is let go and pressed again */
 static uint8_t kb_note[27], kb_trk[27];  /* per key: the note it started and on which track */
 static uint8_t in_key;                   /* the key (+ 1) whose notes go into input_on now (key_on), 0: none (MIDI IN) */
@@ -901,7 +901,8 @@ static __attribute__((noinline)) int seq_cond_miss(const track_t *t, const step_
         return (c == COND_FILL) != (seq_fill != 0u);
     if (!c)
         return 0;
-    loop = t->cond_loop + (idx < t->seq_idx);       /* (an early play of step 1: the next loop's) */
+    /* nd_fired is set before an early play: LEN 1 wraps too, although both indices are zero. */
+    loop = t->cond_loop + (idx < t->seq_idx || (!idx && t->nd_fired == 1u));
     return loop % COND_B[c - 1u] != COND_A[c - 1u] - 1u;
 }
 /* the step does not play: its condition fails, or its chance's roll */

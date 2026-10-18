@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "name": "Separate stopped USER save and sound recovery",
+  "sample_rate": 44100,
+  "initial": {
+    "state": "factory",
+    "seed": 70,
+    "warmup_samples": 22050,
+    "master": 700,
+    "click": 0,
+    "usb_level": 0
+  },
+  "events": [
+    {
+      "sample": 0,
+      "type": "capture"
+    },
+    {
+      "sample": 4410,
+      "type": "button",
+      "id": "SAVE",
+      "down": true
+    },
+    {
+      "sample": 6174,
+      "type": "button",
+      "id": "SAVE",
+      "down": false
+    },
+    {
+      "sample": 13230,
+      "type": "button",
+      "id": "OCT+",
+      "down": true
+    },
+    {
+      "sample": 14993,
+      "type": "button",
+      "id": "OCT+",
+      "down": false
+    },
+    {
+      "sample": 22050,
+      "type": "capture"
+    },
+    {
+      "sample": 26460,
+      "type": "button",
+      "id": "OCT+",
+      "down": true
+    },
+    {
+      "sample": 28224,
+      "type": "button",
+      "id": "OCT+",
+      "down": false
+    },
+    {
+      "sample": 39690,
+      "type": "capture"
+    },
+    {
+      "sample": 44100,
+      "type": "button",
+      "id": "HOME",
+      "down": true
+    },
+    {
+      "sample": 45864,
+      "type": "button",
+      "id": "HOME",
+      "down": false
+    },
+    {
+      "sample": 52920,
+      "type": "key",
+      "id": 7,
+      "down": true
+    },
+    {
+      "sample": 70560,
+      "type": "key",
+      "id": 7,
+      "down": false
+    },
+    {
+      "sample": 352800,
+      "type": "capture"
+    },
+    {
+      "sample": 352800,
+      "type": "end"
+    }
+  ]
+}

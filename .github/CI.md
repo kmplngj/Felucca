@@ -23,6 +23,7 @@ that could leave a required check pending. Existing check names are preserved.
 | --- | --- |
 | Known documentation, documentation images, `AGENTS.md`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
 | Portable fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/console_diagnostics.c`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
+| `tools/firmware_watch.py`, its tests and `data/firmware-watch/**` | Portable Python suite, including ledger migration/integrity and offline Git-DAG recovery tests; no firmware build |
 | `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
 | `web/emu/**` | Fresh generated assets, pinned Emscripten build and freshly compiled native/WASM song equality and emulator checks; no target package, DaisySP or unrelated host/sanitizer suites |
 | Firmware, build scripts/generators, package/installer/editor inputs, shared host harnesses, goldens/budgets, assets, licenses, workflow/selector implementation, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
@@ -64,6 +65,13 @@ python3 tools/ci.py emulator-tests  # needs the pinned Python deps, clang, emcc 
 The emulator command regenerates assets and compiles both peers. It does not
 reuse a previous firmware build. The normal `tests/run_tests.sh` and release
 pipeline retain full coverage and strict optional-suite verification.
+
+Emulator-only and full validation also run the [Chromium UI/audio gate](../docs/cloud-testing.md)
+once, using the pinned Playwright lockfile under `web/emu/`. It tests the actual
+page, AudioWorklet, LCD, keyboard/pointer/encoder input, portrait layout and browser
+saves. `build/browser/run-*/summary.json` is the first file an agent should read;
+screenshots and a bounded PCM WAV are retained only on failure by default. Browser
+diagnostics join the existing 14-day artifacts. No model/API calls are needed.
 
 ## Required checks and evidence
 
@@ -107,9 +115,22 @@ Python 3.12 and Node 22 are selected explicitly. Pillow, fontTools and Brotli ve
 are in `tools/ci-requirements.txt`; Raqm is mandatory and Brotli decodes the M8Stealth
 WOFF2 inputs. Provenance records all three versions and the selected UI font. Emscripten 6.0.11 and DaisySP
 are fetched from fixed source commits. The target cache contains only JieLi's
-`jieli-linux-toolchains-20260730.1` and the three AC79 SDK files. Cache keys include
-runner OS/architecture and setup/checker sources. Every cache hit rechecks the
+`jieli-linux-toolchains-20260730.1` and the three AC79 SDK files. Its key includes
+runner OS/architecture, actual toolchain/SDK pins, expected SDK hashes and the
+toolchain installer recipe, so unrelated build/checker edits do not invalidate it. Every cache hit rechecks the
 compiler/package identity and SDK SHA-256 values from `tools/build.py`.
+
+Python pip and npm download caches use their respective dependency/lock files.
+Emscripten caches are keyed by runner OS/architecture, emsdk source commit and
+SDK version; DaisySP uses its exact source commit. Restored reference checkouts
+must match their pins and tracked files must be clean; emsdk install/activate
+still runs to establish the current environment. Playwright's browser download
+cache uses OS/architecture and the emulator's package lock. Browser system
+dependencies are still installed, and npm/pip install still verify/install the
+requested packages. Cache misses remain supported normal operation. GitHub's
+branch/PR cache scoping applies; a PR cache is not promoted to the default branch.
+No firmware objects, generated assets, test binaries/results, goldens or build
+directories are cached. Target builds and all selected tests always execute.
 
 The SDK downloader first tries JieLi's pinned Gitee SDK commit, then a pinned
 [ChoralRoot mirror](https://github.com/Quixotic7/ChoralRootFM1/tree/d09c687d8ee1850fc1360c080aca41763be998ca/tools/sdk)
@@ -213,10 +234,38 @@ The package digest in `build/ci/package.sha256` names the CI build path, so comp
 digest of the downloaded `.fwsc` rather than use the release-manifest commands unchanged.
 
 Manual `Release` dispatch produces artifacts without publishing. Tag release publication
-does not flash a device or deploy the web installer or Pages site. The upstream
-[installer](https://hugelton.github.io/Felucca/), [browser demo](https://hugelton.github.io/Felucca/webapp/try/)
-and [editor](https://hugelton.github.io/Felucca/webapp/editor/) are maintained separately;
-check their displayed versions before assuming they contain this fork's changes.
+does not flash a device or deploy the Pages site. Fork-site publication follows the
+separate process below.
+
+## Fork site deployment
+
+The fork's [installer](https://kmplngj.github.io/Felucca/webapp/installer/),
+[browser demo](https://kmplngj.github.io/Felucca/webapp/try/) and
+[editor](https://kmplngj.github.io/Felucca/webapp/editor/) are hosted together on
+GitHub Pages. Configure this repository's Pages source as **GitHub Actions**.
+
+After a full successful `main` build, CI tests a pinned
+[Felucca-WebApp fork](https://github.com/kmplngj/Felucca-WebApp) and stages the site
+with that run's firmware, emulator, licences and attribution. The WebApp checkout's
+full commit is pinned in `.github/workflows/build.yml`; update it deliberately to
+adopt editor changes. The installer offers a development build from `main`, not
+necessarily the latest tagged release. The demo retains its preview label.
+
+The `Fork Pages` workflow downloads only the matching `site-RUN_ID` artifact from
+successful CI in this repository on `main`, verifies its firmware revision and run
+provenance, then deploys it. PR runs, failed CI, target-only PR builds and focused/docs
+runs cannot supply a deployment. Documentation-only changes leave the live site intact.
+Deployment permissions exist only in the separate Pages deploy job.
+
+To republish an existing artifact, dispatch `Fork Pages` on `main` with its original
+successful main CI run ID. If no site artifact exists, run full `CI` on `main` with
+the PR/commit inputs empty first. Site artifacts are retained for 30 days.
+
+Check [sources.html](https://kmplngj.github.io/Felucca/sources.html) or
+[provenance.json](https://kmplngj.github.io/Felucca/provenance.json) for the deployed
+firmware, engine and WebApp revisions. The wiki remains upstream documentation;
+the hosted site may lag behind local or PR sources. Browser checks do not establish
+FM-1 update/recovery, Web MIDI or device audio reliability.
 
 ## Exact PR revision builds
 
@@ -224,11 +273,47 @@ The [PR firmware helper](../BUILDING.md#test-a-pull-request-on-hardware) uses
 manual `CI` dispatch with `pr` and a full `commit` SHA. A short resolver job
 checks the PR and verifies that the commit is reachable from its current head.
 The reusable validation workflow checks out that SHA in every job; manual
-dispatch still selects the complete pipeline, including target guards, host,
+dispatch defaults to the complete pipeline, including target guards, host,
 sanitizer, emulator and clean-checkout package reproducibility. Ordinary PR
 events keep the GitHub merge checkout and existing check names; ordinary manual
 CI remains available with empty inputs. Exact-revision requests have separate
 concurrency groups from automatic PR and main runs.
+
+An explicit `validation: target` dispatch is allowed only with a verified PR and
+commit, with no release version. It uses the same target-build step, app/loader
+resource checks and build flags, adds the selected source's static target-budget
+and FWSC structure/CRC checks, and uploads immediately after those checks pass.
+Host/sanitizer, emulator/browser and clean-checkout reproducibility steps and
+their dependencies are omitted. This is a hardware-iteration artifact, not full
+validation or a release. Automatic PR/main checks and releases retain their
+existing validation selection and cannot opt into target-only mode.
+
+Run titles append ` (target)` and target artifacts are named
+`firmware-target-RUN_ID`; full names remain backward-compatible. Mode-specific
+concurrency groups prevent the two modes canceling each other. The helper never
+substitutes a target run for full validation and checks the scope recorded in
+target provenance. `--no-build` and resume must use the same mode.
+
+Manual CI validation jobs use distinct `Manual target / …` / `Manual full / …`
+check prefixes set by the reusable-workflow caller; child job names stay static,
+including when skipped. Automatic PR/main check names stay unchanged. GitHub attaches manual
+checks to the workflow branch commit, which can differ from the selected firmware
+commit; reusing the automatic required-check names here could incorrectly satisfy
+a PR check with a build of another revision or validation scope.
+
+The workflow retains `tools/ci_target.py` from its own revision outside the source
+checkout before checking out the selected SHA. Thus older PRs can use target-only
+delivery without modifying their sources, provided their CI exposes build-identity
+and pinned-engine provenance APIs (as #392 does). Earlier revisions fail target
+preflight with an explicit `--validation full` instruction; full delivery retains
+their original provenance format and checks without requiring these newer APIs.
+Full validation checks for the selected source's browser package/lock files before
+building, so historical revisions lacking that required harness fail promptly
+instead of after the host suite. Use compatible sources/workflows; tests are not
+silently skipped to make such a full request succeed.
+Their firmware, build tools and budgets
+still come from that selected revision. This helper records only target dependencies
+and limitations; full/release provenance and reproducibility remain unchanged.
 
 Run titles include `PR firmware #NUMBER @ SHA`. The helper matches that title
 and the workflow branch, requires a successful run and a nonexpired

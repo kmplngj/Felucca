@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "license": "GPL-3.0-only",
+  "status": "unmeasured",
+  "scenario_id": null,
+  "catalog_sha256": null,
+  "scenario_sha256": null,
+  "baseline_result": null,
+  "device": {
+    "model": "M-VAVE FM-1",
+    "displayed_version": null,
+    "installed_revision": null,
+    "build_manifest": null,
+    "flags": {
+      "FELUCCA_PROFILE": null,
+      "FELUCCA_CPU2": null,
+      "FELUCCA_FM4": null,
+      "FELUCCA_CDC": null,
+      "FM1_INPUT_LAT": null
+    }
+  },
+  "workload": {
+    "kind": null,
+    "initial_project_backup_sha256": null,
+    "project_slot": null,
+    "engines_presets_parameters": null,
+    "actual_event_log": null,
+    "warmup_seconds": null,
+    "duration_seconds": null,
+    "publication_clock": null,
+    "scheduling_jitter": null
+  },
+  "host": {
+    "os": null,
+    "cdc_port": null,
+    "usb_midi_endpoint": null,
+    "trs_source_cable": null,
+    "audio_endpoint": null,
+    "capture_rate": null,
+    "channels": null,
+    "host_overflow": null
+  },
+  "diagnostics": {
+    "collector_summary": null,
+    "samples_jsonl": null,
+    "console_raw": null,
+    "valid": null,
+    "start_snapshot": null,
+    "end_snapshot": null,
+    "deltas": {
+      "audio_late": null,
+      "voices_shed": null,
+      "voices_given_up": null,
+      "uac_underruns": null,
+      "uac_overruns": null,
+      "uac_missed": null,
+      "uac_stalls": null,
+      "uart_rx_drops": null
+    },
+    "boot_audio_max_us": null,
+    "end_audio_max_us": null,
+    "input_windows_after_discard": null,
+    "scan_gaps": null,
+    "collector_overhead_comparison": null
+  },
+  "audio": {
+    "wav": null,
+    "sha256": null,
+    "duration_frames": null,
+    "peak_clipped_samples": null,
+    "listening_clicks_clipping_silence_tails": null
+  },
+  "panel_responsiveness": null,
+  "save_pause_recovery": null,
+  "restoration_verified": null,
+  "unavailable_counters": [],
+  "notes": []
+}
