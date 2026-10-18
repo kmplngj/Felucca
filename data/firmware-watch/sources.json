@@ -1,5 +1,11 @@
 {
   "destination_repo": "kmplngj/Felucca",
+  "issue_repositories": [
+    "kmplngj/Felucca",
+    "kmplngj/Felucca-Engines",
+    "kmplngj/Felucca-Engines-GPL",
+    "kmplngj/Felucca-WebApp"
+  ],
   "pending_source_additions": [
     {
       "adoption_plan": "https://github.com/kmplngj/Felucca/issues/359",
