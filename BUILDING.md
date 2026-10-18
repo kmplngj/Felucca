@@ -157,11 +157,17 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 ### Build revision and PR identity
 
 Each build resolves its actual checkout into `build/gen/build_identity.h` and
-`build/build-identity.json`; the same version, eight-character commit, dirty flag and
-optional PR label appear at startup and MENU > SYSTEM > ABOUT (panel steps in
-[the fork feature guide](docs/fork-features.md#identify-the-installed-build)). No boot-time
-lookup or extra delay is involved. CI provenance includes the same `build_identity`
-object, and release folders include the JSON sidecar.
+`build/build-identity.json`; the version, eight-character commit, dirty flag and
+optional PR label appear in MENU > SYSTEM > ABOUT (panel steps in
+[the fork feature guide](docs/fork-features.md#identify-the-installed-build)).
+The minimal splash shows one line: the verified PR label first; otherwise the version
+only for a clean, identified `--release` build; otherwise the compiled commit or
+`unknown`, preserving `-dirty`. A source-default version alone never marks a release.
+The full identity remains in ABOUT and JSON. Splash colors follow the saved palette,
+and every build keeps the same short automatic startup; any button or note key can
+dismiss it after initialization. See [startup behavior](docs/fork-features.md#identify-the-installed-build).
+No boot-time identity lookup is involved. CI provenance
+includes the same `build_identity` object, and release folders include the JSON sidecar.
 MENU > SYSTEM > INFO selects the verified PR label, clean identified release
 version, or development commit, and includes a separate compiled-commit row for PRs.
 The full revision remains in JSON; a short SHA is a readable identifier, not a checksum.

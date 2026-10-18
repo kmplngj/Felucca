@@ -71,6 +71,20 @@ const home = a.screen();
 check(`boots: the splash, then HOME (${colours(home)} colours), the HOME LED lit`,
       splash > 1 && colours(home) > 4 && (a.ex.web_lit_buttons() >> B.HOME & 1) === 1);
 check("silent at rest", a.peak === 0);
+for (const id of [B.PLAY, B.HOME, 14, 40]) {
+  const d = await device(null), initial = d.ex.web_screen_draws();
+  d.render(5);
+  const press = (on) => id < 14 ? d.ex.web_buttons(on ? 1 << id : 0) : d.ex.web_keys(on ? 1 << (id - 14) : 0);
+  press(true);
+  d.render(50);
+  check(`splash dismissed by ${id} after scan settling`, d.ex.web_screen_draws() > initial);
+  d.render(800);
+  check(`dismissal ${id} stays silent while held`, d.ex.web_playing() === 0 && d.peak === 0);
+  press(false);
+  d.render(60);
+  d.tap(B.PLAY);
+  check(`PLAY works after dismissal ${id} is released`, d.ex.web_playing() === 1);
+}
 a.ex.web_keys(1 << 7);                                        // C4
 a.render(300);
 const keyLit = (a.ex.web_lit_keys() >> 7) & 1;
