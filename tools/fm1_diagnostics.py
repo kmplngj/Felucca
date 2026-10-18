@@ -23,7 +23,7 @@ COUNTERS = {
                "usb_suspends", "usb_retries", "usb_frame_stalls", "midi_rx_pkts", "midi_tx_pkts",
                "uart_rx_bytes", "uart_rx_msgs", "uart_rx_drops", "uac_rate_sets", "uac_starts",
                "uac_pkts", "uac_underruns", "uac_overruns", "uac_missed", "uac_stalls",
-               "uac_adj_up", "uac_adj_down"),
+               "uac_adj_up", "uac_adj_down", "isr_misuse"),
     "dbg": ("halves", "nested", "late", "timer_irqs", "ui_frames"),
     "inp": ("timer_irqs", "nested"),
     "crash": ("count",),

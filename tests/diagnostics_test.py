@@ -150,13 +150,15 @@ EXPECTED_COUNTERS = {
         usb_suspends usb_retries usb_frame_stalls midi_rx_pkts midi_tx_pkts
         uart_rx_bytes uart_rx_msgs uart_rx_drops uac_rate_sets uac_starts
         uac_pkts uac_underruns uac_overruns uac_missed uac_stalls
-        uac_adj_up uac_adj_down""".split()),
+        uac_adj_up uac_adj_down isr_misuse""".split()),
     "dbg": {"halves", "nested", "late", "timer_irqs", "ui_frames"},
     "inp": {"timer_irqs", "nested"},
     "crash": {"count"},
 }
 OPTIONAL_COUNTERS = {name for name in EXPECTED_COUNTERS["status"]
-                     if name.startswith(("uart_", "uac_"))}
+                     if name.startswith(("uart_", "uac_")) or name == "isr_misuse"}
+# isr_misuse/isr_misuse_pc are `status` keys of FELUCCA_ISR_ASSERT=1 FM-1 builds only
+# (FM1_ISR_ASSERT_TARGET); host fixtures and release builds must not emit them.
 
 
 class ConsoleContractTests(unittest.TestCase):
@@ -191,6 +193,8 @@ class ConsoleContractTests(unittest.TestCase):
         for command, names in EXPECTED_COUNTERS.items():
             fields = self.response(command)
             for name in names:
+                if name == "isr_misuse":
+                    continue
                 with self.subTest(command=command, counter=name):
                     self.assertIn(name, fields)
                     self.assertIs(type(fields[name]), int)
@@ -200,12 +204,15 @@ class ConsoleContractTests(unittest.TestCase):
         self.assertEqual(self.response("status").get("usb_resets"), 1)
         self.assertEqual(self.response("dbg").get("halves"), 8192)
         self.assertEqual(self.response("inp").get("window_ms"), 1000)
+        for command in diag.COMMANDS:
+            self.assertNotIn("isr_misuse", self.response(command))   # target-only, assert builds
         self.assertEqual(self.response("crash").get("count"), 2)
 
     def test_optional_features_absent(self):
         for command in diag.COMMANDS:
             fields = self.response(command, False)
             self.assertTrue(OPTIONAL_COUNTERS.isdisjoint(fields))
+            self.assertNotIn("isr_misuse_pc", fields)
             for name in EXPECTED_COUNTERS[command] - OPTIONAL_COUNTERS:
                 self.assertIn(name, fields)
             if command == "status":

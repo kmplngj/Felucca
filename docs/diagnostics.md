@@ -180,7 +180,7 @@ interrupt paths.
 | --- | --- | --- |
 | `0` | FM-1 default and the update loader | The macros expand to `((void)0)`: no code or data (release image byte-identical apart from the embedded commit id). |
 | `1` | Default for host tests and the emulator | `fm1_alnk0_irq` and `fm1_timer5_irq` raise a simulated-interrupt depth; a guarded call in it prints `file:line` and aborts (a test may set `fm1_isr_assert_hook` instead). |
-| `1` | FM-1 development build: `FELUCCA_ISR_ASSERT=1 ./build.sh` | A violation increments `isr_misuse` and records the first caller's address (`isr_misuse_pc`, shown by `status`) and carries on: no abort, flash write or output from the interrupt. |
+| `1` | FM-1 development build: `FELUCCA_ISR_ASSERT=1 ./build.sh` | A violation increments `isr_misuse` and records the first caller's address (`isr_misuse_pc`); both are keys of `status`, not `inp`, and `isr_misuse` is included in the collector's `status` counter deltas and carries on: no abort, flash write or output from the interrupt. |
 
 `tests/storage_test.c` (a real save) and `tests/audio_test.c` (a call from inside the real audio handler)
 check that the assertion fires in simulated interrupt context and stays quiet in the main loop. On the device the

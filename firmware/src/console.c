@@ -218,6 +218,10 @@ static void con_status(void)
     con_kv("cpu2_stack", (int32_t)fm1_cpu1_stack_used());
 #endif
     con_kv("voices_given_up", (int32_t)voice_kills);
+#if FM1_ISR_ASSERT_TARGET
+    con_kv("isr_misuse", (int32_t)fm1_isr_misuse_n);    /* FELUCCA_ISR_ASSERT=1 builds (isr_assert.h) */
+    con_kv("isr_misuse_pc", (int32_t)fm1_isr_misuse_pc);
+#endif
     con_kv("track", (int32_t)song.sel + 1);
     con_kv("batt_raw", song.batt_raw);
     con_puts("engine ");
@@ -323,10 +327,6 @@ static void con_inp(void)
     }
     con_kv("timer_irqs", (int32_t)felucca_dbg.timer_irqs);
     con_kv("nested", (int32_t)felucca_dbg.nested);
-#if FM1_ISR_ASSERT_TARGET
-    con_kv("isr_misuse", (int32_t)fm1_isr_misuse_n);    /* FELUCCA_ISR_ASSERT=1 builds (isr_assert.h) */
-    con_kv("isr_misuse_pc", (int32_t)fm1_isr_misuse_pc);
-#endif
     {
         uint32_t k2 = fm1__lock();
         memset((void *)&fm1_in_stat.gap_max, 0, sizeof fm1_in_stat - sizeof fm1_in_stat.last);
