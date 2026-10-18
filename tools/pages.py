@@ -77,11 +77,15 @@ def stage(webapp, out):
         '<a href="provenance.json">Build provenance</a></p>'
         '<p><a href="webapp/try/">Browser demo</a> · <a href="webapp/editor/">Editor</a> · '
         '<a href="webapp/installer/">Installer</a></p></html>\n')
-    demo = out / "webapp/try/index.html"
-    text = demo.read_text().replace('href="https://github.com/hugelton/Felucca">Source</a>',
-                                    'href="../../sources.html">Fork sources</a>')
-    text = text.replace('<small class="version">', f'<small class="version">Personal fork {revision[:8]} · ')
-    demo.write_text(text)
+    for name in ("try", "installer"):
+        page = out / "webapp" / name / "index.html"
+        text = page.read_text().replace('href="https://github.com/hugelton/Felucca"',
+                                       'href="../../sources.html"')
+        text = text.replace('>Source</a>', '>Fork sources</a>').replace(
+            '>github.com/hugelton/Felucca</a>', '>Fork sources</a>')
+        if name == "try":
+            text = text.replace('<small class="version">', f'<small class="version">Personal fork {revision[:8]} · ')
+        page.write_text(text)
     (out / ".nojekyll").touch()
 
 
