@@ -44,6 +44,71 @@
       "requested_at": "2026-10-16",
       "source_name": "DUELL (including the WAVE instrument)",
       "status": "pending_initialization"
+    },
+    {
+      "authorization": "User requested in the felucca-bsp/fm1-base assessment chat (2026-10-18): register both repositories in the firmware watch and file issues for adoption candidates.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+      },
+      "historical_total_at_setup": 42,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+      },
+      "recent_frontiers": {
+        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/425",
+        "https://github.com/kmplngj/Felucca/issues/426",
+        "https://github.com/kmplngj/Felucca/issues/427",
+        "https://github.com/kmplngj/Felucca/issues/428",
+        "https://github.com/kmplngj/Felucca/issues/429",
+        "https://github.com/kmplngj/Felucca/issues/430",
+        "https://github.com/kmplngj/Felucca/issues/431"
+      ],
+      "repository": "hugelton/felucca-bsp",
+      "repository_id": 1411183629,
+      "requested_at": "2026-10-18",
+      "source_name": "felucca-bsp (MPL-2.0 chip/board layer split out of Felucca)",
+      "status": "pending_initialization"
+    },
+    {
+      "authorization": "User requested in the felucca-bsp/fm1-base assessment chat (2026-10-18): register both repositories in the firmware watch and file issues for adoption candidates.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "bbfd4615e344028c90375bbdd79968e1b6ba2cd9"
+      },
+      "historical_total_at_setup": 135,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "bbfd4615e344028c90375bbdd79968e1b6ba2cd9"
+      },
+      "recent_frontiers": {
+        "main": "bbfd4615e344028c90375bbdd79968e1b6ba2cd9"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/430",
+        "https://github.com/kmplngj/Felucca/issues/431"
+      ],
+      "repository": "charlesvestal/fm1-base",
+      "repository_id": 1423148804,
+      "requested_at": "2026-10-18",
+      "source_name": "fm1-base (MPL-2.0 FM-1 app platform on felucca-bsp; BLE MIDI, WiFi, emulator)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [
