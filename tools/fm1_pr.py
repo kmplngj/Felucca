@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Build/download an exact PR revision and install its FWSC over USB-MIDI."""
+"""Build/download PR firmware and install its verified FWSC over USB-MIDI."""
 import argparse
 import hashlib
 import json
@@ -175,6 +175,42 @@ def resolve_pr(repository, number, revision=None):
     return revision, pull["title"]
 
 
+def resolve_automatic_pr(repository, number, revision=None):
+    validate_selection(repository, number, revision)
+    pull = api(f"repos/{repository}/pulls/{number}")
+    head, base, merge = pull["head"]["sha"], pull["base"]["sha"], pull.get("merge_commit_sha")
+    if pull["state"] != "open" or not all(
+            isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha)
+            for sha in (head, base, merge)):
+        raise ValueError("--automatic requires an open PR with an available merge commit")
+    if revision is not None and revision != head:
+        raise ValueError("--automatic --commit must match the current PR head; "
+                         "omit --automatic for historical exact-commit builds")
+    commit = api(f"repos/{repository}/git/commits/{merge}")
+    if commit["sha"] != merge or [parent["sha"] for parent in commit["parents"]] != [base, head]:
+        raise ValueError("PR merge commit does not match the current base/head; retry after GitHub updates it")
+    return head, base, merge, pull["title"]
+
+
+def automatic_run(repository, number, head, base):
+    runs = pages(f"repos/{repository}/actions/workflows/{WORKFLOW}/runs"
+                 f"?event=pull_request&head_sha={head}", "workflow_runs")
+    matches = sorted((run for run in runs
+                      if run["event"] == "pull_request" and run["head_sha"] == head
+                      and run["status"] == "completed" and run["conclusion"] == "success"
+                      and any(pull["number"] == int(number)
+                              and pull["url"] == f"https://api.github.com/repos/{repository}/pulls/{number}"
+                              and pull["head"]["sha"] == head and pull["base"]["sha"] == base
+                              for pull in run["pull_requests"])),
+                     key=lambda run: run["id"], reverse=True)
+    run = next((item for item in matches if firmware_artifact(repository, item)), None)
+    if run is None:
+        raise ValueError("No successful automatic PR build for the current base/head with a live firmware artifact. "
+                         "Wait for full PR CI or rerun it; no build was requested.")
+    print(f"{run['html_url']} — automatic PR merge build", flush=True)
+    return run
+
+
 def run_title(number, revision, validation="full"):
     return f"PR firmware #{number} @ {revision}" + (" (target)" if validation == "target" else "")
 
@@ -207,6 +243,7 @@ def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=Fal
     if run is None:
         if no_build:
             raise ValueError("No successful exact-commit build with a live firmware artifact. "
+                             "Use --automatic to reuse an automatic PR merge build. "
                              "Ask a maintainer to run CI with the printed PR/commit, or omit --no-build "
                              "if you have Actions write access.")
         print(f"Requesting {validation} validation (requires Actions write access)...", flush=True)
@@ -315,6 +352,8 @@ def main(argv=None):
     parser.add_argument("pr", help="PR number")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub owner/name")
     parser.add_argument("--commit", help="full SHA; default snapshots the current PR head")
+    parser.add_argument("--automatic", action="store_true",
+                        help="reuse successful automatic CI for the current PR merge; never dispatch a build")
     parser.add_argument("--validation", choices=("full", "target"), default="full",
                         help="full (default), or faster target-only checks for hardware iteration")
     mode = parser.add_mutually_exclusive_group()
@@ -342,6 +381,11 @@ def main(argv=None):
     try:
         if args.timeout <= 0:
             raise ValueError("--timeout must be positive")
+        if args.automatic and (args.validation != "full" or args.workflow_ref is not None
+                               or args.worktree or args.worktree_dir is not None
+                               or args.prepare_only or args.remove_worktree or args.resolve_only):
+            raise ValueError("--automatic supports full validation and install/download-only; "
+                             "omit worktree, source-only and --workflow-ref options")
         if args.remove_worktree:
             validate_selection(args.repo, args.pr, args.commit)
             remove_worktree(args.repo, args.pr, args.remove_worktree)
@@ -350,11 +394,17 @@ def main(argv=None):
         installer_command = None
         if not (args.download_only or args.prepare_only or args.resolve_only):
             installer_command = prepare_installer(args.installer, args.m_flasher)
-        revision, title = resolve_pr(args.repo, args.pr, args.commit)
+        if args.automatic:
+            head, base, revision, title = resolve_automatic_pr(args.repo, args.pr, args.commit)
+        else:
+            revision, title = resolve_pr(args.repo, args.pr, args.commit)
         if args.resolve_only:
             print(revision)
             return 0
         print(f"Repository: {args.repo}\nPR: #{args.pr}\nCommit: {revision}", flush=True)
+        if args.automatic:
+            print(f"PR head: {head}\nBase commit: {base}\n"
+                  "Firmware contains the PR merged with its base branch.", flush=True)
         if args.worktree or args.worktree_dir is not None or args.prepare_only:
             prepare_worktree(args.repo, args.pr, revision, args.worktree_dir)
         if args.prepare_only:
@@ -364,8 +414,11 @@ def main(argv=None):
         if args.validation == "target":
             print("Target-only build: host, sanitizer, browser and reproducibility tests are omitted; "
                   "this does not replace full PR validation.", flush=True)
-        workflow_ref = args.workflow_ref or api(f"repos/{args.repo}")["default_branch"]
-        run = ensure_run(args.repo, args.pr, revision, workflow_ref, args.timeout, args.no_build, args.validation)
+        if args.automatic:
+            run = automatic_run(args.repo, args.pr, head, base)
+        else:
+            workflow_ref = args.workflow_ref or api(f"repos/{args.repo}")["default_branch"]
+            run = ensure_run(args.repo, args.pr, revision, workflow_ref, args.timeout, args.no_build, args.validation)
         output = args.out or Path(__file__).resolve().parents[1] / "build" / f"pr-{args.pr}" / revision
         package = download(args.repo, run, revision, output, args.validation)
         if args.download_only:

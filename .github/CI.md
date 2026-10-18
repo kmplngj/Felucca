@@ -321,7 +321,7 @@ FM-1 update/recovery, Web MIDI or device audio reliability.
 ## Exact PR revision builds
 
 The [PR firmware helper](../BUILDING.md#test-a-pull-request-on-hardware) uses
-manual `CI` dispatch with `pr` and a full `commit` SHA. A short resolver job
+manual `CI` dispatch with `pr` and a full `commit` SHA by default. A short resolver job
 checks the PR and verifies that the commit is reachable from its current head.
 The reusable validation workflow checks out that SHA in every job; manual
 dispatch defaults to the complete pipeline, including target guards, host,
@@ -381,6 +381,27 @@ permissions and pinned dependencies. Dispatch requires Actions write access;
 artifact reads require sign-in and appropriate repository access. No release,
 Pages deployment or remote flashing occurs. The helper runs on the computer
 connected to the FM-1 and preserves the installer's interactive confirmation.
+
+### Reuse an automatic PR merge build
+
+`python3 tools/fm1_pr.py NUMBER --automatic` downloads and installs an existing
+automatic PR artifact without dispatching CI. Add `--download-only` to verify
+without installer setup or hardware access. `--no-build` is accepted but redundant.
+
+The helper snapshots an open PR's head, base and GitHub merge commit, verifies the
+merge's ordered parents against that base/head, and searches the `ci.yml`
+`pull_request` runs for that head. It requires a successful run associated with
+the same repository PR and base/head, with one live `firmware-RUN_ID` artifact.
+The existing provenance, SHA-256 and package checks must then verify the merge
+revision. The printed firmware commit and download directory use that merge SHA;
+the PR head and base SHA are also printed. Failed, running, stale or artifactless
+runs cannot be installed. A later push does not change the selected snapshot.
+
+This mode installs the PR merged with its target branch. Exact-head and reachable
+historical builds remain the default mode; automatic mode's optional `--commit`
+must pin the current PR head. Target-only validation, custom workflow branches
+and source worktree operations are rejected with `--automatic`. No workflow or
+required-check behavior changes, and no new firmware build is requested.
 
 ## Releasing
 
