@@ -10,8 +10,8 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 5271,
-    "known_remaining_recent": 159,
+    "known_remaining_history": 5269,
+    "known_remaining_recent": 155,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
@@ -93,12 +93,12 @@
           "total": 151
         },
         "recent": {
-          "remaining": 3,
-          "reviewed": 7,
+          "remaining": 2,
+          "reviewed": 8,
           "total": 10
         },
         "repository": "zvenson/zp12",
-        "terminal_pairs": 7
+        "terminal_pairs": 8
       },
       {
         "history": {
@@ -107,12 +107,12 @@
           "total": 163
         },
         "recent": {
-          "remaining": 32,
-          "reviewed": 2,
+          "remaining": 30,
+          "reviewed": 4,
           "total": 34
         },
         "repository": "charlesvestal/fm1-x0x",
-        "terminal_pairs": 9
+        "terminal_pairs": 11
       },
       {
         "history": {
@@ -298,8 +298,8 @@
       },
       {
         "history": {
-          "remaining": 403,
-          "reviewed": 2,
+          "remaining": 402,
+          "reviewed": 3,
           "total": 405
         },
         "recent": {
@@ -308,12 +308,12 @@
           "total": 0
         },
         "repository": "DeadActive/hortator",
-        "terminal_pairs": 3
+        "terminal_pairs": 4
       },
       {
         "history": {
-          "remaining": 37,
-          "reviewed": 2,
+          "remaining": 36,
+          "reviewed": 3,
           "total": 39
         },
         "recent": {
@@ -322,7 +322,7 @@
           "total": 5
         },
         "repository": "Wulgaren/Araminta",
-        "terminal_pairs": 4
+        "terminal_pairs": 5
       },
       {
         "history": {
@@ -359,12 +359,12 @@
           "total": 34
         },
         "recent": {
-          "remaining": 3,
-          "reviewed": 3,
+          "remaining": 2,
+          "reviewed": 4,
           "total": 6
         },
         "repository": "genkigenki/fm1-to-smk37",
-        "terminal_pairs": 10
+        "terminal_pairs": 11
       },
       {
         "history": {
@@ -382,7 +382,7 @@
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 152
+    "terminal_pairs": 158
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -392,6 +392,54 @@
     "journal_url": "https://github.com/kmplngj/Felucca/issues/152#issuecomment-6149168784",
     "new_commits_admitted": 7,
     "reconciliation_id": "genkigenki-Felucca-smk37-b4038b2cb1137c61114c0f9bf6622da8c686ca03-to-d682be031a6f10c8779e00b425ba8f4a646707cd"
+  },
+  "last_run_assessment": {
+    "README_assessment": "Unchanged: existing fork purpose/status and firmware-watch guide already describe review-only scope; this run adds no implemented user capability or firmware behavior.",
+    "additional_pending_assessments": 1,
+    "blocker": "genkigenki/Felucca branch rewrite: live tip does not contain frozen smk37 target; retained without reconciliation",
+    "comparison_sha": "324eb0be1cc7c4a77d4730c1bbf505c2344e4d31",
+    "completed_assessments": 50,
+    "completed_history_this_run": [
+      "charlesvestal/schwung-hank"
+    ],
+    "coverage_method": "Actual complete per-commit diffs and relevant native callers/tests; no snapshot, count or commit-message coverage import. Partial Nibbi root explicitly pending.",
+    "hardware_validation": "Not performed; findings distinguish source-derived reasoning and storage-layer synthetic fixture from device/semantic-project proof.",
+    "issue_ownership_note": "Existing records retain original URLs and evidence. Concurrent instrument transfers observed; original issue API responses identify redirects. No unrelated-repository writes or ledger-history rewrites.",
+    "issue_ownership_redirects_observed": [
+      {
+        "observed_destination": "https://github.com/kmplngj/Felucca-Engines/issues/7",
+        "old_url": "https://github.com/kmplngj/Felucca/issues/126"
+      },
+      {
+        "observed_destination": "https://github.com/kmplngj/Felucca-Engines-GPL/issues/11",
+        "old_url": "https://github.com/kmplngj/Felucca/issues/132"
+      }
+    ],
+    "later_observed_main_sha": "40261883ad7ef6dc5370aae76307463829f54923",
+    "main_advance_scope": "Only README.md and CONTRIBUTING.md changed; all firmware, native tests and watcher helper/skill/guide unchanged. Recorded comparisons remain immutable.",
+    "models": {
+      "coordinator": "Inherited runtime model cannot be configured; limitation reported, no prompt-only model claim",
+      "diff_worker": "gpt-6.1-sol medium",
+      "metadata_worker": "gpt-6.1-sol low"
+    },
+    "new_findings": [
+      "https://github.com/kmplngj/Felucca/issues/410",
+      "https://github.com/kmplngj/Felucca/issues/413",
+      "https://github.com/kmplngj/Felucca/issues/418",
+      "https://github.com/kmplngj/Felucca/issues/419"
+    ],
+    "pending_sources_initialized": [
+      "oscillr/DUELL after identity, branch, immutable-pin and complete non-shallow DAG checks"
+    ],
+    "queue_split": {
+      "history": 20,
+      "recent": 30
+    },
+    "review_stopped_at": "2026-10-18T09:30:00Z",
+    "run_id": "run-20261018T084900Z-527d65d71274",
+    "started_at": "2026-10-18T08:49:00Z",
+    "stop_reason": "50 completed assessments reached; no further source review",
+    "validation": "Helper validate and checkpoint passed; 20 firmware_watch_test.py tests passed; git diff --check passed; immutable historical journal byte-prefix and ledger-only tracked changes verified."
   },
   "last_run_completed_assessments": 7,
   "last_run_created_issues": [
@@ -905,9 +953,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "740203dd4f16304f57d3feb6c33f3b32dbce0ce77e4c5ba672d89753307d53da",
-  "round_robin_next_repository_index": 22,
-  "round_robin_processed_records": 153,
+  "round_robin_journal_prefix_sha256": "01bb370165735efb38d4e0965a799ee51fa0bccff668725b300b87b728bcf031",
+  "round_robin_next_repository_index": 12,
+  "round_robin_processed_records": 160,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [

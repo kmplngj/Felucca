@@ -6,8 +6,8 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 5271,
-  "known_remaining_recent": 159,
+  "known_remaining_history": 5269,
+  "known_remaining_recent": 155,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -89,12 +89,12 @@
         "total": 151
       },
       "recent": {
-        "remaining": 3,
-        "reviewed": 7,
+        "remaining": 2,
+        "reviewed": 8,
         "total": 10
       },
       "repository": "zvenson/zp12",
-      "terminal_pairs": 7
+      "terminal_pairs": 8
     },
     {
       "history": {
@@ -103,12 +103,12 @@
         "total": 163
       },
       "recent": {
-        "remaining": 32,
-        "reviewed": 2,
+        "remaining": 30,
+        "reviewed": 4,
         "total": 34
       },
       "repository": "charlesvestal/fm1-x0x",
-      "terminal_pairs": 9
+      "terminal_pairs": 11
     },
     {
       "history": {
@@ -294,8 +294,8 @@
     },
     {
       "history": {
-        "remaining": 403,
-        "reviewed": 2,
+        "remaining": 402,
+        "reviewed": 3,
         "total": 405
       },
       "recent": {
@@ -304,12 +304,12 @@
         "total": 0
       },
       "repository": "DeadActive/hortator",
-      "terminal_pairs": 3
+      "terminal_pairs": 4
     },
     {
       "history": {
-        "remaining": 37,
-        "reviewed": 2,
+        "remaining": 36,
+        "reviewed": 3,
         "total": 39
       },
       "recent": {
@@ -318,7 +318,7 @@
         "total": 5
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
@@ -355,12 +355,12 @@
         "total": 34
       },
       "recent": {
-        "remaining": 3,
-        "reviewed": 3,
+        "remaining": 2,
+        "reviewed": 4,
         "total": 6
       },
       "repository": "genkigenki/fm1-to-smk37",
-      "terminal_pairs": 10
+      "terminal_pairs": 11
     },
     {
       "history": {
@@ -378,5 +378,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 152
+  "terminal_pairs": 158
 }
