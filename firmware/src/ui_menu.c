@@ -372,7 +372,7 @@ static void menu_row(uint32_t k, uint32_t row)
  * of the audio (its SYSTEM card; the shown value follows every INFO_CPU_MS, not every frame). The rows as the menu's (no
  * tabs: from INFO_Y), the selected look on none; OCT- back to the tabs, HOME closes */
 #define INFO_Y 32
-#define INFO_N 3u
+#define INFO_N (FELUCCA_BUILD_PR[0] ? 4u : 3u)
 #define INFO_CPU_MS 500u
 static struct { uint8_t cpu; uint32_t t; } info;
 static uint32_t info_usb(void)                         /* 0 OFF, 1 WAIT, 2 BUS, 3 ENUM, 4 MIDI */
@@ -389,26 +389,55 @@ static uint32_t info_sig(void)
 }
 static void info_rows(void)                            /* (in screen rows: cv_oy set by the caller) */
 {
-    static const char *const LBL[INFO_N] = {"FIRMWARE", "USB", "CPU"};
+    static const char *const LBL[] = {"FIRMWARE", "COMMIT", "USB", "CPU"};
     static const char *const USB_N[5] = {"OFF", "WAIT", "BUS", "ENUM", "MIDI"};
     int32_t h = menu_large() ? 28 : 24;
+    int32_t identity_h = h * (text_w(&AF_S, FELUCCA_SPLASH_ID) > MR_VR - MR_LX ? 2 : 1);
     uint32_t k;
     char cpu[8];
     fmt_int(cpu, info.cpu);
     if (!ux.style)                                     /* FLAT: the rows' panel */
-        cv_rrect(4, INFO_Y, 232, (int32_t)INFO_N * (h + 2) - 2 + 2 * MP_PAD, 8, T_SURF, T_BG);
+        cv_rrect(4, INFO_Y, 232, (int32_t)INFO_N * (h + 2) + identity_h - 2 + 2 * MP_PAD, 8, T_SURF, T_BG);
     for (k = 0; k < INFO_N; k++) {
-        int32_t y = INFO_Y + MP_PAD + (int32_t)k * (h + 2), vy = y + CAP_IN(M, h);
+        uint32_t row = k && !FELUCCA_BUILD_PR[0] ? k + 1u : k;
+        int32_t y = INFO_Y + MP_PAD + (int32_t)k * (h + 2) + (k ? identity_h : 0), vy = y + CAP_IN(M, h);
         if (k)
             cv_rect(MR_X + 6, y - 1, MR_W - 12, 1, ux.style ? T_RULE : T_LINE);
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "info row name centred up/down");
-        cv_text_on(MR_LX, vy, &AF_M, LBL[k], T_TEXT, T_SURF);
+        cv_text_on(MR_LX, vy, &AF_M, LBL[row], T_TEXT, T_SURF);
+        if (!row) {
+            /* Keep the full identity below its label: release versions and PR
+             * labels can be wider than a menu value. PR builds also name the
+             * actual compiled commit in the following row. */
+            const aafont_t *f = text_w(&AF_M, FELUCCA_SPLASH_ID) <= MR_VR - MR_LX ? &AF_M : &AF_S;
+            const char *value = FELUCCA_SPLASH_ID, *tail = "";
+            char prefix[32];
+            if (identity_h > h) {                       /* bounded release version: wrap without losing characters */
+                uint32_t n;
+                str_cpy(prefix, value, sizeof prefix);
+                n = str_len(prefix);
+                while (n && text_w(f, prefix) > MR_VR - MR_LX)
+                    prefix[--n] = 0;
+                tail = value + n;
+                value = prefix;
+            }
+            GFX_HOOK_ALIGN(0, y + h, 0, y + 2 * h, AL_V, "info firmware identity centred up/down");
+            cv_text_r(MR_VR, y + h + (f == &AF_M ? CAP_IN(M, h) : CAP_IN(S, h)), f,
+                      value, T_THEME, T_SURF);
+            if (tail[0]) {
+                GFX_HOOK_ALIGN(0, y + 2 * h, 0, y + 3 * h, AL_V, "info firmware continuation centred up/down");
+                cv_text_r(MR_VR, y + 2 * h + CAP_IN(S, h), &AF_S, tail, T_THEME, T_SURF);
+            }
+            continue;
+        }
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "info row value centred up/down");
-        if (k == 2u) {                                 /* CPU: the value and its unit, as HOLD's */
+        if (row == 3u) {                               /* CPU: the value and its unit, as HOLD's */
             GFX_HOOK_ALIGN(0, 0, 0, vy + AF_M.asc, AL_B, "info row unit on its value's baseline");
             cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, "%", T_MID, T_SURF) - 3, vy, &AF_M, cpu, T_THEME, T_SURF);
+        } else if (row == 1u) {
+            cv_text_r(MR_VR, y + CAP_IN(S, h), &AF_S, FELUCCA_BUILD_ID, T_THEME, T_SURF);
         } else {
-            cv_text_r(MR_VR, vy, &AF_M, k ? USB_N[info_usb()] : FELUCCA_VERSION, T_THEME, T_SURF);
+            cv_text_r(MR_VR, vy, &AF_M, USB_N[info_usb()], T_THEME, T_SURF);
         }
     }
 }
@@ -452,13 +481,12 @@ static void draw_menu(void)
     }
     ui.menu_sig = sig;
     menu_head();
-    if (ui.menu == 3) {                                /* INFO: its rows in the first band, the second clear */
+    if (ui.menu == 3) {                                /* INFO: identity and live state span both bands */
         for (pass = 0; pass < 2u; pass++) {
             uint32_t top_y = pass ? 132u : (uint32_t)H_HEAD;
             cv_begin(240, pass ? 240u - 132u : 132u - H_HEAD, T_BG);
             cv_oy = -(int32_t)top_y;
-            if (!pass)
-                info_rows();
+            info_rows();
             cv_oy = 0;
             cv_blit(0, top_y);
         }

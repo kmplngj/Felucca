@@ -168,6 +168,8 @@ and every build keeps the same short automatic startup; any button or note key c
 dismiss it after initialization. See [startup behavior](docs/fork-features.md#identify-the-installed-build).
 No boot-time identity lookup is involved. CI provenance
 includes the same `build_identity` object, and release folders include the JSON sidecar.
+MENU > SYSTEM > INFO selects the verified PR label, clean identified release
+version, or development commit, and includes a separate compiled-commit row for PRs.
 The full revision remains in JSON; a short SHA is a readable identifier, not a checksum.
 
 Clean Git builds use HEAD; tracked changes, untracked nonignored files and changed

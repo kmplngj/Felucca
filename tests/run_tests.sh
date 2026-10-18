@@ -389,6 +389,7 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "UI renders: real renderer, layout lint, alignment, PNGs and comparison manifest" \
             python3 tests/ui_render.py build/ui_new build/ui_slot --renderer "$OUT/ui_render" --cc "$CC"
         run "Build identity UI: bounded metadata in all fonts and palettes" python3 tests/build_identity_ui_test.py
+        run "Settings identity: release, commit and PR in all fonts, palettes, styles and sizes" python3 tests/settings_identity_test.py
         run "UI comparison: exact pixels, scene matching, settings and strict gate fixtures" python3 tests/ui_compare_test.py
     else
         $CC -O1 -w "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render" tests/ui_render.c -lm
