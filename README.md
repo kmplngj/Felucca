@@ -43,6 +43,10 @@ experiments are implemented, with FM-1 listening and timing qualification pendin
 - **Validate and document:** use host tests, target builds and emulator replay, then check
   hardware-dependent behavior on an FM-1. Keep planned work and pending device checks explicit.
 
+The [engine collection plan](docs/modularity.md#gpl-collection-and-mixed-engine-builds--agreed-2026-10-16)
+describes selecting MIT, GPL and native engines in one firmware build. The GPL collection
+is initialized; WAVE implementation and mixed-build integration remain pending.
+
 The [modularity roadmap](docs/modularity.md) and [capacity plan](docs/flash-capacity.md)
 track the larger work. The [performance guide](docs/performance.md) explains measurements;
 [engine extension contracts](docs/extending.md) describe integration boundaries.
