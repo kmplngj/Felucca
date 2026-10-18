@@ -95,6 +95,7 @@ jobs:
           python3 tests/source_archive_test.py -v 2>&1 | tee build/ci/source-tests.log
           python3 -m unittest discover -s tests -p ci_changes_test.py -v 2>&1 | tee build/ci/selection-tests.log
           python3 -m unittest discover -s tests -p branch_cleanup_test.py -v 2>&1 | tee build/ci/branch-cleanup-tests.log
+          python3 -m unittest discover -s tests -p pages_test.py -v 2>&1 | tee build/ci/pages-tests.log
       - name: Upload workflow diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -473,6 +474,38 @@ jobs:
             ./build.sh --release "$VERSION"
           ) 2>&1 | tee build/ci/source-reproduce.log
           cmp "build/felucca-$VERSION.fwsc" "$RUNNER_TEMP/source-reproduce/felucca-$VERSION-source/build/felucca-$VERSION.fwsc"
+      - name: Check out the pinned WebApp fork for main-site builds
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.verified_pr == '' && github.ref == 'refs/heads/main'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kmplngj/Felucca-WebApp
+          ref: 74e961439a76dd9da777264d068122e1d0fc2460
+          path: build/pages-webapp
+          persist-credentials: false
+      - name: Validate the editor and stage the fork site
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.verified_pr == '' && github.ref == 'refs/heads/main'
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -o pipefail
+          webapp="$GITHUB_WORKSPACE/build/pages-webapp"
+          (
+            cd "$webapp"
+            node test_app.mjs
+            node test_web.mjs
+            FELUCCA_PROTO=app node test_web.mjs
+            node test_backup.mjs
+            FELUCCA_ROOT="$GITHUB_WORKSPACE" node test_catalog.mjs
+          ) 2>&1 | tee build/ci/pages-webapp-tests.log
+          python3 tools/pages.py stage "$webapp" build/site
+      - name: Upload the tested fork site
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.verified_pr == '' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: site-${{ github.run_id }}
+          path: build/site/
+          retention-days: 30
+          if-no-files-found: error
       - name: Upload diagnostics, including failed runs
         if: always() && needs.workflow-checks.outputs.full == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
