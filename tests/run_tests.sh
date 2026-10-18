@@ -465,6 +465,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     mkdir -p build/insert_demo
     run "INSERT (1.5): OFF / MIX 0 bit for bit, each TYPE (no DC, bounded, dry / wet), MIX glide, automation, stored, cost, demos" \
         "$OUT/insert_test" build/insert_demo
+    run "INSERT coefficient table: generator guards, original-formula PCM/state and mutation sensitivity" \
+        python3 tests/insert_lpk_test.py --mutation-check
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/sound15_test" tests/sound15_test.c -lm
     mkdir -p build/sound15_demo
     run "1.5 sound items: ANALOG filter TYPE LP / BP / HP (responses, LP and other engines bit for bit), ENV SYNC (times at several tempi), cost, demos" \
@@ -625,6 +627,8 @@ else
         -fno-sanitize-recover=all -fno-builtin -o "$A/libc_test" tests/libc_test.c
     run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
+    run "ASan/UBSan: INSERT coefficient table against the original formula" \
+        python3 tests/insert_lpk_test.py --sanitize
     # Unlike the general DSP harness below, retain every UBSan bounds/pointer/shift check here.
     ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined -fno-sanitize-recover=all \
         -DHALF_FRAMES=$HALF -o "$A/uac_fir_bounds_test" tests/uac_fir_bounds_test.c
