@@ -288,6 +288,24 @@ This uses the native browser-emulator integration on Linux/macOS and needs no ha
 tests/run_tests.sh
 ```
 
+Independent compile-and-test units run concurrently, using up to four workers by
+default (fewer on a host with fewer CPUs). Set `TEST_JOBS=1 tests/run_tests.sh` for
+serial debugging or a timing comparison; `TEST_JOBS=2` through `32` select an
+explicit limit. With multiple units, each regression harness defaults to one
+render child; an explicit `JOBS` overrides that inner limit. `GOLDEN_UPDATE` or
+`BUDGET_UPDATE` forces serial execution because those modes write shared baselines.
+The legacy shared-output overrides `UI_SCREEN_DIR`, `MENU_JSON` and `TRACKS` also
+select serial execution. Presence counts, including an empty environment value.
+
+Each run prints its unique `build/host/test-run-*/` directory. It contains one log
+per unit and `summary.json` with start offsets, elapsed seconds, exit statuses and
+dependencies. The combined transcript stays in script order. Failed prerequisites
+block their consumers; independent checks still finish and any failure makes the
+suite fail. Interrupting the runner terminates its worker process groups. Run
+simultaneous full suites in separate worktrees: a checkout lock protects shared
+generated outputs. Generate assets before starting a suite, and leave sources,
+assets and build flags unchanged while it runs.
+
 Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too, the browser emulator's). Run it after `./build.sh`
 (it uses `build/` and needs `AC79_SDK` set as for the build). The suites cover flash storage,
 user presets, projects of every format, backup, the keys and knobs, MIDI (USB, TRS, clock,
