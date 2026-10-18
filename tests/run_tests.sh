@@ -1011,7 +1011,7 @@ if [ "${SANITIZE:-1}" = 0 ]; then
     note sanitizer_disabled "== skip the sanitizer runs (SANITIZE=0)"
 elif [ ! -f build/gen/felucca_tables.h ]; then
     note sanitizer_no_assets "== skip the sanitizer runs (run ./build.sh once)"
-elif [ "$MODE" = --plan ] && ! san_ok; then
+elif [ "$SELECTED_UNIT" = sanitizer_unavailable ] || { [ "$MODE" = --plan ] && ! san_ok; }; then
     note sanitizer_unavailable "== skip the sanitizer runs (the compiler has no ASan / UBSan)"
 else
     mkdir -p "$OUT/asan"

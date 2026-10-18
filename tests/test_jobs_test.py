@@ -215,6 +215,18 @@ unit fixture "" u_fixture
                          {f"catalog_{i}" for i in (10, 11, 12, 13)})
         self.assertTrue(all(not unit["name"].startswith("asan_") for unit in plan.values()))
 
+        # A compiler without sanitizer support must select and execute the same
+        # explicit skip unit; workers do not repeat the availability probe.
+        env["SANITIZE"] = "1"
+        result = subprocess.run(["sh", "tests/run_tests.sh", "--plan"], cwd=self.root,
+                                env=env, capture_output=True, text=True, check=True)
+        plan = {unit["name"]: unit for unit in test_jobs.parse_plan(result.stdout)}
+        self.assertIn("sanitizer_unavailable", plan)
+        result = subprocess.run(["sh", "tests/run_tests.sh", "--unit", "sanitizer_unavailable"],
+                                cwd=self.root, env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the compiler has no ASan / UBSan", result.stdout)
+
     def test_outer_runner_resolves_script_after_changing_directory(self):
         (self.root / "tests").mkdir()
         (self.root / "tools").mkdir()
