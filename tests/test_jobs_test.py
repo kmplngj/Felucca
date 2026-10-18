@@ -216,7 +216,14 @@ unit fixture "" u_fixture
         (self.root / "build/gen").mkdir(parents=True)
         (self.root / "build/gen/felucca_tables.h").touch()
         (self.root / "build/felucca.fwsc").touch()
+        # Planning only checks node's presence. Keep this fixture independent
+        # of the host's optional web tooling; no JavaScript is executed here.
+        (self.root / "bin").mkdir()
+        node = self.root / "bin/node"
+        node.write_text("#!/bin/sh\nexit 0\n")
+        node.chmod(0o755)
         env = dict(self.env, SANITIZE="0", CC="false")
+        env["PATH"] = str(node.parent) + os.pathsep + env.get("PATH", os.defpath)
         result = subprocess.run(["sh", "tests/run_tests.sh", "--plan"], cwd=self.root,
                                 env=env, capture_output=True, text=True, check=True)
         plan = {unit["name"]: unit for unit in test_jobs.parse_plan(result.stdout)}
