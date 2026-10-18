@@ -1,18 +1,4 @@
 {
-  "active_run_assessment": {
-    "README_assessment": "Unchanged: README already describes review-only source intake and native capabilities; no firmware behavior implemented.",
-    "comparison_sha": "2a8221a929a127fe4a155e31e1dd78658fd45ecf",
-    "identity_method": "Fresh GitHub connector repository responses served to helper gh-api adapter; no counts/coverage inferred from metadata",
-    "models": {
-      "coordinator": "Inherited runtime model cannot be configured; limitation reported",
-      "diff_worker": "gpt-6.1-sol medium",
-      "metadata_worker": "gpt-6.1-sol low"
-    },
-    "publication": "Authenticated GitHub connection; CLI dry-run has no local credentials",
-    "run_id": "run-2026-10-18T1231-ebdd9de29f35",
-    "source_sync": "26 complete non-shallow DAGs; genkigenki/Felucca rewrite retained as blocker",
-    "started_at": "2026-10-18T12:31:30Z"
-  },
   "cadence": "Daily 09:00 Europe/Berlin",
   "configured_branch_count": 29,
   "configured_repository_count": 26,
@@ -24,16 +10,16 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 5251,
-    "known_remaining_recent": 290,
+    "known_remaining_history": 5248,
+    "known_remaining_recent": 288,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
     "repositories": [
       {
         "history": {
-          "remaining": 31,
-          "reviewed": 7,
+          "remaining": 30,
+          "reviewed": 8,
           "total": 38
         },
         "recent": {
@@ -42,12 +28,12 @@
           "total": 5
         },
         "repository": "hugelton/Felucca",
-        "terminal_pairs": 12
+        "terminal_pairs": 13
       },
       {
         "history": {
-          "remaining": 290,
-          "reviewed": 6,
+          "remaining": 289,
+          "reviewed": 7,
           "total": 296
         },
         "recent": {
@@ -56,7 +42,7 @@
           "total": 38
         },
         "repository": "keremimo/melodee",
-        "terminal_pairs": 20
+        "terminal_pairs": 21
       },
       {
         "history": {
@@ -331,12 +317,12 @@
           "total": 39
         },
         "recent": {
-          "remaining": 1,
-          "reviewed": 4,
-          "total": 5
+          "remaining": 0,
+          "reviewed": 0,
+          "total": 0
         },
         "repository": "Wulgaren/Araminta",
-        "terminal_pairs": 8
+        "terminal_pairs": 9
       },
       {
         "history": {
@@ -359,17 +345,17 @@
           "total": 71
         },
         "recent": {
-          "remaining": 8,
-          "reviewed": 5,
+          "remaining": 7,
+          "reviewed": 6,
           "total": 13
         },
         "repository": "genkigenki/Snoop37",
-        "terminal_pairs": 6
+        "terminal_pairs": 7
       },
       {
         "history": {
-          "remaining": 26,
-          "reviewed": 8,
+          "remaining": 25,
+          "reviewed": 9,
           "total": 34
         },
         "recent": {
@@ -378,7 +364,7 @@
           "total": 7
         },
         "repository": "genkigenki/fm1-to-smk37",
-        "terminal_pairs": 14
+        "terminal_pairs": 15
       },
       {
         "history": {
@@ -396,7 +382,7 @@
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 203
+    "terminal_pairs": 208
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -408,88 +394,181 @@
     "reconciliation_id": "genkigenki-Felucca-smk37-b4038b2cb1137c61114c0f9bf6622da8c686ca03-to-d682be031a6f10c8779e00b425ba8f4a646707cd"
   },
   "last_run_assessment": {
-    "README_assessment": "Unchanged: existing fork purpose/status and firmware-watch guide already describe review-only scope; this run adds no implemented user capability or firmware behavior.",
-    "additional_pending_assessments": 1,
-    "blocker": "genkigenki/Felucca branch rewrite: live tip does not contain frozen smk37 target; retained without reconciliation",
-    "comparison_sha": "324eb0be1cc7c4a77d4730c1bbf505c2344e4d31",
+    "README_assessment": "Unchanged: README already describes review-only source intake and native capabilities; no firmware behavior implemented.",
+    "comparison_sha": "2a8221a929a127fe4a155e31e1dd78658fd45ecf",
     "completed_assessments": 50,
-    "completed_history_this_run": [
-      "charlesvestal/schwung-hank"
+    "created_issues": [
+      "https://github.com/kmplngj/Felucca/issues/434",
+      "https://github.com/kmplngj/Felucca/issues/435",
+      "https://github.com/kmplngj/Felucca/issues/436",
+      "https://github.com/kmplngj/Felucca/issues/437"
     ],
-    "coverage_method": "Actual complete per-commit diffs and relevant native callers/tests; no snapshot, count or commit-message coverage import. Partial Nibbi root explicitly pending.",
-    "hardware_validation": "Not performed; findings distinguish source-derived reasoning and storage-layer synthetic fixture from device/semantic-project proof.",
-    "issue_ownership_note": "Existing records retain original URLs and evidence. Concurrent instrument transfers observed; original issue API responses identify redirects. No unrelated-repository writes or ledger-history rewrites.",
-    "issue_ownership_redirects_observed": [
-      {
-        "observed_destination": "https://github.com/kmplngj/Felucca-Engines/issues/7",
-        "old_url": "https://github.com/kmplngj/Felucca/issues/126"
-      },
-      {
-        "observed_destination": "https://github.com/kmplngj/Felucca-Engines-GPL/issues/11",
-        "old_url": "https://github.com/kmplngj/Felucca/issues/132"
-      }
-    ],
-    "later_observed_main_sha": "40261883ad7ef6dc5370aae76307463829f54923",
-    "main_advance_scope": "Only README.md and CONTRIBUTING.md changed; all firmware, native tests and watcher helper/skill/guide unchanged. Recorded comparisons remain immutable.",
+    "dispositions": {
+      "already_present": 6,
+      "bug": 2,
+      "existing_issue": 18,
+      "feature": 1,
+      "not_applicable": 23
+    },
+    "finished_at": "2026-10-18T13:22:37.003510+00:00",
+    "historical_coverage": "Incomplete; no coverage from snapshots or ancestry; partial DUELL/ChoralRoot and unreviewed Ghoulbox merge retained pending",
+    "identity_method": "Fresh GitHub connector repository responses served to helper gh-api adapter; no counts/coverage inferred from metadata",
+    "initialized_pending_sources": 0,
     "models": {
-      "coordinator": "Inherited runtime model cannot be configured; limitation reported, no prompt-only model claim",
+      "coordinator": "Inherited runtime model cannot be configured; limitation reported",
       "diff_worker": "gpt-6.1-sol medium",
       "metadata_worker": "gpt-6.1-sol low"
     },
-    "new_findings": [
-      "https://github.com/kmplngj/Felucca/issues/410",
-      "https://github.com/kmplngj/Felucca/issues/413",
-      "https://github.com/kmplngj/Felucca/issues/418",
-      "https://github.com/kmplngj/Felucca/issues/419"
+    "pending_assessments": [
+      {
+        "queue": "history",
+        "repository": "oscillr/DUELL",
+        "source_sha": "1df6207e5a51a909223c9ccfb6280a97840490c0"
+      },
+      {
+        "queue": "history",
+        "repository": "Quixotic7/ChoralRootFM1",
+        "source_sha": "c1c3cecb82ec5c03f50d463114e837913762242a"
+      },
+      {
+        "queue": "recent",
+        "repository": "jasonpersinger/ghoulbox-fm1-dungeon-synth",
+        "source_sha": "76e2eb40db73adc1c020b2d3f19b8c9c0e694e73"
+      }
     ],
-    "pending_sources_initialized": [
-      "oscillr/DUELL after identity, branch, immutable-pin and complete non-shallow DAG checks"
-    ],
-    "queue_split": {
-      "history": 20,
-      "recent": 30
+    "publication": "Four intermediate checkpoints verified remotely; final ledger-only GitHub connection CAS publication follows. No force push.",
+    "queue_counts": {
+      "history": 21,
+      "recent": 29
     },
-    "review_stopped_at": "2026-10-18T09:30:00Z",
-    "run_id": "run-20261018T084900Z-527d65d71274",
-    "started_at": "2026-10-18T08:49:00Z",
-    "stop_reason": "50 completed assessments reached; no further source review",
-    "validation": "Helper validate and checkpoint passed; 20 firmware_watch_test.py tests passed; git diff --check passed; immutable historical journal byte-prefix and ledger-only tracked changes verified."
-  },
-  "last_run_completed_assessments": 7,
-  "last_run_created_issues": [
-    "https://github.com/kmplngj/Felucca/issues/293"
-  ],
-  "last_run_finished_at": "2026-10-13T15:54:49.316294+00:00",
-  "last_run_id": "dee3d348-7ea2-4fa6-8e41-017f88b0cb00",
-  "last_run_initialized_sources": 6,
-  "last_run_pending_assessments": 0,
-  "last_run_queue_counts": {
-    "history_completed": 0,
-    "recent_completed": 7,
-    "remaining_history": 5319,
-    "remaining_recent": 358,
-    "remaining_smk37_history": 38,
-    "remaining_smk37_recent": 0
-  },
-  "last_run_status": "completed_user_requested_smk37_interval",
-  "last_run_validation": {
-    "completed_ancestry_imports": 2,
-    "exact_source_commits": 7,
-    "existing_issue_assessments": 1,
-    "hardware": "not_run",
-    "history_target_and_reconciliation_archive": "preserved",
-    "host_probes": [
-      "Actual donor storage.c: O2, ASan/UBSan injected owner read/erase/program failures",
-      "Actual maintained/donor resume modules: fake OTA/write counter, missing/wrong identity"
+    "run_id": "run-2026-10-18T1231-ebdd9de29f35",
+    "source_blockers": [
+      {
+        "reason": "branch rewrite: live tip does not contain frozen target for smk37",
+        "repository": "genkigenki/Felucca"
+      }
     ],
-    "native_main_sha": "e64618e4256e87c1d1d68d240f75d368dbe4b5a5",
-    "new_backport_issues": 1,
-    "not_applicable": 3,
-    "shared_checkout": "preserved",
-    "target_build": "not_run_no_native_firmware_change"
+    "source_sync": "26 complete non-shallow DAGs; genkigenki/Felucca rewrite retained as blocker",
+    "started_at": "2026-10-18T12:31:30Z",
+    "stop_reason": "50 completed assessments; review stopped at cap",
+    "validation": {
+      "device": "not run",
+      "firmware_build": "not run; no firmware implementation",
+      "helper_tests": "22 passed",
+      "ledger": "validate/checkpoint; immutable prior journal retained",
+      "native_latch_function": "exact unchanged function OFF/down ON/up reproduced orphan held bit; expected failure exit1"
+    }
+  },
+  "last_run_completed_assessments": 50,
+  "last_run_created_issues": [
+    "https://github.com/kmplngj/Felucca/issues/434",
+    "https://github.com/kmplngj/Felucca/issues/435",
+    "https://github.com/kmplngj/Felucca/issues/436",
+    "https://github.com/kmplngj/Felucca/issues/437"
+  ],
+  "last_run_finished_at": "2026-10-18T13:22:37.003510+00:00",
+  "last_run_id": "run-2026-10-18T1231-ebdd9de29f35",
+  "last_run_initialized_sources": 0,
+  "last_run_pending_assessments": 3,
+  "last_run_queue_counts": {
+    "history": 21,
+    "recent": 29
+  },
+  "last_run_status": "completed_at_assessment_cap_with_source_blocker",
+  "last_run_validation": {
+    "device": "not run",
+    "firmware_build": "not run; no firmware implementation",
+    "helper_tests": "22 passed",
+    "ledger": "validate/checkpoint; immutable prior journal retained",
+    "native_latch_function": "exact unchanged function OFF/down ON/up reproduced orphan held bit; expected failure exit1"
   },
   "latest_felucca_comparison_sha": "2a8221a929a127fe4a155e31e1dd78658fd45ecf",
   "pending_source_blockers": {},
+  "previous_run_assessments": [
+    {
+      "last_run_assessment": {
+        "README_assessment": "Unchanged: existing fork purpose/status and firmware-watch guide already describe review-only scope; this run adds no implemented user capability or firmware behavior.",
+        "additional_pending_assessments": 1,
+        "blocker": "genkigenki/Felucca branch rewrite: live tip does not contain frozen smk37 target; retained without reconciliation",
+        "comparison_sha": "324eb0be1cc7c4a77d4730c1bbf505c2344e4d31",
+        "completed_assessments": 50,
+        "completed_history_this_run": [
+          "charlesvestal/schwung-hank"
+        ],
+        "coverage_method": "Actual complete per-commit diffs and relevant native callers/tests; no snapshot, count or commit-message coverage import. Partial Nibbi root explicitly pending.",
+        "hardware_validation": "Not performed; findings distinguish source-derived reasoning and storage-layer synthetic fixture from device/semantic-project proof.",
+        "issue_ownership_note": "Existing records retain original URLs and evidence. Concurrent instrument transfers observed; original issue API responses identify redirects. No unrelated-repository writes or ledger-history rewrites.",
+        "issue_ownership_redirects_observed": [
+          {
+            "observed_destination": "https://github.com/kmplngj/Felucca-Engines/issues/7",
+            "old_url": "https://github.com/kmplngj/Felucca/issues/126"
+          },
+          {
+            "observed_destination": "https://github.com/kmplngj/Felucca-Engines-GPL/issues/11",
+            "old_url": "https://github.com/kmplngj/Felucca/issues/132"
+          }
+        ],
+        "later_observed_main_sha": "40261883ad7ef6dc5370aae76307463829f54923",
+        "main_advance_scope": "Only README.md and CONTRIBUTING.md changed; all firmware, native tests and watcher helper/skill/guide unchanged. Recorded comparisons remain immutable.",
+        "models": {
+          "coordinator": "Inherited runtime model cannot be configured; limitation reported, no prompt-only model claim",
+          "diff_worker": "gpt-6.1-sol medium",
+          "metadata_worker": "gpt-6.1-sol low"
+        },
+        "new_findings": [
+          "https://github.com/kmplngj/Felucca/issues/410",
+          "https://github.com/kmplngj/Felucca/issues/413",
+          "https://github.com/kmplngj/Felucca/issues/418",
+          "https://github.com/kmplngj/Felucca/issues/419"
+        ],
+        "pending_sources_initialized": [
+          "oscillr/DUELL after identity, branch, immutable-pin and complete non-shallow DAG checks"
+        ],
+        "queue_split": {
+          "history": 20,
+          "recent": 30
+        },
+        "review_stopped_at": "2026-10-18T09:30:00Z",
+        "run_id": "run-20261018T084900Z-527d65d71274",
+        "started_at": "2026-10-18T08:49:00Z",
+        "stop_reason": "50 completed assessments reached; no further source review",
+        "validation": "Helper validate and checkpoint passed; 20 firmware_watch_test.py tests passed; git diff --check passed; immutable historical journal byte-prefix and ledger-only tracked changes verified."
+      },
+      "last_run_completed_assessments": 7,
+      "last_run_created_issues": [
+        "https://github.com/kmplngj/Felucca/issues/293"
+      ],
+      "last_run_finished_at": "2026-10-13T15:54:49.316294+00:00",
+      "last_run_id": "dee3d348-7ea2-4fa6-8e41-017f88b0cb00",
+      "last_run_initialized_sources": 6,
+      "last_run_pending_assessments": 0,
+      "last_run_queue_counts": {
+        "history_completed": 0,
+        "recent_completed": 7,
+        "remaining_history": 5319,
+        "remaining_recent": 358,
+        "remaining_smk37_history": 38,
+        "remaining_smk37_recent": 0
+      },
+      "last_run_status": "completed_user_requested_smk37_interval",
+      "last_run_validation": {
+        "completed_ancestry_imports": 2,
+        "exact_source_commits": 7,
+        "existing_issue_assessments": 1,
+        "hardware": "not_run",
+        "history_target_and_reconciliation_archive": "preserved",
+        "host_probes": [
+          "Actual donor storage.c: O2, ASan/UBSan injected owner read/erase/program failures",
+          "Actual maintained/donor resume modules: fake OTA/write counter, missing/wrong identity"
+        ],
+        "native_main_sha": "e64618e4256e87c1d1d68d240f75d368dbe4b5a5",
+        "new_backport_issues": 1,
+        "not_applicable": 3,
+        "shared_checkout": "preserved",
+        "target_build": "not_run_no_native_firmware_change"
+      }
+    }
+  ],
   "previous_scheduled_run_before_manual_smk37_review": {
     "last_run_completed_assessments": 50,
     "last_run_created_issues": [
@@ -862,7 +941,7 @@
         "main": "b16f1b2ed424172fe238779e9101328d8e732d8a"
       },
       "recent_frontiers": {
-        "main": "7304acfe34cbf43825d33c15ef13bef0aab5c85d"
+        "main": "b16f1b2ed424172fe238779e9101328d8e732d8a"
       },
       "recent_reviewed": 0,
       "repository": "Wulgaren/Araminta"
@@ -991,9 +1070,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "f8d91b74386cd0dd57f915ae4423b0b88066036fb4a46257fcd32b82cd6632ec",
+  "round_robin_journal_prefix_sha256": "995ebb925500e614510b8641975f04d40e8ca2a99579ecc068f463d1adfa4f10",
   "round_robin_next_repository_index": 22,
-  "round_robin_processed_records": 205,
+  "round_robin_processed_records": 213,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [

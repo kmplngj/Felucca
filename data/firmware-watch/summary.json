@@ -6,16 +6,16 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 5251,
-  "known_remaining_recent": 290,
+  "known_remaining_history": 5248,
+  "known_remaining_recent": 288,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
   "repositories": [
     {
       "history": {
-        "remaining": 31,
-        "reviewed": 7,
+        "remaining": 30,
+        "reviewed": 8,
         "total": 38
       },
       "recent": {
@@ -24,12 +24,12 @@
         "total": 5
       },
       "repository": "hugelton/Felucca",
-      "terminal_pairs": 12
+      "terminal_pairs": 13
     },
     {
       "history": {
-        "remaining": 290,
-        "reviewed": 6,
+        "remaining": 289,
+        "reviewed": 7,
         "total": 296
       },
       "recent": {
@@ -38,7 +38,7 @@
         "total": 38
       },
       "repository": "keremimo/melodee",
-      "terminal_pairs": 20
+      "terminal_pairs": 21
     },
     {
       "history": {
@@ -313,12 +313,12 @@
         "total": 39
       },
       "recent": {
-        "remaining": 1,
-        "reviewed": 4,
-        "total": 5
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 8
+      "terminal_pairs": 9
     },
     {
       "history": {
@@ -341,17 +341,17 @@
         "total": 71
       },
       "recent": {
-        "remaining": 8,
-        "reviewed": 5,
+        "remaining": 7,
+        "reviewed": 6,
         "total": 13
       },
       "repository": "genkigenki/Snoop37",
-      "terminal_pairs": 6
+      "terminal_pairs": 7
     },
     {
       "history": {
-        "remaining": 26,
-        "reviewed": 8,
+        "remaining": 25,
+        "reviewed": 9,
         "total": 34
       },
       "recent": {
@@ -360,7 +360,7 @@
         "total": 7
       },
       "repository": "genkigenki/fm1-to-smk37",
-      "terminal_pairs": 14
+      "terminal_pairs": 15
     },
     {
       "history": {
@@ -378,5 +378,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 203
+  "terminal_pairs": 208
 }
