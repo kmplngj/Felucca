@@ -1,0 +1,382 @@
+{
+  "blockers": [
+    {
+      "reason": "branch rewrite: live tip does not contain frozen target for smk37",
+      "repository": "genkigenki/Felucca"
+    }
+  ],
+  "complete_inventory": false,
+  "known_remaining_history": 5289,
+  "known_remaining_recent": 180,
+  "pending_sources": [],
+  "remaining_history": null,
+  "remaining_recent": null,
+  "repositories": [
+    {
+      "history": {
+        "remaining": 32,
+        "reviewed": 6,
+        "total": 38
+      },
+      "recent": {
+        "remaining": 2,
+        "reviewed": 0,
+        "total": 2
+      },
+      "repository": "hugelton/Felucca",
+      "terminal_pairs": 6
+    },
+    {
+      "history": {
+        "remaining": 291,
+        "reviewed": 5,
+        "total": 296
+      },
+      "recent": {
+        "remaining": 29,
+        "reviewed": 9,
+        "total": 38
+      },
+      "repository": "keremimo/melodee",
+      "terminal_pairs": 14
+    },
+    {
+      "history": {
+        "remaining": 189,
+        "reviewed": 1,
+        "total": 190
+      },
+      "recent": {
+        "remaining": 33,
+        "reviewed": 5,
+        "total": 38
+      },
+      "repository": "Quixotic7/ChoralRootFM1",
+      "terminal_pairs": 6
+    },
+    {
+      "history": {
+        "remaining": 13,
+        "reviewed": 0,
+        "total": 13
+      },
+      "recent": {
+        "remaining": 3,
+        "reviewed": 1,
+        "total": 4
+      },
+      "repository": "isod89/sloop-fm1",
+      "terminal_pairs": 1
+    },
+    {
+      "history": {
+        "remaining": 7,
+        "reviewed": 0,
+        "total": 7
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "zvenson/dinghy",
+      "terminal_pairs": 1
+    },
+    {
+      "history": {
+        "remaining": 151,
+        "reviewed": 0,
+        "total": 151
+      },
+      "recent": {
+        "remaining": 5,
+        "reviewed": 5,
+        "total": 10
+      },
+      "repository": "zvenson/zp12",
+      "terminal_pairs": 5
+    },
+    {
+      "history": {
+        "remaining": 156,
+        "reviewed": 7,
+        "total": 163
+      },
+      "recent": {
+        "remaining": 34,
+        "reviewed": 0,
+        "total": 34
+      },
+      "repository": "charlesvestal/fm1-x0x",
+      "terminal_pairs": 7
+    },
+    {
+      "history": {
+        "remaining": 97,
+        "reviewed": 4,
+        "total": 101
+      },
+      "recent": {
+        "remaining": 12,
+        "reviewed": 6,
+        "total": 18
+      },
+      "repository": "jasonpersinger/ghoulbox-fm1-dungeon-synth",
+      "terminal_pairs": 10
+    },
+    {
+      "history": {
+        "remaining": 174,
+        "reviewed": 5,
+        "total": 179
+      },
+      "recent": {
+        "remaining": 9,
+        "reviewed": 1,
+        "total": 10
+      },
+      "repository": "zednaked/jangada",
+      "terminal_pairs": 11
+    },
+    {
+      "history": {
+        "remaining": 221,
+        "reviewed": 5,
+        "total": 226
+      },
+      "recent": {
+        "remaining": 25,
+        "reviewed": 0,
+        "total": 25
+      },
+      "repository": "juanjiant-bit/JIANT",
+      "terminal_pairs": 5
+    },
+    {
+      "history": {
+        "remaining": 3227,
+        "reviewed": 3,
+        "total": 3230
+      },
+      "recent": {
+        "remaining": 1,
+        "reviewed": 0,
+        "total": 1
+      },
+      "repository": "charlesvestal/schwung",
+      "terminal_pairs": 3
+    },
+    {
+      "history": {
+        "remaining": 4,
+        "reviewed": 0,
+        "total": 4
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "temeculadsp/nibbi",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 2,
+        "reviewed": 0,
+        "total": 2
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "charlesvestal/schwung-hank",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 25,
+        "reviewed": 0,
+        "total": 25
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "charlesvestal/schwung-chiptune",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 25,
+        "reviewed": 4,
+        "total": 29
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "charlesvestal/schwung-bouba-kiki",
+      "terminal_pairs": 4
+    },
+    {
+      "history": {
+        "remaining": 34,
+        "reviewed": 0,
+        "total": 34
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "sd88me/schwung-maze",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 16,
+        "reviewed": 4,
+        "total": 20
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "charlesvestal/schwung-ducker",
+      "terminal_pairs": 4
+    },
+    {
+      "history": {
+        "remaining": 7,
+        "reviewed": 4,
+        "total": 11
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "charlesvestal/schwung-gate",
+      "terminal_pairs": 4
+    },
+    {
+      "history": {
+        "remaining": 0,
+        "reviewed": 4,
+        "total": 4
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "charlesvestal/schwung-velocity-scale",
+      "terminal_pairs": 4
+    },
+    {
+      "history": {
+        "remaining": 23,
+        "reviewed": 1,
+        "total": 24
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "handcraftedcc/schwung-eucalypso",
+      "terminal_pairs": 1
+    },
+    {
+      "history": {
+        "remaining": 404,
+        "reviewed": 1,
+        "total": 405
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "DeadActive/hortator",
+      "terminal_pairs": 2
+    },
+    {
+      "history": {
+        "remaining": 38,
+        "reviewed": 1,
+        "total": 39
+      },
+      "recent": {
+        "remaining": 5,
+        "reviewed": 0,
+        "total": 5
+      },
+      "repository": "Wulgaren/Araminta",
+      "terminal_pairs": 1
+    },
+    {
+      "history": {
+        "remaining": 45,
+        "reviewed": 0,
+        "total": 45
+      },
+      "recent": {
+        "remaining": 7,
+        "reviewed": 0,
+        "total": 7
+      },
+      "repository": "genkigenki/Makkuro37",
+      "terminal_pairs": 2
+    },
+    {
+      "history": {
+        "remaining": 71,
+        "reviewed": 0,
+        "total": 71
+      },
+      "recent": {
+        "remaining": 10,
+        "reviewed": 3,
+        "total": 13
+      },
+      "repository": "genkigenki/Snoop37",
+      "terminal_pairs": 3
+    },
+    {
+      "history": {
+        "remaining": 29,
+        "reviewed": 5,
+        "total": 34
+      },
+      "recent": {
+        "remaining": 5,
+        "reviewed": 1,
+        "total": 6
+      },
+      "repository": "genkigenki/fm1-to-smk37",
+      "terminal_pairs": 6
+    },
+    {
+      "history": {
+        "remaining": 8,
+        "reviewed": 0,
+        "total": 8
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "oscillr/DUELL",
+      "terminal_pairs": 0
+    }
+  ],
+  "schema_version": 1,
+  "terminal_pairs": 108
+}

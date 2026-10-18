@@ -1,45 +1,6 @@
 {
   "destination_repo": "kmplngj/Felucca",
-  "pending_source_additions": [
-    {
-      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/359",
-      "authorization": "User requested in the DUELL adoption chat: also add wave to the updater issue and process.",
-      "branches": [
-        "main"
-      ],
-      "historical_reviewed": 0,
-      "historical_targets": {
-        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
-      },
-      "historical_total_at_setup": 8,
-      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
-      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/354",
-      "last_reviewed_sha": null,
-      "pinned_recent_targets": {
-        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
-      },
-      "recent_frontiers": {
-        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
-      },
-      "recent_reviewed": 0,
-      "recent_total_at_setup": 0,
-      "related_issues": [
-        "https://github.com/kmplngj/Felucca/issues/352",
-        "https://github.com/kmplngj/Felucca/issues/353",
-        "https://github.com/kmplngj/Felucca/issues/354",
-        "https://github.com/kmplngj/Felucca/issues/355",
-        "https://github.com/kmplngj/Felucca/issues/356",
-        "https://github.com/kmplngj/Felucca/issues/357",
-        "https://github.com/kmplngj/Felucca/issues/358",
-        "https://github.com/kmplngj/Felucca/issues/359"
-      ],
-      "repository": "oscillr/DUELL",
-      "repository_id": 1414682263,
-      "requested_at": "2026-10-16",
-      "source_name": "DUELL (including the WAVE instrument)",
-      "status": "pending_initialization"
-    }
-  ],
+  "pending_source_additions": [],
   "repositories": [
     {
       "historical_targets": {
@@ -402,6 +363,35 @@
       "recent_total_at_setup": 0,
       "repository": "genkigenki/Felucca",
       "repository_id": 1414748052
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/359",
+      "authorization": "User requested in the DUELL adoption chat: also add wave to the updater issue and process.",
+      "branches": [
+        "main"
+      ],
+      "historical_targets": {
+        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
+      },
+      "historical_total_at_setup": 8,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/354",
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/352",
+        "https://github.com/kmplngj/Felucca/issues/353",
+        "https://github.com/kmplngj/Felucca/issues/354",
+        "https://github.com/kmplngj/Felucca/issues/355",
+        "https://github.com/kmplngj/Felucca/issues/356",
+        "https://github.com/kmplngj/Felucca/issues/357",
+        "https://github.com/kmplngj/Felucca/issues/358",
+        "https://github.com/kmplngj/Felucca/issues/359"
+      ],
+      "repository": "oscillr/DUELL",
+      "repository_id": 1414682263,
+      "requested_at": "2026-10-16",
+      "source_name": "DUELL (including the WAVE instrument)",
+      "status": "pending_initialization"
     }
   ],
   "schema_version": 1
