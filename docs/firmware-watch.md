@@ -136,13 +136,20 @@ Acquire/release the helper's lease with one unique run ID, keeping it for the wh
 multi-command session (replace the example ID for each run):
 
 ```sh
-python3 tools/firmware_watch.py lease acquire --owner run-2026-10-18-example
+# Resolve this in the original clone before creating an isolated worktree.
+watch_lease_dir="$(git rev-parse --path-format=absolute --git-common-dir)/firmware-watch"
+python3 tools/firmware_watch.py --lease-dir "$watch_lease_dir" \
+  lease acquire --owner run-2026-10-18-example
 # Inventory, sync, review, checkpoint and verified Git publication happen here.
-python3 tools/firmware_watch.py lease release --owner run-2026-10-18-example
+python3 tools/firmware_watch.py --lease-dir "$watch_lease_dir" \
+  lease release --owner run-2026-10-18-example
 ```
 
-The lease is under the ignored cache directory and cannot be released with another
-owner ID. A stale lease requires confirming its previous run has stopped before
+The shared lease cannot be released with another owner ID. A worktree-relative
+cache alone cannot coordinate two isolated worktrees; `--lease-dir` prevents those
+worktrees from acquiring separate run leases. A standalone helper defaults to its
+cache directory. Independent clones/machines require a single serialized scheduled
+runner; a local lease does not claim distributed locking. A stale lease requires confirming its previous run has stopped before
 explicit operator cleanup. Helpers also acquire a short per-command writer lock.
 
 ## Scheduled Codex task

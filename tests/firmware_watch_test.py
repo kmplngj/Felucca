@@ -193,6 +193,41 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(self.runtime()["recent_frontiers"]["main"], tip)
         self.assertIn(root, {t["source_sha"] for t in self.tasks()})
 
+    def test_incorrect_frontier_cannot_hide_unreviewed_hole_or_block_other_sources(self):
+        repo = self.repository()
+        root = self.commit(repo, "root")
+        first = self.commit(repo, "unreviewed recent")
+        tip = self.commit(repo, "out of order completed")
+        other = "fixture/unblocked"
+        completed = review(tip) | {"parents": [first], "commit_title": "out of order completed"}
+        self.migrate([source(REPO, root, tip), source(other, root, identity=124)], [completed])
+        self.seed_cache(repo)
+        self.seed_cache(repo, other)
+        state = self.state()
+        next(r for r in state["repositories"] if r["repository"] == REPO)["recent_frontiers"]["main"] = tip
+        (self.data / "state.json").write_text(json.dumps(state))
+        journal = (self.data / "reviews.jsonl").read_bytes()
+        queued = self.watch.queue(10)
+        self.assertEqual([(t["repository"], t["source_sha"]) for t in queued["tasks"]], [(other, root)])
+        self.assertEqual({b["repository"] for b in queued["blockers"]}, {REPO})
+        summary = self.watch.summary()
+        self.assertFalse(summary["complete_inventory"])
+        self.assertIsNone(summary["remaining_recent"])
+        self.assertIsNone(summary["remaining_history"])
+        self.assertEqual(summary["known_remaining_history"], 1)
+        self.assertEqual(summary["terminal_pairs"], 1)
+        checkpoint = self.watch.checkpoint()
+        self.assertEqual({b["repository"] for b in checkpoint["blockers"]}, {REPO})
+        self.assertEqual((self.data / "reviews.jsonl").read_bytes(), journal)
+        self.assertEqual(self.runtime()["recent_frontiers"]["main"], tip)
+        # Correcting the bad cached frontier restores the hole without any review credit.
+        state = self.state()
+        next(r for r in state["repositories"] if r["repository"] == REPO)["recent_frontiers"]["main"] = root
+        (self.data / "state.json").write_text(json.dumps(state))
+        restored = self.tasks()
+        self.assertIn((REPO, first), {(t["repository"], t["source_sha"]) for t in restored})
+        self.assertNotIn((REPO, tip), {(t["repository"], t["source_sha"]) for t in restored})
+
     def test_same_sha_in_different_repositories_remains_two_assessments(self):
         repo = self.repository()
         root = self.commit(repo, "shared root")
@@ -389,6 +424,19 @@ class WatchTests(unittest.TestCase):
         self.watch.lease("release", "run-one")
         self.watch.lease("acquire", "run-two")
         self.watch.lease("release", "run-two")
+
+    def test_shared_run_lease_coordinates_isolated_worktree_caches(self):
+        shared = self.root / "common-git-dir" / "firmware-watch-lease"
+        first = W.Watch(self.root / "worktree-one" / "data", self.root / "worktree-one" / "cache", lease_dir=shared)
+        second = W.Watch(self.root / "worktree-two" / "data", self.root / "worktree-two" / "cache", lease_dir=shared)
+        first.lease("acquire", "first-run")
+        with self.assertRaises(W.WatchError):
+            second.lease("acquire", "second-run")
+        with self.assertRaises(W.WatchError):
+            second.lease("release", "second-run")
+        first.lease("release", "first-run")
+        second.lease("acquire", "second-run")
+        second.lease("release", "second-run")
 
     def test_missing_journal_evidence_and_migration_digest_count_corruption_fail_closed(self):
         self.migrate([source(REPO, "a" * 40)], [review("b" * 40)])

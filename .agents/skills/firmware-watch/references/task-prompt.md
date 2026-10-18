@@ -4,7 +4,10 @@
 Review registered firmware sources for kmplngj/Felucca using the current repository's
 `.agents/skills/firmware-watch/SKILL.md` and `docs/firmware-watch.md`. Fetch current
 main and the canonical `automation/firmware-watch` state branch into an isolated
-worktree; preserve the user's working files. Hold the whole-run lease. Use
+worktree; preserve the user's working files. Resolve a shared absolute lease directory
+from the original clone's Git common directory before creating a worktree and pass it
+with `--lease-dir` when acquiring/releasing the whole-run lease. Serialize this task;
+filesystem leases coordinate worktrees of one clone, not independent machines. Use
 `tools/firmware_watch.py` to validate, synchronize sources, select bounded recent/history
 work, record actual evidence-based assessments and checkpoint complete intervals.
 Initialize pending sources only after all required checks succeed. Import no new

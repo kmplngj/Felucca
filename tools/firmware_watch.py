@@ -4,7 +4,9 @@
 
 The JSONL journal is authoritative; state.json is a recoverable checkpoint cache.
 All CLI operations take a short writer lock. Schedulers must additionally hold a
-run-level lease throughout sync, human review, record and checkpoint.
+run-level lease throughout sync, human review, record and checkpoint. Supply an
+absolute --lease-dir shared by every worktree; its default cache location only
+coordinates callers sharing that cache.
 """
 import argparse
 import contextlib
@@ -219,9 +221,12 @@ def effective_reviews(records):
 
 
 class Watch:
-    def __init__(self, data_dir='data/firmware-watch', cache_dir='build/firmware-watch'):
+    def __init__(self, data_dir='data/firmware-watch', cache_dir='build/firmware-watch', lease_dir=None):
         self.data_dir = Path(data_dir)
         self.cache_dir = Path(cache_dir)
+        self.lease_dir = Path(lease_dir) if lease_dir is not None else self.cache_dir
+        require(lease_dir is None or self.lease_dir.is_absolute(),
+                'lease-dir must be an absolute shared directory across worktrees')
 
     def cache(self, repository):
         return self.cache_dir / 'repos' / (repository_name(repository) + '.git')
@@ -273,7 +278,7 @@ class Watch:
             require(record['repository'] in {s['repository'] for s in configured},
                     'journal record names an unconfigured repository')
         effective_reviews(records)
-        self.validate_migration(records)
+        self.validate_migration(records, sources)
         if 'round_robin_processed_records' in state:
             processed = state['round_robin_processed_records']
             require(type(processed) is int
@@ -284,7 +289,7 @@ class Watch:
                     'round-robin journal prefix changed; manual recovery required')
         return sources, state, records
 
-    def validate_migration(self, records):
+    def validate_migration(self, records, sources):
         manifest = self.data_dir / 'migration-report.json'
         if not manifest.exists():
             return
@@ -312,6 +317,17 @@ class Watch:
                 originals.append(record)
         effective = effective_reviews(originals)
         config = parse_fenced(snapshot['body'], 'archived issue body')
+        require(sources['destination_repo'] == config['destination_repo'],
+                'destination repository differs from immutable migration archive')
+        current_sources = {source['repository']: source
+                           for source in sources['repositories'] + sources.get('pending_source_additions', [])}
+        for original in config['repositories'] + config.get('pending_source_additions', []):
+            current = current_sources.get(original['repository'])
+            require(current is not None and current['repository_id'] == original['repository_id'],
+                    'original registered source identity changed: ' + original['repository'])
+            require(all(current['historical_targets'].get(branch) == target
+                        for branch, target in original['historical_targets'].items()),
+                    'immutable original historical target changed: ' + original['repository'])
         expected = {'schema_version': 1, 'license': 'GPL-3.0-only',
                     'issue_url': snapshot['issue_url'], 'comments': len(snapshot['comments']),
                     'journal_comments': comments, 'journal_records': len(originals),
@@ -422,8 +438,8 @@ class Watch:
     def lease(self, action, owner):
         require(isinstance(owner, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', owner),
                 'lease owner must be a safe nonempty run ID (at most 128 characters)')
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        lease = self.cache_dir / '.run-lease'
+        self.lease_dir.mkdir(parents=True, exist_ok=True)
+        lease = self.lease_dir / '.run-lease'
         if action == 'acquire':
             try:
                 lease.mkdir()
@@ -431,13 +447,13 @@ class Watch:
                 raise WatchError('another run holds ' + str(lease)
                                  + '; never auto-remove an abandoned lease') from error
             atomic_bytes(lease / 'owner', (owner + '\n').encode())
-            fsync_dir(self.cache_dir)
+            fsync_dir(self.lease_dir)
         else:
             require(lease.is_dir() and (lease / 'owner').read_text().strip() == owner,
                     'run lease is absent or belongs to another owner')
             (lease / 'owner').unlink()
             lease.rmdir()
-            fsync_dir(self.cache_dir)
+            fsync_dir(self.lease_dir)
         return {'lease': action, 'owner': owner}
 
     def validate(self):
@@ -473,6 +489,15 @@ class Watch:
         self.rev_list(repository, list(source['historical_targets'].values())
                       + list(runtime['pinned_recent_targets'].values())
                       + list(runtime['recent_frontiers'].values()))
+        # Frontiers are a cache, never proof of completed review. Every newer
+        # commit hidden by their union must have an exact terminal journal entry.
+        hidden = self.rev_list(repository, runtime['recent_frontiers'].values(),
+                               source['historical_targets'].values())
+        completed = {key for key, record in effective_reviews(self.records()).items()
+                     if record['disposition'] in TERMINAL}
+        gaps = [commit for commit in hidden if (repository, commit) not in completed]
+        require(not gaps, 'frontier skips unreviewed recent commits: '
+                + ', '.join(gaps[:5]) + (' (and more)' if len(gaps) > 5 else ''))
 
     def inventories(self, source, runtime):
         self.check_cache(source, runtime)
@@ -717,6 +742,10 @@ class Watch:
                 atomic_json(Path(temporary) / 'state.json', value['state'])
                 atomic_bytes(Path(temporary) / 'reviews.jsonl',
                              (self.data_dir / 'reviews.jsonl').read_bytes())
+                for name in ('migration-report.json', 'legacy-issue-152.json'):
+                    archived = self.data_dir / name
+                    if archived.exists():
+                        atomic_bytes(Path(temporary) / name, archived.read_bytes())
                 Watch(temporary, self.cache_dir).load()
             atomic_json(self.data_dir / 'sources.json', value['sources'])
             atomic_json(self.data_dir / 'state.json', value['state'])
@@ -838,6 +867,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', default='data/firmware-watch')
     parser.add_argument('--cache-dir', default='build/firmware-watch')
+    parser.add_argument('--lease-dir', help='absolute run-lease directory shared by every worktree')
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('migrate').add_argument('--snapshot', required=True)
     commands.add_parser('validate')
@@ -850,8 +880,8 @@ def main(argv=None):
     lease.add_argument('action', choices=('acquire', 'release'))
     lease.add_argument('--owner', required=True)
     args = parser.parse_args(argv)
-    watch = Watch(args.data_dir, args.cache_dir)
     try:
+        watch = Watch(args.data_dir, args.cache_dir, lease_dir=args.lease_dir)
         with writer_lock(args.data_dir):
             watch.recover_transaction()
             if args.command == 'lease':

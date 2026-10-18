@@ -7,18 +7,17 @@ description: Review registered firmware sources and their complete older history
 # Firmware source watch
 
 Read [the ledger guide](../../../docs/firmware-watch.md) and current
-[AGENTS.md](../../../AGENTS.md). This skill replaces the process formerly held in
-[issue #152](https://github.com/kmplngj/Felucca/issues/152). That issue is an archived
-source of evidence; repository files now hold progress. Apply this skill for a scan,
-source registration, historical backfill or recovery, rather than ordinary firmware work.
+[AGENTS.md](../../../AGENTS.md).
 
 ## Start and inventory
 
-1. Fetch `origin/main` and `origin/automation/firmware-watch`. Use an isolated worktree
+1. In the original clone, resolve one shared absolute lease directory under its Git
+   common directory (see the guide); retain that path before creating a worktree.
+   Fetch `origin/main` and `origin/automation/firmware-watch`. Use an isolated worktree
    on the latter branch for the canonical ledger. Keep the user's checkout untouched.
    Merge current main into the state branch before a run when needed; stop on conflicts
    without overwriting either ledger. Initial ledger files also live on main for bootstrap.
-2. Hold the whole-run lock described in the guide through fetch, assessment and final
+2. Acquire `lease` with `--lease-dir` set to that shared path and hold it through fetch, assessment and final
    push. Helper locks protect individual mutations, not an entire review session.
    Do not overlap runs or steal an active lock. Read and validate the complete ledger.
 3. Record the freshly fetched full `origin/main` SHA as the Felucca comparison revision.
