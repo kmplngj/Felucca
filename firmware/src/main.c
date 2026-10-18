@@ -166,11 +166,22 @@ static int boot_splash_wait(uint32_t start)
            (uint32_t)(fm1_ticks() - start) < BOOT_SPLASH_MS * 1000u * FM1_TICKS_PER_US;
 }
 
+#if FELUCCA_CPU2
+/* the notice for a retained exclusion (ui.msg: 23 characters at most); reasons from hal/fm1_sys.h */
+static const char *c1_held_msg(uint32_t reason)
+{
+    static const char *const m[] = {"2ND CORE HELD", "2ND CORE HELD: BAD JOB", "2ND CORE HELD: TIMEOUT",
+                                    "2ND CORE HELD: FAULT", "2ND CORE HELD: HANG", "2ND CORE HELD: CORRUPT"};
+    return m[reason <= FM1_C1X_CORRUPT ? reason : 0u];
+}
+#endif
+
 static void fm1_main(void)
 {
     uint32_t splash_start, master_ms;
 #if FELUCCA_CPU2
-    uint8_t c1_told = 0;                                /* 2ND CORE MISREAD shown (and ON cleared) */
+    uint8_t c1_told = 0;                                /* 2ND CORE HELD shown (and ON cleared) */
+    uint32_t c1_refused = 0;                            /* the retained exclusion that kept it from starting (fm1_c1g_*) */
 #endif
     persist_boot();
 #if FELUCCA_OTA
@@ -204,11 +215,16 @@ static void fm1_main(void)
     if (!bootguard.failed && (ui_prefs2 & (PREF_CPU2_ON >> 16))) {
         /* the second core (hal/fm1_cpu1.h; fx.c mix_block hands it parts), at power-on, before the audio and
          * the timers (started later it never reaches its entry). It starts in the chip's ROM: the PC limits open
-         * meanwhile. MENU > 2ND CORE OFF (the default), a crash in the last boot's first 30 s, or no answer: it is
-         * never started, one core, as 1.6 */
-        fm1_guard_pc_open();
-        fm1_cpu1_start();
-        fm1_guard_enable(FM1_GUARD_PC);
+         * meanwhile. MENU > 2ND CORE OFF (the default), a crash in the last boot's first 30 s, a retained exclusion
+         * (a bad job, a timeout, core 0's fault or a hang while it answered: fm1_c1g_refuse, hal/fm1_sys.h; the saved
+         * ON does not override it, MENU > 2ND CORE set ON again does) or no answer: it is never started, one core,
+         * as 1.6 */
+        c1_refused = fm1_c1g_refuse();
+        if (!c1_refused) {
+            fm1_guard_pc_open();
+            fm1_cpu1_start();
+            fm1_guard_enable(FM1_GUARD_PC);
+        }
     }
 #endif
     audio_init();
@@ -249,14 +265,19 @@ static void fm1_main(void)
             bootguard.failed = 0;
         }
 #if FELUCCA_CPU2
-        if (*(volatile uint8_t *)&fm1_c1_gave_up && !c1_told) {   /* (the ISR's) */
-            c1_told = 1;                                /* (once: ON set again afterwards stays, for the next power-on) */
-            if (ui_prefs2 & (PREF_CPU2_ON >> 16)) {
-                ui_prefs2 &= (uint8_t)~(PREF_CPU2_ON >> 16);   /* core 1 misread or stopped answering on this FM-1: one
-                                                         * core from now on (MENU > 2ND CORE ON tries again) */
-                settings_later();
+        if (!c1_told) {                                 /* (fm1_c1_gave_up is the ISR's) */
+            uint32_t why = c1_refused;
+            if (!why && *(volatile uint8_t *)&fm1_c1_gave_up)
+                why = fm1_c1g_read(0);                  /* its wait recorded BAD_JOB or TIMEOUT before holding it */
+            if (why) {
+                c1_told = 1;                            /* (once: ON set again afterwards stays, for the next power-on) */
+                if (ui_prefs2 & (PREF_CPU2_ON >> 16)) {
+                    ui_prefs2 &= (uint8_t)~(PREF_CPU2_ON >> 16);   /* one core from now on: a bad job, a timeout or a
+                                                         * retained exclusion; MENU > 2ND CORE ON tries again */
+                    settings_later();                   /* (main loop only: never from the ISR or before the exclusion) */
+                }
+                ui_message(c1_held_msg(why));
             }
-            ui_message("2ND CORE MISREAD: OFF");     /* (ui.msg: 23 characters at most) */
         }
 #endif
         {
@@ -352,6 +373,9 @@ void fm1_cstart(void)
     fm1_time_init();
     fm1_reset_reason();
     p3 = fm1_boot.p3_rst;
+#if FELUCCA_CPU2
+    fm1_c1g_boot(p3);                          /* the retained worker guard, settled before anything reads it (fm1_sys.h) */
+#endif
     src = fm1_boot.rst_src;
     wdt = fm1_boot.wdt_con;
     fm1_wdt_arm(0x0D);

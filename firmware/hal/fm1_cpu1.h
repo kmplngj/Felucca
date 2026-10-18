@@ -20,7 +20,8 @@
  * the argument and the job's number, written before the job) matches; the jobs it finished stay in a
  * register (Melodee's, keremimo/melodee#21: a stale function read as the next job fails the check).
  * Anything else it counts (mb.bad) and leaves, and core 0 holds it at the first one (fm1_cpu1_wait):
- * one core from then on. The mailbox keeps each core's writes on cache lines of their own
+ * one core from then on, and the retained guard (fm1_sys.h fm1_c1g_*, #410) refuses it after a reset until the
+ * player retries. The mailbox keeps each core's writes on cache lines of their own
  * (Jangada's layout).
  *
  * Flash: the waiting loop is in RAM (.c1_text), so an idle core 1 never fetches from the flash;
@@ -146,6 +147,7 @@ static int fm1_cpu1_start(void)
         return -1;
     }
     FM1_C1_SYNC();                              /* acquire the worker's published boot state */
+    fm1_c1g_active();                           /* retained: it answers (fm1_sys.h; a reset from here on is judged at boot) */
     fm1_c1_on = 1;
     return 0;
 }
@@ -175,6 +177,7 @@ static inline int fm1_cpu1_wait(void)
         FM1_C1_SYNC();
         if (fm1_c1_mb.bad) {                    /* a unit that cannot run it: one core */
             FM1_C1_SYNC();                      /* acquire its failure details before holding it */
+            fm1_c1g_mark(FM1_C1X_BAD_JOB);      /* retained first: no later reset restarts it (a ON preference cannot) */
             fm1_cpu1_hold();
             fm1_c1_gave_up = 1;
             return -1;
@@ -187,6 +190,7 @@ static inline int fm1_cpu1_wait(void)
         }
         if (FM1_C1_T4 - t0 > 24000u * 4u) {     /* 4 ms (as Jangada): past any block's work, a half is 2.9 ms
                                                  * (it faulted, or stalled): one glitch, then one core */
+            fm1_c1g_mark(FM1_C1X_TIMEOUT);      /* retained first, as above */
             fm1_cpu1_hold();
             fm1_c1_gave_up = 2;
             return -1;

@@ -180,6 +180,9 @@ void fm1_fault_c(uint32_t *f)
     }
 #endif
     fm1_irq_off();
+#if FM1_CPU1_USED
+    fm1_c1g_fault();                          /* core 0's own fault while the worker answered: refuse its restart (#410) */
+#endif
     if (in_fault++) {                         /* fault while reporting: reset at once */
         FM1_RESET_PREP();
         *(volatile uint32_t *)0x10000u |= 1u << 4;
