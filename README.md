@@ -34,6 +34,8 @@ compatibility limits and build identification.
 
 - **Gather and review:** follow upstream and related forks for useful features, engines
   and optimizations, preserving attribution and checking licences and compatibility.
+  The [firmware watch](docs/firmware-watch.md) keeps the source registry, commit reviews
+  and historical backfill in a queryable repository ledger.
 - **Integrate engines:** use the shared engine library where appropriate and build profiles
   to fit the FM-1's limits. Keep sound IDs, saved projects and editor behavior compatible.
 - **Measure and optimize:** compare CPU cost, RAM use and firmware size against a baseline,

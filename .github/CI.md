@@ -23,6 +23,7 @@ that could leave a required check pending. Existing check names are preserved.
 | --- | --- |
 | Known documentation, documentation images, `AGENTS.md`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
 | Portable fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/console_diagnostics.c`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
+| `tools/firmware_watch.py`, its tests and `data/firmware-watch/**` | Portable Python suite, including ledger migration/integrity and offline Git-DAG recovery tests; no firmware build |
 | `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
 | `web/emu/**` | Fresh generated assets, pinned Emscripten build and freshly compiled native/WASM song equality and emulator checks; no target package, DaisySP or unrelated host/sanitizer suites |
 | Firmware, build scripts/generators, package/installer/editor inputs, shared host harnesses, goldens/budgets, assets, licenses, workflow/selector implementation, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
