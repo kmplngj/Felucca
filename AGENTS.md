@@ -50,6 +50,10 @@ each change reviewable and diagnosable.
   coordinator owns shared generated assets and target/emulator builds. Do not run a
   complete firmware build or full suite independently in every subtask. Target-only
   probes remain appropriate when needed to decide a compiler or resource tradeoff.
+- Include affected cross-feature reference tests in those focused checks: for DSP
+  changes, trace preset/engine-switch and mixed-effect audio oracles as well as the
+  new feature's tests. Resolve intended transition differences before the long
+  integrated run; retain historical goldens when the existing contract can be isolated.
 - At the frozen integrated revision, run the full applicable validation once and
   produce one fresh target artifact per required build variant, with aggregate budget
   checks. Reuse successful CI evidence for that exact revision/variant where it covers
