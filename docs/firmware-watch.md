@@ -26,7 +26,7 @@ main into its isolated state worktree before scanning and stops on conflicts.
 
 | File under `data/firmware-watch/` | Purpose |
 | --- | --- |
-| `sources.json` | Destination, registered source IDs, immutable historical targets, source metadata and pending registrations |
+| `sources.json` | Primary destination, allowed issue repositories, registered source IDs, immutable historical targets, source metadata and pending registrations |
 | `state.json` | Recent frontiers, frozen targets, observed tips, blockers and derived progress; legacy fields retain their dated meaning |
 | `summary.json` | Derived complete/partial Git-DAG inventory after checkpointing; absent before the first checkpoint |
 | `reviews.jsonl` | Append-only structured assessments with source/native evidence and issue/PR links; one JSON object per line |
@@ -50,6 +50,39 @@ separate `known_remaining_*` totals for the successfully enumerated sources.
 The journal can retain an earlier pending attempt followed by a terminal result;
 conflicting terminal decisions require investigation. Retain the imported pending
 record even if it predates later successful source initialization.
+
+## Issue destinations and implementation boundaries
+
+Follow the [AGENTS ownership table](../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation)
+for both issue placement and subsequent implementation. Portable MIT-compatible
+engine code/content/generators/tests go to `kmplngj/Felucca-Engines`; GPL-derived
+portable ports go to `kmplngj/Felucca-Engines-GPL`. Felucca owns firmware IDs,
+profiles/pins, voices/services, native UI, effects/hardware, persistence, producer
+protocol, emulator/runtime and integration/qualification. Editor/installer client
+code and tests belong to `kmplngj/Felucca-WebApp`.
+
+Check live repository access and Issues settings. While WebApp Issues is disabled,
+track client work in Felucca with a `Felucca-WebApp:` title, explicit implementation
+repo and linked firmware producer dependency. When enabled, file directly in WebApp.
+The watch does not change repository settings. An inaccessible/disabled engine
+destination is an explicit blocker, not a firmware fallback.
+
+Inventory open/closed issues, relevant comments, stable markers, transferred URLs
+and merged PRs across all four repositories with full pagination before creating work.
+Keep source markers on transfers; use returned canonical URLs for new assessments.
+Reuse linked collection/host/client owners; the [instrument routing review](instrument-issue-routing.md)
+records the initial transfer decisions. Read current main in each affected repo and
+include pinned implementation evidence as well as the full host comparison SHA.
+The scan authorizes justified issue/evidence writes across these repositories, not
+engine, firmware or client implementation.
+
+`destination_repo` remains the primary host and preserves migration identity.
+Optional `issue_repositories` is a nonempty, unique list of allowed destinations
+including that host; this repository configures all four above. The helper validates
+new records and the complete journal against it. An older configuration without the
+field accepts only `destination_repo`. This is an additive schema-v1 setting, not a
+change to registered donor scope or immutable coverage. Preserve existing journal
+URLs and the lossless migration archive; old issue URLs redirect after a transfer.
 
 ## Commands and queries
 

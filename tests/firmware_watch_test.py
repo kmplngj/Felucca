@@ -139,6 +139,46 @@ class WatchTests(unittest.TestCase):
         self.assertIn("WAVE", (self.data / "sources.json").read_text())
         self.watch.validate()
 
+    def test_companion_issue_destinations_record_reload_and_preserve_migration(self):
+        repo = self.repository()
+        root = self.commit(repo, "Fixture commit")
+        self.migrate([source(REPO, root)])
+        self.seed_cache(repo)
+        destinations = ["kmplngj/Felucca", "kmplngj/Felucca-Engines",
+                        "kmplngj/Felucca-Engines-GPL", "kmplngj/Felucca-WebApp"]
+        item = review(root, "feature", queue="history") | {
+            "issue_urls": [f"https://github.com/{name}/issues/1" for name in destinations]}
+        before = self.contents()
+        # Legacy configurations still restrict links to the single primary repo.
+        with self.assertRaisesRegex(W.WatchError, "destination issues"):
+            self.record(item)
+        self.assertEqual(before, self.contents())
+        config_path = self.data / "sources.json"
+        config = json.loads(config_path.read_text())
+        config["issue_repositories"] = destinations
+        config_path.write_text(json.dumps(config))
+        for url in ["https://github.com/other/Felucca/issues/1",
+                    "https://github.com/kmplngj/Felucca-Engines-extra/issues/1",
+                    "https://github.com/kmplngj/Felucca-WebApp/commit/123"]:
+            with self.subTest(url=url), self.assertRaisesRegex(W.WatchError, "destination issues"):
+                self.record(item | {"issue_urls": [url]})
+        self.record(item)
+        self.watch.validate()
+        self.assertEqual(self.watch.records()[0]["issue_urls"], item["issue_urls"])
+        self.assertEqual((self.data / "legacy-issue-152.json").read_bytes(),
+                         before["legacy-issue-152.json"])
+        self.assertEqual((self.data / "migration-report.json").read_bytes(),
+                         before["migration-report.json"])
+
+    def test_issue_destination_configuration_rejects_invalid_allowlists(self):
+        primary = "kmplngj/Felucca"
+        self.assertEqual(W.issue_repositories({"destination_repo": primary}), [primary])
+        for destinations in [[], primary, ["other/repo"], [primary, primary.lower()],
+                             [primary, None], [primary, "../bad"], [primary, "bad"]]:
+            with self.subTest(destinations=destinations), self.assertRaises(W.WatchError):
+                W.issue_repositories({"destination_repo": primary,
+                                      "issue_repositories": destinations})
+
     def test_malformed_marked_comment_prevents_partial_migration(self):
         path = self.snapshot([source(REPO, "a" * 40)])
         value = json.loads(path.read_text())

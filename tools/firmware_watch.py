@@ -155,7 +155,21 @@ def review_content(record):
     return {k: v for k, v in record.items() if k != 'provenance'}
 
 
-def validate_review_structure(record, destination_repo=None):
+def issue_repositories(sources):
+    """Keep the primary/legacy destination while allowing explicit companion repos."""
+    primary = repository_name(sources['destination_repo'])
+    destinations = sources.get('issue_repositories', [primary])
+    require(isinstance(destinations, list) and destinations,
+            'issue_repositories must be a nonempty array')
+    for destination in destinations:
+        repository_name(destination)
+    require(len(destinations) == len({d.lower() for d in destinations}),
+            'duplicate issue repository')
+    require(primary in destinations, 'issue_repositories must include destination_repo')
+    return destinations
+
+
+def validate_review_structure(record, destination_repos=None):
     require(isinstance(record, dict), 'record must be an object')
     review_key(record)
     require(record.get('disposition') in TERMINAL | NONTERMINAL, 'unknown disposition')
@@ -187,7 +201,8 @@ def validate_review_structure(record, destination_repo=None):
                 or u.startswith(source_prefix + '/blob/' + record['source_sha'] + '/')
                 for u in record['source_evidence']),
             'source_evidence must identify the exact repository and full source SHA')
-    issue_prefix = re.escape(destination_repo) if destination_repo else r'[^/]+/[^/]+'
+    issue_prefix = ('(?:' + '|'.join(re.escape(repo) for repo in destination_repos) + ')'
+                    if destination_repos else r'[^/]+/[^/]+')
     require(all(re.fullmatch(r'https://github\.com/' + issue_prefix
                             + r'/(?:issues|pull)/[1-9][0-9]*(?:#\S+)?', u) for u in record['issue_urls']),
             'issue_urls must link destination issues')
@@ -242,6 +257,7 @@ class Watch:
         require(sources.get('schema_version') == SCHEMA_VERSION
                 and state.get('schema_version') == SCHEMA_VERSION, 'unsupported schema version')
         repository_name(sources['destination_repo'])
+        destinations = issue_repositories(sources)
         configured = sources['repositories']
         pending = sources.get('pending_source_additions', [])
         require(isinstance(configured, list) and isinstance(pending, list),
@@ -274,7 +290,7 @@ class Watch:
                     sha(target)
         records = self.records()
         for record in records:
-            validate_review_structure(record, sources['destination_repo'])
+            validate_review_structure(record, destinations)
             require(record['repository'] in {s['repository'] for s in configured},
                     'journal record names an unconfigured repository')
         effective_reviews(records)
@@ -807,7 +823,7 @@ class Watch:
         return {'advanced': advanced, 'blockers': blockers, 'summary': result}
 
     def validate_record(self, record, sources, state, effective):
-        validate_review_structure(record, sources['destination_repo'])
+        validate_review_structure(record, issue_repositories(sources))
         key = review_key(record)
         repository, commit = key
         source = next((s for s in sources['repositories'] if s['repository'] == repository), None)

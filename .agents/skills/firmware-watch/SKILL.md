@@ -24,10 +24,14 @@ Read [the ledger guide](../../../docs/firmware-watch.md) and current
    Fetch registered sources with the helper's `sync` command. Only initialize pending
    registrations after identity, branch, immutable pin and full-DAG checks succeed.
    Keep existing frozen intervals; preserve failed entries and explicit blockers.
-4. Inspect all open and closed destination issues, their relevant comments and merged
-   PRs, with full pagination. Build an ignored local inventory keyed by existing
-   `felucca-upstream` markers and issue URLs. Search indexing alone cannot prove absence.
-   Refresh issue state before a new write. Do not execute unreviewed donor scripts.
+4. Inspect all open and closed issues, their relevant comments and merged PRs in
+   **kmplngj/Felucca, kmplngj/Felucca-Engines, kmplngj/Felucca-Engines-GPL and
+   kmplngj/Felucca-WebApp**, with full pagination wherever Issues is enabled. Check
+   each repository's live Issues setting/access. Build an ignored local inventory
+   keyed by existing `felucca-upstream` markers and canonical issue URLs. Follow
+   transferred URLs and deduplicate across all four repos; search indexing alone
+   cannot prove absence. Refresh issue state before a new write. Do not execute
+   unreviewed donor scripts.
 
 ## Select and review
 
@@ -64,6 +68,33 @@ new coverage or replacement of an earlier decision.
 
 ## Issues and durable recovery
 
+Route findings before writing using [AGENTS repository ownership](../../../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation):
+
+- **Felucca-Engines (MIT):** portable engines/DSP/interface, exclusive content,
+  generators and engine tests whose actual source/dependency closure permits this
+  collection. An upstream MIT core does not make a GPL wrapper or asset MIT.
+- **Felucca-Engines-GPL:** GPL-derived portable engines and their exclusive
+  content/generators/tests. Preserve per-file and asset licenses; restricted data
+  still blocks copying. Do not default all engines to GPL just because the host is GPL.
+- **Felucca:** stable global IDs, profiles/registration, exact pins, voice/arena or
+  service hooks, native UI/MOD, effects/hardware, persistence, producer protocol,
+  emulator/runtime, integration/hardware qualification and mixed adoption plans.
+  Existing firmware-native code stays here until an explicitly scoped extraction.
+- **Felucca-WebApp:** editor/installer client implementation and tests. Create the
+  issue there when enabled. While Issues is disabled, use a `Felucca-WebApp:` issue
+  in Felucca with an explicit implementation repo and firmware producer dependency;
+  do not enable Issues as part of a scan. Inaccessible/disabled engine destinations
+  are blockers, not permission to dump engine tickets in Felucca.
+
+Split collection, firmware-host and client findings into linked issues only where
+each represents justified new work; reuse existing owners. Collection issues define
+portable controls/services/tests, while Felucca owns global IDs and integration.
+Read current main in each affected implementation repo and include immutable native
+evidence URLs there; retain the required full `felucca_comparison_sha` for host fit.
+Collection PRs land before a host updates an exact pin. GPL collection consumption
+is still pending Felucca #360. Issue creation during this watch does not authorize
+implementation in any of the four repositories.
+
 Create an issue only for a justified actionable finding not owned by existing work.
 Use `<!-- felucca-upstream:<repository>@<full-sha>:<stable-topic> -->` in its body.
 Prefer linking existing issues; update one only for material new evidence, changed
@@ -72,7 +103,12 @@ negative findings or one journal comment per commit to GitHub issues.
 
 For actionable findings, create/recover the issue first, verify its returned URL,
 then submit the structured assessment through `record --input FILE`. On interruption,
-search the full issue/comment marker inventory before retrying creation. The append-only
+search the full four-repository issue/comment marker inventory, including redirects,
+before retrying creation. Record the actual returned destination URL(s), not a guessed
+Felucca issue number. `sources.json.issue_repositories` explicitly permits companion
+destinations; `destination_repo` remains the primary/legacy host. Preserve historical
+journal URLs and source markers after transfers; redirects are recovery evidence,
+not a reason to rewrite old assessments. The append-only
 journal is authoritative; cached counters and frontiers are derived. Retry an identical
 record safely; investigate conflicting terminal decisions rather than overwrite them.
 Use `checkpoint` to rebuild counts and advance only fully completed frozen intervals.
@@ -104,5 +140,6 @@ If delegation is unavailable, execute the same bounded process serially.
 Notify the user only for actionable findings, meaningful blockers, completed historical
 coverage or required input. Stay quiet when only ordinary scan progress changes.
 This task authorizes review, ledger commits/pushes and justified issue creation/evidence
-updates. Firmware implementation, baseline regeneration, device flashing, releases,
-deployment and unrelated repository writes require their own task scope.
+updates in the four repositories above, subject to the WebApp fallback. Engine,
+firmware or client implementation, baseline regeneration, device flashing, releases,
+deployment, repository-setting changes and unrelated writes require their own task scope.
