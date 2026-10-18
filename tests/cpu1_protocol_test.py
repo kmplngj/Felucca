@@ -270,20 +270,21 @@ LIFECYCLE = r'''
  * cleared by the main loop only after it has seen the failure (the deferred save); a reset can come before that. */
 static int pref_flash, started;
 static uint32_t refused_why;
-static void boot(uint32_t p3, int pref)
+static void boot_g(uint32_t p3, int pref, int bootguard_failed)
 {
     pref_flash = pref;
     fm1_c1g_boot(p3);
     started = 0;
     refused_why = 0;
-    if (pref_flash) {
+    if (pref_flash) {                      /* main.c: read whether or not bootguard.failed */
         refused_why = fm1_c1g_refuse();
-        if (!refused_why) {
+        if (!bootguard_failed && !refused_why) {
             started = 1;
             fm1_c1g_active();              /* fm1_cpu1_start answered */
         }
     }
 }
+static void boot(uint32_t p3, int pref) { boot_g(p3, pref, 0); }
 static void main_loop_notices(void)        /* main.c: the notice, and the ON preference cleared (settings_later) */
 {
     if (refused_why) pref_flash = 0;
@@ -414,6 +415,34 @@ int main(int argc, char **argv)
         boot(SOFT, 1);
         assert(started);
         break;
+    case 11: /* the worker's watchdog reset is also a bootguard failure: the hang is still recorded and shown */
+        garbage(0, 0);
+        boot(POR, 1);
+        boot_g(WDT, 1, 1);
+        assert(!started && refused_why == FM1_C1X_HANG && reason() == FM1_C1X_HANG && count() == 1u);
+        main_loop_notices();
+        assert(!pref_flash);                                 /* a lost RAM no longer finds the saved ON */
+        boot_g(POR, pref_flash, 0);
+        assert(!started);
+        break;
+    case 12: /* another exclusion together with a bootguard failure: one refusal counted, the preference cleared */
+        garbage(0, 0);
+        boot(POR, 1);
+        fm1_c1g_mark(FM1_C1X_TIMEOUT);
+        boot_g(WDT, 1, 1);
+        assert(!started && refused_why == FM1_C1X_TIMEOUT && count() == 1u);
+        main_loop_notices();
+        assert(!pref_flash);
+        break;
+    case 13: /* a bootguard failure alone: not started, no notice, preference and record untouched */
+        garbage(0, 0);
+        boot_g(POR, 1, 1);
+        assert(!started && !refused_why && reason() == FM1_C1X_NONE && count() == 0u);
+        main_loop_notices();
+        assert(pref_flash == 1);
+        boot(POR, 1);                                        /* the failure passed: it starts */
+        assert(started);
+        break;
     default:
         return 2;
     }
@@ -429,7 +458,9 @@ class Cpu1GuardLifecycle(unittest.TestCase):
     SCENARIOS = {0: "invalid retained state", 1: "cold boot", 2: "early CPU0 fault", 3: "late CPU0 fault",
                  4: "bad job, reset before the deferred save", 5: "timeout, reset before the deferred save",
                  6: "successful operation", 7: "repeated warm reset", 8: "explicit recovery",
-                 9: "core 1 fault alone", 10: "reset between the stores"}
+                 9: "core 1 fault alone", 10: "reset between the stores",
+                 11: "hang with a bootguard failure", 12: "timeout with a bootguard failure",
+                 13: "bootguard failure alone"}
 
     def compile_run(self, source):
         with tempfile.TemporaryDirectory(prefix="felucca-cpu1-guard-") as temporary:
@@ -454,6 +485,9 @@ class Cpu1GuardLifecycle(unittest.TestCase):
         self.assertLess(cstart.index("fm1_c1g_boot(p3)"), cstart.index("_bss_start"))
         self.assertLess(cstart.index("fm1_reset_reason()"), cstart.index("fm1_c1g_boot(p3)"))
         gate = main[main.index("c1_refused = fm1_c1g_refuse();"):]
+        self.assertIn("if (ui_prefs2 & (PREF_CPU2_ON >> 16)) {\n", main[main.index("kb_boot_hold = 1;"):main.index("c1_refused = fm1_c1g_refuse();")])
+        self.assertNotIn("bootguard", main[main.index("kb_boot_hold = 1;"):main.index("c1_refused = fm1_c1g_refuse();")].split("*/")[-1])
+        self.assertIn("if (!bootguard.failed && !c1_refused) {", gate[:gate.index("fm1_cpu1_start();")])
         self.assertLess(gate.index("fm1_c1g_refuse"), gate.index("fm1_cpu1_start();"))
         self.assertIn("settings_later();", main[main.index("if (!c1_told)"):main.index("ui_message(c1_held_msg(why))")])
         self.assertNotIn("settings_later", main[main.index("c1_refused = fm1_c1g_refuse();"):main.index("fm1_cpu1_start();")])

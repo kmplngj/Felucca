@@ -212,15 +212,16 @@ static void fm1_main(void)
     master_boot();
     kb_boot_hold = 1;                         /* #137: no notes from the keys before the UI (seq.c keyboard_block) */
 #if FELUCCA_CPU2
-    if (!bootguard.failed && (ui_prefs2 & (PREF_CPU2_ON >> 16))) {
+    if (ui_prefs2 & (PREF_CPU2_ON >> 16)) {
         /* the second core (hal/fm1_cpu1.h; fx.c mix_block hands it parts), at power-on, before the audio and
          * the timers (started later it never reaches its entry). It starts in the chip's ROM: the PC limits open
          * meanwhile. MENU > 2ND CORE OFF (the default), a crash in the last boot's first 30 s, a retained exclusion
          * (a bad job, a timeout, core 0's fault or a hang while it answered: fm1_c1g_refuse, hal/fm1_sys.h; the saved
          * ON does not override it, MENU > 2ND CORE set ON again does) or no answer: it is never started, one core,
-         * as 1.6 */
+         * as 1.6. The exclusion is read even after a bootguard failure (the worker's own watchdog reset is one): the
+         * notice and the cleared ON preference follow from it, or a lost RAM would start the failed worker again */
         c1_refused = fm1_c1g_refuse();
-        if (!c1_refused) {
+        if (!bootguard.failed && !c1_refused) {
             fm1_guard_pc_open();
             fm1_cpu1_start();
             fm1_guard_enable(FM1_GUARD_PC);
