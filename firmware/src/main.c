@@ -153,9 +153,22 @@ static void boot_leds(void)
         fm1_led_anim_start(settings_leds == LEDS_DIM || settings_leds == LEDS_DIM_LO);
 }
 
+/* Shared with the emulator: a fast boot for every build. Calibration and session
+ * restore precede dismissal; interrupts keep scanning and playing MIDI meanwhile. */
+#define BOOT_SPLASH_MS 430u
+#define BOOT_SCAN_MS 30u
+static int boot_splash_wait(uint32_t start)
+{
+    uint32_t pressed = fm1_input_edges(0);
+    uint32_t notes = fm1_input_note_edges();
+    enc_drop();                              /* no accumulated knob change on HOME */
+    return !(pressed | notes | fm1_in.buttons | fm1_in.notes) &&
+           (uint32_t)(fm1_ms - start) < BOOT_SPLASH_MS;
+}
+
 static void fm1_main(void)
 {
-    uint32_t ms;
+    uint32_t splash_start, master_ms;
 #if FELUCCA_CPU2
     uint8_t c1_told = 0;                                /* 2ND CORE MISREAD shown (and ON cleared) */
 #endif
@@ -207,17 +220,23 @@ static void fm1_main(void)
     timer5_start();
     fm1_guard_lock_top();
     fm1_irq_enable_all();
-    fm1_delay_ms(30);
+    splash_start = fm1_ms;
+    fm1_delay_ms(BOOT_SCAN_MS);
     if ((fm1_in.buttons & 3u) == 3u) {
         panel_setup();                        /* OCT- + OCT+ held at power-on */
         settings_save();
     }
     autosave_boot(boot_clean);                /* (1.2) the last session's music, under the splash */
-    for (ms = 0; ms < 400u; ms += 10u) {      /* the splash; the pot followed (MIDI IN plays under it) */
-        fm1_delay_ms(10);
-        master_poll();
+    master_ms = fm1_ms;
+    while (boot_splash_wait(splash_start)) { /* dismiss at the next debounced input scan */
+        fm1_wdt_feed();
+        usb_retry(fm1_ms);
+        if ((uint32_t)(fm1_ms - master_ms) >= 10u) {
+            master_ms = fm1_ms;
+            master_poll();                  /* preserve the pot smoothing cadence */
+        }
     }
-    kb_boot_hold = 0;
+    /* ui_input releases kb_boot_hold after every dismissal key is up. */
     lcd_fill(0, 0, 240, 240, T_BG);
     scrn.idle = fm1_ms;                        /* (MENU > SCREEN OFF: from here) */
 
@@ -251,7 +270,7 @@ static void fm1_main(void)
              * go cancels it */
             static uint32_t t0;
             uint32_t both = (1u << panel.btn[B_OCTDN]) | (1u << panel.btn[B_OCTUP]);
-            if ((fm1_in.buttons & both) != both) {
+            if (kb_boot_hold || (fm1_in.buttons & both) != both) {
                 if (ui.uboot) {
                     ui.uboot = 0;
                     ui.force = 1;                       /* what the countdown covered */

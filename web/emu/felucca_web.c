@@ -270,7 +270,7 @@ static void cdc_task(void) {}
 #undef usb_detach
 
 /* --------------------------------------------------------- the device --- */
-static uint32_t web_booted, web_boot_ms, web_last_frame;
+static uint32_t web_booted, web_boot_ms, web_last_frame, web_splash;
 
 /* main.c fm1_main's boot, up to the main loop (no USB, no UART, no panel setup) */
 static void web_power_on(void)
@@ -291,7 +291,8 @@ static void web_power_on(void)
     audio_init();
     boot_leds();                          /* main.c: the power-on LED sweep, from the scan's start */
     autosave_boot(boot_clean);            /* main.c: the last session's music (1.2, project.c) */
-    web_boot_ms = fm1_ms + 430u;         /* main.c: 30 + 400 ms before the first frame */
+    web_boot_ms = fm1_ms;
+    web_splash = 1;
     web_booted = 1;
 }
 
@@ -333,11 +334,14 @@ static void web_ms(void)
         }
         web_half ^= 1u;
     }
-    if (!web_booted || (int32_t)(fm1_ms - web_boot_ms) < 0)
+    if (!web_booted)
         return;
-    if (web_boot_ms) {                                    /* main.c: the splash goes, the loop starts */
-        web_boot_ms = 0;
-        kb_boot_hold = 0;
+    if (web_splash) {
+        if ((uint32_t)(fm1_ms - web_boot_ms) % 10u == 0u)
+            master_poll();
+        if ((uint32_t)(fm1_ms - web_boot_ms) < BOOT_SCAN_MS || boot_splash_wait(web_boot_ms))
+            return;
+        web_splash = 0;                                  /* ui_input consumes the release, as on hardware */
         lcd_fill(0, 0, 240, 240, T_BG);
         web_last_frame = fm1_ms - 15u;
     }

@@ -34,7 +34,7 @@ static const uint16_t SCALE_MASK[] = {
 
 #define KB_SILENT 255u
 static uint32_t kb_prev;
-static volatile uint8_t kb_boot_hold;    /* #137: set from power-on to the end of the splash (main.c): the keys sound nothing,
+static volatile uint8_t kb_boot_hold;    /* #137, #407: power-on through dismissal release: the keys sound nothing,
                                           * and one held across its end stays silent until it is let go and pressed again */
 static uint8_t kb_note[27], kb_trk[27];  /* per key: the note it started and on which track */
 static uint8_t in_key;                   /* the key (+ 1) whose notes go into input_on now (key_on), 0: none (MIDI IN) */

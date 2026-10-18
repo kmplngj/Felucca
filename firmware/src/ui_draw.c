@@ -1342,74 +1342,16 @@ static void draw_columns(void)
 }
 
 
-/* The power-on splash (main.c fm1_main, web/emu felucca_web.c; 1.1.5): a RAISE square centred on the screen, square
- * corners (in every style; LINE too: RAISE from the palette's SURF), in it in AF_M (M8 maker lines in S),
- * the ink SPL_PAD in from the left:
- * at the top the name and the version, the first line's capitals' top SPL_PAD down; at the bottom the maker and
- * "with community", the last line's capitals' bottom (its baseline) SPL_PAD up from the square's bottom. Both
- * margins are measured to the capitals (the descender of "community" hangs into the bottom one, as off a baseline).
- * The square (176 x 176) is more than the canvas (CV_MAX, 240 x 124): it is filled straight on the screen and its
- * two text bands drawn on it as canvases, the top one from the square's top edge, the bottom one to its bottom edge.
- * In the saved palette (settings_init before it) */
-#define SPL_SQ 176                                  /* the square (even: centred exactly) */
-#define SPL_X0 ((240u - SPL_SQ) / 2u)               /* its top-left on the screen (x and y) */
-#define SPL_PAD 16                                  /* the text's inset: left (its ink), top and bottom (the capitals) */
-#define SPL_PITCH 20                                /* line to line */
-static const char *const SPLASH_LINES[] = {"Felucca", FELUCCA_VERSION, "H\xFCgelton Instruments", "with community"};
-/* a band of two lines, h tall, at y on the screen: the first line's top at ly; the two lines' capitals declared
- * against al0..al1 (mode: AL_V the band centred there, AL_B the last baseline on al1) */
-static void splash_band(uint32_t y, uint32_t h, int32_t ly, const char *const *l, uint32_t mode, int32_t al0,
-                        int32_t al1, const char *tag)
-{
-    cv_begin(SPL_SQ, h, T_RAISE);
-    GFX_HOOK_ALIGN(0, al0, 0, al1, mode | AL_N(2), tag);
-#if UI_FONT_BITMAP
-    int32_t b[4];
-#if UI_FONT_M8STEALTH
-    /* The wider M8 value face cannot fit the maker's name in this square.
-     * Use S for both maker lines, keeping the bottom baseline and all text. */
-    const aafont_t *f = mode == AL_B ? &AF_S : &AF_M;
-    if (mode == AL_B)
-        ly += AF_M.asc - AF_S.asc;
-#else
-    const aafont_t *f = &AF_M;
-#endif
-    text_ink(f, l[0], b);
-    cv_text_on(SPL_PAD - b[0], ly, f, l[0], T_TEXT, T_RAISE);
-    text_ink(f, l[1], b);
-    cv_text_on(SPL_PAD - b[0], ly + SPL_PITCH, f, l[1], T_TEXT, T_RAISE);
-#else
-    cv_text_on(SPL_PAD, ly, &AF_M, l[0], T_TEXT, T_RAISE);
-    cv_text_on(SPL_PAD, ly + SPL_PITCH, &AF_M, l[1], T_TEXT, T_RAISE);
-#endif
-    cv_blit(SPL_X0, y);
-}
+/* Startup uses the saved palette. One identity line: clean release version,
+ * verified PR label, or compiled revision. ABOUT retains the complete identity. */
 static void draw_splash(void)
 {
-    int32_t top = SPL_PAD - AF_M_CAP_Y;
-#if UI_FONT_BITMAP
-    int32_t b[4];
-    /* Tamzen's lowercase ascenders rise above H. Inset the name's actual ink,
-     * while declaring the capitals' band separately for the alignment check. */
-    text_ink(&AF_M, SPLASH_LINES[0], b);
-    top = SPL_PAD - b[1];
-#endif
-    int32_t h = top + SPL_PITCH + AF_M.h;                    /* a band: its two lines, the descenders in */
-    int32_t lb = h - SPL_PAD - AF_M_CAP_H - AF_M_CAP_Y;         /* the bottom band's last line: its top */
+    const aafont_t *f = text_w(&AF_M, FELUCCA_SPLASH_ID) <= 224 ? &AF_M : &AF_S;
+    int32_t cap_y = f == &AF_M ? AF_M_CAP_Y : AF_S_CAP_Y;
     lcd_fill(0, 0, 240, 240, T_BG);
-    lcd_fill(SPL_X0, SPL_X0, SPL_SQ, SPL_SQ, T_RAISE);
-    splash_band(SPL_X0, (uint32_t)h, top, SPLASH_LINES, AL_V, top + AF_M_CAP_Y,
-                top + AF_M_CAP_Y + SPL_PITCH + AF_M_CAP_H, "splash name + version SPL_PAD from the top");
-    splash_band(SPL_X0 + SPL_SQ - (uint32_t)h, (uint32_t)h, lb - SPL_PITCH, SPLASH_LINES + 2, AL_B, 0, h - SPL_PAD,
-                "splash maker's baseline SPL_PAD from the bottom");
-    /* The middle band uses S so the longest SHA + dirty marker fits every font.
-     * Keep attribution and the existing splash lifetime unchanged. */
-    cv_begin(SPL_SQ, 38, T_RAISE);
-    cv_text_on(SPL_PAD, 0, &AF_S, FELUCCA_BUILD_ID, T_TEXT, T_RAISE);
-    if (FELUCCA_BUILD_PR[0])
-        cv_text_on(SPL_PAD, 18, &AF_S, FELUCCA_BUILD_PR, T_TEXT, T_RAISE);
-    cv_blit(SPL_X0, SPL_X0 + 76);
-    lcd_sync();
+    draw_text_line(8, 60 - AF_L_CAP_Y, 224, &AF_L, "Felucca", T_TEXT, T_BG, 1);
+    draw_text_line(8, 96 - cap_y, 224, f, FELUCCA_SPLASH_ID, T_TEXT, T_BG, 1);
+    draw_text_line(8, 220 - AF_S_CAP_Y, 224, &AF_S, "Press any button to continue", T_TEXT, T_BG, 1);
 }
 
 /* UPDATE MODE countdown (main.c: OCT- + OCT+ held): over everything, the menu and the dialogs too */
