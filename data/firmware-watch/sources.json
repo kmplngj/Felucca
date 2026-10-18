@@ -1,0 +1,408 @@
+{
+  "destination_repo": "kmplngj/Felucca",
+  "pending_source_additions": [
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/359",
+      "authorization": "User requested in the DUELL adoption chat: also add wave to the updater issue and process.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
+      },
+      "historical_total_at_setup": 8,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/354",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
+      },
+      "recent_frontiers": {
+        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/352",
+        "https://github.com/kmplngj/Felucca/issues/353",
+        "https://github.com/kmplngj/Felucca/issues/354",
+        "https://github.com/kmplngj/Felucca/issues/355",
+        "https://github.com/kmplngj/Felucca/issues/356",
+        "https://github.com/kmplngj/Felucca/issues/357",
+        "https://github.com/kmplngj/Felucca/issues/358",
+        "https://github.com/kmplngj/Felucca/issues/359"
+      ],
+      "repository": "oscillr/DUELL",
+      "repository_id": 1414682263,
+      "requested_at": "2026-10-16",
+      "source_name": "DUELL (including the WAVE instrument)",
+      "status": "pending_initialization"
+    }
+  ],
+  "repositories": [
+    {
+      "historical_targets": {
+        "main": "ef1f561b6b105f20350f6b1eac0dc0789a357f00"
+      },
+      "historical_total_at_setup": 38,
+      "recent_total_at_setup": 0,
+      "repository": "hugelton/Felucca",
+      "repository_id": 1401644280
+    },
+    {
+      "historical_targets": {
+        "main": "01a78bdf0fb0e1a9d953567e36a59d80dea54a8a",
+        "next": "01a78bdf0fb0e1a9d953567e36a59d80dea54a8a"
+      },
+      "historical_total_at_setup": 296,
+      "recent_total_at_setup": 38,
+      "repository": "keremimo/melodee",
+      "repository_id": 1403009577
+    },
+    {
+      "historical_targets": {
+        "main": "e8efc993c986f8d7661c515ebfc8c46c6e77057c"
+      },
+      "historical_total_at_setup": 190,
+      "recent_total_at_setup": 38,
+      "repository": "Quixotic7/ChoralRootFM1",
+      "repository_id": 1406518915
+    },
+    {
+      "historical_targets": {
+        "main": "cb6dedcec2578411c7cb16fd24c1c8d3b300a72b"
+      },
+      "historical_total_at_setup": 13,
+      "recent_total_at_setup": 4,
+      "repository": "isod89/sloop-fm1",
+      "repository_id": 1404547122
+    },
+    {
+      "historical_targets": {
+        "main": "929730019a9dc362c12a710c0b139cbfefb582e9"
+      },
+      "historical_total_at_setup": 7,
+      "recent_total_at_setup": 0,
+      "repository": "zvenson/dinghy",
+      "repository_id": 1411934286
+    },
+    {
+      "historical_targets": {
+        "main": "610f330423ae8c37e1b5137b11f04c9c185553bc"
+      },
+      "historical_total_at_setup": 151,
+      "recent_total_at_setup": 10,
+      "repository": "zvenson/zp12",
+      "repository_id": 1409008611
+    },
+    {
+      "historical_targets": {
+        "main": "47f8e4c4ad602591b81c21bc5480db7a94f6d6af"
+      },
+      "historical_total_at_setup": 163,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/fm1-x0x",
+      "repository_id": 1404113489
+    },
+    {
+      "historical_targets": {
+        "ghoulbox": "b61a931cd67b812a9c4f650eefc72215828dc5b0",
+        "research/flash-savings": "7d92eaa3f5added7cbdca1cdf9d27cb4a760e917"
+      },
+      "historical_total_at_setup": 101,
+      "recent_total_at_setup": 18,
+      "repository": "jasonpersinger/ghoulbox-fm1-dungeon-synth",
+      "repository_id": 1408040891
+    },
+    {
+      "historical_targets": {
+        "main": "6c167555576b5022d10a611fc41e3837296ea00e"
+      },
+      "historical_total_at_setup": 179,
+      "recent_total_at_setup": 5,
+      "repository": "zednaked/jangada",
+      "repository_id": 1404672282
+    },
+    {
+      "historical_targets": {
+        "main": "4537c262349ecf02f8924c4297ec4355f7460924"
+      },
+      "historical_total_at_setup": 226,
+      "recent_total_at_setup": 25,
+      "repository": "juanjiant-bit/JIANT",
+      "repository_id": 1410436897
+    },
+    {
+      "historical_targets": {
+        "main": "e877ed64b2b727f5f928c7faa87fef1e12171286"
+      },
+      "historical_total_at_setup": 3230,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/schwung",
+      "repository_id": 1060734339
+    },
+    {
+      "historical_targets": {
+        "main": "19d896795b6ce36f4a382e0fcae2d96dbe7e7cfa"
+      },
+      "historical_total_at_setup": 4,
+      "recent_total_at_setup": 0,
+      "repository": "temeculadsp/nibbi",
+      "repository_id": 1399089150
+    },
+    {
+      "historical_targets": {
+        "main": "bb1266753474951e161216992e557f316a8c4611"
+      },
+      "historical_total_at_setup": 2,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/schwung-hank",
+      "repository_id": 1360295730
+    },
+    {
+      "historical_targets": {
+        "main": "f79280775252f5e0c144dd2b7462101afca3f9dc"
+      },
+      "historical_total_at_setup": 25,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/schwung-chiptune",
+      "repository_id": 1160622558
+    },
+    {
+      "historical_targets": {
+        "main": "2c2ee4bb757bfe4ff171905e625c385e1310f649"
+      },
+      "historical_total_at_setup": 29,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/schwung-bouba-kiki",
+      "repository_id": 1365532471
+    },
+    {
+      "historical_targets": {
+        "main": "e774a674eef281248282ab47f69a9456bf6631fc"
+      },
+      "historical_total_at_setup": 34,
+      "recent_total_at_setup": 0,
+      "repository": "sd88me/schwung-maze",
+      "repository_id": 1353092810
+    },
+    {
+      "historical_targets": {
+        "main": "0f1c932164fc012334dcf1e727da448a8389eaeb"
+      },
+      "historical_total_at_setup": 20,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/schwung-ducker",
+      "repository_id": 1157200667
+    },
+    {
+      "historical_targets": {
+        "main": "49bc5a5a2cd01f1b4965993860e29f7b78fc22a5"
+      },
+      "historical_total_at_setup": 11,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/schwung-gate",
+      "repository_id": 1158510932
+    },
+    {
+      "historical_targets": {
+        "main": "01fd532598b388406d91a8010e805632809337a8"
+      },
+      "historical_total_at_setup": 4,
+      "recent_total_at_setup": 0,
+      "repository": "charlesvestal/schwung-velocity-scale",
+      "repository_id": 1360418155
+    },
+    {
+      "historical_targets": {
+        "main": "f0ff52557829bd686118f45b90119c59188a9bf8"
+      },
+      "historical_total_at_setup": 24,
+      "recent_total_at_setup": 0,
+      "repository": "handcraftedcc/schwung-eucalypso",
+      "repository_id": 1167813711
+    },
+    {
+      "historical_targets": {
+        "main": "1235e59e065061483d4f6c420fdd016a02f1a404"
+      },
+      "historical_total_at_setup": 405,
+      "recent_total_at_setup": 0,
+      "repository": "DeadActive/hortator",
+      "repository_id": 1408646033
+    },
+    {
+      "historical_targets": {
+        "main": "7304acfe34cbf43825d33c15ef13bef0aab5c85d"
+      },
+      "historical_total_at_setup": 39,
+      "recent_total_at_setup": 0,
+      "repository": "Wulgaren/Araminta",
+      "repository_id": 1414058478
+    },
+    {
+      "historical_targets": {
+        "main": "097e3f8a382aca6b0e70943b186280062776d352"
+      },
+      "historical_total_at_setup": 45,
+      "recent_total_at_setup": 0,
+      "repository": "genkigenki/Makkuro37",
+      "repository_id": 1412997724
+    },
+    {
+      "historical_targets": {
+        "main": "800548dae452c4d1fc3bea7b2086c0f87e5fdee7",
+        "smk37-board": "74cdbe3a20331edddd2e9768962fa8178948f972"
+      },
+      "historical_total_at_setup": 71,
+      "recent_total_at_setup": 0,
+      "repository": "genkigenki/Snoop37",
+      "repository_id": 1412117393
+    },
+    {
+      "historical_targets": {
+        "main": "6bc0202ae5b5ed92fb1a5f37009a096a1ca7eb2d"
+      },
+      "historical_total_at_setup": 34,
+      "recent_total_at_setup": 0,
+      "repository": "genkigenki/fm1-to-smk37",
+      "repository_id": 1412129017
+    },
+    {
+      "historical_targets": {
+        "smk37": "b4038b2cb1137c61114c0f9bf6622da8c686ca03"
+      },
+      "historical_total_at_setup": 39,
+      "history_reconciliations": [
+        {
+          "adopted_pinned_recent_target": "d682be031a6f10c8779e00b425ba8f4a646707cd",
+          "authorization": "Direct user request in this chat: reconcile rewritten smk37 history and admit new commits without losing prior checkpoints or decisions.",
+          "branch": "smk37",
+          "journal_invariants": {
+            "comment_count_before": 107,
+            "completed_pairs_before": 101,
+            "records_before": 102,
+            "records_sha256": "cf2d47e3bd28eedea135052e57963d0b122e30f631777b86401b4d0dc913abfb"
+          },
+          "journal_url": "https://github.com/kmplngj/Felucca/issues/152#issuecomment-6149168784",
+          "merge_bases": [
+            "ef1f561b6b105f20350f6b1eac0dc0789a357f00"
+          ],
+          "new_only_commits": [
+            {
+              "commit_title": "Felucca 1.5.6",
+              "parents": [
+                "ef1f561b6b105f20350f6b1eac0dc0789a357f00"
+              ],
+              "source_sha": "9f6a8858afd71b4faed9dfea3a5f94d3ecfdf002",
+              "tree": "1f1efa37f20beeee08084cdbd8ec8c242ebfa251"
+            },
+            {
+              "commit_title": "Felucca 1.6",
+              "parents": [
+                "9f6a8858afd71b4faed9dfea3a5f94d3ecfdf002"
+              ],
+              "source_sha": "1727537624390cc3f9c7dff2456b43b3a8edb005",
+              "tree": "745bae80b325f0bbd6750babb423987bab92fca1"
+            },
+            {
+              "commit_title": "SMK-37 Pro target (BOARD=smk37); the FM-1 build unchanged",
+              "parents": [
+                "1727537624390cc3f9c7dff2456b43b3a8edb005"
+              ],
+              "source_sha": "0b584227f6057f371f2d8f2fec1f98bc5f885b48",
+              "tree": "7afbaf973072d84406130acdab68af46dbb131f0"
+            },
+            {
+              "commit_title": "Emulator: FL_JEDEC_OK and FM1_OCT_BOTH for web/emu (the FM-1's values)",
+              "parents": [
+                "0b584227f6057f371f2d8f2fec1f98bc5f885b48"
+              ],
+              "source_sha": "229316d8281981e3b8a2beb4cc8ec15a5b76d1d1",
+              "tree": "8cdf0d30bf88261ec829b9245b9beb6b512f326b"
+            },
+            {
+              "commit_title": "SMK37.md: SMK-37 instructions; README links it",
+              "parents": [
+                "229316d8281981e3b8a2beb4cc8ec15a5b76d1d1"
+              ],
+              "source_sha": "8d9b55a9af0930bd4e5eb9085d31f31dae35de48",
+              "tree": "d763f9032f638065b02a5e155f5a96d80ef4f49c"
+            },
+            {
+              "commit_title": "SMK-37 Elite and MKE-P37 builds (MODEL=elite / mke); installers check the model on every path",
+              "parents": [
+                "8d9b55a9af0930bd4e5eb9085d31f31dae35de48"
+              ],
+              "source_sha": "60c37c044a8028ef90b458972bde412380daab78",
+              "tree": "a48092a286b38bf8be7967733d15902e5b166372"
+            },
+            {
+              "commit_title": "SMK37.md: the SMK-37 Elite and MKE-P37 builds, the web installer; comments and copyright line of the SMK files",
+              "parents": [
+                "60c37c044a8028ef90b458972bde412380daab78"
+              ],
+              "source_sha": "d682be031a6f10c8779e00b425ba8f4a646707cd",
+              "tree": "f92a712d8dfcd3a9a212ce86bdaaa1509b91b16a"
+            }
+          ],
+          "new_reachable_count": 45,
+          "old_checkpoints": {
+            "historical_targets": {
+              "smk37": "b4038b2cb1137c61114c0f9bf6622da8c686ca03"
+            },
+            "pinned_recent_targets": {
+              "smk37": "b4038b2cb1137c61114c0f9bf6622da8c686ca03"
+            },
+            "recent_frontiers": {
+              "smk37": "b4038b2cb1137c61114c0f9bf6622da8c686ca03"
+            }
+          },
+          "old_only_commits": [
+            {
+              "commit_title": "SMK-37 Pro target (BOARD=smk37); the FM-1 build unchanged",
+              "parents": [
+                "ef1f561b6b105f20350f6b1eac0dc0789a357f00"
+              ],
+              "source_sha": "b4038b2cb1137c61114c0f9bf6622da8c686ca03",
+              "tree": "28cac6cd1b4aa84df14af77400a435db90bce648"
+            }
+          ],
+          "old_reachable_count": 39,
+          "pending_history_count": 38,
+          "pending_recent_count": 7,
+          "queue_policy": {
+            "completion_credit_transferred": 0,
+            "historical_targets": "unchanged; retain entire original DAG including old-only commit",
+            "newer_interval": "complete reachable(adopted target) minus reachable(retained frontier), oldest topological order, minus terminal exact-SHA journal records",
+            "pinned_recent_targets": "adopt verified live tip; previous frozen interval was empty",
+            "recent_frontiers": "unchanged until all seven repository/full-SHA assessments are terminal"
+          },
+          "rebased_commit_mapping": [
+            {
+              "evidence": "git range-diff detects changed keyboard velocity integration, flash-erase LED board guard and UI arrays against the 1.6 base; no terminal decision copied",
+              "new_sha": "0b584227f6057f371f2d8f2fec1f98bc5f885b48",
+              "new_stable_patch_id": "2d78ea1bea59d4b7047b513e6ba97a14ac8e6cc5",
+              "old_sha": "b4038b2cb1137c61114c0f9bf6622da8c686ca03",
+              "old_stable_patch_id": "192c1c0f831bb3e1fe8237b8405d2533a8acb61d",
+              "relationship": "range-diff structural match; changed patch, not interchangeable"
+            }
+          ],
+          "reconciled_at": "2026-10-13T15:31:16.199011+00:00",
+          "reconciliation_id": "genkigenki-Felucca-smk37-b4038b2cb1137c61114c0f9bf6622da8c686ca03-to-d682be031a6f10c8779e00b425ba8f4a646707cd",
+          "repository": "genkigenki/Felucca",
+          "repository_id": 1414748052,
+          "run_id": "267d89df-e6ce-4a9c-832b-e9f73f66b81c",
+          "schema_version": 1,
+          "shared_commit_count": 38,
+          "union_reachable_count": 46
+        }
+      ],
+      "recent_total_at_setup": 0,
+      "repository": "genkigenki/Felucca",
+      "repository_id": 1414748052
+    }
+  ],
+  "schema_version": 1
+}

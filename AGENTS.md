@@ -21,6 +21,7 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 | Contribute or package third-party code/data | [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSING.md](LICENSING.md) |
 | Add an engine, effect or platform/persistence hook | [docs/extending.md](docs/extending.md) |
 | Evaluate an idea from another FM-1 firmware | [The dated development review](docs/development-review-2026-10-11.md), then that project's current source |
+| Scan registered firmware sources, backfill history or maintain scan progress | [Firmware-watch skill](.agents/skills/firmware-watch/SKILL.md) and [ledger guide](docs/firmware-watch.md) |
 | Plan build profiles, usage modes, new engine IDs or new persistent data | [docs/modularity.md](docs/modularity.md) and the issues it maps; for flash sectors, saved bytes or retained RAM, the [capacity plan](docs/flash-capacity.md) |
 | Create or update a PR, or hand off a change for user testing | [PR testing skill](.agents/skills/pr-testing/SKILL.md) |
 

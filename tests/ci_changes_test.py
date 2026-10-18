@@ -51,6 +51,15 @@ class SelectionTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.suites([path]), {"python"})
 
+    def test_firmware_watch_ledger_uses_portable_validation(self):
+        for path in ("data/firmware-watch/sources.json", "data/firmware-watch/state.json",
+                     "data/firmware-watch/reviews.jsonl", "data/firmware-watch/migration-report.json",
+                     "data/firmware-watch/legacy-issue-152.json"):
+            self.assertEqual(self.suites([path]), {"python"})
+        self.assertEqual(self.suites([".agents/skills/firmware-watch/SKILL.md"]), set())
+        self.assertEqual(self.suites(["data/firmware-watch/state.json", "firmware/src/audio.c"]),
+                         {"full"})
+
     def test_shared_inputs_and_unknown_files_run_full(self):
         for path in ("firmware/src/eng_fm6.c", "firmware/hal/regs.h", "firmware/app.ld",
                      "firmware/loader/start.s", "build.sh", "tools/build.py",
