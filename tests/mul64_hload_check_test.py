@@ -128,6 +128,23 @@ class Cli(unittest.TestCase):
         self.run_cli(self.dis(2), "--json", str(base))
         self.assertEqual(self.run_cli(self.dis(2), "--window", "5", "--json", str(self.tmp / "o.json"), "--fail-on-new", str(base))[0], 2)
 
+    def test_fail_on_new_without_reachability_data_exits_2(self):
+        base = self.tmp / "base.json"
+        self.assertEqual(self.run_cli(self.dis(20), "--json", str(base))[0], 0)
+        (self.tmp / "felucca.ll").unlink()
+        rc, out = self.run_cli(self.dis(2), "--json", str(self.tmp / "o.json"), "--fail-on-new", str(base))
+        self.assertEqual(rc, 2)
+        self.assertNotIn("NEW:", out)
+        # IR present but without the ISR roots is equally unusable
+        (self.tmp / "felucca.ll").write_text("define void @hot() #0 {\n  ret void\n}\nattributes #0 = { nounwind }\n")
+        self.assertEqual(self.run_cli(self.dis(2), "--json", str(self.tmp / "o.json"), "--fail-on-new", str(base))[0], 2)
+
+    def test_fail_on_new_with_ir_exit_codes(self):
+        base = self.tmp / "base.json"
+        self.run_cli(self.dis(20), "--json", str(base))
+        self.assertEqual(self.run_cli(self.dis(20), "--json", str(self.tmp / "o.json"), "--fail-on-new", str(base))[0], 0)
+        self.assertEqual(self.run_cli(self.dis(2), "--json", str(self.tmp / "o.json"), "--fail-on-new", str(base))[0], 1)
+
     def test_missing_ir_reports_unknown_reachability(self):
         (self.tmp / "felucca.ll").unlink()
         rc, out = self.run_cli(self.dis(2), "--json", str(self.tmp / "o.json"))

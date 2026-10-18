@@ -41,7 +41,10 @@ python3 tests/mul64_hload_check.py --fail-on-new tests/mul64_hload_baseline.json
 ```
 
 It exits 1 only when an A/T/C-reachable function has more `near_mul` (at `--window`, default 8)
-than the baseline records (missing = 0), and 2 for unusable input.
+than the baseline records (missing = 0), and 2 for unusable input. Gating needs reachability: without
+the matching unoptimized IR (`felucca.ll` beside the listing, or `--ir PATH`), or with IR lacking the
+audio/TIMER5 roots, it exits 2 rather than treating every function as main-loop only. Plain report
+mode still prints `-` and exits 0 in that case.
 
 ## Instruction syntax found
 

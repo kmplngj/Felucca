@@ -157,7 +157,7 @@ def main(argv=None):
     ap.add_argument("--window", "-N", type=int, default=8, help="instructions between a multiply and a load (default 8)")
     ap.add_argument("--json", help="write the machine-readable result here (default: build/mul64_hload.json)")
     ap.add_argument("--top", type=int, default=25, help="table rows (0 = all)")
-    ap.add_argument("--fail-on-new", metavar="BASELINE", help="exit 1 if an ISR/CPU1-reachable function has more "
+    ap.add_argument("--fail-on-new", metavar="BASELINE", help="exit 1 (2 without usable IR) if an ISR/CPU1-reachable function has more "
                     "multiplies near a 16-bit load than in BASELINE (a --json file); not part of tests/run_tests.sh")
     a = ap.parse_args(argv)
     dis = Path(a.dis)
@@ -185,6 +185,12 @@ def main(argv=None):
             return 2
     else:
         warn = f"no IR at {ir}: reachability unknown, every function is shown as '-'"
+    if baseline is not None and not (sets.get("A") or sets.get("T")):
+        # '-' would mean "main loop only" and be skipped by new_findings(): never gate on unknown reachability
+        why = f"no IR at {ir}" if warn else f"{ir} has no audio/TIMER5 ISR roots"
+        print(f"mul64_hload: --fail-on-new needs reachability data: {why}. Provide the matching unoptimized "
+              "LLVM IR as felucca.ll beside the listing, or pass it with --ir PATH.", file=sys.stderr)
+        return 2
     src = sources([r["name"] for r in rows])
     for r in rows:
         r["tags"] = tag(r["name"], sets)
