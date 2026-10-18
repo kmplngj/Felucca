@@ -967,6 +967,9 @@ The device stores every value clamped into its range.
 target:
 - 0 a track's own patch (index 0..3: what it plays and what its project saves). A PUT is heard at once; SLOT becomes
   OWN (F n if it is that factory patch unchanged), and the device does not reload a factory patch over it.
+  A PUT to a track that runs another engine is accepted and kept as the track's latent FM6 patch (no format or
+  reply change); whenever the track plays FM6 again, the audio side builds its copy from the patch published at
+  that time, however many PUTs came meanwhile (#419).
 - 1 the patch bank. 1.0..1.0.2: index 0..26 = B1..B27 in flash (A 0x9F000, B 0xFE000; backup id 8). Since 1.0.3:
   GET, PUT and ERASE answer rc 3 ("no bank") and change nothing; LIST reports nbank 0.
 - 2 a factory patch (0..7, GET only).
