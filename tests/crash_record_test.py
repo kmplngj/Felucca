@@ -49,7 +49,12 @@ def guard_source(barrier="((void)0)"):
     header = (ROOT / "firmware/hal/fm1_sys.h").read_text()
     start = header.index("#define FM1_C1G_MAGIC")
     end = header.index("#define FM1_RESET_PREP() fm1_cpu1_halt()")
-    return header[start:end].replace('__asm__ volatile("csync" ::: "memory")', barrier)
+    guard = header[start:end]
+    # Host: no retained RAM, and Mach-O clang rejects a bare section name, so drop it from this copy only.
+    noinit = ' __attribute__((section(".noinit")))'
+    assert guard.count(noinit) == 1, "fm1_sys.h guard no longer carries the expected .noinit attribute"
+    guard = guard.replace(noinit, "")
+    return guard.replace('__asm__ volatile("csync" ::: "memory")', barrier)
 
 
 HARNESS = r'''
