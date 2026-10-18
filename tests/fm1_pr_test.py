@@ -21,6 +21,7 @@ import fm1pkg_make as M
 
 SHA = "a" * 40
 OLD = "b" * 40
+MERGE = "c" * 40
 REPO = "kmplngj/Felucca"
 TITLE = "Sequencer: Wiedergabe & Übergänge"
 
@@ -153,6 +154,89 @@ class Selection(unittest.TestCase):
         for call in matching.call_args_list:
             self.assertEqual(call.args[-1], "target")
         self.assertEqual(artifact.call_args.args[-1], "target")
+
+
+class Automatic(unittest.TestCase):
+    def pull(self):
+        return {"state": "open", "title": TITLE, "merge_commit_sha": MERGE,
+                "head": {"sha": SHA}, "base": {"sha": OLD}}
+
+    def commit(self):
+        return {"sha": MERGE, "parents": [{"sha": OLD}, {"sha": SHA}]}
+
+    def automatic(self, **changes):
+        return run() | {"event": "pull_request", "head_sha": SHA,
+                        "pull_requests": [{"number": 333,
+                                           "url": f"https://api.github.com/repos/{REPO}/pulls/333",
+                                           "head": {"sha": SHA}, "base": {"sha": OLD}}]} | changes
+
+    def test_resolution_pins_current_head_base_and_merge(self):
+        for selected in (None, SHA):
+            with patch.object(P, "api", side_effect=[self.pull(), self.commit()]):
+                self.assertEqual(P.resolve_automatic_pr(REPO, 333, selected), (SHA, OLD, MERGE, TITLE))
+
+    def test_resolution_rejects_stale_merge_closed_pr_and_historical_commit(self):
+        for pull in (self.pull() | {"state": "closed"},
+                     self.pull() | {"merge_commit_sha": None},
+                     self.pull() | {"merge_commit_sha": "bad"},
+                     self.pull() | {"head": {"sha": "bad"}},
+                     self.pull() | {"base": {"sha": "bad"}}):
+            with patch.object(P, "api", return_value=pull), self.assertRaises(ValueError):
+                P.resolve_automatic_pr(REPO, 333)
+        with patch.object(P, "api", return_value=self.pull()), self.assertRaisesRegex(ValueError, "current PR head"):
+            P.resolve_automatic_pr(REPO, 333, OLD)
+        for commit in (self.commit() | {"sha": SHA},
+                       self.commit() | {"parents": [{"sha": SHA}, {"sha": OLD}]},
+                       self.commit() | {"parents": [{"sha": "d" * 40}, {"sha": SHA}]}):
+            with patch.object(P, "api", side_effect=[self.pull(), commit]), \
+                    self.assertRaisesRegex(ValueError, "base/head"):
+                P.resolve_automatic_pr(REPO, 333)
+
+    def test_selection_requires_successful_current_pr_head_and_base(self):
+        good = self.automatic()
+        association = good["pull_requests"][0]
+        rejected = [self.automatic(event="push"), self.automatic(head_sha=OLD),
+                    self.automatic(status="in_progress", conclusion=None),
+                    self.automatic(pull_requests=[])]
+        rejected += [self.automatic(conclusion=value) for value in ("failure", "cancelled", "timed_out")]
+        rejected += [self.automatic(pull_requests=[association | changes]) for changes in (
+            {"number": 334}, {"url": "https://api.github.com/repos/other/fork/pulls/333"},
+            {"head": {"sha": OLD}}, {"base": {"sha": "d" * 40}})]
+        for candidate in rejected:
+            with self.subTest(candidate=candidate), \
+                    patch.object(P, "pages", return_value=[candidate]), \
+                    patch.object(P, "firmware_artifact") as artifact, \
+                    patch.object(P, "gh") as gh, self.assertRaisesRegex(ValueError, "no build was requested"):
+                P.automatic_run(REPO, "333", SHA, OLD)
+            artifact.assert_not_called()
+            gh.assert_not_called()
+        with patch.object(P, "pages", return_value=[good]) as pages, \
+                patch.object(P, "firmware_artifact", return_value={"name": "firmware-42"}), \
+                patch.object(P, "gh") as gh:
+            self.assertEqual(P.automatic_run(REPO, "333", SHA, OLD), good)
+        self.assertIn(f"event=pull_request&head_sha={SHA}", pages.call_args.args[0])
+        gh.assert_not_called()
+
+    def test_selection_uses_newest_live_artifact_and_fails_if_all_expired(self):
+        runs = [self.automatic(id=value) for value in (41, 43, 42)]
+        for available in (42, None):
+            with patch.object(P, "pages", return_value=runs), \
+                    patch.object(P, "firmware_artifact", side_effect=lambda repo, run:
+                                 {"name": f"firmware-{run['id']}"} if run["id"] == available else None):
+                if available:
+                    self.assertEqual(P.automatic_run(REPO, 333, SHA, OLD)["id"], available)
+                else:
+                    with self.assertRaisesRegex(ValueError, "live firmware artifact"):
+                        P.automatic_run(REPO, 333, SHA, OLD)
+
+    def test_incompatible_cli_options_fail_before_network_or_installer_setup(self):
+        for options in (["--validation", "target"], ["--workflow-ref", "main"],
+                        ["--worktree"], ["--worktree-dir", "somewhere"],
+                        ["--prepare-only"], ["--remove-worktree", "somewhere"], ["--resolve-only"]):
+            with patch.object(P, "api") as api, patch.object(P, "prepare_installer") as installer:
+                self.assertEqual(P.main(["333", "--automatic", *options]), 2)
+            api.assert_not_called()
+            installer.assert_not_called()
 
 
 class Worktrees(unittest.TestCase):
@@ -407,6 +491,37 @@ class Download(unittest.TestCase):
         self.assertEqual(P.verify_download(self.root, SHA), self.root / "felucca.fwsc")
         with self.assertRaisesRegex(ValueError, "provenance"):
             P.verify_download(self.root, OLD)
+
+    def test_automatic_cli_verifies_merge_before_install_or_download_only(self):
+        for download_only, recorded in ((False, MERGE), (True, MERGE), (False, SHA)):
+            output = io.StringIO()
+            def downloaded(*args, **kwargs):
+                root = Path(args[args.index("--dir") + 1])
+                self.artifact(root)
+                (root / "provenance.json").write_text(json.dumps({"revision": recorded}))
+                return ""
+            with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]) as prepare, \
+                    patch.object(P, "resolve_automatic_pr", return_value=(SHA, OLD, MERGE, TITLE)), \
+                    patch.object(P, "automatic_run", return_value=run()) as automatic, \
+                    patch.object(P, "resolve_pr") as exact, patch.object(P, "ensure_run") as dispatch, \
+                    patch.object(P, "gh", side_effect=downloaded), \
+                    patch.object(P, "install", return_value=0) as install, contextlib.redirect_stdout(output):
+                options = ["--download-only", "--no-build"] if download_only else []
+                self.assertEqual(P.main(["333", "--automatic", "--out",
+                                         str(self.root / "out"), *options]), 0 if recorded == MERGE else 2)
+            automatic.assert_called_once_with(REPO, "333", SHA, OLD)
+            exact.assert_not_called()
+            dispatch.assert_not_called()
+            if download_only:
+                prepare.assert_not_called()
+            if download_only or recorded != MERGE:
+                install.assert_not_called()
+            else:
+                self.assertEqual(install.call_count, 1)
+                self.assertEqual(install.call_args.kwargs["command"], ["flasher", "midi", "firmware"])
+            self.assertIn(f"Commit: {MERGE}", output.getvalue())
+            self.assertIn(f"PR head: {SHA}", output.getvalue())
+            self.assertIn(f"Base commit: {OLD}", output.getvalue())
 
     def test_target_scope_is_required_and_cannot_satisfy_full_validation(self):
         with self.assertRaisesRegex(ValueError, "validation scope"):
