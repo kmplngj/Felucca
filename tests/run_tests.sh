@@ -1114,15 +1114,16 @@ u_diagnostics() {
 }
 unit diagnostics "" u_diagnostics
 
-if command -v node >/dev/null 2>&1; then
-u_web() {
+if ! command -v node >/dev/null 2>&1; then
+    note web_unavailable "== skip web tests (no node)"
+elif [ ! -f build/gen/felucca_tables.h ]; then
+    note web_no_assets "== skip web tests (needs build/gen: run ./build.sh once)"
+else
+    u_web() {
         run "web pages: editor protocol + samples, package builder, update protocol" node web/test_web.mjs
         run "web backup: capture, validation before writes, restore order" node web/test_backup.mjs
-}
-unit web "editor descriptors" u_web
-
-else
-    note web_unavailable "== skip web tests (no node)"
+    }
+    unit web "editor descriptors" u_web
 fi
 
 u_emulator_partitions() {

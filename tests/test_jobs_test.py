@@ -193,6 +193,19 @@ unit fixture "" u_fixture
         self.assertIn("after-test-failure", result.stdout)
         self.assertNotIn("after-compile-failure", result.stdout)
 
+        # No compile failure may mask a lost run() failure or an incorrect unit
+        # exit status: the aggregate alone must make this worker fail.
+        self.script.write_text("set -e\nMODE=--unit\nSELECTED_UNIT=fixture\n" + helper + r'''
+u_fixture() {
+    run intentional-failure false
+    echo after-test-failure
+}
+unit fixture "" u_fixture
+''')
+        result = subprocess.run(["sh", str(self.script)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("after-test-failure", result.stdout)
+
     def test_real_plan_has_valid_shared_output_dependencies(self):
         # Planning needs package presence and HALF_FRAMES, not actual firmware.
         (self.root / "tests").mkdir()
@@ -226,6 +239,19 @@ unit fixture "" u_fixture
                                 cwd=self.root, env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the compiler has no ASan / UBSan", result.stdout)
+
+        # Missing generated tables still permit a valid partial plan. In
+        # particular, web cannot depend on absent editor/descriptor units.
+        (self.root / "build/gen/felucca_tables.h").unlink()
+        result = subprocess.run(["sh", "tests/run_tests.sh", "--plan"], cwd=self.root,
+                                env=env, capture_output=True, text=True, check=True)
+        plan = {unit["name"]: unit for unit in test_jobs.parse_plan(result.stdout)}
+        self.assertNotIn("web", plan)
+        self.assertIn("web_no_assets", plan)
+        result = subprocess.run(["sh", "tests/run_tests.sh", "--unit", "web_no_assets"],
+                                cwd=self.root, env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("== skip web tests (needs build/gen", result.stdout)
 
     def test_outer_runner_resolves_script_after_changing_directory(self):
         (self.root / "tests").mkdir()
