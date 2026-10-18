@@ -6,8 +6,8 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 5283,
-  "known_remaining_recent": 166,
+  "known_remaining_history": 5279,
+  "known_remaining_recent": 158,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -19,12 +19,12 @@
         "total": 38
       },
       "recent": {
-        "remaining": 2,
-        "reviewed": 0,
+        "remaining": 1,
+        "reviewed": 1,
         "total": 2
       },
       "repository": "hugelton/Felucca",
-      "terminal_pairs": 6
+      "terminal_pairs": 7
     },
     {
       "history": {
@@ -61,12 +61,12 @@
         "total": 13
       },
       "recent": {
-        "remaining": 2,
-        "reviewed": 2,
+        "remaining": 1,
+        "reviewed": 3,
         "total": 4
       },
       "repository": "isod89/sloop-fm1",
-      "terminal_pairs": 2
+      "terminal_pairs": 3
     },
     {
       "history": {
@@ -89,12 +89,12 @@
         "total": 151
       },
       "recent": {
-        "remaining": 5,
-        "reviewed": 5,
+        "remaining": 3,
+        "reviewed": 7,
         "total": 10
       },
       "repository": "zvenson/zp12",
-      "terminal_pairs": 5
+      "terminal_pairs": 7
     },
     {
       "history": {
@@ -131,12 +131,12 @@
         "total": 179
       },
       "recent": {
-        "remaining": 8,
-        "reviewed": 2,
+        "remaining": 7,
+        "reviewed": 3,
         "total": 10
       },
       "repository": "zednaked/jangada",
-      "terminal_pairs": 12
+      "terminal_pairs": 13
     },
     {
       "history": {
@@ -145,12 +145,12 @@
         "total": 226
       },
       "recent": {
-        "remaining": 24,
-        "reviewed": 1,
+        "remaining": 22,
+        "reviewed": 3,
         "total": 25
       },
       "repository": "juanjiant-bit/JIANT",
-      "terminal_pairs": 6
+      "terminal_pairs": 8
     },
     {
       "history": {
@@ -182,8 +182,8 @@
     },
     {
       "history": {
-        "remaining": 2,
-        "reviewed": 0,
+        "remaining": 1,
+        "reviewed": 1,
         "total": 2
       },
       "recent": {
@@ -192,7 +192,7 @@
         "total": 0
       },
       "repository": "charlesvestal/schwung-hank",
-      "terminal_pairs": 0
+      "terminal_pairs": 1
     },
     {
       "history": {
@@ -294,8 +294,8 @@
     },
     {
       "history": {
-        "remaining": 404,
-        "reviewed": 1,
+        "remaining": 403,
+        "reviewed": 2,
         "total": 405
       },
       "recent": {
@@ -304,12 +304,12 @@
         "total": 0
       },
       "repository": "DeadActive/hortator",
-      "terminal_pairs": 2
+      "terminal_pairs": 3
     },
     {
       "history": {
-        "remaining": 38,
-        "reviewed": 1,
+        "remaining": 37,
+        "reviewed": 2,
         "total": 39
       },
       "recent": {
@@ -318,7 +318,7 @@
         "total": 5
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 1
+      "terminal_pairs": 2
     },
     {
       "history": {
@@ -327,12 +327,12 @@
         "total": 45
       },
       "recent": {
-        "remaining": 5,
-        "reviewed": 2,
+        "remaining": 4,
+        "reviewed": 3,
         "total": 7
       },
       "repository": "genkigenki/Makkuro37",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
@@ -350,8 +350,8 @@
     },
     {
       "history": {
-        "remaining": 29,
-        "reviewed": 5,
+        "remaining": 28,
+        "reviewed": 6,
         "total": 34
       },
       "recent": {
@@ -360,7 +360,7 @@
         "total": 6
       },
       "repository": "genkigenki/fm1-to-smk37",
-      "terminal_pairs": 8
+      "terminal_pairs": 9
     },
     {
       "history": {
@@ -378,5 +378,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 128
+  "terminal_pairs": 140
 }
