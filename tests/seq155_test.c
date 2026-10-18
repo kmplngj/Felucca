@@ -236,6 +236,53 @@ static int cond_nudge(void)
     }
 }
 
+/* #267: compare actual voice starts with loop-owned times, including LEN 1 where
+ * the current and early successor indices are both zero. No condition helper oracle. */
+static int cond_nudge_timing(void)
+{
+    static const uint32_t masks[9] = {0x555555, 0xAAAAAA, 0x249249, 0x492492, 0x924924,
+                                     0x111111, 0x222222, 0x444444, 0x888888};
+    static const uint32_t lengths[] = {1, 3, 16};
+    static const int32_t nudges[] = {-8, -4, -1, 0, 3};
+    uint32_t l, c, q, d;
+    int bad = 0;
+    for (l = 0; l < 3u; l++) {
+        int ok = 1;
+        for (c = 1; c <= 9u; c++)
+            for (q = 0; q < 2u; q++)
+                for (d = 0; d < 5u; d++) {
+                    track_t *t = melody(1);
+                    uint32_t expected[24], count = 0, got = 0, loop, b, period = div_samples(2);
+                    int32_t offset = q ? 0 : nudges[d] * (int32_t)period / (int32_t)NUDGE_DIV;
+                    /* Firmware multiplies the magnitude before dividing (towards zero). */
+                    t->p[P_SLEN] = (int16_t)lengths[l];
+                    t->p[P_SQNT] = (int16_t)q;
+                    step_set_nudge(&t->step[0], nudges[d]);
+                    set_cond(&t->step[0], c);
+                    for (loop = 0; loop < 24u; loop++)
+                        if ((masks[c - 1u] >> loop) & 1u) {
+                            int32_t at = (int32_t)(loop * lengths[l] * period) + (loop || offset > 0 ? offset : 0);
+                            expected[count++] = ((uint32_t)at + CTL - 1u) / CTL;
+                        }
+                    seq_start();
+                    for (b = 0; b < (24u * lengths[l] * period - period / 2u) / CTL; b++) {
+                        uint32_t before = vage;
+                        seq_tick(t, CTL);
+                        if (vage != before) {
+                            ok &= vage == before + 1u && got < count && b == expected[got];
+                            got++;
+                        }
+                    }
+                    seq_stop();
+                    ok &= got == count;
+                }
+        char label[112];
+        snprintf(label, sizeof label, "conditions LEN %u: all loop ratios over 24 loops, early/on-time/late, QUANTIZE OFF/ON, no duplicates", lengths[l]);
+        bad += check(label, ok);
+    }
+    return bad;
+}
+
 /* DETAIL's KNOB 1 and AUTOMATION */
 static void go_page_title(const char *ti)
 {
@@ -367,6 +414,47 @@ static int eu_rest_but(const track_t *t, uint32_t len, uint32_t k, uint32_t n, u
             return 0;
     return 1;
 }
+static int euclid_cancel_state(void)
+{
+    int bad = 0;
+    uint32_t prior, foreign;
+    for (prior = 0; prior < 2u; prior++)
+        for (foreign = 0; foreign < 2u; foreign++) {
+            track_t *t = melody(1u | 1u << 5);
+            step_t original[NSTEP], before[NSTEP];
+            uint8_t preset2 = trk[1].preset;
+            int ok;
+            memcpy(original, t->step, sizeof original);
+            go_page(GR_ROLL);
+            btn_down(B_SEQ); frame();
+            if (prior)
+                tkey(TL_LEFT);
+            memcpy(before, t->step, sizeof before);
+            tkey(TL_EUCLID);
+            if (foreign) {
+                ui.mpc[1] = 0x80u | (preset2 == 2u ? 3u : 2u);
+                frame();
+            }
+            oct_back();
+            ok = !eu.on && !memcmp(t->step, before, sizeof before) && lys.loaded == prior &&
+                 undo.trk == (foreign ? 2u : 0u);
+            if (prior) {
+                oct_back();                         /* Earlier tools still belong to the layer's undo. */
+                ok &= !memcmp(t->step, original, sizeof original) && !lys.loaded;
+            }
+            btn_up(B_SEQ); frame();
+            if (!prior) {
+                hold(B_SAVE);
+                ok &= !memcmp(t->step, original, sizeof original) &&
+                      (foreign ? trk[1].preset == preset2 : msg_is("NOTHING TO UNDO"));
+            }
+            char label[112];
+            snprintf(label, sizeof label, "EUCLID cancel: prior tool %u, T2 load %u: layer state restored, only preview undo retired", prior, foreign);
+            bad += check(label, ok);
+        }
+    return bad;
+}
+
 static int test_euclid(void)
 {
     int bad = 0, ok;
@@ -637,7 +725,7 @@ static int test_double_half(void)
 
 int main(void)
 {
-    int bad = conditions() + cond_locks_rolls() + cond_song() + cond_nudge() + cond_ui() + fill_key() + cond_store() + test_euclid() + test_double_half();
+    int bad = conditions() + cond_locks_rolls() + cond_song() + cond_nudge() + cond_nudge_timing() + cond_ui() + fill_key() + cond_store() + euclid_cancel_state() + test_euclid() + test_double_half();
     printf("%s\n", bad ? "SEQ 1.5.5 TEST FAILED" : "seq 1.5.5 tests passed");
     return bad != 0;
 }

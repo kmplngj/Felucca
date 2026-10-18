@@ -70,16 +70,25 @@ each change reviewable and diagnosable.
 
 ## User-facing documentation
 
-For every added or changed user-facing feature, read [README.md](README.md) and
-check whether its feature list and usage instructions still describe the result.
-Update the affected README sections in the same PR when needed, including how to
-access the feature, its defaults, limitations and compatibility implications.
-Keep detailed instructions in the relevant guide when appropriate and link them
-from the README so users can discover the feature.
+During development, read [README.md](README.md) and assess whether the change affects
+the fork's purpose, overall progress, available engines, installation or compatibility.
+This is a personal integration fork collecting features, engines and optimizations
+from upstream and other forks, with a focus on CPU, RAM and firmware-size improvements.
+Keep that purpose clear and distinguish implemented capabilities from plans and experiments.
+
+Update the README in the same PR for meaningful milestones or changes to that overview.
+Summarize the resulting capability or development stage; do not add a changelog entry
+for every commit, small fix or internal optimization. Put detailed controls, defaults,
+limitations and compatibility instructions in [the fork feature guide](docs/fork-features.md)
+or the relevant focused guide, and link from the README when discoverability requires it.
+Keep performance claims tied to documented measurements and their validation scope.
 
 Before completing the change, record the README assessment in the PR description
 (or completion report when there is no PR): name the sections updated, or explain
-specifically why the existing README already covers the resulting behavior.
+specifically why the existing README already covers the resulting behavior. If a broader
+README change would be useful but depends on unresolved scope or direction, propose the
+concrete wording in that report and identify the open decision. Apply clear, factual
+documentation updates directly without waiting for a separate request.
 
 ## Architecture and ownership
 

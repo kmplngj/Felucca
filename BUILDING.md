@@ -159,8 +159,9 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 Each build resolves its actual checkout into `build/gen/build_identity.h` and
 `build/build-identity.json`; the same version, eight-character commit, dirty flag and
 optional PR label appear at startup and MENU > SYSTEM > ABOUT (panel steps in
-[README](README.md)). No boot-time lookup or extra delay is involved. CI provenance
-includes the same `build_identity` object, and release folders include the JSON sidecar.
+[the fork feature guide](docs/fork-features.md#identify-the-installed-build)). No boot-time
+lookup or extra delay is involved. CI provenance includes the same `build_identity`
+object, and release folders include the JSON sidecar.
 The full revision remains in JSON; a short SHA is a readable identifier, not a checksum.
 
 Clean Git builds use HEAD; tracked changes, untracked nonignored files and changed

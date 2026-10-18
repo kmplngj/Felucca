@@ -901,7 +901,8 @@ static __attribute__((noinline)) int seq_cond_miss(const track_t *t, const step_
         return (c == COND_FILL) != (seq_fill != 0u);
     if (!c)
         return 0;
-    loop = t->cond_loop + (idx < t->seq_idx);       /* (an early play of step 1: the next loop's) */
+    /* nd_fired is set before an early play: LEN 1 wraps too, although both indices are zero. */
+    loop = t->cond_loop + (idx < t->seq_idx || (!idx && t->nd_fired == 1u));
     return loop % COND_B[c - 1u] != COND_A[c - 1u] - 1u;
 }
 /* the step does not play: its condition fails, or its chance's roll */
