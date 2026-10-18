@@ -126,6 +126,10 @@ risk is therefore: objects there may not realize that shape (the voice bank keep
 the autosave payload can realize it only through a crafted FM6 patch (below). The loader fix
 removes the data loss on a successful update; it does not remove a boot-time SPL hazard, which would
 need the shape to be unreachable (a format change, not made here) or SPL knowledge that does not exist.
+Before #418 the post-update erase incidentally cleared such a crafted autosave record by destroying that
+copy; it no longer does. The project slots in `0x97000..0xE0000` carry the same exposure and were never
+cleaned. If the SPL honours that record shape, it does so on every boot regardless of an update; its
+scan order, record priority and validated fields are undocumented.
 
 *Can a valid project hold that record at `+0xF00`?* The record occupies autosave payload bytes
 3584..3663. In a current FUN10 project those are `PROJ_FM6_OFF + 2 * 128 + 16 .. + 95`: bytes 16..95 of
