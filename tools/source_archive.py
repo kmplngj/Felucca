@@ -108,6 +108,8 @@ def export(root, destination, version):
                 "source_date_epoch": epoch, "engines": engine,
                 "files": {name: {"mode": mode, "sha256": hashlib.sha256(data).hexdigest()}
                           for name, (mode, data) in sorted(files.items())}}
+    from build_identity import repository
+    metadata['repository'] = repository(root)
     marker = manifest_bytes(metadata)
     files[MANIFEST] = (0o644, marker)
     prefix = f"felucca-{version}-source"

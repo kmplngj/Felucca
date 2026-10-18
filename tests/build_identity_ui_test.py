@@ -19,7 +19,8 @@ def run():
         (directory / 'ppm').mkdir(parents=True, exist_ok=True)
         # The longest strings conservatively combine the dirty and PR bounds;
         # real verified PR inputs are required to be clean.
-        data = {'version': 'v1.6.1', 'build': 'ffffffff-dirty', 'pr_label': 'PR #9999999 merge'}
+        data = {'version': 'v1.6.1', 'build': 'ffffffff-dirty', 'pr_label': 'PR #9999999 merge',
+                'repository': 'o' * 39 + '/' + 'r' * 100}
         (directory / 'build_identity.h').write_text(build_identity.outputs(data)['build_identity.h'])
         generator = 'gen_aa_font.py' if font == 'inter-tight' else 'gen_bitmap_font.py'
         subprocess.run([sys.executable, str(ROOT / 'tools' / generator),

@@ -148,6 +148,18 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
             for info in archive.getmembers():
                 self.assertEqual((info.uid, info.gid, info.uname, info.gname, info.mtime), (0, 0, "", "", epoch))
 
+    def test_fork_repository_survives_git_free_archive(self):
+        import build_identity
+        self.git(self.repo, 'config', 'remote.origin.url', 'https://github.com/fork/Felucca.git')
+        with patch.dict(os.environ, {}, clear=True):
+            original = build_identity.resolve(self.repo, 'v1.6.1')
+            unpacked = self.unpack()
+            archived = build_identity.resolve(unpacked, 'v1.6.1')
+        self.assertEqual(archived['repository'], 'fork/Felucca')
+        self.assertEqual(archived['revision'], original['revision'])
+        self.assertEqual(build_identity.outputs(archived)['build_identity.h'],
+                         build_identity.outputs(original)['build_identity.h'])
+
     def test_dirty_tracked_firmware_staged_or_unstaged_is_rejected(self):
         for staged in (False, True):
             self.write(self.repo, "firmware/src/felucca.c", "dirty source")

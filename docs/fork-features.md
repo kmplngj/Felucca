@@ -69,6 +69,11 @@ Hold **HOME** until MENU appears, release it, turn **ALGORITHM** to SYSTEM, turn
 menu and HOME closes it. Keep the full artifact provenance with test reports.
 See [build identity](../BUILDING.md#build-revision-and-pr-identity) for local/archive behavior.
 
+ABOUT also shows this build's source repository (`github.com/kmplngj/Felucca` in
+this fork). It follows the GitHub Actions repository or local GitHub `origin` at
+build time, so another fork displays its own source after rebuilding. Turn PRESETS
+to read wrapped links and the preserved upstream and third-party credits.
+
 ## Testing without hardware
 
 The [emulator partition regression](../BUILDING.md#emulator-partition-regression) checks
