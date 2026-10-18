@@ -6,8 +6,8 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 5253,
-  "known_remaining_recent": 293,
+  "known_remaining_history": 5251,
+  "known_remaining_recent": 290,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -47,12 +47,12 @@
         "total": 190
       },
       "recent": {
-        "remaining": 30,
-        "reviewed": 8,
+        "remaining": 29,
+        "reviewed": 9,
         "total": 38
       },
       "repository": "Quixotic7/ChoralRootFM1",
-      "terminal_pairs": 9
+      "terminal_pairs": 10
     },
     {
       "history": {
@@ -294,8 +294,8 @@
     },
     {
       "history": {
-        "remaining": 402,
-        "reviewed": 3,
+        "remaining": 401,
+        "reviewed": 4,
         "total": 405
       },
       "recent": {
@@ -304,21 +304,21 @@
         "total": 0
       },
       "repository": "DeadActive/hortator",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
-        "remaining": 36,
-        "reviewed": 3,
+        "remaining": 35,
+        "reviewed": 4,
         "total": 39
       },
       "recent": {
-        "remaining": 2,
-        "reviewed": 3,
+        "remaining": 1,
+        "reviewed": 4,
         "total": 5
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 6
+      "terminal_pairs": 8
     },
     {
       "history": {
@@ -341,12 +341,12 @@
         "total": 71
       },
       "recent": {
-        "remaining": 9,
-        "reviewed": 4,
+        "remaining": 8,
+        "reviewed": 5,
         "total": 13
       },
       "repository": "genkigenki/Snoop37",
-      "terminal_pairs": 5
+      "terminal_pairs": 6
     },
     {
       "history": {
@@ -378,5 +378,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 198
+  "terminal_pairs": 203
 }
