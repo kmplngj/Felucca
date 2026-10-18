@@ -165,6 +165,28 @@ or invalid; an invalid later window also invalidates the session. Key latency re
 `UNMEASURED` without confirmed instrumentation, a valid window and observed presses/notes.
 Raw zeros are retained without being presented as measured latency.
 
+## Interrupt-context assertion (`FELUCCA_ISR_ASSERT`)
+
+`fm1_sp_in_isr()` (`firmware/hal/fm1_guard.h`) is true when core 0's `sp` lies between the
+linker symbols `_guard1` and `_sstack_top`, the system (interrupt) stack; the main loop runs on the
+user stack below it (`crt0.S`). Core 1 has its own stacks, so the function is always false there.
+`FM1_ASSERT_THREAD()` (`firmware/src/isr_assert.h`) uses it to check code that must not run in an interrupt.
+It sits at the entry of `st_save_to` (every project, settings, autosave and user-preset save), `st_erase`
+and `st_prog` (`storage_hw.c`), `con_exec` (formatted console replies), `usb_start` (waits 25 ms) and
+`apply_preset_to` (preset loads), before any `irq_save()`. It is not placed in `.ram_text` code or in
+interrupt paths.
+
+| `FELUCCA_ISR_ASSERT` | Where | Effect |
+| --- | --- | --- |
+| `0` | FM-1 default and the update loader | The macros expand to `((void)0)`: no code or data (release image byte-identical apart from the embedded commit id). |
+| `1` | Default for host tests and the emulator | `fm1_alnk0_irq` and `fm1_timer5_irq` raise a simulated-interrupt depth; a guarded call in it prints `file:line` and aborts (a test may set `fm1_isr_assert_hook` instead). |
+| `1` | FM-1 development build: `FELUCCA_ISR_ASSERT=1 ./build.sh` | A violation increments `isr_misuse` and records the first caller's address (`isr_misuse_pc`, shown by `status`) and carries on: no abort, flash write or output from the interrupt. |
+
+`tests/storage_test.c` (a real save) and `tests/audio_test.c` (a call from inside the real audio handler)
+check that the assertion fires in simulated interrupt context and stays quiet in the main loop. On the device the
+check assumes interrupts run on the system stack as `fm1_isr.S` and the stack guards describe; that has not
+been observed on an FM-1 yet. The register context of #428 remains deferred.
+
 ## Validation scope
 
 Run `python3 tests/diagnostics_test.py` for console-shaped parser/transport fixtures and

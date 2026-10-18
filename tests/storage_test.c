@@ -50,6 +50,9 @@ static int check(const char *what, int ok)
     return ok ? 0 : 1;
 }
 
+static uint32_t isr_hits;
+static void isr_hook(const char *file, int line) { (void)file; (void)line; isr_hits++; }
+
 int main(void)
 {
     char a[600], b[600], got[600];
@@ -201,6 +204,16 @@ int main(void)
         memset(got, 'X', sizeof got);
         bad += check("small destination rejects whole object", st_load(OBJ_PROJECT0, got, sizeof got - 1u) < 0 && got[0] == 'X');
         bad += check("oversized save rejected", st_save(OBJ_PROJECT0, a, ST_PAYLOAD_MAX + 1u) < 0);
+    }
+    {   /* #428: a save from simulated interrupt context trips FM1_ASSERT_THREAD; from the main loop it does not */
+        fm1_isr_assert_hook = isr_hook;
+        bad += check("save in the main loop: no ISR assertion", st_save(OBJ_PROJECT0, a, sizeof a) == 0 && isr_hits == 0);
+        FM1_ISR_SIM_ENTER();
+        st_save(OBJ_PROJECT0, a, sizeof a);
+        FM1_ISR_SIM_LEAVE();
+        bad += check("save in simulated ISR context: assertion fires", isr_hits == 1u);
+        bad += check("save after the ISR returns: quiet again", st_save(OBJ_PROJECT0, a, sizeof a) == 0 && isr_hits == 1u);
+        fm1_isr_assert_hook = 0;
     }
     printf("%s\n", bad ? "STORAGE TEST FAILED" : "storage test passed");
     return bad != 0;
