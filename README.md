@@ -68,6 +68,14 @@ regardless of control source (one detent takes about
 sound starts at the selected Depth. Static settings and saved project/settings
 formats are unchanged; INSERT CHOR retains its existing behavior.
 
+On the **FX** page, **KNOB2 (CHO)**, **KNOB3 (DLY)** and **KNOB4 (REV)**
+glide to their new send levels over one rendered control block while a track
+sounds (normally 32 samples, about 0.73 ms). This also applies to modulation and
+parameter locks. A new sound after silence starts at its current send levels.
+While REV/ECHO THROW is active or fading, all three sends keep their existing
+THROW behavior. Dry LEVEL/PAN and saved formats are unchanged. See the
+[send experiment](tests/send_gain_test.md) for measurements and pending hardware checks.
+
 The web installer, browser demo, editor and wiki linked above are upstream Hügelton services.
 Their hosted versions are updated independently of this fork's builds and releases.
 Use this fork's `.fwsc` package with the installer for a fork build; raw `.bin` files and

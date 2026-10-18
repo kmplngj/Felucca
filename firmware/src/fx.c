@@ -964,6 +964,56 @@ static int32_t wet[CTL];                                 /* (the dry mix and the
 static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_r[CTL];
 #endif
 
+/* Effective MOD targets are sampled once for this part's block. Idle starts snap to the current target;
+ * an active THROW owns its already-shaped full-send deficit (perform.c), so its whole block stays exact. */
+static int send_begin(track_t *t, int32_t g[3])
+{
+    uint32_t k;
+    int changed = 0;
+    g[0] = t->p[P_CHOR] * 258;
+    g[1] = t->p[P_DLY] * 258;
+    g[2] = t->p[P_REV] * 258;
+    for (k = 0; k < 3u; k++) {
+        if (!t->send_valid || pf.thr)
+            t->send_gain[k] = (int16_t)g[k];
+        changed |= t->send_gain[k] != g[k];
+    }
+    t->send_valid = 1;
+    return changed;
+}
+
+/* Only edited blocks take this extra send loop. A Q16 increment is divided once per bus, never per sample.
+ * Its truncation stays inside both endpoints; the last sample explicitly takes the exact Q15 target.
+ * Bounds include the old gain: a descending edit may begin at full send. Four parts sum at most 4*65535. */
+static __attribute__((noinline)) void send_add(track_t *t, const int32_t *b, uint32_t n, const int32_t target[3] SM_DECL)
+{
+    int32_t g[3], step[3], xmax = 0, lvl = LEVEL_Q12[t->p[P_LEVEL] & 127];
+    uint32_t k, i;
+    for (k = 0; k < 3u; k++) {
+        g[k] = t->send_gain[k] * 65536;
+        step[k] = (target[k] - t->send_gain[k]) * 65536 / (int32_t)n;
+        if (t->send_gain[k] > xmax)
+            xmax = t->send_gain[k];
+        if (target[k] > xmax)
+            xmax = target[k];
+    }
+    xmax = 0x7FFFFFFF / (xmax | 1);
+    for (i = 0; i < n; i++) {
+        int32_t x = clamp(((b[i] >> 2) * lvl) >> 10, -xmax, xmax);
+        int32_t c, d, r;
+        for (k = 0; k < 3u; k++)
+            g[k] += step[k];
+        c = i + 1u == n ? target[0] : g[0] >> 16;
+        d = i + 1u == n ? target[1] : g[1] >> 16;
+        r = i + 1u == n ? target[2] : g[2] >> 16;
+        SM(c)[i] += mulq15(x, c);
+        SM(d)[i] += mulq15(x, d);
+        SM(v)[i] += mulq15(x, r);
+    }
+    for (k = 0; k < 3u; k++)
+        t->send_gain[k] = (int16_t)target[k];
+}
+
 /* SPREAD (#148): a POLY or UNISON part whose SPRD is above 0. Its voices start left and right of PAN in turn (voice.c
  * voice_start; UNISON's detuned voices alternate), at PAN -/+ SPRD / 2 (SPRD 127: hard left and right), with the pan
  * law PAN has (the far side down, the near one as it is). track_render gives every voice (b, as always) and the left
@@ -982,9 +1032,6 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
     int32_t gla = 4096 - (pa > 0 ? pa * 64 : 0), gra = 4096 + (pa < 0 ? pa * 64 : 0);
     int32_t glb = 4096 - (pb > 0 ? pb * 64 : 0), grb = 4096 + (pb < 0 ? pb * 64 : 0);
     int32_t glm = (gla + glb) >> 1, grm = (gra + grb) >> 1, gld = (gla - glb) >> 1, grd = (gra - grb) >> 1;
-    int32_t c = t->p[P_CHOR] * 258, dl = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
-    int32_t xmax = c > dl ? c : dl;
-    xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);
     for (i = 0; i < n; i++)
         d[i] = (d[i] << 1) - b[i];                      /* left - right */
     track_dist(t, b, n);
@@ -993,6 +1040,11 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
     slicer_track_sd(t, b, d, n);
     if ((pf.mute >> (t - trk)) & 1u)
         perf_mute_sd((uint32_t)(t - trk), b, d, n);
+    int32_t gains[3];
+    int ramp = send_begin(t, gains);
+    int32_t c = ramp ? 0 : gains[0], dl = ramp ? 0 : gains[1], r = ramp ? 0 : gains[2], pk = t->peak;
+    int32_t xmax = c > dl ? c : dl;
+    xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);
     for (i = 0; i < n; i++) {
         int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x, y = ((d[i] >> 2) * lvl) >> 10;
         int32_t xs = clamp(x, -xmax, xmax);
@@ -1008,6 +1060,8 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
         SM(r)[i] += ((x * grm) >> 12) + ((y * grd) >> 12);
     }
     t->peak = pk;
+    if (ramp)
+        send_add(t, b, n, gains SM_ARG(sm));
 }
 
 /* a part's cost for the second core's split (mix_split, after Jangada's): its voices x its engine's cost per
@@ -1033,6 +1087,8 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
 #if FELUCCA_CPU2
     uint32_t nr;
 #endif
+    if (!n)
+        return;
     mod_begin(t);                                       /* the matrix's per-block values into t->p (mod.c) */
     T_SPREAD(t) = t->p[P_SPRD] > 0 && (trk_vmode(t) == V_POLY || trk_vmode(t) == V_UNISON);   /* (SPREAD, mix_spread) */
 #if FELUCCA_CPU2
@@ -1045,6 +1101,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         t->tail = t->p[P_ITYPE] ? 64 : 16;              /* blocks of DIST / INSERT state to run out after the last
                                                          * voice (the INSERT's: 46 ms, a flanger's feedback) */
     else if ((!t->tail || !(t->p[P_DIST] | t->p[P_ITYPE]) || !--t->tail) && !slicer_busy(t)) {
+        t->send_valid = 0;
         slicer_track(t, 0, n);                          /* (the SLICER's step clock runs on) */
         if (t->ins_run && !t->p[P_ITYPE])
             ins_rest(t);                                /* TYPE OFF while silent: no fade-out left for the next note */
@@ -1066,7 +1123,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
                                                          * them, no spill in the loop: the ISR's cost as before 1.5) */
         int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN];
         int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
-        int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
+        int32_t gains[3];
+        int ramp = send_begin(t, gains);
+        int32_t c = ramp ? 0 : gains[0], d = ramp ? 0 : gains[1], r = ramp ? 0 : gains[2], pk = t->peak;
         int32_t xmax = c > d ? c : d;
         xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
         for (i = 0; i < n; i++) {
@@ -1084,6 +1143,8 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
             SM(r)[i] += (x * gr) >> 12;
         }
         t->peak = pk;
+        if (ramp)
+            send_add(t, b, n, gains SM_ARG(sm));
     }
     if (pf.thr)
         perf_throw(t, b, SM(d), SM(v), n);              /* perform.c: REV / ECHO THROW (1.5.1), the sends towards full */
@@ -1189,8 +1250,10 @@ static __attribute__((noinline)) void c1_params(uint32_t mask, uint32_t restore)
                 else
                     c1_param[k][j] = trk[k].p[id];
             }
-            if (restore)
+            if (restore) {
+                trk[k].send_valid = 0;                 /* dropped worker sums: its gain transaction may be incomplete */
                 MOD(&trk[k]).on = 0;                   /* discard an incomplete mod_begin/mod_end transaction */
+            }
         }
 }
 
