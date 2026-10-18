@@ -20,8 +20,9 @@
  *      the flash head (SPL, isd_config) is never written;
  *   4. asks 0xF0000000 ("success"), then invalidates the update record (RAM
  *      and flash: 4K boundary - 256 between 0x93000 and 0xFC000, outside
- *      Felucca's store, where only user data lives) so the SPL boots the new
- *      app, and resets.
+ *      Felucca's store, where only user data lives, and outside the autosave
+ *      pair and the FM6 voice bank, whose payloads reach that offset) so the
+ *      SPL boots the new app, and resets.
  * Power loss during 3: the record is still there, the SPL runs the loader
  * again on the next power-on and the host can resume.
  *
@@ -36,6 +37,10 @@
 #define LDR_REC_HI 0xFC000u                     /* ... and below Felucca's globals (Felucca's records: 0xE4F00, */
 #define LDR_DATA_LO 0x97000u                    /* the stock firmware's: 0xE8F00), never in Felucca's store, whose */
 #define LDR_DATA_HI 0xE0000u                    /* bytes (user samples) the host writes */
+#define LDR_AUTO_LO 0xE5000u                    /* Felucca's autosave A/B (0xE5000, 0xE6000: storage.c; a 3840-byte payload at */
+#define LDR_AUTO_HI 0xE8000u                    /* sector + 0x100 reaches +0xF00) and the FM6 voice bank (0xE7000): their bytes are */
+                                                /* not records, so no sector of [LDR_AUTO_LO, LDR_AUTO_HI) is classified or erased; */
+                                                /* loader.c asserts the bounds equal fm1_flash.h's FL_AUTO_LO / FL_VBANK_HI */
 #define LDR_NSEC ((LDR_APP_HI - LDR_APP_LO) >> 12)
 
 static int ldr_fread(uint32_t off, void *p, uint32_t n);
@@ -173,8 +178,10 @@ static int ldr_session(void)
     ldr_record_clear();
     for (s = LDR_REC_HI; s > LDR_REC_LO; s -= 0x1000u) {   /* flash records: 4K boundary - 256 */
         uint8_t r[80];
-        if (s - 0x1000u >= LDR_DATA_LO && s - 0x1000u < LDR_DATA_HI)
-            continue;                                    /* Felucca's store: user data that may look like one */
+        if ((s - 0x1000u >= LDR_DATA_LO && s - 0x1000u < LDR_DATA_HI) ||
+            (s - 0x1000u >= LDR_AUTO_LO && s - 0x1000u < LDR_AUTO_HI))
+            continue;                                    /* Felucca's store, autosave, voice bank: data that may look like
+                                                          * one (the records at 0xE4F00 and 0xE8F00 are outside both) */
         if (ldr_fread(s - 0x100u, r, 80))
             break;
         if (ota_rd16(r + 6) == 0x5441u && ota_rd16(r) && ota_rd16(r) == ota_crc16(r + 2, 78, 0))
