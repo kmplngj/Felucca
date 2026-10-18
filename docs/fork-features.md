@@ -42,6 +42,27 @@ remains future work. Cancelling retires the preview's undo entry without clearin
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
+## Effect control smoothing
+
+Shared chorus Depth changes glide while the bus sounds: tap and release **FX**
+repeatedly until **CHORUS**, then turn **KNOB2 (CDP)**. Cycle FX to the **FX** page
+and turn **KNOB2 (CHO)** for each track's send. Depth edits use the same glide
+regardless of control source (one detent takes about
+0.36 ms, a full-range jump at most 46.1 ms). After the chorus tail drains, the next
+sound starts at the selected Depth. Static settings and saved project/settings
+formats are unchanged; INSERT CHOR retains its existing behavior.
+
+On the **FX** page, **KNOB2 (CHO)**, **KNOB3 (DLY)** and **KNOB4 (REV)**
+glide to their new send levels over one rendered control block while a track
+sounds (normally 32 samples, about 0.73 ms). This also applies to modulation and
+parameter locks. A new sound after silence starts at its current send levels.
+While REV/ECHO THROW is active or fading, all three sends keep their existing
+THROW behavior. Dry LEVEL/PAN and saved formats are unchanged. See the
+[send experiment](../tests/send_gain_test.md) for measurements and pending hardware checks.
+
+
+Real FM-1 listening and timing qualification remain pending for these experiments.
+
 ## Optional second core
 
 The upstream 1.6.1 second-core worker is integrated, with its device preference off

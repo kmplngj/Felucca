@@ -4,8 +4,9 @@
  * hostsim.c as regress.c.
  *   build/host/reverb_test [DEMODIR [DEMODIR2]]          (run_tests.sh: build/fx_demo build/reverb_demo)
  * 1. ROOM bit-identical: fx_buses against a copy of the buses as they were before SPRING (chorus, delay and the
- *    4-comb room in one loop), on noise sends with SIZE / DAMP / the delay and chorus settings changing, sample
- *    for sample. (The goldens of regress.c, all rendered with ROOM, say the same for the whole mix.)
+ *    4-comb room in one loop), with only chorus Depth updated to an independent wide-product slew reference.
+ *    Noise sends vary SIZE / DAMP / delay / chorus settings; compare sample for sample. (The goldens of
+ *    regress.c, all rendered with ROOM, say the same for the whole mix.)
  * 2. SPRING decay: the impulse response's RT60 (Schroeder integral, -5 .. -35 dB) rises with SIZE, within
  *    0.15 .. 1 s at SIZE 0 and 2 .. 6 s at 127.
  * 3. SPRING dispersion: the group delay of the first arrival rises with frequency (1 .. 5 kHz, each band later
@@ -64,10 +65,12 @@ static int32_t noise(int32_t amp)
     return (int32_t)(((int64_t)(int32_t)xs * amp) >> 31);
 }
 
-/* ------------------------------------------------- the buses before SPRING --- */
+/* Historical ROOM/delay reference; chorus uses #270's sample-wise Depth contract.
+ * The wide product is deliberately different from production's split 32-bit math. */
 static int16_t ref_dly[DLY_LEN], ref_cho[CHO_LEN], ref_comb[1116 + 1188 + 1277 + 1356], ref_ap[556 + 441];
 static struct {
-    uint32_t dly_w, cho_w, cho_ph;
+    uint32_t dly_w, cho_w, cho_ph, cho_live;
+    int32_t cho_depth;
     int32_t dly_lp;
     uint16_t comb_i[4], ap_i[2];
     int32_t comb_lp[4];
@@ -78,13 +81,19 @@ static void ref_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_
     int32_t fb = song.g[G_DFDBK] * 230, col = 2000 + song.g[G_DCOLOR] * 240;
     int32_t dmix = song.g[G_DMIX] * 258;
     int32_t size = 25000 + song.g[G_RSIZE] * 50, damp = 32767 - song.g[G_RDAMP] * 200;
-    int32_t cdepth = song.g[G_CDEPTH] * 6;
+    int32_t target = song.g[G_CDEPTH] * 6 * 256, zc = 0;
     uint32_t cinc = LFO_INC[song.g[G_CRATE] & 127] / CTL;
+    if (!rf.cho_live)
+        rf.cho_depth = target;
     for (i = 0; i < n; i++) {
         int32_t y = 0, x, r, a;
-        ref_cho[rf.cho_w & (CHO_LEN - 1u)] = (int16_t)clamp(cho_in[i] >> 1, -32768, 32767);
+        int32_t delta = target - rf.cho_depth;
+        rf.cho_depth += delta > 96 ? 96 : delta < -96 ? -96 : delta;
+        x = clamp(cho_in[i] >> 1, -32768, 32767);
+        zc |= x;
+        ref_cho[rf.cho_w & (CHO_LEN - 1u)] = (int16_t)x;
         rf.cho_ph += cinc;
-        r = (400 << 8) + ((osc_sine(rf.cho_ph) + 32768) * cdepth >> 8);
+        r = (400 << 8) + (int32_t)(((int64_t)(osc_sine(rf.cho_ph) + 32768) * rf.cho_depth) >> 16);
         {
             uint32_t ri = (uint32_t)r >> 8;
             int32_t f = r & 255, c0 = ref_cho[(rf.cho_w - ri) & (CHO_LEN - 1u)];
@@ -124,6 +133,7 @@ static void ref_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_
         y += a;
         wet[i] = y;
     }
+    rf.cho_live = zc ? CHO_LEN : rf.cho_live > n ? rf.cho_live - n : 0u;
 }
 
 static void test_room_identical(void)
@@ -156,10 +166,15 @@ static void test_room_identical(void)
                       memcmp(fx.ap_i, rf.ap_i, sizeof rf.ap_i) != 0 ||
                       memcmp(fx.comb_lp, rf.comb_lp, sizeof rf.comb_lp) != 0 ||
                       memcmp(rev_comb, ref_comb, sizeof ref_comb) != 0 ||
-                      memcmp(rev_ap, ref_ap, sizeof ref_ap) != 0;
+                      memcmp(rev_ap, ref_ap, sizeof ref_ap) != 0 ||
+                      fx.dly_w != rf.dly_w || fx.dly_lp != rf.dly_lp ||
+                      memcmp(dly_buf, ref_dly, sizeof ref_dly) != 0 ||
+                      fx.cho_w != rf.cho_w || fx.cho_ph != rf.cho_ph ||
+                      fx.cho_live != rf.cho_live || fx.cho_depth != rf.cho_depth ||
+                      memcmp(cho_buf, ref_cho, sizeof ref_cho) != 0;
     }
-    check("ROOM: the buses bit for bit as before SPRING (30 s of noise sends, settings changing)", !diff && !fx.rtype);
-    check("ROOM: indices, low-pass state and delay lines match the reference after every block", !state_diff);
+    check("ROOM/delay historical PCM + smoothed chorus reference (30 s noise sends, settings changing)", !diff && !fx.rtype);
+    check("ROOM/delay/chorus: indices, filters, depth and delay lines match after every block", !state_diff);
 }
 
 /* ------------------------------------------------------------- SPRING --- */
