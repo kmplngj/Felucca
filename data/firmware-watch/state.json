@@ -1,0 +1,391 @@
+{
+  "cadence": "Daily 09:00 Europe/Berlin",
+  "configured_branch_count": 29,
+  "configured_repository_count": 26,
+  "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
+  "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
+  "last_reconciliation": {
+    "assessments_completed": 0,
+    "at": "2026-10-13T15:31:16.199011+00:00",
+    "journal_url": "https://github.com/kmplngj/Felucca/issues/152#issuecomment-6149168784",
+    "new_commits_admitted": 7,
+    "reconciliation_id": "genkigenki-Felucca-smk37-b4038b2cb1137c61114c0f9bf6622da8c686ca03-to-d682be031a6f10c8779e00b425ba8f4a646707cd"
+  },
+  "last_run_completed_assessments": 7,
+  "last_run_created_issues": [
+    "https://github.com/kmplngj/Felucca/issues/293"
+  ],
+  "last_run_finished_at": "2026-10-13T15:54:49.316294+00:00",
+  "last_run_id": "dee3d348-7ea2-4fa6-8e41-017f88b0cb00",
+  "last_run_initialized_sources": 6,
+  "last_run_pending_assessments": 0,
+  "last_run_queue_counts": {
+    "history_completed": 0,
+    "recent_completed": 7,
+    "remaining_history": 5319,
+    "remaining_recent": 358,
+    "remaining_smk37_history": 38,
+    "remaining_smk37_recent": 0
+  },
+  "last_run_status": "completed_user_requested_smk37_interval",
+  "last_run_validation": {
+    "completed_ancestry_imports": 2,
+    "exact_source_commits": 7,
+    "existing_issue_assessments": 1,
+    "hardware": "not_run",
+    "history_target_and_reconciliation_archive": "preserved",
+    "host_probes": [
+      "Actual donor storage.c: O2, ASan/UBSan injected owner read/erase/program failures",
+      "Actual maintained/donor resume modules: fake OTA/write counter, missing/wrong identity"
+    ],
+    "native_main_sha": "e64618e4256e87c1d1d68d240f75d368dbe4b5a5",
+    "new_backport_issues": 1,
+    "not_applicable": 3,
+    "shared_checkout": "preserved",
+    "target_build": "not_run_no_native_firmware_change"
+  },
+  "latest_felucca_comparison_sha": "e64618e4256e87c1d1d68d240f75d368dbe4b5a5",
+  "previous_scheduled_run_before_manual_smk37_review": {
+    "last_run_completed_assessments": 50,
+    "last_run_created_issues": [
+      278
+    ],
+    "last_run_finished_at": "2026-10-13T15:21:49.260010+00:00",
+    "last_run_id": "d4094dcf-f112-4971-8720-eaa5d1612098",
+    "last_run_pending_assessments": 0,
+    "last_run_queue_counts": {
+      "history": 30,
+      "recent": 20
+    },
+    "last_run_status": "assessment_limit_reached",
+    "last_run_validation": "Source/DAG and whole issue/comment inventory review against fresh native main e64618e4256e87c1d1d68d240f75d368dbe4b5a5; no firmware changes, builds, baseline updates, FM-1 runs, flashes or publication. Issue278 is an unmeasured quality experiment. Binary artifact headers/hashes read without execution."
+  },
+  "registered_repository_count": 27,
+  "remaining_history": 5319,
+  "remaining_recent": 358,
+  "repositories": [
+    {
+      "historical_reviewed": 6,
+      "last_reviewed_sha": "b0cb5840a6345523dc1996f6e89f895ec49b345e",
+      "pinned_recent_targets": {
+        "main": "1727537624390cc3f9c7dff2456b43b3a8edb005"
+      },
+      "recent_frontiers": {
+        "main": "ef1f561b6b105f20350f6b1eac0dc0789a357f00"
+      },
+      "recent_reviewed": 0,
+      "repository": "hugelton/Felucca"
+    },
+    {
+      "historical_reviewed": 5,
+      "last_reviewed_sha": "3ad8542b68899b9772ba8d0b9c39aa155ba794bc",
+      "pinned_recent_targets": {
+        "main": "16daf99ea797f2e4f6b5e40065942df3648d08b9",
+        "next": "7e3cba9f4ec5083200a3edf1ec6e1337f7139ae1"
+      },
+      "recent_frontiers": {
+        "main": "01a78bdf0fb0e1a9d953567e36a59d80dea54a8a",
+        "next": "01a78bdf0fb0e1a9d953567e36a59d80dea54a8a"
+      },
+      "recent_reviewed": 9,
+      "repository": "keremimo/melodee"
+    },
+    {
+      "historical_reviewed": 1,
+      "last_reviewed_sha": "85d8fae7a288f66833bbce5269cf58e181f9bd5a",
+      "pinned_recent_targets": {
+        "main": "722fe71dd0a1a272e23ce658d1ed64f384c6b6ea"
+      },
+      "recent_frontiers": {
+        "main": "e8efc993c986f8d7661c515ebfc8c46c6e77057c"
+      },
+      "recent_reviewed": 5,
+      "repository": "Quixotic7/ChoralRootFM1"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": "8fad1a15ff59d5c3ed0bfe2d7a9ae90962cf4d5e",
+      "pinned_recent_targets": {
+        "main": "8fad1a15ff59d5c3ed0bfe2d7a9ae90962cf4d5e"
+      },
+      "recent_frontiers": {
+        "main": "cb6dedcec2578411c7cb16fd24c1c8d3b300a72b"
+      },
+      "recent_reviewed": 1,
+      "repository": "isod89/sloop-fm1"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": "d44df7db09b98ccad2f1233b8f83f5f09c04829e",
+      "pinned_recent_targets": {
+        "main": "d44df7db09b98ccad2f1233b8f83f5f09c04829e"
+      },
+      "recent_frontiers": {
+        "main": "d44df7db09b98ccad2f1233b8f83f5f09c04829e"
+      },
+      "recent_reviewed": 1,
+      "repository": "zvenson/dinghy"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": "59821f0eb7f882ccb8a3275b41a9936ac500fd3a",
+      "pinned_recent_targets": {
+        "main": "87bbabd6fe83bba77defd2995b037f4eb4150423"
+      },
+      "recent_frontiers": {
+        "main": "610f330423ae8c37e1b5137b11f04c9c185553bc"
+      },
+      "recent_reviewed": 5,
+      "repository": "zvenson/zp12"
+    },
+    {
+      "historical_reviewed": 7,
+      "last_reviewed_sha": "ad18d67146433ee8de74fcbd1aa897b653815447",
+      "pinned_recent_targets": {
+        "main": "47f8e4c4ad602591b81c21bc5480db7a94f6d6af"
+      },
+      "recent_frontiers": {
+        "main": "47f8e4c4ad602591b81c21bc5480db7a94f6d6af"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/fm1-x0x"
+    },
+    {
+      "historical_reviewed": 4,
+      "last_reviewed_sha": "98cf1d860a525b53b0393b51a66774fc649f62da",
+      "pinned_recent_targets": {
+        "ghoulbox": "8081206b951353b8d04886eeae615feb18123ef5",
+        "research/flash-savings": "7d92eaa3f5added7cbdca1cdf9d27cb4a760e917"
+      },
+      "recent_frontiers": {
+        "ghoulbox": "b61a931cd67b812a9c4f650eefc72215828dc5b0",
+        "research/flash-savings": "7d92eaa3f5added7cbdca1cdf9d27cb4a760e917"
+      },
+      "recent_reviewed": 6,
+      "repository": "jasonpersinger/ghoulbox-fm1-dungeon-synth"
+    },
+    {
+      "historical_reviewed": 5,
+      "last_reviewed_sha": "08bdf1641ed97af71bed7b4316946647fcc9b1c5",
+      "pinned_recent_targets": {
+        "main": "07cce380aae0c6d61793fa1b80231dff49d3c7ee"
+      },
+      "recent_frontiers": {
+        "main": "db41fd9845af6c8ebfbc348dafc33d98ef83a27d"
+      },
+      "recent_reviewed": 6,
+      "repository": "zednaked/jangada"
+    },
+    {
+      "historical_reviewed": 5,
+      "last_reviewed_sha": "6cce818e31b84851967fafcd949902729cc55e5c",
+      "pinned_recent_targets": {
+        "main": "1c1474544c2dc3fd24e486e4819a3c4b1eaa583c"
+      },
+      "recent_frontiers": {
+        "main": "4537c262349ecf02f8924c4297ec4355f7460924"
+      },
+      "recent_reviewed": 0,
+      "repository": "juanjiant-bit/JIANT"
+    },
+    {
+      "historical_reviewed": 3,
+      "last_reviewed_sha": "16a8687177f872f8cd0d39433f128644e8435725",
+      "pinned_recent_targets": {
+        "main": "e877ed64b2b727f5f928c7faa87fef1e12171286"
+      },
+      "recent_frontiers": {
+        "main": "e877ed64b2b727f5f928c7faa87fef1e12171286"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/schwung"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "19d896795b6ce36f4a382e0fcae2d96dbe7e7cfa"
+      },
+      "recent_frontiers": {
+        "main": "19d896795b6ce36f4a382e0fcae2d96dbe7e7cfa"
+      },
+      "recent_reviewed": 0,
+      "repository": "temeculadsp/nibbi"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "bb1266753474951e161216992e557f316a8c4611"
+      },
+      "recent_frontiers": {
+        "main": "bb1266753474951e161216992e557f316a8c4611"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/schwung-hank"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "f79280775252f5e0c144dd2b7462101afca3f9dc"
+      },
+      "recent_frontiers": {
+        "main": "f79280775252f5e0c144dd2b7462101afca3f9dc"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/schwung-chiptune"
+    },
+    {
+      "historical_reviewed": 4,
+      "last_reviewed_sha": "8c13f526aa3d21cec2325725639d7ee734c8cd6f",
+      "pinned_recent_targets": {
+        "main": "2c2ee4bb757bfe4ff171905e625c385e1310f649"
+      },
+      "recent_frontiers": {
+        "main": "2c2ee4bb757bfe4ff171905e625c385e1310f649"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/schwung-bouba-kiki"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "e774a674eef281248282ab47f69a9456bf6631fc"
+      },
+      "recent_frontiers": {
+        "main": "e774a674eef281248282ab47f69a9456bf6631fc"
+      },
+      "recent_reviewed": 0,
+      "repository": "sd88me/schwung-maze"
+    },
+    {
+      "historical_reviewed": 4,
+      "last_reviewed_sha": "1af22f76f6832e888ff564f4ad2154714b685dcf",
+      "pinned_recent_targets": {
+        "main": "0f1c932164fc012334dcf1e727da448a8389eaeb"
+      },
+      "recent_frontiers": {
+        "main": "0f1c932164fc012334dcf1e727da448a8389eaeb"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/schwung-ducker"
+    },
+    {
+      "historical_reviewed": 4,
+      "last_reviewed_sha": "b5ab538bd83fb269919764f0e6446f9ee21c2145",
+      "pinned_recent_targets": {
+        "main": "49bc5a5a2cd01f1b4965993860e29f7b78fc22a5"
+      },
+      "recent_frontiers": {
+        "main": "49bc5a5a2cd01f1b4965993860e29f7b78fc22a5"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/schwung-gate"
+    },
+    {
+      "historical_reviewed": 4,
+      "last_reviewed_sha": "01fd532598b388406d91a8010e805632809337a8",
+      "pinned_recent_targets": {
+        "main": "01fd532598b388406d91a8010e805632809337a8"
+      },
+      "recent_frontiers": {
+        "main": "01fd532598b388406d91a8010e805632809337a8"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/schwung-velocity-scale"
+    },
+    {
+      "historical_reviewed": 1,
+      "last_reviewed_sha": "cecea6e95123db593b9a84a4fde5ec68ef477e4d",
+      "pinned_recent_targets": {
+        "main": "f0ff52557829bd686118f45b90119c59188a9bf8"
+      },
+      "recent_frontiers": {
+        "main": "f0ff52557829bd686118f45b90119c59188a9bf8"
+      },
+      "recent_reviewed": 0,
+      "repository": "handcraftedcc/schwung-eucalypso"
+    },
+    {
+      "historical_reviewed": 1,
+      "last_reviewed_sha": "9d1287241c62124337bbbd6daa569d1da393dbfd",
+      "pinned_recent_targets": {
+        "main": "7e3415971c5800b4a3ad0146a7d95615883d7d96"
+      },
+      "recent_frontiers": {
+        "main": "7e3415971c5800b4a3ad0146a7d95615883d7d96"
+      },
+      "recent_reviewed": 1,
+      "repository": "DeadActive/hortator"
+    },
+    {
+      "historical_reviewed": 1,
+      "last_reviewed_sha": "9d1287241c62124337bbbd6daa569d1da393dbfd",
+      "pinned_recent_targets": {
+        "main": "7304acfe34cbf43825d33c15ef13bef0aab5c85d"
+      },
+      "recent_frontiers": {
+        "main": "7304acfe34cbf43825d33c15ef13bef0aab5c85d"
+      },
+      "recent_reviewed": 0,
+      "repository": "Wulgaren/Araminta"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": "dc730e62d80f972751f2346a45dac5b90868e7d9",
+      "pinned_recent_targets": {
+        "main": "dc730e62d80f972751f2346a45dac5b90868e7d9"
+      },
+      "recent_frontiers": {
+        "main": "dc730e62d80f972751f2346a45dac5b90868e7d9"
+      },
+      "recent_reviewed": 2,
+      "repository": "genkigenki/Makkuro37"
+    },
+    {
+      "historical_reviewed": 0,
+      "last_reviewed_sha": "6cd89aefee7f0b583b5c8b27a9a987935247343a",
+      "pinned_recent_targets": {
+        "main": "d42f54823efb3cebdd40efddfd2bc5da9ca6f892",
+        "smk37-board": "74cdbe3a20331edddd2e9768962fa8178948f972"
+      },
+      "recent_frontiers": {
+        "main": "800548dae452c4d1fc3bea7b2086c0f87e5fdee7",
+        "smk37-board": "74cdbe3a20331edddd2e9768962fa8178948f972"
+      },
+      "recent_reviewed": 3,
+      "repository": "genkigenki/Snoop37"
+    },
+    {
+      "historical_reviewed": 5,
+      "last_reviewed_sha": "7de429e084a2679184f19ee1df32b7c4ee4e4ca1",
+      "pinned_recent_targets": {
+        "main": "fdc75041a131772592de5b9a3a947153fd57b41d"
+      },
+      "recent_frontiers": {
+        "main": "6bc0202ae5b5ed92fb1a5f37009a096a1ca7eb2d"
+      },
+      "recent_reviewed": 1,
+      "repository": "genkigenki/fm1-to-smk37"
+    },
+    {
+      "historical_reviewed": 1,
+      "last_reviewed_sha": "d682be031a6f10c8779e00b425ba8f4a646707cd",
+      "pinned_recent_targets": {
+        "smk37": "d682be031a6f10c8779e00b425ba8f4a646707cd"
+      },
+      "recent_frontiers": {
+        "smk37": "d682be031a6f10c8779e00b425ba8f4a646707cd"
+      },
+      "recent_reviewed": 7,
+      "repository": "genkigenki/Felucca"
+    }
+  ],
+  "reviewed_commit_count": 108,
+  "round_robin_next_repository_index": 9,
+  "schema_version": 1,
+  "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
+  "source_blockers": []
+}

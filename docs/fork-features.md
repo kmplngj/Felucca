@@ -3,7 +3,9 @@
 
 This guide describes the controls, compatibility limits and testing tools summarized in
 the [README](../README.md). The [upstream manual](https://github.com/hugelton/Felucca/wiki/Home)
-covers the shared controls and engines; hosted upstream tools may differ from this checkout.
+covers the shared controls and engines. The [fork site](https://kmplngj.github.io/Felucca/)
+publishes tested main builds and a pinned WebApp fork; its
+[source revisions](https://kmplngj.github.io/Felucca/sources.html) may differ from this checkout.
 
 ## Fork features
 

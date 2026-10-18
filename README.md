@@ -16,8 +16,10 @@ reviewed and tested; the fork does not automatically include every upstream or f
 
 Felucca combines thirteen engines with factory presets, four tracks sharing eight voices,
 a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
-See the upstream [feature overview](https://github.com/hugelton/Felucca/wiki/Features)
-and [manual](https://github.com/hugelton/Felucca/wiki/Home) for the shared instrument.
+The [fork feature guide](docs/fork-features.md) covers controls, defaults,
+compatibility limits and build identification. The
+[upstream manual](https://github.com/hugelton/Felucca/wiki/Home) documents the shared
+instrument; some details may differ in this fork.
 
 This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
 pixel-font options, performance diagnostics and broader host/emulator regression coverage.
@@ -28,13 +30,12 @@ remain planned. The optional second-core worker is beta, off by default, and sti
 real-device reliability validation in this fork. Shared effect-control smoothing
 experiments are implemented, with FM-1 listening and timing qualification pending.
 
-[Detailed fork features and testing](docs/fork-features.md) covers controls, defaults,
-compatibility limits and build identification.
-
 ## Development direction and process
 
 - **Gather and review:** follow upstream and related forks for useful features, engines
   and optimizations, preserving attribution and checking licences and compatibility.
+  The [firmware watch](docs/firmware-watch.md) keeps the source registry, commit reviews
+  and historical backfill in a queryable repository ledger.
 - **Integrate engines:** use the shared engine library where appropriate and build profiles
   to fit the FM-1's limits. Keep sound IDs, saved projects and editor behavior compatible.
 - **Measure and optimize:** compare CPU cost, RAM use and firmware size against a baseline,
@@ -54,12 +55,12 @@ belong in focused guides, issues, PRs and release notes.
   or [CI artifacts](https://github.com/kmplngj/Felucca/actions), following the
   [download and checksum guide](.github/CI.md#downloads-and-checksums).
 - **Install:** use the fork's **`.fwsc` package** with the
-  [web installer](https://hugelton.github.io/Felucca/) in Chrome or Edge, or follow the
+  [fork web installer](https://kmplngj.github.io/Felucca/webapp/installer/) in Chrome or Edge, or follow the
   [command-line instructions](BUILDING.md#install). Raw `.bin` files are build material.
   Installation is at your own risk; M-VAVE's updater or the installer's
   **Return to official V15** restores stock firmware.
-- **Explore:** try the [browser demo](https://hugelton.github.io/Felucca/webapp/try/)
-  or [web editor](https://hugelton.github.io/Felucca/webapp/editor/).
+- **Explore:** try the [fork browser demo](https://kmplngj.github.io/Felucca/webapp/try/)
+  or [fork web editor](https://kmplngj.github.io/Felucca/webapp/editor/).
 - **Build and test:** start with [BUILDING.md](BUILDING.md), including
   [engine profiles](BUILDING.md#engine-build-profiles) and
   [testing a PR on hardware](BUILDING.md#test-a-pull-request-on-hardware).
@@ -72,23 +73,23 @@ cd Felucca
 ./build.sh
 ```
 
-The hosted installer, demo, editor and wiki are **upstream services**, updated independently
-of this fork. Use a fork package to install this fork, and its local emulator to test this
-checkout. Review [project compatibility](docs/fork-features.md#project-compatibility)
-before downgrading.
+The fork site follows successful full builds of `main`: the demo and installer use
+that firmware revision, and the editor comes from a pinned revision of
+[our WebApp fork](https://github.com/kmplngj/Felucca-WebApp). Check the site's
+[source revisions](https://kmplngj.github.io/Felucca/sources.html) before testing;
+the live site can lag behind this checkout.
+See [site deployment](.github/CI.md#fork-site-deployment) and review
+[project compatibility](docs/fork-features.md#project-compatibility) before downgrading.
 
-## Feedback and contributing
+## Development status
 
-Report fork-specific bugs and integration ideas in
-[this fork's Issues](https://github.com/kmplngj/Felucca/issues), with the build commit,
-reproduction steps and any relevant diagnostics. Shared upstream discussion lives in
-[Hügelton's Discussions](https://github.com/hugelton/Felucca/discussions).
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for development guidance.
+For now, I manage this fork's development and issues on my own, following my own
+priorities and wishes. This could change once the larger tasks I want to complete
+are done, with more room for community input and contributions.
 
-Felucca uses AI coding assistance for code, tests, documentation and maintenance.
-Design, sound design and direction remain the maintainer's or community's; generative AI
-is not used for music, icons or artwork. See the upstream
-[AI development statement](https://github.com/hugelton/Felucca/discussions/166).
+This fork uses AI coding assistance for code, tests, documentation and maintenance.
+Design, sound design and direction remain mine; generative AI is not used for music,
+icons or artwork.
 
 ## Credits and licence
 
