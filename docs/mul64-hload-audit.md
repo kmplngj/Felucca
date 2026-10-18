@@ -74,7 +74,7 @@ tap, a FIR whose 16-bit coefficient/history loads sit between accumulating multi
 
 | | |
 | --- | --- |
-| Source revision | `e20985aa7baae96313190526deb5a72c02cf6659` (`origin/main`, merge of #448) plus the uncommitted checker and test (no firmware source differs); Engines pin `9630426f5c4a34a209ca851356fbe8ba3c4c6d19` |
+| Source revision | `e20985aa7baae96313190526deb5a72c02cf6659` (`origin/main`, merge of #448) plus this change's checker, test and documents (no firmware source differs; build identity read `-dirty`); Engines pin `9630426f5c4a34a209ca851356fbe8ba3c4c6d19` |
 | Compiler | JieLi `clang version 4.0.1`, `tools/build.py` `CFLAGS = -Os -ffunction-sections -fno-builtin -Wall -Wno-unused-function`, selective `minsize` pass on (`size: 923 main-loop functions ... 123 reached from an interrupt kept -Os`) |
 | Variants | default (`FELUCCA_CPU2=1`, profile FM4=0, SLICE=1, M8Stealth), listing sha256 `3d0caa3ffd3f...`; and `FELUCCA_CPU2=0` |
 | Host | Linux x86_64 container; AC79 SDK `AC79NN_SDK_V1.2.1_2023-12-13` files for packaging only |
