@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Real INFO rendering and metadata presence, including both canvas bands. */
 #define IDENTITY_UI_RENDER 1
+#define UI_RENDER_TEXT_MAX 64
 #include "ui_render.c"
 
 int main(int argc, char **argv)
@@ -24,7 +25,13 @@ int main(int argc, char **argv)
                 ui_prefs = large ? PREF_LARGE : 0;
                 draw(S_MENU_INFO);
                 for (k = 0; k < nscr; k++) {
+                    uint32_t j;
                     identity |= !strcmp(scr[k].s, FELUCCA_SPLASH_ID);
+                    for (j = k + 1; j < nscr; j++) {
+                        char joined[128];
+                        snprintf(joined, sizeof joined, "%s%s", scr[k].s, scr[j].s);
+                        identity |= !strcmp(joined, FELUCCA_SPLASH_ID);
+                    }
                     commit |= !strcmp(scr[k].s, FELUCCA_BUILD_ID);
                     usb_seen |= !strcmp(scr[k].s, "OFF");
                     cpu_seen |= !strcmp(scr[k].s, "33");

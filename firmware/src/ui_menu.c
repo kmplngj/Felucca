@@ -392,14 +392,15 @@ static void info_rows(void)                            /* (in screen rows: cv_oy
     static const char *const LBL[] = {"FIRMWARE", "COMMIT", "USB", "CPU"};
     static const char *const USB_N[5] = {"OFF", "WAIT", "BUS", "ENUM", "MIDI"};
     int32_t h = menu_large() ? 28 : 24;
+    int32_t identity_h = h * (text_w(&AF_S, FELUCCA_SPLASH_ID) > MR_VR - MR_LX ? 2 : 1);
     uint32_t k;
     char cpu[8];
     fmt_int(cpu, info.cpu);
     if (!ux.style)                                     /* FLAT: the rows' panel */
-        cv_rrect(4, INFO_Y, 232, (int32_t)INFO_N * (h + 2) + h - 2 + 2 * MP_PAD, 8, T_SURF, T_BG);
+        cv_rrect(4, INFO_Y, 232, (int32_t)INFO_N * (h + 2) + identity_h - 2 + 2 * MP_PAD, 8, T_SURF, T_BG);
     for (k = 0; k < INFO_N; k++) {
         uint32_t row = k && !FELUCCA_BUILD_PR[0] ? k + 1u : k;
-        int32_t y = INFO_Y + MP_PAD + (int32_t)k * (h + 2) + (k ? h : 0), vy = y + CAP_IN(M, h);
+        int32_t y = INFO_Y + MP_PAD + (int32_t)k * (h + 2) + (k ? identity_h : 0), vy = y + CAP_IN(M, h);
         if (k)
             cv_rect(MR_X + 6, y - 1, MR_W - 12, 1, ux.style ? T_RULE : T_LINE);
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "info row name centred up/down");
@@ -409,9 +410,24 @@ static void info_rows(void)                            /* (in screen rows: cv_oy
              * labels can be wider than a menu value. PR builds also name the
              * actual compiled commit in the following row. */
             const aafont_t *f = text_w(&AF_M, FELUCCA_SPLASH_ID) <= MR_VR - MR_LX ? &AF_M : &AF_S;
+            const char *value = FELUCCA_SPLASH_ID, *tail = "";
+            char prefix[32];
+            if (identity_h > h) {                       /* bounded release version: wrap without losing characters */
+                uint32_t n;
+                str_cpy(prefix, value, sizeof prefix);
+                n = str_len(prefix);
+                while (n && text_w(f, prefix) > MR_VR - MR_LX)
+                    prefix[--n] = 0;
+                tail = value + n;
+                value = prefix;
+            }
             GFX_HOOK_ALIGN(0, y + h, 0, y + 2 * h, AL_V, "info firmware identity centred up/down");
             cv_text_r(MR_VR, y + h + (f == &AF_M ? CAP_IN(M, h) : CAP_IN(S, h)), f,
-                      FELUCCA_SPLASH_ID, T_THEME, T_SURF);
+                      value, T_THEME, T_SURF);
+            if (tail[0]) {
+                GFX_HOOK_ALIGN(0, y + 2 * h, 0, y + 3 * h, AL_V, "info firmware continuation centred up/down");
+                cv_text_r(MR_VR, y + 2 * h + CAP_IN(S, h), &AF_S, tail, T_THEME, T_SURF);
+            }
             continue;
         }
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "info row value centred up/down");
