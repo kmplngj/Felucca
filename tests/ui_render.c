@@ -39,7 +39,10 @@
 #include <time.h>
 #include <math.h>
 
-typedef struct { int16_t x0, y0, x1, y1; uint8_t flags; char s[28]; char fnt; } rbox_t;   /* fnt: S M L (its face) */
+#ifndef UI_RENDER_TEXT_MAX
+#define UI_RENDER_TEXT_MAX 28
+#endif
+typedef struct { int16_t x0, y0, x1, y1; uint8_t flags; char s[UI_RENDER_TEXT_MAX]; char fnt; } rbox_t;   /* fnt: S M L (its face) */
 static rbox_t pend[256], scr[1200];
 static int16_t cells[64][4];                    /* GFX_HOOK_CELL: the cells and cards of the canvas being drawn */
 static uint32_t ncells, nspill;
@@ -179,7 +182,7 @@ static void hk_text(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const char *
     n_text++;
     if (npend >= 256u) return;
     pend[npend] = (rbox_t){(int16_t)x0, (int16_t)y0, (int16_t)x1, (int16_t)y1, (uint8_t)flags, {0}};
-    strncpy(pend[npend].s, s, 27);
+    strncpy(pend[npend].s, s, sizeof pend[npend].s - 1u);
     pend[npend].fnt = (flags & 4u) ? 'K' : pen_h >= 30u ? 'L' : pen_h >= 18u ? 'M' : 'S';
     pen_h = 0;
     npend++;
@@ -1663,47 +1666,29 @@ static void draw(int s)
         setup_show("TURN RIGHT", "ALGORITHM");
         return;
     }
-    if (s == S_SPLASH) {                          /* the power-on splash (main.c, before the UI): its lines, the version
-                                                   * shown FELUCCA_VERSION (run_tests.sh: src/felucca.c's) */
-        static const char WANT[] = "Felucca|" FELUCCA_VERSION "|H\xFCgelton Instruments|with community";
+    if (s == S_SPLASH) {
+        static const char WANT[] = "Felucca|" FELUCCA_SPLASH_ID "|Press any button to continue";
         splash_seen[0] = 0;
         in_splash = 1;
         draw_splash();
         in_splash = 0;
-        {   /* the square whole on the screen (176 x 176 at 32,32, more than the canvas): its edges and square corners
-             * RAISE, BG just outside; its text's ink 16 px in from the left and the top (the bottom: AL_B, the hook) */
-            const int32_t q0 = 32, q1 = 32 + 176 - 1;
-            uint16_t bg = host_screen[0], ra = host_screen[(uint32_t)(q0 + 1) * 240u + (uint32_t)q0 + 1];
-            int32_t i, x, y, ix = 999, iy = 999, bad = ra == bg;
-            for (i = q0 - 1; i <= q1 + 1; i++) {
-                int32_t in = i >= q0 && i <= q1;
-                bad |= host_screen[(uint32_t)(q0 - 1) * 240u + (uint32_t)i] != bg || host_screen[(uint32_t)(q1 + 1) * 240u + (uint32_t)i] != bg
-                    || host_screen[(uint32_t)i * 240u + (uint32_t)(q0 - 1)] != bg || host_screen[(uint32_t)i * 240u + (uint32_t)(q1 + 1)] != bg;
-                if (in)
-                    bad |= host_screen[(uint32_t)q0 * 240u + (uint32_t)i] != ra || host_screen[(uint32_t)q1 * 240u + (uint32_t)i] != ra
-                        || host_screen[(uint32_t)i * 240u + (uint32_t)q0] != ra || host_screen[(uint32_t)i * 240u + (uint32_t)q1] != ra;
-            }
-            for (y = q0; y <= q1; y++)
-                for (x = q0; x <= q1; x++)
-                    if (host_screen[(uint32_t)y * 240u + (uint32_t)x] != ra) {
-                        if (x - q0 < ix) ix = x - q0;
-                        if (y - q0 < iy) iy = y - q0;
-                    }
-            if (bad || ix != 16 || iy != 16) {
-                if (rep) fprintf(rep, "FIND %-26s the splash square not whole (edges %s) or its text not 16 px in (left %d, top %d)\n",
-                                 cur_name, bad ? "off" : "ok", (int)ix, (int)iy);
-                nfind++;
-            }
+        int matches = !strcmp(splash_seen, WANT);
+        if (text_w(&AF_S, FELUCCA_SPLASH_ID) > 224) {
+            const char *start = splash_seen + strlen("Felucca|");
+            const char *end = strchr(start, '|');
+            matches = !strncmp(splash_seen, "Felucca|", strlen("Felucca|")) && end && end > start &&
+                      (uint8_t)end[-1] == (uint8_t)ELLIPSIS &&
+                      !strncmp(start, FELUCCA_SPLASH_ID, (size_t)(end - start - 1)) &&
+                      !strcmp(end, "|Press any button to continue");
         }
-        char expected[160];
-        snprintf(expected, sizeof expected, "%s|%s%s%s", WANT, FELUCCA_BUILD_ID,
-                 FELUCCA_BUILD_PR[0] ? "|" : "", FELUCCA_BUILD_PR);
-        if (strcmp(splash_seen, expected)) {
-            if (rep) fprintf(rep, "FIND %-26s the splash shows '%s', not '%s'\n", cur_name, splash_seen, expected);
+        if (!matches) {
+            if (rep) fprintf(rep, "FIND %-26s splash shows '%s', expected '%s'\n", cur_name, splash_seen, WANT);
             nfind++;
-        } else {
-            static uint8_t said;
-            if (!said++) printf("ui_render: the splash shows the version " FELUCCA_VERSION " (FELUCCA_VERSION) and its lines\n");
+        }
+        /* The user's background remains visible, including the old card's corners. */
+        if (host_screen[0] != swap16(T_BG) || host_screen[32 * 240 + 32] != host_screen[0]) {
+            if (rep) fprintf(rep, "FIND %-26s splash does not use the saved background\n", cur_name);
+            nfind++;
         }
         return;
     }

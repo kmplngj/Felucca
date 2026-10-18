@@ -55,6 +55,10 @@ class IdentityTest(unittest.TestCase):
             verify.assert_called_once_with(self.root)
             self.assertEqual(got['build'], self.sha[:8])
             self.assertEqual(got['source'], 'verified archive')
+            self.assertIsNone(got['repository'])
+        with patch('source_archive.verify_tree', return_value={
+                'firmware_revision': self.sha, 'repository': 'archive/Felucca'}):
+            self.assertEqual(identity.resolve(self.root, env={})['repository'], 'archive/Felucca')
         with patch('source_archive.verify_tree', side_effect=ValueError('tampered')):
             with self.assertRaisesRegex(ValueError, 'tampered'):
                 identity.resolve(self.root, env={})
@@ -86,13 +90,13 @@ class IdentityTest(unittest.TestCase):
             identity.resolve(self.root, env=env)
 
     def test_merge_pr_compiles_merge_revision(self):
-        self.run_git('checkout', '-qb', 'head')
+        self.run_git('checkout', '-qb', 'pr-head')
         (self.root / 'head.c').write_text('head')
         self.run_git('add', '.')
         self.run_git('commit', '-qm', 'PR head')
         head = self.run_git('rev-parse', 'HEAD')
         self.run_git('checkout', '-q', '-')
-        self.run_git('merge', '--no-ff', '-qm', 'test merge', 'head')
+        self.run_git('merge', '--no-ff', '-qm', 'test merge', 'pr-head')
         merge = self.run_git('rev-parse', 'HEAD')
         env = self.event_env({'number': 123, 'pull_request': {'head': {'sha': head}}}, 'pull_request')
         env.update(GITHUB_SHA=merge, GITHUB_REF='refs/pull/123/merge')
@@ -167,6 +171,62 @@ class IdentityTest(unittest.TestCase):
                 identity.resolve(self.root, version, {})
         self.assertEqual(identity.outputs(identity.resolve(self.root, env={})),
                          identity.outputs(identity.resolve(self.root, env={})))
+
+    def test_fork_repository_and_remote_freshness(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(identity.resolve(self.root)['repository'])
+            for remote in ('https://github.com/kmplngj/Felucca.git',
+                           'git@github.com:kmplngj/Felucca.git',
+                           'ssh://git@github.com/kmplngj/Felucca.git',
+                           'ssh://git@ssh.github.com:443/kmplngj/Felucca.git',
+                           'https://github.com/kmplngj/Felucca/'):
+                self.run_git('config', 'remote.origin.url', remote)
+                self.assertEqual(identity.resolve(self.root)['repository'], 'kmplngj/Felucca')
+            directory = self.root / 'build/gen'
+            identity.write(self.root, directory)
+            self.run_git('config', 'remote.origin.url', 'https://github.com/another/Renamed.git')
+            with self.assertRaisesRegex(ValueError, 'stale'):
+                identity.check(self.root, directory)
+            identity.write(self.root, directory)
+            self.assertIn('github.com/another/Renamed', (directory / 'build_identity.h').read_text())
+            identity.check(self.root, directory)
+
+    def test_repository_ci_and_unsupported_origins(self):
+        self.run_git('config', 'remote.origin.url', 'https://github.com/upstream/Felucca.git')
+        env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'fork/New-name'}
+        self.assertEqual(identity.resolve(self.root, env=env)['repository'], 'fork/New-name')
+        for value in ('bad/repo\n', 'bad/repo"', '../repo', 'owner/../repo', 'owner/日本'):
+            env['GITHUB_REPOSITORY'] = value
+            self.assertIsNone(identity.resolve(self.root, env=env)['repository'])
+        for remote in ('https://example.com/owner/repo', '/tmp/repo',
+                       'https://github.com.evil.test/owner/repo',
+                       'ssh://git@ssh.github.com.evil.test:443/owner/repo.git',
+                       'ssh://git@ssh.github.com:444/owner/repo.git',
+                       'https://token@github.com/owner/repo', 'https://github.com/owner/repo?token=secret'):
+            self.run_git('config', 'remote.origin.url', remote)
+            data = identity.resolve(self.root, env={})
+            self.assertIsNone(data['repository'])
+            self.assertIn('Source repository unavailable', identity.outputs(data)['build_identity.h'])
+
+    def test_splash_uses_release_version_only_for_clean_identified_releases(self):
+        def label(data):
+            header = identity.outputs(data)['build_identity.h']
+            return next(line for line in header.splitlines() if line.startswith('#define FELUCCA_SPLASH_ID '))
+
+        self.assertEqual(label(identity.resolve(self.root, env={})),
+                         f'#define FELUCCA_SPLASH_ID "{self.sha[:8]}"')
+        self.assertEqual(label(identity.resolve(self.root, 'v2.0', {})),
+                         '#define FELUCCA_SPLASH_ID "v2.0"')
+        data = identity.resolve(self.root, 'v2.0', {})
+        data['pr_label'] = 'PR #123 merge'
+        self.assertEqual(label(data), '#define FELUCCA_SPLASH_ID "PR #123 merge"')
+        (self.root / 'changed.c').write_text('dirty')
+        self.assertEqual(label(identity.resolve(self.root, 'v2.0', {})),
+                         f'#define FELUCCA_SPLASH_ID "{self.sha[:8]}-dirty"')
+        import shutil
+        shutil.rmtree(self.root / '.git')
+        self.assertEqual(label(identity.resolve(self.root, 'v2.0', {})),
+                         '#define FELUCCA_SPLASH_ID "unknown"')
 
 
 if __name__ == '__main__':

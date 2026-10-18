@@ -157,11 +157,19 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 ### Build revision and PR identity
 
 Each build resolves its actual checkout into `build/gen/build_identity.h` and
-`build/build-identity.json`; the same version, eight-character commit, dirty flag and
-optional PR label appear at startup and MENU > SYSTEM > ABOUT (panel steps in
-[the fork feature guide](docs/fork-features.md#identify-the-installed-build)). No boot-time
-lookup or extra delay is involved. CI provenance includes the same `build_identity`
-object, and release folders include the JSON sidecar.
+`build/build-identity.json`; the version, eight-character commit, dirty flag and
+optional PR label appear in MENU > SYSTEM > ABOUT (panel steps in
+[the fork feature guide](docs/fork-features.md#identify-the-installed-build)).
+The minimal splash shows one line: the verified PR label first; otherwise the version
+only for a clean, identified `--release` build; otherwise the compiled commit or
+`unknown`, preserving `-dirty`. A source-default version alone never marks a release.
+The full identity remains in ABOUT and JSON. Splash colors follow the saved palette,
+and every build keeps the same short automatic startup; any button or note key can
+dismiss it after initialization. See [startup behavior](docs/fork-features.md#identify-the-installed-build).
+No boot-time identity lookup is involved. CI provenance
+includes the same `build_identity` object, and release folders include the JSON sidecar.
+MENU > SYSTEM > INFO selects the verified PR label, clean identified release
+version, or development commit, and includes a separate compiled-commit row for PRs.
 The full revision remains in JSON; a short SHA is a readable identifier, not a checksum.
 
 Clean Git builds use HEAD; tracked changes, untracked nonignored files and changed
@@ -184,6 +192,15 @@ source reproduction runs in non-PR release context. Local/non-PR builds omit the
 Metadata regenerates on every target/asset build. Host and emulator profile freshness
 checks also reject stale identity after switching commits or clean/dirty state; rebuild
 before compiling them. Generated source hashes continue to enforce input freshness.
+
+ABOUT's source repository is also resolved at build time: GitHub Actions builds use
+`GITHUB_REPOSITORY`, and local Git builds use the GitHub `origin` remote (HTTPS or
+SSH). Forking and cloning your fork therefore updates the displayed owner/repository
+without editing firmware. The readable source URL replaces the fixed upstream QR
+code; upstream copyright and third-party credits remain. No network lookup or extra
+dependency is needed. Complete source archives preserve this repository in
+`SOURCE-PINS.json`; older archives, non-Git trees and unsupported/missing remotes show
+`Source repository unavailable`. Changing `origin` requires an asset rebuild too.
 
 ### Build product identity (forks)
 
