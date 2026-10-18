@@ -6,8 +6,8 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 5256,
-  "known_remaining_recent": 288,
+  "known_remaining_history": 5253,
+  "known_remaining_recent": 293,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -47,26 +47,26 @@
         "total": 190
       },
       "recent": {
-        "remaining": 31,
-        "reviewed": 7,
+        "remaining": 30,
+        "reviewed": 8,
         "total": 38
       },
       "repository": "Quixotic7/ChoralRootFM1",
-      "terminal_pairs": 8
+      "terminal_pairs": 9
     },
     {
       "history": {
-        "remaining": 13,
-        "reviewed": 0,
+        "remaining": 12,
+        "reviewed": 1,
         "total": 13
       },
       "recent": {
-        "remaining": 1,
-        "reviewed": 3,
-        "total": 4
+        "remaining": 3,
+        "reviewed": 0,
+        "total": 3
       },
       "repository": "isod89/sloop-fm1",
-      "terminal_pairs": 3
+      "terminal_pairs": 5
     },
     {
       "history": {
@@ -84,8 +84,8 @@
     },
     {
       "history": {
-        "remaining": 151,
-        "reviewed": 0,
+        "remaining": 150,
+        "reviewed": 1,
         "total": 151
       },
       "recent": {
@@ -94,7 +94,7 @@
         "total": 152
       },
       "repository": "zvenson/zp12",
-      "terminal_pairs": 10
+      "terminal_pairs": 11
     },
     {
       "history": {
@@ -145,12 +145,12 @@
         "total": 226
       },
       "recent": {
-        "remaining": 21,
-        "reviewed": 4,
+        "remaining": 20,
+        "reviewed": 5,
         "total": 25
       },
       "repository": "juanjiant-bit/JIANT",
-      "terminal_pairs": 9
+      "terminal_pairs": 10
     },
     {
       "history": {
@@ -327,17 +327,17 @@
         "total": 45
       },
       "recent": {
-        "remaining": 2,
-        "reviewed": 5,
+        "remaining": 1,
+        "reviewed": 6,
         "total": 7
       },
       "repository": "genkigenki/Makkuro37",
-      "terminal_pairs": 8
+      "terminal_pairs": 9
     },
     {
       "history": {
-        "remaining": 71,
-        "reviewed": 0,
+        "remaining": 70,
+        "reviewed": 1,
         "total": 71
       },
       "recent": {
@@ -346,7 +346,7 @@
         "total": 13
       },
       "repository": "genkigenki/Snoop37",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
@@ -355,12 +355,12 @@
         "total": 34
       },
       "recent": {
-        "remaining": 1,
-        "reviewed": 5,
-        "total": 6
+        "remaining": 7,
+        "reviewed": 0,
+        "total": 7
       },
       "repository": "genkigenki/fm1-to-smk37",
-      "terminal_pairs": 13
+      "terminal_pairs": 14
     },
     {
       "history": {
@@ -378,5 +378,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 190
+  "terminal_pairs": 198
 }

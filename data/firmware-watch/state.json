@@ -24,8 +24,8 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 5256,
-    "known_remaining_recent": 288,
+    "known_remaining_history": 5253,
+    "known_remaining_recent": 293,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
@@ -65,26 +65,26 @@
           "total": 190
         },
         "recent": {
-          "remaining": 31,
-          "reviewed": 7,
+          "remaining": 30,
+          "reviewed": 8,
           "total": 38
         },
         "repository": "Quixotic7/ChoralRootFM1",
-        "terminal_pairs": 8
+        "terminal_pairs": 9
       },
       {
         "history": {
-          "remaining": 13,
-          "reviewed": 0,
+          "remaining": 12,
+          "reviewed": 1,
           "total": 13
         },
         "recent": {
-          "remaining": 1,
-          "reviewed": 3,
-          "total": 4
+          "remaining": 3,
+          "reviewed": 0,
+          "total": 3
         },
         "repository": "isod89/sloop-fm1",
-        "terminal_pairs": 3
+        "terminal_pairs": 5
       },
       {
         "history": {
@@ -102,8 +102,8 @@
       },
       {
         "history": {
-          "remaining": 151,
-          "reviewed": 0,
+          "remaining": 150,
+          "reviewed": 1,
           "total": 151
         },
         "recent": {
@@ -112,7 +112,7 @@
           "total": 152
         },
         "repository": "zvenson/zp12",
-        "terminal_pairs": 10
+        "terminal_pairs": 11
       },
       {
         "history": {
@@ -163,12 +163,12 @@
           "total": 226
         },
         "recent": {
-          "remaining": 21,
-          "reviewed": 4,
+          "remaining": 20,
+          "reviewed": 5,
           "total": 25
         },
         "repository": "juanjiant-bit/JIANT",
-        "terminal_pairs": 9
+        "terminal_pairs": 10
       },
       {
         "history": {
@@ -345,17 +345,17 @@
           "total": 45
         },
         "recent": {
-          "remaining": 2,
-          "reviewed": 5,
+          "remaining": 1,
+          "reviewed": 6,
           "total": 7
         },
         "repository": "genkigenki/Makkuro37",
-        "terminal_pairs": 8
+        "terminal_pairs": 9
       },
       {
         "history": {
-          "remaining": 71,
-          "reviewed": 0,
+          "remaining": 70,
+          "reviewed": 1,
           "total": 71
         },
         "recent": {
@@ -364,7 +364,7 @@
           "total": 13
         },
         "repository": "genkigenki/Snoop37",
-        "terminal_pairs": 4
+        "terminal_pairs": 5
       },
       {
         "history": {
@@ -373,12 +373,12 @@
           "total": 34
         },
         "recent": {
-          "remaining": 1,
-          "reviewed": 5,
-          "total": 6
+          "remaining": 7,
+          "reviewed": 0,
+          "total": 7
         },
         "repository": "genkigenki/fm1-to-smk37",
-        "terminal_pairs": 13
+        "terminal_pairs": 14
       },
       {
         "history": {
@@ -396,7 +396,7 @@
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 190
+    "terminal_pairs": 198
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -568,10 +568,10 @@
         "main": "4ec1ac829fd2bdf2c571ea215fb3d62477d01220"
       },
       "pinned_recent_targets": {
-        "main": "8fad1a15ff59d5c3ed0bfe2d7a9ae90962cf4d5e"
+        "main": "4ec1ac829fd2bdf2c571ea215fb3d62477d01220"
       },
       "recent_frontiers": {
-        "main": "cb6dedcec2578411c7cb16fd24c1c8d3b300a72b"
+        "main": "8fad1a15ff59d5c3ed0bfe2d7a9ae90962cf4d5e"
       },
       "recent_reviewed": 1,
       "repository": "isod89/sloop-fm1"
@@ -910,10 +910,10 @@
         "main": "54252ffa2219e3c9cd7eb70f4e99b361eaa048e1"
       },
       "pinned_recent_targets": {
-        "main": "fdc75041a131772592de5b9a3a947153fd57b41d"
+        "main": "54252ffa2219e3c9cd7eb70f4e99b361eaa048e1"
       },
       "recent_frontiers": {
-        "main": "6bc0202ae5b5ed92fb1a5f37009a096a1ca7eb2d"
+        "main": "fdc75041a131772592de5b9a3a947153fd57b41d"
       },
       "recent_reviewed": 1,
       "repository": "genkigenki/fm1-to-smk37"
@@ -972,12 +972,28 @@
       "repository": "handcraftedcc/schwung-eucalypso",
       "run_id": "run-2026-10-18T1231-ebdd9de29f35",
       "source_sha": "7774b7357459839a4fd0bfcfb58269441b247f20"
+    },
+    {
+      "correct_url": "https://github.com/kmplngj/Felucca/blob/2a8221a929a127fe4a155e31e1dd78658fd45ecf/firmware/src/core.h",
+      "incorrect_url": "https://github.com/kmplngj/Felucca/blob/2a8221a929a127fe4a155e31e1dd78658fd45ecf/docs/makkuro37-adoption-plan-2026-10-12.md",
+      "reason": "Prepublication link correction; original append-only evidence and decision retained. Planning report was local-only, not tracked native evidence. Verified native four-part/control contracts are linked instead.",
+      "repository": "genkigenki/Makkuro37",
+      "run_id": "run-2026-10-18T1231-ebdd9de29f35",
+      "source_sha": "90cc530f0fe6966f9c41589e1739aa2e2cf49a52"
+    },
+    {
+      "correct_url": "https://github.com/kmplngj/Felucca/blob/2a8221a929a127fe4a155e31e1dd78658fd45ecf/tests/regress.c",
+      "incorrect_url": "https://github.com/kmplngj/Felucca/blob/2a8221a929a127fe4a155e31e1dd78658fd45ecf/tests/voices_test.c",
+      "reason": "Prepublication link correction; original append-only evidence and decision retained. Native voice-budget regression is part of regress.c; corrected nonexistent test filename.",
+      "repository": "juanjiant-bit/JIANT",
+      "run_id": "run-2026-10-18T1231-ebdd9de29f35",
+      "source_sha": "66f64eba84fc50a38f04c49845a4a3b23f2e7280"
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "2e0cd3518d2b9371af942063d735fae4f56e8478c41916c9566f4713e96c0126",
-  "round_robin_next_repository_index": 1,
-  "round_robin_processed_records": 192,
+  "round_robin_journal_prefix_sha256": "f50c7fb6e04e05e59347356c0756a53b5f724e00f010cc965c2e9ed054392d16",
+  "round_robin_next_repository_index": 4,
+  "round_robin_processed_records": 200,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [
