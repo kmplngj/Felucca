@@ -6,39 +6,39 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 5260,
-  "known_remaining_recent": 293,
+  "known_remaining_history": 5256,
+  "known_remaining_recent": 288,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
   "repositories": [
     {
       "history": {
-        "remaining": 32,
-        "reviewed": 6,
+        "remaining": 31,
+        "reviewed": 7,
         "total": 38
       },
       "recent": {
-        "remaining": 3,
-        "reviewed": 2,
+        "remaining": 2,
+        "reviewed": 3,
         "total": 5
       },
       "repository": "hugelton/Felucca",
-      "terminal_pairs": 10
+      "terminal_pairs": 12
     },
     {
       "history": {
-        "remaining": 291,
-        "reviewed": 5,
+        "remaining": 290,
+        "reviewed": 6,
         "total": 296
       },
       "recent": {
-        "remaining": 25,
-        "reviewed": 13,
+        "remaining": 24,
+        "reviewed": 14,
         "total": 38
       },
       "repository": "keremimo/melodee",
-      "terminal_pairs": 18
+      "terminal_pairs": 20
     },
     {
       "history": {
@@ -98,8 +98,8 @@
     },
     {
       "history": {
-        "remaining": 156,
-        "reviewed": 7,
+        "remaining": 155,
+        "reviewed": 8,
         "total": 163
       },
       "recent": {
@@ -108,7 +108,7 @@
         "total": 34
       },
       "repository": "charlesvestal/fm1-x0x",
-      "terminal_pairs": 13
+      "terminal_pairs": 14
     },
     {
       "history": {
@@ -117,12 +117,12 @@
         "total": 101
       },
       "recent": {
-        "remaining": 11,
-        "reviewed": 7,
+        "remaining": 10,
+        "reviewed": 8,
         "total": 18
       },
       "repository": "jasonpersinger/ghoulbox-fm1-dungeon-synth",
-      "terminal_pairs": 12
+      "terminal_pairs": 13
     },
     {
       "history": {
@@ -145,12 +145,12 @@
         "total": 226
       },
       "recent": {
-        "remaining": 22,
-        "reviewed": 3,
+        "remaining": 21,
+        "reviewed": 4,
         "total": 25
       },
       "repository": "juanjiant-bit/JIANT",
-      "terminal_pairs": 8
+      "terminal_pairs": 9
     },
     {
       "history": {
@@ -313,12 +313,12 @@
         "total": 39
       },
       "recent": {
-        "remaining": 3,
-        "reviewed": 2,
+        "remaining": 2,
+        "reviewed": 3,
         "total": 5
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 5
+      "terminal_pairs": 6
     },
     {
       "history": {
@@ -350,8 +350,8 @@
     },
     {
       "history": {
-        "remaining": 27,
-        "reviewed": 7,
+        "remaining": 26,
+        "reviewed": 8,
         "total": 34
       },
       "recent": {
@@ -360,7 +360,7 @@
         "total": 6
       },
       "repository": "genkigenki/fm1-to-smk37",
-      "terminal_pairs": 12
+      "terminal_pairs": 13
     },
     {
       "history": {
@@ -378,5 +378,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 181
+  "terminal_pairs": 190
 }
