@@ -233,10 +233,38 @@ The package digest in `build/ci/package.sha256` names the CI build path, so comp
 digest of the downloaded `.fwsc` rather than use the release-manifest commands unchanged.
 
 Manual `Release` dispatch produces artifacts without publishing. Tag release publication
-does not flash a device or deploy the web installer or Pages site. The upstream
-[installer](https://hugelton.github.io/Felucca/), [browser demo](https://hugelton.github.io/Felucca/webapp/try/)
-and [editor](https://hugelton.github.io/Felucca/webapp/editor/) are maintained separately;
-check their displayed versions before assuming they contain this fork's changes.
+does not flash a device or deploy the Pages site. Fork-site publication follows the
+separate process below.
+
+## Fork site deployment
+
+The fork's [installer](https://kmplngj.github.io/Felucca/webapp/installer/),
+[browser demo](https://kmplngj.github.io/Felucca/webapp/try/) and
+[editor](https://kmplngj.github.io/Felucca/webapp/editor/) are hosted together on
+GitHub Pages. Configure this repository's Pages source as **GitHub Actions**.
+
+After a full successful `main` build, CI tests a pinned
+[Felucca-WebApp fork](https://github.com/kmplngj/Felucca-WebApp) and stages the site
+with that run's firmware, emulator, licences and attribution. The WebApp checkout's
+full commit is pinned in `.github/workflows/build.yml`; update it deliberately to
+adopt editor changes. The installer offers a development build from `main`, not
+necessarily the latest tagged release. The demo retains its preview label.
+
+The `Fork Pages` workflow downloads only the matching `site-RUN_ID` artifact from
+successful CI in this repository on `main`, verifies its firmware revision and run
+provenance, then deploys it. PR runs, failed CI, target-only PR builds and focused/docs
+runs cannot supply a deployment. Documentation-only changes leave the live site intact.
+Deployment permissions exist only in the separate Pages deploy job.
+
+To republish an existing artifact, dispatch `Fork Pages` on `main` with its original
+successful main CI run ID. If no site artifact exists, run full `CI` on `main` with
+the PR/commit inputs empty first. Site artifacts are retained for 30 days.
+
+Check [sources.html](https://kmplngj.github.io/Felucca/sources.html) or
+[provenance.json](https://kmplngj.github.io/Felucca/provenance.json) for the deployed
+firmware, engine and WebApp revisions. The wiki remains upstream documentation;
+the hosted site may lag behind local or PR sources. Browser checks do not establish
+FM-1 update/recovery, Web MIDI or device audio reliability.
 
 ## Exact PR revision builds
 

@@ -252,7 +252,9 @@ python3 -m http.server -d build/emu 8790     # open http://localhost:8790/
 Emscripten compiles it to WebAssembly (`build/emu/felucca.wasm`, with `index.html`, `worklet.js` and the font in `fonts/`). The page
 keeps the flash's storage sectors (projects, user presets, settings) in the browser. Not emulated: USB (audio,
 MIDI out, the editor, updates), TRS MIDI and the user sample slots. A build of it is on the site:
-<https://hugelton.github.io/Felucca/webapp/try/>.
+<https://kmplngj.github.io/Felucca/webapp/try/>. The fork site follows successful
+full builds of `main`; check its [source revisions](https://kmplngj.github.io/Felucca/sources.html)
+before comparing it with a local build.
 
 ## Tests
 
@@ -583,7 +585,8 @@ until the chosen revision and scenarios have been exercised on a real FM-1.**
 ## Install
 
 Use the web installer in Chrome or Edge:
-<https://hugelton.github.io/Felucca/webapp/installer/>. It installs the released package.
+<https://kmplngj.github.io/Felucca/webapp/installer/>. It offers the last successfully
+published full `main` build; use a downloaded release or PR `.fwsc` for another revision.
 
 From the command line (needs `pip3 install mido python-rtmidi`):
 

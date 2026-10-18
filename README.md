@@ -53,12 +53,12 @@ belong in focused guides, issues, PRs and release notes.
   or [CI artifacts](https://github.com/kmplngj/Felucca/actions), following the
   [download and checksum guide](.github/CI.md#downloads-and-checksums).
 - **Install:** use the fork's **`.fwsc` package** with the
-  [web installer](https://hugelton.github.io/Felucca/) in Chrome or Edge, or follow the
+  [fork web installer](https://kmplngj.github.io/Felucca/webapp/installer/) in Chrome or Edge, or follow the
   [command-line instructions](BUILDING.md#install). Raw `.bin` files are build material.
   Installation is at your own risk; M-VAVE's updater or the installer's
   **Return to official V15** restores stock firmware.
-- **Explore:** try the [browser demo](https://hugelton.github.io/Felucca/webapp/try/)
-  or [web editor](https://hugelton.github.io/Felucca/webapp/editor/).
+- **Explore:** try the [fork browser demo](https://kmplngj.github.io/Felucca/webapp/try/)
+  or [fork web editor](https://kmplngj.github.io/Felucca/webapp/editor/).
 - **Build and test:** start with [BUILDING.md](BUILDING.md), including
   [engine profiles](BUILDING.md#engine-build-profiles) and
   [testing a PR on hardware](BUILDING.md#test-a-pull-request-on-hardware).
@@ -71,10 +71,13 @@ cd Felucca
 ./build.sh
 ```
 
-The hosted installer, demo, editor and wiki are **upstream services**, updated independently
-of this fork. Use a fork package to install this fork, and its local emulator to test this
-checkout. Review [project compatibility](docs/fork-features.md#project-compatibility)
-before downgrading.
+The fork site follows successful full builds of `main`: the demo and installer use
+that firmware revision, and the editor comes from a pinned revision of
+[our WebApp fork](https://github.com/kmplngj/Felucca-WebApp). Check the site's
+[source revisions](https://kmplngj.github.io/Felucca/sources.html) before testing;
+the live site can lag behind this checkout. The wiki remains upstream documentation.
+See [site deployment](.github/CI.md#fork-site-deployment) and review
+[project compatibility](docs/fork-features.md#project-compatibility) before downgrading.
 
 ## Feedback and contributing
 
