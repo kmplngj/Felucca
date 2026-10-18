@@ -480,7 +480,7 @@ jobs:
         with:
           repository: kmplngj/Felucca-WebApp
           ref: 74e961439a76dd9da777264d068122e1d0fc2460
-          path: build/pages-webapp
+          path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.verified_pr == '' && github.ref == 'refs/heads/main'
@@ -488,7 +488,10 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
           set -o pipefail
-          webapp="$GITHUB_WORKSPACE/build/pages-webapp"
+          webapp="$GITHUB_WORKSPACE/build/pages/webapp"
+          # Standalone WebApp suites use their own mock firmware revision. Keep the
+          # checkout separate from web/'s legacy relative host-fixture paths;
+          # the final catalog suite explicitly exercises this firmware's C harness.
           (
             cd "$webapp"
             node test_app.mjs
