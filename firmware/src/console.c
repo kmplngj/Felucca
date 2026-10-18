@@ -322,6 +322,10 @@ static void con_inp(void)
     }
     con_kv("timer_irqs", (int32_t)felucca_dbg.timer_irqs);
     con_kv("nested", (int32_t)felucca_dbg.nested);
+#if FM1_ISR_ASSERT_TARGET
+    con_kv("isr_misuse", (int32_t)fm1_isr_misuse_n);    /* FELUCCA_ISR_ASSERT=1 builds (isr_assert.h) */
+    con_kv("isr_misuse_pc", (int32_t)fm1_isr_misuse_pc);
+#endif
     {
         uint32_t k2 = fm1__lock();
         memset((void *)&fm1_in_stat.gap_max, 0, sizeof fm1_in_stat - sizeof fm1_in_stat.last);
@@ -363,6 +367,7 @@ static void con_params(void)
 
 static void con_exec(const char *p)
 {
+    FM1_ASSERT_THREAD();                                /* formatted replies: main loop only (#428) */
     if (con_word(&p, "help") || con_word(&p, "?"))
         con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "status"))

@@ -98,6 +98,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
 {
     uint8_t p;
     uint32_t t0;
+    FM1_ISR_SIM_ENTER();                        /* host: simulated interrupt context (isr_assert.h) */
     felucca_dbg.in_audio = 1;                   /* first: TIMER5 nests from here on (main.c) */
     p = fm1_audio_pending();
     t0 = fm1_ticks();
@@ -138,6 +139,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         felucca_dbg.cpu_q8 = song.cpu_q8;
     }
     felucca_dbg.in_audio = 0;
+    FM1_ISR_SIM_LEAVE();
 }
 extern void isr_alnk0(void);
 

@@ -22,6 +22,7 @@ void fm1_timer5_irq(void)
 {
     static uint32_t sub, owed;
     uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u;
+    FM1_ISR_SIM_ENTER();                        /* host: simulated interrupt context (isr_assert.h) */
     fm1_timer5_ack();
     felucca_dbg.timer_irqs++;
     fm1_input_tick();
@@ -49,6 +50,7 @@ void fm1_timer5_irq(void)
             uac_service();
 #endif
         t5_nested_ticks += fm1_ticks() - t0;
+        FM1_ISR_SIM_LEAVE();
         return;
     }
     if (owed & 1u)
@@ -58,6 +60,7 @@ void fm1_timer5_irq(void)
         uart_midi_poll();
 #endif
     owed = 0;
+    FM1_ISR_SIM_LEAVE();
 }
 extern void isr_timer5(void);
 

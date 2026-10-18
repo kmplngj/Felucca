@@ -29,6 +29,7 @@ static int st_erase(uint32_t off)
 {
     uint32_t took, f;
     int rc;
+    FM1_ASSERT_THREAD();                        /* (#428) before irq_save: an erase stops audio and scan */
     if (!FL_STORE_OK(off, 0x1000u))
         return -8;
     f = irq_save();
@@ -40,6 +41,7 @@ static int st_erase(uint32_t off)
 }
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
+    FM1_ASSERT_THREAD();                        /* (#428) */
     if (!FL_STORE_OK(off, n))                   /* only inside the storage areas */
         return -8;
     return fl_write(off, src, n);
