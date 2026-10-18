@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 import unittest
 
-from crash_record_test import ROOT, function_source
+from crash_record_test import ROOT, function_source, guard_source
 
 
 def protocol_source():
@@ -134,8 +134,12 @@ static void observe_store(const char *field) {
 #define LOAD(field) (observe_load(#field), fm1_c1_mb.field)
 #define STORE(field, value) do { observe_store(#field); fm1_c1_mb.field = (value); } while (0)
 #define STORE_TRACE(value) do { trace_store = ++sequence; fm1_c1_trace = (value); } while (0)
+#pragma GCC diagnostic ignored "-Wunused-function"
+@GUARD@
+static uint32_t guard_at_halt = 0xFFFFFFFFu;
 static void fm1_cpu1_halt(void) {
     if (scenario == 1) assert(acquired && payload == 0xCAFEu && last_sync > observation);
+    guard_at_halt = fm1_c1g_read(0);
     halts++;
 }
 @PROTOCOL@
@@ -147,14 +151,21 @@ int main(int argc, char **argv) {
     fm1_c1_mb.done = 16;
     if (scenario <= 2) {
         int result = fm1_cpu1_wait();
-        if (!scenario) assert(!result && acquired && payload == 0xCAFEu && last_sync > observation && !halts);
-        else assert(result == -1 && !fm1_c1_on && halts == 1 && fm1_c1_gave_up == scenario);
+        if (!scenario) assert(!result && acquired && payload == 0xCAFEu && last_sync > observation && !halts &&
+                              fm1_c1g_read(0) == FM1_C1X_NONE);
+        else {
+            assert(result == -1 && !fm1_c1_on && halts == 1 && fm1_c1_gave_up == scenario);
+            /* the exclusion is retained before the worker is held, and survives as the first reason */
+            assert(guard_at_halt == (scenario == 1 ? FM1_C1X_BAD_JOB : FM1_C1X_TIMEOUT));
+            assert(fm1_c1g_read(0) == guard_at_halt);
+        }
     } else if (scenario <= 4) {
         fm1_c1_on = 0;
         int result = fm1_cpu1_start();
         assert(fm1_c1_marked && fm1_c1_mb.done == fm1_c1_mb.job && !fm1_c1_mb.fn);
-        if (scenario == 3) assert(!result && fm1_c1_on && acquired && last_sync > observation);
-        else assert(result == -1 && !fm1_c1_on && halts == 2);
+        if (scenario == 3) assert(!result && fm1_c1_on && acquired && last_sync > observation &&
+                                  fm1_c1g_read(0) == FM1_C1X_ACTIVE && guard_at_halt == FM1_C1X_NONE);
+        else assert(result == -1 && !fm1_c1_on && halts == 2 && fm1_c1g_read(0) == FM1_C1X_NONE);
         for (unsigned i = 0; i < FM1_C1_STACK_WORDS; i++) assert(_c1_ustack[i] == FM1_C1_MARK);
     } else if (scenario == 5) {
         assert(fm1_cpu1_run(work, 23));
@@ -183,7 +194,8 @@ int main(int argc, char **argv) {
 class Cpu1Protocol(unittest.TestCase):
     def compile_run(self, body, scenarios):
         record, _ = protocol_source()
-        source = HARNESS.replace("@RECORD@", record).replace("@PROTOCOL@", instrument(body))
+        source = (HARNESS.replace("@RECORD@", record).replace("@PROTOCOL@", instrument(body))
+                  .replace("@GUARD@", guard_source()))
         # A corrupted check must exercise the actual worker's refusal path.
         if 9 in scenarios:
             source = source.replace("fm1_c1_mb.check = FM1_C1_CHECK(work, argument, next_job);",
@@ -228,6 +240,241 @@ class Cpu1Protocol(unittest.TestCase):
                 mutant = body.replace("FM1_C1_SYNC();\n" + " " * (4 if scenario == 5 else 16 if scenario == 6 else 12) + marker, marker)
                 self.assertNotEqual(mutant, body)
                 self.assertNotEqual(self.compile_run(mutant, [scenario])[0].returncode, 0)
+
+    def test_exclusion_recorded_before_hold(self):
+        _, body = protocol_source()
+        for marker, scenario in (("fm1_c1g_mark(FM1_C1X_BAD_JOB);", 1), ("fm1_c1g_mark(FM1_C1X_TIMEOUT);", 2)):
+            with self.subTest(marker=marker):
+                mutant, count = re.subn(r"^.*" + re.escape(marker) + r"[^\n]*\n", "", body, flags=re.M)
+                self.assertEqual(count, 1)
+                self.assertNotEqual(self.compile_run(mutant, [scenario])[0].returncode, 0)
+        late = body.replace("fm1_c1g_mark(FM1_C1X_BAD_JOB);      /* retained first: no later reset restarts it (a ON preference cannot) */\n            fm1_cpu1_hold();",
+                            "fm1_cpu1_hold();\n            fm1_c1g_mark(FM1_C1X_BAD_JOB);")
+        self.assertNotEqual(late, body)
+        self.assertNotEqual(self.compile_run(late, [1])[0].returncode, 0)
+
+LIFECYCLE = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#pragma GCC diagnostic ignored "-Wunused-function"
+@GUARD@
+/* The reset classes of fm1_boot.p3_rst (hal/fm1_sys.h): bit0 power-on, 2 WDT, 4 long press, 6 soft */
+#define POR 0x01u
+#define WDT 0x04u
+#define LONG 0x10u
+#define SOFT 0x40u
+/* One FM-1 session as main.c runs it (fm1_cstart -> fm1_main): the preference lives in "flash" (pref_flash) and is
+ * cleared by the main loop only after it has seen the failure (the deferred save); a reset can come before that. */
+static int pref_flash, started;
+static uint32_t refused_why;
+static void boot(uint32_t p3, int pref)
+{
+    pref_flash = pref;
+    fm1_c1g_boot(p3);
+    started = 0;
+    refused_why = 0;
+    if (pref_flash) {
+        refused_why = fm1_c1g_refuse();
+        if (!refused_why) {
+            started = 1;
+            fm1_c1g_active();              /* fm1_cpu1_start answered */
+        }
+    }
+}
+static void main_loop_notices(void)        /* main.c: the notice, and the ON preference cleared (settings_later) */
+{
+    if (refused_why) pref_flash = 0;
+}
+static uint32_t reason(void) { return fm1_c1g_read(0); }
+static uint32_t count(void) { uint32_t n; fm1_c1g_read(&n); return n; }
+static void garbage(uint32_t a, uint32_t b) { fm1_c1_guard.magic = a; fm1_c1_guard.state = b; }
+
+int main(int argc, char **argv)
+{
+    int sc = argc > 1 ? atoi(argv[1]) : -1;
+    uint32_t i;
+    switch (sc) {
+    case 0:  /* invalid retained state: no magic is no record (cold RAM), a wrong rest is refused, never trusted */
+        for (i = 0; i < 64u; i++) {
+            garbage(0xA5A5A5A5u ^ i, 0xFFFFFFFFu * (i & 1u));
+            boot(POR, 1);
+            assert(started && reason() == FM1_C1X_ACTIVE && !refused_why);
+        }
+        garbage(FM1_C1G_MAGIC, 0xA5A5A5A5u);                 /* the magic, a check that does not match */
+        assert(reason() == FM1_C1X_CORRUPT);
+        boot(SOFT, 1);
+        assert(!started && refused_why == FM1_C1X_CORRUPT && reason() == FM1_C1X_CORRUPT && count() == 1u);
+        garbage(FM1_C1G_MAGIC, fm1_c1g_pack(9u, 0));         /* a valid check on a reason no code writes */
+        boot(SOFT, 1);
+        assert(!started && refused_why == FM1_C1X_CORRUPT);
+        garbage(FM1_C1G_MAGIC, fm1_c1g_pack(0u, 0));         /* reason 0 is no state */
+        boot(SOFT, 1);
+        assert(!started && refused_why == FM1_C1X_CORRUPT);
+        garbage(FM1_C1G_MAGIC, fm1_c1g_pack(FM1_C1X_FAULT, 4u) ^ 0x10000u);   /* one flipped check bit */
+        boot(WDT, 1);
+        assert(!started && refused_why == FM1_C1X_CORRUPT && count() == 1u);
+        break;
+    case 1:  /* cold boot: zeroed RAM, preference OFF and ON; OFF never touches the record */
+        garbage(0, 0);
+        boot(POR, 0);
+        assert(!started && reason() == FM1_C1X_NONE);
+        boot(POR, 1);
+        assert(started && reason() == FM1_C1X_ACTIVE);
+        break;
+    case 2: case 3:  /* core 0 faults while the worker answers: early (2) or late (3) is the same record */
+        garbage(0, 0);
+        boot(POR, 1);
+        assert(started);
+        fm1_c1g_fault();
+        assert(reason() == FM1_C1X_FAULT);
+        boot(SOFT, 1);                                       /* the reset after the fault report */
+        assert(!started && refused_why == FM1_C1X_FAULT);
+        main_loop_notices();
+        assert(!pref_flash);
+        boot(SOFT, 0);                                       /* OFF afterwards: still held, nothing starts */
+        assert(!started && reason() == FM1_C1X_FAULT);
+        break;
+    case 4: case 5:  /* a bad job (4) or a timeout (5) in the audio ISR, then a reset before the deferred save */
+        garbage(0, 0);
+        boot(POR, 1);
+        fm1_c1g_mark(sc == 4 ? FM1_C1X_BAD_JOB : FM1_C1X_TIMEOUT);
+        /* no main_loop_notices(): the reset came first, the flash still says ON */
+        boot(SOFT, pref_flash);
+        assert(pref_flash == 1 && !started && refused_why == (sc == 4 ? FM1_C1X_BAD_JOB : FM1_C1X_TIMEOUT));
+        main_loop_notices();
+        assert(!pref_flash);
+        fm1_c1g_fault();                                     /* a later fault while held changes nothing */
+        fm1_c1g_mark(FM1_C1X_HANG);
+        assert(reason() == (sc == 4 ? FM1_C1X_BAD_JOB : FM1_C1X_TIMEOUT));
+        break;
+    case 6:  /* successful operation: every reset that is not a watchdog leaves no record */
+        for (i = 0; i < 4u; i++) {
+            static const uint32_t cls[] = {POR, LONG, SOFT, POR | LONG};
+            garbage(0, 0);
+            boot(POR, 1);
+            assert(started && reason() == FM1_C1X_ACTIVE);
+            boot(cls[i], 1);                                 /* power-off / planned reboot / update / UBOOT */
+            assert(started && !refused_why && reason() == FM1_C1X_ACTIVE);
+            fm1_c1g_boot(cls[i]);
+            assert(reason() == FM1_C1X_NONE);
+        }
+        garbage(0, 0);
+        boot(POR, 1);
+        boot(WDT, 1);                                        /* a hang while it answered */
+        assert(!started && refused_why == FM1_C1X_HANG);
+        break;
+    case 7:  /* repeated warm reset: held across every reset class, counted, saturating, never cleared by time */
+        garbage(0, 0);
+        boot(POR, 1);
+        fm1_c1g_mark(FM1_C1X_TIMEOUT);
+        for (i = 1; i <= 600u; i++) {
+            static const uint32_t cls[] = {SOFT, WDT, LONG, POR, POR | WDT, 0};
+            boot(cls[i % 6u], 1);
+            assert(!started && refused_why == FM1_C1X_TIMEOUT);
+            assert(count() == (i < 255u ? i : 255u));
+        }
+        boot(SOFT, 0);                                       /* OFF never counts a refusal or clears it */
+        assert(reason() == FM1_C1X_TIMEOUT && count() == 255u);
+        break;
+    case 8:  /* explicit recovery: only an excluded record, only once, then the worker may start again */
+        garbage(0, 0);
+        assert(!fm1_c1g_recover());
+        boot(POR, 1);
+        assert(!fm1_c1g_recover() && reason() == FM1_C1X_ACTIVE);     /* it is answering: nothing to clear */
+        fm1_c1g_mark(FM1_C1X_BAD_JOB);
+        assert(fm1_c1g_recover() && reason() == FM1_C1X_NONE && !fm1_c1g_recover());
+        boot(SOFT, 1);
+        assert(started && reason() == FM1_C1X_ACTIVE);
+        garbage(FM1_C1G_MAGIC, 0x12345678u);                 /* a corrupt record is recoverable too */
+        assert(fm1_c1g_recover());
+        boot(SOFT, 1);
+        assert(started);
+        break;
+    case 9:  /* a core 1 fault alone: core 0 does not fault, the record stays ACTIVE until its wait fails */
+        garbage(0, 0);
+        boot(POR, 1);
+        assert(reason() == FM1_C1X_ACTIVE);
+        fm1_c1g_mark(FM1_C1X_TIMEOUT);                       /* fm1_cpu1_wait: the parked worker never finishes */
+        boot(SOFT, 1);
+        assert(!started && refused_why == FM1_C1X_TIMEOUT);
+        break;
+    case 10: /* a reset between the two stores of a record leaves no record, never a half one */
+        for (i = 0; i < 32u; i++) {
+            garbage(0x5A5A0000u + i, fm1_c1g_pack(FM1_C1X_FAULT, 1u));   /* state stored, magic not yet */
+            boot(SOFT, 1);
+            assert(started);
+        }
+        garbage(0, 0);
+        boot(POR, 1);
+        fm1_c1g_set(FM1_C1X_FAULT, 0);
+        fm1_c1_guard.magic = 0;                              /* the clear cut after its one store */
+        boot(SOFT, 1);
+        assert(started);
+        break;
+    default:
+        return 2;
+    }
+    return 0;
+}
+'''
+
+
+class Cpu1GuardLifecycle(unittest.TestCase):
+    """The actual retained-guard functions of hal/fm1_sys.h across simulated resets (#410). Host fixtures:
+    they say nothing about whether the device's NOINIT survives a particular reset or a power-off."""
+
+    SCENARIOS = {0: "invalid retained state", 1: "cold boot", 2: "early CPU0 fault", 3: "late CPU0 fault",
+                 4: "bad job, reset before the deferred save", 5: "timeout, reset before the deferred save",
+                 6: "successful operation", 7: "repeated warm reset", 8: "explicit recovery",
+                 9: "core 1 fault alone", 10: "reset between the stores"}
+
+    def compile_run(self, source):
+        with tempfile.TemporaryDirectory(prefix="felucca-cpu1-guard-") as temporary:
+            path = Path(temporary)
+            (path / "fixture.c").write_text(source)
+            executable = path / "guard"
+            subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-std=c11", "-O2", "-Wall", "-Wextra",
+                            "-Werror", str(path / "fixture.c"), "-o", str(executable)], check=True)
+            return {n: subprocess.run([str(executable), str(n)], capture_output=True, text=True)
+                    for n in self.SCENARIOS}
+
+    def source(self):
+        return LIFECYCLE.replace("@GUARD@", guard_source())
+
+    def test_reset_lifecycle(self):
+        for n, result in self.compile_run(self.source()).items():
+            self.assertEqual(result.returncode, 0, f"{self.SCENARIOS[n]}: {result.stderr}")
+
+    def test_startup_order_in_main(self):
+        main = (ROOT / "firmware/src/main.c").read_text()
+        cstart = main[main.index("void fm1_cstart(void)"):]
+        self.assertLess(cstart.index("fm1_c1g_boot(p3)"), cstart.index("_bss_start"))
+        self.assertLess(cstart.index("fm1_reset_reason()"), cstart.index("fm1_c1g_boot(p3)"))
+        gate = main[main.index("c1_refused = fm1_c1g_refuse();"):]
+        self.assertLess(gate.index("fm1_c1g_refuse"), gate.index("fm1_cpu1_start();"))
+        self.assertIn("settings_later();", main[main.index("if (!c1_told)"):main.index("ui_message(c1_held_msg(why))")])
+        self.assertNotIn("settings_later", main[main.index("c1_refused = fm1_c1g_refuse();"):main.index("fm1_cpu1_start();")])
+        table = main[main.index("static const char *c1_held_msg"):]
+        messages = re.findall(r'"(2ND CORE[^"]*)"', table[:table.index("return m[")])
+        self.assertEqual(len(messages), 6)
+        for text in messages + re.findall(r'"(2ND CORE RETRY[^"]*)"', (ROOT / "firmware/src/menu_items.c").read_text()):
+            self.assertLessEqual(len(text), 23, text)     # ui.msg holds 23 characters
+
+    def test_a_policy_regression_is_detected(self):
+        source = self.source()
+        mutants = {
+            "an invalid record trusted": source.replace("return FM1_C1X_CORRUPT;\n    if (count)", "return FM1_C1X_NONE;\n    if (count)"),
+            "a hang forgotten": source.replace("fm1_c1g_set(FM1_C1X_HANG, 0);", "fm1_c1g_clear();"),
+            "a refused start cleared": source.replace("fm1_c1g_set(r, n < 255u ? n + 1u : n);\n    return r;", "fm1_c1g_clear();\n    return r;"),
+            "the first reason replaced": source.replace("if (!fm1_c1g_excluded(fm1_c1g_read(0)))\n        fm1_c1g_set(reason, 0);", "fm1_c1g_set(reason, 0);"),
+        }
+        for name, mutant in mutants.items():
+            with self.subTest(name):
+                self.assertNotEqual(mutant, source)
+                self.assertTrue(any(r.returncode for r in self.compile_run(mutant).values()))
 
 
 if __name__ == "__main__":
