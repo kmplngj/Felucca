@@ -150,7 +150,7 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
 
     def test_fork_repository_survives_git_free_archive(self):
         import build_identity
-        self.git(self.repo, 'config', 'remote.origin.url', 'https://github.com/fork/Felucca.git')
+        self.git(self.repo, 'config', 'remote.origin.url', 'ssh://git@ssh.github.com:443/fork/Felucca.git')
         with patch.dict(os.environ, {}, clear=True):
             original = build_identity.resolve(self.repo, 'v1.6.1')
             unpacked = self.unpack()

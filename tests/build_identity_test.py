@@ -178,6 +178,7 @@ class IdentityTest(unittest.TestCase):
             for remote in ('https://github.com/kmplngj/Felucca.git',
                            'git@github.com:kmplngj/Felucca.git',
                            'ssh://git@github.com/kmplngj/Felucca.git',
+                           'ssh://git@ssh.github.com:443/kmplngj/Felucca.git',
                            'https://github.com/kmplngj/Felucca/'):
                 self.run_git('config', 'remote.origin.url', remote)
                 self.assertEqual(identity.resolve(self.root)['repository'], 'kmplngj/Felucca')
@@ -199,6 +200,8 @@ class IdentityTest(unittest.TestCase):
             self.assertIsNone(identity.resolve(self.root, env=env)['repository'])
         for remote in ('https://example.com/owner/repo', '/tmp/repo',
                        'https://github.com.evil.test/owner/repo',
+                       'ssh://git@ssh.github.com.evil.test:443/owner/repo.git',
+                       'ssh://git@ssh.github.com:444/owner/repo.git',
                        'https://token@github.com/owner/repo', 'https://github.com/owner/repo?token=secret'):
             self.run_git('config', 'remote.origin.url', remote)
             data = identity.resolve(self.root, env={})

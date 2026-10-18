@@ -22,7 +22,7 @@ def repository(root, env=None):
             remote = git(root, 'config', '--get', 'remote.origin.url')
         except subprocess.CalledProcessError:
             return None
-        match = re.fullmatch(r'(?:https://github\.com/|ssh://git@github\.com/|git@github\.com:)([^\s]+?)(?:\.git)?/?', remote)
+        match = re.fullmatch(r'(?:https://github\.com/|ssh://git@github\.com/|ssh://git@ssh\.github\.com:443/|git@github\.com:)([^\s]+?)(?:\.git)?/?', remote)
         value = match[1] if match else ''
     return value if REPOSITORY.fullmatch(value) else None
 
