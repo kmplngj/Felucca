@@ -43,8 +43,10 @@ static __attribute__((noinline)) void fm1_isr_misuse(void)
 #define FM1_ISR_SIM_ENTER() ((void)0)
 #define FM1_ISR_SIM_LEAVE() ((void)0)
 #else
+#ifndef __EMSCRIPTEN__
 #include <stdio.h>
 #include <stdlib.h>
+#endif
 #define FM1_ISR_ASSERT_TARGET 0
 static int fm1_host_isr_depth __attribute__((unused));             /* simulated interrupt handlers running (nested) */
 static void (*fm1_isr_assert_hook)(const char *file, int line) __attribute__((unused));
@@ -55,8 +57,13 @@ static void fm1_host_isr_misuse(const char *file, int line)
         fm1_isr_assert_hook(file, line);
         return;
     }
+#ifdef __EMSCRIPTEN__
+    (void)file; (void)line;                 /* no stdio/abort: they import wasi_snapshot_preview1, and the emulator's */
+    __builtin_trap();                       /* wasm is instantiated with no imports (web/emu/partition_test.mjs) */
+#else
     fprintf(stderr, "FM1_ASSERT_THREAD: %s:%d runs in simulated interrupt context\n", file, line);
     abort();
+#endif
 }
 #define FM1_ASSERT_THREAD() do { if (fm1_host_isr_depth > 0) fm1_host_isr_misuse(__FILE__, __LINE__); } while (0)
 #define FM1_ISR_SIM_ENTER() (fm1_host_isr_depth++)
