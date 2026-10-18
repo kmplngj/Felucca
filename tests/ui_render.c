@@ -39,7 +39,10 @@
 #include <time.h>
 #include <math.h>
 
-typedef struct { int16_t x0, y0, x1, y1; uint8_t flags; char s[28]; char fnt; } rbox_t;   /* fnt: S M L (its face) */
+#ifndef UI_RENDER_TEXT_MAX
+#define UI_RENDER_TEXT_MAX 28
+#endif
+typedef struct { int16_t x0, y0, x1, y1; uint8_t flags; char s[UI_RENDER_TEXT_MAX]; char fnt; } rbox_t;   /* fnt: S M L (its face) */
 static rbox_t pend[256], scr[1200];
 static int16_t cells[64][4];                    /* GFX_HOOK_CELL: the cells and cards of the canvas being drawn */
 static uint32_t ncells, nspill;
@@ -179,7 +182,7 @@ static void hk_text(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const char *
     n_text++;
     if (npend >= 256u) return;
     pend[npend] = (rbox_t){(int16_t)x0, (int16_t)y0, (int16_t)x1, (int16_t)y1, (uint8_t)flags, {0}};
-    strncpy(pend[npend].s, s, 27);
+    strncpy(pend[npend].s, s, sizeof pend[npend].s - 1u);
     pend[npend].fnt = (flags & 4u) ? 'K' : pen_h >= 30u ? 'L' : pen_h >= 18u ? 'M' : 'S';
     pen_h = 0;
     npend++;

@@ -162,6 +162,8 @@ optional PR label appear at startup and MENU > SYSTEM > ABOUT (panel steps in
 [the fork feature guide](docs/fork-features.md#identify-the-installed-build)). No boot-time
 lookup or extra delay is involved. CI provenance includes the same `build_identity`
 object, and release folders include the JSON sidecar.
+MENU > SYSTEM > INFO selects the verified PR label, clean identified release
+version, or development commit, and includes a separate compiled-commit row for PRs.
 The full revision remains in JSON; a short SHA is a readable identifier, not a checksum.
 
 Clean Git builds use HEAD; tracked changes, untracked nonignored files and changed

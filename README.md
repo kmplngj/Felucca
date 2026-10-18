@@ -27,7 +27,8 @@ Five portable engines live in the pinned
 [Felucca-Engines fork](https://github.com/kmplngj/Felucca-Engines); initial standard/reduced
 engine build profiles are implemented. Broader engine selection and startup usage modes
 remain planned. The optional second-core worker is beta, off by default, and still needs
-real-device reliability validation in this fork.
+real-device reliability validation in this fork. Shared effect-control smoothing
+experiments are implemented, with FM-1 listening and timing qualification pending.
 
 ## Development direction and process
 
