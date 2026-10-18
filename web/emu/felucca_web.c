@@ -251,6 +251,10 @@ enum { FM1_GUARD_STACK = 1, FM1_GUARD_WRITE = 2, FM1_GUARD_BUS = 4, FM1_GUARD_PC
 uint32_t _c1_start[1], _c1_end[1], _c1_load[1];
 static uint8_t fm1_c1_on, fm1_c1_gave_up;
 static void fm1_cpu1_halt(void) {}
+enum { FM1_C1X_CORRUPT = 5 };
+static void fm1_c1g_boot(uint32_t p3) { (void)p3; }                     /* no retained worker guard: one core */
+static uint32_t fm1_c1g_refuse(void) { return 0; }
+static uint32_t fm1_c1g_read(uint32_t *n) { if (n) *n = 0; return 0; }
 static int fm1_cpu1_start(void) { return -1; }
 static void fm1_guard_pc_open(void) {}
 #endif

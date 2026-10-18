@@ -140,6 +140,15 @@ the main core or `core 1` for the worker. This identifies the retained crash's o
 even after the device falls back to one core; current `status` worker state describes
 the running system instead. Builds with `FELUCCA_CPU2=0` and older firmware omit the
 field. The collector preserves it when supplied and leaves it absent otherwise.
+In those builds `status` also reports the retained worker guard (#410): `cpu2_excl`
+(0 none, 1 bad job, 2 timeout, 3 core 0 fault, 4 hang, 5 corrupt, 15 the worker answers
+and no failure is recorded) and `cpu2_refused`, the number of starts it refused (saturating
+at 255). A value of 1 to 5 means the saved **2ND CORE ON** is overridden until the player
+sets it OFF and ON again in the menu ([recovery](fork-features.md#retained-exclusion-after-a-failed-worker-410)).
+It is the firmware's record, not proof of the cause, and it is not a measurement of
+whether `.noinit` survives a reset on the connected unit: when you collect after a warm
+reset, record the reset class and whether the value persisted. The collector keeps both
+keys as unknown fields.
 Each `crash` reply formats one validated local copy. If the retained record is absent
 or changes while it is copied, the reply is `no crash record`; a later request can retry.
 

@@ -44,6 +44,19 @@ def recorder_source():
     return record, body
 
 
+def guard_source(barrier="((void)0)"):
+    """The retained CPU1 guard (#410) exactly as hal/fm1_sys.h builds it; only the target barrier is replaced."""
+    header = (ROOT / "firmware/hal/fm1_sys.h").read_text()
+    start = header.index("#define FM1_C1G_MAGIC")
+    end = header.index("#define FM1_RESET_PREP() fm1_cpu1_halt()")
+    guard = header[start:end]
+    # Host: no retained RAM, and Mach-O clang rejects a bare section name, so drop it from this copy only.
+    noinit = ' __attribute__((section(".noinit")))'
+    assert guard.count(noinit) == 1, "fm1_sys.h guard no longer carries the expected .noinit attribute"
+    guard = guard.replace(noinit, "")
+    return guard.replace('__asm__ volatile("csync" ::: "memory")', barrier)
+
+
 HARNESS = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -51,6 +64,11 @@ HARNESS = r'''
 #include <string.h>
 #define FM1_CRASH_MAGIC 0x43525348u
 @RECORD@
+#if FM1_CPU1_USED
+#pragma GCC diagnostic ignored "-Wunused-function"
+@GUARD@
+static uint32_t expected_guard;
+#endif
 fm1_crash_t fm1_crash;
 static const char fm1_fatal_stubs[256];
 static uint32_t test_timer_ticks, test_reset, frame[26];
@@ -69,6 +87,7 @@ static uint32_t expected_count, expected_early, expected_core;
 #if FM1_CPU1_USED
 static void test_halt(void) {
     assert(!expected_core && phase == 0 && !halts);
+    assert(fm1_c1g_read(0) == expected_guard);   /* the exclusion is recorded before the worker is held and the chip reset */
     halts++;
     /* A last worker publication may finish before the hold. Main must read
      * retained history after it, and preserve MMIO diagnostics before it. */
@@ -113,6 +132,9 @@ static void observe_barrier(void) {
     phase++;
 }
 static void fm1_fault(const fm1_crash_t *c) {
+#if FM1_CPU1_USED
+    assert(fm1_c1g_read(0) == expected_guard);
+#endif
     assert(c == &fm1_crash);
     assert(phase == 3 && c->magic == FM1_CRASH_MAGIC);
     complete_record();
@@ -120,10 +142,20 @@ static void fm1_fault(const fm1_crash_t *c) {
 }
 @RECORDER@
 int main(int argc, char **argv) {
-    assert(argc == 4);
+    assert(argc == 5);
     expected_core = (uint32_t)atoi(argv[1]);
     const unsigned valid = (unsigned)atoi(argv[2]);
     const uint32_t ms = (uint32_t)atoi(argv[3]);
+#if FM1_CPU1_USED
+    /* argv[4]: the retained guard before the fault: 0 none, 1 the worker answers, 2 an earlier bad job. A fault on
+     * core 0 while it answers is recorded (FAULT); the worker's own fault (core 1) changes nothing: core 0's wait
+     * decides (BAD_JOB / TIMEOUT), or the watchdog does (HANG at the next boot). */
+    unsigned before = (unsigned)atoi(argv[4]);
+    if (before == 1u) fm1_c1g_set(FM1_C1X_ACTIVE, 0);
+    else if (before == 2u) fm1_c1g_set(FM1_C1X_BAD_JOB, 3u);
+    expected_guard = before == 1u ? (expected_core ? FM1_C1X_ACTIVE : FM1_C1X_FAULT)
+                                  : before == 2u ? FM1_C1X_BAD_JOB : FM1_C1X_NONE;
+#endif
     memset(&fm1_crash, 0xA5, sizeof(fm1_crash));
     fm1_crash.magic = valid ? FM1_CRASH_MAGIC : 0xA5A5A5A5u;
     fm1_crash.count = 23u;
@@ -150,6 +182,10 @@ int main(int argc, char **argv) {
 #endif
     fm1_fault_c(frame);
     assert(phase == 3 && reports == !expected_core && !test_reset);
+#if FM1_CPU1_USED
+    assert(fm1_c1g_read(0) == expected_guard);
+    if (before == 2u) { uint32_t n; fm1_c1g_read(&n); assert(n == 3u); }
+#endif
     assert(fm1_crash.magic == FM1_CRASH_MAGIC);
     complete_record();
     return 0;
@@ -160,7 +196,8 @@ int main(int argc, char **argv) {
 class CrashRecord(unittest.TestCase):
     def test_poisoned_record_and_publication_order(self):
         record, recorder = recorder_source()
-        source = HARNESS.replace("@RECORD@", record).replace("@RECORDER@", recorder)
+        source = (HARNESS.replace("@RECORD@", record).replace("@RECORDER@", recorder)
+                  .replace("@GUARD@", guard_source()))
         with tempfile.TemporaryDirectory(prefix="felucca-crash-record-") as temporary:
             path = Path(temporary)
             (path / "fixture.c").write_text(source)
@@ -173,9 +210,10 @@ class CrashRecord(unittest.TestCase):
                 for core in range(cpu1 + 1):
                     for valid in (0, 1):
                         for uptime in (100, 3000):
-                            with self.subTest(cpu1=cpu1, core=core, valid=valid, uptime=uptime):
-                                subprocess.run([str(executable), str(core), str(valid),
-                                                str(uptime)], check=True)
+                            for guard in range(3 if cpu1 else 1):
+                                with self.subTest(cpu1=cpu1, core=core, valid=valid, uptime=uptime, guard=guard):
+                                    subprocess.run([str(executable), str(core), str(valid),
+                                                    str(uptime), str(guard)], check=True)
 
 
 if __name__ == "__main__":

@@ -205,6 +205,13 @@ static void con_status(void)
     con_kv("cpu2", fm1_c1_on);                          /* the second core renders parts (hal/fm1_cpu1.h) */
     con_kv("cpu2_gave_up", fm1_c1_gave_up);             /* 1: it misread a job, 2: one timed out (then one core) */
     con_kv("cpu2_bad", (int32_t)fm1_c1_mb.bad);
+    {
+        uint32_t refused;
+        con_kv("cpu2_excl", (int32_t)fm1_c1g_read(&refused));   /* retained: 0 none, 1 bad job, 2 timeout, 3 core 0 fault, 4 hang
+                                                         * (WDT), 5 corrupt, 15 answering; 1..5 refuse a start until MENU > 2ND CORE
+                                                         * is set ON again (hal/fm1_sys.h) */
+        con_kv("cpu2_refused", (int32_t)refused);        /* starts it refused (saturating at 255) */
+    }
     con_kv("cpu2_blocks", (int32_t)c1_blocks);          /* blocks it took parts of (fx.c mix_block) */
     con_kv("cpu2_wait_max_us", (int32_t)(fm1_c1_wait_max / 24u));
     con_kv("cpu2_stack", (int32_t)fm1_cpu1_stack_used());

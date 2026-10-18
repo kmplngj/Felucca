@@ -285,7 +285,7 @@ still choose), **BLOCKED** (no capacity).
 | A4 | DEEP: deep-patch sidecars `OBJ_DEEP0/1` (15, 16), one per user-preset bank, tag-tied to the record | `0xD2000/0xD3000`, `0xD4000/0xD5000` | 4 sectors; 16 x (4 B tag + 144 B) = 2,368 B each | #188 |
 | A5 | FM6 library `OBJ_FVL0/1` (17, 18): 32 voices of 112 B each (the packed layout of `fm6_vbank.c`) | `0xD6000/0xD7000`, `0xD8000/0xD9000` | 4 sectors; 3,616 B each, 64 voices | #74 |
 | A6 | KITS `OBJ_KITS` (19): editable drum kit banks | `0xDA000/0xDB000` | 2 sectors; 1,464 B asserted by #141 | #141 stage C. Unassigned until that stage is promoted |
-| A7 | NOINIT | no new users | #116 may extend `bootguard` by up to 16 B; #204's session choice up to 4 B; **at least 100 B stays unallocated** (enforced by the build, F9) | #116, #204 |
+| A7 | NOINIT | no new users | #116 may extend `bootguard` by up to 16 B; #204's session choice up to 4 B; **#410's CPU1 exclusion guard takes 8 B (`fm1_c1_guard`, `FELUCCA_CPU2=1` builds only: spare 128 -> 120 B)**; **at least 100 B stays unallocated** (enforced by the build, F9) | #116, #204, #410 |
 | A8 | Pattern-bank store | none | see the row below | #62, #66 |
 | A9 | **USR3 reclaim** (the sectors for A3-A6): `0xC8000..0xDC000`, 20 of 20 sectors allocated, none in reserve while A6 is assigned | an explicit user action | 20 sectors | prerequisite of A3-A6 |
 

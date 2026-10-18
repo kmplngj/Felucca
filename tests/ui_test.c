@@ -43,6 +43,10 @@
 #include <stdint.h>
 static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty), as the flash at 0xA0000 */
 #define SMP_USER_XIP(k) ((const uint8_t *)host_slots + (k) * SMP_USER_SIZE)
+#if FELUCCA_CPU2 || !defined(FELUCCA_CPU2)
+static int c1_exclusion, c1_recovers;                   /* #410: a retained exclusion the player's ON may clear (menu_items.c) */
+#define C1_RECOVER() (c1_exclusion ? (c1_exclusion = 0, ++c1_recovers, 1) : 0)
+#endif
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -1947,6 +1951,21 @@ static int test_menu_tabs(void)
         ui_prefs2 = p2; ui.msg_t = 0;
         bad += check("MENU > SYSTEM > 2ND CORE (1.6.1): OFF by default (bit 7 clear), OFF / ON (BETA) in words, a restart "
                      "message each way", ok && ui.menu == 1);
+        {   /* #410: with a retained exclusion, ON from OFF is the explicit retry (cleared once, its own message); OFF never
+             * clears it; ON while already ON (a refresh) does not; without an exclusion the plain message */
+            ui_prefs2 = 0x7Fu; c1_exclusion = 1; c1_recovers = 0;
+            ui.menu_sel = MI_CPU2; ui.msg_t = 0;
+            press(B_OCTDN);
+            ok = menu_get(MI_CPU2) == 0u && c1_exclusion == 1 && c1_recovers == 0;
+            menu_put(MI_CPU2, 1u);
+            ok &= menu_get(MI_CPU2) == 1u && c1_exclusion == 0 && c1_recovers == 1 && msg_is("2ND CORE RETRY: RESTART");
+            c1_exclusion = 1; ui.msg_t = 0;
+            menu_put(MI_CPU2, 1u);
+            ok &= c1_exclusion == 1 && c1_recovers == 1 && msg_is("2ND CORE ON: RESTART");
+            c1_exclusion = 0; ui_prefs2 = p2; ui.msg_t = 0;
+            bad += check("MENU > 2ND CORE (#410): ON again from OFF clears a retained exclusion (RETRY message); OFF or a repeated "
+                         "ON does not; no exclusion: the plain message", ok);
+        }
     }
 #endif
 

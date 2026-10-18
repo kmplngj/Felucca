@@ -57,6 +57,7 @@
 #define C1_ON() fm1_c1_on                    /* fx.c mix_block: a second core is answering */
 #define C1_RUN(fn, arg) fm1_cpu1_run(fn, arg)
 #define C1_WAIT() fm1_cpu1_wait()
+#define C1_RECOVER() fm1_c1g_recover()       /* menu_items.c: MENU > 2ND CORE set ON again clears a retained exclusion (hal/fm1_sys.h) */
 #endif
 #include "fm1_input.h"
 #include "fm1_timer.h"
