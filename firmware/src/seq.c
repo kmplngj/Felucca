@@ -214,7 +214,6 @@ static void arp_remove(track_t *t, uint32_t note)
     t->nheld = (uint8_t)k;
 }
 
-#define ND_NONE 0u                      /* track_t nd_late / nd_early: nothing latched (seq_tick; else its seq_pos + 1) */
 static void rec_note(track_t *t, uint32_t note, uint32_t vel);
 static void rec_release(track_t *t, uint32_t note);
 static int rec_on(const track_t *t) { return ((song.rec >> trk_index(t)) & 1u) && song.playing && !chain.running; }
@@ -694,6 +693,8 @@ static __attribute__((noinline)) void perf_key_remap(void)
             perf_key_press(k, 1);
             continue;
         }
+        if (o < PF_N && ((perf_held >> o) & 1u))      /* (a hold begun before FX LATCH went on: let go of it) */
+            perf_key_press(k, 0);
         kb_fx[k] = (uint8_t)(e + 1u);
         if (o < PF_N && ((perf_latched >> o) & 1u)) {
             perf_latched &= ~PF_BIT(o);
