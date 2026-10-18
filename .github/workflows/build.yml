@@ -526,6 +526,7 @@ jobs:
             build/loader/*.elf
             build/loader/*.dis
             build/host/*.wav
+            build/host/test-run-*/
             build/stress/
             build/browser/
             build/host/asan/*.log

@@ -288,6 +288,24 @@ This uses the native browser-emulator integration on Linux/macOS and needs no ha
 tests/run_tests.sh
 ```
 
+Independent compile-and-test units run concurrently, using up to four workers by
+default (fewer on a host with fewer CPUs). Set `TEST_JOBS=1 tests/run_tests.sh` for
+serial debugging or a timing comparison; `TEST_JOBS=2` through `32` select an
+explicit limit. With multiple units, each regression harness defaults to one
+render child; an explicit `JOBS` overrides that inner limit. `GOLDEN_UPDATE` or
+`BUDGET_UPDATE` forces serial execution because those modes write shared baselines.
+The legacy shared-output overrides `UI_SCREEN_DIR`, `MENU_JSON` and `TRACKS` also
+select serial execution. Presence counts, including an empty environment value.
+
+Each run prints its unique `build/host/test-run-*/` directory. It contains one log
+per unit and `summary.json` with start offsets, elapsed seconds, exit statuses and
+dependencies. The combined transcript stays in script order. Failed prerequisites
+block their consumers; independent checks still finish and any failure makes the
+suite fail. Interrupting the runner terminates its worker process groups. Run
+simultaneous full suites in separate worktrees: a checkout lock protects shared
+generated outputs. Generate assets before starting a suite, and leave sources,
+assets and build flags unchanged while it runs.
+
 Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too, the browser emulator's). Run it after `./build.sh`
 (it uses `build/` and needs `AC79_SDK` set as for the build). The suites cover flash storage,
 user presets, projects of every format, backup, the keys and knobs, MIDI (USB, TRS, clock,
@@ -395,8 +413,9 @@ recorded revision, SHA-256 and package structure, then starts the existing
 native `m-flasher` USB-MIDI installer. After the installer succeeds, the helper
 prints the PR title and GitHub link so you can open its **User test instructions**.
 You do not need the JieLi toolchain, SDK or Docker locally.
-Normal automatic PR CI continues to build the merge with the target branch;
-this helper requests a separate, exact-commit build.
+Normal automatic PR CI builds the merge with the target branch. By default,
+this helper requests a separate, exact-commit build; `--automatic` reuses a
+successful automatic PR merge build instead, without requesting another build.
 
 Install Python 3 and the [GitHub CLI](https://cli.github.com/), sign in with
 `gh auth login`, and get this fork's sources. The default installer is our native MIDI-capable `m-flasher`. On first use the
@@ -414,6 +433,9 @@ applications using its MIDI ports; do not enter ROM download mode. From the chec
 ```sh
 # Replace 123 with the intended PR number.
 python3 tools/fm1_pr.py 123
+
+# Reuse the existing automatic PR build and install its merge firmware:
+python3 tools/fm1_pr.py 123 --automatic
 
 # Faster firmware for hardware iteration, with isolated PR sources:
 python3 tools/fm1_pr.py 123 --validation target --worktree-dir ../Felucca-pr123
@@ -499,12 +521,34 @@ python3 tools/fm1_pr.py 123 --download-only
 
 # Reuse a successful or running exact-commit build without requesting a new one.
 python3 tools/fm1_pr.py 123 --commit FULL_40_CHARACTER_SHA --no-build --download-only
+
+# Download/verify the automatic PR merge build without installer setup or MIDI.
+python3 tools/fm1_pr.py 123 --automatic --download-only
 ```
+
+`--automatic` requires an open PR and full, successful automatic CI with a live
+`firmware-RUN_ID` artifact. It snapshots the current PR head, base and merge SHA,
+checks that the merge's parents match that base/head, and selects a successful
+run associated with the same PR and base/head. The package provenance must match
+the **merge SHA**, rather than the PR head. All three SHAs and the Actions run URL
+are printed; downloads are stored under the merge SHA. A later push does not
+change that snapshot. Changed base/head, failed or running CI, missing/expired
+artifacts and provenance/checksum mismatches prevent installation.
+Documentation-only CI has no firmware artifact and cannot be used this way.
+
+Automatic mode never dispatches a build; `--no-build` is allowed but redundant.
+It does not wait for running CI: retry after the automatic build finishes.
+An optional `--commit SHA` must equal the current PR head; use the default
+exact-commit mode for historical revisions. Automatic mode cannot be combined
+with target validation, `--workflow-ref`, worktree or source-only options.
+It uses the same native installer, confirmation, `--port`, `--yes` and
+`--download-only` behavior as exact-commit mode.
 
 GitHub sign-in and artifact read access are required. Requesting a missing build
 also requires Actions write access (typically a maintainer or collaborator).
 Read-only testers use `--no-build` after a maintainer starts **Actions > CI >
-Run workflow** on the default branch, with `pr` and `commit` filled in. Leave
+Run workflow** on the default branch, with `pr` and `commit` filled in, or use
+`--automatic` for an already successful automatic PR merge build. Leave
 both empty and select `full` for ordinary manual CI. Firmware artifacts expire after 30 days;
 an expired or failed build requires a fresh run. The helper retains full CI
 validation in the default mode; select `target` explicitly for faster hardware iteration.
