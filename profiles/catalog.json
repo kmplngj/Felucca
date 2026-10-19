@@ -15,7 +15,7 @@
       "preset_categories": "LPBPBKLBULLP",
       "cc": 86,
       "order": 0,
-      "kit": false,
+      "union_control": true,
       "requires": [
         "portable-dsp"
       ],
@@ -42,7 +42,7 @@
       "preset_categories": "",
       "cc": 0,
       "order": 2,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "native-core"
       ],
@@ -69,7 +69,7 @@
       "preset_categories": "LKPLUU",
       "cc": 48,
       "order": 3,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "native-core"
       ],
@@ -95,7 +95,7 @@
       "preset_categories": "LBLLL",
       "cc": 128,
       "order": 4,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "portable-dsp"
       ],
@@ -123,7 +123,7 @@
       "preset_categories": "KKLL",
       "cc": 80,
       "order": 5,
-      "kit": false,
+      "union_control": true,
       "requires": [
         "native-core"
       ],
@@ -148,7 +148,7 @@
       "preset_categories": "PLBF",
       "cc": 7,
       "order": 6,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "native-core"
       ],
@@ -173,7 +173,7 @@
       "preset_categories": "BLLUP",
       "cc": 103,
       "order": 7,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "portable-dsp"
       ],
@@ -199,7 +199,7 @@
       "preset_categories": "KKKKK",
       "cc": 0,
       "order": 8,
-      "kit": false,
+      "union_control": true,
       "requires": [
         "portable-dsp"
       ],
@@ -225,7 +225,7 @@
       "preset_categories": "PFPP",
       "cc": 128,
       "order": 9,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "native-core"
       ],
@@ -251,7 +251,7 @@
       "preset_categories": "UUUPUDDPU",
       "cc": 48,
       "order": 10,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "native-core"
       ],
@@ -276,7 +276,7 @@
       "preset_categories": "DDDD",
       "cc": 48,
       "order": 13,
-      "kit": true,
+      "union_control": false,
       "requires": [
         "native-core"
       ],
@@ -301,7 +301,7 @@
       "preset_categories": "FFFF",
       "cc": 52,
       "order": 11,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "portable-dsp"
       ],
@@ -326,7 +326,7 @@
       "preset_categories": "KUBLPUKU",
       "cc": 48,
       "order": 1,
-      "kit": false,
+      "union_control": false,
       "requires": [
         "native-core"
       ],
@@ -353,7 +353,7 @@
       "preset_categories": "DD",
       "cc": 128,
       "order": 12,
-      "kit": true,
+      "union_control": false,
       "requires": [
         "native-core"
       ],

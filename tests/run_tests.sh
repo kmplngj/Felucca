@@ -27,6 +27,8 @@
 #                   settings (PER6), ids this build lacks kept in projects, user presets and backups (N/A, silent, never
 #                   another engine). Again with placeholder engine 14 and DRUM/NOISE/FM6/SLICE omitted (10..13),
 #                   including serializers, unavailable UI controls, owner checks and matching union workloads.
+# ENGINE METADATA (tests/engine_metadata_test.c, #301): every catalog engine's tag, icon, category, CC74/CC71 targets and
+#                   preset letters are valid and match the compiled descriptors.
 # UI renders (tests/ui_render.c): every screen in every palette from the real drawing code: the layout lint (no text
 #                   off the screen, cut, hidden, overlapping or spilling out of its cell / card; only free text
 #                   ellipsised), GREY gray, MONO neutral, the draw cost, the text audit (build/ui_new/text_audit.tsv);
@@ -674,6 +676,13 @@ if [ -f build/gen/felucca_tables.h ]; then
             "$OUT/engid_test"
     }
     unit engid "" u_engid
+
+    u_engmeta() {
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/engine_metadata_test" tests/engine_metadata_test.c -lm
+        run "engine metadata (#301): catalog tag/icon/category/CC/preset letters complete, compiled descriptors match ENGINE_META" \
+            "$OUT/engine_metadata_test"
+    }
+    unit engmeta "" u_engmeta
 
     # #212/#306: IDs and serializers run even when DRUM/FM6 are absent. Full-catalog union controls exclude
     # the same engine from their workload, preserving the existing default 720 goldens without new golden files.

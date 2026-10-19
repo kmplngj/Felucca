@@ -45,7 +45,7 @@ class ResolverTests(unittest.TestCase):
         self.catalog['providers'][0]['requires']=['portable-dsp'];self.fails('cycle')
         self.catalog['providers'][0]['requires']=[];self.standard['exclude_providers']=['portable-dsp'];self.fails('conflict')
     def test_metadata_is_required(self):
-        for key in ['tag','icon','cc','category','preset_categories','order','kit']:
+        for key in ['tag','icon','cc','category','preset_categories','order','union_control']:
             c=copy.deepcopy(self.catalog);del c['engines'][3][key];self.fails('metadata',c=c)
     def test_target_budget_render_coverage_is_complete(self):
         import ast

@@ -178,7 +178,7 @@ entry point changes engine, preset and values inside one window.
   `profiles/catalog.json` needs one letter per preset; `tools/profile.py` generates
   `engine_categories.inc` for `PRESET_CAT[]` and `engine_metadata.inc` for `ENGINE_META` from it.
   Metadata and UI tests check it against `npresets`.
-  Its `category` and `kit` fields identify kit-style engines.
+  A kit-style engine (DRUM, SLICE) is catalogued with the DRUM `category`.
 - EDIT 1 / EDIT 2 and HOME are generated from `edit[]`, `page_title` and `knob[]`; a plain engine
   needs no new page. Engine-specific pages (`FILTER`, `LANES`, `OPERATOR`, `SLICES`) are gated by
   `page_visible()` in `ui.c`; add a gate there only for a genuinely engine-specific page.
@@ -194,7 +194,7 @@ entry point changes engine, preset and values inside one window.
    ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 2. Add the source path and `ENG_X` symbol to `profiles/catalog.json` with a new stable ID.
    Generated includes feed `engines.c` in the single translation unit used by target/host/emulator.
-3. Fill tag, icon, category/letters, display order, kit flag and packed CC74/CC71 targets
+3. Fill tag, icon, category/letters, display order, `union_control` flag (true only for an engine whose state lives outside the arena and must join `tests/union_test.c`) and packed CC74/CC71 targets
    (high/low nibble = E index + 1, zero = none). Choose source/assets/tests/dependencies;
    select the engine explicitly in intended profiles and update the protocol document.
 4. If its render function is not already covered, add the render function names to `FUNCS` in
@@ -699,7 +699,7 @@ capabilities and tests instead of opening duplicate feature tickets.
 Engine:
 
 - [ ] Added one complete stable-ID entry to `profiles/catalog.json` (tag, icon, category/letters,
-      CC74/CC71 mapping, display order, kit flag, dependencies, source/assets/tests and render budgets);
+      CC74/CC71 mapping, display order, `union_control` flag, dependencies, source/assets/tests and render budgets);
       selected explicitly in intended profiles; protocol engine table updated; no ID moves.
 - [ ] `edit[]` ranges/defaults deliberate (they are stored); `desc` hook keeps range/default.
 - [ ] `mem` set with `ENG_MEM_FITS`; zeroed region is a valid initial state; switch tests added.

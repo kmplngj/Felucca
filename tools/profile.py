@@ -67,11 +67,13 @@ def resolve(catalog, profile):
         raise ValueError('missing reserved stable slot in registry')
     unique([e['name'] for e in catalog['engines']], 'engine names')
     for e in catalog['engines']:
-        for facet in ('tag', 'icon', 'category', 'preset_categories', 'cc', 'order', 'kit', 'source', 'symbol', 'render', 'budget_functions', 'tests', 'assets', 'requires'):
+        for facet in ('tag', 'icon', 'category', 'preset_categories', 'cc', 'order', 'union_control', 'source', 'symbol', 'render', 'budget_functions', 'tests', 'assets', 'requires'):
             if facet not in e or e[facet] is None:
                 raise ValueError(f"engine {e['id']} missing metadata: {facet}")
         if not e['tag'] or len(e['tag']) > 4 or not 0 <= e['category'] < 9 or not 0 <= e['cc'] <= 255:
             raise ValueError(f"engine {e['id']} invalid identity metadata")
+        if type(e['union_control']) is not bool:
+            raise ValueError(f"engine {e['id']} union_control must be a boolean")
         if any(letter not in 'BLPUKDFO' for letter in e['preset_categories']):
             raise ValueError(f"engine {e['id']} invalid category letters")
     unique([e['order'] for e in catalog['engines']], 'display orders')
@@ -212,6 +214,8 @@ def generated(root, name, font_variant=None):
         # Legacy compiler -DFELUCCA_FM4=1 enables the retired engine in host conversion fixtures.
         value = 'FELUCCA_FM4' if e['id'] == 1 else 'FELUCCA_SLICE' if e['id'] == 13 else str(int(e['id'] in selected))
         header += f"#ifdef FELUCCA_PROFILE_ENGINE_{e['id']}\n#error \"engine selection is generated; use FELUCCA_PROFILE\"\n#endif\n#define FELUCCA_PROFILE_ENGINE_{e['id']} {value}\n"
+    # Test-only: engines whose state lives outside the arena; tests/union_test.c adds them to its workload.
+    header += '#define FELUCCA_UNION_CONTROL_MASK 0x%xull\n' % sum(1 << e['id'] for e in all_engines if e['union_control'])
     header += '#define FELUCCA_PROFILE_NSHOWN (' + ' + '.join(f"({condition(e)})" for e in all_engines) + ' + (FELUCCA_ENG_TEST14 && FELUCCA_ENG_OMIT != 14))\n'
     out = {'felucca_profile.h':header}
     for filename in ('engine_includes.inc','engine_registry.inc','engine_names.inc','engine_order.inc','engine_metadata.inc','engine_cc.inc','engine_categories.inc'):
@@ -230,7 +234,7 @@ def generated(root, name, font_variant=None):
         icon = icons.index(e['icon'])
         out['engine_cc.inc'] += f'#if {c}\n[{i}] = {e["cc"]},\n#endif\n'
         out['engine_categories.inc'] += f'[{i}] = "{e["preset_categories"]}",\n'
-        out['engine_metadata.inc'] += f'[{i}] = {{"{e["tag"]}", "{e["preset_categories"]}", {icon}, {e["category"]}, {e["cc"]}, {e["order"]}, {int(e["kit"])} }},\n'
+        out['engine_metadata.inc'] += f'[{i}] = {{"{e["tag"]}", "{e["preset_categories"]}", {icon}, {e["category"]}, {e["cc"]}, {e["order"]} }},\n'
     for e in sorted(all_engines,key=lambda e:e['order']):
         if e['id']==10:
             out['engine_order.inc'] += '#if FELUCCA_ENG_TEST14 && FELUCCA_ENG_OMIT != 14\n14,\n#endif\n'
