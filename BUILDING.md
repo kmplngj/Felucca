@@ -426,6 +426,9 @@ Python MIDI packages, GUI installation or administrator access is needed on macO
 The macOS CLI is universal for Apple silicon and Intel; Linux x86-64 and Windows
 x86-64 are also available. The source pin and setup live in `tools/m_flasher.py`,
 from the trusted checkout running this helper, never the PR being tested.
+The pinned macOS CLI refreshes CoreMIDI's endpoint cache before reconnecting to
+the update loader and restarted firmware. Older native builds could time out
+with `update loader did not appear` despite USB detecting `Felucca Update`.
 
 Connect one FM-1 with running firmware using a USB data cable. Close other
 applications using its MIDI ports; do not enter ROM download mode. From the checkout:
@@ -498,8 +501,10 @@ Native MIDI OTA validates the Felucca package and delegates loader staging and
 writes to the device; it creates no raw backup or verified preboot checkpoint.
 It does not silently fall back to m-flasher's ROM USB route. Firmware/settings
 compatibility and backups remain part of the selected hardware test. The native
-MIDI implementation's real FM-1/macOS validation is pending; host tests and a
-successful build do not establish physical data preservation or rollback.
+MIDI loader handoff, package exchange and reconnection to running `FM-1_900` were
+confirmed by the owner on macOS with PR #477 on 2026-10-19. That shared identity
+still requires checking the ABOUT build commit; it does not establish physical
+data preservation or rollback, or qualification on other hosts/devices.
 See [m-flasher MIDI OTA](https://github.com/kmplngj/m-flasher/blob/main/docs/midi-ota.md).
 
 The command prints the fixed commit and Actions run URL, waits for all selected

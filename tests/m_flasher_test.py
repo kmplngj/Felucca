@@ -130,7 +130,7 @@ class Setup(unittest.TestCase):
 
     def test_explicit_binary_has_no_automatic_download(self):
         with patch.object(F, 'check_capabilities', side_effect=lambda p:p), patch.object(F, 'download') as download:
-            self.assertEqual(F.ensure(self.base / 'chosen'), self.base / 'chosen')
+            self.assertEqual(F.ensure(self.base / 'chosen'), (self.base / 'chosen').resolve())
         download.assert_not_called()
 
     def test_exact_successful_push_artifact_selected(self):
