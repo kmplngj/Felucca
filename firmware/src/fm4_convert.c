@@ -357,7 +357,7 @@ static uint32_t fm4_convert(int16_t *p, uint8_t *v)
     return FM4_TO_FM6[near];
 }
 
-/* DIGITAL preset k's values into p as a preset load sets them (ui.c apply_preset_to: the EDIT values, ENV, ENV ->
+/* DIGITAL preset k's values into p as a preset load sets them (sound.c sound_preset_values: the EDIT values, ENV, ENV ->
  * FLT, VOICE, the sends; the OP ENV values their defaults); the track's own values (param_kept) are the caller's */
 static void fm4_preset_values(int16_t *p, uint32_t k)
 {

@@ -1090,8 +1090,6 @@ static void motion_undo_done(track_t *t)
     undo.t_ms = fm1_ms;
 }
 
-static int param_kept(uint32_t i);
-
 /* SAVE held: what the loads changed (undo.what) and the copy change places, so held again = the loads
  * again. The sound: engine, preset and its parameters (not param_kept); the pattern: the steps and LEN
  * DIV SWING GATE. The mix (LEVEL PAN MUTE) stays: no load changes it */
@@ -1114,21 +1112,19 @@ static void undo_swap(void)
     }
     undo.motion_backup = current_motion;
     fm1_irq_off();                                /* the audio ISR must not see half a sound */
-    if (undo.what & UNDO_SOUND) {
+    if (undo.what & UNDO_SOUND) {                 /* the copy's sound back (sound.c: nested in this window) */
         uint8_t e = t->eng_req, pr = t->preset, u = t->user;
-        panic_req |= (uint8_t)(1u << trk_index(t));
-        t->eng_req = undo.eng;
-        t->preset = undo.preset;
+        int16_t p[P_COUNT];
+        for (i = 0; i < P_COUNT; i++) {
+            p[i] = undo.p[i];
+            if (!param_kept(i))
+                undo.p[i] = t->p[i];
+        }
         t->user = undo.user;
+        sound_install(t, undo.eng, undo.preset, p, 0, SND_PANIC);
         undo.eng = e;
         undo.preset = pr;
         undo.user = u;
-        for (i = 0; i < P_COUNT; i++)
-            if (!param_kept(i)) {
-                int16_t v = t->p[i];
-                t->p[i] = undo.p[i];
-                undo.p[i] = v;
-            }
     }
     if (undo.what & UNDO_PAT) {
         uint32_t ps = pat_sig[trk_index(t)];
@@ -1278,23 +1274,7 @@ static void pat_load_ui(track_t *t, uint32_t n)
     ui_say("LOADED ", b);
 }
 
-/* the track's settings, not the sound's: what a sound load (factory or user preset, an engine jump,
- * TOOLS INIT) leaves alone. The mix (LEVEL, PAN, MUTE: the TRACKS faders), the arpeggiator (ARP, ARP 2),
- * the scale and key map (SCL), the pattern parameters (LEN, DIV, SWING, GATE; 1.2: QUANTIZE) and the SLICER
- * insert, which chops whatever the track plays in time with its sequencer */
-static int param_kept(uint32_t i)
-{
-    return i == P_LEVEL || i == P_PAN || i == P_MUTE || (i >= P_AMODE && i <= P_SGATE) ||
-           (i >= P_SLCR && i <= P_SLDEPTH) || i == P_CHRD || i == P_VOIC || i == P_SQNT;
-}
-
-/* a retired preset kept as an alias, so stored preset numbers stay valid: SAMPLE 1, once TRANH, is PIANO
- * (tools/gen_samples.py SMP_SET_ORIG). It loads as the original; browsing skips it. -> the preset k stands for.
- * (SAMPLE 4, once PERC, is past SMP_NPRESETS: apply_preset_to loads it as DRUM) */
-static uint32_t preset_orig(const engine_t *e, uint32_t k)
-{
-    return e->presets == SMP_PRESET_TABLE && k < SMP_NSETS ? SMP_SET_ORIG[k] : k;
-}
+/* (the track's own settings, param_kept, and the preset aliases, preset_orig: sound.c, the Sound install) */
 
 /* the presets of engine e that browsing shows before preset k (k = npresets: all of them) */
 static uint32_t preset_rank(const engine_t *e, uint32_t k)
@@ -1311,53 +1291,54 @@ static uint32_t preset_rank(const engine_t *e, uint32_t k)
 
 #if !FELUCCA_FM4
 /* DIGITAL (engine 1, retired): t's sound = p, values as DIGITAL has them, converted to FM6 with a patch of its own
- * (fm4_convert.c). Every path that brings a DIGITAL sound into a track ends here: a track never keeps engine 1 */
-static void fm4_apply(track_t *t, int16_t *p)
+ * (fm4_convert.c) and installed (sound.c; SLOT OWN or the factory patch it equals). Every path that brings a DIGITAL
+ * sound into a track ends here: a track never keeps engine 1. flags: SND_PANIC or 0 */
+static void fm4_apply(track_t *t, int16_t *p, uint32_t flags)
 {
     uint8_t v[FP_SIZE + 1u];
-    uint32_t pr = fm4_convert(p, v), tr = trk_index(t), f;
-    fm6_set_patch(tr, v);
-    f = motion_guard();                               /* the audio ISR sees the old sound or the new one */
-    memcpy(t->p, p, sizeof t->p);
-    t->eng_req = ENGI_FM6;
-    t->preset = (uint8_t)pr;
-    motion_unguard(f);
-    fm6_adopt(tr);                                    /* SLOT OWN: the converted patch is the track's own */
+    uint32_t pr = fm4_convert(p, v);
+    sound_install(t, ENGI_FM6, pr, p, v, flags | SND_ALL);
 }
 static void fm4_track(track_t *t)                     /* t holds a DIGITAL sound (engine 1): convert it */
 {
     int16_t p[P_COUNT];
     memcpy(p, t->p, sizeof p);
-    fm4_apply(t, p);
+    fm4_apply(t, p, 0);
 }
 /* DIGITAL preset k (a stored preset number of engine 1: the editor's PRESET, SET G_ENGSEL, an old project's
  * power-on sound): its sound as a preset load sets it, converted. The sound only (not the steps, not param_kept) */
 static void fm4_load_preset(track_t *t, uint32_t k)
 {
     int16_t p[P_COUNT];
-    uint32_t i;
     load_begin(t, UNDO_SOUND);
-    panic_req |= (uint8_t)(1u << trk_index(t));
     t->user = 0;
     if (t == TSEL)
         sync_reload = 1;
     memcpy(p, t->p, sizeof p);
-    for (i = 0; i < P_E0; i++)
-        if (!param_kept(i))
-            p[i] = TP[i].def;
+    sound_defaults(p);
     fm4_preset_values(p, k);
-    fm4_apply(t, p);
+    fm4_apply(t, p, SND_PANIC);
     load_end(t);
 }
 #endif
+
+/* a factory sound (sound.c sound_load_factory) as one undoable load of the panel's: the user preset slot gone, the
+ * editor told; what sounds is released (MONO/POLY or the engine may change) */
+static void factory_load(track_t *t, uint32_t ei, uint32_t pi, uint32_t flags)
+{
+    load_begin(t, UNDO_SOUND);
+    t->user = 0;
+    if (t == TSEL)
+        sync_reload = 1;
+    sound_load_factory(t, ei, pi, flags | SND_PANIC);
+    load_end(t);
+}
 
 static void set_engine_of(track_t *t, uint32_t ei);
 /* preset pi of the engine the track asked for: the sound only (not the steps, not param_kept) */
 static void apply_preset_to(track_t *t, uint32_t pi)
 {
     FM1_ASSERT_THREAD();                        /* preset loads are main-loop work (#428) */
-    const engine_t *e = eng_of(t->eng_req);
-    uint32_t i;
 #if !FELUCCA_FM4
     if (t->eng_req == ENGI_DIGITAL) {
         fm4_load_preset(t, pi);
@@ -1368,44 +1349,13 @@ static void apply_preset_to(track_t *t, uint32_t pi)
         set_engine_of(t, ENGI_DRUM);                  /* number: the editor's PRESET, a favourite): DRUM's kit */
         return;                                       /* (core.h drum_from_perc) */
     }
-    load_begin(t, UNDO_SOUND);
-    panic_req |= (uint8_t)(1u << trk_index(t));       /* MONO/POLY may change: release what sounds */
-    t->user = 0;
-    if (t == TSEL)
-        sync_reload = 1;
-    if (!e->npresets) {
-        load_end(t);
-        return;
-    }
-    pi = preset_orig(e, pi % e->npresets);
-    t->preset = (uint8_t)pi;
-    for (i = 0; i < P_E0; i++)                        /* the rest of the sound to its defaults: a preset */
-        if (!param_kept(i))                           /* sounds the same after any edit */
-            t->p[i] = TP[i].def;
-    for (i = 0; i < 8u; i++)
-        t->p[P_E0 + i] = (int16_t)e->presets[pi].e[i];
-    t->p[P_ATK] = e->presets[pi].env[0];
-    t->p[P_DEC] = e->presets[pi].env[1];
-    t->p[P_SUS] = e->presets[pi].env[2];
-    t->p[P_REL] = e->presets[pi].env[3];
-    t->p[P_ED_FLT] = e->presets[pi].fenv;
-    t->p[P_VOICE] = e->presets[pi].mono ? V_LEGATO : V_POLY;   /* mono presets keep the legato feel */
-    {   /* the sends */
-        static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
-        const preset_t *pr = &e->presets[pi];
-        for (i = 0; i < 4u; i++)
-            t->p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
-    }
-    fm6_track_loaded(t);                              /* FM6: the preset's patch (its SLOT) */
-    load_end(t);
+    factory_load(t, t->eng_req, pi, 0);
 }
 
-/* the engine's defaults and its first preset. With the audio IRQ off: the ISR sees the old engine with
- * its values or the new one with its own (voice.c engine_block), never one with the other's */
+/* the engine's defaults and its first preset, installed as one sound (sound.c: the audio side sees the old engine
+ * with its values or the new one with its own, voice.c engine_block, never one with the other's) */
 static void set_engine_of(track_t *t, uint32_t ei)
 {
-    const engine_t *e = eng_of(ei);
-    uint32_t i;
 #if !FELUCCA_FM4
     if (ei == ENGI_DIGITAL) {             /* DIGITAL (retired): its first preset, as FM6 */
         fm4_load_preset(t, 0);
@@ -1414,14 +1364,7 @@ static void set_engine_of(track_t *t, uint32_t ei)
 #endif
     if (!eng_ok(ei))                                  /* (#212: an engine this build lacks: the sound stays) */
         return;
-    load_begin(t, UNDO_SOUND);
-    fm1_irq_off();
-    t->eng_req = (uint8_t)ei;
-    for (i = 0; i < 8u; i++)
-        t->p[P_E0 + i] = e->edit[i].def;
-    apply_preset_to(t, 0);
-    fm1_irq_on();
-    load_end(t);
+    factory_load(t, ei, 0, SND_EDIT_DEF);
 }
 
 static void apply_preset(uint32_t pi) { apply_preset_to(TSEL, pi); }
@@ -1432,12 +1375,15 @@ static void set_engine(uint32_t ei) { set_engine_of(TSEL, ei); }
  * amounts, the MOD slots off, no GLIDE, POLY), the ENV neutral (ATK 0, SUS 100 %, a short REL; DRUM: its kit's own, so
  * the hits ring as they should); FM6 the init voice (one sine carrier, ALGORITHM 1; SLOT OWN). What INIT keeps stays
  * (param_kept: LEVEL PAN MUTE, ARP, SCL, the sequence, SLICER, the chord keys); the steps stay. One undo, as INIT
- * (SAVE held). INIT itself is unchanged (the engine's defaults and its first preset) */
+ * (SAVE held). INIT itself is unchanged (the engine's defaults and its first preset). The preset number: INIT's (the
+ * first preset; an engine without presets keeps it). One install (sound.c), as INIT's */
 #define CLEAN_REL 40                                   /* ~18 ms */
 static void clean_engine_of(track_t *t)
 {
-    uint32_t ei = t->eng_req, i;
+    uint32_t ei = t->eng_req, i, fm6 = eng_is(ei, ENGI_FM6);
     const engine_t *e = eng_of(ei);
+    int16_t p[P_COUNT];
+    uint8_t v[FP_SIZE + 1u];
 #if !FELUCCA_FM4
     if (ei == ENGI_DIGITAL) {                         /* (retired: it becomes FM6, fm4_track) */
         set_engine_of(t, ei);
@@ -1447,30 +1393,26 @@ static void clean_engine_of(track_t *t)
     if (!eng_ok(ei))                                  /* (#212: an unavailable engine: its sound is kept) */
         return;
     load_begin(t, UNDO_SOUND);
-    set_engine_of(t, ei);                             /* (nested in this load: one undo copy, from before) */
-    fm1_irq_off();
-    for (i = 0; i < P_E0; i++)
-        if (!param_kept(i))
-            t->p[i] = TP[i].def;
+    t->user = 0;
+    if (t == TSEL)
+        sync_reload = 1;
+    memcpy(p, t->p, sizeof p);
+    sound_defaults(p);
     for (i = 0; i < 8u; i++)
-        t->p[P_E0 + i] = e->edit[i].def;
+        p[P_E0 + i] = e->edit[i].def;
     if (eng_is(ei, ENGI_DRUM) && e->npresets) {
-        t->p[P_ATK] = e->presets[0].env[0];
-        t->p[P_DEC] = e->presets[0].env[1];
-        t->p[P_SUS] = e->presets[0].env[2];
-        t->p[P_REL] = e->presets[0].env[3];
+        p[P_ATK] = e->presets[0].env[0];
+        p[P_DEC] = e->presets[0].env[1];
+        p[P_SUS] = e->presets[0].env[2];
+        p[P_REL] = e->presets[0].env[3];
     } else {
-        t->p[P_ATK] = 0;
-        t->p[P_SUS] = TP[P_SUS].max;
-        t->p[P_REL] = CLEAN_REL;
+        p[P_ATK] = 0;
+        p[P_SUS] = TP[P_SUS].max;
+        p[P_REL] = CLEAN_REL;
     }
-    fm1_irq_on();
-    if (eng_is(ei, ENGI_FM6)) {                             /* the init voice as the track's own patch (SLOT: OWN) */
-        uint8_t v[FP_SIZE + 1u];
+    if (fm6)                                          /* the init voice as the track's own patch (SLOT: OWN) */
         fm6_unpack(FM6_INIT, v);
-        fm6_set_patch(trk_index(t), v);
-        fm6_adopt(trk_index(t));
-    }
+    sound_install(t, ei, e->npresets ? preset_orig(e, 0) : t->preset, p, fm6 ? v : 0, SND_PANIC);
     load_end(t);
 }
 static void clean_engine(void) { clean_engine_of(TSEL); }

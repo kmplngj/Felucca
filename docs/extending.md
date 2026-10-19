@@ -115,8 +115,8 @@ Per-voice state lives in the shared `voice_t` (`ph[]`, `s[]`); the `render` path
 
 ### 1.4 Switching, fades and reset
 
-`voice.c engine_block` implements the switch: the UI writes `eng_req` and the new `P_E0..P_E7`
-together (IRQ off); sounding voices fade over `XF_BLOCKS` blocks on the **old** engine rendered
+`voice.c engine_block` implements the switch: the Sound install (below) writes `eng_req` and the
+new `P_E0..P_E7` together (IRQ off); sounding voices fade over `XF_BLOCKS` blocks on the **old** engine rendered
 with the saved `pe_old[]` values, then `engine` changes, `eng_mem_claim()` runs, and note-ons
 that arrived during the fade (`xp_*`) start on the new engine. Consequences for a new engine:
 
@@ -125,6 +125,35 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
 - It must tolerate a zeroed region and values anywhere inside its descriptor ranges (project and
   preset loads `param_fit()` into range, `params.c`).
 - Add switch coverage for state sharing: `tests/union_test.c` (see 1.8).
+
+**Sound install** ([sound.c](../firmware/src/sound.c), [#298](https://github.com/kmplngj/Felucca/issues/298)) is
+the only code that publishes a sound into a track. `sound_install(t, engine, preset, values, patch, flags)` writes
+`eng_req`, the preset number and the values (without `SND_ALL`, the track's own `param_kept()` values stay) plus an
+optional FM6 patch under one interrupt guard that saves and restores the interrupt state, so it may nest inside a
+caller's IRQ-off window. `SND_PANIC` sets the track's `panic_req` bit in the same window. After the guard it runs
+`fm6_adopt()` for a supplied patch, or `fm6_track_loaded()` for a factory sound (`SND_FM6_SLOT`).
+`sound_load_factory()` builds a factory preset's values (`sound_preset_values()`, the one send-default table,
+the `preset_orig()` alias) and installs them. The module has no UI state. Callers keep their undo copy and
+motion pause/rebase (`load_begin`/`load_end` in `ui.c`), messages, `sync_reload`, the `t->user` slot and
+retired-sound translation ([#299](https://github.com/kmplngj/Felucca/issues/299),
+[#456](https://github.com/kmplngj/Felucca/issues/456)). A future per-sound extension (for example the GRAIN
+extension in [#324](https://github.com/kmplngj/Felucca/issues/324)) should be published inside the same
+`sound_install()` window. Its engine-fade snapshot belongs to `voice.c engine_block`.
+
+| Entry point | Values | Kept values | Panic | FM6 | Undo/motion (caller) |
+| --- | --- | --- | --- | --- | --- |
+| PRESETS knob/page, editor `PRESET`, favourite, MIDI Program Change (`apply_preset_to`) | factory preset | kept | yes | preset SLOT | `load_begin`/`load_end` |
+| Engine change, TOOLS INIT, editor `SET G_ENGSEL`, power-on (`set_engine_of`) | engine defaults + first preset | kept | yes | preset SLOT | same |
+| CLEAN INIT (`clean_engine_of`) | engine defaults, neutral ENV | kept | yes | FM6 init voice, adopted | same |
+| User preset (`up_load`) | record values, preset 0 | kept | yes | record patch (`upf_patch`), adopted | same |
+| Undo/redo (`undo_swap`) | the undo copy | kept | yes | caller restores patch and SLOT | swaps its own copy |
+| Project, autosave, editor runtime restore (`project_restore_runtime`) | `param_fit` values | all | all tracks (caller) | project patch, adopted | nested in the project window; no undo |
+| Legacy drum part (`proj_legacy_drums`) | DRUM kit 0 | all (caller fills them) | caller | none | none |
+| Retired DIGITAL (`fm4_apply`: `fm4_load_preset`, `fm4_track`, `up_load`) | converted values | all | load paths only | converted patch, adopted | caller |
+| DSP goldens (`tests/hostsim.c host_preset_req`) | factory preset or converted DIGITAL | kept | no: tails ring into the fade | as above | none |
+
+`tests/sound_install_test.c` probes the audio interrupt at every mask edge and checks that each
+entry point changes engine, preset and values inside one window.
 
 ### 1.5 Parameters
 
@@ -324,9 +353,11 @@ Publish every packet's payload **and** metadata before its write index. The empt
 `RING_PUBLISH()` prevents compiler reordering in this single-core interrupt model; it is
 not a hardware memory fence, atomic snapshot or CPU1/cache coherence protocol. The
 `sx_ready` flag is a handoff with a buffer-lifetime rule. Multi-field mutations such as
-`eng_req` plus eight parameters use a bounded IRQ-off window instead (`set_engine_of`
-in [ui.c](../firmware/src/ui.c)). These disable/enable paths require main-loop context
-with interrupts enabled at entry. Despite their names, `fm1_flash.h`'s `irq_save()`
+`eng_req` plus eight parameters use a bounded IRQ-off window instead (`sound_install`
+in [sound.c](../firmware/src/sound.c), section 1.4). Its guard saves and restores the
+interrupt state, as `motion_guard` does, so it may nest in a caller's window. Plain
+`fm1_irq_off()`/`fm1_irq_on()` pairs require main-loop context with interrupts enabled
+at entry. Despite their names, `fm1_flash.h`'s `irq_save()`
 always returns 0 and `irq_restore()` unconditionally enables interrupts: they do not
 preserve prior state and must not be nested or used from an ISR/IRQ-off caller.
 Adding `volatile` to each field would still let an

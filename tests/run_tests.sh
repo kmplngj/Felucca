@@ -46,6 +46,9 @@
 #                   MIDI IN ROUT, saves refused while playing and the OVERWRITE? dialog, MUTE on TRACKS KNOB 1, FM6's operator
 #                   pages (each byte alone, SLOT OWN, the sound, undo, the macros, projects / user presets),
 #                   the DRUM grid (keys, knobs, LEDs, pages, live recording into it, BEAT from PATTERNS).
+# SOUND INSTALL (tests/sound_install_test.c, #298): the PRESETS knob, engine changes, INIT, CLEAN INIT, MIDI Program Change,
+#                   FM6, a user preset, undo, a converted DIGITAL sound and a project load each change the track's engine,
+#                   preset and sound values inside one interrupt-off window (firmware/src/sound.c), the ISR probed at the edges.
 # DRUM STRESS (tests/drumfuzz_test.c, #211): ASan / UBSan, a synth sequence playing while the DRUM grid is edited at random
 #                   (keys, locks, lanes, HIT / ACC, EDIT, undo, SEQ TOOLS, engines, kits, the MENU), the audio ISR emulated
 #                   anywhere in the main loop; also with a SONG playing; a step over 5 s is a hang.
@@ -550,6 +553,13 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "UI, a FELUCCA_CPU2=0 build: MENU > SYSTEM without 2ND CORE, the rest as the default build" "$OUT/ui_test_c1"
     }
     unit ui "" u_ui
+
+    u_sound_install() {
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/sound_install_test" tests/sound_install_test.c -lm
+        run "Sound install (#298): every sound load publishes engine, preset and values in one interrupt-off window" \
+            "$OUT/sound_install_test"
+    }
+    unit sound_install "" u_sound_install
 
     u_drumfuzz() {
         $CC -DPREEMPT -g -fwrapv -fsanitize=address,undefined -fno-sanitize=shift -fno-sanitize-recover=all -w \

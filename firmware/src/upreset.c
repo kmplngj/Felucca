@@ -470,24 +470,17 @@ static int up_load(uint32_t k)
     r = up_rec(k);
     up_values(r, v);
     load_begin(t, UNDO_SOUND);                          /* (ui.c: the copy for SAVE held = undo) */
-    panic_req |= (uint8_t)(1u << song.sel);
 #if !FELUCCA_FM4
     if (r->engine == ENGI_DIGITAL) {                    /* a DIGITAL sound (kept as it was stored): FM6 */
         int16_t p[P_COUNT];
         for (i = 0; i < P_COUNT; i++)
             p[i] = param_kept(i) ? t->p[i] : v[i];
-        fm4_apply(t, p);
+        fm4_apply(t, p, SND_PANIC);
     } else
 #endif
-    {
-        fm1_irq_off();                                  /* the audio ISR must not see half a sound */
-        t->eng_req = r->engine;
-        for (i = 0; i < P_COUNT; i++)
-            if (!param_kept(i))
-                t->p[i] = v[i];
-        t->preset = 0;
-        fm1_irq_on();
-        upf_track_load(t, k);                           /* FM6: the preset's own patch (up_fm6.c) */
+    {   /* one sound (sound.c): the engine, the values, FM6 the preset's own patch (up_fm6.c) */
+        uint8_t pv[FP_SIZE + 1u];
+        sound_install(t, r->engine, 0, v, upf_patch(k, r->engine, v[P_E7], pv), SND_PANIC);
     }
     t->user = (uint8_t)(k + 1u);
     load_end(t);
