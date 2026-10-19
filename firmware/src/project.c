@@ -770,28 +770,19 @@ static int proj_unpack(project_t *q, const uint8_t *b, uint32_t st)
 
 #ifndef PROJ_HOST
 /* the GM drum part of a project of before 1.0 (proj_drums_to_part): DRUM's first kit, as a preset load sets it
- * (until 1.0.2 the SAMPLE engine's PERC set, retired since) */
+ * (until 1.0.2 the SAMPLE engine's PERC set, retired since), keeping the steps, LEVEL PAN MUTE, LEN DIV SWING GATE,
+ * the SLICER and the drums' reverb send; the drum part had no arp or scale. One sound (sound.c) */
 static void proj_legacy_drums(track_t *t)
 {
-    static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
-    /* Legacy data always means this kit, even in a catalog without DRUM. */
-    const preset_t *pr = &DRUM_PRESETS[0];
+    int16_t p[P_COUNT];
     uint32_t i;
-    t->eng_req = ENGI_DRUM;
-    t->preset = 0;
-    for (i = 0; i < P_E0; i++)
-        if (!param_kept(i))
-            t->p[i] = TP[i].def;
-    for (i = 0; i < 8u; i++)
-        t->p[P_E0 + i] = pr->e[i];
-    t->p[P_ATK] = pr->env[0];
-    t->p[P_DEC] = pr->env[1];
-    t->p[P_SUS] = pr->env[2];
-    t->p[P_REL] = pr->env[3];
-    t->p[P_ED_FLT] = pr->fenv;
-    t->p[P_VOICE] = pr->mono ? V_LEGATO : V_POLY;
-    for (i = 0; i < 4u; i++)
-        t->p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
+    memcpy(p, t->p, sizeof p);
+    /* Legacy data always means this kit, even in a catalog without DRUM. */
+    sound_preset_values(p, &DRUM_PRESETS[0]);
+    p[P_REV] = t->p[P_REV];
+    for (i = P_AMODE; i <= P_TRANS; i++)
+        p[i] = TP[i].def;
+    sound_install(t, ENGI_DRUM, 0, p, 0, SND_ALL);
 }
 
 static project_t proj_scratch               /* decoded main-loop work, never audio ISR */
@@ -1064,6 +1055,9 @@ static int project_restore_runtime(const project_t *input)
     proj_phys(p);                                       /* .. before PHYS lost DUST and DRUM */
     proj_fm4(p);                                        /* .. that had DIGITAL tracks */
     proj_perc(p);                                       /* .. or SAMPLE PERC tracks */
+    for (k = 0; k < NTRK; k++)                          /* every value back inside its range (param_fit), before */
+        for (i = 0; i < P_COUNT; i++)                   /* the window (the decoded copy: main-loop scratch) */
+            p->t[k].p[i] = (int16_t)param_fit(param_desc_of(eng_idx(p->t[k].engine), i), p->t[k].p[i]);
     transport_req = 2;
     panic_req = (1u << NTRK) - 1u;
     fm1_irq_off();                                      /* the audio ISR must not see half a project */
@@ -1084,22 +1078,15 @@ static int project_restore_runtime(const project_t *input)
         track_t *t = &trk[k];
         const proj_trk_t *s = &p->t[k];
         uint32_t e = s->engine;                         /* (< ENG_ID_MAX: proj_engines_ok; kept, available or not) */
-        t->eng_req = (uint8_t)e;
+        uint8_t v[FP_SIZE + 1u];
         t->user = 0;                                    /* (no user preset slot is saved) */
-        for (i = 0; i < P_COUNT; i++) {                 /* every value back inside its range (param_fit) */
-            const param_desc_t *d = param_desc_of(eng_idx(e), i);
-            t->p[i] = (int16_t)param_fit(d, s->p[i]);
-        }
-        t->preset = (uint8_t)(eng_of(e)->npresets ? (s->preset >= PROJ_DEF_KEEP ? 0u : s->preset) % eng_of(e)->npresets :
-                              eng_ok(e) ? 0u : s->preset);   /* (#212: an unavailable engine's preset number kept) */
+        fm6_unpack(p->fm6[k], v);                       /* the project's own FM6 patch, never reloaded from SLOT: */
+        sound_install(t, e,                             /* F n if it is that factory patch, else OWN (sound.c) */
+                      eng_of(e)->npresets ? (s->preset >= PROJ_DEF_KEEP ? 0u : s->preset) % eng_of(e)->npresets :
+                      eng_ok(e) ? 0u : s->preset,       /* (#212: an unavailable engine's preset number kept) */
+                      s->p, v, SND_ALL);
         memcpy(t->step, s->step, sizeof t->step);
         proj_steps(t->step);
-        {   /* the project's own FM6 patch, never reloaded from SLOT: F n if it is that factory patch, else OWN */
-            uint8_t v[FP_SIZE + 1u];
-            fm6_unpack(p->fm6[k], v);
-            fm6_set_patch(k, v);
-            fm6_adopt(k);
-        }
     }
     song.sel = (uint8_t)(p->sel < NTRK ? p->sel : 0u);
     fm1_irq_on();
@@ -1110,18 +1097,11 @@ static int project_restore_runtime(const project_t *input)
     undo_depth++;                                       /* and these loads take none */
     for (k = 0; k < NTRK; k++) {                        /* the power-on sounds: format 1 (tracks 2..4), old drums */
         track_t *t = &trk[k];
-        int16_t keep[P_COUNT];
         if (p->t[k].preset == PROJ_DEF_SOUND) {
             apply_preset_to(t, TRK_DEF[k][1]);
             track_defaults_steps(t);
         } else if (p->t[k].preset == PROJ_DEF_KEEP) {   /* the steps, LEVEL PAN MUTE, LEN DIV SWING GATE kept */
-            memcpy(keep, t->p, sizeof keep);
-            fm1_irq_off();                           /* publish the legacy sound as one bounded parameter batch */
-            proj_legacy_drums(t);                     /* (keeps the SLICER: param_kept) */
-            t->p[P_REV] = keep[P_REV];                  /* and the drums' reverb send */
-            for (i = P_AMODE; i <= P_TRANS; i++)        /* the drum part had no arp or scale */
-                t->p[i] = TP[i].def;
-            fm1_irq_on();
+            proj_legacy_drums(t);
         }
         pat_sig[k] = ~steps_sig(t);                     /* a project's steps are the user's */
     }

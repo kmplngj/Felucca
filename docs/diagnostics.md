@@ -173,7 +173,7 @@ user stack below it (`crt0.S`). Core 1 has its own stacks, so the function is al
 `FM1_ASSERT_THREAD()` (`firmware/src/isr_assert.h`) uses it to check code that must not run in an interrupt.
 It sits at the entry of `st_save_to` (every project, settings, autosave and user-preset save), `st_erase`
 and `st_prog` (`storage_hw.c`), `con_exec` (formatted console replies), `usb_start` (waits 25 ms) and
-`apply_preset_to` (preset loads), before any `irq_save()`. It is not placed in `.ram_text` code or in
+`apply_preset_to` (preset loads) and `sound_install` (every sound load, `sound.c`), before any `irq_save()`. It is not placed in `.ram_text` code or in
 interrupt paths.
 
 | `FELUCCA_ISR_ASSERT` | Where | Effect |

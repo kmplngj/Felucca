@@ -87,6 +87,7 @@
 #endif
 #include "song_chain.c"
 #include "seq.c"
+#include "sound.c"               /* Sound install (#298): every sound load into a track, before ui.c */
 #include "audio.c"
 
 /* -------------------------------------------------------------- UI --- */

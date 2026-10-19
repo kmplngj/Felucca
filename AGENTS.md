@@ -136,6 +136,7 @@ the moved ideas and retained integration owners.
 | --- | --- |
 | `firmware/src/felucca.c` | Single translation unit: includes the other C files in dependency order |
 | `firmware/src/core.h`, `engines.c`, `voice.c` | Types, stable engine IDs, per-part engine memory, voice allocation |
+| `firmware/src/sound.c` | Sound install: the one path that publishes engine, preset and values into a track ([extending](docs/extending.md#14-switching-fades-and-reset)) |
 | `firmware/src/audio.c`, `fx.c`, `eng_*.c` | Audio interrupt, mixer, effects, engines, fixed-point helpers |
 | `firmware/src/main.c`, `ui*.c`, `panel.c` | Boot, main loop, UI and panel event handling |
 | `firmware/engines/` | Pinned MIT engine interface, shared DSP/tables and ANALOG/LOFI/TRIO/WHEEL/NOISE; commit changes in the Engines fork before updating the gitlink |

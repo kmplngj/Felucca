@@ -40,6 +40,7 @@ static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #include "../firmware/src/midi_uart.c"                /* TRS MIDI IN: its parser (um_byte) feeds midi_in_q */
 #include "../firmware/src/song_chain.c"
 #include "../firmware/src/seq.c"
+#include "../firmware/src/sound.c"              /* the production sound install (#298): host_preset below */
 #define inst (trk[0])                   /* the single-part renders below: part 1 */
 
 static void wav_hdr(FILE *f, uint32_t frames)
@@ -84,51 +85,26 @@ static void host_tracks_init(void)                /* as felucca_init: defaults, 
     song.master_q12 = 4096;
 }
 
-/* the factory preset as ui.c apply_preset_to sets it (sound, sends; not the steps, not the track's own:
- * the mix, ARP, SCL, the pattern parameters, the SLICER);
- * the engine as the UI asks for it (eng_req: the audio side switches; host_preset: at once) */
-static void host_preset_values(track_t *t, uint32_t e, uint32_t pi, const preset_t *p)
-{
-    static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
-    uint32_t i;
-    t->eng_req = (uint8_t)e;
-    t->preset = (uint8_t)pi;
-    for (i = 0; i < 8u; i++)
-        t->p[P_E0 + i] = p->e[i];
-    t->p[P_ATK] = p->env[0];
-    t->p[P_DEC] = p->env[1];
-    t->p[P_SUS] = p->env[2];
-    t->p[P_REL] = p->env[3];
-    t->p[P_ED_FLT] = p->fenv;
-    t->p[P_VOICE] = p->mono ? V_LEGATO : V_POLY;
-    for (i = 0; i < 4u; i++)
-        t->p[P_DIST + i] = (int16_t)(p->fx[i] ? p->fx[i] - 1 : FX_DEF[i]);
-    fm6_track_loaded(t);                          /* FM6: the preset's patch (ui.c apply_preset_to) */
-}
+/* engine e's factory preset pi as the UI asks for it, through the production Sound install (sound.c
+ * sound_load_factory, as ui.c set_engine_of + apply_preset_to: the track's own values kept, the rest of the sound at
+ * its defaults, an alias preset loaded as its original, FM6 the preset's patch); eng_req: the audio side switches
+ * (voice.c engine_block; host_preset: at once). Unlike the panel's loads, no SND_PANIC: these renders keep the old
+ * engine's notes ringing into the switch on purpose (union_test, arena_test: the engine fade and its memory owner) */
 static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)
 {
-    uint32_t n = eng_of(e)->npresets;
 #if !FELUCCA_FM4
-    if (e == ENGI_DIGITAL) {                      /* DIGITAL preset pi (retired): converted, as ui.c fm4_load_preset */
+    if (e == ENGI_DIGITAL) {                      /* DIGITAL preset pi (retired): its values converted to FM6 (as
+                                                   * ui.c fm4_load_preset: fm4_convert.c), installed by sound.c */
         uint8_t v[FP_SIZE + 1u];
-        uint32_t tr = (uint32_t)(t - trk) % NTRK;
-        fm4_preset_values(t->p, pi);
-        t->preset = (uint8_t)fm4_convert(t->p, v);
-        t->eng_req = ENGI_FM6;
-        fm6_set_patch(tr, v);
-        fm6_slot[tr] = (uint8_t)t->p[P_E7];
+        int16_t p[P_COUNT];
+        memcpy(p, t->p, sizeof p);
+        sound_defaults(p);
+        fm4_preset_values(p, pi);
+        sound_install(t, ENGI_FM6, fm4_convert(p, v), p, v, SND_ALL);
         return;
     }
 #endif
-    if (!n) {
-        t->eng_req = (uint8_t)e;
-        t->preset = 0;
-        for (uint32_t i = 0; i < 8u; i++)
-            t->p[P_E0 + i] = eng_of(e)->edit[i].def;
-        return;
-    }
-    pi %= n;
-    host_preset_values(t, e, pi, &ENGINES[e]->presets[pi]);
+    sound_load_factory(t, e, pi, SND_EDIT_DEF);
 }
 static void host_preset(track_t *t, uint32_t e, uint32_t pi)
 {
@@ -144,7 +120,10 @@ static void host_preset(track_t *t, uint32_t e, uint32_t pi)
 static void host_legacy_sample_perc(track_t *t)
 {
     static const preset_t PERC = {"PERC", {SMP_SET_PERC, 0, 0, 0, 127, 0, 0, 0}, {0, 127, 127, 60}, 0, 0, PAT(12)};
-    host_preset_values(t, ENGI_SAMPLE, SMP_SET_PERC, &PERC);
+    int16_t p[P_COUNT];
+    memcpy(p, t->p, sizeof p);
+    sound_preset_values(p, &PERC);
+    sound_install(t, ENGI_SAMPLE, SMP_SET_PERC, p, 0, 0);
     t->engine = ENGI_SAMPLE;
 }
 /* the drums of the render tests: DRUM's kit (the power-on track 4; until 1.0.2 these used SAMPLE PERC) */

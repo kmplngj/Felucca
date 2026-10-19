@@ -64,6 +64,16 @@ static int saved(project_store_t *out)
     return proj_pack(out, &q);
 }
 
+static void partial_matrix(track_t *t)              /* every slot on: VEL to PAN, DIST, RATE, E2 */
+{
+    static const uint8_t dst[NMSLOT] = {MD_PAN, MD_DIST, MD_RATE, MD_E1 + 1};
+    for (uint32_t j = 0; j < NMSLOT; j++) {
+        t->p[P_M1SRC + 3 * j] = MS_VEL;
+        t->p[P_M1DST + 3 * j] = dst[j];
+        t->p[P_M1AMT + 3 * j] = 40;
+    }
+}
+
 static int partial_params(uint32_t matrix, uint32_t fade, int cut)
 {
     int32_t out[CTL * 2];
@@ -77,19 +87,15 @@ static int partial_params(uint32_t matrix, uint32_t fade, int cut)
         trk_note_on(t, 60 + k, 100);
         t->p[P_CHOR] = t->p[P_DLY] = t->p[P_REV] = 0;
         if (k == 0 || k == 2) t->p[P_LEVEL] = 0;
-        if (matrix) {
-            static const uint8_t dst[NMSLOT] = {MD_PAN, MD_DIST, MD_RATE, MD_E1 + 1};
-            for (uint32_t j = 0; j < NMSLOT; j++) {
-                t->p[P_M1SRC + 3 * j] = MS_VEL;
-                t->p[P_M1DST + 3 * j] = dst[j];
-                t->p[P_M1AMT + 3 * j] = 40;
-            }
-        }
+        if (matrix)
+            partial_matrix(t);
     }
     if (fade) {
         /* Capture the sounding ANALOG values as events_block does, then request LOFI with distinct values. */
         engine_block(&trk[3]);
-        host_preset_values(&trk[3], 2, 0, &ENG_LOFI.presets[0]);
+        host_preset_req(&trk[3], 2, 0);                   /* (the production load: the MOD slots at their */
+        if (matrix)                                       /* defaults, so the matrix again, as before #298) */
+            partial_matrix(&trk[3]);
         trk[3].p[P_E0] = trk[3].pe_old[0] ? 0 : 1;       /* even the first swap must expose a different value */
     }
     for (uint32_t k = 0; k < NPART; k++)
