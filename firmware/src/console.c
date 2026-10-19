@@ -225,6 +225,16 @@ static void con_status(void)
 #if FELUCCA_CRASH_CTX
     con_kv("crash_ctx", 1);                             /* diagnostic build: `crash` adds the registers (#428) */
 #endif
+#if FELUCCA_MUL64_REPRO
+    con_kv("mul64_repro", 1);                           /* diagnostic build: the #425 reproducer (mul64_repro.c) */
+    con_kv("mul64_runs", (int32_t)mr.runs);
+    con_kv("mul64_inl_bad", (int32_t)mr.inl_bad);
+    con_kv("mul64_nol_bad", (int32_t)mr.nol_bad);
+    con_kv("mul64_ref_bad", (int32_t)mr.ref_bad);
+    con_kv("mul64_first_var", (int32_t)mr.first_var);
+    con_kv("mul64_first_run", (int32_t)mr.first_run);
+    con_kx("mul64_first_xor", mr.first_xor);
+#endif
     con_kv("track", (int32_t)song.sel + 1);
     con_kv("batt_raw", song.batt_raw);
     con_puts("engine ");

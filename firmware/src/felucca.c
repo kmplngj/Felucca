@@ -39,6 +39,11 @@
 #endif
 #define FM1_CPU1_USED FELUCCA_CPU2   /* hal/fm1_sys.h: the second core is built in; every reset holds it first (its
                                       * waiting loop is in RAM the ROM and the SPL use at boot) */
+#ifndef FELUCCA_MUL64_REPRO
+#define FELUCCA_MUL64_REPRO 0    /* 1: the #425 synthetic reproducer runs in the main loop's idle wait (mul64_repro.c,
+                                  * `status` mul64_*); a diagnostic build, never a release. FELUCCA_CRASH_CTX:
+                                  * hal/fm1_irq.h */
+#endif
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "v1.6.1" /* shown in the menu, the console and the editor; build.py --release X.Y */
 #endif
@@ -112,6 +117,10 @@
 #include "ota.c"
 #include "ota_hw.c"
 #include "editor.c"              /* web editor SysEx (needs the OTA SysEx plumbing) */
+#endif
+#if FELUCCA_MUL64_REPRO
+#include "mul64_repro.c"         /* #425 reproducer (-Os like the audio code; run by main.c, read by console.c). Late in
+                                  * the unit: its state comes after every other object, as little layout change as possible */
 #endif
 #if FELUCCA_CDC
 #include "console.c"
