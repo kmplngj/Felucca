@@ -59,30 +59,20 @@ static int layer_set_open(void);                       /* (ui_layer.c) */
  * undo copy holds the sound as it was, the load's sound stays after). The menu, a dialog, NAME or a layer opening put
  * them back too. Up to MOM_N values at a time ("MOMENTARY FULL" past them: the turn does nothing). LFO held did
  * nothing (it is no layer; OCT- is the octave and a layer's UNDO, so not it), so no gesture changes: LFO + a knob
- * turned opened LFO's page on release before, and edited the page under it for good. The values: ui.c mom */
+ * turned opened LFO's page on release before, and edited the page under it for good. The values: ui.c mom; which
+ * value a knob holds and its turn: ui_knob.c mom_target / mom_turn (the permanent turns' targets, #295) */
 static int mom_down(void)                              /* LFO held where its turns are momentary */
 {
     return ((fm1_in.buttons >> panel.btn[B_LFO]) & 1u) && !ui.menu && !ui.confirm && !name_on() && !ui.layer && !ui.uboot;
 }
-/* a page whose knobs can be momentary (mom_turn's page tests; a knob or two more there refuse) */
-static int mom_page(void)
-{
-    const page_t *pg = cur_page();
-    if (ui.home || (pg->scope == SC_TRK && !lock_held()))
-        return 1;
-    return !(act_cols() || lock_held() || !(pg->scope == SC_TRACK || pg->scope == SC_ENGINE || pg->scope == SC_GLOBAL) ||
-             pg->graph == GR_EVENTS || pg->graph == GR_SONG || pg->graph == GR_BROWSE || pg->graph == GR_USER ||
-             pg->graph == GR_PATS);
-}
 /* the header's persistent status while LFO is held where it is momentary (ui_draw.c mom_head): MOM_ST_READY, MOM_ST_KEPT
  * or MOM_ST_N + the values held; 0 = none. Main loop state only, once per ui_input */
-static const param_desc_t *mom_target(uint32_t k, int16_t **vpp);
 static uint8_t mom_status(void)
 {
     uint32_t k = 4u;
-    int16_t *vp;
+    knob_target_t kt;
     if (mom_down())                                    /* (a page none of whose knobs is momentary: FM6's operator pages) */
-        for (k = 0; k < 4u && !mom_target(k, &vp); k++)
+        for (k = 0; k < 4u && !mom_target(k, &kt); k++)
             ;
     if (k == 4u) {
         mom.kept = 0;                                  /* (let go, a menu, a page of no momentary: no stale KEPT) */
@@ -90,59 +80,6 @@ static uint8_t mom_status(void)
     }
     return mom.n ? (uint8_t)(MOM_ST_N + mom.n) : mom.kept ? MOM_ST_KEPT : MOM_ST_READY;
 }
-/* KNOB k's momentary value here (its desc; *vpp where it is), 0: none (the turn goes as ever). No side effect */
-static const param_desc_t *mom_target(uint32_t k, int16_t **vpp)
-{
-    const page_t *pg = cur_page();
-    const param_desc_t *d;
-    int16_t *vp = 0;
-    uint32_t g;
-    const track_t *t = ui.home ? home_trk(k) : TSEL;     /* (HOME LEVELS: KNOB k is track k's) */
-    if (ui.home) {
-        d = home_param(k, &vp);
-    } else if (pg->scope == SC_TRK && !lock_held()) {  /* MIXER (#195): the selected track's LEVEL PAN REV MUTE */
-        static const uint8_t MIX_ID[4] = {P_LEVEL, P_PAN, P_REV, P_MUTE};   /* (tracks_edit's knobs) */
-        vp = &TSEL->p[MIX_ID[k & 3u]];
-        d = &TP[MIX_ID[k & 3u]];
-    } else {
-        if (!mom_page() || (pg->graph == GR_SLICES && k < 2u) || (pg->graph == GR_MOD && k == 0u))
-            return 0;
-        d = page_desc(pg, k, &vp);
-    }
-    g = vp && vp >= song.g && vp < song.g + G_COUNT ? (uint32_t)(vp - song.g) : G_COUNT;
-    if (!d || !vp || d->max == d->min ||
-        !((vp >= t->p && vp < t->p + P_COUNT) || (g <= G_CDEPTH && g != G_CLOCK) || g == G_RTYPE))
-        return 0;                                      /* (only the values a sound and the FX are: no CLK, no actions) */
-    *vpp = vp;
-    return d;
-}
-/* KNOB k turned s with LFO held: 1 = taken (a momentary value, or refused full), 0 = not a momentary value (the turn
- * goes as ever: the column picks, steps, acts) */
-static int mom_turn(uint32_t k, int32_t s)
-{
-    int16_t *vp = 0;
-    const param_desc_t *d = mom_target(k, &vp);
-    uint32_t i;
-    if (!d)
-        return 0;
-    for (i = 0; i < mom.n && mom.vp[i] != vp; i++)
-        ;
-    if (i == mom.n) {                                  /* the first turn of this value: what it was */
-        if (mom.n >= MOM_N) {
-            ui_message("MOMENTARY FULL");
-            return 1;
-        }
-        mom.vp[i] = vp;
-        mom.v[i] = *vp;
-        mom.n++;
-        mom.kept = 0;
-        if (i == 0u)
-            ui_message("MOMENTARY  [OCT+] KEEP");
-    }
-    *vp = (int16_t)param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
-    return 1;
-}
-
 /* 1.5.6 (#84): MENU > SELECT MODW / VEL: SELECT plays. MODW: the selected track's mod wheel 0..127, as MIDI CC1 sets it (the
  * matrix's MODW source; sent as CC1 on the track's channel, where the keys' notes go); VEL: the panel keys'
  * velocity 1..127 (100 from power-on, as before; MIDI OUT and live recording take it). Performance state, not saved, as
@@ -529,36 +466,6 @@ static int32_t accel(uint32_t role, int32_t s, int32_t range)
     }
     ui.enc_t[role] = now | up << 24 | (i ? i : 1u) << 25;
     return s * (int32_t)m;
-}
-
-/* MIXER page: KNOB 1 LEVEL, 2 PAN, 3 REV send, 4 MUTE of the selected track (right = ON, left = OFF: the
- * track itself is ALGORITHM's, on every page). Pattern length stays on SEQ. */
-static void tracks_edit(uint32_t slot, int32_t steps)
-{
-    track_t *t = TSEL;
-    int16_t *vp;
-    const param_desc_t *d;
-    switch (slot) {
-    case 3:
-        t->p[P_MUTE] = (int16_t)(steps > 0);
-        ml_knob(t, P_MUTE);                             /* (MIDI LEARN: picked) */
-        return;
-    case 0:
-        vp = &t->p[P_LEVEL];
-        d = &TP[P_LEVEL];
-        break;
-    case 2:
-        vp = &t->p[P_REV];
-        d = &TP[P_REV];
-        break;
-    default:
-        vp = &t->p[P_PAN];
-        d = &TP[P_PAN];
-        break;
-    }
-    *vp = (int16_t)clamp(*vp + accel(EN_K1 + slot, steps, d->max - d->min), d->min, d->max);
-    motion_capture(t, (uint32_t)(vp - t->p), *vp);
-    ml_knob(t, (uint32_t)(vp - t->p));
 }
 
 /* SEQ > STEP's piano roll (not the DRUM grid, whose white keys stay its steps): where step recording writes */
@@ -976,10 +883,8 @@ static void step_edit(uint32_t slot, int32_t steps)
 
 static void edit_param(uint32_t slot, int32_t steps)
 {
-    int16_t *vp;
     const page_t *pg = cur_page();
-    const param_desc_t *d;
-    int32_t v;
+    knob_target_t kt;
     if (pg->graph == GR_EVENTS) {                         /* AUTOMATION (ui_events.c) */
         ev_knob(slot, steps);
         return;
@@ -1015,8 +920,9 @@ static void edit_param(uint32_t slot, int32_t steps)
         step_edit(slot, steps);
         return;
     }
-    if (pg->scope == SC_TRK) {
-        tracks_edit(slot, steps);
+    if (pg->scope == SC_TRK) {                           /* MIXER: LEVEL PAN REV MUTE (ui_knob.c knob_mixer) */
+        knob_mixer(slot, &kt);
+        knob_edit(&kt, slot, steps);
         return;
     }
     if (pg->graph == GR_BROWSE) {                         /* KNOB 1: one preset, KNOB 2: the next / previous engine */
@@ -1078,15 +984,8 @@ static void edit_param(uint32_t slot, int32_t steps)
         mod_ui_slot = (uint8_t)clamp((int32_t)mod_ui_slot + (steps > 0 ? 1 : -1), 0, 3);
         return;
     }
-    d = page_desc(pg, slot, &vp);
-    if (!d || !vp || d->max == d->min)
-        return;
-    v = param_turn(d, *vp, accel(EN_K1 + slot, steps, d->fmt == F_ENUM ? 0 : d->max - d->min));
-    *vp = (int16_t)v;
-    if (pg->scope != SC_GLOBAL) {
-        motion_capture(TSEL, (uint32_t)(vp - TSEL->p), *vp);
-        ml_knob(TSEL, (uint32_t)(vp - TSEL->p));        /* (MIDI LEARN: picked) */
-    }
+    if (knob_page(pg, slot, &kt) && knob_live(&kt))     /* a value cell (ui_knob.c: a track's captured and picked) */
+        knob_edit(&kt, slot, steps);
 }
 
 /* OCT+ on an action page: the picked action. A load stays picked (browse and load again); the others
@@ -1899,12 +1798,10 @@ static void ui_input(void)
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
         }
-        if (ui.home) {
-            int16_t *vp;
-            const param_desc_t *d = home_param(k, &vp);
-            *vp = (int16_t)param_turn(d, *vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
-            motion_capture(home_trk(k), (uint32_t)(vp - home_trk(k)->p), *vp);   /* (LEVELS: that track's, as MIXER) */
-            ml_knob(home_trk(k), (uint32_t)(vp - home_trk(k)->p));
+        if (ui.home) {                                  /* (LEVELS: track k's, as MIXER; ui_knob.c knob_home) */
+            knob_target_t kt;
+            knob_home(k, &kt);
+            knob_edit(&kt, k, s);
         } else {
             edit_param(k, s);
         }

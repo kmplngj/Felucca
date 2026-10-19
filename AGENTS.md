@@ -139,6 +139,7 @@ the moved ideas and retained integration owners.
 | `firmware/src/sound.c` | Sound install: the one path that publishes engine, preset and values into a track ([extending](docs/extending.md#14-switching-fades-and-reset)) |
 | `firmware/src/audio.c`, `fx.c`, `eng_*.c` | Audio interrupt, mixer, effects, engines, fixed-point helpers |
 | `firmware/src/main.c`, `ui*.c`, `panel.c` | Boot, main loop, UI and panel event handling |
+| `firmware/src/ui_knob.c` | Panel knob editing: the value a knob edits on HOME, MIXER, a page, GLO and MOMENTARY, and its turn/capture/LEARN policy ([extending](docs/extending.md#38-panel-drawing-and-main-loop-services)) |
 | `firmware/engines/` | Pinned MIT engine interface, shared DSP/tables and ANALOG/LOFI/TRIO/WHEEL/NOISE; commit changes in the Engines fork before updating the gitlink |
 | `firmware/hal/` | Registers, interrupt assembly, peripheral access, hardware guards |
 | `firmware/app.ld`, `firmware/loader/` | Memory layout and the separate update loader |

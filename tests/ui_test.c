@@ -207,6 +207,7 @@ static int host_project_info(uint32_t slot, char *b, uint16_t *len48, uint32_t *
 #undef project_info
 #include "../firmware/src/ui_draw.c"
 #include "../firmware/src/ui_menu.c"
+#include "../firmware/src/ui_knob.c"
 #include "../firmware/src/ui_input.c"
 #include "../firmware/src/ui_layer.c"
 #include "../firmware/src/upreset.c"
