@@ -10,10 +10,11 @@
  * paths, and noinline keeps them out of the minsize main loop.
  *
  * Each step takes one of MR_SEEDS inputs and compares a checksum of both variants with a reference checksum
- * established for that input: the first time, the noinline variant runs twice and the inline variant once; three
- * equal results are the reference, anything else counts in ref_bad and is tried again later. The checksum takes
- * in the loop counter, so a corrupted index that ends the loop early shows as a mismatch. A mismatch keeps the
- * variant (1 inline, 2 noinline), the step and the XOR of the two checksums (one set bit: a one-bit result error).
+ * established for that input: the first time, the noinline variant runs twice and the inline variant once; the two
+ * noinline results, if equal, are the reference (a differing inline result counts in inl_bad), otherwise the set-up
+ * counts in ref_bad and is tried again later. The checksum takes in the loop counter, so a corrupted index that
+ * ends the loop early shows as a mismatch. A mismatch keeps the variant (1 inline, 2 noinline), the step and the
+ * XOR of the two checksums (one set bit: a one-bit result error).
  * `status` prints the counters (console.c, tools/fm1_diagnostics.py). */
 
 #define MR_LEN 128u                 /* loop iterations per kernel call: 3 multiplies (2 signed MACs, 1 unsigned) each */
@@ -30,7 +31,7 @@ static int16_t mr_hist[MR_H] __attribute__((section(".pool")));
 static struct {
     uint32_t runs;                  /* steps that compared both variants (each: 2 x MR_LEN x 3 64-bit multiplies) */
     uint32_t inl_bad, nol_bad;      /* checksum mismatches: inline variant, noinline variant */
-    uint32_t ref_bad;               /* reference attempts whose three results disagreed */
+    uint32_t ref_bad;               /* reference attempts whose two noinline results disagreed */
     uint32_t first_var, first_run, first_xor;   /* the first mismatch: 1 inline / 2 noinline / 3 reference */
     uint32_t ref_ok;                /* bit per seed: reference established */
     uint32_t ref[MR_SEEDS];
@@ -105,9 +106,13 @@ static __attribute__((noinline)) void mr_step(void)
     if (!(mr.ref_ok & (1u << k))) {
         uint32_t a = MR_TEST_FAULT(2u, mr_kernel_call(seed)), b = MR_TEST_FAULT(2u, mr_kernel_call(seed));
         uint32_t c = MR_TEST_FAULT(1u, mr_kernel_inline(seed));
-        if (a == b && b == c) {
+        if (a == b) {                                   /* the two noinline runs agree: they are the reference */
             mr.ref[k] = a;
             mr.ref_ok |= 1u << k;
+            if (b != c) {                               /* only the inline run differs: the reproduction itself */
+                mr.inl_bad++;
+                mr_miss(1u, c, a);
+            }
         } else {
             mr.ref_bad++;
             mr_miss(3u, (a ^ b) | (b ^ c), 0u);         /* first_xor: every bit on which the three differ */

@@ -223,7 +223,7 @@ idle wait. `status` adds:
 | `mul64_runs` | steps that compared both variants; each runs 2 x 128 loop iterations with 3 64-bit multiplies (384 per variant) |
 | `mul64_inl_bad` | checksum mismatches of the inline variant (multiplies among the 16-bit loads) |
 | `mul64_nol_bad` | checksum mismatches of the noinline variant (each multiply in a helper that uses the product at once) |
-| `mul64_ref_bad` | reference set-ups whose three results disagreed (retried later) |
+| `mul64_ref_bad` | reference set-ups whose two noinline results disagreed (retried later); an inline result differing from two agreeing noinline ones counts in `mul64_inl_bad` instead |
 | `mul64_first_var`, `mul64_first_run`, `mul64_first_xor` | the first mismatch: variant (1 inline, 2 noinline, 3 reference), step, and the XOR of the wrong and the reference checksum (hex; one set bit is a one-bit result error) |
 
 The collector counts `mul64_runs`, `mul64_inl_bad`, `mul64_nol_bad` and `mul64_ref_bad` as `status` counters

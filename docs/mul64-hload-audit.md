@@ -333,7 +333,7 @@ console route.
 | --- | --- |
 | C: `mul64_runs` grows, `mul64_inl_bad` = `mul64_nol_bad` = `mul64_ref_bad` = 0; B and C: no reboot, `crash` `count` unchanged | no reproduction in `mul64_runs` x 768 multiplies under that load. Not a proof of safety |
 | C: `mul64_inl_bad` > 0, `mul64_nol_bad` = 0 | the donor's pattern reproduces on this unit: continue with the mitigation order above, measuring cost |
-| C: both counters > 0, or `mul64_ref_bad` > 0 | errors not tied to the inline shape (supply, clock, other code): report first, do not mitigate |
+| C: both counters > 0, or `mul64_ref_bad` > 0 (the two noinline runs disagreed; a lone inline difference during set-up counts in `mul64_inl_bad`) | errors not tied to the inline shape (supply, clock, other code): report first, do not mitigate |
 | a `crash` with `ctx 1` | look up `pc`/`rets` in that build's listing; look for a register one bit away from a plausible value (`0x00800000`-style) and for `sp` off by a word |
 | a reboot without a new crash record | watchdog or hang (possibly the loop-counter case); report time, segment and `boots` |
 | B vs C: `audio_late`, `voices_shed`, `uac_*` errors | should match within run-to-run variation; the reproducer only uses main-loop idle time, so panel response may be slower in C, listen and report it |

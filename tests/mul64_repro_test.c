@@ -72,7 +72,14 @@ int main(void)
     CHECK(mr.nol_bad == 1u && !mr.inl_bad && !mr.ref_bad);
     CHECK(mr.first_var == 2u && mr.first_run == 39u && mr.first_xor == 0x4u);
 
-    reset(1, 1u, 0x10u);                                 /* a wrong result while the reference is set up */
+    reset(1, 1u, 0x10u);                                 /* only the inline call wrong during set-up: a reproduction */
+    for (k = 0; k < MR_SEEDS + 1u + 10u; k++)
+        mr_step();
+    CHECK(mr.inl_bad == 1u && mr.first_var == 1u && mr.first_xor == 0x10u && mr.first_run == 0u);
+    CHECK(!mr.ref_bad && !mr.nol_bad && mr.ref_ok == (1u << MR_SEEDS) - 1u && mr.runs == 11u);
+    CHECK(mr.ref[0] == mr_kernel_call(mr_seed(0)));      /* the two agreeing noinline runs are the reference */
+
+    reset(2, 1u, 0x10u);                                 /* a noinline run wrong while the reference is set up */
     for (k = 0; k < MR_SEEDS + 1u + 10u; k++)
         mr_step();
     CHECK(mr.ref_bad == 1u && mr.first_var == 3u && mr.first_xor == 0x10u && mr.first_run == 0u);
