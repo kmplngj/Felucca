@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 REPOSITORY = 'kmplngj/m-flasher'
-REVISION = '5652a511631dcd4b4ac7216efadbf653ffad0abd'
+REVISION = '6aecdb8ce1b0239f2fd97b125b07cce0cd985e57'
 PROTOCOL = 'felucca-device-pull-v1'
 SOURCE_BINARY = 'm-flasher-midi.exe' if os.name == 'nt' else 'm-flasher-midi'
 

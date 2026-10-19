@@ -304,7 +304,7 @@ class Worktrees(unittest.TestCase):
         before = {command: self.git(self.source, *command.split()) for command in
                   ("status --porcelain --ignored", "diff", "diff --cached", "show-ref", "rev-parse HEAD")}
         index = (self.source / ".git/index").read_bytes()
-        self.assertEqual(self.prepare(), self.path)
+        self.assertEqual(self.prepare(), self.path.resolve())
         self.assertEqual(self.git(self.path, "rev-parse", "HEAD"), self.revision)
         self.assertEqual(self.git(self.path, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
         self.assertEqual(self.git(self.path / "engine", "rev-parse", "HEAD"), self.pin)
@@ -316,7 +316,7 @@ class Worktrees(unittest.TestCase):
         self.assertEqual((self.source / "untracked").read_text(), "keep\n")
         self.assertEqual((self.source / "generated/output").read_text(), "keep ignored\n")
         self.assertEqual(self.git(self.source, "for-each-ref", "refs/felucca-pr"), "")
-        self.assertEqual(self.prepare(), self.path)
+        self.assertEqual(self.prepare(), self.path.resolve())
         self.remove()
         self.assertFalse(self.path.exists())
         self.assertEqual((self.source / "tracked").read_text(), "unstaged\n")
