@@ -8,6 +8,7 @@
  * Single compilation unit. */
 #include <stdint.h>
 #define FELUCCA_LOADER 1
+#define FELUCCA_ISR_ASSERT 0        /* no interrupt handlers here (src/isr_assert.h) */
 #define FELUCCA_CDC 0
 #define FELUCCA_OTA 1
 #define FELUCCA_OTA_DRYRUN 0

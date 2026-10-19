@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "isr_assert.h"                    /* FM1_ASSERT_THREAD / FM1_ISR_SIM_* (#428) */
 /* Serial console on the CDC-ACM function (FELUCCA_CDC=1): read-only
  * diagnostics. Runs in the main loop (cdc_task); usb_poll moves the bytes.
  * The baud rate is ignored. Nothing here writes memory or flash; `uboot`
@@ -217,6 +218,10 @@ static void con_status(void)
     con_kv("cpu2_stack", (int32_t)fm1_cpu1_stack_used());
 #endif
     con_kv("voices_given_up", (int32_t)voice_kills);
+#if FM1_ISR_ASSERT_TARGET
+    con_kv("isr_misuse", (int32_t)fm1_isr_misuse_n);    /* FELUCCA_ISR_ASSERT=1 builds (isr_assert.h) */
+    con_kv("isr_misuse_pc", (int32_t)fm1_isr_misuse_pc);
+#endif
     con_kv("track", (int32_t)song.sel + 1);
     con_kv("batt_raw", song.batt_raw);
     con_puts("engine ");
@@ -363,6 +368,7 @@ static void con_params(void)
 
 static void con_exec(const char *p)
 {
+    FM1_ASSERT_THREAD();                                /* formatted replies: main loop only (#428) */
     if (con_word(&p, "help") || con_word(&p, "?"))
         con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "status"))

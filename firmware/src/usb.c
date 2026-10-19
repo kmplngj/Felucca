@@ -22,6 +22,7 @@
  * SET_CUR (UAC1 sampling frequency control, two discrete rates in the one alt setting). The engines stay
  * at 44.1 kHz; at 48 kHz uac_tap resamples (polyphase FIR 160 / 147, uac_fir.h) into the ring. 44.1 kHz,
  * the rate until a host asks for another, sends the samples as before, bit for bit. */
+#include "isr_assert.h"
 #include "../hal/fm1_usb.h"   /* registers; relative, so the loader and the host tests find it too */
 #ifndef FELUCCA_CDC
 #define FELUCCA_CDC 0
@@ -1324,6 +1325,7 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
 
 static void usb_start(void)                             /* boot, or main-loop retry while usb.up == 0 */
 {
+    FM1_ASSERT_THREAD();                                /* it waits 25 ms (#428) */
     usb.timeouts = 0;
     fm1_usb_reset();                                    /* reset whatever the ROM left */
     fm1_delay_ms(25);
