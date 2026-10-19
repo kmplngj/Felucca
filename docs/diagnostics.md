@@ -185,7 +185,54 @@ interrupt paths.
 `tests/storage_test.c` (a real save) and `tests/audio_test.c` (a call from inside the real audio handler)
 check that the assertion fires in simulated interrupt context and stays quiet in the main loop. On the device the
 check assumes interrupts run on the system stack as `fm1_isr.S` and the stack guards describe; that has not
-been observed on an FM-1 yet. The register context of #428 remains deferred.
+been observed on an FM-1 yet.
+
+## Diagnostic builds for #425 (`FELUCCA_CRASH_CTX`, `FELUCCA_MUL64_REPRO`)
+
+Two opt-in build flags serve the [#425 soak test](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak).
+Both default to `0`; release and standard builds compile neither, and `./build.sh --release` refuses them.
+They are development images: install them only for the test and reinstall the normal build afterwards.
+
+**`FELUCCA_CRASH_CTX=1`** (#428): the fault handler (`fm1_fault_c`, `hal/fm1_irq.h`) also keeps the faulting core's
+`r0`..`r15`, `usp` and `ssp` from the frame `fm1_fatal_common` saved, in the same retained record and under the same
+invalidate / publish protocol as the other fields, for core 0 and for the worker (`core 1`). One record, the most
+recent crash, as before. A one-bit register error such as the donor's loop index `0x00800012` is visible only here.
+
+| Key | Meaning |
+| --- | --- |
+| `status` `crash_ctx 1` | the running firmware is a `FELUCCA_CRASH_CTX=1` build |
+| `crash` `ctx` | `1`: the registers below belong to this record; `0`: the record was written by a firmware without them (no register lines follow) |
+| `crash` `r0` .. `r15`, `usp`, `ssp` | hex, after the existing keys, which keep their order and meaning |
+
+Cost: +76 B NOINIT (`fm1_crash` grows from 68 to 144 B: a key word and 18 registers), which puts this build at
+44 B spare, below the 100 B floor that release and standard builds keep; `tools/build.py` checks a 24 B floor for
+this build only ([performance](performance.md#ram-and-stack), capacity plan rule A7). `fm1_crash` stays the first
+`.noinit` object, so its address is unchanged; the objects after it move by 76 B between a normal and a CRASH_CTX
+build. The retained flash mirrors, boot guard, panel copy and CPU1 exclusion are validated at boot (magic, checksum
+or key), so the first boot after switching discards rather than misreads them, as with any build that changes a
+`.noinit` object (`FELUCCA_CPU2` already changes `fm1_crash`). `crash_seen` has no check: when a crash record exists,
+that first boot may take it for a new crash and skip the LED sweep and the RESTORE LAST autosave once. Keep the
+music for the test in a saved project, not only in the autosave.
+
+**`FELUCCA_MUL64_REPRO=1`** (#425): the synthetic reproducer (`firmware/src/mul64_repro.c`) runs in the main loop's
+idle wait. `status` adds:
+
+| Key | Meaning |
+| --- | --- |
+| `mul64_repro` | `1`: the reproducer is built in |
+| `mul64_runs` | steps that compared both variants; each runs 2 x 128 loop iterations with 3 64-bit multiplies (384 per variant) |
+| `mul64_inl_bad` | checksum mismatches of the inline variant (multiplies among the 16-bit loads) |
+| `mul64_nol_bad` | checksum mismatches of the noinline variant (each multiply in a helper that uses the product at once) |
+| `mul64_ref_bad` | reference set-ups whose three results disagreed (retried later) |
+| `mul64_first_var`, `mul64_first_run`, `mul64_first_xor` | the first mismatch: variant (1 inline, 2 noinline, 3 reference), step, and the XOR of the wrong and the reference checksum (hex; one set bit is a one-bit result error) |
+
+The collector counts `mul64_runs`, `mul64_inl_bad`, `mul64_nol_bad` and `mul64_ref_bad` as `status` counters
+(interval deltas); they are absent, not zero, in other builds. A corrupted loop counter may instead make a kernel
+loop run for minutes: the watchdog then resets the FM-1, the collector reports the reboot as a discontinuity, and
+`boots` increases. Report that as a candidate observation together with the time and the workload.
+`tests/mul64_repro_test.c` checks the bookkeeping on the host; `tests/diagnostics_test.py` checks the console keys
+and the collector's deltas; `tests/crash_record_test.py` and `tests/crash_snapshot_test.py` check register capture,
+the record replaced while it is read, and the console output in both build variants. None of them tests the chip.
 
 ## Validation scope
 

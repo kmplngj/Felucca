@@ -221,6 +221,9 @@ rows); the linker itself already refuses an overflow. The v1.6 baseline uses 15,
 4-byte core identifier. The retained CPU1 exclusion guard (#410, 8 B, `fm1_c1_guard` in
 `hal/fm1_sys.h`) brings the default build to 15,576 B (120 B spare); `FELUCCA_CPU2=0`
 retains 15,564 B (132 B spare).
+The only exception is the opt-in diagnostic build `FELUCCA_CRASH_CTX=1` (#428): its crash record keeps
+one full register set (+76 B, 15,652 B used, 44 B spare), so that build alone checks a floor of 24 B
+(`CRASH_CTX_NOINIT`); release and standard builds keep 100 B, and `--release` refuses the flag.
 `tests/build_guard_test.py` covers the exact 100 B boundary, the one-byte failure and padding without a symbol. Raising the floor or
 adding a `.noinit` user needs the plan's rule A7 review first.
 
