@@ -240,6 +240,9 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_SLICE` | 1 | the SLICE engine; `0` leaves engine id 13 out of the catalog (SLICE sounds in projects, user presets and backups are kept and shown N/A, [#212](web/EDITOR_PROTOCOL.md#engine-ids-212)) |
 | `FELUCCA_ICONS` | 1 | parameter icons on the knob cards |
 | `FELUCCA_FM4` | 0 | the retired DIGITAL engine (4-operator FM) instead of its FM6 conversion |
+| `FELUCCA_ISR_ASSERT` | 0 | development build: count main-loop-only functions called in an interrupt ([diagnostics](docs/diagnostics.md#interrupt-context-assertion-felucca_isr_assert)) |
+| `FELUCCA_CRASH_CTX` | 0 | diagnostic build: the crash record keeps r0..r15, usp and ssp (+76 B NOINIT, below the 100 B floor; [diagnostics](docs/diagnostics.md#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro)); refused with `--release` |
+| `FELUCCA_MUL64_REPRO` | 0 | diagnostic build: the #425 synthetic reproducer runs in the main loop's idle time ([audit, phase 2](docs/mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak)); refused with `--release` |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/src/usb.c`.

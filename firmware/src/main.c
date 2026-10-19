@@ -363,6 +363,9 @@ static void fm1_main(void)
 #if FELUCCA_OTA
             ed_service();                       /* editor replies without waiting for the next frame */
 #endif
+#if FELUCCA_MUL64_REPRO
+            mr_step();                          /* #425 reproducer: one bounded step of idle time (mul64_repro.c) */
+#endif
         }
     }
 }

@@ -865,6 +865,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     }
     unit crash_snapshot "" u_crash_snapshot
 
+    u_mul64_repro() {
+        $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/mul64_repro_test" tests/mul64_repro_test.c
+        run "#425 reproducer (FELUCCA_MUL64_REPRO): both variants agree; references, mismatch counters, first record" "$OUT/mul64_repro_test"
+    }
+    unit mul64_repro "" u_mul64_repro
+
     u_tsan() {
         if [ -n "$TSAN" ]; then                     # TSAN=1: the same under ThreadSanitizer (~6 min): shared state
             TSAN_CC="cc -O1 -g -w -Ibuild/gen -Ifirmware/src -fsanitize=thread -pthread"

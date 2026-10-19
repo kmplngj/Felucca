@@ -73,9 +73,20 @@ static uint32_t fm1__dim_k = 4;
 typedef struct {
     uint32_t magic, count, vec, pc, rets, emu, dbg, sp, psr, icfg, uptime_ms;
     uint32_t etm[4], early;
+#if FELUCCA_CRASH_CTX
+    uint32_t ctx, r[16], usp, ssp;       /* hal/fm1_irq.h, FELUCCA_CRASH_CTX=1 diagnostic builds */
+#endif
 } fm1_crash_t;
 static fm1_crash_t fm1_crash = {.magic = FM1_CRASH_MAGIC, .count = 2, .vec = 4, .pc = 0x02001234,
                .sp = 0x01C60000, .uptime_ms = 50};
+#if FELUCCA_CRASH_CTX
+#define FM1_CRASH_CTX_KEY 0x43545852u
+#endif
+#if FELUCCA_MUL64_REPRO
+/* The counters of firmware/src/mul64_repro.c that `status` prints (fixed values; the kernel has its own test). */
+static struct { uint32_t runs, inl_bad, nol_bad, ref_bad, first_var, first_run, first_xor; } mr =
+    {4000000000u, 1, 0, 0, 1, 1234, 0x00800000u};
+#endif
 
 /* The console consumes a validated snapshot through the HAL accessor. The
  * fixture supplies fixed host state; retained-RAM publication has its own tests. */
@@ -104,10 +115,26 @@ int main(int argc, char **argv)
         (strcmp(argv[1], "status") && strcmp(argv[1], "dbg") &&
          strcmp(argv[1], "inp") && strcmp(argv[1], "crash")))
         return 2;
+#if FELUCCA_CRASH_CTX
+    {
+        uint32_t i;
+        for (i = 0; i < 16u; i++)
+            fm1_crash.r[i] = 0x01C60000u + i;
+        fm1_crash.r[5] = 0x00800012u;        /* the donor's one-bit loop index */
+        fm1_crash.usp = 0x01C40000u;
+        fm1_crash.ssp = 0x01C7E000u;
+        fm1_crash.ctx = FM1_CRASH_CTX_KEY ^ fm1_crash.count;
+    }
+#endif
     if (argc == 3) {
-        if (strcmp(argv[2], "no-crash"))
+        if (!strcmp(argv[2], "no-crash"))
+            fm1_crash.magic = 0;
+#if FELUCCA_CRASH_CTX
+        else if (!strcmp(argv[2], "stale-ctx"))
+            fm1_crash.ctx = 0;               /* a record another firmware left: no registers */
+#endif
+        else
             return 2;
-        fm1_crash.magic = 0;
     }
     /* Skip only the connection banner, not command echo or dispatch. */
     con.dtr_seen = 1;

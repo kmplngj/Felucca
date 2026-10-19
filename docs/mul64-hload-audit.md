@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
-# 64-bit multiplies next to 16-bit loads: target inventory (issue #425, phase 1)
+# 64-bit multiplies next to 16-bit loads: target inventory (issue #425, phases 1 and 2)
 
 **Scope.** A static inventory of the compiled pi32v2 code. It follows
 [felucca-bsp `docs/CPU.md` @ f20c2c3](https://github.com/hugelton/felucca-bsp/blob/f20c2c383b1fa51d8592b4eaa6a20f23c05d56d8/docs/CPU.md)
@@ -7,7 +7,8 @@
 32x32->64 multiplies among 16-bit loads now and then leave a register one bit off on the
 AC79/pi32v2. **No fault has been reproduced on Felucca, no FM-1 test was performed, and this
 phase changes no firmware, flag, golden or budget.** A function listed here is a place to look,
-not a defect. Mitigation, its cost and the device soak are later phases of #425.
+not a defect. Mitigation, its cost and the device soak are later phases of #425; the tooling for
+the device soak and a synthetic reproducer is described in [phase 2, step 1](#phase-2-step-1-synthetic-reproducer-and-device-soak).
 
 ## Reproduce
 
@@ -157,15 +158,17 @@ report and no single-bit (`0x00800000`-style) signature**. The retained crash re
 index like the donor's `0x00800012` could not be seen in it; only `sp` is a candidate (the donor
 saw it a word off, which a report could check for 4-byte misalignment of an otherwise valid
 stack). `tests/crash_record_test.py` and `tests/crash_snapshot_test.py` use synthetic frames, and
-`docs/stress-baseline-2026-10-16.md` is a host stress baseline. Recording registers belongs to
-#428; until then any unexplained fault needs the `pc`/`rets`/`etm` addresses mapped to this
-inventory by hand.
+`docs/stress-baseline-2026-10-16.md` is a host stress baseline. Release builds still keep no
+register; the opt-in `FELUCCA_CRASH_CTX=1` diagnostic build (#428, [below](#phase-2-step-1-synthetic-reproducer-and-device-soak))
+adds `r0`..`r15`, `usp` and `ssp` of the most recent crash for the soak test. Map `pc`/`rets`/`etm`
+to the listing of the exact build that crashed.
 
 ## Proposed phase 2 order
 
 1. **Reproducer first (device).** Synthetic test with this toolchain and flags: 16-bit table loads
    beside inline `int64` multiplies vs `noinline` consumers, and the FM6/PHYS/USB-48k stress presets.
    Without a reproduction on this unit a mitigation has no measured benefit; decide per the result.
+   *Tooling in place, FM-1 run pending:* [phase 2, step 1](#phase-2-step-1-synthetic-reproducer-and-device-soak).
 2. **`uac_tap48`** (`usb.c`, firmware only, ISR A, only at 48 kHz UAC): smallest, nearest to the donor
    pattern; candidate: out-of-line product helper or 32-bit accumulation if the range allows.
 3. **`fm6_op_run` / `fm6_op_fb`** (`fm6_core.c`): already `noinline`, so the multiply stays among the
@@ -189,6 +192,154 @@ effects and USB audio at 44.1 and 48 kHz, reading `cpu_pct`, `audio_max_us`, `au
 `voices_shed`, `uac_*` through the diagnostics collector ([diagnostics](diagnostics.md),
 [performance](performance.md)). The donor's decoder lost about 50 % speed to the same remedy;
 Felucca's deadline headroom per engine is unmeasured here.
+
+## Phase 2, step 1: synthetic reproducer and device soak
+
+**Status: the builds and the procedure are ready; no FM-1 run has been performed, so nothing below
+is a device result.** No mitigation is applied: `fm6_op_run`, `uac_tap48`, `px_symp_run` and every
+other function in the table compile exactly as before.
+
+### Two opt-in diagnostic builds
+
+| Flag (default 0) | What it adds | Read through |
+| --- | --- | --- |
+| `FELUCCA_CRASH_CTX=1` (#428) | the crash record keeps the faulting core's `r0`..`r15`, `usp`, `ssp` (one record, the most recent crash; core 0 and the worker) | `crash` (`ctx`, `r0`..`r15`, `usp`, `ssp`), `status` `crash_ctx` |
+| `FELUCCA_MUL64_REPRO=1` (#425) | `firmware/src/mul64_repro.c`, run in the main loop's idle wait | `status` `mul64_*` |
+
+Both are described key by key in [diagnostics](diagnostics.md#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro).
+`./build.sh --release` refuses either flag. The collector (`tools/fm1_diagnostics.py`) needs no option:
+it sends `status` and `crash` as before and keeps the new keys; `mul64_runs`, `mul64_inl_bad`,
+`mul64_nol_bad` and `mul64_ref_bad` get interval deltas.
+
+### The reproducer
+
+Each step runs one of eight inputs through two kernels of identical arithmetic, 128 iterations each:
+
+- **inline** (`mr_kernel_inline`): per iteration a 16-bit load from the flash `SINE` table indexed by
+  the last product (as `fm6_op_run`), two 16-bit loads from a 64-entry RAM history (as `uac_tap48`'s
+  `rs.l`/`rs.r`), two accumulating signed multiplies and one unsigned multiply, all in one function.
+- **noinline** (`mr_kernel_call`): the same loads; each multiply in a `noinline` helper (`mr_mac`,
+  `mr_mulhi`) that returns its product at once: the donor's clean variant.
+
+Both checksums are compared with a reference that three runs agreed on (noinline twice, inline once);
+the checksum takes in the loop counter. The kernels are not in a `SIZE_FILES` source, so they are built
+at `-Os` like the audio code; their state is in `.pool`, so `.data`/`.bss` keep the normal build's layout.
+
+What the target listing of the reproducer build shows (`tests/mul64_hload_check.py`, same tool and
+flags as the table above; the 21 audited rows are unchanged):
+
+| Function | Reach | Insns | mul64 | h-load | N=4 | N=8 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mr_kernel_inline` | - | 36 | 3 | 3 | 3/4 | 3/7 |
+| `mr_kernel_call` | - | 42 | 0 (3 calls) | 3 | - | - |
+| `mr_mac` | - | 2 | 1 | 0 | 0/0 | 0/0 |
+| `mr_mulhi` | - | 3 | 1 | 0 | 0/0 | 0/0 |
+
+```
+r6 = h[r6+r8] (s)            SINE[ph >> 22]
+r2 = r6 + 0x8000
+r11_r10 = r2 * r7 (u)        the index product, next to the load it feeds
+r11_r10 >>= 16
+r2 = r1 & 0x3F
+r2 = h[r12+r2<<1] (s)        history loads
+r3 = r0 & 0x3F
+r3 = h[r12+r3<<1] (s)
+r7 += r10
+r7 += r9
+r5_r4 += r2 * r6 (s)         two accumulating multiplies
+r15_r14 += r3 * r6 (s)
+r1 += 5
+if (r1 != 647) goto ...      loop counter (i * 5 + 7)
+```
+
+A data error shows as `mul64_inl_bad` / `mul64_nol_bad` with the first wrong checksum's XOR. A
+corrupted loop counter instead makes the loop run up to about 2^32 iterations: the watchdog resets the
+FM-1, the collector reports a reboot, and the `crash` record (written only by an exception) stays as it
+was. Each step executes 768 64-bit multiplies (384 per variant); the rate depends on how much idle time
+the main loop has under the workload, so report `mul64_runs` per interval rather than assuming one.
+
+Limits: it runs in the main loop, not in an interrupt (the donor saw no difference with interrupts
+off); it compares one CPU's results with references the same CPU produced; it is one instruction mix,
+not the audio functions themselves, which the soak covers.
+
+### Builds and resources
+
+Revision: the head of this change; JieLi clang 4.0.1, `tools/build.py` flags, default profile,
+M8Stealth. Static figures from `./build.sh` (no execution):
+
+| Build | app image | RAM `.data+.bss` | POOL | NOINIT used (spare) |
+| --- | --- | --- | --- | --- |
+| normal (`origin/main` and this change, identical) | 486,672 B | 62,056 B | 336,440 B | 15,576 B (120 B) |
+| `FELUCCA_CRASH_CTX=1` | 487,040 B (+368) | 62,056 B | 336,440 B | 15,652 B (44 B; floor 24 B) |
+| `FELUCCA_MUL64_REPRO=1` | 487,440 B (+768) | 62,056 B | 336,636 B (+196) | 15,576 B (120 B) |
+| both (the soak build) | 487,812 B (+1,140) | 62,056 B | 336,636 B (+196) | 15,652 B (44 B) |
+| `FELUCCA_CPU2=0` / with `FELUCCA_CRASH_CTX=1` | 481,564 / 481,848 B | 55,460 B | 336,440 B | 15,564 (132) / 15,640 B (56 B) |
+
+Against the normal build, function by function (addresses ignored): the CRASH_CTX build changes only
+`fm1_fault_c`, `fm1_crash_read` and `fm1_main` (the inlined console); the reproducer build only
+`fm1_main` (the call), `span_param` (one instruction, main loop) and jump-table labels; the soak build
+the union. `tests/target_budget.py` output is identical for all of them, so the audio and scan paths
+under test are the same code in every soak build.
+
+### FM-1 soak procedure (pending hardware validation)
+
+Compare **B** = `FELUCCA_CRASH_CTX=1` (without the reproducer) with **C** = `FELUCCA_CRASH_CTX=1
+FELUCCA_MUL64_REPRO=1` (with it). Both keep the registers of a crash. Use one FM-1, one host and the
+same project, MIDI and audio setup for both. Follow [stress-device](stress-device.md) for backups,
+provenance and the result template, and [diagnostics](diagnostics.md#idle-baseline-setup) for the
+console route.
+
+1. **Build** both packages from the PR head and keep each build's listing (needed to map a crash `pc`):
+   ```sh
+   FELUCCA_CRASH_CTX=1 ./build.sh
+   cp build/felucca.fwsc build/soak-B.fwsc; cp build/felucca.dis build/soak-B.dis
+   FELUCCA_CRASH_CTX=1 FELUCCA_MUL64_REPRO=1 ./build.sh
+   cp build/felucca.fwsc build/soak-C.fwsc; cp build/felucca.dis build/soak-C.dis
+   ```
+   Export a full backup first (stress-device step 2). Install with `python3 tools/fm1_install.py
+   build/soak-B.fwsc` ([BUILDING > Install](../BUILDING.md#install)).
+2. **Check the build.** Turn USB SERIAL on (diagnostics, idle baseline steps 1-4) and collect 10 s:
+   `python3 tools/fm1_diagnostics.py --port PORT --scenario 'soak425 B check' --duration 10 --interval 5`.
+   `status` must show `crash_ctx 1` (C also `mul64_repro 1`). Note the `crash` `count` (an older record
+   reads `ctx 0`).
+3. **MIDI routing.** Hold **HOME** until MENU opens, release, turn **ALGORITHM** to the **MIDI** tab,
+   turn **PRESETS** to **MIDI IN** and set it to **CH1-4** with **OCT+**/**OCT−** (the default): USB MIDI
+   channels 1-4 play parts 1-4. Tap **HOME** to close MENU.
+4. **Load the stress sound on all four parts.** On HOME turn **ALGORITHM** to select part 1 (the
+   `status` `track` key confirms it), then turn **PRESETS** until the screen shows the sound; repeat
+   for parts 2, 3 and 4. Three configurations, one per segment group:
+   **FM6 PAD**, **PHYS DRONE STRING** (PHYS SYMP model), **VOICE CHOIR AAH** (the FORMANT engine,
+   shown as VOICE). Their effect sends (chorus, delay, reverb) load with the preset and stay on.
+   `status` shows `engine`/`preset` of the selected part.
+5. **Load.** From the host DAW send on USB MIDI channels 1-4 at once a six-note chord per channel
+   (C3 E3 G3 B3 D4 F#4, velocity 100), held 3.5 s and released 0.5 s, looped for the whole segment.
+   Record the FM-1's USB audio input on the host at **44,100 Hz**, then repeat the three engine groups
+   at **48,000 Hz** (the 48 kHz path runs `uac_tap48`); `status` `uac_hz` must match.
+6. **Collect each segment** (10 minutes; six per build: 3 sounds x 2 rates):
+   ```sh
+   python3 tools/fm1_diagnostics.py --port PORT --scenario 'soak425 B FM6-PADx4 uac44100' \
+     --duration 600 --interval 30 --firmware-revision HEAD_SHA
+   ```
+   Change the label for each segment and build. Leave the panel untouched while it runs.
+7. **Repeat 1-6 with build C** (`build/soak-C.fwsc`), same order and setup. Optionally add one long run
+   (2 h or overnight) of C with the 48 kHz FM6 segment.
+8. **After any reset or freeze**: collect `crash` again after the reboot (step 2's 10 s command) and keep
+   it with the segment's output and the matching `soak-*.dis`.
+9. **Finish**: reinstall the normal build, restore the backup and USB SERIAL setting.
+
+### Expected results and how to read them
+
+| Observation | Meaning |
+| --- | --- |
+| C: `mul64_runs` grows, `mul64_inl_bad` = `mul64_nol_bad` = `mul64_ref_bad` = 0; B and C: no reboot, `crash` `count` unchanged | no reproduction in `mul64_runs` x 768 multiplies under that load. Not a proof of safety |
+| C: `mul64_inl_bad` > 0, `mul64_nol_bad` = 0 | the donor's pattern reproduces on this unit: continue with the mitigation order above, measuring cost |
+| C: both counters > 0, or `mul64_ref_bad` > 0 (the two noinline runs disagreed; a lone inline difference during set-up counts in `mul64_inl_bad`) | errors not tied to the inline shape (supply, clock, other code): report first, do not mitigate |
+| a `crash` with `ctx 1` | look up `pc`/`rets` in that build's listing; look for a register one bit away from a plausible value (`0x00800000`-style) and for `sp` off by a word |
+| a reboot without a new crash record | watchdog or hang (possibly the loop-counter case); report time, segment and `boots` |
+| B vs C: `audio_late`, `voices_shed`, `uac_*` errors | should match within run-to-run variation; the reproducer only uses main-loop idle time, so panel response may be slower in C, listen and report it |
+
+Report for each segment: build (B/C), revision, sound, sample rate, duration, the collector's
+`summary.json` deltas, `mul64_*` values, any `crash` output, and audible problems.
 
 ## Limits
 

@@ -222,6 +222,19 @@ static void con_status(void)
     con_kv("isr_misuse", (int32_t)fm1_isr_misuse_n);    /* FELUCCA_ISR_ASSERT=1 builds (isr_assert.h) */
     con_kv("isr_misuse_pc", (int32_t)fm1_isr_misuse_pc);
 #endif
+#if FELUCCA_CRASH_CTX
+    con_kv("crash_ctx", 1);                             /* diagnostic build: `crash` adds the registers (#428) */
+#endif
+#if FELUCCA_MUL64_REPRO
+    con_kv("mul64_repro", 1);                           /* diagnostic build: the #425 reproducer (mul64_repro.c) */
+    con_kv("mul64_runs", (int32_t)mr.runs);
+    con_kv("mul64_inl_bad", (int32_t)mr.inl_bad);
+    con_kv("mul64_nol_bad", (int32_t)mr.nol_bad);
+    con_kv("mul64_ref_bad", (int32_t)mr.ref_bad);
+    con_kv("mul64_first_var", (int32_t)mr.first_var);
+    con_kv("mul64_first_run", (int32_t)mr.first_run);
+    con_kx("mul64_first_xor", mr.first_xor);
+#endif
     con_kv("track", (int32_t)song.sel + 1);
     con_kv("batt_raw", song.batt_raw);
     con_puts("engine ");
@@ -353,6 +366,21 @@ static void con_crash(void)
     con_kx("psr", c.psr);
     con_kv("uptime_ms", (int32_t)c.uptime_ms);
     con_kv("early", (int32_t)c.early);
+#if FELUCCA_CRASH_CTX
+    {   /* FELUCCA_CRASH_CTX=1 diagnostic builds (#428, hal/fm1_irq.h): the faulting core's registers, after the keys
+         * above (unchanged for old reports); ctx 0 = this record carries none (written by another firmware) */
+        static const char rn[16][4] = {"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+                                       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"};
+        uint32_t i, ok = c.ctx == (FM1_CRASH_CTX_KEY ^ c.count);
+        con_kv("ctx", (int32_t)ok);
+        if (ok) {
+            for (i = 0; i < 16u; i++)
+                con_kx(rn[i], c.r[i]);
+            con_kx("usp", c.usp);
+            con_kx("ssp", c.ssp);
+        }
+    }
+#endif
 }
 
 static void con_params(void)
