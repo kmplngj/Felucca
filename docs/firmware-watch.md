@@ -17,6 +17,14 @@ does not increase coverage. The migration does not fetch or review newer commits
 
 ## Canonical files and branch
 
+The [Optimist adoption review](optimist-adoption-2026-10-19.md) registers
+`w0ts/optimist` main as a pending source, pinned initially at
+`5fc3ee51a4aa64fd22cef217c8498c9be567eb69` (2,018 reachable commits, zero reviewed
+by the snapshot). After this registration reaches main and the state branch, the
+next audit verifies identity, branch, immutable pin and complete history before
+initializing it. Pending registration is not active or completed review coverage.
+The existing daily task reads this registry; its schedule does not need changing.
+
 Routine scan state lives on the repository's
 [`automation/firmware-watch` branch](https://github.com/kmplngj/Felucca/tree/automation/firmware-watch/data/firmware-watch).
 The initial migration also lives on main. Read the state branch for current progress;

@@ -285,6 +285,11 @@ real test of the contract, so the contract is frozen only after it.
 
 ## Mapping other firmwares
 
+The [Optimist adoption review](optimist-adoption-2026-10-19.md) maps its browser
+builder, instrument auditions and measured optimization candidates to this roadmap
+and the existing engine, firmware and WebApp owners. These remain planned work;
+the review does not change the supported profiles or standard firmware.
+
 Each donor splits into the axes above. Instruments and presets go through the normal
 engine/content path; only the workflow becomes a mode.
 

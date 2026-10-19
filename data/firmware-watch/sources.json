@@ -109,6 +109,44 @@
       "requested_at": "2026-10-18",
       "source_name": "fm1-base (MPL-2.0 FM-1 app platform on felucca-bsp; BLE MIDI, WiFi, emulator)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/461",
+      "authorization": "User requested in the Optimist adoption chat: analyse the firmware, plan features/instruments/optimizations, create GitHub issues and add it to the firmware watcher.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "5fc3ee51a4aa64fd22cef217c8498c9be567eb69"
+      },
+      "historical_total_at_setup": 2018,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/468",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "5fc3ee51a4aa64fd22cef217c8498c9be567eb69"
+      },
+      "recent_frontiers": {
+        "main": "5fc3ee51a4aa64fd22cef217c8498c9be567eb69"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/461",
+        "https://github.com/kmplngj/Felucca/issues/462",
+        "https://github.com/kmplngj/Felucca/issues/463",
+        "https://github.com/kmplngj/Felucca/issues/465",
+        "https://github.com/kmplngj/Felucca/issues/466",
+        "https://github.com/kmplngj/Felucca/issues/467",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/23",
+        "https://github.com/kmplngj/Felucca/issues/468"
+      ],
+      "repository": "w0ts/optimist",
+      "repository_id": 1410403115,
+      "requested_at": "2026-10-19",
+      "source_name": "Optimist (modular SLOOP/Felucca firmware, native instruments, profile/cloud builder and web simulator)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [
