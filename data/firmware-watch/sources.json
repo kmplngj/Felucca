@@ -147,6 +147,43 @@
       "requested_at": "2026-10-19",
       "source_name": "Optimist (modular SLOOP/Felucca firmware, native instruments, profile/cloud builder and web simulator)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/481",
+      "authorization": "User requested in the Clipper adoption chat (2026-10-19): analyse the firmware, plan features/instruments/optimizations, create GitHub issues and add it to the firmware watcher.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "7008d31e78da5d4e5e0a1f25a994ba7b2266c702"
+      },
+      "historical_total_at_setup": 49,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/480",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "7008d31e78da5d4e5e0a1f25a994ba7b2266c702"
+      },
+      "recent_frontiers": {
+        "main": "7008d31e78da5d4e5e0a1f25a994ba7b2266c702"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/481",
+        "https://github.com/kmplngj/Felucca/issues/478",
+        "https://github.com/kmplngj/Felucca/issues/479",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/24",
+        "https://github.com/kmplngj/Felucca/issues/480",
+        "https://github.com/kmplngj/Felucca/issues/17",
+        "https://github.com/kmplngj/Felucca/issues/234"
+      ],
+      "repository": "isod89/clipper-fm1",
+      "repository_id": 1424928986,
+      "requested_at": "2026-10-19",
+      "source_name": "Clipper (SLOOP/Felucca-derived synth; VPS, TERRAIN, VECTOR, WSEQ, HYBRID, FMX and synth workflow experiments)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [
