@@ -40,12 +40,24 @@ static inline void fm1_irq_off(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void fm1_irq_on(void) { __asm__ volatile("csync\n\tsti" ::: "memory"); }
 
 #define FM1_CRASH_MAGIC 0x43525348u          /* "CRSH" */
+/* FELUCCA_CRASH_CTX=1 (build.py; a diagnostic build for the #425 soak, #428): the record also keeps the faulting
+ * core's r0..r15, usp and ssp (+76 B NOINIT, below the 100 B spare floor that release and standard builds keep).
+ * `ctx` = FM1_CRASH_CTX_KEY ^ count marks registers written with this record, not left by another firmware whose
+ * record sat at the same address. 0 (the default): none of it, the record and its code as before. */
+#ifndef FELUCCA_CRASH_CTX
+#define FELUCCA_CRASH_CTX 0
+#endif
+#define FM1_CRASH_CTX_KEY 0x43545852u        /* "CTXR" */
 typedef struct {
     uint32_t magic, count, vec, pc, rets, emu, dbg, sp, psr, icfg, uptime_ms;
     uint32_t etm[4];
     uint32_t early;                          /* consecutive crashes < 3 s after boot */
 #if FM1_CPU1_USED
     uint32_t core;                           /* 1 = the second core's (its sp on its stacks, hal/fm1_cpu1.h) */
+#endif
+#if FELUCCA_CRASH_CTX
+    uint32_t ctx;                            /* FM1_CRASH_CTX_KEY ^ count: r/usp/ssp belong to this record */
+    uint32_t r[16], usp, ssp;                /* the faulting core's registers as fm1_fatal_common saved them */
 #endif
 } fm1_crash_t;
 /* Not static: .noinit holds whatever the last run (or power-on) left, and a
@@ -88,6 +100,13 @@ static int fm1_crash_read(fm1_crash_t *copy)
     copy->early = shared->early;
 #if FM1_CPU1_USED
     copy->core = shared->core;
+#endif
+#if FELUCCA_CRASH_CTX
+    copy->ctx = shared->ctx;
+    for (i = 0; i < 16u; i++)
+        copy->r[i] = shared->r[i];
+    copy->usp = shared->usp;
+    copy->ssp = shared->ssp;
 #endif
     __asm__ volatile("csync" ::: "memory");
     if (shared->magic != FM1_CRASH_MAGIC)
@@ -172,6 +191,13 @@ void fm1_fault_c(uint32_t *f)
         for (i = 0; i < 4u; i++)
             fm1_crash.etm[i] = 0;
         fm1_crash.early = 0;
+#if FELUCCA_CRASH_CTX
+        for (i = 0; i < 16u; i++)
+            fm1_crash.r[i] = f[i];
+        fm1_crash.usp = f[22];
+        fm1_crash.ssp = f[23];
+        fm1_crash.ctx = FM1_CRASH_CTX_KEY ^ (count + 1u);
+#endif
         __asm__ volatile("csync" ::: "memory");
         fm1_crash.magic = FM1_CRASH_MAGIC;
         __asm__ volatile("csync" ::: "memory");
@@ -214,6 +240,13 @@ void fm1_fault_c(uint32_t *f)
     fm1_crash.early = fm1_crash.uptime_ms < 3000u ? early + 1u : 0u;
 #if FM1_CPU1_USED
     fm1_crash.core = 0;
+#endif
+#if FELUCCA_CRASH_CTX
+    for (i = 0; i < 16u; i++)
+        fm1_crash.r[i] = f[i];
+    fm1_crash.usp = f[22];
+    fm1_crash.ssp = f[23];
+    fm1_crash.ctx = FM1_CRASH_CTX_KEY ^ (count + 1u);
 #endif
     __asm__ volatile("csync" ::: "memory");
     fm1_crash.magic = FM1_CRASH_MAGIC;

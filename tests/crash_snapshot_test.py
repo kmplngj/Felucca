@@ -34,9 +34,9 @@ def instrument(reader):
                             '__asm__ volatile("" ::: "memory");')
     reader = reader.replace("const volatile fm1_crash_t *shared = &fm1_crash;",
                             "/* shared loads are instrumented below */")
-    return re.sub(r"shared->(etm\[i\]|\w+)", lambda match:
-                  "read_word(offsetof(fm1_crash_t, etm) + i * sizeof(uint32_t))"
-                  if match.group(1) == "etm[i]" else
+    return re.sub(r"shared->(\w+)(\[i\])?", lambda match:
+                  f"read_word(offsetof(fm1_crash_t, {match.group(1)}) + i * sizeof(uint32_t))"
+                  if match.group(2) else
                   f"read_word(offsetof(fm1_crash_t, {match.group(1)}))", reader)
 
 
@@ -44,6 +44,7 @@ HARNESS = r'''
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #define FM1_CRASH_MAGIC 0x43525348u
 #define FELUCCA_CPU2 FM1_CPU1_USED
@@ -113,6 +114,12 @@ static void con_kv(const char *name, int32_t value) {
     else if (!strcmp(name, "emu")) expected = old_record.emu;
     else if (!strcmp(name, "sp")) expected = old_record.sp;
     else if (!strcmp(name, "psr")) expected = old_record.psr;
+#if FELUCCA_CRASH_CTX
+    else if (!strcmp(name, "ctx")) expected = old_record.ctx == (FM1_CRASH_CTX_KEY ^ old_record.count);
+    else if (!strcmp(name, "usp")) expected = old_record.usp;
+    else if (!strcmp(name, "ssp")) expected = old_record.ssp;
+    else if (name[0] == 'r' && name[1] >= '0' && name[1] <= '9') expected = old_record.r[atoi(name + 1)];
+#endif
     else { fprintf(stderr, "unexpected console field\n"); console_words = 100; return; }
     if ((uint32_t)value != expected) console_words = 100;
     console_words++;
@@ -141,6 +148,10 @@ int main(void) {
     old_words[0] = new_words[0] = FM1_CRASH_MAGIC;
     old_words[1] = 100;
     new_words[1] = 101;
+#if FELUCCA_CRASH_CTX
+    old_words[offsetof(fm1_crash_t, ctx) / 4] = FM1_CRASH_CTX_KEY ^ 100u;   /* registers belong to each record */
+    new_words[offsetof(fm1_crash_t, ctx) / 4] = FM1_CRASH_CTX_KEY ^ 101u;
+#endif
     memcpy(&old_record, old_words, sizeof(old_record));
     memcpy(&new_record, new_words, sizeof(new_record));
     start = finish = 1000;
@@ -168,11 +179,11 @@ int main(void) {
     reset();
     serial_changes = 1;
     con_crash();
-    if (console_words != 9 + FM1_CPU1_USED || absent) return 2;
+    if (console_words != 9 + FM1_CPU1_USED + 19 * FELUCCA_CRASH_CTX || absent) return 2;
     reset();
     fm1_crash.magic = 0;
     con_crash();
-    if (console_words != 9 + FM1_CPU1_USED || absent != 1) return 3;
+    if (console_words != 9 + FM1_CPU1_USED + 19 * FELUCCA_CRASH_CTX || absent != 1) return 3;
     /* Valid boot history remains unchanged; failed reads never use live count. */
     reset();
 #if FM1_CPU1_USED
@@ -233,6 +244,14 @@ int main(int argc, char **argv) {
 #if FM1_CPU1_USED
     fm1_crash.core = (uint32_t)atoi(argv[1]);
 #endif
+#if FELUCCA_CRASH_CTX
+    for (unsigned i = 0; i < 16; i++)
+        fm1_crash.r[i] = 0x01C60000u + i;
+    fm1_crash.r[3] = 0x00800012u;
+    fm1_crash.usp = 0x01C40000u;
+    fm1_crash.ssp = 0x01C7E000u;
+    fm1_crash.ctx = FM1_CRASH_CTX_KEY ^ 100u;
+#endif
     replacement = fm1_crash;
     replacement.count = 101;
     replacement.vec = 12;
@@ -278,23 +297,29 @@ class CrashSnapshot(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="felucca-crash-console-") as temporary:
             path = Path(temporary)
             (path / "fixture.c").write_text(source)
-            for cpu1 in (0, 1):
-                executable = path / f"console-{cpu1}"
+            for cpu1, ctx in ((0, 0), (1, 0), (0, 1), (1, 1)):    # ctx: FELUCCA_CRASH_CTX (#428)
+                executable = path / f"console-{cpu1}-{ctx}"
                 subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-std=c11", "-O2",
                                 "-Wall", "-Wextra", "-Werror", f"-DFM1_CPU1_USED={cpu1}",
+                                f"-DFELUCCA_CRASH_CTX={ctx}",
                                 str(path / "fixture.c"), "-o", str(executable)], check=True)
+                regs = [0x00800012 if i == 3 else 0x01C60000 + i for i in range(16)]
+                ctx_raw = ("ctx 1\r\n" + "".join(f"r{i} 0x{v:08X}\r\n" for i, v in enumerate(regs)) +
+                           "usp 0x01C40000\r\nssp 0x01C7E000\r\n") if ctx else ""
+                ctx_fields = dict({f"r{i}": v for i, v in enumerate(regs)}, ctx=1, usp=0x01C40000,
+                                  ssp=0x01C7E000) if ctx else {}
                 for core in range(cpu1 + 1):
                     for replace in (0, 1):
                         for valid in (0, 1):
-                            with self.subTest(cpu1=cpu1, core=core, replace=replace, valid=valid):
+                            with self.subTest(cpu1=cpu1, ctx=ctx, core=core, replace=replace, valid=valid):
                                 result = subprocess.run([str(executable), str(core), str(replace),
                                                          str(valid)], capture_output=True, check=True)
                                 raw = ("count 100\r\n" + (f"core {core}\r\n" if cpu1 else "") +
-                                       payload) if valid else "no crash record\r\n"
+                                       payload + ctx_raw) if valid else "no crash record\r\n"
                                 self.assertEqual(result.stdout, raw.encode())
                                 parsed = diag.parse_response("crash", result.stdout)
-                                fields = dict(expected, **({"core": core} if cpu1 else {})) if valid else {
-                                    "record_present": False}
+                                fields = dict(expected, **({"core": core} if cpu1 else {}),
+                                              **ctx_fields) if valid else {"record_present": False}
                                 self.assertEqual(parsed, {"fields": fields, "unknown_lines": [], "issues": []})
 
     def test_emulator_shim_validity_and_local_copy(self):
@@ -330,7 +355,7 @@ int main(void) {
                                 "-o", str(executable)], check=True)
                 subprocess.run([str(executable)], check=True)
 
-    def compile_run(self, reader, cpu1):
+    def compile_run(self, reader, cpu1, ctx=0):
         record, _ = recorder_source()
         console = function_source((ROOT / "firmware/src/console.c").read_text(),
                                   "static void con_crash(void)")
@@ -344,13 +369,14 @@ int main(void) {
             executable = path / "snapshot"
             subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-std=c11", "-O2",
                             "-Wall", "-Wextra", "-Werror", f"-DFM1_CPU1_USED={cpu1}",
+                            f"-DFELUCCA_CRASH_CTX={ctx}",
                             str(path / "fixture.c"), "-o", str(executable)], check=True)
             return subprocess.run([str(executable)], capture_output=True, text=True)
 
     def test_per_load_interleavings_and_actual_consumers(self):
-        for cpu1 in (0, 1):
-            with self.subTest(cpu1=cpu1):
-                result = self.compile_run(reader_source(), cpu1)
+        for cpu1, ctx in ((0, 0), (1, 0), (0, 1), (1, 1)):    # ctx: FELUCCA_CRASH_CTX (#428)
+            with self.subTest(cpu1=cpu1, ctx=ctx):
+                result = self.compile_run(reader_source(), cpu1, ctx)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 print(result.stdout.strip())
 
@@ -366,9 +392,11 @@ int main(void) {
 
     def test_missing_generation_check_is_detected(self):
         reader = reader_source().replace("    if (shared->count != count)\n        return 0;", "")
-        result = self.compile_run(reader, 1)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("mixed snapshot", result.stderr)
+        for ctx in (0, 1):
+            with self.subTest(ctx=ctx):
+                result = self.compile_run(reader, 1, ctx)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("mixed snapshot", result.stderr)
 
     def test_reversed_final_acquire_order_is_detected(self):
         reader = reader_source()

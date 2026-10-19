@@ -66,6 +66,10 @@ import lz4blk  # noqa: E402
 APP_XIP = 0x02000120                # app.bin offset 0 in the XIP map; the SPL jumps here
 APP_SLOT = fm1pkg_make.APP_SLOT
 NOINIT_SPARE_MIN = 100              # B of app.ld's NOINIT region left unallocated (capacity plan rule A7, docs/flash-capacity.md)
+# FELUCCA_CRASH_CTX=1 (hal/fm1_irq.h, #428): a diagnostic build whose crash record also keeps r0..r15, usp, ssp and
+# their key (19 words). Only that build may take these bytes out of the floor; release and standard builds keep 100 B
+CRASH_CTX_NOINIT = 76
+DIAG_FLAGS = ("FELUCCA_CRASH_CTX",)  # diagnostic builds for #425/#428: never a release
 LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
@@ -129,6 +133,9 @@ def resolve(argv):
         if a.product != product:
             tag = "-" + a.product
         product = a.product
+    diag = [flag for flag in DIAG_FLAGS if os.environ.get(flag) == "1"]
+    if a.release and diag:
+        raise SystemExit(f"--release with a diagnostic build ({', '.join(diag)}=1): build the release without them")
     profile_name = os.environ.get("FELUCCA_PROFILE", "standard")
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", profile_name):
         raise SystemExit("invalid FELUCCA_PROFILE name")
@@ -347,7 +354,8 @@ def build_app():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
-                 "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2", "FELUCCA_ISR_ASSERT"):
+                 "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2", "FELUCCA_ISR_ASSERT",
+                 "FELUCCA_CRASH_CTX"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
@@ -538,8 +546,12 @@ def check(img, hdr, syms, dis, rt):
         errors.append(f"RAM headroom {ram_len - bss} B < 4096 B")
     if pool_len - pool < 8192:                    # keep >= 8 KiB of the pool spare
         errors.append(f"pool headroom {pool_len - pool} B < 8192 B")
-    if noinit_len - noinit < NOINIT_SPARE_MIN:    # NOINIT gets no new users (A7): keep >= 100 B unallocated
-        errors.append(f"NOINIT headroom {noinit_len - noinit} B < {NOINIT_SPARE_MIN} B")
+    floor = NOINIT_SPARE_MIN - (CRASH_CTX_NOINIT if os.environ.get("FELUCCA_CRASH_CTX") == "1" else 0)
+    if noinit_len - noinit < floor:               # NOINIT gets no new users (A7): keep >= 100 B unallocated
+        errors.append(f"NOINIT headroom {noinit_len - noinit} B < {floor} B")
+    elif floor != NOINIT_SPARE_MIN:
+        notes.append(f"NOINIT floor {floor} B: FELUCCA_CRASH_CTX=1 diagnostic build ({CRASH_CTX_NOINIT} B register "
+                     f"context; release/standard builds keep {NOINIT_SPARE_MIN} B)")
     return errors, notes
 
 

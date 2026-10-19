@@ -119,6 +119,27 @@ class AppGuards(unittest.TestCase):
         self.values["_pool_end"] += 1
         self.assertIn("pool headroom 8191 B", " ".join(self.check()))
 
+    def test_crash_ctx_diagnostic_build_floor(self):
+        """FELUCCA_CRASH_CTX=1 (#428): only that build may put its 76 B register context below the 100 B floor"""
+        self.assertEqual(B.CRASH_CTX_NOINIT, 76)
+        with patch.dict(os.environ, {"FELUCCA_CRASH_CTX": "1"}):
+            self.noinit_used = NOINIT_LEN - 24                   # 24 B spare: the floor of this build
+            errors, notes = self.run_check()
+            self.assertEqual(errors, [])
+            self.assertIn("NOINIT floor 24 B: FELUCCA_CRASH_CTX=1", " ".join(notes))
+            self.noinit_used += 1
+            self.assertEqual(self.check(), ["NOINIT headroom 23 B < 24 B"])
+        for env in ({"FELUCCA_CRASH_CTX": "0"}, {}):
+            with patch.dict(os.environ, env):
+                if not env:
+                    os.environ.pop("FELUCCA_CRASH_CTX", None)
+                self.noinit_used = NOINIT_LEN - 99               # standard and release builds: still 100 B
+                self.assertEqual(self.check(), ["NOINIT headroom 99 B < 100 B"])
+                self.noinit_used = NOINIT_LEN - 100
+                errors, notes = self.run_check()
+                self.assertEqual(errors, [])
+                self.assertNotIn("NOINIT floor", " ".join(notes))
+
     def test_noinit_spare_floor_and_one_byte_failure(self):
         floor = NOINIT_LEN - B.NOINIT_SPARE_MIN
         self.assertEqual(B.NOINIT_SPARE_MIN, 100)

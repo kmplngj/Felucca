@@ -34,6 +34,7 @@ def function_source(header, signature):
 def recorder_source():
     header = (ROOT / "firmware/hal/fm1_irq.h").read_text()
     record = re.search(r"typedef struct \{.*?\} fm1_crash_t;", header, re.S).group()
+    record = re.search(r"^#define FM1_CRASH_CTX_KEY .*$", header, re.M).group() + "\n" + record
     body = function_source(header, "void fm1_fault_c(uint32_t *f)")
     body = body.replace('__asm__ volatile("csync" ::: "memory");', "observe_barrier();")
     body = body.replace("*(volatile uint32_t *)0x10804u", "test_timer_ticks")
@@ -118,6 +119,13 @@ static void complete_record(void) {
 #if FM1_CPU1_USED
     assert(fm1_crash.core == expected_core);
 #endif
+#if FELUCCA_CRASH_CTX
+    /* #428 diagnostic build: the faulting core's r0..r15, usp, ssp, keyed to this record's count */
+    for (unsigned i = 0; i < 16; i++)
+        assert(fm1_crash.r[i] == frame[i]);
+    assert(fm1_crash.usp == frame[22] && fm1_crash.ssp == frame[23]);
+    assert(fm1_crash.ctx == (FM1_CRASH_CTX_KEY ^ expected_count));
+#endif
 }
 static void observe_barrier(void) {
     /* First invalidate the poisoned old record. Then all fields must be ready
@@ -176,9 +184,9 @@ int main(int argc, char **argv) {
 #if FM1_CPU1_USED
     if (expected_core)
         frame[24] = (uint32_t)(uintptr_t)(worker_stacks + 32);
-    assert(sizeof(fm1_crash_t) == 68u);
+    assert(sizeof(fm1_crash_t) == 68u + (FELUCCA_CRASH_CTX ? 76u : 0u));
 #else
-    assert(!expected_core && sizeof(fm1_crash_t) == 64u);
+    assert(!expected_core && sizeof(fm1_crash_t) == 64u + (FELUCCA_CRASH_CTX ? 76u : 0u));
 #endif
     fm1_fault_c(frame);
     assert(phase == 3 && reports == !expected_core && !test_reset);
@@ -201,17 +209,18 @@ class CrashRecord(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="felucca-crash-record-") as temporary:
             path = Path(temporary)
             (path / "fixture.c").write_text(source)
-            for cpu1 in (0, 1):
-                executable = path / f"crash-{cpu1}"
+            for cpu1, ctx in ((0, 0), (1, 0), (0, 1), (1, 1)):    # ctx: FELUCCA_CRASH_CTX (#428)
+                executable = path / f"crash-{cpu1}-{ctx}"
                 subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-std=c11",
                                 "-Wall", "-Wextra", "-Werror", "-O2",
-                                f"-DFM1_CPU1_USED={cpu1}", str(path / "fixture.c"),
-                                "-o", str(executable)], check=True)
+                                f"-DFM1_CPU1_USED={cpu1}", f"-DFELUCCA_CRASH_CTX={ctx}",
+                                str(path / "fixture.c"), "-o", str(executable)], check=True)
                 for core in range(cpu1 + 1):
                     for valid in (0, 1):
                         for uptime in (100, 3000):
                             for guard in range(3 if cpu1 else 1):
-                                with self.subTest(cpu1=cpu1, core=core, valid=valid, uptime=uptime, guard=guard):
+                                with self.subTest(cpu1=cpu1, ctx=ctx, core=core, valid=valid, uptime=uptime,
+                                                  guard=guard):
                                     subprocess.run([str(executable), str(core), str(valid),
                                                     str(uptime), str(guard)], check=True)
 
