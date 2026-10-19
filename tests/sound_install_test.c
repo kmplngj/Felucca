@@ -70,9 +70,24 @@ static uint32_t si_on;                         /* bit per track watched */
 static si_snd_t si_log[NTRK][SI_MAX];
 static uint8_t si_kind[SI_MAX];                 /* 0 a probe with the interrupt allowed, 1 masking, 2 unmasked */
 static uint32_t si_n;
+/* FM6 patch/values coherence (SLOT a factory sound): at every point an interrupt could run, track 0's patch is the
+ * factory one its SLOT value names (fm6_sync would otherwise render the new preset with the old patch) */
+static uint32_t si_fm6chk, si_fm6bad;
+static void si_fm6_probe(void)
+{
+    uint8_t v[FP_SIZE + 1u];
+    int32_t s = trk[0].p[P_E7];
+    if (s < 0 || s >= (int32_t)FM6_NFACTORY)
+        return;
+    fm6_unpack(FM6_FACTORY[s], v);
+    if (memcmp(v, fm6_patch[0], FP_SIZE))
+        si_fm6bad++;
+}
 static void si_probe(uint32_t kind)
 {
     uint32_t k;
+    if (si_fm6chk)
+        si_fm6_probe();
     if (!si_on || si_n >= SI_MAX)
         return;
     for (k = 0; k < NTRK; k++)
@@ -183,6 +198,17 @@ int main(void)
     track_select(0);
     bad += si_check("a project load, every track in the same window",
                  si_watch(op_project, (1u << NTRK) - 1u, &ch) && ch == (1u << NTRK) - 1u);
+    /* TOOLS INIT on an FM6 track: no engine-switch fade, so the patch must change inside the window with the values */
+    track_select(0);
+    set_engine(ENGI_FM6);
+    trk[0].p[P_E7] = 5;
+    fm6_poll();
+    trk[0].p[P_GLIDE] = 3;
+    si_fm6chk = 1;
+    si_fm6bad = 0;
+    bad += si_check("FM6 INIT on an FM6 track: values and factory patch in one window",
+                 si_watch(op_init, 1u, &ch) && ch == 1u && si_fm6bad == 0 && fm6_slot[0] == (uint8_t)trk[0].p[P_E7]);
+    si_fm6chk = 0;
     printf("sound_install: %s\n", bad ? "FAIL" : "ok");
     return bad ? 1 : 0;
 }

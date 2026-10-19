@@ -6,10 +6,12 @@
  *
  * It owns the publication: the engine id (eng_req), the preset number and the values change as one sound under one
  * interrupt guard, so the audio side (voice.c engine_block, the renders) sees the old engine with its values or the
- * new one with its own, never one with the other's; with an FM6 patch of the caller's, that patch too (fm6_pgen: the
- * renderer takes it at its next block). The guard saves and restores the interrupt state, so an install nests in a
- * caller's own IRQ-off window (a project restores four tracks and its motion in one). After the guard: the FM6
- * slot's invariants (fm6_adopt, fm6_track_loaded: main-loop work, outside the window). Values a future sound carries
+ * new one with its own, never one with the other's; with an FM6 patch of the caller's (or the factory patch the new
+ * SLOT names: SND_FM6_SLOT), that patch too (fm6_pgen: the renderer takes it at its next block; an FM6 track reloaded
+ * as FM6 has no engine-switch fade, so fm6_sync must not see the new values on the old patch). The guard saves and
+ * restores the interrupt state, so an install nests in a caller's own IRQ-off window (a project restores four tracks
+ * and its motion in one). After the guard: the FM6 slot's bookkeeping (fm6_adopt, fm6_slot: main-loop state no render
+ * reads, outside the window). Values a future sound carries
  * beside p[] (an engine's extension, #324) belong in the same window; the fading old engine's copy of them is
  * voice.c engine_block's, as pe_old[] is.
  *
@@ -96,8 +98,16 @@ static void sound_preset_values(int16_t *p, const preset_t *pr)
 static void sound_install(track_t *t, uint32_t eng, uint32_t preset, const int16_t *p, const uint8_t *patch,
                           uint32_t flags)
 {
+    uint8_t fv[FP_SIZE + 1u];
     uint32_t i, tr = trk_index(t) % NTRK, f;
+    int32_t slot = p[P_E7];
+    int fslot = 0;
     FM1_ASSERT_THREAD();                              /* sound loads are main-loop work (#428) */
+    if (!patch && (flags & SND_FM6_SLOT) && eng_is(eng, ENGI_FM6) && slot >= 0 && slot < (int32_t)FM6_NFACTORY) {
+        fm6_unpack(FM6_FACTORY[slot], fv);            /* a factory SLOT: its patch goes in the window with the values */
+        patch = fv;                                   /* (a same-engine reload has no engine-switch fade to hide */
+        fslot = 1;                                    /* new values on the old patch from fm6_sync) */
+    }
     f = sound_guard();                                /* the audio side sees the old sound or the new one */
     t->eng_req = (uint8_t)eng;
     t->preset = (uint8_t)preset;
@@ -109,9 +119,12 @@ static void sound_install(track_t *t, uint32_t eng, uint32_t preset, const int16
     if (flags & SND_PANIC)
         panic_req |= (uint8_t)(1u << tr);
     sound_unguard(f);
-    if (patch)
+    if (fslot) {
+        fm6_own_ok &= (uint8_t)~(1u << tr);           /* (fm6_load_slot: nothing of OWN to bring back) */
+        fm6_slot[tr] = (uint8_t)slot;
+    } else if (patch) {
         fm6_adopt(tr);                                /* SLOT: the factory patch it equals (F n), else OWN */
-    else if (flags & SND_FM6_SLOT)
+    } else if (flags & SND_FM6_SLOT)
         fm6_track_loaded(t);                          /* FM6: the patch of the preset's SLOT */
 }
 
