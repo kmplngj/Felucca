@@ -142,6 +142,36 @@ class Reachability(unittest.TestCase):
             S.isr_reach(module("call void bitcast (void (...)* %f to void (void ()*)*)(void ()* @other)",
                               extra=function("other")))
 
+    def test_isr_call_into_a_separately_compiled_module_is_rejected(self):
+        # #454: a module compiled as its own unit is only a declaration in felucca.c's IR; interrupt code
+        # reaching it (directly, through a callee or a constant table) must fail, intrinsics stay allowed
+        decl = "declare void @sound_install()\ndeclare void @llvm.memset.p0i8.i32(i8*, i8, i32, i32, i1)\n"
+        self.assertEqual(S.isr_reach(module(extra=decl + function("ui", "call void @sound_install()"))),
+                         set(S.ISR_ROOTS))
+        self.assertIn("leaf", S.isr_reach(module("call void @leaf()", extra=decl + function(
+            "leaf", "call void @llvm.memset.p0i8.i32(i8* null, i8 0, i32 4, i32 1, i1 false)"))))
+        for ir in (module("call void @sound_install()", extra=decl),
+                   module("call void @leaf()", extra=decl + function("leaf", "call void @sound_install()")),
+                   module("%f = load void ()*, void ()** @alias\n  call void %f()",
+                          extra=decl + "@alias = alias void ()*, void ()** @table\n"
+                          "@table = constant [2 x void ()*] [void ()* @cb, void ()* @sound_install]\n" +
+                          function("cb"))):
+            with self.assertRaisesRegex(ValueError, "sound_install, defined outside this translation unit"):
+                S.isr_reach(ir, indirect={S.ISR_ROOTS[0]: (1, ("table",))} if "@table" in ir else S.ISR_INDIRECT)
+
+    def test_module_mode_annotates_main_loop_definitions_without_roots(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+            src, dst = Path(tmp) / "sound.ll", Path(tmp) / "sound_size.ll"
+            src.write_text(function("sound_install", "call void @sound_port_lock()", "local_unnamed_addr #0") +
+                           "declare void @sound_port_lock()\nattributes #0 = { nounwind optsize }\n")
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", src, dst], capture_output=True, text=True)
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("missing ISR roots", p.stderr)
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", "--module", src, dst],
+                               capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("@sound_install() local_unnamed_addr minsize #0", dst.read_text())
+
     def test_cli_failure_does_not_write_output(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
             src, dst = Path(tmp) / "in.ll", Path(tmp) / "out.ll"

@@ -74,6 +74,9 @@ LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
 CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
+# Modules compiled as their own translation unit and linked with felucca.o (#454 pilot, docs/modules.md): each one's
+# interface is its .h, what it needs of felucca.c's unit its _port.h. They own no state (separate_check)
+SEPARATE = ("sound",)
 LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$", re.I)
 
 # SDK files of AC79NN_SDK_V1.2.1_2023-12-13 (the tested version)
@@ -350,6 +353,21 @@ def ld_regions():
     return regs
 
 
+def separate_check(names):
+    """A separately compiled module owns no state: any .data/.bss/.pool/.noinit byte in its object is an error. core.h
+    and the HAL headers define static objects (trk, song, fm1_ms, ...); a module that used one would get a second,
+    private copy, silently. Its code goes in .text only (no .ram_text: interrupt code stays in felucca.c's unit)"""
+    errors = []
+    for name in names:
+        for p in map(str.split, tc("common/bin/objdump", "-h", OUT / f"{name}.o").splitlines()):
+            if len(p) >= 3 and p[0].isdigit() and p[1].startswith(".") and re.fullmatch(r"[0-9a-f]+", p[2]):
+                if int(p[2], 16) and not p[1].startswith((".text", ".rodata", ".rela.")) and p[1] not in (".shstrtab", ".symtab",
+                                                                                                ".strtab", ".comment"):
+                    errors.append(f"{name}.o: section {p[1]} holds {int(p[2], 16)} B; a separate module owns no state "
+                                  f"or interrupt code (docs/modules.md)")
+    return errors
+
+
 def build_app():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
@@ -368,23 +386,31 @@ def build_app():
     # felucca.c goes to LLVM IR without the optimizer, the main-loop functions (UI, stores, editor) are
     # marked minsize (tools/size_fns.py), then the IR is compiled at -Os. FELUCCA_SIZE=0: -Os everywhere
     size = os.environ.get("FELUCCA_SIZE") != "0"
-    cmain = (("cc", *flags, "-S", "-emit-llvm", "-Xclang", "-disable-llvm-optzns", "-c",
-              FW / "src" / "felucca.c", "-o", OUT / "felucca.ll") if size else
-             ("cc", *flags, "-c", FW / "src" / "felucca.c", "-o", OUT / "felucca.o"))
+    units = [("felucca", FW / "src" / "felucca.c", [])] + [(m, FW / "src" / f"{m}.c", ["-DFELUCCA_OWN_UNIT=1"])
+                                                         for m in SEPARATE]
+    cunits = [(("cc", *flags, *extra, "-S", "-emit-llvm", "-Xclang", "-disable-llvm-optzns", "-c", src,
+                "-o", OUT / f"{name}.ll") if size else
+               ("cc", *flags, *extra, "-c", src, "-o", OUT / f"{name}.o")) for name, src, extra in units]
     (OUT / "fm1_cpu1.o").unlink(missing_ok=True)
     tc_all(("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
            ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
            ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
            *([("cc", "-c", FW / "hal" / "fm1_cpu1.S", "-o", OUT / "fm1_cpu1.o")] if CPU2 else []),
-           cmain)
+           *cunits)
     if size:
-        subprocess.run([sys.executable, SRC / "tools" / "size_fns.py", OUT / "felucca.ll", OUT / "felucca_size.ll"],
-                       check=True)
-        tc("cc", *[f for f in flags if not f.startswith(("-I", "-D", "-W"))], "-c",
-           OUT / "felucca_size.ll", "-o", OUT / "felucca.o")
+        # felucca.c: the ISR graph keeps what an interrupt reaches at -Os, and fails if it reaches a separate module;
+        # a separate module (--module): no interrupt roots in it, every listed main-loop definition minsize
+        for name, _, _ in units:
+            subprocess.run([sys.executable, SRC / "tools" / "size_fns.py", *(["--module"] if name != "felucca" else []),
+                            OUT / f"{name}.ll", OUT / f"{name}_size.ll"], check=True)
+        tc_all(*[("cc", *[f for f in flags if not f.startswith(("-I", "-D", "-W"))], "-c",
+                  OUT / f"{name}_size.ll", "-o", OUT / f"{name}.o") for name, _, _ in units])
+    errors = separate_check([name for name, _, _ in units[1:]])
+    if errors:
+        raise SystemExit("\n".join(errors))
     elf = OUT / "felucca.elf"
     tc("pi32v2/bin/ld", "-T", FW / "app.ld", OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o",
-       *([OUT / "fm1_cpu1.o"] if CPU2 else []), OUT / "felucca.o", "-o", elf)
+       *([OUT / "fm1_cpu1.o"] if CPU2 else []), *[OUT / f"{name}.o" for name, _, _ in units], "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin", "c1text.bin"):
         (OUT / sect).unlink(missing_ok=True)
     *_, hdr, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),

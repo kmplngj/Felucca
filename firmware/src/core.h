@@ -406,6 +406,8 @@ typedef struct {
 #define MCH_OFF 17u
 #define MCH_N 18u                    /* channels 1..16, OMNI, OFF */
 
+#ifndef FELUCCA_OWN_UNIT          /* felucca.c's unit owns the state below; a module compiled as its own unit (#454,
+                                  * docs/modules.md) cannot name it: it would get a second, private copy */
 static track_t trk[NTRK];        /* the instrument: four parts */
 static song_t song;
 #define TSEL (&trk[song.sel])    /* the selected track */
@@ -432,10 +434,13 @@ static inline uint32_t swing_step_len(const track_t *t, uint32_t base, uint32_t 
     int32_t sw = track_swing(t) * (int32_t)base / 250;
     return base + (uint32_t)((idx & 1u) ? -sw : sw);
 }
+#endif /* !FELUCCA_OWN_UNIT */
 
 /* ----------------------------------------------------------- system --- */
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */
+#define BOOTGUARD_MAGIC 0x42475244u
+#ifndef FELUCCA_OWN_UNIT          /* (felucca.c's unit only, as trk and song above) */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
-#define BOOTGUARD_MAGIC 0x42475244u
 struct { uint32_t magic, failed, pending; } bootguard __attribute__((section(".noinit")));
+#endif
