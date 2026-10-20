@@ -10,7 +10,8 @@ optimizer, this script adds 'minsize' to those definitions, and the IR is then c
 A module compiled as its own translation unit (build.py SEPARATE, #454) is annotated with --module: it holds no
 interrupt root, and felucca.c's own run fails if interrupt-reachable code calls a function defined outside it, so
 nothing in such a module can be ISR code.
-  size_fns.py [--module] IN.ll OUT.ll"""
+  size_fns.py [--module] IN.ll OUT.ll
+  size_fns.py --check IN.ll        (analysis only, nothing written: the ISR boundary check of a FELUCCA_SIZE=0 build)"""
 import re
 import sys
 from pathlib import Path
@@ -195,9 +196,13 @@ def annotate(ir, candidates, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
     return IR_DEF.sub(mark, ir), hit, protected
 
 
-def main(src, dst, module=False):
+def main(src, dst=None, module=False):
     ir = Path(src).read_text()
     candidates = size_names()
+    if dst is None:                       # --check: the reachability / boundary analysis only, no minsize applied
+        isr = isr_reach(ir) if not module else set()
+        print(f"size: {Path(src).stem}: ISR boundary check passed ({len(isr)} interrupt-reachable functions)")
+        return 0
     annotated, hit, isr = annotate(ir, candidates, roots=() if module else ISR_ROOTS)
     names = candidates - isr
     Path(dst).write_text(annotated)
@@ -212,7 +217,9 @@ def main(src, dst, module=False):
 if __name__ == "__main__":
     args = sys.argv[1:]
     module = args[:1] == ["--module"]
+    check = args[:1] == ["--check"]          # one file: analysis only
     try:
-        sys.exit(main(*args[module:module + 2], module=module))
+        sys.exit(main(*args[check:check + 1], None, module=False) if check else
+                 main(*args[module:module + 2], module=module))
     except (OSError, ValueError) as e:
         sys.exit(f"size: {e}")

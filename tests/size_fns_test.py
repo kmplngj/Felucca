@@ -172,6 +172,25 @@ class Reachability(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("@sound_install() local_unnamed_addr minsize #0", dst.read_text())
 
+    def test_check_mode_is_analysis_only_and_enforces_the_boundary(self):
+        # FELUCCA_SIZE=0 builds run `size_fns.py --check felucca.ll`: same failure, nothing annotated or written
+        with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+            src = Path(tmp) / "felucca.ll"
+            decl = "declare void @sound_install()\n"
+            src.write_text(module("call void @sound_install()", extra=decl))
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", "--check", src], capture_output=True, text=True)
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("sound_install, defined outside this translation unit", p.stderr)
+            src.write_text(module())
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", "--check", src], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("boundary check passed", p.stdout)
+            self.assertEqual(sorted(x.name for x in Path(tmp).iterdir()), ["felucca.ll"])
+
+    def test_build_runs_the_check_when_size_is_off(self):
+        text = (ROOT / "tools/build.py").read_text()
+        self.assertRegex(text, r'if not size:\n\s+subprocess\.run\(\[sys\.executable, SRC / "tools" / "size_fns\.py", "--check"')
+
     def test_cli_failure_does_not_write_output(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
             src, dst = Path(tmp) / "in.ll", Path(tmp) / "out.ll"

@@ -396,7 +396,12 @@ def build_app():
            ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
            ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
            *([("cc", "-c", FW / "hal" / "fm1_cpu1.S", "-o", OUT / "fm1_cpu1.o")] if CPU2 else []),
-           *cunits)
+           *cunits,
+           # FELUCCA_SIZE=0 skips the minsize pass below, but not its ISR boundary check: the same IR, analysis only
+           *([] if size else [("cc", *flags, "-S", "-emit-llvm", "-Xclang", "-disable-llvm-optzns", "-c",
+                               FW / "src" / "felucca.c", "-o", OUT / "felucca.ll")]))
+    if not size:
+        subprocess.run([sys.executable, SRC / "tools" / "size_fns.py", "--check", OUT / "felucca.ll"], check=True)
     if size:
         # felucca.c: the ISR graph keeps what an interrupt reaches at -Os, and fails if it reaches a separate module;
         # a separate module (--module): no interrupt roots in it, every listed main-loop definition minsize
