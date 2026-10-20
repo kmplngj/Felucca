@@ -26,7 +26,11 @@ in issues and roadmaps, not among implemented changes below.
 - **Project recovery and backup:** deferred automatic project saves that wait for
   stopped, idle operation and quiet stereo output, including effect tails and
   fixed-level USB audio; full backups now include the FM6 voice bank and SLICE records.
-  See [persistence contracts](extending.md#4-persistence-and-protocol).
+  A read-only raw store export (editor commands 82/83) downloads every stored
+  object byte for byte, including projects, presets and settings the firmware
+  cannot load, as the first step of moving legacy conversion to the web editor;
+  no client uses it yet. See [persistence contracts](extending.md#4-persistence-and-protocol)
+  and the [stored-format inventory](legacy-formats.md).
 - **Build identification and diagnostics:** startup, ABOUT and INFO identify the
   release, commit or PR; ABOUT includes the fork source. USB serial diagnostics,
   retained crash reporting, opt-in crash register context and interrupt-context
