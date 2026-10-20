@@ -20,7 +20,8 @@ class FirmwareEngineContract(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'firmware/src').mkdir(parents=True)
         (self.root / 'firmware/engines/src').mkdir(parents=True)
-        shutil.copyfile(ROOT / 'firmware/src/core.h', self.root / 'firmware/src/core.h')
+        for name in ('core.h', 'boot_policy.h'):
+            shutil.copyfile(ROOT / 'firmware/src' / name, self.root / 'firmware/src' / name)
         self.header = self.root / 'firmware/engines/src/felucca_engine.h'
         self.header.write_bytes((ROOT / 'firmware/engines/src/felucca_engine.h').read_bytes())
         self.cc = shlex.split(os.environ.get('CC', 'cc'))
