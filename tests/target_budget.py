@@ -26,6 +26,7 @@ FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_l
          "slicer_track",
          "slice_render", "slc_rev",                          # SLICE (eng_slice.c): the render, the reverse windows
          "fm1_alnk0_irq", "fm1_timer5_irq",               # the audio ISR; TIMER5: the key / LED scan (hal/fm1_input.h)
+         "usb_poll", "fm1_input_tick", "fm1__frame", "fm1__keys",  # shared rescue calls can outline TIMER5 work
          "mix_part",                                        # a part's block (fx.c), on either core since the second
          "mix_spread", "send_begin", "send_add",             # send-ramp helpers: count their loops separately from callers
          "c1_params",                                       # bounded canonical snapshot/restore around a worker job
@@ -46,7 +47,11 @@ FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_l
 OPTIONAL = {"digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,
             "uac_tap48": 504,           # (absent from a FELUCCA_UAC_48K=0 or FELUCCA_UAC=0 build)
             "mix_part": 3549,           # CPU2 build: cold epilogue layout after word memset; see docs/performance.md
-            "c1_params": 83}           # 15 temporary values per handed part; absent with FELUCCA_CPU2=0
+            "c1_params": 83,           # 15 temporary values per handed part; absent with FELUCCA_CPU2=0
+            # New outlined TIMER5 coverage; maxima of matched default/CPU2-off
+            # target listings. Existing caller/engine budgets stay unchanged.
+            "usb_poll": 23757, "fm1_input_tick": 14,
+            "fm1__frame": 134, "fm1__keys": 204}
 # a FELUCCA_CPU2=0 build (no mix_part: inlined into the audio ISR, as 1.6) has the one-core ISR, checked against this
 ONE_CORE = {"fm1_alnk0_irq": 37502}
 TOL = 0.10                      # exact (no noise): small edits pass, a grown render loop does not

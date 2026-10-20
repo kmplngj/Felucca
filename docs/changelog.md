@@ -16,6 +16,10 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Added
 
+- **Early USB rescue:** holding OCT− at power-on or repeated incomplete warm boots
+  selects a MIDI-only installer before settings, projects and audio initialize;
+  another warm reset in rescue escalates to ROM USB. FM-1 hardware qualification
+  remains pending; see the [recovery guide](usb-rescue.md).
 - **Playing and editing workflows:** a session-local RECENT sound browser,
   MOMENTARY edit status, previous-page navigation, playback transpose before scale
   quantization (`SEQ+T`), and reversible EUCLID sequencer previews.
@@ -37,6 +41,10 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **Early rescue entry:** enable the shared key/LED power rail before reading
+  OCT− at startup, allow it to settle and use the normal input scan cadence.
+  Both-OCT calibration remains available; corrected entry awaits FM-1 retesting
+  ([evidence and procedure](usb-rescue.md#physical-entry-evidence-and-related-firmware)).
 - **Sequencer state and timing:** early nudged steps use the upcoming loop's
   condition; EUCLID cancellation preserves the correct undo ownership, and
   stop/cursor state is covered by focused regressions
@@ -57,6 +65,11 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Changed
 
+- **Update-loader compatibility:** installers bind current Felucca packages to loader
+  `900`, with the digest-pinned original V15 using loader `015` through Python/the
+  maintained browser. Unknown package families fail Python file preflight before
+  MIDI access; its legacy `--force` option has no effect. The [recovery guide](usb-rescue.md)
+  records supported clients and pending hardware checks.
 - **Upstream foundation and engine ownership:** integrated upstream 1.6 and 1.6.1
   while retaining fork work. ANALOG, LOFI, TRIO, WHEEL and NOISE use the pinned MIT
   Engines collection with an explicit API contract; standard/reduced build profiles

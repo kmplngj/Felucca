@@ -361,6 +361,12 @@ unit cc_scale "" u_cc_scale
 [ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
+    $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/boot_policy_test" tests/boot_policy_test.c
+    run "early boot: retained guard, OCT/calibration priority, rescue escalation and live-start window" "$OUT/boot_policy_test"
+    $CC -o "$OUT/rescue_input_test" tests/rescue_input_test.c
+    run "early rescue: real input HAL, shift register, delayed rows, OCT combinations and timer wrap" "$OUT/rescue_input_test"
+    $CC -o "$OUT/rescue_test" tests/rescue_test.c
+    run "early USB rescue: real OTA staging, zero idle writes, unsupported flash, timer wrap and reconnect" "$OUT/rescue_test" build/felucca.fwsc
     $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
     run "M-UPGRADE entry (own loader)" "$OUT/ota_test" build/felucca.fwsc
 
@@ -1060,6 +1066,10 @@ else
     unit asan_usb "" u_asan_usb
 
     u_asan_loader() {
+        $SCC -o "$A/rescue_input_test" tests/rescue_input_test.c
+        run "ASan/UBSan: early panel rail and actual input HAL" "$A/rescue_input_test"
+        $SCC -o "$A/rescue_test" tests/rescue_test.c
+        run "ASan/UBSan: early application rescue and real OTA staging" "$A/rescue_test" build/felucca.fwsc
         $SCC -o "$A/ldr_test" tests/ldr_test.c
         run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
         $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c

@@ -450,6 +450,11 @@ def disassembly_rows(text, label, empty_ok=False):
             continue                # .text also holds tables; RAM flash-busy code must decode
         elif re.match(r"^\s*[0-9a-f]+:", line, re.I):
             errors.append(f"{label}: malformed instruction row: {line.strip()}")
+        elif label in (".ram_text", ".c1_text") and line.strip() and not (
+                re.fullmatch(r".*file format ELF32-pi32v2", line.strip()) or
+                line.strip() == f"Disassembly of section {label}:" or
+                re.fullmatch(r"(?:[0-9a-f]+ <[^>]+>|[^\s:]+):", line.strip(), re.I)):
+            errors.append(f"{label}: malformed disassembly line: {line.strip()}")
     if not rows:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         header = any(re.fullmatch(r".*file format ELF32-pi32v2", line) for line in lines)
@@ -460,6 +465,19 @@ def disassembly_rows(text, label, empty_ok=False):
     return rows, errors
 
 
+def ram_text_empty(hdr, syms):
+    """True only with ELF proof of emptiness; False for conflicting/nonempty evidence, None if unavailable."""
+    evidence = []
+    for p in map(str.split, hdr.splitlines()):
+        if len(p) >= 2 and p[0].isdigit() and p[1] == ".ram_text":
+            evidence.append(len(p) >= 4 and bool(re.fullmatch(r"[0-9a-f]+", p[2], re.I)) and int(p[2], 16) == 0)
+    bounds = [re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M | re.I)
+              for name in ("_rt_start", "_rt_end")]
+    if any(re.search(r"\s" + name + r"$", syms, re.M) for name in ("_rt_start", "_rt_end")):
+        evidence.append(all(bounds) and int(bounds[0][1], 16) == int(bounds[1][1], 16))
+    return all(evidence) if evidence else None
+
+
 def check(img, hdr, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -468,7 +486,7 @@ def check(img, hdr, syms, dis, rt):
     if img[:4] != bytes.fromhex("04818000"):
         errors.append(f"image starts with {img[:4].hex()}, not the entry stub")
     app_rows, app_errors = disassembly_rows(dis, "app")
-    sections = {}
+    sections, preamble = {}, []
     section = None
     for line in rt.splitlines():
         match = re.match(r"^Disassembly of section (\S+):", line)
@@ -476,9 +494,19 @@ def check(img, hdr, syms, dis, rt):
             section = match.group(1)
         if section:
             sections.setdefault(section, []).append(line)
-    rt_text = "\n".join(sections.get(".ram_text", [])) if sections else rt
+        else:
+            preamble.append(line)
+    unexpected = set(sections) - {".ram_text", ".c1_text"}
+    if unexpected:
+        errors.append(f"unexpected RAM disassembly sections: {sorted(unexpected)}")
+    rt_text = "\n".join(preamble + sections.get(".ram_text", [])) if sections else rt
     c1_text = "\n".join(sections.get(".c1_text", []))
-    rt_rows, rt_errors = disassembly_rows(rt_text, ".ram_text", empty_ok=True)
+    empty = ram_text_empty(hdr, syms)
+    # objdump omits an empty .ram_text when .c1_text is present. Keep the file
+    # header, but require ELF evidence before accepting that missing section.
+    # Preserve standalone header-only fixtures unless the ELF says nonempty.
+    rt_rows, rt_errors = disassembly_rows(rt_text, ".ram_text",
+                                         empty_ok=empty is True or (not sections and empty is None))
     c1_rows, c1_errors = disassembly_rows(c1_text, ".c1_text") if c1_text or CPU2 else ([], [])
     errors += app_errors + rt_errors + c1_errors
     rt_calls = [ln for ln in rt_text.splitlines() if re.search(r"\bcall\b", ln)]

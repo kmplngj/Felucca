@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Collecting device diagnostics
 
+For early boot failure, see [USB rescue and compatible loaders](usb-rescue.md).
+Rescue is MIDI-only and has no CDC diagnostics console; this guide applies after
+normal application startup.
+
 `tools/fm1_diagnostics.py` collects the existing Felucca CDC console on macOS and Linux
 using Python 3's standard library. Enable USB SERIAL on the device and explicitly select
 its CDC tty. Close other serial applications first. The collector opens the tty exclusively,
