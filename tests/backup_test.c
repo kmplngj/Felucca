@@ -817,6 +817,332 @@ static int ext_tests(void)
     return bad;
 }
 
+
+/* ---- #456: the raw store export (STORE_LIST 82, STORE_GET 83) ----
+ * Every stored object as flash holds it, whatever this firmware can decode: current, legacy, unknown and damaged
+ * fixtures written straight to the simulated NOR (st_save / st_save_to, no conversion), exported byte for byte; the
+ * flash, the backup's snapshot and the settings / autosave state untouched by the export. */
+#define RAW_REC 23u                                  /* a STORE_LIST entry: id, state, copy, len, crc, seq, magic */
+static uint32_t raw_call(uint32_t cmd, const uint8_t *a, uint32_t n)
+{
+    rep_n = 0;
+    ed_raw_handle(cmd, a, n);
+    return rep_n;
+}
+static uint32_t raw_list(void) { raw_call(ED_STORE_LIST, 0, 0); return rep[1]; }
+static uint8_t raw_lst[3u + 16u * RAW_REC];          /* the last LIST (rep is reused by GET) */
+static uint32_t raw_list_keep(void)
+{
+    uint32_t rc = raw_list();
+    memcpy(raw_lst, rep, sizeof raw_lst);
+    return rc;
+}
+typedef struct { uint32_t found, state, copy, len, crc, seq, magic; } raw_ent_t;
+static raw_ent_t raw_ent(uint32_t id)                /* from the last raw_list_keep */
+{
+    raw_ent_t e = {0};
+    uint32_t i;
+    for (i = 0; i < raw_lst[2]; i++) {
+        const uint8_t *o = raw_lst + 3u + i * RAW_REC;
+        if (o[0] != id) continue;
+        e.found = 1; e.state = o[1]; e.copy = o[2];
+        e.len = ed_bk_r32(o + 3); e.crc = ed_bk_r32(o + 8); e.seq = ed_bk_r32(o + 13); e.magic = ed_bk_r32(o + 18);
+    }
+    return e;
+}
+static uint32_t raw_get(uint32_t id, uint32_t off, uint32_t count)
+{
+    uint8_t a[8] = {(uint8_t)id};
+    put32(a + 1, off);
+    a[6] = (uint8_t)(count & 127u);
+    a[7] = (uint8_t)(count >> 7);
+    raw_call(ED_STORE_GET, a, sizeof a);
+    return rep[1];
+}
+static uint32_t raw_get_all(uint32_t id, uint32_t len, uint8_t *out)
+{
+    uint32_t off, rc = 0;
+    for (off = 0; off < len && !rc; off += 256u) {
+        uint32_t n = len - off > 256u ? 256u : len - off;
+        rc = raw_get(id, off, n);
+        if (!rc && (ed_bk_r32(rep + 2) != off || ed_unpack7(rep + 9, rep_n - 9u, out + off, 256u) != n))
+            rc = 99;
+    }
+    return rc;
+}
+/* object id's copy c as flash holds it: its payload */
+static const uint8_t *raw_stored(uint32_t id, uint32_t c)
+{
+    return nor + (id == OBJ_FM6VB ? FVB_HOME + FVB_INFO : st_sector(id, c) + ST_PAYLOAD_OFF);
+}
+/* id lists `state`, its stored length / CRC / sequence, and GET returns exactly the payload of the listed copy */
+static int raw_same(uint32_t id, uint32_t state, uint32_t len)
+{
+    static uint8_t got[ST_PAYLOAD_MAX];
+    raw_ent_t e = raw_ent(id);
+    st_hdr_t h;
+    if (!e.found || e.state != state || e.len != len || e.copy > 1u)
+        return 0;
+    memcpy(&h, id == OBJ_FM6VB ? nor + FVB_HOME : nor + st_sector(id, e.copy), sizeof h);
+    if (h.len != len || h.crc != e.crc || h.seq != e.seq)
+        return 0;
+    if (len >= 4u && memcmp(&e.magic, raw_stored(id, e.copy), 4))
+        return 0;
+    memset(got, 0xA5, sizeof got);
+    return raw_get_all(id, len, got) == 0 && !memcmp(got, raw_stored(id, e.copy), len) &&
+           (state == ED_RAW_DAMAGED) == (st_crc32(got, len) != e.crc);
+}
+static uint8_t nor_before[sizeof nor];
+static void raw_snap(void) { memcpy(nor_before, nor, sizeof nor); erases = progs = 0; }
+static int raw_untouched(void) { return !erases && !progs && !memcmp(nor_before, nor, sizeof nor); }
+/* a stored project of n bytes with magic m, its size field and its FNV-1a hash as every format has them */
+static void raw_proj(uint8_t *b, uint32_t n, uint32_t m)
+{
+    uint32_t s;
+    memcpy(b, &m, 4); memcpy(b + 4, &n, 4);
+    s = proj_hash(b, n - 4u); memcpy(b + n - 4u, &s, 4);
+}
+
+static int raw_tests(void)
+{
+    int bad = 0, ok;
+    uint32_t i;
+    static project_store_t st, st2;
+    static uint8_t v9[3648], v7[3388], buf[ST_PAYLOAD_MAX];
+    static project_v6_t v6;
+    static up_bank_t ub;
+    static fm6_bank_t bk;
+    persist_t ps;
+    bank_t vb;
+
+    /* an erased device */
+    reset();
+    raw_snap();
+    ok = raw_list_keep() == 0 && raw_lst[0] == 1u && raw_lst[2] == 11u;
+    for (i = 0; ok && i < raw_lst[2]; i++) {
+        const uint8_t *o = raw_lst + 3u + i * RAW_REC;
+        ok = o[0] == ED_RAW_IDS[i] && o[1] == ED_RAW_EMPTY && o[2] == 127u && !ed_bk_r32(o + 3) && !ed_bk_r32(o + 8);
+    }
+    bad += check("raw LIST, erased device: 11 objects (types 0..9, 32), all EMPTY, no copy, 0 bytes", ok && raw_untouched());
+    bad += check("raw GET of an empty object: rc 1, nothing read", raw_get(OBJ_SETTINGS, 0, 16) == 1u);
+
+    /* current formats, written as this firmware writes them */
+    reset();
+    memset(&ps, 0, sizeof ps);
+    settings_export(&ps);
+    ps.lowcut = 2;
+    st_save(OBJ_SETTINGS, &ps, sizeof ps);
+    trk[1].step[3] = (step_t){{64}, 1, ST_NOTE, 0, 96, 0, 0};
+    project_capture(&proj_scratch);
+    proj_pack(&st, &proj_scratch);
+    st_save(OBJ_PROJECT0, &st, sizeof st);
+    st_save(OBJ_PROJECT0, &st, sizeof st);              /* (both copies: B the newer) */
+    st_save(OBJ_AUTOSAVE, &st, sizeof st);
+    memset(&ub, 0, sizeof ub);
+    ub.magic = UP_BANK_MAGIC; ub.rsize = sizeof(up_rec_t); ub.nslot = UP_PER_BANK;
+    ub.r[0].used = UP_USED; ub.r[0].ver = UP_VER; ub.r[0].engine = 0; ub.r[0].np = P_COUNT;
+    memcpy(ub.r[0].name, "NOW", 3);
+    ub.r[1].used = UP_USED; ub.r[1].ver = 1; ub.r[1].engine = ENGI_PHYS; ub.r[1].np = 53;   /* a 0.x record inside */
+    memcpy(ub.r[1].name, "OLD", 3);
+    ub.r[1].p[52] = 2;
+    st_save(OBJ_UPRESET0, &ub, sizeof ub);
+    upf_empty();
+    st_save(OBJ_UPFM6, &upf, sizeof upf);
+    make_bank(&vb, 'R', 0x5u, "RAW BANK");
+    ok = send_bank(&vb) == 0;                           /* (staged in the autosave's older copy, then 0xE7000) */
+    raw_snap();
+    ok &= raw_list_keep() == 0 && raw_lst[2] == 11u;
+    bad += check("raw LIST of current objects: rc 0, 11 objects", ok);
+    bad += check("  settings PER4: CURRENT, 572 B, the stored bytes", raw_same(OBJ_SETTINGS, ED_RAW_CURRENT, sizeof ps));
+    bad += check("  project slot 1 FUN10: CURRENT, 3840 B, the newer copy (B) byte for byte",
+                 raw_same(OBJ_PROJECT0, ED_RAW_CURRENT, sizeof st) && raw_ent(OBJ_PROJECT0).copy == 1u &&
+                 raw_ent(OBJ_PROJECT0).seq == 2u && raw_ent(OBJ_PROJECT0).magic == PROJ_MAGIC);
+    bad += check("  the autosave: CURRENT FUN10, its own copy (not the voice bank's staging record beside it)",
+                 raw_same(OBJ_AUTOSAVE, ED_RAW_CURRENT, sizeof st));
+    bad += check("  user preset bank 1: CURRENT container, a version 1 record inside kept as stored",
+                 raw_same(OBJ_UPRESET0, ED_RAW_CURRENT, sizeof ub));
+    bad += check("  the user presets' FM6 patches: CURRENT, 3728 B", raw_same(OBJ_UPFM6, ED_RAW_CURRENT, sizeof upf));
+    bad += check("  the FM6 voice bank (type 32): CURRENT, 3616 B from 0xE7000 + 224", raw_same(OBJ_FM6VB, ED_RAW_CURRENT, FVB_LEN));
+    bad += check("  empty project slots 2..4 and bank 2: EMPTY",
+                 raw_ent(OBJ_PROJECT0 + 1).state == ED_RAW_EMPTY && raw_ent(OBJ_PROJECT0 + 3).state == ED_RAW_EMPTY &&
+                 raw_ent(OBJ_UPRESET0 + 1).state == ED_RAW_EMPTY && raw_ent(OBJ_FM6BANK).state == ED_RAW_EMPTY);
+    bad += check("  the export wrote nothing: no erase, no program, every flash byte as before", raw_untouched());
+
+    /* legacy formats this firmware still converts on load, exported as stored (no conversion) */
+    reset();
+    project_capture(&proj_scratch);
+    ok = old_pack(v9, &proj_scratch, OLD_FUN9, 99u) == sizeof v9 && old_pack(v7, &proj_scratch, OLD_FUN7, 89u) == sizeof v7;
+    st_save(OBJ_PROJECT0, v9, sizeof v9);
+    st_save(OBJ_PROJECT0 + 1, v7, sizeof v7);
+    memset(&v6, 0, sizeof v6);
+    v6.magic = PROJ_MAGIC_V6;
+    v6.size = sizeof v6;
+    for (i = 0; i < G_COUNT; i++)
+        v6.g[i] = GP[i].def;
+    v6.sum = proj_hash(&v6, sizeof v6 - 4u);
+    st_save(OBJ_PROJECT0 + 2, &v6, sizeof v6);
+    proj_pack(&st2, &proj_scratch);                     /* a FUN10 header of 104 parameters (1.2 .. 1.4: mapped by count) */
+    st2.raw[66] = 104;
+    raw_proj(st2.raw, sizeof st2, PROJ_MAGIC);
+    st_save(OBJ_PROJECT0 + 3, &st2, sizeof st2);
+    memset(&ps, 0, sizeof ps);                          /* PER3: before the favourites */
+    settings_export(&ps);
+    ps.magic = 0x50455233u;
+    st_save(OBJ_SETTINGS, &ps, sizeof ps - sizeof ps.favorites);
+    memset(&bk, 0, sizeof bk);                          /* the FM6 patch bank of 1.0 .. 1.0.2 */
+    bk.magic = FM6_BANK_MAGIC; bk.ver = 1; bk.nslot = FM6_BANK_N; bk.used = 1u << 2;
+    memcpy(bk.v[2], FM6_FACTORY[5], FM6_PACKED);
+    st_save(OBJ_FM6BANK, &bk, sizeof bk);
+    raw_snap();
+    ok &= raw_list_keep() == 0;
+    bad += check("raw LIST of legacy objects: rc 0", ok);
+    bad += check("  FUN9 (1.1, 3648 B): LEGACY, as stored (not re-packed as FUN10)", raw_same(OBJ_PROJECT0, ED_RAW_LEGACY, sizeof v9) &&
+                 raw_ent(OBJ_PROJECT0).magic == PROJ_MAGIC_V9);
+    bad += check("  FUN7 of 89 parameters (3388 B): LEGACY, as stored", raw_same(OBJ_PROJECT0 + 1, ED_RAW_LEGACY, sizeof v7));
+    bad += check("  FUN6 (3388 B, another magic): LEGACY, as stored", raw_same(OBJ_PROJECT0 + 2, ED_RAW_LEGACY, sizeof v6));
+    bad += check("  FUN10 of 104 parameters: LEGACY (a parameter-count remap), as stored",
+                 raw_same(OBJ_PROJECT0 + 3, ED_RAW_LEGACY, sizeof st2));
+    bad += check("  PER3 settings (52 B): LEGACY, as stored", raw_same(OBJ_SETTINGS, ED_RAW_LEGACY, sizeof ps - sizeof ps.favorites));
+    bad += check("  the retired FM6 patch bank (type 7, 3472 B): LEGACY, as stored", raw_same(OBJ_FM6BANK, ED_RAW_LEGACY, sizeof bk));
+    bad += check("  .. and the export wrote nothing", raw_untouched());
+    up_boot();                                          /* (the first boot after 1.0.3: the bank's patches move once) */
+    raw_snap();
+    bad += check("after the boot's one-time FM6 bank move: the bank still exports as stored, the new object beside it",
+                 raw_list_keep() == 0 && raw_same(OBJ_FM6BANK, ED_RAW_LEGACY, sizeof bk) &&
+                 !memcmp(raw_stored(OBJ_FM6BANK, raw_ent(OBJ_FM6BANK).copy), &bk, sizeof bk) &&
+                 raw_same(OBJ_UPFM6, ED_RAW_CURRENT, sizeof(upf_t)) && raw_ent(OBJ_UPFM6).copy != raw_ent(OBJ_FM6BANK).copy &&
+                 raw_untouched());
+
+    /* content this firmware cannot load: exported, never shown as empty */
+    reset();
+    memset(buf, 0x3C, sizeof buf);
+    raw_proj(buf, PROJ_STORE_SIZE, 0x46554E42u);       /* "FUNB": a later project format of 3840 bytes */
+    st_save(OBJ_PROJECT0, buf, PROJ_STORE_SIZE);
+    project_capture(&proj_scratch);
+    proj_pack(&st2, &proj_scratch);
+    st2.raw[66] = P_COUNT + 4u;                          /* a FUN10 of more parameters than this firmware has */
+    raw_proj(st2.raw, sizeof st2, PROJ_MAGIC);
+    st_save(OBJ_PROJECT0 + 1, &st2, sizeof st2);
+    memcpy(&st, &st2, sizeof st);
+    st.raw[300] ^= 1;                                    /* FUN10 whose own hash fails */
+    st_save(OBJ_PROJECT0 + 2, &st, sizeof st);
+    memset(buf, 0x11, 600);
+    memcpy(buf, "PER7", 4);                              /* a later settings record */
+    st_save(OBJ_SETTINGS, buf, 600);
+    memset(&ub, 0, sizeof ub);
+    ub.magic = UP_BANK_MAGIC; ub.rsize = sizeof(up_rec_t) + 8u; ub.nslot = UP_PER_BANK;   /* another record size */
+    st_save(OBJ_UPRESET0 + 1, &ub, sizeof ub);
+    raw_snap();
+    for (i = 0; i < 4u; i++)                            /* boot: the RAM slots from flash (a slot it cannot read: empty) */
+        proj_fetch(i);
+    up_boot();
+    ok = raw_untouched();
+    bad += check("boot over objects it cannot read writes nothing (project slots, user preset banks)", ok);
+    {
+        uint32_t len = 1, crc = 1;
+        bad += check("  the full backup lists such a project slot as empty (0 bytes: the gap the raw export closes)",
+                     list(2, &len, &crc) == 0 && len == 0 && crc == 0);
+    }
+    raw_snap();
+    ok = raw_list_keep() == 0;
+    bad += check("raw LIST: a later project format (FUNB): UNKNOWN, its 3840 bytes as stored",
+                 ok && raw_same(OBJ_PROJECT0, ED_RAW_UNKNOWN, PROJ_STORE_SIZE) && raw_ent(OBJ_PROJECT0).magic == 0x46554E42u);
+    bad += check("  a FUN10 of more parameters than P_COUNT: UNKNOWN, as stored", raw_same(OBJ_PROJECT0 + 1, ED_RAW_UNKNOWN, sizeof st2));
+    bad += check("  a FUN10 whose own hash fails: UNKNOWN (storage CRC intact), as stored",
+                 raw_same(OBJ_PROJECT0 + 2, ED_RAW_UNKNOWN, sizeof st));
+    bad += check("  a later settings record (PER7, 600 B): UNKNOWN, as stored", raw_same(OBJ_SETTINGS, ED_RAW_UNKNOWN, 600));
+    bad += check("  a user preset bank of another record size: UNKNOWN, as stored", raw_same(OBJ_UPRESET0 + 1, ED_RAW_UNKNOWN, sizeof ub));
+    bad += check("  .. and the export wrote nothing", raw_untouched());
+
+    /* damaged copies: the reader's choice, or the bytes as stored */
+    reset();
+    project_capture(&proj_scratch);
+    proj_pack(&st, &proj_scratch);
+    st_save(OBJ_PROJECT0, &st, sizeof st);              /* copy A, seq 1 */
+    st.raw[0x200] ^= 0x40;
+    st2 = st;
+    raw_proj(st2.raw, sizeof st2, PROJ_MAGIC);
+    st_save(OBJ_PROJECT0, &st2, sizeof st2);            /* copy B, seq 2 */
+    nor[st_sector(OBJ_PROJECT0, 1) + ST_PAYLOAD_OFF + 100u] ^= 0xFF;   /* B's payload damaged after its commit */
+    st_save(OBJ_PROJECT0 + 1, &st, sizeof st);
+    nor[st_sector(OBJ_PROJECT0 + 1, 0) + ST_PAYLOAD_OFF + 7u] ^= 0x01;   /* the only copy damaged */
+    st_save(OBJ_PROJECT0 + 2, &st2, sizeof st2);
+    nor[st_sector(OBJ_PROJECT0 + 2, 0) + 4u] ^= 0x01;   /* its commit record torn: no record at all */
+    raw_snap();
+    ok = raw_list_keep() == 0;
+    bad += check("raw LIST: the newer copy damaged: the older intact copy (A, seq 1), as storage.c's reader takes it",
+                 ok && raw_same(OBJ_PROJECT0, ED_RAW_CURRENT, sizeof st) && raw_ent(OBJ_PROJECT0).copy == 0u &&
+                 raw_ent(OBJ_PROJECT0).seq == 1u);
+    bad += check("  the only copy damaged: DAMAGED, its stored bytes and its record's CRC (which they fail)",
+                 raw_same(OBJ_PROJECT0 + 1, ED_RAW_DAMAGED, sizeof st));
+    bad += check("  a torn commit record: EMPTY (nothing committed)", raw_ent(OBJ_PROJECT0 + 2).state == ED_RAW_EMPTY &&
+                 raw_get(OBJ_PROJECT0 + 2, 0, 16) == 1u);
+    bad += check("  .. and the export wrote nothing", raw_untouched());
+
+    /* an erased slot (project_erase commits 0 bytes) */
+    reset();
+    project_capture(&proj_scratch);
+    proj_pack(&st, &proj_scratch);
+    st_save(OBJ_PROJECT0, &st, sizeof st);
+    memcpy(&proj_slot[0], &st, sizeof st);
+    ok = project_erase(0) == 0;
+    raw_snap();
+    st_save(OBJ_PROJECT0 + 1, &st, sizeof st);          /* (for the requests below) */
+    nor[st_sector(OBJ_PROJECT0 + 1, 0) + ST_PAYLOAD_OFF + 7u] ^= 0x01;
+    erases = progs = 0;
+    bad += check("an erased project slot: EMPTY with its commit record (seq), 0 bytes; GET rc 1",
+                 ok && raw_list_keep() == 0 && raw_ent(OBJ_PROJECT0).state == ED_RAW_EMPTY && raw_ent(OBJ_PROJECT0).copy <= 1u &&
+                 raw_ent(OBJ_PROJECT0).len == 0u && raw_ent(OBJ_PROJECT0).seq == 2u && raw_get(OBJ_PROJECT0, 0, 1) == 1u);
+
+    /* requests */
+    {
+        uint8_t one = 1, a[8] = {OBJ_PROJECT0 + 1};
+        raw_call(ED_STORE_LIST, &one, 1);
+        bad += check("raw LIST with an argument: rc 1, no objects", rep[0] == 1u && rep[1] == 1u && rep[2] == 0u && rep_n == 3u);
+        bad += check("raw GET of an id that is no stored object (10, 20, 31): rc 1",
+                     raw_get(10, 0, 16) == 1u && raw_get(20, 0, 16) == 1u && raw_get(31, 0, 16) == 1u);
+        bad += check("raw GET past the stored length: rc 1",
+                     raw_get(OBJ_PROJECT0 + 1, sizeof st - 8u, 16) == 1u && raw_get(OBJ_PROJECT0 + 1, sizeof st + 1u, 1) == 1u);
+        bad += check("raw GET of 0 or 257 bytes: rc 1", raw_get(OBJ_PROJECT0 + 1, 0, 0) == 1u && raw_get(OBJ_PROJECT0 + 1, 0, 257) == 1u);
+        raw_call(ED_STORE_GET, a, 6);
+        bad += check("raw GET with the wrong argument count: rc 1", rep[0] == OBJ_PROJECT0 + 1u && rep[1] == 1u);
+        raw_call(ED_STORE_GET, a, 0);
+        bad += check("raw GET without arguments: id 127, rc 1", rep[0] == 127u && rep[1] == 1u);
+        bad += check("raw GET of the last byte", raw_get(OBJ_PROJECT0 + 1, sizeof st - 1u, 1) == 0u && rep[8] == 0u && rep[7] == 1u);
+    }
+    /* the running transport: refused, not stopped (read only) */
+    transport_req = 1;
+    bad += check("raw LIST / GET while PLAY starts: rc 3, the transport not stopped",
+                 raw_list() == 3u && rep[2] == 0u && raw_get(OBJ_PROJECT0 + 1, 0, 16) == 3u && transport_req == 1u);
+    transport_req = 0;
+    flash_ok = 0;
+    bad += check("raw LIST / GET without flash: rc 4", raw_list() == 4u && raw_get(OBJ_PROJECT0 + 1, 0, 16) == 4u);
+    flash_ok = 1;
+
+    /* nothing else moves: the backup's snapshot, the staging RAM, the settings queue, the autosave */
+    reset();
+    project_capture(&proj_scratch);
+    proj_pack(&st, &proj_scratch);
+    st_save(OBJ_PROJECT0, &st, sizeof st);
+    {
+        uint32_t gen, len = 0, crc = 0, ms = as.t;
+        uint8_t pend;
+        ok = list(0, &len, &crc) == 0;
+        gen = proj_wire_gen;
+        memcpy(&st2, ED_BK_RAW, sizeof st2);
+        pend = persist_pending;
+        raw_snap();
+        ok &= raw_list_keep() == 0 && raw_same(OBJ_PROJECT0, ED_RAW_CURRENT, sizeof st);
+        bad += check("raw export inside a full backup: the backup's snapshot and staging RAM untouched, its GET still 0",
+                     ok && gen == proj_wire_gen && !memcmp(&st2, ED_BK_RAW, sizeof st2) && ed_bk_valid && get(0, 0, 64) == 0u &&
+                     crc == st_crc32(ED_BK_RAW, len));
+        settings_poll();
+        bad += check("  no settings save queued or written by it", persist_pending == pend && raw_untouched());
+        bad += check("  no autosave hold from the handler itself (the editor's dispatch holds it, as for BACKUP_*)", as.t == ms);
+    }
+    return bad;
+}
+
 int main(void)
 {
     int bad = 0;
@@ -1074,6 +1400,7 @@ int main(void)
         bad += check("a bank with the wrong slot count is refused", put_all(7, &b, sizeof b, st_crc32(&b, sizeof b)) == 2u);
     }
     bad += ext_tests();
+    bad += raw_tests();
     printf("backup test %s\n", bad ? "FAILED" : "passed");
     return bad != 0;
 }

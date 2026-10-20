@@ -170,8 +170,19 @@ static int preferences(void)
     int bad = 0;
     uint8_t a[4] = {0, 7, 0, 0};
     reset();
+    {   /* (the dispatch reaches the raw store export: no flash store in this build -> rc 4, nothing listed) */
+        uint8_t g[8] = {1, 0, 0, 0, 0, 0, 16, 0};
+        uint32_t m = request(ED_STORE_LIST, a, 0), ok = m == 9u && host_wire[4] == ED_STORE_LIST && host_wire[5] == 1u &&
+                     host_wire[6] == 4u && host_wire[7] == 0u;
+        request(ED_STORE_GET, g, sizeof g);
+        bad += check("STORE_LIST / STORE_GET (82, 83) are dispatched: rc 4 without the flash store",
+                     ok && host_wire[4] == ED_STORE_GET && host_wire[5] == 1u && host_wire[6] == 4u);
+    }
     uint32_t n = request(ED_INFO, a, 0);
-    bad += check("INFO #321: 58 01 caps, last (the full backup's LIST 1 and ids 20 / 21; 0 here: no flash in this build)",
+    bad += check("INFO #456: 59 01 caps, last (the raw store export, cmds 82 / 83; 0 here: no flash in this build)",
+        host_wire[n - 4] == 0x59 && host_wire[n - 3] == 1 && host_wire[n - 2] == 0);
+    n -= 3u;                                              /* (the tags before it, as before) */
+    bad += check("INFO #321: 58 01 caps, before it (the full backup's LIST 1 and ids 20 / 21; 0 here: no flash in this build)",
         host_wire[n - 4] == 0x58 && host_wire[n - 3] == 1 && host_wire[n - 2] == ED_BK_XCAPS && ED_BK_XCAPS == 0);
     n -= 3u;                                              /* (the tags before it, as before) */
     {   /* #212: the engine id space, last: 49 01 ENG_ID_MAX ENG_USER_WIRE, then a bit per id this build plays */

@@ -436,11 +436,12 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     if (!ed_args_ok(cmd, a, na))
         return;
     if ((cmd >= ED_SMP_BEGIN && cmd <= ED_SMP_INFO) || (cmd >= ED_BACKUP_LIST && cmd <= ED_BACKUP_PUT) ||
-        (cmd >= ED_FM6B_BEGIN && cmd <= ED_FM6B_END))
+        (cmd >= ED_FM6B_BEGIN && cmd <= ED_FM6B_END) || cmd == ED_STORE_LIST || cmd == ED_STORE_GET)
         autosave_hold();                                /* (a transfer: no autosave meanwhile, project.c) */
     ed_begin(cmd);
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_backup_handle(cmd, a, na)) { ed_send(); return; }
+    if (ed_raw_handle(cmd, a, na)) { ed_send(); return; }   /* #456: the raw store export (editor_backup.c) */
     if (ed_fm6_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_menu_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_learn_handle(cmd, a, na)) { ed_send(); return; }
@@ -502,6 +503,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         }
         ed_b(0x58); ed_b(1); ed_b(ED_BK_XCAPS);   /* #321: bit 0 BACKUP_LIST 1 (the 13 objects + the next), bit 1 backup id 20 (the
                                                    * FM6 voice bank), bit 2 id 21 (the SLICE records); editor_backup.c */
+        ed_b(0x59); ed_b(1); ed_b(FELUCCA_FLASH ? ED_RAW_CAPS : 0u);   /* #456: bit 0 STORE_LIST / STORE_GET (82, 83), the stored
+                                                                       * objects as flash holds them; editor_backup.c */
         break;
     case ED_GET:
     case ED_SET:
