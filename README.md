@@ -51,8 +51,10 @@ is initialized; WAVE implementation and mixed-build integration remain pending.
 The [modularity roadmap](docs/modularity.md) and [capacity plan](docs/flash-capacity.md)
 track the larger work. The [performance guide](docs/performance.md) explains measurements;
 [engine extension contracts](docs/extending.md) describe integration boundaries.
-This README summarizes the overall direction and meaningful milestones. Detailed changes
-belong in focused guides, issues, PRs and release notes.
+This README summarizes the overall direction and meaningful milestones. The
+[changelog](docs/changelog.md) gives a curated overview of additions, fixes, changes
+and optimizations. Detailed controls and evidence belong in focused guides, issues,
+PRs and release notes.
 
 ## Try, install or build
 

@@ -84,6 +84,16 @@ limitations and compatibility instructions in [the fork feature guide](docs/fork
 or the relevant focused guide, and link from the README when discoverability requires it.
 Keep performance claims tied to documented measurements and their validation scope.
 
+Assess [docs/changelog.md](docs/changelog.md) in the same PR. Update it when the work
+adds a meaningful capability, fixes a significant bug, changes behavior or compatibility,
+or delivers a noteworthy optimization. Group related work under Added, Fixed, Changed
+or Optimized and describe the outcome; do not list every commit, small fix or internal
+adjustment. Link focused guides or evidence instead of duplicating them, keep pending
+hardware qualification explicit, and exclude plans and unmerged work. Do not invent
+release versions or unsupported performance claims. Record the changelog assessment in
+the PR description (or completion report): identify entries updated, or explain why
+the change does not warrant an entry.
+
 Before completing the change, record the README assessment in the PR description
 (or completion report when there is no PR): name the sections updated, or explain
 specifically why the existing README already covers the resulting behavior. If a broader
