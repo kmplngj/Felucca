@@ -143,6 +143,12 @@ in the ISR-protected `-Os` closure. Separate optional budgets retain coverage wh
 they are outlined: 23757, 14, 134 and 204 respectively, using the largest measured
 default/CPU2-off target score for this change. Existing ISR and engine baselines
 are unchanged. These heuristic scores must not be summed into a timing claim.
+The physical-entry correction powers PA2 before scanning and uses the tick scanner
+in place of the old full-frame caller. `fm1__frame` and `fm1__keys` explicitly stay
+outlined: otherwise JieLi folds them into `fm1_input_tick`, changing its isolated
+score from 14 to 220. With the boundaries preserved, the default build retains
+the original 344/137/82 total instructions and 14/134/204 scores for those three
+functions, with no budget changes.
 
 The combined optimization integration calibrates only the optional `mix_part`
 score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
