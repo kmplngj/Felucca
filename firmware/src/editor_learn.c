@@ -44,7 +44,7 @@ static int ed_learn_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
         ui.force = 1;
         ui.foot_sig = 0;
     }
-    ed_b(rc ? rc : ed_ui_save());                      /* rc as UI_SET: 0 saved, 3 RAM only, 4 queued until STOP */
+    ed_b(rc ? rc : ed_settings_save());                      /* rc as UI_SET: 0 saved, 3 RAM only, 4 queued until STOP */
     ed_learn_list();
     return 1;
 }

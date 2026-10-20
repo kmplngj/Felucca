@@ -673,8 +673,12 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 # open http://localhost:8000/webapp/installer/
 ```
 
-Installing firmware is at your own risk. If an install fails and the FM-1 no longer
-starts, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+On a build with early USB rescue, hold OCT− while powering on to reach the
+MIDI-only updater before settings/projects and audio initialize. Use the same
+reviewed `.fwsc` and supported installer. See [early USB rescue](docs/usb-rescue.md)
+for the loader matrix, exact client versions and pending hardware checks.
+If application rescue cannot start, ROM recovery is a separate path; some faults
+need [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
 
 ### Package validation and file errors
 
@@ -686,9 +690,14 @@ from [Build](#build). See the [download and checksum guide](.github/CI.md#downlo
 for release files. Package acceptance alone does not establish compatibility with your
 FM-1 or a successful installation; the installer still checks the device and final identity.
 
-`--force` only overrides the requirement for the Felucca loader marker. Package structure
-and CRC checks still apply. The exact unmodified official V15 file is accepted through its
+`--force` is a deprecated compatibility option with no effect. Unknown package loader
+families are rejected with exit code 2 before MIDI discovery or an installation prompt,
+including with `--force`. The exact unmodified official V15 file is accepted through its
 pinned SHA-256 digest without `--force`; this exception does not cover arbitrary vendor files.
+The selected package also determines the accepted running loader: current Felucca
+requires `ota-FM-1_900`, verified original V15 requires `ota-FM-1_015` through
+Python/the maintained browser. Unknown/crossed pairs fail before the loader's
+writing phase. `--force` cannot override this contract.
 
 Device discovery and connection errors occur later: exit code 3 means the FM-1 was not
 found (check the USB data cable and other apps using MIDI), 4 means the connection was lost

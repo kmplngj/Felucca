@@ -59,7 +59,7 @@
  * come from assets/icons.json (the same enum input as gen_aa_icons.py). Const data only. */
 typedef struct {
     const char *tag, *preset_categories;
-    uint8_t icon, category, cc, order, kit;
+    uint8_t icon, category, cc, order;
 } engine_meta_t;
 static const engine_meta_t ENGINE_META[ENG_ID_MAX] = {
 #include "engine_metadata.inc"
@@ -441,6 +441,7 @@ static inline uint32_t swing_step_len(const track_t *t, uint32_t base, uint32_t 
 #define BOOTGUARD_MAGIC 0x42475244u
 #ifndef FELUCCA_OWN_UNIT          /* (felucca.c's unit only, as trk and song above) */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
-/* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
-struct { uint32_t magic, failed, pending; } bootguard __attribute__((section(".noinit")));
+/* Early boot/rescue decisions share the existing twelve retained bytes. */
+#include "boot_policy.h"
+boot_policy_guard_t bootguard __attribute__((section(".noinit")));
 #endif

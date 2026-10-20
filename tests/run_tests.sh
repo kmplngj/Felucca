@@ -27,6 +27,8 @@
 #                   settings (PER6), ids this build lacks kept in projects, user presets and backups (N/A, silent, never
 #                   another engine). Again with placeholder engine 14 and DRUM/NOISE/FM6/SLICE omitted (10..13),
 #                   including serializers, unavailable UI controls, owner checks and matching union workloads.
+# ENGINE METADATA (tests/engine_metadata_test.c, #301): every catalog engine's tag, icon, category, CC74/CC71 targets and
+#                   preset letters are valid and match the compiled descriptors.
 # UI renders (tests/ui_render.c): every screen in every palette from the real drawing code: the layout lint (no text
 #                   off the screen, cut, hidden, overlapping or spilling out of its cell / card; only free text
 #                   ellipsised), GREY gray, MONO neutral, the draw cost, the text audit (build/ui_new/text_audit.tsv);
@@ -53,7 +55,8 @@
 #                   (keys, locks, lanes, HIT / ACC, EDIT, undo, SEQ TOOLS, engines, kits, the MENU), the audio ISR emulated
 #                   anywhere in the main loop; also with a SONG playing; a step over 5 s is a hang.
 # Audio / persistence / editor: the real C paths against simulated DMA and NOR flash: bounded overload
-#                   fades, shared-voice limits, deferred settings and retries, failed-save rollback, the autosave
+#                   fades, shared-voice limits, deferred settings and retries, failed-save rollback, one settings
+#                   durability result behind every editor settings reply (#296: UI_SET, FAV_SET, MENU_SET), the autosave
 #                   (1.2: when it writes, the power-on restore, damaged copies, a write cut short, wear over a session),
 #                   malformed transfers, transport-stop timeouts, MIDI and UART recovery; the MENU settings over the
 #                   editor (MENU_DESC / MENU_SET: every item, clamping, unknown ids, saving, USB SERIAL applied later).
@@ -360,6 +363,12 @@ unit cc_scale "" u_cc_scale
 [ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
+    $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/boot_policy_test" tests/boot_policy_test.c
+    run "early boot: retained guard, OCT/calibration priority, rescue escalation and live-start window" "$OUT/boot_policy_test"
+    $CC -o "$OUT/rescue_input_test" tests/rescue_input_test.c
+    run "early rescue: real input HAL, shift register, delayed rows, OCT combinations and timer wrap" "$OUT/rescue_input_test"
+    $CC -o "$OUT/rescue_test" tests/rescue_test.c
+    run "early USB rescue: real OTA staging, zero idle writes, unsupported flash, timer wrap and reconnect" "$OUT/rescue_test" build/felucca.fwsc
     $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
     run "M-UPGRADE entry (own loader)" "$OUT/ota_test" build/felucca.fwsc
 
@@ -546,6 +555,13 @@ if [ -f build/gen/felucca_tables.h ]; then
     }
     unit boot_splash "" u_boot_splash
 
+    u_frame() {
+        $CC -w -ffp-contract=off -Ibuild/gen -Ifirmware/src -o "$OUT/frame_test" tests/frame_test.c -lm
+        run "musical frame (#297): one 15 ms frame order in the emulator, input between/at frames, settings/autosave commits" "$OUT/frame_test"
+        run "musical frame (#297): firmware loop and emulator call the shared frame, no copied steps" python3 tests/frame_source_test.py
+    }
+    unit frame "" u_frame
+
     u_ui() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test" tests/ui_test.c -lm
         run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"
@@ -682,6 +698,13 @@ if [ -f build/gen/felucca_tables.h ]; then
             "$OUT/engid_test"
     }
     unit engid "" u_engid
+
+    u_engmeta() {
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/engine_metadata_test" tests/engine_metadata_test.c -lm
+        run "engine metadata (#301): catalog tag/icon/category/CC/preset letters complete, compiled descriptors match ENGINE_META" \
+            "$OUT/engine_metadata_test"
+    }
+    unit engmeta "" u_engmeta
 
     # #212/#306: IDs and serializers run even when DRUM/FM6 are absent. Full-catalog union controls exclude
     # the same engine from their workload, preserving the existing default 720 goldens without new golden files.
@@ -1067,6 +1090,10 @@ else
     unit asan_usb "" u_asan_usb
 
     u_asan_loader() {
+        $SCC -o "$A/rescue_input_test" tests/rescue_input_test.c
+        run "ASan/UBSan: early panel rail and actual input HAL" "$A/rescue_input_test"
+        $SCC -o "$A/rescue_test" tests/rescue_test.c
+        run "ASan/UBSan: early application rescue and real OTA staging" "$A/rescue_test" build/felucca.fwsc
         $SCC -o "$A/ldr_test" tests/ldr_test.c
         run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
         $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c

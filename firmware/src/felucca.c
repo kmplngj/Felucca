@@ -130,4 +130,5 @@
 #include "console.c"
 #endif
 #include "master.c"              /* the MASTER pot (#137: read before the audio starts) */
+#include "rescue.c"              /* #116: polled recovery before normal services start */
 #include "main.c"

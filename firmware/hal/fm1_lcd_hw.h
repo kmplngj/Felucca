@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* FM-1 LCD wiring: SPI1 on PC9 CLK, PC10 DO, PC7 CS,
- * PC8 D/C; backlight PA2, active low. The panel protocol is src/lcd.c.
+ * PC8 D/C; PA2 active low powers the backlight AND key/LED matrix rail.
+ * Early input must enable that rail before scanning. The panel protocol is src/lcd.c.
  *
  *   fm1_lcd_hw_init()          pins, backlight on, SPI1 master at BAUD 4
  *   fm1_lcd_baud(b)            SPI1 clock = lsb / (b + 1)
@@ -14,6 +15,7 @@
 #pragma once
 #include <stdint.h>
 #include "fm1_cc.h"
+#include "fm1_gpio.h"
 
 #define FM1_LCD_PC_OUT (*(volatile uint32_t *)0x50080u)
 #define FM1_LCD_PC_DIR (*(volatile uint32_t *)0x50088u)
@@ -23,8 +25,8 @@
 #define FM1_LCD_SPI_BUF (*(volatile uint32_t *)0x11D08u)
 #define FM1_LCD_SPI_ADR (*(volatile uint32_t *)0x11D0Cu)
 #define FM1_LCD_SPI_CNT (*(volatile uint32_t *)0x11D10u)
-#define FM1_LCD_PA_OUT (*(volatile uint32_t *)0x50000u)
-#define FM1_LCD_PA_DIR (*(volatile uint32_t *)0x50008u)
+#define FM1_LCD_PA_OUT FM1_PR(FM1_PA, FM1_OUT)
+#define FM1_LCD_PA_DIR FM1_PR(FM1_PA, FM1_DIR)
 #define FM1_LCD_BL (1u << 2)
 #define FM1_LCD_CS (1u << 7)
 #define FM1_LCD_DC (1u << 8)
@@ -33,10 +35,15 @@
 
 static uint32_t fm1_lcd_timeouts;
 
-FM1_INLINE void fm1_lcd_hw_init(void)
+FM1_INLINE void fm1_panel_power_on(void)
 {
     FM1_LCD_PA_OUT &= ~FM1_LCD_BL;
     FM1_LCD_PA_DIR &= ~FM1_LCD_BL;
+}
+
+FM1_INLINE void fm1_lcd_hw_init(void)
+{
+    fm1_panel_power_on();
     FM1_LCD_IOMAP_CON1 |= 0x10u;
     FM1_LCD_PC_OUT |= FM1_LCD_CS;
     FM1_LCD_PC_OUT &= ~(FM1_LCD_DC | FM1_LCD_CLK | FM1_LCD_DO);

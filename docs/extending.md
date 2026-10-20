@@ -181,7 +181,7 @@ entry point changes engine, preset and values inside one window.
   `profiles/catalog.json` needs one letter per preset; `tools/profile.py` generates
   `engine_categories.inc` for `PRESET_CAT[]` and `engine_metadata.inc` for `ENGINE_META` from it.
   Metadata and UI tests check it against `npresets`.
-  Its `category` and `kit` fields identify kit-style engines.
+  A kit-style engine (DRUM, SLICE) is catalogued with the DRUM `category`.
 - EDIT 1 / EDIT 2 and HOME are generated from `edit[]`, `page_title` and `knob[]`; a plain engine
   needs no new page. Engine-specific pages (`FILTER`, `LANES`, `OPERATOR`, `SLICES`) are gated by
   `page_visible()` in `ui.c`; add a gate there only for a genuinely engine-specific page.
@@ -197,7 +197,7 @@ entry point changes engine, preset and values inside one window.
    ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 2. Add the source path and `ENG_X` symbol to `profiles/catalog.json` with a new stable ID.
    Generated includes feed `engines.c` in the single translation unit used by target/host/emulator.
-3. Fill tag, icon, category/letters, display order, kit flag and packed CC74/CC71 targets
+3. Fill tag, icon, category/letters, display order, `union_control` flag (true only for an engine whose state lives outside the arena and must join `tests/union_test.c`) and packed CC74/CC71 targets
    (high/low nibble = E index + 1, zero = none). Choose source/assets/tests/dependencies;
    select the engine explicitly in intended profiles and update the protocol document.
 4. If its render function is not already covered, add the render function names to `FUNCS` in
@@ -498,8 +498,25 @@ reusing `cv_px`. A stack buffer that expires during DMA or a flash pointer is in
 [main.c](../firmware/src/main.c) services `ui_input`, `ui_leds`, `ui_draw`,
 `master_poll`, `ed_service`, `ota_service`, settings/autosave and watchdog in the main
 loop. It can request bounded audio actions; it does not drain the musical MIDI ring.
+The steady-state musical frame (#297) is one implementation in main.c, called by the
+firmware loop and by the emulator's `web_ms` (and so by native replay and the partition
+tests): `music_frame_sense` (battery, MASTER), then the platform's own services, then
+`music_frame_run` (input, queued settings save, autosave, LED composition, drawing, with
+the `felucca_dbg` stage breadcrumbs), and `music_frame_poll` (`ui_input`) between frames.
+Each platform keeps its scheduling: the 15 ms busy-wait gate on the FM-1, one emulated
+millisecond per `web_ms` step. Add per-frame UI or persistence work inside those functions,
+not at one call site; keep USB, editor/OTA, console, watchdog and boot work outside them.
+The table at the top of those functions records each step's placement on both platforms.
 All normal SIE access is TIMER5's 2 kHz `usb_poll`, with the nested EP4 UAC exception
 in 3.1. Startup/update bring-up has its own explicit paths; a UI hook must not poll SIE.
+
+[boot_policy.h](../firmware/src/boot_policy.h) owns retained boot/rescue decisions
+in the existing twelve-byte guard. [rescue.c](../firmware/src/rescue.c) runs before
+normal imports/services, with physical OCT input and one polled USB owner. Its
+TIMER4 clock and RAM-flash adapters are used only while interrupts remain masked;
+normal OTA keeps TIMER5 service. Call `boot_policy_live_begin` only when the chosen
+workflow is musically ready, so a future chooser cannot clear failure counting.
+See [USB rescue](usb-rescue.md) for the application/loader boundary and test scope.
 
 ### 3.9 MIDI and time
 
@@ -607,6 +624,14 @@ unchanged exported record clears the request without erase; failure sets
 1 s before retrying. A fresh `settings_save()` resets that state to 1 and calls the
 poller immediately, bypassing the retry delay. It can save immediately **when stopped**
 and is not a rate-limited API, so do not turn every new knob detent into a new call.
+A caller that must report durability calls `settings_save_result()` instead (#296): it
+requests the save and returns `SETTINGS_SAVED` (written, or unchanged without an erase),
+`SETTINGS_QUEUED` (waiting for STOP) or `SETTINGS_RAM_ONLY` (no flash or a failed write,
+still queued for retry). Only project.c reads `persist_pending` and compares the saved
+record; the editor maps the result to its wire codes 0/4/3 in one place
+(`editor_preferences.c ed_settings_save`, used by UI_SET, FAV_SET, MENU_SET, LEARN_SET and
+PALETTE_SET). The panel's deferred request (`ui.c set_later`) only decides *when* to call
+`settings_save()`; its cleared flag is not evidence of a write.
 `autosave_poll()` runs in the main loop
 every 250 ms, after 10 s unchanged/quiet and at least 60 s between successful writes
 (30 s retry gap on failure). It requires stopped transport, no keys/buttons/active
@@ -718,7 +743,7 @@ capabilities and tests instead of opening duplicate feature tickets.
 Engine:
 
 - [ ] Added one complete stable-ID entry to `profiles/catalog.json` (tag, icon, category/letters,
-      CC74/CC71 mapping, display order, kit flag, dependencies, source/assets/tests and render budgets);
+      CC74/CC71 mapping, display order, `union_control` flag, dependencies, source/assets/tests and render budgets);
       selected explicitly in intended profiles; protocol engine table updated; no ID moves.
 - [ ] `edit[]` ranges/defaults deliberate (they are stored); `desc` hook keeps range/default.
 - [ ] `mem` set with `ENG_MEM_FITS`; zeroed region is a valid initial state; switch tests added.

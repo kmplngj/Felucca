@@ -66,8 +66,8 @@ static void uplay(track_t *t, uint32_t e, uint32_t pi, uint32_t base, uint32_t w
     urun(250);                                   /* still ringing at the next switch */
 }
 
-/* State users are discovered from the compiled registry. Three deliberate controls exercise
- * engines whose state lives outside the arena; their stable order preserves the sound hashes. */
+/* State users are discovered from the compiled registry. Engines flagged union_control in
+ * profiles/catalog.json exercise state that lives outside the arena; their stable order preserves the sound hashes. */
 static uint32_t UE[ENG_ID_MAX], UNE;
 static void union_engines(void)
 {
@@ -75,7 +75,7 @@ static void union_engines(void)
     for (e = 0; e < NENGINES; e++)
         /* Filter before indexing accompaniment: full and sparse controls need the same order/count. */
         if ((int)e != FELUCCA_UNION_OMIT && eng_ok(e) &&
-            (eng_of(e)->mem || e == 0 || e == ENGI_SAMPLE || e == 7))
+            (eng_of(e)->mem || (FELUCCA_UNION_CONTROL_MASK >> e & 1ull)))
             UE[UNE++] = e;
 }
 
