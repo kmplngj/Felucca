@@ -16,7 +16,8 @@ the FM-1 restarts and the installed identity is checked.
 If the FM-1 is still in update mode (an earlier install was cut off), the
 install finishes the write. Before any MIDI port is opened the package's
 structure is checked (UFW header, entry list, every file's extent and CRC,
-the loader heads); --force never skips that. Needs mido with python-rtmidi.
+the loader heads). Only matching known package/loader families may write;
+--force never skips identity, layout or loader compatibility. Needs mido with python-rtmidi.
 
 Exit codes: 0 done, 1 cancelled or other error, 2 bad arguments or package,
 3 FM-1 not found, 4 connection lost or the device stopped, 5 timeout (no
@@ -47,6 +48,8 @@ OTA_MAX, OTA_LOAD = 0x4E00, 0x01C0A800    # loader body: OTA_AREA_LEN - 0x200; i
 # every byte of a package is something the device may read: flash.bin is at most the 1 MiB part, so twice
 # that is room for any other files (V15: 684 KiB) and still refuses a wrong file before it is read whole
 MAX_PKG = 0x200000
+PRODUCT_RE = re.compile(r"FM-1_[A-Z0-9._-]{1,15}")
+LOADER_FAMILIES = {"felucca-v1": "ota-FM-1_900", "stock-v15": "ota-FM-1_015"}
 PORT_RE = re.compile(r"fm-1|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
 
 # seconds; the tests shorten them
@@ -131,8 +134,8 @@ def parse_identity(pkt):
     if len(d) != 34 or d[:3] != b"\x00\x59\x11":
         return None
     txt = printable(d[6:33].rstrip(b"\0"))
-    m = re.fullmatch(r"([^_]+)_(\d+)", txt)
-    return Identity(txt, m[1], int(m[2])) if m else None
+    m = re.fullmatch(r"([^_]+)_([A-Z0-9._-]{1,15})", txt)
+    return Identity(txt, m[1], int(m[2]) if m[2].isdigit() else m[2]) if m else None
 
 
 # --------------------------------------------------------------- package ---
@@ -240,6 +243,53 @@ def ufw_damage(img):
     if crc16(img[off + 0x20:off + 0x20 + n]) != u16(b, 2):
         return f"{what}: loader body CRC mismatch"
     return None
+
+
+def package_bytes(image, product):
+    """Rebuild canonical .fwsc bytes so the direct updater also pins the complete stock file."""
+    out = bytearray()
+    for i in range(BLOCKS):
+        marker = (ord(product[i]) + i + 1) & 0xFF if i < len(product) else 0x7D
+        out += image[i * KEEP:(i + 1) * KEEP] + bytes([marker])
+    return bytes(out + image[BLOCKS * KEEP:])
+
+
+def package_family(image, product):
+    """Validate the expected app identity and classify only known package layouts/loaders.
+
+    None is an unmarked, otherwise valid native package: --force may admit the file,
+    but no connected loader is approved to write an unknown loader family.
+    """
+    if (not isinstance(product, str) or not PRODUCT_RE.fullmatch(product)
+            or any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product))):
+        raise InstallError("badpkg", f"unsupported expected app identity {product!r}")
+    if (product == "FM-1_015"
+            and hashlib.sha256(package_bytes(image, product)).hexdigest() == STOCK_V15_SHA256):
+        return "stock-v15"
+    if product == "FM-1_015":
+        raise InstallError("badpkg", "FM-1_015 is reserved for the exact approved official V15 package")
+    if why := ufw_damage(image):
+        raise InstallError("badpkg", f"damaged or unsupported package, nothing was sent: {why}")
+    files = {}
+    for i in range(u16(jl_dec(image[:UFW_HDR]), 8)):
+        e = jl_dec(image[UFW_HDR + i * UFW_ENT:UFW_HDR + (i + 1) * UFW_ENT])
+        files[u16(e, 0)] = (u32(e, 8), u32(e, 12))
+    if files[0][1] != FL_MIN:
+        raise InstallError("badpkg", f"unsupported flash.bin layout: expected exactly {FL_MIN:#x} bytes")
+    off, size = files[100]
+    loader = image[off:off + size]
+    # Match ota_stage: only the first LZ4 literal window of the actual type-100 loader.
+    if LOADER_MARK in loader[0x48:0x48 + 64] and u32(loader, 0x24) <= 0x14000:
+        return "felucca-v1"
+    return None
+
+
+def require_loader(ota, family):
+    expected = LOADER_FAMILIES.get(family)
+    if expected is None or ota.id.text != expected:
+        ota.link.close()
+        raise InstallError("model", f"incompatible update loader {ota.id.text}: "
+                           f"package requires {expected or 'a known loader family'}; no update START/data was sent to the loader")
 
 
 def model_of(text):
@@ -462,10 +512,18 @@ class Updater:
     def install(self, dev, image, product, step=lambda *a: None):
         """running firmware -> loader -> new firmware; dev from find(). A device already in
         update mode only needs the write."""
+        try:
+            family = package_family(image, product)
+            if family is None:
+                raise InstallError("model", "unknown package loader family; cannot establish loader compatibility")
+        except InstallError:
+            dev.link.close()
+            raise
         if model_of(dev.id.text) != model_of(product):
             dev.link.close()
             raise InstallError("model", f"the device is {dev.id.text}, the package is for {product}")
         ota = dev if dev.id.loader else self.check(dev, image, step)
+        require_loader(ota, family)    # both direct resume and the loader discovered after staging
         self.write(ota, image, step)
         return self.verify(product, step)
 
@@ -481,17 +539,14 @@ def load_package(path, force):
     if len(raw) > MAX_PKG:
         raise InstallError("badpkg", f"{path}: not an FM-1 package (larger than {MAX_PKG // 1024} KiB)")
     product = product_of(raw)
-    if not re.fullmatch(r"[^_]+_\d+", product):
-        raise InstallError("badpkg", f"{path}: not an FM-1 package (identity {product!r})")
-    official = hashlib.sha256(raw).hexdigest() == STOCK_V15_SHA256
     image = logical_image(raw)
-    # the whole structure before any MIDI; --force does not skip it (the digest pins every byte of V15)
-    if not official and (why := ufw_damage(image)):
-        raise InstallError("badpkg", f"{path}: damaged or unsupported package, nothing was sent: {why}")
-    if LOADER_MARK not in raw and not official and not force:
+    family = package_family(image, product)
+    if family == "stock-v15" and hashlib.sha256(raw).hexdigest() != STOCK_V15_SHA256:
+        raise InstallError("badpkg", "official V15 requires the exact approved whole-file digest")
+    if family is None and not force:
         raise InstallError("badpkg", f"{path}: no Felucca update loader in this package; only Felucca's own "
                                      "packages and the unmodified official V15 (FM-1.fwsc) are installed "
-                                     "(--force overrides)")
+                                     "(--force overrides the marker check, not loader compatibility)")
     return product, image
 
 
@@ -570,7 +625,7 @@ def main(argv=None, backend=None, out=sys.stdout, ask=ask_tty):
     ap.add_argument("--port", metavar="NAME", help="MIDI port to use (part of its name)")
     ap.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     ap.add_argument("--force", action="store_true", help="install a package without the Felucca loader marker "
-                    "(its structure and CRCs are still checked)")
+                    "(identity, structure and loader compatibility are still checked)")
     a = ap.parse_args(argv)
     if bool(a.info) == bool(a.package):
         ap.error("give a PACKAGE.fwsc or --info")
