@@ -708,12 +708,10 @@ static void layer_knob(uint32_t k, int32_t s)
         if (k == 3u && !perf_harm_on())
             s = -s;                                     /* DEPTH (100 - perf_k[3]) rises to the right (#40: it fell) */
         perf_k[k] = (int8_t)clamp(perf_k[k] + accel(EN_K1 + k, s, k ? 100 : 200), k ? 0 : -100, 100);   /* (#126) */
-    } else if (l == LAYER_GLO) {                        /* T1..T4 LEVEL, recorded as on MIXER */
-        int16_t *vp = &trk[k].p[P_LEVEL];
-        *vp = (int16_t)clamp(*vp + accel(EN_K1 + k, s, TP[P_LEVEL].max - TP[P_LEVEL].min), TP[P_LEVEL].min,
-                             TP[P_LEVEL].max);
-        motion_capture(&trk[k], P_LEVEL, *vp);
-        ml_knob(&trk[k], P_LEVEL);                      /* (MIDI LEARN: Tk LEVEL picked) */
+    } else if (l == LAYER_GLO) {                        /* T1..T4 LEVEL, recorded and picked as on MIXER (ui_knob.c) */
+        knob_target_t kt;
+        knob_glo(k, &kt);
+        knob_edit(&kt, k, s);
     } else if (l == LAYER_EDIT) {                       /* ENG, No., FAV */
         if (k == 0u)
             edit_load(eng_step(TSEL->eng_req, s), 0);
