@@ -94,7 +94,7 @@ static int run_case(void)
 {
     uint32_t next;
     if (scenario == 1u)
-        fm1_ms = ~0u - 300u;                          /* the 15 ms gate across fm1_ms wrapping */
+        fm1_ms = UINT32_MAX - BOOT_SPLASH_MS - 300u;  /* wrap during the checked frames, after the splash */
     web_nor_erase();
     web_boot();
     step(BOOT_SPLASH_MS);
@@ -103,7 +103,12 @@ static int run_case(void)
     next = web_last_frame + 15u;                      /* (a frame ran at the splash's end) */
 
     if (scenario <= 1u) {                             /* cadence: a whole frame every 15 ms, one poll every ms between */
+        uint32_t start = fm1_ms;
+        if (scenario == 1u)
+            CHECK(start > UINT32_MAX - 1000u);
         CHECK(run_checked(1000u, &next));
+        if (scenario == 1u)
+            CHECK(fm1_ms < start);                   /* fail if setup moves the wrap outside run_checked */
         return 0;
     }
     if (scenario == 2u) {                             /* input between frames and at a frame's own millisecond */
