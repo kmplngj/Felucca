@@ -690,8 +690,9 @@ from [Build](#build). See the [download and checksum guide](.github/CI.md#downlo
 for release files. Package acceptance alone does not establish compatibility with your
 FM-1 or a successful installation; the installer still checks the device and final identity.
 
-`--force` only overrides the requirement for the Felucca loader marker. Package structure
-and CRC checks still apply. The exact unmodified official V15 file is accepted through its
+`--force` is a deprecated compatibility option with no effect. Unknown package loader
+families are rejected with exit code 2 before MIDI discovery or an installation prompt,
+including with `--force`. The exact unmodified official V15 file is accepted through its
 pinned SHA-256 digest without `--force`; this exception does not cover arbitrary vendor files.
 The selected package also determines the accepted running loader: current Felucca
 requires `ota-FM-1_900`, verified original V15 requires `ota-FM-1_015` through

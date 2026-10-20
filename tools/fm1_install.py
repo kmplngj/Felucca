@@ -16,8 +16,8 @@ the FM-1 restarts and the installed identity is checked.
 If the FM-1 is still in update mode (an earlier install was cut off), the
 install finishes the write. Before any MIDI port is opened the package's
 structure is checked (UFW header, entry list, every file's extent and CRC,
-the loader heads). Only matching known package/loader families may write;
---force never skips identity, layout or loader compatibility. Needs mido with python-rtmidi.
+the loader heads). Only matching known package/loader families may write.
+--force is a deprecated compatibility option with no effect. Needs mido with python-rtmidi.
 
 Exit codes: 0 done, 1 cancelled or other error, 2 bad arguments or package,
 3 FM-1 not found, 4 connection lost or the device stopped, 5 timeout (no
@@ -257,8 +257,8 @@ def package_bytes(image, product):
 def package_family(image, product):
     """Validate the expected app identity and classify only known package layouts/loaders.
 
-    None is an unmarked, otherwise valid native package: --force may admit the file,
-    but no connected loader is approved to write an unknown loader family.
+    None is an unmarked, otherwise valid native package. No connected loader is
+    approved to write an unknown loader family.
     """
     if (not isinstance(product, str) or not PRODUCT_RE.fullmatch(product)
             or any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product))):
@@ -531,6 +531,7 @@ class Updater:
 # ------------------------------------------------------------------- CLI ---
 
 def load_package(path, force):
+    """Validate before MIDI discovery; force is retained for caller compatibility only."""
     try:
         with open(path, "rb") as f:
             raw = f.read(MAX_PKG + 1)
@@ -543,10 +544,10 @@ def load_package(path, force):
     family = package_family(image, product)
     if family == "stock-v15" and hashlib.sha256(raw).hexdigest() != STOCK_V15_SHA256:
         raise InstallError("badpkg", "official V15 requires the exact approved whole-file digest")
-    if family is None and not force:
+    if family is None:
         raise InstallError("badpkg", f"{path}: no Felucca update loader in this package; only Felucca's own "
                                      "packages and the unmodified official V15 (FM-1.fwsc) are installed "
-                                     "(--force overrides the marker check, not loader compatibility)")
+                                     "(--force cannot approve an unknown loader family)")
     return product, image
 
 
@@ -624,8 +625,8 @@ def main(argv=None, backend=None, out=sys.stdout, ask=ask_tty):
     ap.add_argument("--info", action="store_true", help="print the identity of the connected FM-1")
     ap.add_argument("--port", metavar="NAME", help="MIDI port to use (part of its name)")
     ap.add_argument("--yes", action="store_true", help="do not ask for confirmation")
-    ap.add_argument("--force", action="store_true", help="install a package without the Felucca loader marker "
-                    "(identity, structure and loader compatibility are still checked)")
+    ap.add_argument("--force", action="store_true", help="deprecated compatibility option; has no effect "
+                    "(unknown loader families are rejected before MIDI access)")
     a = ap.parse_args(argv)
     if bool(a.info) == bool(a.package):
         ap.error("give a PACKAGE.fwsc or --info")

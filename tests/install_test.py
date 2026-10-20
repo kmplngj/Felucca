@@ -222,11 +222,15 @@ def pkgfile(name, raw):
     return str(p)
 
 
-def cli(args, dev, answer=True):
+def cli(args, dev, answer=True, prompts=None):
     out, err = io.StringIO(), io.StringIO()
     old, sys.stderr = sys.stderr, err
+    def ask(prompt):
+        if prompts is not None:
+            prompts.append(prompt)
+        return answer
     try:
-        rc = I.main(args, backend=dev, out=out, ask=lambda _p: answer)
+        rc = I.main(args, backend=dev, out=out, ask=ask)
     finally:
         sys.stderr = old
     return rc, out.getvalue(), err.getvalue()
@@ -326,13 +330,23 @@ def errors():
     ok(rc == 5 and "loader did not appear" in err, "no loader after step 1 -> exit 5")
 
     plain = pkgfile("plain.fwsc", package(marker=False))
-    dev = FakeFM1(image)
-    rc, out, err = cli([plain, "--yes"], dev)
-    ok(rc == 2 and "no Felucca update loader" in err and dev.sent == [], "package without the loader marker -> exit 2, no MIDI")
-    dev = FakeFM1(I.logical_image(package(marker=False)))
-    rc, out, err = cli([plain, "--yes", "--force"], dev)
-    ok(rc == 6 and dev.upgrades == 0 and "loader compatibility" in err,
-       "... --force overrides marker admission but unknown family cannot install")
+    class NoDiscovery(FakeFM1):
+        def input_names(self):
+            raise AssertionError("unapproved package must fail before MIDI discovery")
+        output_names = input_names
+    for force in ([], ["--force"]):
+        for confirmation in ([], ["--yes"]):
+            dev = NoDiscovery(I.logical_image(package(marker=False)))
+            prompts = []
+            rc, out, err = cli([plain, *confirmation, *force], dev, prompts=prompts)
+            ok(rc == 2 and "no Felucca update loader" in err and "--force cannot approve" in err
+               and dev.opened == 0 and dev.sent == [] and prompts == [],
+               f"unknown package -> exit 2 before MIDI or confirmation ({confirmation + force})")
+    for identity, upgrades in (("FM-1_015", 2), ("ota-FM-1_900", 1)):
+        dev = FakeFM1(image, identity=identity)
+        rc, out, err = cli([p, "--yes", "--force"], dev)
+        ok(rc == 0 and dev.bad == 0 and dev.upgrades == upgrades,
+           f"deprecated --force leaves a supported install unchanged ({identity})")
     rc, out, err = cli([pkgfile("short.fwsc", b"\0" * 100), "--yes"], FakeFM1(image))
     ok(rc == 2 and "too short" in err, "not a package -> exit 2")
     rc, out, err = cli([str(TMP / "missing.fwsc"), "--yes"], FakeFM1(image))
@@ -387,8 +401,8 @@ def compatibility():
         for force in ([], ["--force"]):
             dev = FakeFM1(I.logical_image(bad))
             rc, out, err = cli([pkgfile("unknown-family.fwsc", bad), "--yes", *force], dev)
-            ok(rc in (2, 6) and dev.upgrades == 0 and dev.served == 0,
-               f"classifier: {what} cannot install ({force})")
+            ok(rc == 2 and dev.opened == 0 and dev.sent == [] and dev.upgrades == 0 and dev.served == 0,
+               f"classifier: {what} refused before MIDI ({force})")
 
 
 def preflight():
@@ -407,8 +421,13 @@ def preflight():
     rc, out, err = cli([pkgfile("n11.fwsc", many(11)), "--yes"], dev)
     ok(rc == 0 and dev.bad == 0, "install: an 11-entry package")
     plain = package(marker=False)
-    ok(I.load_package(pkgfile("p.fwsc", plain), True)[1] == I.logical_image(plain),
-       "preflight: a valid package without the loader marker passes with --force")
+    for force in (False, True):
+        try:
+            I.load_package(pkgfile("p.fwsc", plain), force)
+            refused = False
+        except I.InstallError as e:
+            refused = e.code == "badpkg" and "unknown loader family" in str(e)
+        ok(refused, f"preflight: unmarked package refused (force={force})")
 
     def lay(t, size):          # flash.bin entry with another size, its data CRC kept true
         def f(i, e):

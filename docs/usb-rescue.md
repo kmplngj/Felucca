@@ -51,8 +51,9 @@ second-phase START/data to the incompatible loader.
 Configured application products follow `tools/build.py` syntax; they do not rename
 the fixed loader or authorize a layout. Final application identity must match.
 Development builds can share that identity: retain provenance and verify ABOUT's
-commit. Python `--force` only admits an absent marker at file preflight; it cannot
-override the compatibility classifier, CRCs or final identity.
+commit. Python `--force` is a deprecated compatibility option with no effect.
+Unknown package loader families fail file preflight before MIDI discovery or an
+installation prompt; the flag cannot override the classifier, CRCs or final identity.
 
 Original V15 return remains a separately validated Python/browser path, outside
 the native CLI's package set. Its loader can write beyond the custom app-only
