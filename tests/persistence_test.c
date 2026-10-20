@@ -423,6 +423,167 @@ static int autosave_test(void)
 }
 
 #ifndef PERSISTENCE_FIXTURE
+/* ---- #296: one durability result for every editor settings write (project.c settings_save_result) ----
+ * The same scenario through UI_SET (a palette), FAV_SET (a favourite) and MENU_SET (LEDS), each a change, against
+ * the NOR store: each must answer the rc settings_save_result's durability maps to, with the same flash outcome. */
+enum { DUR_UI, DUR_FAV, DUR_MENU, DUR_N };
+static const char *const DUR_NAME[DUR_N] = {"UI_SET", "FAV_SET", "MENU_SET"};
+static uint32_t dur_flip;                         /* (each write a new value: an unchanged one is rc 0 regardless) */
+static uint32_t dur_fav_engine(void)
+{
+    uint32_t e;
+    for (e = 0; e < NENGINES && !(eng_ok(e) && ENGINES[e]->npresets); e++)
+        ;
+    return e;
+}
+static uint32_t dur_write(uint32_t which, int same)
+{
+    if (!same)
+        dur_flip ^= 1u;
+    ed_repn = 0;
+    if (which == DUR_UI) {
+        const uint8_t a[] = {0, (uint8_t)(dur_flip ? 2u : 3u)};
+        ed_ui_handle(ED_UI_SET, a, sizeof a);
+    } else if (which == DUR_FAV) {
+        const uint8_t a[] = {(uint8_t)dur_fav_engine(), 0, 64, (uint8_t)dur_flip};
+        ed_ui_handle(ED_FAV_SET, a, sizeof a);
+    } else {
+        const uint8_t a[] = {4, (uint8_t)(dur_flip ? 0u : 3u), 64};   /* LEDS OFF / INV */
+        ed_menu_handle(ED_MENU_SET, a, sizeof a);
+    }
+    return ed_repn ? ed_rep[0] : 99u;
+}
+static int dur_flash_is(const persist_rec_t *want)    /* the committed record is exactly want's (persist_len bytes) */
+{
+    static persist_rec_t got;
+    int n;
+    memset(&got, 0, sizeof got);
+    n = st_load(OBJ_SETTINGS, &got, sizeof got);
+    return n == (int)persist_len(want) && !memcmp(&got, want, (size_t)n);
+}
+static int durability_test(void)
+{
+    static persist_rec_t old;
+    int bad = 0;
+    uint32_t w, before;
+    for (w = 0; w < DUR_N; w++) {
+        char what[96];
+        int ok;
+        reset();
+        settings_init();
+        dur_flip = 0;
+        settings_save();                              /* (a first record in flash: what a failure must keep) */
+        old = persist_saved;
+#define DUR_CHECK(label, cond) do { snprintf(what, sizeof what, "%s: %s", DUR_NAME[w], label); bad += check(what, cond); } while (0)
+        before = erases;
+        ok = dur_write(w, 0) == 0 && erases == before + 1u && !persist_pending && dur_flash_is(&persist_saved) &&
+             memcmp(&persist_saved, &old, sizeof old) != 0;
+        DUR_CHECK("stopped: rc 0, one erase, the new record committed", ok);
+        before = erases;
+        DUR_CHECK("unchanged request: rc 0, no erase", dur_write(w, 1) == 0 && erases == before && !persist_pending);
+        old = persist_saved;
+        /* playing, a pending PLAY, an armed SONG: rc 4, nothing erased; STOP commits the latest values once */
+        song.playing = 1;
+        ok = dur_write(w, 0) == 4 && persist_pending == 1;
+        song.playing = 0; transport_req = 1;
+        ok &= dur_write(w, 0) == 4;
+        transport_req = 0; chain.armed = 1;
+        ok &= dur_write(w, 0) == 4 && erases == before && dur_flash_is(&old);
+        chain.armed = 0;
+        settings_poll();
+        ok &= !persist_pending && erases == before + 1u && !settings_unsaved() && dur_flash_is(&persist_saved);
+        DUR_CHECK("PLAY / pending PLAY / armed SONG: rc 4, no erase; STOP commits the latest once", ok);
+        /* a failed erase: RAM applied, rc 3, the committed record kept, retried 1000 ms later by polling */
+        old = persist_saved;
+        before = erases;
+        erase_error = 1;
+        ok = dur_write(w, 0) == 3 && persist_pending == 2 && settings_unsaved() && dur_flash_is(&old) &&
+             !memcmp(&persist_saved, &old, sizeof old);
+        erase_error = 0;
+        fm1_ms += 999u;
+        settings_poll();
+        ok &= persist_pending == 2 && erases == before + 1u;
+        fm1_ms += 1u;
+        settings_poll();
+        ok &= !persist_pending && erases == before + 2u && dur_flash_is(&persist_saved) && !settings_unsaved();
+        DUR_CHECK("failed erase: rc 3, old record kept; polling retries at 1000 ms, not 999", ok);
+        /* an interrupted write (power cut / program error after the first payload page): rc 3, old record kept */
+        old = persist_saved;
+        fail_after = 1;
+        ok = dur_write(w, 0) == 3 && persist_pending == 2 && dur_flash_is(&old);
+        fail_after = -1;
+        /* the same value requested again, still within the retry wait, stopped: the latest RAM values written at
+         * once (a fresh request is no poll: no blanket rate limit) */
+        before = erases;
+        ok &= dur_write(w, 1) == 0 && erases == before + 1u && !persist_pending && dur_flash_is(&persist_saved) &&
+              memcmp(&persist_saved, &old, sizeof old) != 0;
+        DUR_CHECK("interrupted write: rc 3, old record kept; a fresh request retries at once", ok);
+        /* a failure, then a fresh request while playing: queued (rc 4) until STOP, as before #296 */
+        erase_error = 1;
+        ok = dur_write(w, 0) == 3;
+        erase_error = 0;
+        song.playing = 1;
+        ok &= dur_write(w, 0) == 4 && persist_pending == 1;
+        song.playing = 0;
+        settings_poll();
+        ok &= !persist_pending && dur_flash_is(&persist_saved) && !settings_unsaved();
+        DUR_CHECK("failure, then a request while playing: rc 4, committed at STOP", ok);
+        /* no usable flash: applied in RAM, rc 3, never an erase, even stopped and polled */
+        old = persist_saved;
+        flash_ok = 0;
+        before = erases;
+        ok = dur_write(w, 0) == 3 && dur_write(w, 1) == 3;
+        settings_poll();
+        ok &= erases == before && dur_flash_is(&old) && settings_unsaved();
+        DUR_CHECK("no flash (flash_ok 0): rc 3, applied in RAM, no erase", ok);
+        flash_ok = 1;
+#undef DUR_CHECK
+    }
+    /* DUR_API_BEGIN: the shared result itself (project.c), the one the replies above map */
+    {
+        int ok;
+        reset();
+        settings_init();
+        settings.palette = 2;
+        ok = settings_save_result() == SETTINGS_SAVED && !persist_pending;
+        ok &= settings_save_result() == SETTINGS_SAVED;               /* unchanged */
+        settings.palette = 3; song.playing = 1;
+        ok &= settings_save_result() == SETTINGS_QUEUED;
+        song.playing = 0; erase_error = 1;
+        ok &= settings_save_result() == SETTINGS_RAM_ONLY && persist_pending == 2;
+        erase_error = 0; flash_ok = 0;
+        ok &= settings_save_result() == SETTINGS_RAM_ONLY;
+        flash_ok = 1;
+        ok &= settings_save_result() == SETTINGS_SAVED && !settings_unsaved();
+        bad += check("settings_save_result: SAVED, unchanged, QUEUED, RAM_ONLY (failed write, no flash), SAVED", ok);
+        settings.palette = 0;
+        persist_saved.bold = 1;                      /* (an earlier firmware's field: the record differs from RAM's) */
+        song.playing = 0;
+        ok = settings_unsaved() && settings_save_result() == SETTINGS_SAVED && persist_saved.bold == 1u &&
+             !settings_unsaved();
+        bad += check("settings_save_result: the whole record compared, fields of other firmware kept", ok);
+        /* the panel's deferred request (ui.c set_later, #197) cleared is no evidence of a write */
+        before = erases;
+        settings.palette = 5;
+        settings_later();
+        ui.menu = 1;                                 /* (a view change: the request goes out) */
+        song.playing = 1;
+        settings_later_poll();
+        ok = !set_later.on && persist_pending == 1 && erases == before && settings_save_result() == SETTINGS_QUEUED;
+        song.playing = 0;
+        flash_ok = 0;
+        settings.palette = 6;
+        settings_later();
+        settings_later_poll();
+        ok &= !set_later.on && erases == before && settings_save_result() == SETTINGS_RAM_ONLY;
+        flash_ok = 1;
+        ui.menu = 0;
+        bad += check("panel's deferred request cleared (playing, no flash): still QUEUED / RAM_ONLY, no erase", ok);
+    }
+    /* DUR_API_END */
+    return bad;
+}
+
 int main(void)
 {
     int bad = 0, ok;
@@ -724,6 +885,7 @@ int main(void)
     settings_save();
     bad += check("PLAY consumed before the settings snapshot defers the write",
                   irq_races == 3u && song.playing && !transport_req && persist_pending && erases == before);
+    bad += durability_test();
     bad += mig_test();
     bad += autosave_test();
     printf("%s\n", bad ? "PERSISTENCE TEST FAILED" : "persistence test passed");

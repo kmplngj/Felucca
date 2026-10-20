@@ -238,6 +238,7 @@ static const char *c1_held_msg(uint32_t reason)
 static void fm1_main(void)
 {
     uint32_t splash_start, master_ms;
+    boot_policy_live_t boot_live;
 #if FELUCCA_CPU2
     uint8_t c1_told = 0;                                /* 2ND CORE HELD shown (and ON cleared) */
     uint32_t c1_refused = 0;                            /* the retained exclusion that kept it from starting (fm1_c1g_*) */
@@ -316,14 +317,12 @@ static void fm1_main(void)
     lcd_fill(0, 0, 240, 240, T_BG);
     scrn.idle = fm1_ms;                        /* (MENU > SCREEN OFF: from here) */
 
+    boot_policy_live_begin(&boot_live, fm1_ms);
     for (;;) {
         uint32_t m = fm1_ms;
         fm1_wdt_feed();
         usb_retry(fm1_ms);
-        if (fm1_ms > 30000u && bootguard.pending) {     /* a crash or hang in the first 30 s counts */
-            bootguard.pending = 0;
-            bootguard.failed = 0;
-        }
+        boot_policy_service(&bootguard, &boot_live, fm1_ms);
 #if FELUCCA_CPU2
         if (!c1_told) {                                 /* (fm1_c1_gave_up is the ISR's) */
             uint32_t why = c1_refused;
@@ -366,7 +365,7 @@ static void fm1_main(void)
                 draw_text_box(0, 110, 240, &AF_M, "UBOOT", T_THEME, 1);
                 usb_detach();
                 fm1_delay_ms(30);
-                bootguard.pending = 0;                  /* intentional reset: not a failed boot */
+                boot_policy_intentional(&bootguard);     /* intentional reset */
                 fm1_enter_uboot();
             }
         }
@@ -391,7 +390,7 @@ static void fm1_main(void)
             fm1_delay_ms(20);
             usb_detach();
             fm1_delay_ms(30);
-            bootguard.pending = 0;
+            boot_policy_intentional(&bootguard);
             fm1_enter_uboot();
         }
 #if FELUCCA_CDC
@@ -413,6 +412,7 @@ static void fm1_main(void)
 void fm1_cstart(void)
 {
     uint32_t *s, *d, p3, src, wdt;
+    boot_policy_path_t boot_path;
 #if FELUCCA_CPU2
     fm1_cpu1_halt();                           /* (after Jangada, X0X): a second core still running from before
                                                 * this reset (a watchdog, a fault, another firmware) would read the RAM
@@ -427,19 +427,9 @@ void fm1_cstart(void)
     src = fm1_boot.rst_src;
     wdt = fm1_boot.wdt_con;
     fm1_wdt_arm(0x0D);
-    if (bootguard.magic != BOOTGUARD_MAGIC) {
-        bootguard.magic = BOOTGUARD_MAGIC;
-        bootguard.failed = 0;
-        bootguard.pending = 0;
-    }
-    if (bootguard.pending)
-        bootguard.failed++;
-    bootguard.pending = 1;
-    if (bootguard.failed >= 2u) {
-        bootguard.failed = 0;
-        bootguard.pending = 0;
-        fm1_enter_uboot();
-    }
+    boot_path = boot_policy_begin(&bootguard, p3, src);
+    if (boot_path == BOOT_POLICY_ROM)
+        fm1_enter_uboot();                     /* another reset while in rescue */
     fm1_irq_init();
     for (d = _bss_start; d < _bss_end; d++)
         *d = 0;
@@ -458,6 +448,13 @@ void fm1_cstart(void)
     fm1_boot.p3_rst = (uint8_t)p3;
     fm1_boot.rst_src = src;
     fm1_boot.wdt_con = (uint8_t)wdt;
+    boot_path = boot_policy_select(&bootguard, boot_path, rescue_boot_buttons(), FELUCCA_OTA);
+    if (boot_path == BOOT_POLICY_ROM)
+        fm1_enter_uboot();                     /* builds without OTA retain the ROM fallback */
+#if FELUCCA_OTA
+    if (boot_path == BOOT_POLICY_RESCUE)
+        rescue_run();
+#endif
     fm1_main();
     for (;;)
         ;

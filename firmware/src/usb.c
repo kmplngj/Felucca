@@ -136,6 +136,9 @@ static struct {
 #endif
 #endif
 
+/* Runtime recovery persona; normal builds keep their original descriptors. */
+static uint8_t usb_rescue_mode;
+
 static struct {
     uint8_t up, config, pend_addr, has_pend_addr, e0_tx, e0_zlp;
     const uint8_t *e0_src;
@@ -178,6 +181,8 @@ static volatile uint8_t midi_in_overflow;               /* audio ISR discards a 
 static int midi_enqueue(uint32_t pkt, uint32_t source)
 {
     uint32_t at = mi_w % MQ;
+    if (usb_rescue_mode)
+        return 1;                                      /* no synth/audio consumer in rescue */
     if (midi_in_overflow)
         return 0;
     if (mi_w - mi_r >= MQ) {
@@ -339,7 +344,7 @@ static const uint8_t CFG_DESC[] = {
 };
 typedef char cfg_len_ok[sizeof CFG_DESC == CFG_LEN ? 1 : -1];
 static uint8_t usb_cdc_on = FELUCCA_CDC_DEFAULT != 0;      /* the console is presented (read by the TIMER5 ISR) */
-#define USB_CDC_ON usb_cdc_on
+#define USB_CDC_ON (usb_cdc_on && !usb_rescue_mode)
 #define AUD_IF (usb_cdc_on ? AUD_IF_CDC : 0u)
 #else
 #define DEV_DESC DEV_DESC_PLAIN
@@ -348,6 +353,19 @@ static uint8_t usb_cdc_on = FELUCCA_CDC_DEFAULT != 0;      /* the console is pre
 #define AUD_IF 0u
 #endif
 #define UAC_AS_IF (AUD_IF + 2u)
+/* MIDI-only recovery still identifies as the APPLICATION. Its device revision
+ * differs so hosts cannot reuse a cached normal audio/console configuration. */
+static const uint8_t DEV_DESC_RESCUE[18] = {
+    18, 1, 0x10, 1, 0, 0, 0, 64, 0x09, 0x12, FELUCCA_USB_PID & 0xFF,
+    FELUCCA_USB_PID >> 8, 0, 4, 1, 2, 0, 1
+};
+static const uint8_t CFG_DESC_RESCUE[] = {
+    D_CFG(101, 2),
+    9, 4, 0, 0, 0, 1, 1, 0, 0,
+    9, 0x24, 1, 0, 1, 9, 0, 1, 1,
+    D_MIDI(1)
+};
+typedef char cfg_rescue_len_ok[sizeof CFG_DESC_RESCUE == 101 ? 1 : -1];
 static const uint8_t STR0[4] = {4, 3, 0x09, 0x04};
 static const uint8_t STR1[] = {42, 3, 'H', 0, 0xFC, 0, 'g', 0, 'e', 0, 'l', 0, 't', 0, 'o', 0, 'n', 0, ' ', 0, 'I', 0,
                                'n', 0, 's', 0, 't', 0, 'r', 0, 'u', 0, 'm', 0, 'e', 0, 'n', 0, 't', 0, 's', 0};
@@ -362,12 +380,12 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
 {
     switch (wvalue >> 8) {
     case 1:
-        *d = USB_CDC_ON ? DEV_DESC : DEV_DESC_PLAIN;
+        *d = usb_rescue_mode ? DEV_DESC_RESCUE : USB_CDC_ON ? DEV_DESC : DEV_DESC_PLAIN;
         *l = 18;
         return 1;
     case 2:
-        *d = USB_CDC_ON ? CFG_DESC : CFG_DESC_PLAIN;
-        *l = (uint16_t)(USB_CDC_ON ? sizeof CFG_DESC : sizeof CFG_DESC_PLAIN);
+        *d = usb_rescue_mode ? CFG_DESC_RESCUE : USB_CDC_ON ? CFG_DESC : CFG_DESC_PLAIN;
+        *l = (uint16_t)(usb_rescue_mode ? sizeof CFG_DESC_RESCUE : USB_CDC_ON ? sizeof CFG_DESC : sizeof CFG_DESC_PLAIN);
         return 1;
     case 3:
         switch (wvalue & 0xFFu) {
@@ -479,7 +497,7 @@ static void ep1_config(void)
     sie_wr(S_INTRRX1E, 0x02);
     fm1_usb_ep_enable(1u << 1);
 #if FELUCCA_CDC
-    if (!usb_cdc_on)
+    if (!USB_CDC_ON)
         goto no_cdc;                                    /* presented without the console: EP2 / EP3 unused */
     fm1_usb_ep_txbuf(2, ep2tx);
     sie_wr(S_INDEX, 2);
@@ -501,6 +519,8 @@ static void ep1_config(void)
 no_cdc:;
 #endif
 #if FELUCCA_UAC
+    if (usb_rescue_mode)
+        return;
     fm1_usb_ep4_txbuf(ep4tx);
     sie_wr(S_INDEX, 4);
     sie_wr(S_TXMAXP, 0xFF);
@@ -645,7 +665,7 @@ static void ep0_service(void)
         return;
     case 0x010B:                                        /* SET_INTERFACE: alt 0 (alt 1 for the audio stream) */
 #if FELUCCA_UAC
-        if (s[4] == UAC_AS_IF && wvalue <= 1u && usb.config) {
+        if (!usb_rescue_mode && s[4] == UAC_AS_IF && wvalue <= 1u && usb.config) {
             uac_ep4_reset();
             uac_stream(wvalue);
             goto ack;
@@ -656,7 +676,7 @@ static void ep0_service(void)
         goto stall;
     case 0x810A:
 #if FELUCCA_UAC
-        if (s[4] == UAC_AS_IF) {
+        if (!usb_rescue_mode && s[4] == UAC_AS_IF) {
             static uint8_t alt;
             alt = uac.alt;
             e0_send(&alt, 1, wlength);
@@ -668,7 +688,7 @@ static void ep0_service(void)
     case 0x0201: {                                      /* CLEAR_FEATURE(ENDPOINT_HALT): data toggle reset */
         uint32_t ep = s[4] & 0x0Fu, last = USB_CDC_ON ? 3u : 1u;
 #if FELUCCA_UAC
-        if (wvalue == 0 && s[4] == 0x84u)
+        if (!usb_rescue_mode && wvalue == 0 && s[4] == 0x84u)
             goto ack;                                   /* isochronous: no halt, no toggle */
 #endif
         if (wvalue != 0 || ep > last)
@@ -684,7 +704,7 @@ static void ep0_service(void)
     }
 #if FELUCCA_CDC
     case 0x2120:                                        /* SET_LINE_CODING: 7 bytes follow */
-        if (!usb_cdc_on)
+        if (!USB_CDC_ON)
             goto stall;
         if (wlength) {
             cdc.e0_rx = 1;
@@ -694,23 +714,23 @@ static void ep0_service(void)
         }
         goto ack;
     case 0xA121:                                        /* GET_LINE_CODING */
-        if (!usb_cdc_on)
+        if (!USB_CDC_ON)
             goto stall;
         e0_send(cdc.line, 7, wlength);
         return;
     case 0x2122:                                        /* SET_CONTROL_LINE_STATE */
-        if (!usb_cdc_on)
+        if (!USB_CDC_ON)
             goto stall;
         cdc.dtr = s[2] & 1u;
         goto ack;
     case 0x2123:                                        /* SEND_BREAK */
-        if (!usb_cdc_on)
+        if (!USB_CDC_ON)
             goto stall;
         goto ack;
 #endif
 #if FELUCCA_UAC
     case 0x2201:                                        /* SET_CUR, endpoint: sampling frequency */
-        if (s[4] != 0x84u || s[3] != 1u)
+        if (usb_rescue_mode || s[4] != 0x84u || s[3] != 1u)
             goto stall;
         if (wlength) {
             uac.e0_rx = 1;
@@ -726,7 +746,7 @@ static void ep0_service(void)
 #if FELUCCA_UAC_48K
         static const uint8_t RATE48[3] = {48000u & 0xFF, (48000u >> 8) & 0xFF, 48000u >> 16};
 #endif
-        if (s[4] != 0x84u || s[3] != 1u)
+        if (usb_rescue_mode || s[4] != 0x84u || s[3] != 1u)
             goto stall;
 #if FELUCCA_UAC_48K
         if (s[1] == 0x83u || (s[1] == 0x81u && uac.r48)) {
@@ -838,7 +858,7 @@ static int ep1_take(const uint8_t *b, uint32_t n)
 {
     uint32_t i;
 #ifndef FELUCCA_LOADER
-    if (MQ - (mi_w - mi_r) < EP1_ROOM)
+    if (!usb_rescue_mode && MQ - (mi_w - mi_r) < EP1_ROOM)
         return 0;
 #endif
     for (i = 0; i + 3u < n; i += 4u)
@@ -1205,7 +1225,7 @@ static uint32_t uac_packet(uint32_t *d)
 static void uac_service(void)
 {
     uint32_t csr, n;
-    if (!usb.up || !usb.config || !uac.alt)
+    if (usb_rescue_mode || !usb.up || !usb.config || !uac.alt)
         return;
     sie_wr(S_INDEX, 4);
     csr = sie_rd(S_TXCSR1);
@@ -1309,7 +1329,7 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
     if (usb.config)
         ep1_tx();
 #if FELUCCA_CDC
-    if (usb.config && usb_cdc_on) {
+    if (usb.config && USB_CDC_ON) {
         if (ir & 0x08u)
             cdc.rx_pend = 1;
         if (cdc.rx_pend)                                /* not every poll: 3 SIE round trips each */

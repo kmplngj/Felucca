@@ -30,6 +30,9 @@ remain planned. The optional second-core worker is beta, off by default, and sti
 real-device reliability validation in this fork; after a recorded worker failure it is
 held off across resets until the player retries it ([guide](docs/fork-features.md#retained-exclusion-after-a-failed-worker-410)). Shared effect-control smoothing
 experiments are implemented, with FM-1 listening and timing qualification pending.
+Early USB rescue and explicit update-loader compatibility are implemented;
+the [recovery guide](docs/usb-rescue.md) describes OCT− entry, existing installers
+and the combined FM-1 checks that remain pending.
 
 ## Development direction and process
 
@@ -51,8 +54,10 @@ is initialized; WAVE implementation and mixed-build integration remain pending.
 The [modularity roadmap](docs/modularity.md) and [capacity plan](docs/flash-capacity.md)
 track the larger work. The [performance guide](docs/performance.md) explains measurements;
 [engine extension contracts](docs/extending.md) describe integration boundaries.
-This README summarizes the overall direction and meaningful milestones. Detailed changes
-belong in focused guides, issues, PRs and release notes.
+This README summarizes the overall direction and meaningful milestones. The
+[changelog](docs/changelog.md) gives a curated overview of additions, fixes, changes
+and optimizations. Detailed controls and evidence belong in focused guides, issues,
+PRs and release notes.
 
 ## Try, install or build
 

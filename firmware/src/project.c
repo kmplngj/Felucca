@@ -1137,7 +1137,9 @@ static persist_rec_t persist_saved __attribute__((section(".pool")));   /* the r
 /* main-loop scratch for a whole settings record (#212: PER6 is 2.7 KB, too much for the stack): persist_boot,
  * settings_poll, settings_unsaved. Each fills and uses it within the call; none calls another of them */
 static persist_rec_t persist_tmp __attribute__((section(".pool")));
-static uint8_t persist_pending;                 /* 1 requested, 2 waiting after a flash error */
+/* settings_poll's queue (#296: read only by project.c's settings functions; editor_backup.c clears it with a restore) */
+enum { PERSIST_IDLE, PERSIST_REQUESTED, PERSIST_RETRY };   /* RETRY: a flash error, polled again after 1000 ms */
+static uint8_t persist_pending;                 /* PERSIST_*: 1 requested, 2 waiting after a flash error */
 static uint32_t persist_retry_ms;
 #endif
 
@@ -1235,20 +1237,20 @@ static void settings_poll(void)
 #if FELUCCA_SLICE
     slc_store_poll();                              /* SLICE's slices edited on the SLICES page */
 #endif
-    if (!persist_pending || !flash_ok || transport_busy() ||
-        (persist_pending == 2u && (uint32_t)(fm1_ms - persist_retry_ms) < 1000u))
+    if (persist_pending == PERSIST_IDLE || !flash_ok || transport_busy() ||
+        (persist_pending == PERSIST_RETRY && (uint32_t)(fm1_ms - persist_retry_ms) < 1000u))
         return;
     *p = persist_saved;
     settings_export_rec(p);
     if (!memcmp(p, &persist_saved, sizeof *p)) {
-        persist_pending = 0;
+        persist_pending = PERSIST_IDLE;
         return;                                    /* unchanged: no erase cycle */
     }
     if (st_save(OBJ_SETTINGS, p, persist_len(p)) == 0) {
         persist_saved = *p;
-        persist_pending = 0;
+        persist_pending = PERSIST_IDLE;
     } else {
-        persist_pending = 2;
+        persist_pending = PERSIST_RETRY;
         persist_retry_ms = fm1_ms;
     }
 #endif
@@ -1257,12 +1259,12 @@ static void settings_poll(void)
 static void settings_save(void)
 {
 #if FELUCCA_FLASH
-    persist_pending = 1;
+    persist_pending = PERSIST_REQUESTED;           /* (a fresh request: no retry wait, saved at once when stopped) */
 #endif
     settings_poll();
 }
 #if FELUCCA_FLASH
-/* 1 = the settings in RAM differ from the record in flash (the editor's rc 3: applied, not saved) */
+/* 1 = the settings in RAM differ from the record in flash (the whole record, as settings_poll compares it) */
 static int settings_unsaved(void)
 {
     persist_tmp = persist_saved;
@@ -1270,6 +1272,26 @@ static int settings_unsaved(void)
     return memcmp(&persist_tmp, &persist_saved, sizeof persist_tmp) != 0;
 }
 #endif
+
+/* A save request and its durability (#296), the one reading of the queue and the saved record for callers that
+ * report it (the editor's replies, editor_preferences.c ed_settings_save):
+ *   SETTINGS_SAVED     the record in flash holds the settings in RAM (written now, or unchanged: no erase)
+ *   SETTINGS_QUEUED    requested, written by settings_poll once the transport stops (PLAY, a pending PLAY, an armed SONG)
+ *   SETTINGS_RAM_ONLY  applied in RAM, not in flash: no flash (FELUCCA_FLASH=0, flash_ok 0) or a failed write (the
+ *                      request stays queued: settings_poll retries after 1000 ms, a new request at once when stopped)
+ * Only this answer is evidence of durability: the panel's deferred request (ui.c set_later) clearing is not. */
+enum { SETTINGS_SAVED, SETTINGS_RAM_ONLY, SETTINGS_QUEUED };
+static uint32_t settings_save_result(void)
+{
+    settings_save();
+#if FELUCCA_FLASH
+    if (!flash_ok || persist_pending == PERSIST_RETRY) return SETTINGS_RAM_ONLY;
+    if (persist_pending == PERSIST_REQUESTED) return SETTINGS_QUEUED;
+    return settings_unsaved() ? SETTINGS_RAM_ONLY : SETTINGS_SAVED;
+#else
+    return SETTINGS_RAM_ONLY;
+#endif
+}
 
 /* The autosave (1.2, Discussion #130): the music as it is (what a project holds: every track's sound, steps, LEN DIV
  * SWING GATE, mix, the song, the automation and locks, the FM6 patches, the name) kept in its own storage object

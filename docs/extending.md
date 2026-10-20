@@ -178,7 +178,7 @@ entry point changes engine, preset and values inside one window.
   `profiles/catalog.json` needs one letter per preset; `tools/profile.py` generates
   `engine_categories.inc` for `PRESET_CAT[]` and `engine_metadata.inc` for `ENGINE_META` from it.
   Metadata and UI tests check it against `npresets`.
-  Its `category` and `kit` fields identify kit-style engines.
+  A kit-style engine (DRUM, SLICE) is catalogued with the DRUM `category`.
 - EDIT 1 / EDIT 2 and HOME are generated from `edit[]`, `page_title` and `knob[]`; a plain engine
   needs no new page. Engine-specific pages (`FILTER`, `LANES`, `OPERATOR`, `SLICES`) are gated by
   `page_visible()` in `ui.c`; add a gate there only for a genuinely engine-specific page.
@@ -194,7 +194,7 @@ entry point changes engine, preset and values inside one window.
    ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 2. Add the source path and `ENG_X` symbol to `profiles/catalog.json` with a new stable ID.
    Generated includes feed `engines.c` in the single translation unit used by target/host/emulator.
-3. Fill tag, icon, category/letters, display order, kit flag and packed CC74/CC71 targets
+3. Fill tag, icon, category/letters, display order, `union_control` flag (true only for an engine whose state lives outside the arena and must join `tests/union_test.c`) and packed CC74/CC71 targets
    (high/low nibble = E index + 1, zero = none). Choose source/assets/tests/dependencies;
    select the engine explicitly in intended profiles and update the protocol document.
 4. If its render function is not already covered, add the render function names to `FUNCS` in
@@ -467,6 +467,20 @@ and note-key IDs 14..40; it is not `ui_leds()`'s multi-level path.
 MASTER is the ADC pot, sampled by
 [master.c](../firmware/src/master.c) `master_boot`/`master_poll`, not an encoder.
 
+A knob turn that edits a parameter value goes through
+[ui_knob.c](../firmware/src/ui_knob.c) (#295). It resolves the value KNOB k edits:
+`knob_home` (HOME, including HOME LEVELS), `knob_mixer`, `knob_glo`, `knob_page`
+(a page cell) and `knob_here` (the context shown). `knob_edit` applies a permanent
+turn: acceleration once, `param_turn`, then automation capture and the MIDI LEARN
+pick for a track's value. A global value is neither captured nor picked; MIXER MUTE
+is set by direction and only picked. `mom_target`/`mom_turn` share the same targets
+for MOMENTARY (LFO held) without capture, LEARN or undo. Resolvers have no side
+effects. The module header's table records each caller's rules. Navigation and gesture
+arbitration stay in `ui_input.c`/`ui_layer.c`: quick-layer precedence, consumed
+encoder deltas, step locks, pages whose knobs pick or act, and feedback priority.
+A new context that edits a stored value adds a resolver there. Do not add its own
+turn, capture or LEARN call.
+
 Drawing is main-loop work: [gfx.c](../firmware/src/gfx.c) `cv_begin`, `cv_rect`, `cv_line`,
 `cv_text`/`cv_text_in`, `cv_blit`; `aafont_t` and generated `AF_S`/`AF_M`/`AF_L` fonts
 use the selected build font. The 240×240 display has no full framebuffer: `CV_MAX` is
@@ -490,6 +504,14 @@ not at one call site; keep USB, editor/OTA, console, watchdog and boot work outs
 The table at the top of those functions records each step's placement on both platforms.
 All normal SIE access is TIMER5's 2 kHz `usb_poll`, with the nested EP4 UAC exception
 in 3.1. Startup/update bring-up has its own explicit paths; a UI hook must not poll SIE.
+
+[boot_policy.h](../firmware/src/boot_policy.h) owns retained boot/rescue decisions
+in the existing twelve-byte guard. [rescue.c](../firmware/src/rescue.c) runs before
+normal imports/services, with physical OCT input and one polled USB owner. Its
+TIMER4 clock and RAM-flash adapters are used only while interrupts remain masked;
+normal OTA keeps TIMER5 service. Call `boot_policy_live_begin` only when the chosen
+workflow is musically ready, so a future chooser cannot clear failure counting.
+See [USB rescue](usb-rescue.md) for the application/loader boundary and test scope.
 
 ### 3.9 MIDI and time
 
@@ -597,6 +619,14 @@ unchanged exported record clears the request without erase; failure sets
 1 s before retrying. A fresh `settings_save()` resets that state to 1 and calls the
 poller immediately, bypassing the retry delay. It can save immediately **when stopped**
 and is not a rate-limited API, so do not turn every new knob detent into a new call.
+A caller that must report durability calls `settings_save_result()` instead (#296): it
+requests the save and returns `SETTINGS_SAVED` (written, or unchanged without an erase),
+`SETTINGS_QUEUED` (waiting for STOP) or `SETTINGS_RAM_ONLY` (no flash or a failed write,
+still queued for retry). Only project.c reads `persist_pending` and compares the saved
+record; the editor maps the result to its wire codes 0/4/3 in one place
+(`editor_preferences.c ed_settings_save`, used by UI_SET, FAV_SET, MENU_SET, LEARN_SET and
+PALETTE_SET). The panel's deferred request (`ui.c set_later`) only decides *when* to call
+`settings_save()`; its cleared flag is not evidence of a write.
 `autosave_poll()` runs in the main loop
 every 250 ms, after 10 s unchanged/quiet and at least 60 s between successful writes
 (30 s retry gap on failure). It requires stopped transport, no keys/buttons/active
@@ -708,7 +738,7 @@ capabilities and tests instead of opening duplicate feature tickets.
 Engine:
 
 - [ ] Added one complete stable-ID entry to `profiles/catalog.json` (tag, icon, category/letters,
-      CC74/CC71 mapping, display order, kit flag, dependencies, source/assets/tests and render budgets);
+      CC74/CC71 mapping, display order, `union_control` flag, dependencies, source/assets/tests and render budgets);
       selected explicitly in intended profiles; protocol engine table updated; no ID moves.
 - [ ] `edit[]` ranges/defaults deliberate (they are stored); `desc` hook keeps range/default.
 - [ ] `mem` set with `ENG_MEM_FITS`; zeroed region is a valid initial state; switch tests added.

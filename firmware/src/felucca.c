@@ -103,6 +103,7 @@
 #include "ui_graph.c"
 #include "ui_draw.c"
 #include "ui_menu.c"
+#include "ui_knob.c"              /* panel knob editing (#295): the value a knob edits and its turn */
 #include "ui_input.c"
 #include "ui_layer.c"              /* the quick layers (FX GLO SCL EDIT REC held; SEQ TOOLS: ui_tools.c) */
 
@@ -127,4 +128,5 @@
 #include "console.c"
 #endif
 #include "master.c"              /* the MASTER pot (#137: read before the audio starts) */
+#include "rescue.c"              /* #116: polled recovery before normal services start */
 #include "main.c"

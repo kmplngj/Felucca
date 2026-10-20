@@ -207,6 +207,7 @@ static int host_project_info(uint32_t slot, char *b, uint16_t *len48, uint32_t *
 #undef project_info
 #include "../firmware/src/ui_draw.c"
 #include "../firmware/src/ui_menu.c"
+#include "../firmware/src/ui_knob.c"
 #include "../firmware/src/ui_input.c"
 #include "../firmware/src/ui_layer.c"
 #include "../firmware/src/upreset.c"
@@ -10002,6 +10003,220 @@ static int test_help(void)
     return bad;
 }
 
+/* #295: the panel knob edit policy (ui_knob.c) across HOME, HOME LEVELS, MIXER, a sound page, a global FX page and the
+ * GLO layer, through real gestures with recording armed (playing) and MIDI LEARN on: which value moves (nothing else
+ * of any track or the globals), by how much (bounds; KNOB ACCEL once, alike everywhere), whether the turn is captured as
+ * automation (the selected track's sound values only) and picked by LEARN (a track's values only), MIXER MUTE's
+ * direction rule, and MOMENTARY's share (the same values, temporary: no capture, no pick, put back) */
+static int16_t kp_p[NTRK][P_COUNT], kp_g[G_COUNT];
+static void kp_take(void)
+{
+    uint32_t i;
+    for (i = 0; i < NTRK; i++)
+        memcpy(kp_p[i], trk[i].p, sizeof kp_p[i]);
+    memcpy(kp_g, song.g, sizeof kp_g);
+}
+static int kp_only(const int16_t *vp)                  /* nothing but *vp (0: nothing) moved since kp_take */
+{
+    uint32_t i, k;
+    for (i = 0; i < NTRK; i++)
+        for (k = 0; k < P_COUNT; k++)
+            if (&trk[i].p[k] != vp && trk[i].p[k] != kp_p[i][k])
+                return 0;
+    for (k = 0; k < G_COUNT; k++)
+        if (&song.g[k] != vp && song.g[k] != kp_g[k])
+            return 0;
+    return 1;
+}
+static int kp_has(uint32_t ti, uint32_t id)            /* an automation event of track ti's id */
+{
+    uint32_t i;
+    for (i = 0; i < motion.count; i++)
+        if ((motion.event[i].place >> 6) == ti && motion.event[i].param == id)
+            return 1;
+    return 0;
+}
+/* KNOB knob turned s: *vp becomes want and nothing else moves; captured (an event of ti's id, else no new event) and
+ * picked (LEARN: ti's id, else nothing) as asked */
+static int kp_turn(uint32_t knob, int32_t s, int16_t *vp, int32_t want, uint32_t ti, uint32_t id, int cap, int pick)
+{
+    uint32_t n0 = motion.count;
+    int ok;
+    kp_take();
+    ui.ml.pick = 0;
+    turn(EN_K1 + knob, s);
+    ok = *vp == want && kp_only(vp);
+    ok &= cap ? kp_has(ti, id) : motion.count == n0;
+    ok &= pick ? ui.ml.pick && ui.ml.trk == ti && ui.ml.id == id : !ui.ml.pick;
+    if (!ok)
+        printf("  (knob %u by %d: %d, want %d; events %u -> %u; pick %u T%u %u)\n", (unsigned)knob + 1u, (int)s, *vp,
+               (int)want, (unsigned)n0, (unsigned)motion.count, ui.ml.pick, ui.ml.trk + 1u, ui.ml.id);
+    return ok;
+}
+static void kp_start(uint32_t view)                    /* stopped HOME, T2 selected, armed and playing, LEARN on */
+{
+    ui_power_on();
+    menu_put(MI_HOME, view);
+    song.sel = 1;
+    go_home(); frame();
+    song.playing = 1; song.rec = 1u << song.sel;
+    ui.ml.on = 1;
+}
+static void kp_end(void)
+{
+    song.playing = 0; song.rec = 0;
+    ui.ml.on = 0; ui.ml.pick = 0;
+    menu_put(MI_HOME, HV_SCOPE);
+}
+static int test_knob_policy(void)
+{
+    int bad = 0, ok;
+    uint32_t id, k, sel;
+    int16_t v, *vp;
+    const param_desc_t *d;
+
+    /* permanent turns */
+    kp_start(HV_SCOPE);
+    sel = song.sel;
+    id = eng_of(TSEL->eng_req)->knob[0];
+    d = track_desc(TSEL, id);
+    vp = &TSEL->p[id];
+    ok = kp_turn(0, 3, vp, param_turn(d, *vp, 3), sel, id, motion_param(id), 1);
+    bad += check("#295 HOME: KNOB 1 the selected track's engine knob only; captured, LEARN picks it", ok);
+    kp_end();
+
+    kp_start(HV_LEVELS);
+    vp = &trk[0].p[P_LEVEL];
+    ok = kp_turn(0, -4, vp, clamp(*vp - 4, TP[P_LEVEL].min, TP[P_LEVEL].max), 0, P_LEVEL, 0, 1);
+    vp = &trk[sel].p[P_LEVEL];
+    ok &= kp_turn(sel, 5, vp, clamp(*vp + 5, TP[P_LEVEL].min, TP[P_LEVEL].max), sel, P_LEVEL, motion_param(P_LEVEL), 1);
+    bad += check("#295 HOME LEVELS: KNOB k track k's LEVEL only; picked; captured for the selected track (not T1)", ok);
+    kp_end();
+
+    kp_start(HV_SCOPE);
+    go_title("MIXER"); frame();
+    {
+        static const uint8_t ID[3] = {P_LEVEL, P_PAN, P_REV};
+        static const int8_t S[3] = {-6, 7, 9};
+        ok = 1;
+        for (k = 0; k < 3u; k++) {
+            vp = &TSEL->p[ID[k]];
+            ok &= kp_turn(k, S[k], vp, clamp(*vp + S[k], TP[ID[k]].min, TP[ID[k]].max), sel, ID[k],
+                          motion_param(ID[k]), 1);
+        }
+        bad += check("#295 MIXER: KNOB 1..3 the selected track's LEVEL PAN REV only; captured, picked", ok);
+    }
+    vp = &TSEL->p[P_MUTE];
+    *vp = 0;
+    ok = kp_turn(3, 3, vp, 1, sel, P_MUTE, 0, 1) && kp_turn(3, 2, vp, 1, sel, P_MUTE, 0, 1) &&
+         kp_turn(3, -3, vp, 0, sel, P_MUTE, 0, 1);
+    bad += check("#295 MIXER: KNOB 4 MUTE set by direction (right ON, left OFF), never captured, LEARN picks it", ok);
+    kp_end();
+
+    kp_start(HV_SCOPE);
+    go_title("FX"); frame();
+    vp = &TSEL->p[P_CHOR];
+    ok = kp_turn(1, 5, vp, clamp(*vp + 5, TP[P_CHOR].min, TP[P_CHOR].max), sel, P_CHOR, motion_param(P_CHOR), 1);
+    go_title("REVERB"); frame();
+    vp = &song.g[G_RSIZE];
+    ok &= kp_turn(1, 6, vp, clamp(*vp + 6, GP[G_RSIZE].min, GP[G_RSIZE].max), 0, 0, 0, 0);
+    bad += check("#295 a sound page edits the selected track's value (captured, picked); a global FX page its global"
+                 " (neither)", ok);
+    kp_end();
+
+    kp_start(HV_SCOPE);
+    btn_down(B_GLO); frame();
+    vp = &trk[0].p[P_LEVEL];
+    ok = kp_turn(0, 4, vp, clamp(*vp + 4, TP[P_LEVEL].min, TP[P_LEVEL].max), 0, P_LEVEL, 0, 1);
+    vp = &trk[sel].p[P_LEVEL];
+    ok &= kp_turn(sel, -3, vp, clamp(*vp - 3, TP[P_LEVEL].min, TP[P_LEVEL].max), sel, P_LEVEL, motion_param(P_LEVEL), 1);
+    btn_up(B_GLO); frame(); frames(400);
+    bad += check("#295 GLO held: KNOB k track k's LEVEL only; picked; captured for the selected track", ok);
+    kp_end();
+
+    /* KNOB ACCEL ON: 8 quick detents of the selected track's LEVEL (or PAN) are 20 steps wherever it is turned */
+    {
+        int32_t dl[4], dp[2];
+        kp_start(HV_LEVELS);
+        ui_prefs = PREF_ACCEL;
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K1 + sel, 1);
+        dl[0] = TSEL->p[P_LEVEL] - 40;
+        menu_put(MI_HOME, HV_SCOPE);
+        go_title("MIXER"); frame();
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K1, 1);
+        dl[1] = TSEL->p[P_LEVEL] - 40;
+        TSEL->p[P_PAN] = 0; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K2, 1);
+        dp[0] = TSEL->p[P_PAN];
+        go_title("VOICE 2"); frame();
+        TSEL->p[P_PAN] = 0; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K3, 1);
+        dp[1] = TSEL->p[P_PAN];
+        go_home(); frame();
+        btn_down(B_GLO); frame();
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K1 + sel, 1);
+        dl[2] = TSEL->p[P_LEVEL] - 40;
+        btn_up(B_GLO); frame(); frames(400);
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;          /* MOMENTARY: the same steps, then back */
+        btn_down(B_LFO); frame();
+        go_title("MIXER"); frame();
+        for (k = 0; k < 8u; k++) turn(EN_K1, 1);
+        dl[3] = TSEL->p[P_LEVEL] - 40;
+        btn_up(B_LFO); frame();
+        ui_prefs = 0;
+        ok = dl[0] == 20 && dl[1] == 20 && dl[2] == 20 && dl[3] == 20 && dp[0] == 20 && dp[1] == 20 &&
+             TSEL->p[P_LEVEL] == 40;
+        if (!ok)
+            printf("  (LEVEL +%d HOME LEVELS, +%d MIXER, +%d GLO, +%d MOMENTARY; PAN +%d MIXER, +%d VOICE 2)\n",
+                   (int)dl[0], (int)dl[1], (int)dl[2], (int)dl[3], (int)dp[0], (int)dp[1]);
+        bad += check("#295 KNOB ACCEL once and alike: 8 quick detents = 20 on HOME LEVELS, MIXER, GLO, MOMENTARY, a page", ok);
+        kp_end();
+    }
+
+    /* MOMENTARY: the same values, temporary (no capture, no pick), put back; inspecting them moves nothing */
+    kp_start(HV_SCOPE);
+    {
+        uint32_t enc[sizeof ui.enc_t / sizeof ui.enc_t[0]];
+        id = eng_of(TSEL->eng_req)->knob[0];
+        btn_down(B_LFO); frame();
+        kp_take();
+        memcpy(enc, ui.enc_t, sizeof enc);
+        k = motion.count;
+        frames(480);                                    /* (LFO held, no turn: the header's status each pass) */
+        ok = kp_only(0) && !memcmp(enc, ui.enc_t, sizeof enc) && motion.count == k && !mom.n && mom_head();
+        bad += check("#295 MOMENTARY status: LFO held without a turn edits, captures and times nothing", ok);
+        kp_take();
+        ui.ml.pick = 0;
+        turn(EN_K1, 4);
+        go_title("MIXER"); frame();
+        turn(EN_K2, 5);
+        turn(EN_K4, 1);
+        go_title("FX"); frame();
+        turn(EN_K2, 3);
+        go_title("REVERB"); frame();
+        turn(EN_K2, 4);
+        ok = mom.n == 5u && motion.count == k && !ui.ml.pick && TSEL->p[id] != kp_p[sel][id] &&
+             TSEL->p[P_PAN] != kp_p[sel][P_PAN] && TSEL->p[P_MUTE] != kp_p[sel][P_MUTE] &&
+             TSEL->p[P_CHOR] != kp_p[sel][P_CHOR] && song.g[G_RSIZE] != kp_g[G_RSIZE];
+        btn_up(B_LFO); frame();
+        ok &= !mom.n && kp_only(0);
+        bad += check("#295 MOMENTARY on HOME, MIXER (MUTE too), a sound and a global page: no capture, no pick; all back", ok);
+        go_title("MOD"); frame();
+        k = mod_ui_slot;
+        btn_down(B_LFO); frame();
+        kp_take();
+        turn(EN_K1, 1);
+        ok = !mom.n && mod_ui_slot == k + 1u && kp_only(0);
+        btn_up(B_LFO); frame();
+        mod_ui_slot = 0;
+        bad += check("#295 MOMENTARY: a knob that picks (MOD's slot) picks as ever", ok);
+    }
+    kp_end();
+    return bad;
+}
 static int test_home_tracks(void)
 {
     int bad = 0, ok;
@@ -11055,6 +11270,7 @@ int main(int argc, char **argv)
     bad += test_fm6_charts();
     bad += test_fm6_ops();
     bad += test_home_tracks();
+    bad += test_knob_policy();
     bad += test_scope_redraw();
     bad += test_fx_map_columns();
     bad += test_help();

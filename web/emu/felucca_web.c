@@ -165,6 +165,7 @@ static void lcd_init(void) {}
 #include "../../firmware/src/ui_graph.c"
 #include "../../firmware/src/ui_draw.c"
 #include "../../firmware/src/ui_menu.c"
+#include "../../firmware/src/ui_knob.c"
 #include "../../firmware/src/ui_input.c"
 #include "../../firmware/src/ui_layer.c"
 
@@ -266,6 +267,8 @@ static void cdc_task(void) {}
 #define usb_start() ((void)0)
 #define usb_retry(ms) ((void)(ms))
 #define usb_detach() ((void)0)
+/* Physical early recovery is target-only; web_power_on owns emulator startup. */
+static uint32_t rescue_boot_buttons(void) { return 0; }
 #include "../../firmware/src/master.c"
 #include "../../firmware/src/main.c"
 #undef usb_poll
