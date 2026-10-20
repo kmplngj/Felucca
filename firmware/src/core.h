@@ -59,7 +59,7 @@
  * come from assets/icons.json (the same enum input as gen_aa_icons.py). Const data only. */
 typedef struct {
     const char *tag, *preset_categories;
-    uint8_t icon, category, cc, order, kit;
+    uint8_t icon, category, cc, order;
 } engine_meta_t;
 static const engine_meta_t ENGINE_META[ENG_ID_MAX] = {
 #include "engine_metadata.inc"
