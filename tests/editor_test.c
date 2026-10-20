@@ -211,6 +211,8 @@ static int preferences(void)
     request(ED_UI_SET, a, 2);
     bad += check("UI_SET updates the actual palette and reports RAM-only saving",
         host_wire[5] == 3 && settings.palette == 7 && T_BG == UI_PALETTES[7].bg);
+    bad += check("FELUCCA_FLASH=0: the shared settings durability is RAM only (#296: rc 3 for every editor write)",
+        settings_save_result() == SETTINGS_RAM_ONLY && ed_settings_save() == 3u);
     a[1] = NPALETTES; request(ED_UI_SET, a, 2);
     bad += check("out-of-range palette leaves the display unchanged", host_wire[5] == 1 && settings.palette == 7);
     a[0] = 1; a[1] = 1; request(ED_UI_SET, a, 2);

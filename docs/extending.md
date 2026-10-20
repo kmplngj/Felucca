@@ -602,6 +602,14 @@ unchanged exported record clears the request without erase; failure sets
 1 s before retrying. A fresh `settings_save()` resets that state to 1 and calls the
 poller immediately, bypassing the retry delay. It can save immediately **when stopped**
 and is not a rate-limited API, so do not turn every new knob detent into a new call.
+A caller that must report durability calls `settings_save_result()` instead (#296): it
+requests the save and returns `SETTINGS_SAVED` (written, or unchanged without an erase),
+`SETTINGS_QUEUED` (waiting for STOP) or `SETTINGS_RAM_ONLY` (no flash or a failed write,
+still queued for retry). Only project.c reads `persist_pending` and compares the saved
+record; the editor maps the result to its wire codes 0/4/3 in one place
+(`editor_preferences.c ed_settings_save`, used by UI_SET, FAV_SET, MENU_SET, LEARN_SET and
+PALETTE_SET). The panel's deferred request (`ui.c set_later`) only decides *when* to call
+`settings_save()`; its cleared flag is not evidence of a write.
 `autosave_poll()` runs in the main loop
 every 250 ms, after 10 s unchanged/quiet and at least 60 s between successful writes
 (30 s retry gap on failure). It requires stopped transport, no keys/buttons/active
