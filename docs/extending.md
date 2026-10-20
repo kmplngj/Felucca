@@ -482,6 +482,14 @@ loop. It can request bounded audio actions; it does not drain the musical MIDI r
 All normal SIE access is TIMER5's 2 kHz `usb_poll`, with the nested EP4 UAC exception
 in 3.1. Startup/update bring-up has its own explicit paths; a UI hook must not poll SIE.
 
+[boot_policy.h](../firmware/src/boot_policy.h) owns retained boot/rescue decisions
+in the existing twelve-byte guard. [rescue.c](../firmware/src/rescue.c) runs before
+normal imports/services, with physical OCT input and one polled USB owner. Its
+TIMER4 clock and RAM-flash adapters are used only while interrupts remain masked;
+normal OTA keeps TIMER5 service. Call `boot_policy_live_begin` only when the chosen
+workflow is musically ready, so a future chooser cannot clear failure counting.
+See [USB rescue](usb-rescue.md) for the application/loader boundary and test scope.
+
 ### 3.9 MIDI and time
 
 USB and TRS feed the same bounded musical queue, with source 1/2 and arrival `fm1_ms`
