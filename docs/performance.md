@@ -135,6 +135,15 @@ can escape the caller's count; keep coverage in `FUNCS` and inspect the callee a
 Missing budget entries are reported but do not themselves fail. Passing this check alone
 does not prove deadline headroom.
 
+Early USB rescue shares the physical scan and USB poll with startup/main-loop
+code. JieLi consequently outlines `usb_poll`, `fm1_input_tick`, `fm1__frame` and
+`fm1__keys` from TIMER5. The caller's loop score drops because those instructions
+move to callees; this is not evidence of faster interrupt service. All four stay
+in the ISR-protected `-Os` closure. Separate optional budgets retain coverage when
+they are outlined: 23757, 14, 134 and 204 respectively, using the largest measured
+default/CPU2-off target score for this change. Existing ISR and engine baselines
+are unchanged. These heuristic scores must not be summed into a timing claim.
+
 The combined optimization integration calibrates only the optional `mix_part`
 score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
 the same JieLi Clang 4.0.1 default build has 679→684 total instructions and
