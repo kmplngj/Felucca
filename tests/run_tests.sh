@@ -53,7 +53,8 @@
 #                   (keys, locks, lanes, HIT / ACC, EDIT, undo, SEQ TOOLS, engines, kits, the MENU), the audio ISR emulated
 #                   anywhere in the main loop; also with a SONG playing; a step over 5 s is a hang.
 # Audio / persistence / editor: the real C paths against simulated DMA and NOR flash: bounded overload
-#                   fades, shared-voice limits, deferred settings and retries, failed-save rollback, the autosave
+#                   fades, shared-voice limits, deferred settings and retries, failed-save rollback, one settings
+#                   durability result behind every editor settings reply (#296: UI_SET, FAV_SET, MENU_SET), the autosave
 #                   (1.2: when it writes, the power-on restore, damaged copies, a write cut short, wear over a session),
 #                   malformed transfers, transport-stop timeouts, MIDI and UART recovery; the MENU settings over the
 #                   editor (MENU_DESC / MENU_SET: every item, clamping, unknown ids, saving, USB SERIAL applied later).

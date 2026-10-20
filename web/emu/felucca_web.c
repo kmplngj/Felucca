@@ -165,6 +165,7 @@ static void lcd_init(void) {}
 #include "../../firmware/src/ui_graph.c"
 #include "../../firmware/src/ui_draw.c"
 #include "../../firmware/src/ui_menu.c"
+#include "../../firmware/src/ui_knob.c"
 #include "../../firmware/src/ui_input.c"
 #include "../../firmware/src/ui_layer.c"
 
