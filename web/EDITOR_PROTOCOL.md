@@ -5,7 +5,8 @@ and parameter writes (27, 29, 30, 31) were checked on hardware. `tests/editor_te
 handler, malformed transfers and stop timeouts against simulated flash. User-preset
 flash writes and live pushes (16-26, 32) have host coverage; that does not establish
 their hardware behavior. The step chance byte, motion (64) and the full backup (65-67) have host
-coverage only (`tests/editor_test.c`, `tests/backup_test.c`, `web/test_backup.mjs`).
+coverage only (`tests/editor_test.c`, `tests/backup_test.c`, `web/test_backup.mjs`), as has the raw store export (82, 83:
+`tests/backup_test.c`, `web/test_backup.mjs`).
 
 **v3 (four tracks):** the device has four tracks, each a synth part (since 1.0; before it, track 4
 was a GM drum track: see "Track 4 since 1.0" below). One
@@ -185,7 +186,7 @@ at 1..3 and hides 6 5 8: what it sets still plays the right kit, and the device 
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
-| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v6) CHAIN_ROWS (16), then the tagged blocks `55 01 uiCaps`, `4D 01 64 01`, `42 01 3`, `46 01 nfactory nbank`, `53 01 3`, (1.0.3) `50 01 3` and (1.0.4) `4E 01 count` (MENU settings; 12, 1.1: 15, 1.2: 17, 1.1.5: 18, 1.2: 23, 1.3: 24, 1.5: 25, 1.5.5: 32) and (1.0.5) `52 01 4` (ratchet) and (1.1) `4C 01 1` (parameter locks) and (1.2) `41 01 00 01` (128 motion records: two 7-bit bytes, LSB first; `4D 01 64 01` keeps saying 64) and `54 01 16` (a step's nudge, 1/16 of a step) and `57 01 4` (song sections: a slot per track, SONG ops 4..7) and (1.4.1) `56 01 32` (FM6's voice bank: cmds 74..77, SLOT 9..40) and (1.5) `43 01 16` (MIDI LEARN's map: cmds 78, 79) and (1.5.5) `4B 01 NCOND` (a step's condition) and (1.6) `45 01 5` (CUSTOM palette: cmds 80, 81) and (#212) `49 01 64 7F` + 10 bitmap bytes (the engine id space, FAV's user marker, the ids this build plays: "Engine ids" below) and (#321) `58 01 caps` (the full backup's `BACKUP_LIST 1` and ids 20, 21: bit 0 / 1 / 2, "v7: full backup" below) (below); older firmware ends earlier. The old prefix stays as it was: NENGINES is the length of the name list (ids 0..NENGINES−1), a name `-` an id this build cannot play (DIGITAL's 1, an id its catalog leaves out) |
+| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v6) CHAIN_ROWS (16), then the tagged blocks `55 01 uiCaps`, `4D 01 64 01`, `42 01 3`, `46 01 nfactory nbank`, `53 01 3`, (1.0.3) `50 01 3` and (1.0.4) `4E 01 count` (MENU settings; 12, 1.1: 15, 1.2: 17, 1.1.5: 18, 1.2: 23, 1.3: 24, 1.5: 25, 1.5.5: 32) and (1.0.5) `52 01 4` (ratchet) and (1.1) `4C 01 1` (parameter locks) and (1.2) `41 01 00 01` (128 motion records: two 7-bit bytes, LSB first; `4D 01 64 01` keeps saying 64) and `54 01 16` (a step's nudge, 1/16 of a step) and `57 01 4` (song sections: a slot per track, SONG ops 4..7) and (1.4.1) `56 01 32` (FM6's voice bank: cmds 74..77, SLOT 9..40) and (1.5) `43 01 16` (MIDI LEARN's map: cmds 78, 79) and (1.5.5) `4B 01 NCOND` (a step's condition) and (1.6) `45 01 5` (CUSTOM palette: cmds 80, 81) and (#212) `49 01 64 7F` + 10 bitmap bytes (the engine id space, FAV's user marker, the ids this build plays: "Engine ids" below) and (#321) `58 01 caps` (the full backup's `BACKUP_LIST 1` and ids 20, 21: bit 0 / 1 / 2, "v7: full backup" below) and (#456) `59 01 caps` (the raw store export: cmds 82, 83, bit 0; "Raw store export" below) (below); older firmware ends earlier. The old prefix stays as it was: NENGINES is the length of the name list (ids 0..NENGINES−1), a name `-` an id this build cannot play (DIGITAL's 1, an id its catalog leaves out) |
 | 2 GET | scope, id | scope, id, v14 |
 | 3 SET | scope, id, v14 | scope, id, v14 (the value after clamping). Setting global `G_ENGSEL` (id from DESC label "ENG") changes the engine: its defaults, then its first preset (as on the device) |
 | 4 DUMP | — | engine, preset, then P_COUNT × v14 (the selected track), then G_COUNT × v14 (globals) |
@@ -861,7 +862,7 @@ A `LIST` replaces the snapshot, and a `PUT` begin ends it: a `GET` after a begin
 ### The FM6 voice bank and the SLICE records (#321, ids 20, 21)
 
 Two stores that were outside the full backup are in it, behind a new capability so that existing editors see exactly
-the list they know. INFO advertises `58 01 caps` (last of the tagged blocks): bit 0 = `BACKUP_LIST` takes the
+the list they know. INFO advertises `58 01 caps` (after the `49 01` block; #456's `59 01` follows it): bit 0 = `BACKUP_LIST` takes the
 argument `1`, bit 1 = backup id 20, bit 2 = id 21. This firmware sends 7 (3 in a build without SLICE; 0 without the
 flash store, which then answers like older firmware). `BACKUP_LIST` without an argument is unchanged: the 13 objects
 of 1.0.3, ids 0..9 and 32..34, in that order. `BACKUP_LIST 1` takes the same snapshot and lists those 13 and then, in
@@ -922,6 +923,79 @@ reads INFO's `58 01` (bit 0 for `LIST 1`, bits 1 and 2 for the ids), asks `LIST 
 `GET` as the others, and keeps them in the archive under their ids; an archive may have 13, 14 or 15 objects. On restore
 it sends 20 any time and 21 after the samples, and skips an object on rc 1. The client does not need to understand the
 bytes (they are kept as they are); the device validates them.
+
+## Raw store export (82-83; #456)
+
+The full backup (65-67) exports what the firmware *decoded*: a project slot is its RAM copy re-packed as FUN10, a slot
+it cannot read lists as 0 bytes, the settings are re-exported from RAM, a user preset bank of another shape is empty.
+The raw store export is the recovery path for everything the firmware keeps on flash **whether or not it can load
+it** (an older or later format, a retired kind, a damaged copy): each storage object as flash holds it, byte for byte,
+with the length, CRC and sequence of its commit record. It is **read only**: no command here writes, erases, restores,
+converts or stops the transport, and nothing it does changes what boot, settings saves or the autosave do. Restoring
+or migrating these bytes is the web editor's (Felucca-WebApp, #457); the inventory of formats and the conversion rules
+it needs are in [docs/legacy-formats.md](../docs/legacy-formats.md).
+
+INFO advertises `59 01 caps` after `58 01` (the last tagged block): bit 0 = `STORE_LIST` / `STORE_GET`. This firmware
+sends 1 (0 in a build without the flash store, `FELUCCA_FLASH=0`). Firmware without the tag answers neither command.
+
+| cmd | Request args | Reply args |
+| --- | --- | --- |
+| 82 STORE_LIST | — | 1 (this reply's layout), rc, count (11), then per object: type, state, copy, size u32, crc u32, seq u32, magic u32 (23 bytes) |
+| 83 STORE_GET | type, offset u32, count lo, count hi (count 1..256) | type, rc, offset u32, count lo, count hi, pack7 data (as `BACKUP_GET`) |
+
+u32 is five 7-bit bytes, LSB first, as in the full backup. The objects are named by their **storage type** (the
+`type` of the commit record on flash, `firmware/src/storage.c` `OBJ_*`), not by backup id, in this order:
+
+| type | object | flash (copy A / B) | its current schema (this firmware) | backup id |
+| --- | --- | --- | --- | --- |
+| 0 | settings | `0xFC000` / `0xFD000` | PER4 (572 B) or PER6 (672..2688 B) | 1 (re-exported from RAM) |
+| 1..4 | PROJECT slots 1..4 | `0x97000 + 0x2000 k` / `+ 0x1000` | FUN10, 3840 B, P_COUNT at byte 66 | 2..5 (re-packed RAM copy) |
+| 5, 6 | user preset banks 1, 2 | `0xDC000 + 0x2000 k` / `+ 0x1000` | `UPB1`, 3080 B (16 records of 192 B) | 6, 7 (RAM copy) |
+| 7 | the FM6 patch bank of 1.0 .. 1.0.2 (retired; its patches moved into the user presets once) | `0x9F000` / `0xFE000` (shared with 8) | none: read only, `FM6B` 3472 B | 8 (always empty) |
+| 8 | the user presets' FM6 patches | `0x9F000` / `0xFE000` (shared with 7) | `UPF6` ver 1, 3728 B | 9 (RAM copy) |
+| 9 | the autosave (the music at power-off, 1.2) | `0xE5000` / `0xE6000` | FUN10, 3840 B | none (id 0 is the live music) |
+| 32 | the FM6 voice bank (1.4.1) | `0xE7000` only (payload at `+224`) | `FM6V` ver 1, 3616 B | 20 (from flash) |
+
+A future storage type (the PRX sidecars, types 10-14 in [flash-capacity.md](../docs/flash-capacity.md)) is appended
+to this list; `count` says how many follow, and a client skips types it does not know. The user sample slots
+(backup ids 32-34) and the SLICE records (id 21) are not storage objects of this kind (no commit record): the full
+backup already exports the sample slots' stored bytes, and their formats (`FSMP` 1, `SLM1`) have no older version.
+
+**The copy.** Each type has an A/B pair (the voice bank one copy). `STORE_LIST` takes the copy the firmware's own
+reader takes (`st_current`: the newest copy whose commit record and payload CRC are intact, A on a tie of sequence
+numbers); `copy` says which (0 A, 1 B; 127 none). If no copy is intact but a commit record is valid, it takes the
+newest such copy and reports it DAMAGED: its bytes as stored, and the record's CRC, which they fail. The older copy of
+a pair is not exported (open question in #456).
+
+**state** (one byte; what this firmware would do with the object, from its identification only: magic, length,
+version and count fields and a project's own FNV-1a hash; the bytes are never decoded for the export):
+
+| state | meaning |
+| --- | --- |
+| 0 EMPTY | no valid commit record (never written, erased, a torn first write, or a stock-firmware area), or one of 0 bytes (an erased project slot): size 0. `copy` 127 when there is no record |
+| 1 CURRENT | the schema this firmware writes: PER4 / PER6, FUN10 with today's P_COUNT, `UPB1` 192-byte records x 16, `UPF6` 1, `FM6V` 1 |
+| 2 LEGACY | an older schema this firmware still converts when it loads it: FUN1..FUN9, a FUN10 of fewer parameters (mapped by count), PER1/2/3/5, a PER6 whose extension it cannot read (its PER4 block is read), the retired FM6 bank |
+| 3 UNKNOWN | intact on flash but no schema this firmware loads: a later format, a FUN10 of more parameters than P_COUNT, a project whose own hash fails, another bank shape. The firmware does not load it (a project slot shows EMPTY; see docs/legacy-formats.md for which writes can still replace it) |
+| 4 DAMAGED | a valid commit record whose payload fails the record's CRC on every copy |
+
+The state describes the container. Records inside it are the client's to read: a CURRENT user preset bank can hold
+records of older versions or retired engines (each record's `ver`, `np` and `engine`), and a CURRENT FUN10 can hold
+a DIGITAL or SAMPLE PERC track. `magic` is the first four payload bytes as stored (little endian; 0 for fewer than 4).
+
+`STORE_GET` reads `count` bytes from `offset` of the object `STORE_LIST` describes, chosen again for each request by
+the same rule. rc: 0 ok; 1 arguments (the length, an argument byte, a count of 0 or above 256), a type that is not in
+the list, an EMPTY object, or a range past its size; 3 the transport is running (`LIST` and `GET` answer 3 and leave it
+running: stop first); 4 no flash. `STORE_LIST` with any argument answers `1, 1, 0`; `GET` without arguments answers
+type 127. There is no snapshot and no stale rc: check each object's bytes against the listed CRC (an object that
+changed between `LIST` and `GET` fails it); for a DAMAGED object, which fails it anyway, send `STORE_LIST` again
+afterwards and compare its `copy`, `size`, `crc` and `seq`. The firmware holds the autosave off while these requests
+come in, as for the backup transfers. The reference reader is `captureRawStore` in `web/fm1backup.js`
+(`web/test_backup.mjs`); no page uses it yet.
+
+**What a client keeps** (#457): per object the type, state, copy, size, crc, seq, magic and the bytes, with the
+firmware's `INFO` version string and P_COUNT. The bytes are the source of truth; a later firmware may list more types
+or report another state for the same bytes. Nothing in this export can be uploaded back as it is: a restore of a
+migrated object goes through a current-schema upload path that does not exist yet (#456).
 
 ## FM6 patches (68-71)
 
