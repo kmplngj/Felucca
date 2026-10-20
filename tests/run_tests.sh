@@ -546,6 +546,13 @@ if [ -f build/gen/felucca_tables.h ]; then
     }
     unit boot_splash "" u_boot_splash
 
+    u_frame() {
+        $CC -w -ffp-contract=off -Ibuild/gen -Ifirmware/src -o "$OUT/frame_test" tests/frame_test.c -lm
+        run "musical frame (#297): one 15 ms frame order in the emulator, input between/at frames, settings/autosave commits" "$OUT/frame_test"
+        run "musical frame (#297): firmware loop and emulator call the shared frame, no copied steps" python3 tests/frame_source_test.py
+    }
+    unit frame "" u_frame
+
     u_ui() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test" tests/ui_test.c -lm
         run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"

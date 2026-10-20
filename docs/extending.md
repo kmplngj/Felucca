@@ -479,6 +479,15 @@ reusing `cv_px`. A stack buffer that expires during DMA or a flash pointer is in
 [main.c](../firmware/src/main.c) services `ui_input`, `ui_leds`, `ui_draw`,
 `master_poll`, `ed_service`, `ota_service`, settings/autosave and watchdog in the main
 loop. It can request bounded audio actions; it does not drain the musical MIDI ring.
+The steady-state musical frame (#297) is one implementation in main.c, called by the
+firmware loop and by the emulator's `web_ms` (and so by native replay and the partition
+tests): `music_frame_sense` (battery, MASTER), then the platform's own services, then
+`music_frame_run` (input, queued settings save, autosave, LED composition, drawing, with
+the `felucca_dbg` stage breadcrumbs), and `music_frame_poll` (`ui_input`) between frames.
+Each platform keeps its scheduling: the 15 ms busy-wait gate on the FM-1, one emulated
+millisecond per `web_ms` step. Add per-frame UI or persistence work inside those functions,
+not at one call site; keep USB, editor/OTA, console, watchdog and boot work outside them.
+The table at the top of those functions records each step's placement on both platforms.
 All normal SIE access is TIMER5's 2 kHz `usb_poll`, with the nested EP4 UAC exception
 in 3.1. Startup/update bring-up has its own explicit paths; a UI hook must not poll SIE.
 
