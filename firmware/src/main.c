@@ -170,6 +170,61 @@ static int boot_splash_wait(uint32_t start)
            (uint32_t)(fm1_ticks() - start) < BOOT_SPLASH_MS * 1000u * FM1_TICKS_PER_US;
 }
 
+/* The musical frame (#297): the steady-state work main.c's loop and the emulator (web/emu/felucca_web.c web_ms, and
+ * through it native replay and the partition tests) share, in this one order. Each platform keeps its own scheduling
+ * and services around it:
+ *
+ *   step                 firmware fm1_main                     emulator web_ms (1 ms of device time)
+ *   frame gate           busy wait: fm1_ms - m >= 15           fm1_ms - web_last_frame >= 15
+ *   before               WDT, usb_retry, bootguard, 2ND CORE   (the audio halves due by this ms)
+ *   music_frame_sense    battery IIR, MASTER                   the same
+ *   between              UBOOT hold, editor/OTA, UBOOT (USB),  nothing (no USB, editor, console)
+ *                        console (cdc_task)
+ *   music_frame_run      breadcrumbs, input, settings save, autosave, LEDs, screen (felucca_dbg.stage 1 -> 2 -> 9)
+ *   music_frame_poll     ui_input on every pass of the wait     ui_input on each ms without a frame
+ *                        (+ ed_service, #425 mr_step)
+ *
+ * Input precedes the queued settings save (settings_poll: stopped only), which precedes the autosave, which
+ * precedes the LED composition and the drawing. Boot, splash, calibration and recovery are not frame work.
+ * MUSIC_FRAME_STEP marks each step for the host frame test (tests/frame_test.c); empty in the firmware and emulator builds */
+#ifndef MUSIC_FRAME_STEP
+#define MUSIC_FRAME_STEP(s) ((void)0)
+#endif
+enum { MF_SENSE, MF_INPUT, MF_SETTINGS, MF_AUTOSAVE, MF_LEDS, MF_DRAW, MF_POLL };
+static void music_frame_sense(void)
+{
+    int32_t b;
+    MUSIC_FRAME_STEP(MF_SENSE);
+    b = fm1_adc_read(FM1_ADC_BATT);                     /* battery: slow IIR */
+    if (b > 0)
+        song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
+    master_poll();
+}
+static void music_frame_run(void)
+{
+    felucca_dbg.ui_frames++;
+    felucca_dbg.page = ui.page;
+    felucca_dbg.home = ui.home;
+    felucca_dbg.stage = 1;
+    MUSIC_FRAME_STEP(MF_INPUT);
+    ui_input();
+    MUSIC_FRAME_STEP(MF_SETTINGS);
+    settings_poll();                                    /* queued settings save: only while stopped */
+    MUSIC_FRAME_STEP(MF_AUTOSAVE);
+    autosave_poll();                                    /* (1.2) the music, stopped and idle: project.c */
+    felucca_dbg.stage = 2;
+    MUSIC_FRAME_STEP(MF_LEDS);
+    ui_leds();
+    MUSIC_FRAME_STEP(MF_DRAW);
+    ui_draw();
+    felucca_dbg.stage = 9;
+}
+static void music_frame_poll(void)                      /* between frames: input is not held to the frame rate */
+{
+    MUSIC_FRAME_STEP(MF_POLL);
+    ui_input();
+}
+
 #if FELUCCA_CPU2
 /* the notice for a retained exclusion (ui.msg: 23 characters at most); reasons from hal/fm1_sys.h */
 static const char *c1_held_msg(uint32_t reason)
@@ -284,12 +339,7 @@ static void fm1_main(void)
             }
         }
 #endif
-        {
-            int32_t b = fm1_adc_read(FM1_ADC_BATT);     /* battery: slow IIR */
-            if (b > 0)
-                song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
-        }
-        master_poll();
+        music_frame_sense();                            /* battery, MASTER (before the platform services, as ever) */
         {   /* OCT- + OCT+ held 5 s: enter UBOOT with RAM intact (debug / update); a countdown
              * shows from 2 s over the whole screen (the menu and the dialogs too: ui_draw), letting
              * go cancels it */
@@ -346,19 +396,9 @@ static void fm1_main(void)
 #if FELUCCA_CDC
         cdc_task();
 #endif
-        felucca_dbg.ui_frames++;
-        felucca_dbg.page = ui.page;
-        felucca_dbg.home = ui.home;
-        felucca_dbg.stage = 1;
-        ui_input();
-        settings_poll();                              /* queued settings save: only while stopped */
-        autosave_poll();                              /* (1.2) the music, stopped and idle: project.c */
-        felucca_dbg.stage = 2;
-        ui_leds();
-        ui_draw();
-        felucca_dbg.stage = 9;
+        music_frame_run();                              /* input, settings, autosave, LEDs, screen */
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */
-            ui_input();
+            music_frame_poll();
 #if FELUCCA_OTA
             ed_service();                       /* editor replies without waiting for the next frame */
 #endif
