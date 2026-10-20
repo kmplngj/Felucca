@@ -29,9 +29,9 @@ static boot_policy_guard_t bootguard;
 static uint32_t fm1_ticks(void) { ticks += tick_step; return ticks; }
 static void fm1_wdt_feed(void) { feeds++; }
 static void fm1_delay_ms(uint32_t ms) { ticks += ms * 24000u; }
-static void fm1_input_init(void) { fm1_in.buttons = physical_buttons; }
-static void fm1_input_scan(void) { ticks += 13200u; }
-static void fm1_input_tick(void) { input_calls++; }
+static void fm1_panel_power_on(void) {}
+static void fm1_input_init(void) { fm1_in.buttons = 0; }
+static void fm1_input_tick(void) { input_calls++; fm1_in.buttons = physical_buttons; }
 static void usb_poll(void) { poll_calls++; }
 static void usb_start(void) { usb.up = 1; fm1_delay_ms(25); }
 static void usb_retry(uint32_t now) { if (!usb.up && !usb.detached && now >= 1000u) usb_start(); }

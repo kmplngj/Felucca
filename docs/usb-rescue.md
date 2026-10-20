@@ -67,8 +67,12 @@ CPU1 exclusion is preserved. Intentional OTA/ROM transitions clear the boot guar
 Healthy confirmation occurs after more than thirty seconds from explicit musical
 readiness; a future chooser's waiting time cannot qualify unactivated workflows.
 
-A thirty-millisecond physical OCT scan precedes persisted panel mappings, adding
-that interval to ordinary boot. Rescue polls USB at about 2 kHz, feeds the watchdog
+A thirty-millisecond panel-rail settle followed by a thirty-millisecond physical
+OCT scan precedes persisted panel mappings, adding about 60 ms to ordinary boot.
+PA2 must be driven low as an output before sampling: it supplies the key/LED
+matrix rail as well as the backlight. The early path enables that rail without
+initializing the LCD, then polls the normal input HAL at TIMER5's 100 us cadence.
+Rescue polls USB at about 2 kHz, feeds the watchdog
 and accumulates TIMER4 deltas across its roughly 179-second wrap. TIMER5/audio stay
 off, leaving one USB SIE owner. Normal interrupt-driven service stays intact.
 Rescue flash hooks call RAM-safe HAL operations with interrupts masked, avoiding
@@ -77,6 +81,37 @@ normal audio-dependent storage wrappers. Editor/musical MIDI cannot start the sy
 Without OTA (including flash-disabled builds), recovery selects the existing ROM
 fallback. No new flash sector, settings schema, NOINIT allocation, boot stub or
 firmware bank is introduced. The emulator has no physical early-rescue entry.
+
+### Physical entry evidence and related firmware
+
+The first PR #487 hardware report found normal startup with OCT− held, while
+both-OCT calibration still worked. That later path runs after `lcd_init` has
+enabled PA2; the original early check did not enable it. The original host test
+assigned button bits in its input-init stub and could not detect an unpowered matrix.
+
+The registered watch sources were compared at immutable revisions:
+
+- [ChoralRoot boot-safety investigation](https://github.com/Quixotic7/ChoralRootFM1/blob/7d97982a7db3dad2da456a3e4d4478548b6571d9/docs/BOOT-SAFETY.md):
+  documents the same failure before PA2 was enabled, then a real-device OCT− cold
+  boot and both-OCT calibration after enabling it. Its v3 stub excludes the first
+  30 ms from the key decision and settles each selected column for 100 us.
+- [Melodee stub](https://github.com/keremimo/melodee/blob/398ada1e09d864c12f3b778a43e45c7c2a8031b8/firmware/stub/stub.c):
+  explicitly enables the shared PA2 rail and uses 100 us column settling too.
+  These boot-stub layouts/loaders are separate from Felucca's application rescue.
+- [Ghoulbox](https://github.com/jasonpersinger/ghoulbox-fm1-dungeon-synth/blob/f23fbc593f8af29dfa01174278f08ee79155ed27/firmware/src/rescue.c),
+  [Dinghy](https://github.com/zvenson/dinghy/blob/d44df7db09b98ccad2f1233b8f83f5f09c04829e/firmware/src/recovery.c)
+  and [SLOOP](https://github.com/isod89/sloop-fm1/blob/4ec1ac829fd2bdf2c571ea215fb3d62477d01220/firmware/src/recovery.c):
+  implement similar application rescue, but their inspected early key checks use
+  the older full-frame scanner without enabling PA2 first. They do not supply a
+  correction for this hardware failure. Current upstream Felucca at
+  `5738617968a22b5d4c0d3470cfcc95559052f446` has no equivalent rescue entry.
+
+Felucca reuses its own LCD HAL's existing rail-enable sequence and its normal
+input scanner. `tests/rescue_input_test.c` compiles both actual HAL helpers and
+the rescue-entry function against a shift-register/row model with an initially
+unpowered rail, rail startup delay, row settling and timer wrap. This catches the
+original omission; simulated timing is not a measured FM-1 rail-rise bound.
+The corrected Felucca entry still needs the device check below.
 
 ## One combined FM-1 handoff
 

@@ -41,6 +41,10 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **Early rescue entry:** enable the shared key/LED power rail before reading
+  OCT− at startup, allow it to settle and use the normal input scan cadence.
+  Both-OCT calibration remains available; corrected entry awaits FM-1 retesting
+  ([evidence and procedure](usb-rescue.md#physical-entry-evidence-and-related-firmware)).
 - **Sequencer state and timing:** early nudged steps use the upcoming loop's
   condition; EUCLID cancellation preserves the correct undo ownership, and
   stop/cursor state is covered by focused regressions

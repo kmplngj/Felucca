@@ -54,11 +54,26 @@ static void rescue_screen(void)
  * settings or flash layout is trusted to decide whether recovery is needed. */
 static uint32_t rescue_boot_buttons(void)
 {
-    uint32_t start = fm1_ticks();
+    uint32_t start, scanned_at;
+    /* PA2 also supplies the matrix/595 rail; lcd_init normally enables it,
+     * but recovery must read keys before initializing the display. Allow the
+     * rail to rise before debounce can count any samples. */
+    fm1_panel_power_on();
     fm1_input_init();
+    fm1_wdt_feed();
+    fm1_delay_ms(30);
+    start = scanned_at = fm1_ticks();
     do {
+        uint32_t now = fm1_ticks();
         fm1_wdt_feed();
-        fm1_input_scan();
+        /* Match TIMER5: latch a column, then sample on the next 100 us tick.
+         * The old full-frame scanner samples after
+         * only 10 us and can miss/shift a held OCT key on the physical panel.
+         * No interrupt or USB service starts during this decision. */
+        if ((uint32_t)(now - scanned_at) >= 100u * FM1_TICKS_PER_US) {
+            scanned_at = now;
+            fm1_input_tick();
+        }
     } while ((uint32_t)(fm1_ticks() - start) < 30000u * FM1_TICKS_PER_US);
     return fm1_in.buttons & 3u;                 /* physical OCT-, OCT+; no saved panel mapping */
 }
