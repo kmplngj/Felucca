@@ -16,6 +16,14 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Added
 
+- **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
+  51 factory sounds alongside all thirteen standard engines, using stable engine
+  ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.
+  The standard profile is unchanged. User reports cover models, controls and
+  switching during held notes; the raised-key symptom was a corrected QNT setting.
+  Specific FM-1 listening, persistence, USB/TRS transport and timing checks remain
+  pending. See the [engine guide](macro-engine.md),
+  [device procedure](macro-hardware-test.md) and [results](macro-device-results.md).
 - **Early USB rescue:** holding OCT− at power-on or repeated incomplete warm boots
   selects a MIDI-only installer before settings, projects and audio initialize;
   another warm reset in rescue escalates to ROM USB. FM-1 hardware qualification

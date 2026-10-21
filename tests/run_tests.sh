@@ -1173,17 +1173,20 @@ if [ -f build/gen/felucca_braids.h ]; then
         run "MACRO full bank: all models, bounds, controls and live cap changes" "$OUT/braids_test"
         $CC -O2 -w -Ifirmware/src -o "$OUT/macro_switch_test" tests/macro_switch_test.c -lm
         run "MACRO: owned arena transitions with every installed memory engine" "$OUT/macro_switch_test"
+        $CC -O2 -w -Ifirmware/src -o "$OUT/macro_keyboard_test" tests/macro_keyboard_test.c -lm
+        run "MACRO/FM6: all 27 keys, held-key switches and track QNT modes" "$OUT/macro_keyboard_test"
+        run "MACRO device projects, song sections and MIDI workload" python3 tests/macro_device_pack_test.py
         run "Braids: pinned original C++ versus generated C output" python3 tests/braids_reference.py
     }
     unit macro "" u_macro
     if [ "${SANITIZE:-1}" != 0 ] && san_ok; then
         u_asan_macro() {
-            for src in macro_core_test braids_test macro_switch_test; do
-                if [ "$src" = macro_switch_test ]; then
+            for src in macro_core_test braids_test macro_switch_test macro_keyboard_test; do
+                if [ "$src" = macro_switch_test ] || [ "$src" = macro_keyboard_test ]; then
                     # This cross-engine fixture reaches PHYS and other existing DSP:
                     # retain the same documented wrap/shift exclusions as their suite.
                     $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/$src" "tests/$src.c" -lm
-                    run "ASan/UBSan: MACRO arena/voice switches across existing DSP" env NOCOST=1 "$A/$src"
+                    run "ASan/UBSan: MACRO cross-engine $src" env NOCOST=1 "$A/$src"
                 else
                     ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ifirmware/src -Ibuild/gen \
                         -o "$A/$src" "tests/$src.c" -lm

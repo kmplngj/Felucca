@@ -484,6 +484,14 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/emu/package-lock.json') }}
+      - name: Prepare MACRO device acceptance projects and MIDI
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.profile == 'macro'
+        run: |
+          if [ -f tools/macro_device_pack.py ]; then
+            python3 tools/macro_device_pack.py --out build/macro-device-pack
+          else
+            echo 'Selected revision predates the optional MACRO device pack; firmware validation continues.'
+          fi
       - name: Browser UI and AudioWorklet smoke test
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
@@ -601,6 +609,7 @@ jobs:
             build/build-identity.json
             build/gen/resolved-profile.json
             build/ci/package.sha256
+            build/macro-device-pack/
             LICENSE
             LICENSING.md
             LICENSES/

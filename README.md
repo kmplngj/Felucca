@@ -14,7 +14,7 @@ reviewed and tested; the fork does not automatically include every upstream or f
 
 ## What it offers
 
-Felucca combines thirteen engines with factory presets, four tracks sharing eight voices,
+The standard profile combines thirteen engines with factory presets, four tracks sharing eight voices,
 a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
 The [fork feature guide](docs/fork-features.md) covers controls, defaults,
 compatibility limits and build identification. The
@@ -31,11 +31,15 @@ real-device reliability validation in this fork; after a recorded worker failure
 held off across resets until the player retries it ([guide](docs/fork-features.md#retained-exclusion-after-a-failed-worker-410)). Shared effect-control smoothing
 experiments are implemented, with FM-1 listening and timing qualification pending.
 
-An opt-in [MACRO/Braids test profile](docs/macro-engine.md) adds 48 oscillator models
-and 51 factory sounds while keeping every standard engine. It is experimental and
+The opt-in [MACRO/Braids profile](docs/macro-engine.md) adds a fourteenth engine with
+48 oscillator models and 51 factory sounds while keeping every standard engine. WAVE,
+FOLD and FBFM support eight voices; the 45 added models use one voice per part.
+This firmware-native integration is experimental and
 requires `FELUCCA_PROFILE=macro`; the normal build and hosted demo do not include it.
-Host/emulator evidence and the remaining [FM-1 test procedure](docs/macro-hardware-test.md)
-are tracked under [#27](https://github.com/kmplngj/Felucca/issues/27).
+The [FM-1 test procedure](docs/macro-hardware-test.md) includes reproducible projects
+and songs. The [device results record](docs/macro-device-results.md) separates
+user-reported model/control and held-note checks from pending persistence, transport and timing
+qualification under [#27](https://github.com/kmplngj/Felucca/issues/27).
 Early USB rescue and explicit update-loader compatibility are implemented;
 the [recovery guide](docs/usb-rescue.md) describes OCT− entry, existing installers
 and the combined FM-1 checks that remain pending.

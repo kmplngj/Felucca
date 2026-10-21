@@ -6,16 +6,19 @@ The 48-model, 51-preset experiment has been rebased onto current main for issue
 candidate**, not part of the standard profile or the hosted main demo.
 
 ```sh
-FELUCCA_PROFILE=macro ./build.sh
-FELUCCA_PROFILE=macro tests/run_tests.sh
+FELUCCA_PROFILE=macro uv run --locked --group build ./build.sh
+FELUCCA_PROFILE=macro uv run --locked --group build tests/run_tests.sh
 ```
 
 Use the [exact-revision artifact and FM-1 checklist](macro-hardware-test.md) for
 installation and hardware acceptance. The [rebase validation report](macro-rebase-validation.md)
 records the current comparison and separates host, static target, browser and device
-evidence. No hardware acceptance is claimed until that checklist is actually run.
-The source collection/extraction decision remains separate: the existing firmware
-wrapper and generators are GPL, while Braids/stmlib and the adapted DSP retain MIT.
+evidence. The [device results](macro-device-results.md) retain the initial smoke
+report and identify each pending check; they do not claim completed hardware acceptance.
+Portable extraction is tracked separately in
+[Felucca-Engines-GPL #25](https://github.com/kmplngj/Felucca-Engines-GPL/issues/25):
+the existing firmware wrapper and generators are GPL, while Braids/stmlib and
+the adapted DSP retain MIT.
 
 The `macro` profile selects every standard engine plus stable MACRO ID **14**.
 `standard` and `reduced-lofi` exclude its source, exclusive tables/generator work and
@@ -166,25 +169,36 @@ These models can alias at high notes, especially with strong folding/FM.
 
 ## Persistence and compatibility
 
-Existing engine IDs and parameter IDs are unchanged: NENGINES is 15, P_COUNT 111,
-P_E0 103 and projects remain FUN10 (3840 bytes). SLICE keeps reserved ID 13 even
-with `FELUCCA_SLICE=0`; DIGITAL's ID 1 also stays reserved when disabled. MACRO
-stays ID 14 in all four FM4/SLICE configurations. The editor discovers its names,
-ranges and presets through the existing INFO/DESC commands; the repository's
-editor mock and engine ordering are updated too.
+The current implementation uses the stable engine namespace introduced by
+[#212](https://github.com/kmplngj/Felucca/issues/212): IDs 0..63 are independent of
+which engines a profile includes. MACRO is ID **14**; DIGITAL 1 and SLICE 13 retain
+their IDs when unavailable. `NENGINES` is this build's name-table length, not a
+persistent ID limit or a fixed user-preset marker. INFO advertises the availability
+bitmap and wire user marker **127**; the legacy marker derived from INFO's table
+length remains accepted. Editors discover model names, ranges and presets through
+INFO/DESC/NAMES. Projects remain FUN10 (3,840 bytes), with the existing parameter IDs.
 
-PER4 used favorites row 14 for MIDI LEARN and row 15 for UI preferences. PER5
-preserves that complete prefix and appends 32 bytes for MACRO favorites. Boot
-import and backup restore migrate PER4, keeping the mappings, old stars and UI
-preferences; PER1–PER3 still migrate at boot. A backup's old CRC and fields are
-validated before the staged settings expand. There is no new save-on-boot or
-immediate erase on a knob turn.
+Current standard/reduced profiles preserve an unavailable MACRO track's ID, preset
+number and eight engine values. It displays N/A and is silent until a MACRO build
+is restored. Selecting a different sound explicitly replaces it. This preservation
+does not apply to older firmware predating #212, which can reject unknown-engine
+projects or treat user presets as empty.
 
-**Downgrading:** earlier firmware cannot load engine 14 or import PER5 settings.
-The earlier three-model branch also cannot represent IDs 3..47: it clamps new
-model values and cannot reproduce those sounds. Keep a pre-update backup to
-restore settings and sounds after a downgrade. Existing-engine
-projects retain their previous format and sound hashes.
+Settings remain **PER4** while no factory favourite uses an ID from 14 onward.
+Marking a MACRO factory favourite requires **PER6**, whose versioned extension
+stores the MIDI LEARN map, device preferences and 64 engine-favourite rows. The
+PER4 prefix retains its original low-ID favourites, map and device bytes. Current
+firmware reads the earlier experimental **PER5** format and imports its appended
+row as MACRO's favourites; PER5 is historical input, not the current write format.
+See [the protocol contract](../web/EDITOR_PROTOCOL.md#engine-ids-212) and
+`firmware/src/settings_persist.c` for the exact layouts and fallback behavior.
+
+**Downgrading:** firmware through 1.6 cannot read a PER6 settings record or restore
+its settings backup object. It starts with default settings until it writes its
+own. The earlier three-model MACRO branch cannot represent models 3..47 either.
+Retain a full pre-update backup and its matching firmware package; reinstalling
+older firmware alone does not roll data back. Restore the matching backup when
+returning to that firmware. Existing-engine projects retain their format.
 
 ## Full-bank expansion — 2026-10-11
 
@@ -433,7 +447,7 @@ LCD transfer and interrupt timing. They do not establish FM-1 CPU utilization.
 Reports and the archived baseline harness are retained under the UI-change
 artifact directories above, including their `ui-cost/` subdirectories.
 
-## Validation and reproduction
+## Initial three-model validation and reproduction — 2026-10-11
 
 Fresh target build, the full applicable `tests/run_tests.sh` suite and target
 resource checks are required. Use [BUILDING.md](../BUILDING.md) for toolchain and
@@ -486,9 +500,11 @@ reference is skipped because no DaisySP checkout is configured. The host suite's
 five pre-existing unsequenced `host_now` warnings in `input_test.c` remain; the
 fresh target build has no compiler warnings.
 
-### Remaining real-device checks
+### Remaining real-device checks at that historical stage
 
-No FM-1 was flashed or measured. Before a hardware-validated release, listen to
+No FM-1 was flashed or measured for that validation. For current user feedback
+and pending acceptance use [the device results](macro-device-results.md) and
+[hardware procedure](macro-hardware-test.md). Before a hardware-validated release, listen to
 all models and extreme controls, check live preset/model changes and panel/MIDI
 behavior, and record audio ISR min/max/average time, overloads and stack guards
 with eight voices, four-part mixed loads, all effects, modulation, USB audio/MIDI,

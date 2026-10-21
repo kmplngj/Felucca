@@ -1,7 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # MACRO hardware acceptance
 
-All device checks below are **Pending hardware validation**. No FM-1 is exposed in
+The [device results record](macro-device-results.md) contains the user's model/control
+and held-note switching reports. The raised/black-key symptom, including on FM6,
+was resolved by correcting QNT. The specific checks below remain **Pending hardware
+validation** except where that record identifies user-reported coverage. No FM-1 is exposed in
 this cloud workspace. Native/Wasm parity and browser persistence exercise simulated
 hardware; they do not establish device deadlines, physical input/display behavior,
 real NOR timing, USB audio/MIDI or TRS MIDI.
@@ -11,9 +14,9 @@ real NOR timing, USB audio/MIDI or TRS MIDI.
 Use the firmware producer repository, `kmplngj/Felucca`, and the final issue #27 PR
 head. Record the full commit, build flags, resolved profile, artifact checksum and
 `provenance.json`. Replace `PR_NUMBER` and `FULL_SHA` with the published handoff's
-values. Check out the published PR branch before using these commands: until this
-PR is merged, main's helper does not accept `--profile`. A development ABOUT
-version alone cannot identify the artifact.
+values. Run installation tools from a trusted reviewed caller checkout with the
+profile-aware helper; the downloaded PR sources must not supply the installer.
+A development ABOUT version alone cannot identify the artifact.
 
 MACRO is opt-in: the candidate must use **`FELUCCA_PROFILE=macro`**. The default
 `standard` artifact does not contain MACRO. Do not install a standard artifact to
@@ -23,9 +26,9 @@ See [BUILDING](../BUILDING.md) for toolchain/SDK prerequisites and checksums. A 
 build from the exact source revision uses:
 
 ```sh
-FELUCCA_PROFILE=macro ./build.sh
-python3 tools/fm1_install.py build/felucca-macro.fwsc
-python3 tools/fm1_install.py --info
+FELUCCA_PROFILE=macro uv run --locked --group build ./build.sh
+uv run --locked --group midi tools/fm1_install.py build/felucca-macro.fwsc
+uv run --locked --group midi tools/fm1_install.py --info
 ```
 
 The PR helper requests or reuses an exact-commit **macro-profile** run. The
@@ -33,7 +36,7 @@ workflow reference selects the PR branch's profile-aware workflow; it is separat
 from the pinned firmware source revision. Prepare/download without a connected FM-1:
 
 ```sh
-python3 tools/fm1_pr.py PR_NUMBER --commit FULL_SHA --profile macro \
+uv run --locked --group midi tools/fm1_pr.py PR_NUMBER --commit FULL_SHA --profile macro \
   --workflow-ref feat/macro27-current-main --download-only
 ```
 
@@ -41,17 +44,26 @@ On the host connected to the normally running FM-1, close applications using its
 MIDI ports and omit `--download-only` to verify and install the same package:
 
 ```sh
-python3 tools/fm1_pr.py PR_NUMBER --commit FULL_SHA --profile macro \
+uv run --locked --group midi tools/fm1_pr.py PR_NUMBER --commit FULL_SHA --profile macro \
   --workflow-ref feat/macro27-current-main
 ```
 
-Keep downloaded provenance and checksums. The helper asks before flashing. Do not
+Install uv first (`brew install uv` on macOS; other hosts use
+[uv installation](https://docs.astral.sh/uv/getting-started/installation/)). The
+locked `midi` group supplies the Python USB-MIDI updater; no backend flag or manual
+pip setup is needed. Keep downloaded provenance and checksums. The helper asks
+before flashing. Do not
 enter ROM download mode. Automatic/default standard-profile builds cannot replace
 this explicitly selected artifact.
 
 Before installation, retain a full backup using the compatible editor's Backup
-export, and retain the previous firmware package. Use unused USER/project slots;
-record their numbers. Earlier firmware cannot reproduce engine 14 sounds or all
+export, verify that it contains all four project slots, and retain the previous
+firmware package. The test pack uses **all four project slots A–D**, so mark all
+four disposable only after preserving their original data; no project slot remains
+outside this test. Reserve one disposable USER slot too and record its number.
+The generator writes host files only; imports/saves are explicit user actions.
+Never automatically overwrite device slots. Earlier firmware cannot reproduce
+engine 14 sounds or all
 new settings. A firmware downgrade is not a data rollback: restore the matching
 pre-update backup if downgrading. See [MACRO compatibility](macro-engine.md).
 
@@ -68,11 +80,89 @@ transport checks. Record host OS, audio application, USB sample rate and routing
    is selected. Set MASTER to a comfortable low listening level.
 2. Hold HOME more than 0.7 seconds until MENU appears, then release. ALGORITHM
    selects the SYSTEM tab; PRESETS selects ABOUT; OCT+ opens it. Record version,
-   then OCT− returns. Tap HOME to close MENU.
+   then OCT− returns. Turn PRESETS to RESTORE LAST, record its original setting,
+   and use OCT− to select OFF. This prevents autosave from replacing the working
+   music during controlled recall tests; A–D remain explicit project saves.
+   Record 2ND CORE and leave it OFF for the primary run (changes apply after a
+   restart). Tap HOME to close MENU. Restart normally if a core setting changed.
 3. From HOME tap SAVE once for USER and again for PRESETS. Turn KNOB 2 until MACRO
    appears, after DRUM in this profile. KNOB 1 or PRESETS browses its factory sounds;
    select WAVE SCAN. Tap HOME. This route follows the profile's engine order rather
    than assuming a fixed EDIT-map keyboard key.
+4. Tap the physical **SEL** button: the second button from the left in the upper
+   six-button row, between **FX** and **ENV**. This is the firmware's SCL/scale
+   function; use the printed SEL button, not the SELECT knob. If CHORD appears,
+   tap SEL again to reach the SCL scale page. Use KNOB 3, labelled QNT, to select
+   **OFF**. WHITE deliberately
+   silences black keys; quantization is kept across engine changes and in projects.
+   With transport stopped and no external MIDI input, tap HOME, press and release every
+   physical piano key in the lower and upper rows, first with WAVE SCAN and then
+   with an FM6 factory sound. Reach FM6 through HOME → SAVE twice → PRESETS,
+   KNOB 2 FM6, KNOB 1 a factory sound, HOME. Each key should strike and release a
+   note; record exact failing key positions, octave, engine, page and any held
+   layer buttons. Repeat after a normal power cycle. The earlier raised-key report
+   was resolved by correcting QNT; this step keeps that setup explicit. After the
+   restart verify QNT OFF again. Return to MACRO WAVE SCAN with SAVE twice →
+   PRESETS → KNOB 2 MACRO → KNOB 1 WAVE SCAN → HOME before the model checks.
+
+## Prepare the project and song pack
+
+1. From the reviewed candidate checkout, generate the pack on the host:
+
+   ```sh
+   uv run --locked --group build tools/macro_device_pack.py \
+     --generate-headers --out build/macro-device-pack --candidate FULL_SHA
+   ```
+
+   This compiles the firmware's host serializer and writes files; it does not
+   connect to, install or change an FM-1. Keep `manifest.json` with the tested
+   firmware provenance. This command generates `macro` profile/UI assets and
+   needs a host C compiler; it does not need the JieLi toolchain or a target build.
+   Later runs can reuse those headers with `python3 tools/macro_device_pack.py
+   --out build/macro-device-pack-another --candidate FULL_SHA`. Use a new output
+   directory for each run: the generator refuses to replace an existing pack.
+   Record the generator's source revision separately from the installed candidate.
+2. Keep the full backup from before this procedure outside the generated pack
+   directory. Also export each existing A–D project individually. Check that
+   A, B, C and D are backed up and disposable before any
+   import. In the compatible WebApp open PROJECT, find the PROJECTS card and click
+   **Import** within the desired A/B/C/D slot. Select that slot's matching
+   `*.felucca-project.json` file and confirm **Import → [letter] (overwrite)?**
+   only for the intended disposable slot. Repeat individually for the other slots.
+   Import updates slot storage; loading is a separate action.
+   Do not import a fixture over a slot you still need. The `.fun10` files are
+   the underlying firmware records, not installable packages or full backups.
+3. Use this mapping and record the files' manifest hashes. Imported data must
+   remain in A–D as specified because the song references those slots:
+
+   | Slot | Import file | Expected setup |
+   | --- | --- | --- |
+   | A | `A-legacy-poly.felucca-project.json` | MAC LEGACY; four MACRO parts: WAVE/FOLD/FBFM/WAVE; polyphonic strike/tie/rest patterns |
+   | B | `B-bank-heavy.felucca-project.json` | MAC HEAVY; four HARMONICS parts; repeated strikes |
+   | C | `C-mixed.felucca-project.json` | MAC MIXED; PLUCKED/PHYS/FM6/ANALOG; mixed two-note patterns |
+   | D | `D-song.felucca-project.json` | MAC SONG; WAVE/HARMONICS/PLUCKED/WAVETABLE; five song sections referencing A–C patterns |
+
+   All use 120 BPM, internal clock and CH1-4 routing. The manifest records exact
+   parameter values. MACRO controls start at model-specific ID, TIMBRE/COLOR 64,
+   TUNE 0, CUT 110, RES 8, DRIVE 127, FINE 0. Each part has LEVEL 64, attack/decay 0,
+   sustain 100, release 25, CHOR/DLY/REV sends 20/20/35 and ROOM reverb.
+   Global FX start at delay time 1/8, feedback 60, color 70, delay mix 90,
+   reverb size 90/damping 60, and chorus rate 40/depth 60. These are stored
+   integer values; the manifest pairs its globals array with parameter labels.
+   Display percentages/filter units differ from these stored integer values.
+4. Close the editor after import so it cannot compete for MIDI ports. From HOME,
+   tap SAVE four times for USER → PRESETS → PHRASES → PROJECT. KNOB 1 chooses A;
+   KNOB 3 selects LOAD; OCT+ loads it. Confirm MAC LEGACY and the four sounds by
+   tapping HOME and selecting T1–T4 with ALGORITHM. Repeat LOAD for B, C and D,
+   confirming the names and engines/models above before playback. Any unexpected
+   import destination, sound or value is a failure to resolve before load testing.
+5. With D loaded and transport stopped, tap GLO for SONG. KNOB 1 selects a section,
+   KNOB 2 a track; inspect KNOB 3's PAT and KNOB 4's REPS without changing them.
+   The sections are `AAAA ×8`, `BCAB ×8`, `CABC ×8`, `BBBB ×8`, then `---- ×1`.
+   Press PLAY (or OCT+ on SONG) to start. Expect about 66 seconds at 120 BPM,
+   changing patterns while retaining D's sounds, followed by the silent ending
+   and stopped transport. Press PLAY to stop early. Run twice and note any missed
+   section, stuck note, reset, unresponsive control or dropout.
 
 ## Models, controls and live changes
 
@@ -113,18 +203,38 @@ transport checks. Record host OS, audio application, USB sample rate and routing
    → PHRASES → PROJECT). KNOB 1 selects a disposable project slot, KNOB 4 SAVE,
    OCT+ NAME, OCT+ writes (used slots add overwrite confirmation). Restart, return to
    PROJECT, select the same slot, KNOB 3 LOAD and OCT+. Verify all four parts.
+6. Reload A from the imported pack, record its four sounds and eight MACRO values,
+   explicitly save it back to A with the route above, load B, then reload A and
+   compare. Repeat for B, C and D in their own slots. Preserve the fixture names
+   when confirming NAME. After a normal power cycle, load each A–D explicitly
+   (RESTORE LAST remains OFF): names, engines/models, controls and patterns must
+   match the manifest. With D loaded, tap GLO and compare its five song sections;
+   start it with PLAY and verify the same approximately 66-second sequence and
+   silent ending. Report any change separately from USER preset persistence.
 
 ## Four parts, effects and transports
 
-1. Select T1–T4 with ALGORITHM and set MACRO on each via SAVE twice → PRESETS → KNOB 2.
-   First use HARMONICS on all four parts; then repeat with WAVE, FOLD, PLUCKED and
-   QPSK. Record each part's preset, voice mode, control values and envelopes. Tap FX:
-   KNOB 2 CHOR, 3 DLY, 4 REV; use matching displayed amounts on every part. Record
-   global delay/reverb/chorus settings too (subsequent FX page taps reach them).
+1. Load A through HOME → SAVE four times → PROJECT → KNOB 1 A → KNOB 3 LOAD → OCT+.
+   Tap HOME and PLAY to run its internal patterns for at least 60 seconds; PLAY
+   stops. Repeat for B (four HARMONICS parts) and C (mixed engines), then D's song
+   through GLO → PLAY. Before each run select T1–T4 with ALGORITHM to verify the
+   engine/model, POLY mode, envelopes and manifest values. Tap FX for part sends:
+   KNOB 2 CHOR, 3 DLY, 4 REV; later FX taps show global effect pages. Record the
+   global values from the manifest and leave them identical in repeated runs.
+   Expect repeated notes and ties to release, responsive controls and stable
+   audio without resets/dropouts. B is a defined stress workload, not a proven
+   worst case over every model, pitch and control.
 2. Hold HOME to MENU, ALGORITHM → MIDI, PRESETS → MIDI IN, OCT± → CH1-4. Close HOME.
-   Send a fixed repeating chord/note sequence on channels 1–4 at a recorded tempo,
-   velocity and duration. Include strikes, overlapping notes, sustain and note-offs.
-   Play for at least 60 seconds while editing TIMBRE/COLOR and changing models. Expect
+   Keep the internal transport stopped. Load A and play the pack's
+   `macro-ch1-4.mid` at its saved 120 BPM through USB MIDI, routed to channels 1–4
+   without channel remapping, looping or transposition. Each file run lasts
+   64 seconds: eight-note chords on channels 1, 2 and 3 for eight seconds each;
+   all four channels together at 24–56 seconds; rapid strikes at 56–60 seconds;
+   note-offs/sustain-off and release tails at 60–64 seconds. Repeat unchanged
+   with B and C. Retain the MIDI file's hash, event schedule and player settings.
+   Repeat the defined load while editing TIMBRE/COLOR and changing models,
+   recording the part, model, values and edit times so that this separate manual
+   stress run can be reproduced. Expect
    responsive controls, no resets or stuck notes, and usable audio without dropouts.
 3. Repeat the identical sequence while capturing USB audio at the host's recorded
    supported rate. Repeat with USB MIDI and TRS MIDI separately and together, documenting
@@ -156,5 +266,11 @@ observe collector overhead. Host timing or static budgets do not prove FM-1 dead
 
 Report commit/package/profile, device version, host and transport setup, slot/project,
 model/control values, steps performed, expected versus observed results, audio and
-logs. Restore USB SERIAL and host/MIDI settings after collection. Mark every unrun
-scenario pending; a successful installation is not completion of this checklist.
+logs in the [device results record](macro-device-results.md), using its run template.
+Stop playback, send note-offs and sustain-off, and wait for effect tails before
+any save or restore. Restore the pre-test backup if these A–D/USER test contents
+are no longer needed; verify the restored project names before overwriting the
+saved backup. Restore RESTORE LAST, USB SERIAL, 2ND CORE and host/MIDI settings to
+their recorded original values. Returning to older firmware requires its matching
+backup as described above. Mark every unrun scenario pending; a successful
+installation is not completion of this checklist.

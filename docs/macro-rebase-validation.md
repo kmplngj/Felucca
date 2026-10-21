@@ -2,8 +2,17 @@
 # MACRO rebase validation
 
 This records the issue #27 experiment rebased from original MACRO revision
-`3d1f940` onto current main `3b165ba`. Measurements below use the same JieLi
-Clang 4.0.1 toolchain. They are integration evidence, with FM-1 qualification pending.
+`3d1f940` onto main revision `3b165ba`. Measurements below use the same JieLi
+Clang 4.0.1 toolchain. These are retained results for that integration stage,
+not measurements of every later handoff revision. The final PR's exact-commit
+provenance and validation record identify the current candidate, including the
+subsequent uv/Python installer workflow updates.
+
+The [device results record](macro-device-results.md) contains user-reported
+model/control and held-note switching checks, plus the raised-key symptom resolved
+by correcting QNT. Candidate identity and detailed scenario coverage are unknown;
+the remaining physical qualification stays under #27. Use the [hardware procedure](macro-hardware-test.md)
+and its generated project/song pack to record further results against an exact build.
 
 ## Local target resources
 
@@ -54,8 +63,8 @@ pass all 429 scenarios over 200 blocks each. The final PR records the correction
 and successful reruns; do not interpret the initial aggregate as a passing run.
 Official V15 restore is untested because its package is unavailable.
 
-Real FM-1 installation/recovery, physical panel/LCD, USB/TRS MIDI, USB audio and
-render deadlines remain **pending**. Follow [the hardware acceptance procedure](macro-hardware-test.md)
+Specific real FM-1 installation/recovery, physical panel/LCD, USB/TRS MIDI, USB audio and
+render-deadline acceptance checks remain **pending**. Follow [the hardware acceptance procedure](macro-hardware-test.md)
 using the exact commit's macro-profile package. Issue #27 remains open until the
 device acceptance results are recorded.
 
