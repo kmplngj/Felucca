@@ -18,16 +18,19 @@ stages the selected package's RAM loader. Entry and idle cause no flash writes.
 Use the same reviewed `.fwsc` as for ordinary OTA, not a raw `.bin`:
 
 ```sh
-python3 tools/fm1_pr.py NUMBER --automatic
-# Python backend, for a locally built package:
-python3 tools/fm1_install.py build/felucca.fwsc
+# Download/verify a successful automatic build for this PR's current base/head:
+uv run --locked --group midi tools/fm1_pr.py NUMBER --automatic
+# Install an already downloaded or locally built package:
+uv run --locked --group midi tools/fm1_install.py build/felucca.fwsc
 ```
 
-The helper uses the exact m-flasher source pinned in `tools/m_flasher.py`, with
-source-manifest and executable-digest checks. The maintained browser client is
-**kmplngj/Felucca-WebApp**, pinned by the main-site workflow. Use the corresponding
-PR/client checkout when testing: an older hosted installer does not establish this
-contract. There is no automatic fallback to ROM flashing.
+The helper uses `tools/fm1_install.py` from the trusted caller checkout. Install uv
+first (`brew install uv` on macOS); the `midi` group supplies locked dependencies
+automatically, as described in
+[BUILDING](../BUILDING.md#test-a-pull-request-on-hardware). The maintained browser
+client is **kmplngj/Felucca-WebApp**, pinned by the main-site workflow. Use the
+corresponding PR/client checkout when testing: an older hosted installer does not
+establish this contract. There is no automatic fallback to ROM flashing.
 
 The application stages a loader, the installer reconnects, that loader writes,
 and the installer verifies the returned application identity. An already-running
@@ -38,7 +41,7 @@ session remains in rescue; staging may already have been written and cleaned up.
 
 | Selected bytes | Actual accepted loader handshake | Installer |
 | --- | --- | --- |
-| CRC-checked current FM-1 image, exact `0x93000` flash image, supported loader heads and initial `FELUCCA-LOADER-1` literal | `ota-FM-1_900` | Native, Python, maintained browser |
+| CRC-checked current FM-1 image, exact `0x93000` flash image, supported loader heads and initial `FELUCCA-LOADER-1` literal | `ota-FM-1_900` | Python, maintained browser |
 | Unmodified official V15, whole-file SHA-256 `db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a` | `ota-FM-1_015` | Python, maintained browser |
 | Unknown loader, wrong model or crossed pair | Refused before that loader's START/data | All |
 
@@ -55,8 +58,7 @@ commit. Python `--force` is a deprecated compatibility option with no effect.
 Unknown package loader families fail file preflight before MIDI discovery or an
 installation prompt; the flag cannot override the classifier, CRCs or final identity.
 
-Original V15 return remains a separately validated Python/browser path, outside
-the native CLI's package set. Its loader can write beyond the custom app-only
+Original V15 return remains a separately validated Python/browser path. Its loader can write beyond the custom app-only
 region; package acceptance does not prove stored-data preservation.
 
 ## Boot and service ownership
@@ -121,7 +123,7 @@ unknown flash, abort/erase/program failures, deliberate resets, wrap, reconnect 
 the MIDI-only persona. They do not prove real SIE/host enumeration or flash hardware.
 
 Prepare the selected transition's backups and a known-good package. Retain one exact
-candidate commit/package plus the pinned CLI and matching WebApp. Record hashes,
+candidate commit/package plus the caller's Python installer revision and matching WebApp. Record hashes,
 OS/browser and endpoint names; use a disposable project with known settings/sounds.
 
 1. Install the candidate through the ordinary updater. Hold HOME to open MENU,
@@ -131,7 +133,7 @@ OS/browser and endpoint names; use a disposable project with known settings/soun
    silence and MIDI-only enumeration. Wait more than three minutes, disconnect/
    reconnect USB, then identify through the installer. Cancelling its confirmation
    must not start an update.
-3. Install the intended package from rescue with the native helper/Python command.
+3. Install the intended package from rescue with the Python helper or direct installer command.
    Expect staging, loader reconnection, writing and expected application return.
    Verify ABOUT again. Repeat with the matching WebApp to qualify that browser path.
 4. Boot normally and check the known project/settings. On a separate ordinary boot,
@@ -150,4 +152,6 @@ per issue, except where the install/resume/return scenario requires a transition
 
 Application rescue needs intact startup/HAL/USB/RAM-flash code. ROM recovery remains
 #429; SPL interpretation of record-shaped user data remains #438. Full raw-backup,
-readback, rollback and writer-failure qualification remain m-flasher #13/#15/#16.
+readback, rollback and writer-failure qualification remain [legacy m-flasher #13](https://github.com/kmplngj/m-flasher-legacy/issues/13),
+[#15](https://github.com/kmplngj/m-flasher-legacy/issues/15) and
+[#16](https://github.com/kmplngj/m-flasher-legacy/issues/16).

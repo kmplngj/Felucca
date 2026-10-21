@@ -57,9 +57,9 @@ Run selector regressions locally with:
 
 ```sh
 python3 -m unittest discover -s tests -p ci_changes_test.py -v
-python3 tools/ci.py portable-tests
+uv run --locked --group build tools/ci.py portable-tests
 node web/test_backup.mjs
-python3 tools/ci.py emulator-tests  # needs the pinned Python deps, clang, emcc and Node
+uv run --locked --group build tools/ci.py emulator-tests  # needs the pinned Python deps, clang, emcc and Node
 ```
 
 The emulator command regenerates assets and compiles both peers. It does not
@@ -112,22 +112,26 @@ paths land, require the regression rather than accepting its dependency skip.
 ## Dependencies and provenance
 
 Python 3.12 and Node 22 are selected explicitly. Pillow, fontTools and Brotli versions
-are in `tools/ci-requirements.txt`; Raqm is mandatory and Brotli decodes the M8Stealth
-WOFF2 inputs. Provenance records all three versions and the selected UI font. Emscripten 6.0.11 and DaisySP
+are locked in `uv.lock` from the `pyproject.toml` `build` group; Raqm is mandatory
+and Brotli decodes the M8Stealth WOFF2 inputs. CI synchronizes this group with uv
+and keeps its environment outside the source checkout, including for verified
+source-archive reproduction. Exact-PR builds retain the trusted workflow
+revision's dependency project before selecting historical firmware sources.
+Provenance records all three versions and the selected UI font. Emscripten 6.0.11 and DaisySP
 are fetched from fixed source commits. The target cache contains only JieLi's
 `jieli-linux-toolchains-20260730.1` and the three AC79 SDK files. Its key includes
 runner OS/architecture, actual toolchain/SDK pins, expected SDK hashes and the
 toolchain installer recipe, so unrelated build/checker edits do not invalidate it. Every cache hit rechecks the
 compiler/package identity and SDK SHA-256 values from `tools/build.py`.
 
-Python pip and npm download caches use their respective dependency/lock files.
+uv and npm download caches use their respective dependency/lock files.
 Emscripten caches are keyed by runner OS/architecture, emsdk source commit and
 SDK version; DaisySP uses its exact source commit. Restored reference checkouts
 must match their pins and tracked files must be clean; emsdk install/activate
 still runs to establish the current environment. Playwright's browser download
 cache uses OS/architecture and the emulator's package lock. Browser system
-dependencies are still installed, and npm/pip install still verify/install the
-requested packages. Cache misses remain supported normal operation. GitHub's
+dependencies are still installed; locked uv synchronization and npm install
+verify/install the requested packages. Cache misses remain supported normal operation. GitHub's
 branch/PR cache scoping applies; a PR cache is not promoted to the default branch.
 No firmware objects, generated assets, test binaries/results, goldens or build
 directories are cached. Target builds and all selected tests always execute.
@@ -384,7 +388,8 @@ connected to the FM-1 and preserves the installer's interactive confirmation.
 
 ### Reuse an automatic PR merge build
 
-`python3 tools/fm1_pr.py NUMBER --automatic` downloads and installs an existing
+From a trusted caller checkout with uv installed (`brew install uv` on macOS),
+`uv run --locked --group midi tools/fm1_pr.py NUMBER --automatic` downloads and installs an existing
 automatic PR artifact without dispatching CI. Add `--download-only` to verify
 without installer setup or hardware access. `--no-build` is accepted but redundant.
 

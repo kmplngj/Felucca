@@ -34,7 +34,7 @@ in issues and roadmaps, not among implemented changes below.
 - **Testing and installation tools:** deterministic interaction replay, native/WASM
   partition comparisons, host stress scenarios and a Chromium UI/audio gate.
   PR installation supports isolated source worktrees, exact-revision artifacts and
-  a pinned native MIDI updater, including its macOS reconnect fix.
+  the Python USB-MIDI updater with dependency checks before firmware CI.
 - **Fork distribution and tracking:** a hosted browser demo, editor and installer
   with source revisions, complete reproducible source archives with dependency pins
   and checksums, and a repository-backed firmware-watch ledger for reviewing other forks.
@@ -64,6 +64,15 @@ in issues and roadmaps, not among implemented changes below.
   [second-core behavior and recovery](fork-features.md#optional-second-core).
 
 ### Changed
+
+- **Python tooling setup:** locked uv dependency groups separate build/font tooling
+  from MIDI installation. Build and PR handoff commands synchronize their environment
+  automatically, including on macOS without manual pip setup; see
+  [Python environments](../BUILDING.md#python-environments).
+
+- **PR installation:** the CLI uses the maintained Python updater again. Native Rust
+  updater setup, cached artifacts and backend selection have been removed; the locked
+  `midi` group supplies `mido`/`python-rtmidi` in the trusted caller checkout. See [BUILDING](../BUILDING.md#test-a-pull-request-on-hardware).
 
 - **Update-loader compatibility:** installers bind current Felucca packages to loader
   `900`, with the digest-pinned original V15 using loader `015` through Python/the

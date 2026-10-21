@@ -64,7 +64,7 @@ class SelectionTest(unittest.TestCase):
         for path in ("firmware/src/eng_fm6.c", "firmware/hal/regs.h", "firmware/app.ld",
                      "firmware/loader/start.s", "build.sh", "tools/build.py",
                      "tools/gen_bitmap_font.py", "tools/sampleio.py", "tools/fm1_install.py",
-                     "tools/ci.py", "tools/ci_changes.py", "tools/ci-requirements.txt",
+                     "tools/ci.py", "tools/ci_changes.py", "pyproject.toml", "uv.lock", ".python-version",
                      "tools/get_toolchain.sh", "assets/fonts/Control.ttf",
                      "assets/samples-cc0/PIANO/sample.wav", "LICENSE", "LICENSING.md",
                      "LICENSES/Apache-2.0.txt", "web/editor.html", "web/fm1pkg.js",
