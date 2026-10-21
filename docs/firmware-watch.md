@@ -16,6 +16,14 @@ next audit verifies identity, branch, immutable pin and complete history before
 initializing it. Pending registration is not active or completed review coverage.
 The existing daily task reads this registry; its schedule does not need changing.
 
+The [FM1 Open V14 review](fm1-open-adoption-2026-10-21.md) additionally registers
+`m-vave/fm1_open` main as pending, repository ID `1416743005`, pinned at
+`4c7496daac04a95ff10d1afdcc8f9ead2dbabc41` (eight reachable commits, zero
+credited assessments). The same post-merge identity/pin/full-history checks apply.
+Its mixed-license instrument selection stays in
+[#368](https://github.com/kmplngj/Felucca/issues/368); the refreshed adoption
+plan is [#370](https://github.com/kmplngj/Felucca/issues/370).
+
 Routine scan state lives on the repository's
 [`automation/firmware-watch` branch](https://github.com/kmplngj/Felucca/tree/automation/firmware-watch/data/firmware-watch).
 The initial migration also lives on main. Read the state branch for current progress;
