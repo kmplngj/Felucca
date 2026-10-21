@@ -417,8 +417,11 @@ universal click detection nor hardware sound quality.
 Every configuration runs twice from a fresh process. Full stereo PCM and a
 per-block hash of selected voice/control state must repeat exactly. Builds cover
 `-O2`, `-Os` without vectorization, ASan/UBSan when available (the established
-fixed-point shift exclusion), compile-time CPU2 off, and an isolated generated
-`reduced-lofi` selection. No case relies on LOFI or is skipped for that catalog.
+fixed-point shift exclusion, with undefined behavior made fatal), compile-time
+CPU2 off, and an isolated generated `reduced-lofi` selection. No case relies on
+LOFI or is skipped for that catalog.
+An actual signed-overflow probe in the capture harness must exit nonzero and
+retain its `.stderr` diagnostic and partial `.pcm` under the output directory.
 The CPU2 build compares runtime OFF with a real worker thread rendering parts
 1–3 while part 4 stays on the main thread; counters require the edited parts to
 be assigned to the worker during the transition. A refusal fixture takes worker

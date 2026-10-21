@@ -225,6 +225,13 @@ int main(int argc, char **argv)
                 trk_note_on(&trk[0], 60, 90);
         } else
             transition_event(id, f);
+#ifdef AUDIO_TRANSITION_UBSAN_PROBE
+        if (f == TRANSITION_AT) {
+            volatile int32_t maximum = INT32_MAX;
+            volatile int32_t overflow = maximum + 1;
+            (void)overflow;                    /* prove capture rejects real UB */
+        }
+#endif
         mix_block(out, CTL);
         if (f == TRANSITION_AT + 1024u) {
             uint32_t i;

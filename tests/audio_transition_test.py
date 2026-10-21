@@ -157,6 +157,27 @@ def capture(binary, case, block, route, path, attack=False):
     return pcm, info
 
 
+def sanitizer_capture_probe(cc, flags, out):
+    """An actual overflow in the real renderer must fail through capture()."""
+    binary = out / "sanitizer-overflow-probe"
+    command = cc + ["-O1", "-g"] + flags + ["-w", "-DAUDIO_TRANSITION_UBSAN_PROBE=1",
+                  "-I" + str(ROOT / "build/gen"), "-I" + str(ROOT / "firmware/src"),
+                  str(ROOT / "tests/audio_transition_test.c"), "-lm", "-pthread", "-o", str(binary)]
+    run(command)
+    path = out / "sanitizer-overflow.pcm"
+    try:
+        capture(binary, 12, 32, "off", path)
+    except ValueError as error:
+        failure = error.__cause__
+        diagnostic = path.with_suffix(".stderr")
+        if (not isinstance(failure, subprocess.CalledProcessError) or not failure.returncode
+                or not diagnostic.exists() or "signed integer overflow" not in diagnostic.read_text()):
+            raise ValueError("sanitizer probe failed without a retained signed-overflow diagnostic") from error
+        print(f"audio transitions: sanitizer overflow rejected (exit {failure.returncode}); {diagnostic}", flush=True)
+        return dict(command=command, returncode=failure.returncode, stderr=str(diagnostic), pcm=str(path))
+    raise ValueError("sanitizer overflow capture unexpectedly passed; undefined behavior must be fatal")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "build/host/audio-transitions")
@@ -178,12 +199,14 @@ def main():
     builds = [(name, ["-" + name] + (novec if name == "Os" else []), ROOT / "build/gen", 1)
               for name in (args.optimization or ("O2", "Os"))]
     skips = []
+    sanitizer_probe = None
     if os.environ.get("SANITIZE", "1") != "0":
-        san = ["-fsanitize=address,undefined", "-fno-sanitize=shift"]
+        san = ["-fsanitize=address,undefined", "-fno-sanitize=shift", "-fno-sanitize-recover=undefined"]
         probe_path = out / "sanitizer-probe"
         probe = subprocess.run(cc + san + ["-x", "c", "-o", str(probe_path), "-"],
                                input="int main(void) { return 0; }", text=True, capture_output=True)
         if not probe.returncode and not subprocess.run([str(probe_path)], capture_output=True).returncode:
+            sanitizer_probe = sanitizer_capture_probe(cc, san, out)
             builds.append(("sanitize", ["-O1", "-g"] + san, ROOT / "build/gen", 1))
         else:
             skips.append("sanitizers: compiler/runtime unavailable")
@@ -275,7 +298,7 @@ def main():
                   transition=TRANSITION, compiler=cc, profile=profile,
                   commands=commands, source_sha256={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                                    for p in sources},
-                  mutations=mutations, skips=skips, rows=rows, errors=errors)
+                  mutations=mutations, sanitizer_probe=sanitizer_probe, skips=skips, rows=rows, errors=errors)
     (out / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
     for skip in skips:
         print("audio transitions: SKIP " + skip)
