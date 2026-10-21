@@ -203,3 +203,11 @@ release publication and unrelated writes remain outside this maintenance task.
 
 Keep a single active runner for the published state branch. Disable an existing
 runner before enabling a replacement so both cannot process the same queues.
+
+## Release-specific adoption reviews
+
+The [Araminta v2.8 review](araminta-v2.8-review-2026-10-21.md) refreshes
+the existing adoption and experimental instrument issues against the immutable
+release commit. Araminta main is already registered; normal source synchronization
+discovers the new tip. The release snapshot does not reset historical targets,
+advance commit-review coverage or create another runner.
