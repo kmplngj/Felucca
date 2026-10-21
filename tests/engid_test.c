@@ -162,8 +162,11 @@ static int info(void)
         ok &= eng_ok(e) ? str_eq(nm, ENGINES[e]->name) : str_eq(nm, "-");
     }
     bad += check("INFO's old prefix: NENGINES names, \"-\" where this build cannot play the id", ok);
-    ok = host_wire[n - 4u] == 0x58 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == ED_BK_XCAPS;   /* #321: 58 01 caps, last */
-    bad += check("INFO 58 01: the full backup's capabilities (#321), last", ok);
+    ok = host_wire[n - 4u] == 0x59 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == (FELUCCA_FLASH ? ED_RAW_CAPS : 0u);
+    bad += check("INFO 59 01: the raw store export (#456: cmds 82, 83), last", ok);
+    n -= 3u;                                                    /* (the 58 01 block before it, as before) */
+    ok = host_wire[n - 4u] == 0x58 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == ED_BK_XCAPS;   /* #321: 58 01 caps */
+    bad += check("INFO 58 01: the full backup's capabilities (#321), before it", ok);
     n -= 3u;                                                    /* (the 49 01 block before it, as before) */
     ok = host_wire[n - 15u] == 0x49 && host_wire[n - 14u] == 1u && host_wire[n - 13u] == ENG_ID_MAX &&
          host_wire[n - 12u] == ENG_USER_WIRE;

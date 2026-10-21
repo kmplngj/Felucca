@@ -50,6 +50,8 @@ and the combined FM-1 checks that remain pending.
   and optimizations, preserving attribution and checking licences and compatibility.
   The [firmware watch](docs/firmware-watch.md) keeps the source registry, commit reviews
   and historical backfill in a queryable repository ledger.
+  The [FM Lab adoption review](docs/fm-lab-adoption-2026-10-21.md) plans optional FM6
+  sound-design features, original voice content and exact optimization experiments.
 - **Integrate engines:** use the shared engine library where appropriate and build profiles
   to fit the FM-1's limits. Keep sound IDs, saved projects and editor behavior compatible.
 - **Measure and optimize:** compare CPU cost, RAM use and firmware size against a baseline,
@@ -64,6 +66,8 @@ is initialized; WAVE implementation and mixed-build integration remain pending.
 The [modularity roadmap](docs/modularity.md) and [capacity plan](docs/flash-capacity.md)
 track the larger work. The [performance guide](docs/performance.md) explains measurements;
 [engine extension contracts](docs/extending.md) describe integration boundaries.
+The [stored-format inventory](docs/legacy-formats.md) documents the first recovery stage:
+a read-only raw export, with historical firmware readers retained while browser migration is pending.
 This README summarizes the overall direction and meaningful milestones. The
 [changelog](docs/changelog.md) gives a curated overview of additions, fixes, changes
 and optimizations. Detailed controls and evidence belong in focused guides, issues,
