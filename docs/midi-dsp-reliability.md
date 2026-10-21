@@ -80,6 +80,10 @@ Legal SEQ/ARP rates are the ten N_DIV values; dotted rates are delay-only.
 
 ## Combined user test instructions
 
+The [2026-10-21 device results](midi-dsp-device-results-2026-10-21.md) record the
+passed USB pulse-count checks with CPU2 OFF, the BAD_JOB fallback reproduced with
+CPU2 ON on both baseline and candidate, exact restoration, and pending TRS/listening checks.
+
 Use the exact PR revision, linked CI artifact and `.fwsc` named in the PR description.
 Follow [BUILDING](../BUILDING.md#install) prerequisites and the backup protocol;
 retain the existing full backup and exact original package before installing once.

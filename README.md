@@ -26,8 +26,9 @@ instrument; some details may differ in this fork.
 This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
 pixel-font options, performance diagnostics and broader host/emulator regression coverage.
 [MIDI timing and DSP hardening](docs/midi-dsp-reliability.md) retains external-clock
-phase, timestamps TRS input during rendering, and guards invalid tempo; device
-qualification and host regression evidence are recorded separately.
+phase, timestamps TRS input during rendering, and guards invalid tempo.
+[Device results](docs/midi-dsp-device-results-2026-10-21.md) qualify USB pulse-count
+phase with CPU2 OFF; physical TRS and CPU2 ON remain unqualified.
 Five portable engines live in the pinned
 [Felucca-Engines fork](https://github.com/kmplngj/Felucca-Engines); initial standard/reduced
 engine build profiles are implemented. Broader engine selection and startup usage modes
