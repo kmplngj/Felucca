@@ -48,14 +48,14 @@ static int ed_palette_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
             ui_cpal_flags |= CPAL_ACTIVE;
             palette_apply();
             ui.force = 1;
-            rc = ed_ui_save();                         /* as UI_SET: 0 saved, 3 RAM only, 4 queued until STOP */
+            rc = ed_settings_save();                         /* as UI_SET: 0 saved, 3 RAM only, 4 queued until STOP */
         }
     } else if (n == 1u && a[0] == 2u) {                /* 2: removed (the built-in palette in use before is back) */
         memset(ui_cpal, 0, 2u * ED_PAL_N);
         ui_cpal_flags = 0;
         palette_apply();
         ui.force = 1;
-        rc = ed_ui_save();
+        rc = ed_settings_save();
     } else if (n == 1u && a[0] == 3u) {                /* 3: the preview dropped (the palette in use again) */
         palette_apply();
         ui.force = 1;

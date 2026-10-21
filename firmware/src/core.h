@@ -36,13 +36,15 @@
 #define ENG_USER 0xFFu           /* a user preset slot, not an engine (never < ENG_ID_MAX) */
 #define ENG_USER_WIRE 0x7Fu      /* .. on the wire (editor_preferences.c; INFO's 49 01 block says it) */
 #ifndef FELUCCA_ENG_TEST14
-#define FELUCCA_ENG_TEST14 0     /* host tests only: a placeholder engine with id 14 (engines.c ENG_TEST14) */
+#define FELUCCA_ENG_TEST14 0     /* host tests only: append a placeholder at ENGI_TEST (legacy flag name) */
 #endif
 #ifndef FELUCCA_ENG_OMIT
 #define FELUCCA_ENG_OMIT (-1)    /* host tests only: an engine id this build's catalog leaves out (a sparse catalog:
                                   * its sounds are kept as unavailable), -1 = none */
 #endif
-#define NENGINES (FELUCCA_ENG_TEST14 ? 15 : FELUCCA_PROFILE_NSLOTS)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
+#define ENGI_TEST FELUCCA_PROFILE_NSLOTS   /* host fixture follows every real stable catalog slot */
+#define ENGI_MACRO 14u
+#define NENGINES (FELUCCA_PROFILE_NSLOTS + FELUCCA_ENG_TEST14)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
                                                   * leaves 13 out of the catalog, its slot stays: engines.c) */
 #ifndef FELUCCA_CPU2
 #define FELUCCA_CPU2 1           /* the second core (src/felucca.c): 1 = built in, MENU > 2ND CORE ON lets it render
@@ -59,12 +61,12 @@
  * come from assets/icons.json (the same enum input as gen_aa_icons.py). Const data only. */
 typedef struct {
     const char *tag, *preset_categories;
-    uint8_t icon, category, cc, order, kit;
+    uint8_t icon, category, cc, order;
 } engine_meta_t;
 static const engine_meta_t ENGINE_META[ENG_ID_MAX] = {
 #include "engine_metadata.inc"
 #if FELUCCA_ENG_TEST14
-    [14] = {"T14", "", 0, 8, 0, 13, 0},
+    [ENGI_TEST] = {"T14", "", 0, 8, 0, 15},
 #endif
 };
 _Static_assert(sizeof ENGINE_META / sizeof ENGINE_META[0] == ENG_ID_MAX, "identity adapter: stable ID space");
@@ -436,6 +438,6 @@ static inline uint32_t swing_step_len(const track_t *t, uint32_t base, uint32_t 
 /* ----------------------------------------------------------- system --- */
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
-/* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
-#define BOOTGUARD_MAGIC 0x42475244u
-struct { uint32_t magic, failed, pending; } bootguard __attribute__((section(".noinit")));
+/* Early boot/rescue decisions share the existing twelve retained bytes. */
+#include "boot_policy.h"
+boot_policy_guard_t bootguard __attribute__((section(".noinit")));

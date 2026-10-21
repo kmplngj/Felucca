@@ -66,6 +66,10 @@ import lz4blk  # noqa: E402
 APP_XIP = 0x02000120                # app.bin offset 0 in the XIP map; the SPL jumps here
 APP_SLOT = fm1pkg_make.APP_SLOT
 NOINIT_SPARE_MIN = 100              # B of app.ld's NOINIT region left unallocated (capacity plan rule A7, docs/flash-capacity.md)
+# FELUCCA_CRASH_CTX=1 (hal/fm1_irq.h, #428): a diagnostic build whose crash record also keeps r0..r15, usp, ssp and
+# their key (19 words). Only that build may take these bytes out of the floor; release and standard builds keep 100 B
+CRASH_CTX_NOINIT = 76
+DIAG_FLAGS = ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO")   # diagnostic builds for #425/#428: never a release
 LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
@@ -129,6 +133,9 @@ def resolve(argv):
         if a.product != product:
             tag = "-" + a.product
         product = a.product
+    diag = [flag for flag in DIAG_FLAGS if os.environ.get(flag) == "1"]
+    if a.release and diag:
+        raise SystemExit(f"--release with a diagnostic build ({', '.join(diag)}=1): build the release without them")
     profile_name = os.environ.get("FELUCCA_PROFILE", "standard")
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", profile_name):
         raise SystemExit("invalid FELUCCA_PROFILE name")
@@ -187,7 +194,9 @@ def generate():
     from build_identity import write as write_identity
     write_identity(SRC, GEN, VERSION, BUILD_IDENTITY)
     from profile import generated
-    for name, content in generated(SRC, os.environ.get("FELUCCA_PROFILE", "standard")).items():
+    selection = generated(SRC, os.environ.get("FELUCCA_PROFILE", "standard"))
+    resolved = json.loads(selection["resolved-profile.json"])
+    for name, content in selection.items():
         GEN.mkdir(parents=True, exist_ok=True)
         (GEN / name).write_text(content)
     print(f"Engine profile: {os.environ.get('FELUCCA_PROFILE', 'standard')}")
@@ -205,6 +214,12 @@ def generate():
             [tools / "gen_tables.py", GEN / "felucca_tables.h"],
             [tools / "gen_fm6_patches.py", GEN / "felucca_fm6.h"],
             [tools / "gen_samples.py", GEN / "felucca_samples.h"]]
+    if 14 in resolved["engine_ids"]:
+        cmds += [[tools / "gen_braids.py", GEN / "felucca_braids.h"],
+                 [tools / "gen_macro.py", GEN / "felucca_macro.h"]]
+    else:
+        for old in ("felucca_braids.h", "felucca_macro.h"):
+            (GEN / old).unlink(missing_ok=True)
     procs = [subprocess.Popen([sys.executable, *map(str, c)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True) for c in cmds]
     failed = []
@@ -347,7 +362,8 @@ def build_app():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
-                 "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2"):
+                 "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2", "FELUCCA_ISR_ASSERT",
+                 "FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
@@ -442,6 +458,11 @@ def disassembly_rows(text, label, empty_ok=False):
             continue                # .text also holds tables; RAM flash-busy code must decode
         elif re.match(r"^\s*[0-9a-f]+:", line, re.I):
             errors.append(f"{label}: malformed instruction row: {line.strip()}")
+        elif label in (".ram_text", ".c1_text") and line.strip() and not (
+                re.fullmatch(r".*file format ELF32-pi32v2", line.strip()) or
+                line.strip() == f"Disassembly of section {label}:" or
+                re.fullmatch(r"(?:[0-9a-f]+ <[^>]+>|[^\s:]+):", line.strip(), re.I)):
+            errors.append(f"{label}: malformed disassembly line: {line.strip()}")
     if not rows:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         header = any(re.fullmatch(r".*file format ELF32-pi32v2", line) for line in lines)
@@ -452,6 +473,19 @@ def disassembly_rows(text, label, empty_ok=False):
     return rows, errors
 
 
+def ram_text_empty(hdr, syms):
+    """True only with ELF proof of emptiness; False for conflicting/nonempty evidence, None if unavailable."""
+    evidence = []
+    for p in map(str.split, hdr.splitlines()):
+        if len(p) >= 2 and p[0].isdigit() and p[1] == ".ram_text":
+            evidence.append(len(p) >= 4 and bool(re.fullmatch(r"[0-9a-f]+", p[2], re.I)) and int(p[2], 16) == 0)
+    bounds = [re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M | re.I)
+              for name in ("_rt_start", "_rt_end")]
+    if any(re.search(r"\s" + name + r"$", syms, re.M) for name in ("_rt_start", "_rt_end")):
+        evidence.append(all(bounds) and int(bounds[0][1], 16) == int(bounds[1][1], 16))
+    return all(evidence) if evidence else None
+
+
 def check(img, hdr, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -460,7 +494,7 @@ def check(img, hdr, syms, dis, rt):
     if img[:4] != bytes.fromhex("04818000"):
         errors.append(f"image starts with {img[:4].hex()}, not the entry stub")
     app_rows, app_errors = disassembly_rows(dis, "app")
-    sections = {}
+    sections, preamble = {}, []
     section = None
     for line in rt.splitlines():
         match = re.match(r"^Disassembly of section (\S+):", line)
@@ -468,9 +502,19 @@ def check(img, hdr, syms, dis, rt):
             section = match.group(1)
         if section:
             sections.setdefault(section, []).append(line)
-    rt_text = "\n".join(sections.get(".ram_text", [])) if sections else rt
+        else:
+            preamble.append(line)
+    unexpected = set(sections) - {".ram_text", ".c1_text"}
+    if unexpected:
+        errors.append(f"unexpected RAM disassembly sections: {sorted(unexpected)}")
+    rt_text = "\n".join(preamble + sections.get(".ram_text", [])) if sections else rt
     c1_text = "\n".join(sections.get(".c1_text", []))
-    rt_rows, rt_errors = disassembly_rows(rt_text, ".ram_text", empty_ok=True)
+    empty = ram_text_empty(hdr, syms)
+    # objdump omits an empty .ram_text when .c1_text is present. Keep the file
+    # header, but require ELF evidence before accepting that missing section.
+    # Preserve standalone header-only fixtures unless the ELF says nonempty.
+    rt_rows, rt_errors = disassembly_rows(rt_text, ".ram_text",
+                                         empty_ok=empty is True or (not sections and empty is None))
     c1_rows, c1_errors = disassembly_rows(c1_text, ".c1_text") if c1_text or CPU2 else ([], [])
     errors += app_errors + rt_errors + c1_errors
     rt_calls = [ln for ln in rt_text.splitlines() if re.search(r"\bcall\b", ln)]
@@ -538,8 +582,12 @@ def check(img, hdr, syms, dis, rt):
         errors.append(f"RAM headroom {ram_len - bss} B < 4096 B")
     if pool_len - pool < 8192:                    # keep >= 8 KiB of the pool spare
         errors.append(f"pool headroom {pool_len - pool} B < 8192 B")
-    if noinit_len - noinit < NOINIT_SPARE_MIN:    # NOINIT gets no new users (A7): keep >= 100 B unallocated
-        errors.append(f"NOINIT headroom {noinit_len - noinit} B < {NOINIT_SPARE_MIN} B")
+    floor = NOINIT_SPARE_MIN - (CRASH_CTX_NOINIT if os.environ.get("FELUCCA_CRASH_CTX") == "1" else 0)
+    if noinit_len - noinit < floor:               # NOINIT gets no new users (A7): keep >= 100 B unallocated
+        errors.append(f"NOINIT headroom {noinit_len - noinit} B < {floor} B")
+    elif floor != NOINIT_SPARE_MIN:
+        notes.append(f"NOINIT floor {floor} B: FELUCCA_CRASH_CTX=1 diagnostic build ({CRASH_CTX_NOINIT} B register "
+                     f"context; release/standard builds keep {NOINIT_SPARE_MIN} B)")
     return errors, notes
 
 

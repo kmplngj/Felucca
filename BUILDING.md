@@ -45,7 +45,9 @@ sha256sum -c felucca-1.6-rc1-source.tar.gz.sha256  # macOS: shasum -a 256 -c ...
 tar -xzf felucca-1.6-rc1-source.tar.gz
 cd felucca-1.6-rc1-source
 python3 tools/source_archive.py verify .
-./build.sh --release 1.6-rc1
+# Keep uv dependencies outside this verified source tree:
+export UV_PROJECT_ENVIRONMENT="$HOME/.cache/felucca-source-venv"
+uv run --locked --group build ./build.sh --release 1.6-rc1
 ```
 
 Install the prerequisites below before building. The extracted source needs no
@@ -84,8 +86,9 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 
 ## Prerequisites (macOS)
 
-- Python 3 with Pillow and fontTools: `pip3 install Pillow 'fonttools[woff]'` (the UI font and icons are
-  rasterised at build time)
+- [uv](https://docs.astral.sh/uv/) and Python 3 (the UI font and icons are rasterised
+  at build time). On macOS, install uv with `brew install uv`. The locked `build`
+  dependency group provides Pillow, fontTools and Brotli.
 - Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
   `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
@@ -107,11 +110,42 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - Emscripten (optional, `emcc`: the browser emulator, `web/emu/`).
 
 On Linux x86-64 the toolchain runs natively and Docker is not needed.
+Install uv using its [installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
+
+### Python environments
+
+Run dependency-using commands from the repository root with `uv run --locked` and
+an explicit group: `build` for asset generation, firmware builds and image-dependent
+host/emulator tests; `midi` for USB-MIDI installation and PR hardware handoff.
+`uv run` automatically creates/synchronizes the project environment (`.venv` by
+default) from `pyproject.toml` and `uv.lock` before starting the command. No shell
+activation or manual pip installation is required. There are no default dependency
+groups; add both `--group build --group midi` when a command needs both.
+`.python-version` selects Python 3.12; uv downloads a managed interpreter if a
+suitable local Python is unavailable.
+
+Direct `python3` and shell entry points remain supported when the necessary
+packages are already available in their interpreter. Their dependency checks
+report the uv command to run; they do not install packages themselves. On Windows,
+generated retry commands explicitly target PowerShell. Standard library tools
+such as source-archive verification, diagnostics and package checks
+continue to work with plain `python3`.
+
+For a verified source archive, keep the uv environment **outside the extracted
+tree**: its source verifier rejects extra inputs and symlinks, including `.venv`.
+Set an absolute external path before any uv command, for example:
+
+```sh
+export UV_PROJECT_ENVIRONMENT="$HOME/.cache/felucca-source-venv"
+```
+
+Use a fresh extraction if an environment was already created inside it. A normal
+Git clone can use uv's default `.venv`.
 
 ## Build
 
 ```
-./build.sh
+uv run --locked --group build ./build.sh
 ```
 
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
@@ -127,18 +161,20 @@ firmware:
 | `m8stealth` | Trash80 M8Stealth57 / M8Stealth89 pixel faces, the default |
 
 ```sh
-FELUCCA_FONT=inter-tight ./build.sh
-FELUCCA_FONT=tamzen ./build.sh
-FELUCCA_FONT=m8stealth ./build.sh
+FELUCCA_FONT=inter-tight uv run --locked --group build ./build.sh
+FELUCCA_FONT=tamzen uv run --locked --group build ./build.sh
+FELUCCA_FONT=m8stealth uv run --locked --group build ./build.sh
 ```
 
-Plain `./build.sh` selects M8Stealth when `FELUCCA_FONT` is unset. The pixel fonts
+Plain `uv run --locked --group build ./build.sh` selects M8Stealth when
+`FELUCCA_FONT` is unset. The pixel fonts
 save about 39 KB of firmware flash and use 1,032 B less POOL RAM for Huffman
 decode caches than Inter Tight; other RAM regions are unchanged. Tamzen stores
 6×12 and 8×16 pixel faces as 1-bit glyphs; large readouts share the 8×16 data at 2×.
 The line boxes and baselines keep the existing layout metrics, while the visible
 capital heights change. Rebuild after choosing a variant, then run
-`tests/run_tests.sh`; host tests and the browser emulator use the generated font
+`uv run --locked --group build tests/run_tests.sh`; host tests and the browser emulator
+use the generated font
 header from that build. Real FM-1 readability and redraw behavior still need
 comparison.
 M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and shared
@@ -148,7 +184,8 @@ container is decoded only during asset generation. The ten extra Felucca marks
 are explicit local bitmap adaptations. All font variants retain Inter Tight keycaps.
 Measurements and validation are recorded in [the font experiment](docs/font-experiment.md).
 
-`./build.sh --release 1.0` makes a release build: the package identity becomes `FM-1_910`
+`uv run --locked --group build ./build.sh --release 1.0` makes a release build:
+the package identity becomes `FM-1_910`
 and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 `build/release-1.0/` holds what a release ships: the package, the app
 (`felucca-1.0-app.bin`), `SHA256SUMS`, the sample attribution, `LICENSE`, `LICENSING.md` and
@@ -205,7 +242,8 @@ dependency is needed. Complete source archives preserve this repository in
 ### Build product identity (forks)
 
 `--product FM-1_XXX` sets the package identity explicitly, independent of the display version:
-`./build.sh --release 1.0 --product FM-1_ACME` builds version `v1.0` with identity `FM-1_ACME`.
+`uv run --locked --group build ./build.sh --release 1.0 --product FM-1_ACME`
+builds version `v1.0` with identity `FM-1_ACME`.
 The one resolved value is the target `FELUCCA_ID` define, the package marker, the build summary
 and (with `--release`) `BUILD-INPUTS.txt` in the release folder. Precedence: `--product`, then the
 identity derived from `--release` (`FM-1_9XY`), then the development default `FM-1_900`. Without
@@ -240,6 +278,9 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_SLICE` | 1 | the SLICE engine; `0` leaves engine id 13 out of the catalog (SLICE sounds in projects, user presets and backups are kept and shown N/A, [#212](web/EDITOR_PROTOCOL.md#engine-ids-212)) |
 | `FELUCCA_ICONS` | 1 | parameter icons on the knob cards |
 | `FELUCCA_FM4` | 0 | the retired DIGITAL engine (4-operator FM) instead of its FM6 conversion |
+| `FELUCCA_ISR_ASSERT` | 0 | development build: count main-loop-only functions called in an interrupt ([diagnostics](docs/diagnostics.md#interrupt-context-assertion-felucca_isr_assert)) |
+| `FELUCCA_CRASH_CTX` | 0 | diagnostic build: the crash record keeps r0..r15, usp and ssp (+76 B NOINIT, below the 100 B floor; [diagnostics](docs/diagnostics.md#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro)); refused with `--release` |
+| `FELUCCA_MUL64_REPRO` | 0 | diagnostic build: the #425 synthetic reproducer runs in the main loop's idle time ([audit, phase 2](docs/mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak)); refused with `--release` |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/src/usb.c`.
@@ -260,7 +301,7 @@ remain under `build/genwav/` for the SLICE test loop.
 ## Browser emulator
 
 ```
-./build.sh
+uv run --locked --group build ./build.sh
 sh web/emu/build.sh
 python3 -m http.server -d build/emu 8790     # open http://localhost:8790/
 ```
@@ -285,10 +326,30 @@ build, run `python3 tools/fm1_replay.py tests/scenarios/interaction.json --out b
 This uses the native browser-emulator integration on Linux/macOS and needs no hardware.
 
 ```
-tests/run_tests.sh
+uv run --locked --group build tests/run_tests.sh
 ```
 
-Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too, the browser emulator's). Run it after `./build.sh`
+Independent compile-and-test units run concurrently, using up to four workers by
+default (fewer on a host with fewer CPUs). Set
+`TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for
+serial debugging or a timing comparison; `TEST_JOBS=2` through `32` select an
+explicit limit. With multiple units, each regression harness defaults to one
+render child; an explicit `JOBS` overrides that inner limit. `GOLDEN_UPDATE` or
+`BUDGET_UPDATE` forces serial execution because those modes write shared baselines.
+The legacy shared-output overrides `UI_SCREEN_DIR`, `MENU_JSON` and `TRACKS` also
+select serial execution. Presence counts, including an empty environment value.
+
+Each run prints its unique `build/host/test-run-*/` directory. It contains one log
+per unit and `summary.json` with start offsets, elapsed seconds, exit statuses and
+dependencies. The combined transcript stays in script order. Failed prerequisites
+block their consumers; independent checks still finish and any failure makes the
+suite fail. Interrupting the runner terminates its worker process groups. Run
+simultaneous full suites in separate worktrees: a checkout lock protects shared
+generated outputs. Generate assets before starting a suite, and leave sources,
+assets and build flags unchanged while it runs.
+
+Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too,
+the browser emulator's). Run it after `uv run --locked --group build ./build.sh`
 (it uses `build/` and needs `AC79_SDK` set as for the build). The suites cover flash storage,
 user presets, projects of every format, backup, the keys and knobs, MIDI (USB, TRS, clock,
 control), USB audio, the update entry and loader, the command-line installer, the UI (the real
@@ -330,7 +391,7 @@ vectorises with NEON and understates engines such as PHYS and WHEEL by up to a t
 the same goldens and its own `tests/cpu_baseline_os.txt`: the host count closest to the
 device, for measuring DSP changes. `tests/target_budget.txt` (from the pi32v2 disassembly,
 needs the toolchain) stays the exact, static check. After an intended change of
-the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
+the sound, `GOLDEN_UPDATE=1 uv run --locked --group build sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
 does the same for the cost files (all three).
 The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_event_open`
 (user-space instructions, needs `perf_event_paranoid` <= 2) and the baselines are
@@ -392,32 +453,57 @@ The client needs Python 3 on macOS/Linux and an explicitly selected serial port;
 `tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a CI
 build of that exact revision (full validation by default), downloads its firmware artifact, verifies the
 recorded revision, SHA-256 and package structure, then starts the existing
-native `m-flasher` USB-MIDI installer. After the installer succeeds, the helper
+Python USB-MIDI installer (`tools/fm1_install.py`). After the installer succeeds, the helper
 prints the PR title and GitHub link so you can open its **User test instructions**.
 You do not need the JieLi toolchain, SDK or Docker locally.
-Normal automatic PR CI continues to build the merge with the target branch;
-this helper requests a separate, exact-commit build.
+Normal automatic PR CI builds the merge with the target branch. By default,
+this helper requests a separate, exact-commit build; `--automatic` reuses a
+successful automatic PR merge build instead, without requesting another build.
 
-Install Python 3 and the [GitHub CLI](https://cli.github.com/), sign in with
-`gh auth login`, and get this fork's sources. The default installer is our native MIDI-capable `m-flasher`. On first use the
-helper downloads a successful Actions artifact for a reviewed, pinned m-flasher
-commit, checks its source/platform and executable SHA-256, and installs it under
-`~/.local/share/felucca/m-flasher/COMMIT/PLATFORM/`. Later runs reuse it. No Rust,
-Python MIDI packages, GUI installation or administrator access is needed on macOS.
-The macOS CLI is universal for Apple silicon and Intel; Linux x86-64 and Windows
-x86-64 are also available. The source pin and setup live in `tools/m_flasher.py`,
-from the trusted checkout running this helper, never the PR being tested.
+Install [uv](https://docs.astral.sh/uv/) (`brew install uv` on macOS) and the
+[GitHub CLI](https://cli.github.com/), sign in with `gh auth login`, and get this
+fork's sources. Run the commands below from a trusted caller checkout. The
+`midi` group automatically supplies the locked `mido` and `python-rtmidi`
+dependencies; no manual environment activation or pip install is needed.
+
+The helper checks those imports before preparing sources or starting firmware CI.
+It uses `tools/fm1_install.py` from the trusted checkout running the helper,
+never an installer from the PR being tested. No native updater binary, Cargo/Rust
+build or m-flasher artifact download is needed.
 
 Connect one FM-1 with running firmware using a USB data cable. Close other
 applications using its MIDI ports; do not enter ROM download mode. From the checkout:
 
 ```sh
 # Replace 123 with the intended PR number.
-python3 tools/fm1_pr.py 123
+uv run --locked --group midi tools/fm1_pr.py 123
+
+# Reuse the existing automatic PR build and install its merge firmware:
+uv run --locked --group midi tools/fm1_pr.py 123 --automatic
 
 # Faster firmware for hardware iteration, with isolated PR sources:
-python3 tools/fm1_pr.py 123 --validation target --worktree-dir ../Felucca-pr123
+uv run --locked --group midi tools/fm1_pr.py 123 --validation target --worktree-dir ../Felucca-pr123
 ```
+
+Use `--profile NAME` to opt into an engine profile defined in that exact PR
+commit; the default remains `standard`, including automatic PR/main/release CI.
+For example, to download a MACRO test package without accessing hardware:
+
+```sh
+uv run --locked tools/fm1_pr.py 123 --commit FULL_40_CHARACTER_SHA --profile macro \
+  --workflow-ref feat/macro27-current-main --download-only
+```
+
+The workflow branch must support the `profile` input. Nonstandard profiles require
+an exact verified manual PR revision and cannot create releases. The helper checks
+the pinned profile definition, keeps profile run/artifact identities separate, and
+verifies the downloaded profile against provenance before installation. Resume with
+the same commit, profile, validation mode and workflow branch. `--automatic` supports
+only `standard`; omit `--download-only` when ready to use the normal installer.
+For MACRO device checks, the full macro-profile artifact also contains the
+[project/song and MIDI test pack](docs/macro-hardware-test.md#prepare-the-project-and-song-pack).
+It prepares four importable project files and a deterministic MIDI workload;
+importing them and recording physical results remain separate user actions.
 
 `--validation target` uses the same target build and flags as full validation:
 it checks the pinned SDK/toolchain, source and Engines identity, app/loader and
@@ -448,37 +534,21 @@ never cancels a target run, or vice versa. Both can also be requested manually
 under **Actions > CI > Run workflow**, selecting `validation` and filling in
 `pr` and `commit`; target-only mode requires both fields and cannot make a release.
 
-Before source preparation or any firmware CI request, the helper sets up/checks
-the selected installer's **offline** capabilities. It does not probe or open MIDI
-until the verified package is handed off for installation. `--download-only`,
-`--prepare-only`, cleanup and resolve-only modes skip installer setup entirely.
+Before source preparation or any firmware CI request, the helper checks the
+Python MIDI dependencies without discovering or opening ports. `--download-only`,
+`--prepare-only`, cleanup and resolve-only modes skip that check entirely. These
+standard-library-only modes can use `uv run --locked` without a dependency group,
+or plain `python3`, without installing MIDI packages.
+The former `--installer python` spelling is accepted for existing commands;
+native backend selection and `--m-flasher` have been removed.
 
-To install the native tool ahead of time, without accessing a device:
-
-```sh
-python3 tools/m_flasher.py
-# If the pinned CI artifact expired, build the same commit with existing Rust:
-python3 tools/m_flasher.py --from-source
-# Select an already built MIDI-capable executable explicitly:
-python3 tools/fm1_pr.py 123 --m-flasher /absolute/path/to/m-flasher
-```
-
-The CI artifacts are development builds, not releases. Retain their `source.json`.
-An expired/missing artifact fails before firmware CI; it never downloads an
-unreviewed latest binary. Source builds require Cargo/Rust and, on Linux, ALSA
-development headers. Installation writes only the user cache and does not change
-PATH, install a system service, or touch the FM-1. `--from-source` reuses an already
-valid cached installation too. For the original Python backend, explicitly choose
-`--installer python` and install `mido`/`python-rtmidi` in the same interpreter
-(prefer a virtual environment). Its dependencies are checked before CI as well.
-
-Native MIDI OTA validates the Felucca package and delegates loader staging and
-writes to the device; it creates no raw backup or verified preboot checkpoint.
-It does not silently fall back to m-flasher's ROM USB route. Firmware/settings
-compatibility and backups remain part of the selected hardware test. The native
-MIDI implementation's real FM-1/macOS validation is pending; host tests and a
-successful build do not establish physical data preservation or rollback.
-See [m-flasher MIDI OTA](https://github.com/kmplngj/m-flasher/blob/main/docs/midi-ota.md).
+The Python updater validates the package, stages its selected loader and checks
+the final application identity. It creates no raw backup or verified preboot
+checkpoint and has no automatic fallback to ROM USB. Package/loader compatibility,
+backups and pending hardware qualification are documented in the
+[recovery guide](docs/usb-rescue.md). The previously observed native updater
+exchange remains historical evidence in `m-flasher-legacy`, not validation of
+this Python handoff.
 
 The command prints the fixed commit and Actions run URL, waits for all selected
 validation to pass, and downloads into a fresh directory under
@@ -495,16 +565,38 @@ commit. The firmware and build defaults come from that revision.
 
 ```sh
 # Build/download/verify without an FM-1 or MIDI dependencies.
-python3 tools/fm1_pr.py 123 --download-only
+uv run --locked tools/fm1_pr.py 123 --download-only
 
 # Reuse a successful or running exact-commit build without requesting a new one.
-python3 tools/fm1_pr.py 123 --commit FULL_40_CHARACTER_SHA --no-build --download-only
+uv run --locked tools/fm1_pr.py 123 --commit FULL_40_CHARACTER_SHA --no-build --download-only
+
+# Download/verify the automatic PR merge build without installer setup or MIDI.
+uv run --locked tools/fm1_pr.py 123 --automatic --download-only
 ```
+
+`--automatic` requires an open PR and full, successful automatic CI with a live
+`firmware-RUN_ID` artifact. It snapshots the current PR head, base and merge SHA,
+checks that the merge's parents match that base/head, and selects a successful
+run associated with the same PR and base/head. The package provenance must match
+the **merge SHA**, rather than the PR head. All three SHAs and the Actions run URL
+are printed; downloads are stored under the merge SHA. A later push does not
+change that snapshot. Changed base/head, failed or running CI, missing/expired
+artifacts and provenance/checksum mismatches prevent installation.
+Documentation-only CI has no firmware artifact and cannot be used this way.
+
+Automatic mode never dispatches a build; `--no-build` is allowed but redundant.
+It does not wait for running CI: retry after the automatic build finishes.
+An optional `--commit SHA` must equal the current PR head; use the default
+exact-commit mode for historical revisions. Automatic mode cannot be combined
+with target validation, `--workflow-ref`, worktree or source-only options.
+It uses the same Python installer, confirmation, `--port`, `--yes` and
+`--download-only` behavior as exact-commit mode.
 
 GitHub sign-in and artifact read access are required. Requesting a missing build
 also requires Actions write access (typically a maintainer or collaborator).
 Read-only testers use `--no-build` after a maintainer starts **Actions > CI >
-Run workflow** on the default branch, with `pr` and `commit` filled in. Leave
+Run workflow** on the default branch, with `pr` and `commit` filled in, or use
+`--automatic` for an already successful automatic PR merge build. Leave
 both empty and select `full` for ordinary manual CI. Firmware artifacts expire after 30 days;
 an expired or failed build requires a fresh run. The helper retains full CI
 validation in the default mode; select `target` explicitly for faster hardware iteration.
@@ -529,10 +621,10 @@ firmware is installed. Local builds need the toolchain and SDK described above.
 
 ```sh
 # Prepare sources, then continue through CI/download/confirmed install.
-python3 tools/fm1_pr.py 123 --worktree
+uv run --locked --group midi tools/fm1_pr.py 123 --worktree
 
 # Only prepare sources: no CI build, download or MIDI access.
-python3 tools/fm1_pr.py 123 --prepare-only --worktree-dir ../Felucca-pr-123
+uv run --locked tools/fm1_pr.py 123 --prepare-only --worktree-dir ../Felucca-pr-123
 ```
 
 The default directory is a sibling named `CHECKOUT-pr-123-FULL_SHA`. A new PR
@@ -561,7 +653,7 @@ Use the isolated worktree when your current checkout has ongoing work.
 From the **original checkout**, remove a finished helper-created worktree with:
 
 ```sh
-python3 tools/fm1_pr.py 123 --remove-worktree ../Felucca-pr-123
+uv run --locked tools/fm1_pr.py 123 --remove-worktree ../Felucca-pr-123
 ```
 
 Removal needs no GitHub access and does not contact CI or MIDI. It refuses foreign
@@ -586,7 +678,8 @@ until the chosen revision and scenarios have been exercised on a real FM-1.**
    treating that PR as ready for user hardware testing.
 2. Record the printed PR commit, Actions run URL, host OS, FM-1 model and downloaded
    `provenance.json`. Flash the verified `.fwsc`; require the installer to finish
-   successfully and the FM-1 to restart. Run `python3 tools/fm1_install.py --info`
+   successfully and the FM-1 to restart. Run
+   `uv run --locked --group midi tools/fm1_install.py --info`
    to record its device identity. That identity/display version alone does not
    identify the source commit; retain the build provenance as well.
 3. Follow the PR's numbered hardware scenarios on the FM-1. Check each stated
@@ -605,11 +698,11 @@ Use the web installer in Chrome or Edge:
 <https://kmplngj.github.io/Felucca/webapp/installer/>. It offers the last successfully
 published full `main` build; use a downloaded release or PR `.fwsc` for another revision.
 
-From the command line (needs `pip3 install mido python-rtmidi`):
+From a trusted checkout with uv installed (the locked `midi` group is synchronized automatically):
 
 ```
-python3 tools/fm1_install.py build/felucca.fwsc
-python3 tools/fm1_install.py --info          # identity of the connected FM-1
+uv run --locked --group midi tools/fm1_install.py build/felucca.fwsc
+uv run --locked --group midi tools/fm1_install.py --info          # identity of the connected FM-1
 ```
 
 Or, to install your own build from the web installer, make a local copy of the site and open it from `localhost`
@@ -621,8 +714,12 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 # open http://localhost:8000/webapp/installer/
 ```
 
-Installing firmware is at your own risk. If an install fails and the FM-1 no longer
-starts, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+On a build with early USB rescue, hold OCT− while powering on to reach the
+MIDI-only updater before settings/projects and audio initialize. Use the same
+reviewed `.fwsc` and supported installer. See [early USB rescue](docs/usb-rescue.md)
+for the loader matrix, exact client versions and pending hardware checks.
+If application rescue cannot start, ROM recovery is a separate path; some faults
+need [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
 
 ### Package validation and file errors
 
@@ -634,14 +731,19 @@ from [Build](#build). See the [download and checksum guide](.github/CI.md#downlo
 for release files. Package acceptance alone does not establish compatibility with your
 FM-1 or a successful installation; the installer still checks the device and final identity.
 
-`--force` only overrides the requirement for the Felucca loader marker. Package structure
-and CRC checks still apply. The exact unmodified official V15 file is accepted through its
+`--force` is a deprecated compatibility option with no effect. Unknown package loader
+families are rejected with exit code 2 before MIDI discovery or an installation prompt,
+including with `--force`. The exact unmodified official V15 file is accepted through its
 pinned SHA-256 digest without `--force`; this exception does not cover arbitrary vendor files.
+The selected package also determines the accepted running loader: current Felucca
+requires `ota-FM-1_900`, verified original V15 requires `ota-FM-1_015` through
+Python/the maintained browser. Unknown/crossed pairs fail before the loader's
+writing phase. `--force` cannot override this contract.
 
 Device discovery and connection errors occur later: exit code 3 means the FM-1 was not
 found (check the USB data cable and other apps using MIDI), 4 means the connection was lost
 or the device stopped, 5 means a timeout, and 6 means a model or installed-identity mismatch.
-Run `python3 tools/fm1_install.py --help` for the options and complete exit-code list.
+Run `uv run --locked --group midi tools/fm1_install.py --help` for the options and complete exit-code list.
 
 If package generation reports `app area is ... B, available ... B`, the app region plus
 the SDK configuration files and headers exceeds the flash boundary. The app fitting its
@@ -650,9 +752,11 @@ own slot is not enough: use the supported SDK files and review the reported size
 
 ### Engine build profiles
 
-Plain `./build.sh` uses the frozen `standard` profile in `profiles/standard.json`:
+Plain `uv run --locked --group build ./build.sh` uses the frozen `standard` profile
+in `profiles/standard.json`:
 all thirteen current engines, stable reserved DIGITAL slot 1, unchanged display order
-and boot sounds. `FELUCCA_PROFILE=reduced-lofi ./build.sh` omits portable LOFI (id 3),
+and boot sounds.
+`FELUCCA_PROFILE=reduced-lofi uv run --locked --group build ./build.sh` omits portable LOFI (id 3),
 including its wave RAM and factory presets, and writes `felucca-reduced-lofi.fwsc`.
 No engine ID moves. Stored LOFI projects, user presets and favourites survive; the
 sound shows N/A and is silent until standard firmware is restored. Selecting another

@@ -4,6 +4,7 @@
 No toolchain or SDK is needed: every generator, compiler and package step is mocked."""
 from pathlib import Path
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,23 @@ class Stop(Exception):
 
 
 class Resolve(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ, {"FELUCCA_PROFILE": "standard"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def test_release_refuses_diagnostic_builds(self):
+        """FELUCCA_CRASH_CTX / FELUCCA_MUL64_REPRO (#425, #428) are development builds only"""
+        self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO"))
+        for flag in B.DIAG_FLAGS:
+            with patch.dict(os.environ, {flag: "1"}):
+                with self.assertRaises(SystemExit) as raised:
+                    B.resolve(["--release", "1.0"])
+                self.assertIn(flag, str(raised.exception))
+                self.assertEqual(B.resolve([])["name"], "felucca.fwsc")      # a development build is fine
+            with patch.dict(os.environ, {flag: "0"}):
+                self.assertEqual(B.resolve(["--release", "1.0"])["product"], "FM-1_910")
+
     def test_default_unchanged(self):
         c = B.resolve([])
         self.assertEqual((c["product"], c["version"], c["name"], c["explicit"]), ("FM-1_900", None, "felucca.fwsc", False))
@@ -93,6 +111,9 @@ class NoJobs(unittest.TestCase):
     """main() with mocked generators and compilers: bad input starts none of them, good input uses one identity."""
 
     def setUp(self):
+        environment = patch.dict(os.environ, {"FELUCCA_PROFILE": "standard"})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         out = Path(self.tmp.name) / "out"

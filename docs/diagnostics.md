@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Collecting device diagnostics
 
+For early boot failure, see [USB rescue and compatible loaders](usb-rescue.md).
+Rescue is MIDI-only and has no CDC diagnostics console; this guide applies after
+normal application startup.
+
 `tools/fm1_diagnostics.py` collects the existing Felucca CDC console on macOS and Linux
 using Python 3's standard library. Enable USB SERIAL on the device and explicitly select
 its CDC tty. Close other serial applications first. The collector opens the tty exclusively,
@@ -140,6 +144,15 @@ the main core or `core 1` for the worker. This identifies the retained crash's o
 even after the device falls back to one core; current `status` worker state describes
 the running system instead. Builds with `FELUCCA_CPU2=0` and older firmware omit the
 field. The collector preserves it when supplied and leaves it absent otherwise.
+In those builds `status` also reports the retained worker guard (#410): `cpu2_excl`
+(0 none, 1 bad job, 2 timeout, 3 core 0 fault, 4 hang, 5 corrupt, 15 the worker answers
+and no failure is recorded) and `cpu2_refused`, the number of starts it refused (saturating
+at 255). A value of 1 to 5 means the saved **2ND CORE ON** is overridden until the player
+sets it OFF and ON again in the menu ([recovery](fork-features.md#retained-exclusion-after-a-failed-worker-410)).
+It is the firmware's record, not proof of the cause, and it is not a measurement of
+whether `.noinit` survives a reset on the connected unit: when you collect after a warm
+reset, record the reset class and whether the value persisted. The collector keeps both
+keys as unknown fields.
 Each `crash` reply formats one validated local copy. If the retained record is absent
 or changes while it is copied, the reply is `no crash record`; a later request can retry.
 
@@ -155,6 +168,75 @@ windows are checked against the requested equal interval and reported separately
 or invalid; an invalid later window also invalidates the session. Key latency remains
 `UNMEASURED` without confirmed instrumentation, a valid window and observed presses/notes.
 Raw zeros are retained without being presented as measured latency.
+
+## Interrupt-context assertion (`FELUCCA_ISR_ASSERT`)
+
+`fm1_sp_in_isr()` (`firmware/hal/fm1_guard.h`) is true when core 0's `sp` lies between the
+linker symbols `_guard1` and `_sstack_top`, the system (interrupt) stack; the main loop runs on the
+user stack below it (`crt0.S`). Core 1 has its own stacks, so the function is always false there.
+`FM1_ASSERT_THREAD()` (`firmware/src/isr_assert.h`) uses it to check code that must not run in an interrupt.
+It sits at the entry of `st_save_to` (every project, settings, autosave and user-preset save), `st_erase`
+and `st_prog` (`storage_hw.c`), `con_exec` (formatted console replies), `usb_start` (waits 25 ms) and
+`apply_preset_to` (preset loads) and `sound_install` (every sound load, `sound.c`), before any `irq_save()`. It is not placed in `.ram_text` code or in
+interrupt paths.
+
+| `FELUCCA_ISR_ASSERT` | Where | Effect |
+| --- | --- | --- |
+| `0` | FM-1 default and the update loader | The macros expand to `((void)0)`: no code or data (release image byte-identical apart from the embedded commit id). |
+| `1` | Default for host tests and the emulator | `fm1_alnk0_irq` and `fm1_timer5_irq` raise a simulated-interrupt depth; a guarded call in it prints `file:line` and aborts (a test may set `fm1_isr_assert_hook` instead). |
+| `1` | FM-1 development build: `FELUCCA_ISR_ASSERT=1 ./build.sh` | A violation increments `isr_misuse` and records the first caller's address (`isr_misuse_pc`); both are keys of `status`, not `inp`, and `isr_misuse` is included in the collector's `status` counter deltas and carries on: no abort, flash write or output from the interrupt. |
+
+`tests/storage_test.c` (a real save) and `tests/audio_test.c` (a call from inside the real audio handler)
+check that the assertion fires in simulated interrupt context and stays quiet in the main loop. On the device the
+check assumes interrupts run on the system stack as `fm1_isr.S` and the stack guards describe; that has not
+been observed on an FM-1 yet.
+
+## Diagnostic builds for #425 (`FELUCCA_CRASH_CTX`, `FELUCCA_MUL64_REPRO`)
+
+Two opt-in build flags serve the [#425 soak test](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak).
+Both default to `0`; release and standard builds compile neither, and `./build.sh --release` refuses them.
+They are development images: install them only for the test and reinstall the normal build afterwards.
+
+**`FELUCCA_CRASH_CTX=1`** (#428): the fault handler (`fm1_fault_c`, `hal/fm1_irq.h`) also keeps the faulting core's
+`r0`..`r15`, `usp` and `ssp` from the frame `fm1_fatal_common` saved, in the same retained record and under the same
+invalidate / publish protocol as the other fields, for core 0 and for the worker (`core 1`). One record, the most
+recent crash, as before. A one-bit register error such as the donor's loop index `0x00800012` is visible only here.
+
+| Key | Meaning |
+| --- | --- |
+| `status` `crash_ctx 1` | the running firmware is a `FELUCCA_CRASH_CTX=1` build |
+| `crash` `ctx` | `1`: the registers below belong to this record; `0`: the record was written by a firmware without them (no register lines follow) |
+| `crash` `r0` .. `r15`, `usp`, `ssp` | hex, after the existing keys, which keep their order and meaning |
+
+Cost: +76 B NOINIT (`fm1_crash` grows from 68 to 144 B: a key word and 18 registers), which puts this build at
+44 B spare, below the 100 B floor that release and standard builds keep; `tools/build.py` checks a 24 B floor for
+this build only ([performance](performance.md#ram-and-stack), capacity plan rule A7). `fm1_crash` stays the first
+`.noinit` object, so its address is unchanged; the objects after it move by 76 B between a normal and a CRASH_CTX
+build. The retained flash mirrors, boot guard, panel copy and CPU1 exclusion are validated at boot (magic, checksum
+or key), so the first boot after switching discards rather than misreads them, as with any build that changes a
+`.noinit` object (`FELUCCA_CPU2` already changes `fm1_crash`). `crash_seen` has no check: when a crash record exists,
+that first boot may take it for a new crash and skip the LED sweep and the RESTORE LAST autosave once. Keep the
+music for the test in a saved project, not only in the autosave.
+
+**`FELUCCA_MUL64_REPRO=1`** (#425): the synthetic reproducer (`firmware/src/mul64_repro.c`) runs in the main loop's
+idle wait. `status` adds:
+
+| Key | Meaning |
+| --- | --- |
+| `mul64_repro` | `1`: the reproducer is built in |
+| `mul64_runs` | steps that compared both variants; each runs 2 x 128 loop iterations with 3 64-bit multiplies (384 per variant) |
+| `mul64_inl_bad` | checksum mismatches of the inline variant (multiplies among the 16-bit loads) |
+| `mul64_nol_bad` | checksum mismatches of the noinline variant (each multiply in a helper that uses the product at once) |
+| `mul64_ref_bad` | reference set-ups whose two noinline results disagreed (retried later); an inline result differing from two agreeing noinline ones counts in `mul64_inl_bad` instead |
+| `mul64_first_var`, `mul64_first_run`, `mul64_first_xor` | the first mismatch: variant (1 inline, 2 noinline, 3 reference), step, and the XOR of the wrong and the reference checksum (hex; one set bit is a one-bit result error) |
+
+The collector counts `mul64_runs`, `mul64_inl_bad`, `mul64_nol_bad` and `mul64_ref_bad` as `status` counters
+(interval deltas); they are absent, not zero, in other builds. A corrupted loop counter may instead make a kernel
+loop run for minutes: the watchdog then resets the FM-1, the collector reports the reboot as a discontinuity, and
+`boots` increases. Report that as a candidate observation together with the time and the workload.
+`tests/mul64_repro_test.c` checks the bookkeeping on the host; `tests/diagnostics_test.py` checks the console keys
+and the collector's deltas; `tests/crash_record_test.py` and `tests/crash_snapshot_test.py` check register capture,
+the record replaced while it is read, and the console output in both build variants. None of them tests the chip.
 
 ## Validation scope
 

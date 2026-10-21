@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "isr_assert.h"                    /* FM1_ASSERT_THREAD / FM1_ISR_SIM_* (#428) */
 /* Serial console on the CDC-ACM function (FELUCCA_CDC=1): read-only
  * diagnostics. Runs in the main loop (cdc_task); usb_poll moves the bytes.
  * The baud rate is ignored. Nothing here writes memory or flash; `uboot`
@@ -205,11 +206,35 @@ static void con_status(void)
     con_kv("cpu2", fm1_c1_on);                          /* the second core renders parts (hal/fm1_cpu1.h) */
     con_kv("cpu2_gave_up", fm1_c1_gave_up);             /* 1: it misread a job, 2: one timed out (then one core) */
     con_kv("cpu2_bad", (int32_t)fm1_c1_mb.bad);
+    {
+        uint32_t refused;
+        con_kv("cpu2_excl", (int32_t)fm1_c1g_read(&refused));   /* retained: 0 none, 1 bad job, 2 timeout, 3 core 0 fault, 4 hang
+                                                         * (WDT), 5 corrupt, 15 answering; 1..5 refuse a start until MENU > 2ND CORE
+                                                         * is set ON again (hal/fm1_sys.h) */
+        con_kv("cpu2_refused", (int32_t)refused);        /* starts it refused (saturating at 255) */
+    }
     con_kv("cpu2_blocks", (int32_t)c1_blocks);          /* blocks it took parts of (fx.c mix_block) */
     con_kv("cpu2_wait_max_us", (int32_t)(fm1_c1_wait_max / 24u));
     con_kv("cpu2_stack", (int32_t)fm1_cpu1_stack_used());
 #endif
     con_kv("voices_given_up", (int32_t)voice_kills);
+#if FM1_ISR_ASSERT_TARGET
+    con_kv("isr_misuse", (int32_t)fm1_isr_misuse_n);    /* FELUCCA_ISR_ASSERT=1 builds (isr_assert.h) */
+    con_kv("isr_misuse_pc", (int32_t)fm1_isr_misuse_pc);
+#endif
+#if FELUCCA_CRASH_CTX
+    con_kv("crash_ctx", 1);                             /* diagnostic build: `crash` adds the registers (#428) */
+#endif
+#if FELUCCA_MUL64_REPRO
+    con_kv("mul64_repro", 1);                           /* diagnostic build: the #425 reproducer (mul64_repro.c) */
+    con_kv("mul64_runs", (int32_t)mr.runs);
+    con_kv("mul64_inl_bad", (int32_t)mr.inl_bad);
+    con_kv("mul64_nol_bad", (int32_t)mr.nol_bad);
+    con_kv("mul64_ref_bad", (int32_t)mr.ref_bad);
+    con_kv("mul64_first_var", (int32_t)mr.first_var);
+    con_kv("mul64_first_run", (int32_t)mr.first_run);
+    con_kx("mul64_first_xor", mr.first_xor);
+#endif
     con_kv("track", (int32_t)song.sel + 1);
     con_kv("batt_raw", song.batt_raw);
     con_puts("engine ");
@@ -341,6 +366,21 @@ static void con_crash(void)
     con_kx("psr", c.psr);
     con_kv("uptime_ms", (int32_t)c.uptime_ms);
     con_kv("early", (int32_t)c.early);
+#if FELUCCA_CRASH_CTX
+    {   /* FELUCCA_CRASH_CTX=1 diagnostic builds (#428, hal/fm1_irq.h): the faulting core's registers, after the keys
+         * above (unchanged for old reports); ctx 0 = this record carries none (written by another firmware) */
+        static const char rn[16][4] = {"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+                                       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"};
+        uint32_t i, ok = c.ctx == (FM1_CRASH_CTX_KEY ^ c.count);
+        con_kv("ctx", (int32_t)ok);
+        if (ok) {
+            for (i = 0; i < 16u; i++)
+                con_kx(rn[i], c.r[i]);
+            con_kx("usp", c.usp);
+            con_kx("ssp", c.ssp);
+        }
+    }
+#endif
 }
 
 static void con_params(void)
@@ -356,6 +396,7 @@ static void con_params(void)
 
 static void con_exec(const char *p)
 {
+    FM1_ASSERT_THREAD();                                /* formatted replies: main loop only (#428) */
     if (con_word(&p, "help") || con_word(&p, "?"))
         con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "status"))

@@ -8,8 +8,8 @@
  * compiled to WebAssembly and run in an AudioWorklet against a simulated FM-1:
  *   - the device clock: TIMER4 ticks (24 MHz) and fm1_ms advance with the audio the worklet asks for; the
  *     audio ISR (audio.c fm1_alnk0_irq, the real one) renders each I2S half (HALF_FRAMES) as the DMA would
- *     ask for it, and the main loop (main.c's, below in web_frame) runs every 15 ms, with ui_input on every
- *     millisecond in between as main.c's wait loop calls it;
+ *     ask for it, and main.c's musical frame (music_frame_sense / music_frame_run, below in web_frame) runs every
+ *     15 ms, with music_frame_poll (ui_input) on every millisecond in between as main.c's wait loop calls it;
  *   - the panel: buttons and encoders by their printed labels (panel.c's table maps them to the matrix),
  *     the keys as fm1_in.notes, the LEDs read back from fm1_led / fm1_led_dim through the key matrix;
  *   - the screen: lcd_fill / lcd_blit into a 240 x 240 RGB565 frame (the panel's byte order);
@@ -165,6 +165,7 @@ static void lcd_init(void) {}
 #include "../../firmware/src/ui_graph.c"
 #include "../../firmware/src/ui_draw.c"
 #include "../../firmware/src/ui_menu.c"
+#include "../../firmware/src/ui_knob.c"
 #include "../../firmware/src/ui_input.c"
 #include "../../firmware/src/ui_layer.c"
 
@@ -251,6 +252,10 @@ enum { FM1_GUARD_STACK = 1, FM1_GUARD_WRITE = 2, FM1_GUARD_BUS = 4, FM1_GUARD_PC
 uint32_t _c1_start[1], _c1_end[1], _c1_load[1];
 static uint8_t fm1_c1_on, fm1_c1_gave_up;
 static void fm1_cpu1_halt(void) {}
+enum { FM1_C1X_CORRUPT = 5 };
+static void fm1_c1g_boot(uint32_t p3) { (void)p3; }                     /* no retained worker guard: one core */
+static uint32_t fm1_c1g_refuse(void) { return 0; }
+static uint32_t fm1_c1g_read(uint32_t *n) { if (n) *n = 0; return 0; }
 static int fm1_cpu1_start(void) { return -1; }
 static void fm1_guard_pc_open(void) {}
 #endif
@@ -262,6 +267,8 @@ static void cdc_task(void) {}
 #define usb_start() ((void)0)
 #define usb_retry(ms) ((void)(ms))
 #define usb_detach() ((void)0)
+/* Physical early recovery is target-only; web_power_on owns emulator startup. */
+static uint32_t rescue_boot_buttons(void) { return 0; }
 #include "../../firmware/src/master.c"
 #include "../../firmware/src/main.c"
 #undef usb_poll
@@ -296,19 +303,12 @@ static void web_power_on(void)
     web_booted = 1;
 }
 
-/* one pass of main.c fm1_main's loop (what the browser has: no USB, editor, UBOOT, console) */
+/* one pass of main.c fm1_main's loop: its musical frame (main.c music_frame_sense / music_frame_run, #297), without
+ * the platform services between them that the browser lacks (USB, editor, UBOOT, console) */
 static void web_frame(void)
 {
-    int32_t b = fm1_adc_read(FM1_ADC_BATT);
-    if (b > 0)
-        song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
-    master_poll();
-    felucca_dbg.ui_frames++;
-    ui_input();
-    settings_poll();
-    autosave_poll();
-    ui_leds();
-    ui_draw();
+    music_frame_sense();
+    music_frame_run();
 }
 
 /* output ring, stereo float, filled by web_ms, drained by web_render */
@@ -350,7 +350,7 @@ static void web_ms(void)
         web_last_frame = fm1_ms;
         web_frame();
     } else {
-        ui_input();                                       /* main.c's wait loop */
+        music_frame_poll();                               /* main.c's wait loop */
     }
 }
 
@@ -506,6 +506,30 @@ EXPORT void web_test_heavy(void)
 }
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
+EXPORT uint32_t web_test_engine(void) { return TSEL->eng_req; }
+EXPORT int32_t web_test_param(uint32_t i) { return i < P_COUNT ? TSEL->p[i] : 0; }
+EXPORT uint32_t web_test_engine_param_base(void) { return P_E0; }
+EXPORT uint32_t web_test_engine_rank(uint32_t e) { return eng_ok(e) ? eng_rank(e) : UINT32_MAX; }
+EXPORT const char *web_test_user_name(uint32_t i) { return i < UP_SLOTS ? up_rec(i)->name : 0; }
+EXPORT uint32_t web_test_user_category(uint32_t i) { return up_cat(i); }
+EXPORT uint32_t web_test_macro_count(void)
+{
+#if FELUCCA_PROFILE_ENGINE_14
+    return ENG_MACRO.npresets;
+#else
+    return 0;
+#endif
+}
+/* Use the ordinary deferred sound install; model/oscillator state is not injected. */
+EXPORT void web_test_macro(uint32_t preset)
+{
+#if FELUCCA_PROFILE_ENGINE_14
+    host_preset_req(&trk[0], ENGI_MACRO, preset);
+    ui.force = 1;
+#else
+    (void)preset;
+#endif
+}
 
 EXPORT uint16_t *web_screen(void) { return web_fb; }
 EXPORT uint32_t web_screen_draws(void) { return web_draws; }

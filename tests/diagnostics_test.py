@@ -150,13 +150,23 @@ EXPECTED_COUNTERS = {
         usb_suspends usb_retries usb_frame_stalls midi_rx_pkts midi_tx_pkts
         uart_rx_bytes uart_rx_msgs uart_rx_drops uac_rate_sets uac_starts
         uac_pkts uac_underruns uac_overruns uac_missed uac_stalls
-        uac_adj_up uac_adj_down""".split()),
+        uac_adj_up uac_adj_down isr_misuse
+        mul64_runs mul64_inl_bad mul64_nol_bad mul64_ref_bad""".split()),
     "dbg": {"halves", "nested", "late", "timer_irqs", "ui_frames"},
     "inp": {"timer_irqs", "nested"},
     "crash": {"count"},
 }
 OPTIONAL_COUNTERS = {name for name in EXPECTED_COUNTERS["status"]
-                     if name.startswith(("uart_", "uac_"))}
+                     if name.startswith(("uart_", "uac_")) or name == "isr_misuse"}
+# isr_misuse/isr_misuse_pc are `status` keys of FELUCCA_ISR_ASSERT=1 FM-1 builds only
+# (FM1_ISR_ASSERT_TARGET); host fixtures and release builds must not emit them.
+# mul64_* (FELUCCA_MUL64_REPRO=1, #425) and crash_ctx plus the crash registers (FELUCCA_CRASH_CTX=1, #428)
+# are diagnostic-build keys: absent from release and standard builds.
+DIAG_COUNTERS = {name for name in EXPECTED_COUNTERS["status"] if name.startswith("mul64_")}
+OPTIONAL_COUNTERS |= DIAG_COUNTERS
+DIAG_STATUS_KEYS = DIAG_COUNTERS | {"mul64_repro", "mul64_first_var", "mul64_first_run", "mul64_first_xor",
+                                    "crash_ctx"}
+CRASH_CTX_KEYS = {"ctx", "usp", "ssp"} | {f"r{i}" for i in range(16)}
 
 
 class ConsoleContractTests(unittest.TestCase):
@@ -174,6 +184,13 @@ class ConsoleContractTests(unittest.TestCase):
                 str(root / "tests/console_diagnostics.c"), "-o", str(binary)]
             subprocess.run(command, check=True, timeout=30)
             cls.binaries[features] = binary
+        # the diagnostic build of #425/#428: FELUCCA_CRASH_CTX=1 FELUCCA_MUL64_REPRO=1
+        binary = Path(cls.directory.name) / "console-diag"
+        subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
+            "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+            "-DFELUCCA_CRASH_CTX=1", "-DFELUCCA_MUL64_REPRO=1",
+            str(root / "tests/console_diagnostics.c"), "-o", str(binary)], check=True, timeout=30)
+        cls.binaries["diag"] = binary
 
     def response(self, command, features=True, *arguments):
         raw = subprocess.check_output([str(self.binaries[features]), command, *arguments], timeout=5)
@@ -191,6 +208,8 @@ class ConsoleContractTests(unittest.TestCase):
         for command, names in EXPECTED_COUNTERS.items():
             fields = self.response(command)
             for name in names:
+                if name == "isr_misuse" or name in DIAG_COUNTERS:
+                    continue
                 with self.subTest(command=command, counter=name):
                     self.assertIn(name, fields)
                     self.assertIs(type(fields[name]), int)
@@ -200,12 +219,50 @@ class ConsoleContractTests(unittest.TestCase):
         self.assertEqual(self.response("status").get("usb_resets"), 1)
         self.assertEqual(self.response("dbg").get("halves"), 8192)
         self.assertEqual(self.response("inp").get("window_ms"), 1000)
+        for command in diag.COMMANDS:
+            self.assertNotIn("isr_misuse", self.response(command))   # target-only, assert builds
+            for features in (True, False):
+                fields = self.response(command, features)
+                self.assertTrue(DIAG_STATUS_KEYS.isdisjoint(fields))  # diagnostic builds only
+                self.assertTrue(CRASH_CTX_KEYS.isdisjoint(fields))
         self.assertEqual(self.response("crash").get("count"), 2)
+
+    def test_diagnostic_build_keys(self):
+        """FELUCCA_CRASH_CTX=1 / FELUCCA_MUL64_REPRO=1: the added keys, parsed and counted by the collector."""
+        status = self.response("status", "diag")
+        self.assertEqual(status["crash_ctx"], 1)
+        self.assertEqual(status["mul64_repro"], 1)
+        self.assertEqual(status["mul64_runs"], 4000000000)          # uint32 restored from con_kv's signed text
+        self.assertEqual((status["mul64_inl_bad"], status["mul64_nol_bad"], status["mul64_ref_bad"]), (1, 0, 0))
+        self.assertEqual((status["mul64_first_var"], status["mul64_first_run"]), (1, 1234))
+        self.assertEqual(status["mul64_first_xor"], 0x00800000)
+        for name in EXPECTED_COUNTERS["status"] - {"isr_misuse"}:
+            self.assertIn(name, status)
+        crash = self.response("crash", "diag")
+        self.assertEqual((crash["count"], crash["pc"], crash["sp"]), (2, 0x02001234, 0x01C60000))
+        self.assertEqual(crash["ctx"], 1)
+        self.assertEqual([crash[f"r{i}"] for i in range(16)],
+                         [0x00800012 if i == 5 else 0x01C60000 + i for i in range(16)])
+        self.assertEqual((crash["usp"], crash["ssp"]), (0x01C40000, 0x01C7E000))
+        raw = subprocess.check_output([str(self.binaries["diag"]), "crash"], timeout=5).decode()
+        self.assertLess(raw.index("early "), raw.index("ctx "))     # the old keys first, unchanged
+        stale = self.response("crash", "diag", "stale-ctx")
+        self.assertEqual(stale["ctx"], 0)
+        self.assertTrue((CRASH_CTX_KEYS - {"ctx"}).isdisjoint(stale))
+        self.assertEqual(self.response("crash", "diag", "no-crash"), {"record_present": False})
+        counters = "mul64_runs {}\nmul64_inl_bad {}\nmul64_nol_bad 0\nmul64_ref_bad 0\n"
+        first = snapshot(status=STATUS + counters.format(10, 0))
+        second = snapshot(status=STATUS.replace("uptime_ms 10000", "uptime_ms 15000") + counters.format(4010, 2))
+        result = diag.compare(first, second)
+        self.assertEqual(result["validity"], "VALID")
+        self.assertEqual(result["deltas"]["status"]["mul64_runs"], 4000)
+        self.assertEqual(result["deltas"]["status"]["mul64_inl_bad"], 2)
 
     def test_optional_features_absent(self):
         for command in diag.COMMANDS:
             fields = self.response(command, False)
             self.assertTrue(OPTIONAL_COUNTERS.isdisjoint(fields))
+            self.assertNotIn("isr_misuse_pc", fields)
             for name in EXPECTED_COUNTERS[command] - OPTIONAL_COUNTERS:
                 self.assertIn(name, fields)
             if command == "status":

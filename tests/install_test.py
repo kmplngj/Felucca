@@ -9,17 +9,22 @@ The packages are genuine ones, built with tools/fm1pkg_make.py from synthetic SD
 files, app and loader; the preflight (#118) gets them damaged one cause at a time.
 Also checks logical_image/product_of against web/fm1pkg.js (needs node; the
 build/felucca.fwsc check is skipped without a build)."""
+import contextlib
 import hashlib
 import json
 import io
+import os
 import queue
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import wave
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -73,8 +78,9 @@ class FakeFM1:
     """a MIDI backend with one FM-1 on it"""
 
     def __init__(self, image, identity="FM-1_015", name="FM-1", unplug_after=None, after_write="FM-1_900",
-                 stall_after=None, bad_addr=None):
+                 stall_after=None, bad_addr=None, loader_identity="ota-FM-1_900"):
         self.image, self.unplug_after, self.after_write = image, unplug_after, after_write
+        self.loader_identity = loader_identity
         self.stall_after, self.bad_addr = stall_after, bad_addr
         self.served = self.bad = self.upgrades = 0
         self.sent, self.links, self.gen, self.lock = [], [], 0, threading.Lock()
@@ -131,7 +137,7 @@ class FakeFM1:
             if self.stall_after and self.served >= self.stall_after:
                 return
             if addr == I.FINISH_CHECK:
-                threading.Timer(0.05, self.boot, ("ota-FM-1_900", "Felucca Update")).start()
+                threading.Timer(0.05, self.boot, (self.loader_identity, "Felucca Update")).start()
             elif addr == I.FINISH_WRITE:
                 threading.Timer(0.05, self.boot, (self.after_write, "Felucca")).start()
             else:
@@ -221,11 +227,15 @@ def pkgfile(name, raw):
     return str(p)
 
 
-def cli(args, dev, answer=True):
+def cli(args, dev, answer=True, prompts=None):
     out, err = io.StringIO(), io.StringIO()
     old, sys.stderr = sys.stderr, err
+    def ask(prompt):
+        if prompts is not None:
+            prompts.append(prompt)
+        return answer
     try:
-        rc = I.main(args, backend=dev, out=out, ask=lambda _p: answer)
+        rc = I.main(args, backend=dev, out=out, ask=ask)
     finally:
         sys.stderr = old
     return rc, out.getvalue(), err.getvalue()
@@ -325,16 +335,79 @@ def errors():
     ok(rc == 5 and "loader did not appear" in err, "no loader after step 1 -> exit 5")
 
     plain = pkgfile("plain.fwsc", package(marker=False))
-    dev = FakeFM1(image)
-    rc, out, err = cli([plain, "--yes"], dev)
-    ok(rc == 2 and "no Felucca update loader" in err and dev.sent == [], "package without the loader marker -> exit 2, no MIDI")
-    dev = FakeFM1(I.logical_image(package(marker=False)))
-    rc, out, err = cli([plain, "--yes", "--force"], dev)
-    ok(rc == 0 and dev.bad == 0, "... installs with --force")
+    class NoDiscovery(FakeFM1):
+        def input_names(self):
+            raise AssertionError("unapproved package must fail before MIDI discovery")
+        output_names = input_names
+    for force in ([], ["--force"]):
+        for confirmation in ([], ["--yes"]):
+            dev = NoDiscovery(I.logical_image(package(marker=False)))
+            prompts = []
+            rc, out, err = cli([plain, *confirmation, *force], dev, prompts=prompts)
+            ok(rc == 2 and "no Felucca update loader" in err and "--force cannot approve" in err
+               and dev.opened == 0 and dev.sent == [] and prompts == [],
+               f"unknown package -> exit 2 before MIDI or confirmation ({confirmation + force})")
+    for identity, upgrades in (("FM-1_015", 2), ("ota-FM-1_900", 1)):
+        dev = FakeFM1(image, identity=identity)
+        rc, out, err = cli([p, "--yes", "--force"], dev)
+        ok(rc == 0 and dev.bad == 0 and dev.upgrades == upgrades,
+           f"deprecated --force leaves a supported install unchanged ({identity})")
     rc, out, err = cli([pkgfile("short.fwsc", b"\0" * 100), "--yes"], FakeFM1(image))
     ok(rc == 2 and "too short" in err, "not a package -> exit 2")
     rc, out, err = cli([str(TMP / "missing.fwsc"), "--yes"], FakeFM1(image))
     ok(rc == 2, "missing file -> exit 2")
+
+
+def compatibility():
+    """#119: connected loader identity, not an ota- prefix, decides phase-two safety."""
+    raw = package()
+    image = I.logical_image(raw)
+    p = pkgfile("compatibility.fwsc", raw)
+    ok(I.package_bytes(image, "FM-1_900") == raw and I.package_family(image, "FM-1_900") == "felucca-v1",
+       "classifier: native layout and loader window identify current Felucca")
+    for identity in ("ota-FM-1_015", "ota-FM-1_901", "ota-FM-1_CUSTOM", "ota-XY-9_900"):
+        dev = FakeFM1(image, identity=identity, name="Felucca Update")
+        rc, out, err = cli([p, "--yes"], dev)
+        ok(rc == 6 and dev.upgrades == 0 and dev.served == 0,
+           f"resume: custom package refuses {identity} before START/data")
+        dev = FakeFM1(image, loader_identity=identity)
+        rc, out, err = cli([p, "--yes"], dev)
+        ok(rc == 6 and dev.upgrades == 1 and dev.served == 4,
+           f"fresh: custom package refuses discovered {identity} before phase two")
+    override = "FM-1_ACME.V2_X-1"
+    custom = package(product=override)
+    dev = FakeFM1(I.logical_image(custom), identity=override, after_write=override)
+    rc, out, err = cli([pkgfile("override.fwsc", custom), "--yes"], dev)
+    ok(rc == 0 and dev.upgrades == 2 and override in out,
+       "identity: supported build override handshakes and verifies exactly")
+    # Install is also a public entry point: reject the expected identity before START or reads.
+    for product in ("", "ota-FM-1_900", "FM-1_lower", "FM-1_" + "A" * 16, "FM-1_015", "FM-1_9\n", "FM-1_9é"):
+        dev = FakeFM1(image)
+        link = FakeLink(dev, dev.gen)
+        d = I.Device(link, I.Identity("FM-1_900", "FM-1", 900), "FM-1")
+        try:
+            I.Updater(dev).install(d, image, product)
+            refused = False
+        except I.InstallError as e:
+            refused = e.code == "badpkg"
+        ok(refused and dev.sent == [] and dev.upgrades == 0 and link.closed,
+           f"identity: invalid expected {product!r} causes no device operations")
+    # Recompute all CRCs so these test classification, not accidental structural damage.
+    unmarked = package(marker=False, extra=[(200, "marker.bin", I.LOADER_MARK)])
+    misplaced = package(ota=B.ldr_wrap(synth(256, 101) + I.LOADER_MARK + synth(3000, 7)))
+    wrong_size = M.ufw(FLASH + bytes(0x100), loader(), "FM-1_900")
+    huge_loader = bytearray(loader())
+    huge_loader[0x24:0x28] = (0x14001).to_bytes(4, "little")
+    huge_loader[0x20:0x22] = I.crc16(huge_loader[0x22:0x40]).to_bytes(2, "little")
+    huge_loader[2:4] = I.crc16(huge_loader[0x20:]).to_bytes(2, "little")
+    huge_loader[0:2] = I.crc16(huge_loader[2:0x20]).to_bytes(2, "little")
+    for what, bad in (("marker in another file", unmarked), ("marker outside loader window", misplaced),
+                      ("non-native flash size", wrong_size), ("oversized expanded loader", package(ota=bytes(huge_loader)))):
+        for force in ([], ["--force"]):
+            dev = FakeFM1(I.logical_image(bad))
+            rc, out, err = cli([pkgfile("unknown-family.fwsc", bad), "--yes", *force], dev)
+            ok(rc == 2 and dev.opened == 0 and dev.sent == [] and dev.upgrades == 0 and dev.served == 0,
+               f"classifier: {what} refused before MIDI ({force})")
 
 
 def preflight():
@@ -353,8 +426,13 @@ def preflight():
     rc, out, err = cli([pkgfile("n11.fwsc", many(11)), "--yes"], dev)
     ok(rc == 0 and dev.bad == 0, "install: an 11-entry package")
     plain = package(marker=False)
-    ok(I.load_package(pkgfile("p.fwsc", plain), True)[1] == I.logical_image(plain),
-       "preflight: a valid package without the loader marker passes with --force")
+    for force in (False, True):
+        try:
+            I.load_package(pkgfile("p.fwsc", plain), force)
+            refused = False
+        except I.InstallError as e:
+            refused = e.code == "badpkg" and "unknown loader family" in str(e)
+        ok(refused, f"preflight: unmarked package refused (force={force})")
 
     def lay(t, size):          # flash.bin entry with another size, its data CRC kept true
         def f(i, e):
@@ -429,6 +507,51 @@ def preflight():
     ok(r.returncode == 0 and "refused" in r.stdout and "list CRC" in r.stdout, "preflight: active under python -O")
 
 
+def dependency_guidance():
+    """Missing MIDI packages give a complete retry; offline paths still run without them."""
+    import fm1_sample_upload as U
+    arguments = ["--info", "--port", "FM-1 user's port"]
+    sample_arguments = ["erase", "1"]
+    for missing, modules in (("mido", {"mido": None}),
+                             ("rtmidi", {"mido": object(), "rtmidi": None})):
+        error = io.StringIO()
+        with patch.dict(sys.modules, modules), contextlib.redirect_stderr(error):
+            result = I.main(arguments)
+        command = shlex.split(error.getvalue().split("Run:\n  ", 1)[1])
+        expected = ["uv", "run", "--project", str(ROOT), "--locked", "--group", "midi",
+                    "python", str(ROOT / "tools/fm1_install.py"), *arguments]
+        ok(result == 2 and command == expected, f"missing {missing}: installer gives locked MIDI retry with original flags")
+        with patch.dict(sys.modules, modules), patch.object(sys, "argv", [U.__file__, *sample_arguments]):
+            try:
+                U.Link()
+                ok(False, f"missing {missing}: sample uploader stops before MIDI discovery")
+            except SystemExit as error:
+                command = shlex.split(str(error).split("Run:\n  ", 1)[1])
+                expected = ["uv", "run", "--project", str(ROOT), "--locked", "--group", "midi",
+                            "python", str(ROOT / "tools/fm1_sample_upload.py"), *sample_arguments]
+                ok(command == expected, f"missing {missing}: sample uploader gives locked MIDI retry")
+    help_ok = False
+    with patch.dict(sys.modules, {"mido": None, "rtmidi": None}), contextlib.redirect_stdout(io.StringIO()):
+        try:
+            I.main(["--help"])
+        except SystemExit as error:
+            help_ok = error.code == 0
+    ok(help_ok, "installer help needs no MIDI dependencies")
+    wav = TMP / "offline sample.wav"
+    with wave.open(str(wav), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(22050)
+        output.writeframes(bytes(128))
+    prefix = TMP / "offline slot"
+    with patch.dict(sys.modules, {"mido": None, "rtmidi": None}), \
+            patch.object(sys, "argv", [U.__file__, "build", "Offline", str(prefix), str(wav)]), \
+            contextlib.redirect_stdout(io.StringIO()):
+        U.main()
+    ok(prefix.with_suffix(".hdr").is_file() and prefix.with_suffix(".bin").is_file(),
+       "sample slot build needs no MIDI dependencies")
+
+
 def js_synthetic():
     """the synthetic packages through web/fm1pkg.js: same identity, logical image, entries; same CRC refusals"""
     if not shutil.which("node"):
@@ -461,7 +584,8 @@ def js_synthetic():
 
 
 def against_js():
-    clean = ROOT / "build/felucca.fwsc"
+    profile = os.environ.get("FELUCCA_PROFILE", "standard")
+    clean = ROOT / "build" / ("felucca" + ("-" + profile if profile != "standard" else "") + ".fwsc")
     if not clean.exists():
         print("built package preflight / fm1pkg.js parity: skipped (needs build/felucca.fwsc)")
         return
@@ -487,7 +611,8 @@ def stock_policy():
     digest = I.STOCK_V15_SHA256
     try:
         I.STOCK_V15_SHA256 = hashlib.sha256(raw).hexdigest()
-        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015")
+        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015",
+                      loader_identity="ota-FM-1_015")
         rc, out, err = cli([pkgfile("digest-approved.fwsc", raw), "--yes"], dev)
         ok(rc == 0 and dev.bad == 0 and dev.identity == "FM-1_015",
            "stock policy: exactly approved bytes bypass preflight and marker restrictions")
@@ -501,7 +626,7 @@ def stock_policy():
         unlisted = package(product="FM-1_015", marker=False)
         dev = FakeFM1(I.logical_image(unlisted))
         rc, out, err = cli([pkgfile("digest-unlisted.fwsc", unlisted), "--yes"], dev)
-        ok(rc == 2 and "no Felucca update loader" in err and dev.opened == 0 and dev.sent == [],
+        ok(rc == 2 and "reserved" in err and dev.opened == 0 and dev.sent == [],
            "stock policy: matching identity alone does not grant the digest exception")
     finally:
         I.STOCK_V15_SHA256 = digest
@@ -511,13 +636,40 @@ def official():
     """#32: back to the official V15 from Felucca, without --force (only the unmodified file)"""
     v15 = ROOT / "FM-1_v15.fwsc"
     if not v15.exists():
+        v15 = ROOT / "build/recovery-inputs/FM-1_v15.fwsc"
+    if not v15.exists():
         print("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)")
         return
     raw = v15.read_bytes()
-    dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015")
+    dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015",
+                      loader_identity="ota-FM-1_015")
     rc, out, err = cli([str(v15), "--yes"], dev)
     ok(rc == 0 and dev.bad == 0 and "FM-1_015" in out and dev.identity == "FM-1_015",
        "official V15 (FM-1.fwsc) from Felucca: installed without --force, back as FM-1_015")
+    ok(I.package_family(I.logical_image(raw), "FM-1_015") == "stock-v15",
+       "official V15: classifier recognizes complete approved file")
+    for identity in ("ota-FM-1_015", "ota-FM-1_900", "ota-FM-1_901", "ota-FM-1_CUSTOM"):
+        dev = FakeFM1(I.logical_image(raw), identity=identity, name="Felucca Update", after_write="FM-1_015")
+        rc, out, err = cli([str(v15), "--yes"], dev)
+        compatible = identity == "ota-FM-1_015"
+        ok((rc == 0 and dev.upgrades == 1 and dev.served == 7) if compatible
+           else (rc == 6 and dev.upgrades == 0 and dev.served == 0),
+           f"official V15 resume: loader {identity}, compatible={compatible}")
+        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", after_write="FM-1_015", loader_identity=identity)
+        rc, out, err = cli([str(v15), "--yes"], dev)
+        ok((rc == 0 and dev.upgrades == 2 and dev.served == 11) if compatible
+           else (rc == 6 and dev.upgrades == 1 and dev.served == 4),
+           f"official V15 fresh: loader {identity}, compatible={compatible}")
+    shifted = bytearray(raw)
+    product = "FM-1_015"
+    for i in range(I.BLOCKS):
+        shifted[i * I.BLK + I.KEEP] = ((ord(product[i - 1]) + i + 1) & 0xFF) if 1 <= i <= len(product) else 0x7D
+    ok(I.product_of(shifted) == product and I.logical_image(shifted) == I.logical_image(raw),
+       "official digest fixture: noncanonical markers keep logical image and identity")
+    dev = FakeFM1(I.logical_image(raw))
+    rc, out, err = cli([pkgfile("v15-shifted-markers.fwsc", shifted), "--yes", "--force"], dev)
+    ok(rc == 2 and dev.opened == 0 and "whole-file digest" in err,
+       "official V15: modified marker bytes fail exact-file digest before MIDI")
     bad = bytearray(raw)
     bad[-1] ^= 1
     dev = FakeFM1(I.logical_image(bytes(bad)), identity="FM-1_900", name="Felucca")
@@ -528,7 +680,9 @@ def official():
 wire()
 installs()
 errors()
+compatibility()
 preflight()
+dependency_guidance()
 js_synthetic()
 against_js()
 stock_policy()

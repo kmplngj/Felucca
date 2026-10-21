@@ -44,11 +44,11 @@ Use **one shared Felucca-Engines fork** for additional reusable engines whose so
 be distributed under MIT. A build profile selects individual engines from that repository;
 it does not need one Git repository or submodule per engine. Share the portable contract,
 DSP helpers, tables and standalone tests there, with engine-specific source/test files.
-Firmware-dependent engines (storage, samples, UI, arena lifecycle) and GPL-derived ports
-initially stay in `firmware/src/`. Do not label GPL-derived work MIT merely to move it into
-the library. If several additional engines later need an independently reusable GPL home,
-a single separate extra-engine repository can be evaluated then; no such repo is required
-or created by this plan. Repository placement never assigns or changes an engine's stable ID.
+Existing firmware-dependent engines (storage, samples, UI, arena lifecycle) stay in
+`firmware/src/` until separately extracted and qualified. The additional GPL collection
+and mixed-profile direction below supersede the earlier provisional placement rule for
+new GPL ports. Do not label GPL-derived work MIT merely to move it into a library.
+Repository placement never assigns or changes an engine's stable ID.
 
 Portable changes are committed and tested in Engines first, then consumed by an explicit
 Felucca gitlink update. Firmware builds never edit the checked-out dependency or fetch a
@@ -71,6 +71,46 @@ The capacity plan still applies: moving source does not free a storage sector or
 new NOINIT objects. Report measured app/RAM/POOL/RAMTEXT/NOINIT/stack costs for each profile;
 the second core's static cost exists even with its runtime preference OFF. Saved mode state,
 large donor sample packs and deep patches keep their existing allocations and dependency order.
+
+## GPL collection and mixed engine builds — agreed 2026-10-16
+
+The user requested one additional shared engine collection, named
+[`kmplngj/Felucca-Engines-GPL`](https://github.com/kmplngj/Felucca-Engines-GPL), for GPL
+engines. Its license, contribution rules, empty design-only catalog and integration
+design are published. No engine is implemented there yet; the first firmware pin
+and resolver support remain pending. This page does not add a dependency or implement
+GPL collection loading.
+[Integration #360](https://github.com/kmplngj/Felucca/issues/360) owns that work;
+[collection #1](https://github.com/kmplngj/Felucca-Engines-GPL/issues/1) owns the first
+WAVE implementation and [Felucca #354](https://github.com/kmplngj/Felucca/issues/354)
+owns its host integration/qualification.
+
+The intended arrangement is one firmware build selecting individual engines across the
+MIT collection at `firmware/engines/`, the GPL collection at `firmware/engines-gpl/`, and
+the existing native catalog. For example, a future custom profile could select MIT
+ANALOG/LOFI, GPL WAVE and native FM6. This is a design example, not a profile supported
+by today's resolver. The combined firmware remains GPL-3.0-only; MIT files retain
+their license and notices. Adapting GPL code under its GPL terms needs no extra
+permission, and does not permit offering that derived code under MIT.
+
+Each collection is pinned independently. Extend the firmware-owned resolver, CI,
+provenance and complete-source/release tools together: target, host and emulator must
+resolve identical source/assets/tests/licenses, and offline source archives must contain
+and verify all selected dependency sources and required generators/helpers. A selected
+GPL engine requires its clean matching pin and contract; an omitted collection must not
+be fetched or needed merely to build a profile without it. Builds never mutate dependencies.
+
+Keep one stable ID namespace and firmware-owned registration/UI identity. Reuse the MIT
+engine API and shared DSP without copying them into a divergent GPL interface; WAVE's
+main-loop generation/cancellation/publication needs an explicit host bridge. Do not make
+the engine collection a second HAL, mixer, MIDI consumer or storage stack. Existing native
+engines need no immediate move, and collection discovery cannot change the standard set.
+
+The GPL seed is published. Next qualify its reusable WAVE implementation/service
+contract, then pin it into the multi-collection resolver and add an opt-in mixed profile. Require
+standard/mixed/omitted builds, stable unavailable-sound round trips, target/host/Wasm
+parity, source-archive reproduction and all resource/real-device gates. Collection setup
+alone supplies neither a playable WAVE instrument nor target-fit/performance evidence.
 
 
 ## Vocabulary: independent axes
@@ -244,6 +284,11 @@ real test of the contract, so the contract is frozen only after it.
    remains excluded.
 
 ## Mapping other firmwares
+
+The [Optimist adoption review](optimist-adoption-2026-10-19.md) maps its browser
+builder, instrument auditions and measured optimization candidates to this roadmap
+and the existing engine, firmware and WebApp owners. These remain planned work;
+the review does not change the supported profiles or standard firmware.
 
 Each donor splits into the axes above. Instruments and presets go through the normal
 engine/content path; only the workflow becomes a mode.

@@ -43,6 +43,10 @@
 #include <stdint.h>
 static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty), as the flash at 0xA0000 */
 #define SMP_USER_XIP(k) ((const uint8_t *)host_slots + (k) * SMP_USER_SIZE)
+#if FELUCCA_CPU2 || !defined(FELUCCA_CPU2)
+static int c1_exclusion, c1_recovers;                   /* #410: a retained exclusion the player's ON may clear (menu_items.c) */
+#define C1_RECOVER() (c1_exclusion ? (c1_exclusion = 0, ++c1_recovers, 1) : 0)
+#endif
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -203,6 +207,7 @@ static int host_project_info(uint32_t slot, char *b, uint16_t *len48, uint32_t *
 #undef project_info
 #include "../firmware/src/ui_draw.c"
 #include "../firmware/src/ui_menu.c"
+#include "../firmware/src/ui_knob.c"
 #include "../firmware/src/ui_input.c"
 #include "../firmware/src/ui_layer.c"
 #include "../firmware/src/upreset.c"
@@ -1503,7 +1508,9 @@ static int test_recent(void)
 {
     int bad = 0, ok;
     uint32_t total, k, i;
-    persist_t p0, p1;
+    /* settings_export preserves unknown bits in its destination (including bold).
+     * Start both records from the same stored bytes before comparing them. */
+    persist_t p0 = {0}, p1 = {0};
     track_t before;
     ui_power_on();
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
@@ -1947,6 +1954,21 @@ static int test_menu_tabs(void)
         ui_prefs2 = p2; ui.msg_t = 0;
         bad += check("MENU > SYSTEM > 2ND CORE (1.6.1): OFF by default (bit 7 clear), OFF / ON (BETA) in words, a restart "
                      "message each way", ok && ui.menu == 1);
+        {   /* #410: with a retained exclusion, ON from OFF is the explicit retry (cleared once, its own message); OFF never
+             * clears it; ON while already ON (a refresh) does not; without an exclusion the plain message */
+            ui_prefs2 = 0x7Fu; c1_exclusion = 1; c1_recovers = 0;
+            ui.menu_sel = MI_CPU2; ui.msg_t = 0;
+            press(B_OCTDN);
+            ok = menu_get(MI_CPU2) == 0u && c1_exclusion == 1 && c1_recovers == 0;
+            menu_put(MI_CPU2, 1u);
+            ok &= menu_get(MI_CPU2) == 1u && c1_exclusion == 0 && c1_recovers == 1 && msg_is("2ND CORE RETRY: RESTART");
+            c1_exclusion = 1; ui.msg_t = 0;
+            menu_put(MI_CPU2, 1u);
+            ok &= c1_exclusion == 1 && c1_recovers == 1 && msg_is("2ND CORE ON: RESTART");
+            c1_exclusion = 0; ui_prefs2 = p2; ui.msg_t = 0;
+            bad += check("MENU > 2ND CORE (#410): ON again from OFF clears a retained exclusion (RETRY message); OFF or a repeated "
+                         "ON does not; no exclusion: the plain message", ok);
+        }
     }
 #endif
 
@@ -4267,11 +4289,11 @@ static int test_quick_layers(void)
     key_down(white(1)); key_up(white(1)); frame();
     ok &= TSEL->eng_req == ENGI_FM6;                    /* (G3: FM6, second in ENGINE_ORDER) */
     key_down(white(NENG_SHOWN - 1u)); key_up(white(NENG_SHOWN - 1u)); frame();
-    ok &= TSEL->eng_req == ENGI_DRUM;                   /* (the last key: DRUM) */
+    ok &= TSEL->eng_req == eng_vis(NENG_SHOWN - 1u);     /* the catalog's last engine */
     ok &= !memcmp(TSEL->step, before.step, sizeof before.step) && TSEL->p[P_SLEN] == before.p[P_SLEN] &&
           TSEL->p[P_SLCR] == SL_STUT;
     btn_up(B_EDIT); frame();
-    bad += check("EDIT + white key n: the n-th engine shown (FM6 2nd, DRUM last), while playing; steps, LEN, SLICER stay", ok);
+    bad += check("EDIT + white key n: the catalog order (FM6 second), while playing; steps, LEN, SLICER stay", ok);
     hold(B_SAVE);
     bad += check("  SAVE held: UNDO back to before the layer's loads, the steps untouched",
                  TSEL->eng_req == 0u && TSEL->preset == before.preset && !memcmp(TSEL->step, before.step, sizeof before.step));
@@ -5440,8 +5462,10 @@ static int test_fm6_charts(void)
 static int test_fm4_retired(void)
 {
     int bad = 0, ok = 1;
-    uint32_t i, k, e, total, seen = 0, all = ((1u << NENGINES) - 1u) & ~(1u << ENGI_DIGITAL);
+    uint32_t i, k, e, total, seen = 0, all = 0, available = 0;
     int16_t p[P_COUNT];
+    for (e = 0; e < NENGINES; e++)
+        if (eng_ok(e) && e != ENGI_DIGITAL) { all |= 1u << e; available++; }
     uint8_t v[FP_SIZE + 1u];
     ui_power_on();
     bad += check("power-on: track 2 is FM6 PAD (TRK_DEF, was DIGITAL PAD)", trk[1].eng_req == ENGI_FM6 &&
@@ -5452,7 +5476,7 @@ static int test_fm4_retired(void)
         if (e < NENGINES)
             seen |= 1u << e;
     }
-    bad += check("PRESETS: the list holds every engine's presets but DIGITAL's", seen == all && NENG_SHOWN == NENGINES - 1u);
+    bad += check("PRESETS: the list holds every engine's presets but DIGITAL's", seen == all && NENG_SHOWN == available);
     go_page(GR_BROWSE);
     set_engine_of(TSEL, 0);
     for (i = 0, seen = 0; i < NENG_SHOWN; i++) {
@@ -5461,10 +5485,14 @@ static int test_fm4_retired(void)
     }
     bad += check("PRESETS KNOB 2: the engines in order, DIGITAL skipped, back to the first",
                  seen == all && TSEL->eng_req == 0u && eng_step(0, 1) == ENGI_FM6 && eng_step(ENGI_FM6, 1) == 2u &&
-                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == ENGI_DRUM);
+                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == eng_vis(NENG_SHOWN - 1u));
     {   /* the display order (engines.c ENGINE_ORDER): every engine one can pick once; the PRESETS list follows it */
         static const char *const ORDER[] = {"ANALOG", "FM6", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN",
-                                            "PHYS", "NOISE", "SLICE", "DRUM"};
+                                            "PHYS", "NOISE", "SLICE", "DRUM",
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+                                            "MACRO",
+#endif
+        };
         uint32_t last = 0xFFu, r = 0, n = 0;
         ok = NENG_SHOWN == NELEM(ORDER);
         for (i = 0; ok && i < NENG_SHOWN; i++)
@@ -5479,7 +5507,7 @@ static int test_fm4_retired(void)
             last = e;
             r++;
         }
-        bad += check("engines shown ANALOG FM6 PHASE ... NOISE SLICE DRUM (ENGINE_ORDER); PRESETS lists them so",
+        bad += check("engines shown in the profile order (ENGINE_ORDER); PRESETS lists them so",
                      ok && r == NENG_SHOWN);
     }
     /* a user preset stored with engine 1: kept as it is, it loads as FM6 with the converted patch */
@@ -9983,6 +10011,220 @@ static int test_help(void)
     return bad;
 }
 
+/* #295: the panel knob edit policy (ui_knob.c) across HOME, HOME LEVELS, MIXER, a sound page, a global FX page and the
+ * GLO layer, through real gestures with recording armed (playing) and MIDI LEARN on: which value moves (nothing else
+ * of any track or the globals), by how much (bounds; KNOB ACCEL once, alike everywhere), whether the turn is captured as
+ * automation (the selected track's sound values only) and picked by LEARN (a track's values only), MIXER MUTE's
+ * direction rule, and MOMENTARY's share (the same values, temporary: no capture, no pick, put back) */
+static int16_t kp_p[NTRK][P_COUNT], kp_g[G_COUNT];
+static void kp_take(void)
+{
+    uint32_t i;
+    for (i = 0; i < NTRK; i++)
+        memcpy(kp_p[i], trk[i].p, sizeof kp_p[i]);
+    memcpy(kp_g, song.g, sizeof kp_g);
+}
+static int kp_only(const int16_t *vp)                  /* nothing but *vp (0: nothing) moved since kp_take */
+{
+    uint32_t i, k;
+    for (i = 0; i < NTRK; i++)
+        for (k = 0; k < P_COUNT; k++)
+            if (&trk[i].p[k] != vp && trk[i].p[k] != kp_p[i][k])
+                return 0;
+    for (k = 0; k < G_COUNT; k++)
+        if (&song.g[k] != vp && song.g[k] != kp_g[k])
+            return 0;
+    return 1;
+}
+static int kp_has(uint32_t ti, uint32_t id)            /* an automation event of track ti's id */
+{
+    uint32_t i;
+    for (i = 0; i < motion.count; i++)
+        if ((motion.event[i].place >> 6) == ti && motion.event[i].param == id)
+            return 1;
+    return 0;
+}
+/* KNOB knob turned s: *vp becomes want and nothing else moves; captured (an event of ti's id, else no new event) and
+ * picked (LEARN: ti's id, else nothing) as asked */
+static int kp_turn(uint32_t knob, int32_t s, int16_t *vp, int32_t want, uint32_t ti, uint32_t id, int cap, int pick)
+{
+    uint32_t n0 = motion.count;
+    int ok;
+    kp_take();
+    ui.ml.pick = 0;
+    turn(EN_K1 + knob, s);
+    ok = *vp == want && kp_only(vp);
+    ok &= cap ? kp_has(ti, id) : motion.count == n0;
+    ok &= pick ? ui.ml.pick && ui.ml.trk == ti && ui.ml.id == id : !ui.ml.pick;
+    if (!ok)
+        printf("  (knob %u by %d: %d, want %d; events %u -> %u; pick %u T%u %u)\n", (unsigned)knob + 1u, (int)s, *vp,
+               (int)want, (unsigned)n0, (unsigned)motion.count, ui.ml.pick, ui.ml.trk + 1u, ui.ml.id);
+    return ok;
+}
+static void kp_start(uint32_t view)                    /* stopped HOME, T2 selected, armed and playing, LEARN on */
+{
+    ui_power_on();
+    menu_put(MI_HOME, view);
+    song.sel = 1;
+    go_home(); frame();
+    song.playing = 1; song.rec = 1u << song.sel;
+    ui.ml.on = 1;
+}
+static void kp_end(void)
+{
+    song.playing = 0; song.rec = 0;
+    ui.ml.on = 0; ui.ml.pick = 0;
+    menu_put(MI_HOME, HV_SCOPE);
+}
+static int test_knob_policy(void)
+{
+    int bad = 0, ok;
+    uint32_t id, k, sel;
+    int16_t v, *vp;
+    const param_desc_t *d;
+
+    /* permanent turns */
+    kp_start(HV_SCOPE);
+    sel = song.sel;
+    id = eng_of(TSEL->eng_req)->knob[0];
+    d = track_desc(TSEL, id);
+    vp = &TSEL->p[id];
+    ok = kp_turn(0, 3, vp, param_turn(d, *vp, 3), sel, id, motion_param(id), 1);
+    bad += check("#295 HOME: KNOB 1 the selected track's engine knob only; captured, LEARN picks it", ok);
+    kp_end();
+
+    kp_start(HV_LEVELS);
+    vp = &trk[0].p[P_LEVEL];
+    ok = kp_turn(0, -4, vp, clamp(*vp - 4, TP[P_LEVEL].min, TP[P_LEVEL].max), 0, P_LEVEL, 0, 1);
+    vp = &trk[sel].p[P_LEVEL];
+    ok &= kp_turn(sel, 5, vp, clamp(*vp + 5, TP[P_LEVEL].min, TP[P_LEVEL].max), sel, P_LEVEL, motion_param(P_LEVEL), 1);
+    bad += check("#295 HOME LEVELS: KNOB k track k's LEVEL only; picked; captured for the selected track (not T1)", ok);
+    kp_end();
+
+    kp_start(HV_SCOPE);
+    go_title("MIXER"); frame();
+    {
+        static const uint8_t ID[3] = {P_LEVEL, P_PAN, P_REV};
+        static const int8_t S[3] = {-6, 7, 9};
+        ok = 1;
+        for (k = 0; k < 3u; k++) {
+            vp = &TSEL->p[ID[k]];
+            ok &= kp_turn(k, S[k], vp, clamp(*vp + S[k], TP[ID[k]].min, TP[ID[k]].max), sel, ID[k],
+                          motion_param(ID[k]), 1);
+        }
+        bad += check("#295 MIXER: KNOB 1..3 the selected track's LEVEL PAN REV only; captured, picked", ok);
+    }
+    vp = &TSEL->p[P_MUTE];
+    *vp = 0;
+    ok = kp_turn(3, 3, vp, 1, sel, P_MUTE, 0, 1) && kp_turn(3, 2, vp, 1, sel, P_MUTE, 0, 1) &&
+         kp_turn(3, -3, vp, 0, sel, P_MUTE, 0, 1);
+    bad += check("#295 MIXER: KNOB 4 MUTE set by direction (right ON, left OFF), never captured, LEARN picks it", ok);
+    kp_end();
+
+    kp_start(HV_SCOPE);
+    go_title("FX"); frame();
+    vp = &TSEL->p[P_CHOR];
+    ok = kp_turn(1, 5, vp, clamp(*vp + 5, TP[P_CHOR].min, TP[P_CHOR].max), sel, P_CHOR, motion_param(P_CHOR), 1);
+    go_title("REVERB"); frame();
+    vp = &song.g[G_RSIZE];
+    ok &= kp_turn(1, 6, vp, clamp(*vp + 6, GP[G_RSIZE].min, GP[G_RSIZE].max), 0, 0, 0, 0);
+    bad += check("#295 a sound page edits the selected track's value (captured, picked); a global FX page its global"
+                 " (neither)", ok);
+    kp_end();
+
+    kp_start(HV_SCOPE);
+    btn_down(B_GLO); frame();
+    vp = &trk[0].p[P_LEVEL];
+    ok = kp_turn(0, 4, vp, clamp(*vp + 4, TP[P_LEVEL].min, TP[P_LEVEL].max), 0, P_LEVEL, 0, 1);
+    vp = &trk[sel].p[P_LEVEL];
+    ok &= kp_turn(sel, -3, vp, clamp(*vp - 3, TP[P_LEVEL].min, TP[P_LEVEL].max), sel, P_LEVEL, motion_param(P_LEVEL), 1);
+    btn_up(B_GLO); frame(); frames(400);
+    bad += check("#295 GLO held: KNOB k track k's LEVEL only; picked; captured for the selected track", ok);
+    kp_end();
+
+    /* KNOB ACCEL ON: 8 quick detents of the selected track's LEVEL (or PAN) are 20 steps wherever it is turned */
+    {
+        int32_t dl[4], dp[2];
+        kp_start(HV_LEVELS);
+        ui_prefs = PREF_ACCEL;
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K1 + sel, 1);
+        dl[0] = TSEL->p[P_LEVEL] - 40;
+        menu_put(MI_HOME, HV_SCOPE);
+        go_title("MIXER"); frame();
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K1, 1);
+        dl[1] = TSEL->p[P_LEVEL] - 40;
+        TSEL->p[P_PAN] = 0; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K2, 1);
+        dp[0] = TSEL->p[P_PAN];
+        go_title("VOICE 2"); frame();
+        TSEL->p[P_PAN] = 0; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K3, 1);
+        dp[1] = TSEL->p[P_PAN];
+        go_home(); frame();
+        btn_down(B_GLO); frame();
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;
+        for (k = 0; k < 8u; k++) turn(EN_K1 + sel, 1);
+        dl[2] = TSEL->p[P_LEVEL] - 40;
+        btn_up(B_GLO); frame(); frames(400);
+        TSEL->p[P_LEVEL] = 40; fm1_ms += 1000;          /* MOMENTARY: the same steps, then back */
+        btn_down(B_LFO); frame();
+        go_title("MIXER"); frame();
+        for (k = 0; k < 8u; k++) turn(EN_K1, 1);
+        dl[3] = TSEL->p[P_LEVEL] - 40;
+        btn_up(B_LFO); frame();
+        ui_prefs = 0;
+        ok = dl[0] == 20 && dl[1] == 20 && dl[2] == 20 && dl[3] == 20 && dp[0] == 20 && dp[1] == 20 &&
+             TSEL->p[P_LEVEL] == 40;
+        if (!ok)
+            printf("  (LEVEL +%d HOME LEVELS, +%d MIXER, +%d GLO, +%d MOMENTARY; PAN +%d MIXER, +%d VOICE 2)\n",
+                   (int)dl[0], (int)dl[1], (int)dl[2], (int)dl[3], (int)dp[0], (int)dp[1]);
+        bad += check("#295 KNOB ACCEL once and alike: 8 quick detents = 20 on HOME LEVELS, MIXER, GLO, MOMENTARY, a page", ok);
+        kp_end();
+    }
+
+    /* MOMENTARY: the same values, temporary (no capture, no pick), put back; inspecting them moves nothing */
+    kp_start(HV_SCOPE);
+    {
+        uint32_t enc[sizeof ui.enc_t / sizeof ui.enc_t[0]];
+        id = eng_of(TSEL->eng_req)->knob[0];
+        btn_down(B_LFO); frame();
+        kp_take();
+        memcpy(enc, ui.enc_t, sizeof enc);
+        k = motion.count;
+        frames(480);                                    /* (LFO held, no turn: the header's status each pass) */
+        ok = kp_only(0) && !memcmp(enc, ui.enc_t, sizeof enc) && motion.count == k && !mom.n && mom_head();
+        bad += check("#295 MOMENTARY status: LFO held without a turn edits, captures and times nothing", ok);
+        kp_take();
+        ui.ml.pick = 0;
+        turn(EN_K1, 4);
+        go_title("MIXER"); frame();
+        turn(EN_K2, 5);
+        turn(EN_K4, 1);
+        go_title("FX"); frame();
+        turn(EN_K2, 3);
+        go_title("REVERB"); frame();
+        turn(EN_K2, 4);
+        ok = mom.n == 5u && motion.count == k && !ui.ml.pick && TSEL->p[id] != kp_p[sel][id] &&
+             TSEL->p[P_PAN] != kp_p[sel][P_PAN] && TSEL->p[P_MUTE] != kp_p[sel][P_MUTE] &&
+             TSEL->p[P_CHOR] != kp_p[sel][P_CHOR] && song.g[G_RSIZE] != kp_g[G_RSIZE];
+        btn_up(B_LFO); frame();
+        ok &= !mom.n && kp_only(0);
+        bad += check("#295 MOMENTARY on HOME, MIXER (MUTE too), a sound and a global page: no capture, no pick; all back", ok);
+        go_title("MOD"); frame();
+        k = mod_ui_slot;
+        btn_down(B_LFO); frame();
+        kp_take();
+        turn(EN_K1, 1);
+        ok = !mom.n && mod_ui_slot == k + 1u && kp_only(0);
+        btn_up(B_LFO); frame();
+        mod_ui_slot = 0;
+        bad += check("#295 MOMENTARY: a knob that picks (MOD's slot) picks as ever", ok);
+    }
+    kp_end();
+    return bad;
+}
 static int test_home_tracks(void)
 {
     int bad = 0, ok;
@@ -10942,6 +11184,95 @@ static int test_project_readiness_cache(void)
     return bad;
 }
 
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+/* Model words are presentation only. The preview must work while silent, match settled
+ * oscillator tables, and leave all live DSP state alone. Layout sweeps live in ui_render.c. */
+static int test_macro_ui(void)
+{
+    static const char *const LABEL[3][2] = {{"SCAN", "TEXTURE"}, {"FOLD", "BLEND"}, {"DEPTH", "MOD PIT"}};
+    static const char *const SHORT[3] = {"TEX", "BLEND", "MPIT"};
+    static const int16_t CORNER[] = {0, 31, 32, 63, 64, 95, 96, 127};
+    uint32_t s, j, k, phase, before, track_hash, mem_hash, sig;
+    int bad = 0, words = 1, fits = 1, preview = 1, idle = 1, pure = 1;
+    char val[12], name[12];
+    const char *unit;
+    ui_power_on(); set_engine_of(TSEL, ENGI_MACRO);
+    song.playing = 0;
+    for (s = 0; s < 3u; s++) {
+        apply_preset_to(TSEL, 2u * s);
+        TSEL->p[P_E0] = (int16_t)s;
+        go_home(); draw_columns();
+        words &= !strncmp(ui.col[0], LABEL[s][0], strlen(LABEL[s][0])) &&
+                 !strncmp(ui.col[1], LABEL[s][1], strlen(LABEL[s][1])) && !strncmp(ui.col[3], "MODEL|", 6);
+        fits &= help_fits(help_page());
+        go_title("EDIT 1"); draw_columns();
+        words &= !strncmp(ui.col[1], LABEL[s][0], strlen(LABEL[s][0])) &&
+                 !strncmp(ui.col[2], LABEL[s][1], strlen(LABEL[s][1]));
+        fits &= help_fits(help_page());
+        words &= str_eq(ui_mod_dst_name(TSEL, MD_E1 + 1), LABEL[s][0]) && str_eq(ui_mod_dst_name(TSEL, MD_E1 + 2), SHORT[s]);
+        ev_name(TSEL, P_E2, name); words &= str_eq(name, SHORT[s]);
+        ui_param_format(TSEL, P_E0, track_desc(TSEL, P_E0), (int32_t)s, val, &unit);
+        words &= !strncmp(val, N_MACRO_SHAPE[s], 5) && strlen(val) <= 5u && fmt_named;
+        words &= str_eq(track_desc(TSEL, P_E1)->label, "TIMBRE") && str_eq(track_desc(TSEL, P_E2)->label, "COLOR") &&
+                 str_eq(track_desc(TSEL, P_E0)->label, "SHAPE") && track_desc(TSEL, P_E2)->fmt == F_PCT;
+        track_hash = fnv(2166136261u, trk, sizeof trk);
+        mem_hash = fnv(2166136261u, eng_mem, sizeof eng_mem);
+        ui.force = 1; draw_graph(); ui.force = 0;
+        sig = graph_signature(); host_blit_rows = 0; ui.frame += 2; draw_graph();
+        idle &= graph_signature() == sig && host_blit_rows == 0;
+        pure &= fnv(2166136261u, trk, sizeof trk) == track_hash && fnv(2166136261u, eng_mem, sizeof eng_mem) == mem_hash;
+        if (s == MAC_FBFM) continue;
+        before = fnv(2166136261u, host_screen, sizeof host_screen);
+        TSEL->p[P_E1] = 127; TSEL->p[P_E2] = 127; draw_graph();
+        preview &= graph_signature() != sig && fnv(2166136261u, host_screen, sizeof host_screen) != before;
+        for (j = 0; j < 128u; j++)
+            for (k = 0; k < NELEM(CORNER); k++)
+                for (phase = 0; phase < 128u; phase += 7u) {
+                    macro_osc_t osc = {0};
+                    uint32_t ph = phase << 25;
+                    int16_t sample;
+                    TSEL->p[P_E1] = (int16_t)j; TSEL->p[P_E2] = CORNER[k];
+                    osc.timbre = j == 127u ? 32767 : (int32_t)j * 256;
+                    osc.color = CORNER[k] == 127 ? 32767 : CORNER[k] * 256;
+                    osc.scan = osc.timbre * 2;
+                    if (s == MAC_WAVE) mac_waveline(&osc, &ph, 0, osc.timbre, osc.color, &sample, 1);
+                    else mac_fold(&osc, &ph, 0, 60 * 128, osc.timbre, osc.color, &sample, 1);
+                    if (macro_preview_sample(TSEL, phase << 25) != sample) {
+                        if (preview) printf("ui: MACRO preview %u timbre %u color %d phase %u differs from settled DSP\n", s, j, CORNER[k], phase);
+                        preview = 0;
+                    }
+                }
+    }
+    for (s = 3; s < MAC_NSHAPE; s++) {
+        TSEL->p[P_E0] = (int16_t)s;
+        go_home(); draw_columns();
+        words &= str_eq(ui_param_label(TSEL, P_E1), MACRO_LABEL[s][0]) && str_eq(ui_param_label(TSEL, P_E2), MACRO_LABEL[s][1]);
+        ui_param_format(TSEL, P_E0, track_desc(TSEL, P_E0), (int32_t)s, val, &unit);
+        words &= !strncmp(val, N_MACRO_SHAPE[s], 5) && strlen(val) <= 5u && fmt_named;
+        fits &= help_fits(help_page());
+        go_title("EDIT 1"); draw_columns();
+        fits &= help_fits(help_page());
+        track_hash = fnv(2166136261u, trk, sizeof trk);
+        mem_hash = fnv(2166136261u, eng_mem, sizeof eng_mem);
+        ui.force = 1; draw_graph(); ui.force = 0;
+        sig = graph_signature(); host_blit_rows = 0; ui.frame += 2; draw_graph();
+        idle &= graph_signature() == sig && host_blit_rows == 0;
+        pure &= fnv(2166136261u, trk, sizeof trk) == track_hash && fnv(2166136261u, eng_mem, sizeof eng_mem) == mem_hash;
+    }
+    TSEL->p[P_E0] = MAC_FBFM;
+    for (j = 0; j < 128u; j++) {
+        int32_t want = j == 127u ? 64 : (int32_t)j - 64;
+        ui_param_format(TSEL, P_E2, track_desc(TSEL, P_E2), (int32_t)j, val, &unit);
+        words &= atoi(val) == want && str_eq(unit, "st");
+    }
+    bad += check("MACRO: model labels on HOME/OSC, modulation and automation; wire DESC unchanged", words);
+    bad += check("MACRO: all model hints fit; idle OSC cached without touching voices or engine memory", fits && idle && pure);
+    bad += check("MACRO: silent preview responds; 128 timbres x texture corners match settled WAVE/FOLD", preview);
+    ui_power_on();
+    return bad;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -11036,9 +11367,13 @@ int main(int argc, char **argv)
     bad += test_fm6_charts();
     bad += test_fm6_ops();
     bad += test_home_tracks();
+    bad += test_knob_policy();
     bad += test_scope_redraw();
     bad += test_fx_map_columns();
     bad += test_help();
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    bad += test_macro_ui();
+#endif
     bad += test_prev_page();
     bad += test_footer_first();
     bad += test_no_flash();

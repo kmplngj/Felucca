@@ -103,13 +103,48 @@ so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is k
 | `0xE0000..0xE5000` | OTA staging | ota.c | Not data space: any non-blank byte at `0xE0000` or `0xE4F00` is erased at boot as a stale update |
 
 Two rules follow from the update path. First, the loader protects `0x97000..0xE0000` entirely
-([ldr_core.c:171-176](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L171-L176),
+([ldr_core.c `LDR_DATA_LO`/`LDR_DATA_HI`](../firmware/loader/ldr_core.c),
 and `tests/ldr_test.c` counts any erase there as a bad range), so new objects that stay inside that
 window need **no loader, guard-window or SPL change**. Second, the SPL looks for an update record at
 sector offset `+0xF00` of every sector from `0x93000` up. Object payloads reach that offset (a project
 fills the sector); a new object must not be able to hold a valid `UPDATA_PARM` there (u16 at +6 =
-`0x5441` with a matching CRC16, [ldr_core.c:174](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L174)).
+`0x5441` with a matching CRC16, [ldr_core.c `ldr_session`](../firmware/loader/ldr_core.c)).
 User-uploaded sample bytes already carry that theoretical risk; reserved headers must not add to it.
+
+**Loader cleanup versus the SPL scan (#418).** These are two different scans, and only the first is
+Felucca's. After a successful update the loader's cleanup walks the sector tails from `0x93000` to
+`0xFC000` and erases a sector whose `+0xF00` record matches. It skips `0x97000..0xE0000` (user data) and,
+since #418, **`0xE5000..0xE8000`**: the autosave pair `0xE5000`/`0xE6000` (a 3,840-byte payload at
+`sector + 0x100` reaches `+0xF00`) and the voice bank sector `0xE7000` (also the staging copy in the
+autosave's older sector). The window is exactly `FL_AUTO_LO..FL_VBANK_HI`; `loader.c` asserts that at
+compile time and narrows its flash guard (`FL_RANGE_OK`) to match, so the loader cannot erase there even
+by mistake. The required cleanups stay: `0xE4F00` (staging sector `0xE4000`, Felucca's record) and
+`0xE8F00` (sector `0xE8000`, the stock firmware's), as do `0x93000..0x97000` and `0xE0000..0xE5000`.
+The SPL's own scan is **unchanged and outside this repository**: if a valid-looking record sat at
+`+0xF00` of an autosave sector, the SPL could still read it as an update request at boot. The residual
+risk is therefore: objects there may not realize that shape (the voice bank keeps its tail erased), and
+the autosave payload can realize it only through a crafted FM6 patch (below). The loader fix
+removes the data loss on a successful update; it does not remove a boot-time SPL hazard, which would
+need the shape to be unreachable (a format change, not made here) or SPL knowledge that does not exist.
+Before #418 the post-update erase incidentally cleared such a crafted autosave record by destroying that
+copy; it no longer does. The project slots in `0x97000..0xE0000` carry the same exposure and were never
+cleaned. If the SPL honours that record shape, it does so on every boot regardless of an update; its
+scan order, record priority and validated fields are undocumented.
+
+*Can a valid project hold that record at `+0xF00`?* The record occupies autosave payload bytes
+3584..3663. In a current FUN10 project those are `PROJ_FM6_OFF + 2 * 128 + 16 .. + 95`: bytes 16..95 of
+**track 3's packed FM6 patch**, written by `fm6_pack` from a sanitized voice (steps, parameters, chain,
+motion and the name lie elsewhere). Bytes 0 and 1 of the record (the CRC) fall on operator 0's FF and
+operator 1's R1 (each limited to 0..99), bytes 6 and 7 on operator 1's L2 and L3 (also 0..99; `0x41` and
+`0x54` are legal), and the other 76 bytes are free within their field ranges, so a matching record is
+constructible. `tests/project_test.c` builds one, round-trips it through `fm6_unpack`/`fm6_pack` (a fixed
+point, so the autosave would write it back) and `proj_pack`/`proj_import`, and checks the loader's own
+classification of the packed bytes. It needs a crafted voice (the editor's patch write or an FM6 voice);
+a random or hand-edited patch matches with probability about 2^-32, and a project of init or factory
+patches does not. The validators were not weakened and no historical payload was rewritten. This is
+distinct from `tests/ldr_test.c`, whose fixture saves an arbitrary 3,840-byte storage object with a record
+at `payload + 0xE00` and so proves the loader's behavior for any object, reachable or not. The voice bank
+(`FVB_INFO + FVB_LEN == 0xF00`) cannot hold one: its tail stays erased.
 
 ### 2.3 Retained RAM and the RAM mirrors
 
@@ -250,7 +285,7 @@ still choose), **BLOCKED** (no capacity).
 | A4 | DEEP: deep-patch sidecars `OBJ_DEEP0/1` (15, 16), one per user-preset bank, tag-tied to the record | `0xD2000/0xD3000`, `0xD4000/0xD5000` | 4 sectors; 16 x (4 B tag + 144 B) = 2,368 B each | #188 |
 | A5 | FM6 library `OBJ_FVL0/1` (17, 18): 32 voices of 112 B each (the packed layout of `fm6_vbank.c`) | `0xD6000/0xD7000`, `0xD8000/0xD9000` | 4 sectors; 3,616 B each, 64 voices | #74 |
 | A6 | KITS `OBJ_KITS` (19): editable drum kit banks | `0xDA000/0xDB000` | 2 sectors; 1,464 B asserted by #141 | #141 stage C. Unassigned until that stage is promoted |
-| A7 | NOINIT | no new users | #116 may extend `bootguard` by up to 16 B; #204's session choice up to 4 B; **at least 100 B stays unallocated** (enforced by the build, F9) | #116, #204 |
+| A7 | NOINIT | no new users | #116 may extend `bootguard` by up to 16 B; #204's session choice up to 4 B; **#410's CPU1 exclusion guard takes 8 B (`fm1_c1_guard`, `FELUCCA_CPU2=1` builds only: spare 128 -> 120 B)**; **at least 100 B stays unallocated** (enforced by the build, F9) in release and standard builds; only the opt-in `FELUCCA_CRASH_CTX=1` diagnostic build (#428, the #425 soak) adds 76 B of crash registers to `fm1_crash` (44 B spare, its own 24 B floor; refused with `--release`) | #116, #204, #410, #428 |
 | A8 | Pattern-bank store | none | see the row below | #62, #66 |
 | A9 | **USR3 reclaim** (the sectors for A3-A6): `0xC8000..0xDC000`, 20 of 20 sectors allocated, none in reserve while A6 is assigned | an explicit user action | 20 sectors | prerequisite of A3-A6 |
 
@@ -340,7 +375,9 @@ Every persistent object, in this order of decision:
    below 32; never renumber. Give each new type its own case in `st_sector()` *before* the generic `obj >= OBJ_UPRESET0`
    branch (which would place an appended type in the user-preset banks), and update the layout assertions in
    `tests/storage_test.c` (they assume `OBJ_UPFM6 == OBJ_COUNT - 2`, that the autosave is the last object, and
-   check its sectors against every earlier type).
+   check its sectors against every earlier type). List it in the raw store export too (`editor_backup.c`
+   `ED_RAW_IDS` and its classification, `web/EDITOR_PROTOCOL.md` "Raw store export", #456); a static assert there
+   fails when `OBJ_COUNT` changes.
    Keep the `FL_STORE_OK` / `FL_RANGE_OK` windows and the loader windows unchanged; an object outside the
    current windows is a hardware-and-loader decision, not a map edit.
 3. **Versioning.** Every payload starts with a magic, a version and the element size and count, and a

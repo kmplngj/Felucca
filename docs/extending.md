@@ -115,8 +115,8 @@ Per-voice state lives in the shared `voice_t` (`ph[]`, `s[]`); the `render` path
 
 ### 1.4 Switching, fades and reset
 
-`voice.c engine_block` implements the switch: the UI writes `eng_req` and the new `P_E0..P_E7`
-together (IRQ off); sounding voices fade over `XF_BLOCKS` blocks on the **old** engine rendered
+`voice.c engine_block` implements the switch: the Sound install (below) writes `eng_req` and the
+new `P_E0..P_E7` together (IRQ off); sounding voices fade over `XF_BLOCKS` blocks on the **old** engine rendered
 with the saved `pe_old[]` values, then `engine` changes, `eng_mem_claim()` runs, and note-ons
 that arrived during the fade (`xp_*`) start on the new engine. Consequences for a new engine:
 
@@ -125,6 +125,35 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
 - It must tolerate a zeroed region and values anywhere inside its descriptor ranges (project and
   preset loads `param_fit()` into range, `params.c`).
 - Add switch coverage for state sharing: `tests/union_test.c` (see 1.8).
+
+**Sound install** ([sound.c](../firmware/src/sound.c), [#298](https://github.com/kmplngj/Felucca/issues/298)) is
+the only code that publishes a sound into a track. `sound_install(t, engine, preset, values, patch, flags)` writes
+`eng_req`, the preset number and the values (without `SND_ALL`, the track's own `param_kept()` values stay) plus an
+optional FM6 patch under one interrupt guard that saves and restores the interrupt state, so it may nest inside a
+caller's IRQ-off window. `SND_PANIC` sets the track's `panic_req` bit in the same window. After the guard it runs
+`fm6_adopt()` for a supplied patch, or `fm6_track_loaded()` for a factory sound (`SND_FM6_SLOT`).
+`sound_load_factory()` builds a factory preset's values (`sound_preset_values()`, the one send-default table,
+the `preset_orig()` alias) and installs them. The module has no UI state. Callers keep their undo copy and
+motion pause/rebase (`load_begin`/`load_end` in `ui.c`), messages, `sync_reload`, the `t->user` slot and
+retired-sound translation ([#299](https://github.com/kmplngj/Felucca/issues/299),
+[#456](https://github.com/kmplngj/Felucca/issues/456)). A future per-sound extension (for example the GRAIN
+extension in [#324](https://github.com/kmplngj/Felucca/issues/324)) should be published inside the same
+`sound_install()` window. Its engine-fade snapshot belongs to `voice.c engine_block`.
+
+| Entry point | Values | Kept values | Panic | FM6 | Undo/motion (caller) |
+| --- | --- | --- | --- | --- | --- |
+| PRESETS knob/page, editor `PRESET`, favourite, MIDI Program Change (`apply_preset_to`) | factory preset | kept | yes | preset SLOT | `load_begin`/`load_end` |
+| Engine change, TOOLS INIT, editor `SET G_ENGSEL`, power-on (`set_engine_of`) | engine defaults + first preset | kept | yes | preset SLOT | same |
+| CLEAN INIT (`clean_engine_of`) | engine defaults, neutral ENV | kept | yes | FM6 init voice, adopted | same |
+| User preset (`up_load`) | record values, preset 0 | kept | yes | record patch (`upf_patch`), adopted | same |
+| Undo/redo (`undo_swap`) | the undo copy | kept | yes | caller restores patch and SLOT | swaps its own copy |
+| Project, autosave, editor runtime restore (`project_restore_runtime`) | `param_fit` values | all | all tracks (caller) | project patch, adopted | nested in the project window; no undo |
+| Legacy drum part (`proj_legacy_drums`) | DRUM kit 0 | all (caller fills them) | caller | none | none |
+| Retired DIGITAL (`fm4_apply`: `fm4_load_preset`, `fm4_track`, `up_load`) | converted values | all | load paths only | converted patch, adopted | caller |
+| DSP goldens (`tests/hostsim.c host_preset_req`) | factory preset or converted DIGITAL | kept | no: tails ring into the fade | as above | none |
+
+`tests/sound_install_test.c` probes the audio interrupt at every mask edge and checks that each
+entry point changes engine, preset and values inside one window.
 
 ### 1.5 Parameters
 
@@ -149,7 +178,7 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
   `profiles/catalog.json` needs one letter per preset; `tools/profile.py` generates
   `engine_categories.inc` for `PRESET_CAT[]` and `engine_metadata.inc` for `ENGINE_META` from it.
   Metadata and UI tests check it against `npresets`.
-  Its `category` and `kit` fields identify kit-style engines.
+  A kit-style engine (DRUM, SLICE) is catalogued with the DRUM `category`.
 - EDIT 1 / EDIT 2 and HOME are generated from `edit[]`, `page_title` and `knob[]`; a plain engine
   needs no new page. Engine-specific pages (`FILTER`, `LANES`, `OPERATOR`, `SLICES`) are gated by
   `page_visible()` in `ui.c`; add a gate there only for a genuinely engine-specific page.
@@ -165,7 +194,7 @@ that arrived during the fade (`xp_*`) start on the new engine. Consequences for 
    ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 2. Add the source path and `ENG_X` symbol to `profiles/catalog.json` with a new stable ID.
    Generated includes feed `engines.c` in the single translation unit used by target/host/emulator.
-3. Fill tag, icon, category/letters, display order, kit flag and packed CC74/CC71 targets
+3. Fill tag, icon, category/letters, display order, `union_control` flag (true only for an engine whose state lives outside the arena and must join `tests/union_test.c`) and packed CC74/CC71 targets
    (high/low nibble = E index + 1, zero = none). Choose source/assets/tests/dependencies;
    select the engine explicitly in intended profiles and update the protocol document.
 4. If its render function is not already covered, add the render function names to `FUNCS` in
@@ -324,9 +353,11 @@ Publish every packet's payload **and** metadata before its write index. The empt
 `RING_PUBLISH()` prevents compiler reordering in this single-core interrupt model; it is
 not a hardware memory fence, atomic snapshot or CPU1/cache coherence protocol. The
 `sx_ready` flag is a handoff with a buffer-lifetime rule. Multi-field mutations such as
-`eng_req` plus eight parameters use a bounded IRQ-off window instead (`set_engine_of`
-in [ui.c](../firmware/src/ui.c)). These disable/enable paths require main-loop context
-with interrupts enabled at entry. Despite their names, `fm1_flash.h`'s `irq_save()`
+`eng_req` plus eight parameters use a bounded IRQ-off window instead (`sound_install`
+in [sound.c](../firmware/src/sound.c), section 1.4). Its guard saves and restores the
+interrupt state, as `motion_guard` does, so it may nest in a caller's window. Plain
+`fm1_irq_off()`/`fm1_irq_on()` pairs require main-loop context with interrupts enabled
+at entry. Despite their names, `fm1_flash.h`'s `irq_save()`
 always returns 0 and `irq_restore()` unconditionally enables interrupts: they do not
 preserve prior state and must not be nested or used from an ISR/IRQ-off caller.
 Adding `volatile` to each field would still let an
@@ -436,6 +467,20 @@ and note-key IDs 14..40; it is not `ui_leds()`'s multi-level path.
 MASTER is the ADC pot, sampled by
 [master.c](../firmware/src/master.c) `master_boot`/`master_poll`, not an encoder.
 
+A knob turn that edits a parameter value goes through
+[ui_knob.c](../firmware/src/ui_knob.c) (#295). It resolves the value KNOB k edits:
+`knob_home` (HOME, including HOME LEVELS), `knob_mixer`, `knob_glo`, `knob_page`
+(a page cell) and `knob_here` (the context shown). `knob_edit` applies a permanent
+turn: acceleration once, `param_turn`, then automation capture and the MIDI LEARN
+pick for a track's value. A global value is neither captured nor picked; MIXER MUTE
+is set by direction and only picked. `mom_target`/`mom_turn` share the same targets
+for MOMENTARY (LFO held) without capture, LEARN or undo. Resolvers have no side
+effects. The module header's table records each caller's rules. Navigation and gesture
+arbitration stay in `ui_input.c`/`ui_layer.c`: quick-layer precedence, consumed
+encoder deltas, step locks, pages whose knobs pick or act, and feedback priority.
+A new context that edits a stored value adds a resolver there. Do not add its own
+turn, capture or LEARN call.
+
 Drawing is main-loop work: [gfx.c](../firmware/src/gfx.c) `cv_begin`, `cv_rect`, `cv_line`,
 `cv_text`/`cv_text_in`, `cv_blit`; `aafont_t` and generated `AF_S`/`AF_M`/`AF_L` fonts
 use the selected build font. The 240×240 display has no full framebuffer: `CV_MAX` is
@@ -448,8 +493,25 @@ reusing `cv_px`. A stack buffer that expires during DMA or a flash pointer is in
 [main.c](../firmware/src/main.c) services `ui_input`, `ui_leds`, `ui_draw`,
 `master_poll`, `ed_service`, `ota_service`, settings/autosave and watchdog in the main
 loop. It can request bounded audio actions; it does not drain the musical MIDI ring.
+The steady-state musical frame (#297) is one implementation in main.c, called by the
+firmware loop and by the emulator's `web_ms` (and so by native replay and the partition
+tests): `music_frame_sense` (battery, MASTER), then the platform's own services, then
+`music_frame_run` (input, queued settings save, autosave, LED composition, drawing, with
+the `felucca_dbg` stage breadcrumbs), and `music_frame_poll` (`ui_input`) between frames.
+Each platform keeps its scheduling: the 15 ms busy-wait gate on the FM-1, one emulated
+millisecond per `web_ms` step. Add per-frame UI or persistence work inside those functions,
+not at one call site; keep USB, editor/OTA, console, watchdog and boot work outside them.
+The table at the top of those functions records each step's placement on both platforms.
 All normal SIE access is TIMER5's 2 kHz `usb_poll`, with the nested EP4 UAC exception
 in 3.1. Startup/update bring-up has its own explicit paths; a UI hook must not poll SIE.
+
+[boot_policy.h](../firmware/src/boot_policy.h) owns retained boot/rescue decisions
+in the existing twelve-byte guard. [rescue.c](../firmware/src/rescue.c) runs before
+normal imports/services, with physical OCT input and one polled USB owner. Its
+TIMER4 clock and RAM-flash adapters are used only while interrupts remain masked;
+normal OTA keeps TIMER5 service. Call `boot_policy_live_begin` only when the chosen
+workflow is musically ready, so a future chooser cannot clear failure counting.
+See [USB rescue](usb-rescue.md) for the application/loader boundary and test scope.
 
 ### 3.9 MIDI and time
 
@@ -506,6 +568,10 @@ any separate opt-in FPU/ABI/IRQ/device experiment.
   cover them). Add round-trip, default and malformed-input tests together with the change.
   State downgrade limits explicitly: for example firmware that does not know a newer project
   count refuses it (`np > P_COUNT`; see the `project.c` header).
+  Historical conversion is moving to the web editor (#456/#457): [legacy-formats.md](legacy-formats.md) inventories
+  every stored format and conversion and proposes the supported schema. Do not add another permanent firmware
+  converter for a new layout; keep the raw store export (`STORE_LIST` / `STORE_GET`, `editor_backup.c`) listing
+  every storage type, so content a build cannot load stays downloadable.
 - **Retired values.** Retired engines, enum values and parameter ids stay reserved and keep a
   migration (`core.h` `drum_from_phys`, `drum_from_perc`; `params.c enum_orig`, `param_fit`).
 - **Editor protocol.** SysEx commands, parameter ids and `INFO` are specified in
@@ -557,6 +623,14 @@ unchanged exported record clears the request without erase; failure sets
 1 s before retrying. A fresh `settings_save()` resets that state to 1 and calls the
 poller immediately, bypassing the retry delay. It can save immediately **when stopped**
 and is not a rate-limited API, so do not turn every new knob detent into a new call.
+A caller that must report durability calls `settings_save_result()` instead (#296): it
+requests the save and returns `SETTINGS_SAVED` (written, or unchanged without an erase),
+`SETTINGS_QUEUED` (waiting for STOP) or `SETTINGS_RAM_ONLY` (no flash or a failed write,
+still queued for retry). Only project.c reads `persist_pending` and compares the saved
+record; the editor maps the result to its wire codes 0/4/3 in one place
+(`editor_preferences.c ed_settings_save`, used by UI_SET, FAV_SET, MENU_SET, LEARN_SET and
+PALETTE_SET). The panel's deferred request (`ui.c set_later`) only decides *when* to call
+`settings_save()`; its cleared flag is not evidence of a write.
 `autosave_poll()` runs in the main loop
 every 250 ms, after 10 s unchanged/quiet and at least 60 s between successful writes
 (30 s retry gap on failure). It requires stopped transport, no keys/buttons/active
@@ -668,7 +742,7 @@ capabilities and tests instead of opening duplicate feature tickets.
 Engine:
 
 - [ ] Added one complete stable-ID entry to `profiles/catalog.json` (tag, icon, category/letters,
-      CC74/CC71 mapping, display order, kit flag, dependencies, source/assets/tests and render budgets);
+      CC74/CC71 mapping, display order, `union_control` flag, dependencies, source/assets/tests and render budgets);
       selected explicitly in intended profiles; protocol engine table updated; no ID moves.
 - [ ] `edit[]` ranges/defaults deliberate (they are stored); `desc` hook keeps range/default.
 - [ ] `mem` set with `ENG_MEM_FITS`; zeroed region is a valid initial state; switch tests added.
@@ -700,8 +774,10 @@ Reusable MIT engines belong in the shared Felucca-Engines fork, with portable te
 DSP/tables and API contract changes committed there first. Then update Felucca's explicit
 gitlink and host registry/profile selection, rebuild, and run both portable conformance
 and firmware host/target/emulator tests. Builds never edit or fetch the dependency.
-Firmware-dependent and GPL-derived implementations remain in `firmware/src`; moving
-source does not change its licence or assign an engine ID. Firmware UI identity remains
+Existing firmware-dependent and GPL-derived implementations currently remain in
+`firmware/src`; moving source does not change its licence or assign an engine ID.
+The planned additional GPL collection below gives new reusable GPL ports their own home.
+Firmware UI identity remains
 in the GPL host adapter, never appended to the MIT `engine_t` merely for convenience.
 
 `profiles/catalog.json` is the source of host metadata and includes. New engines require
@@ -714,3 +790,28 @@ omitted. Add render/helper coverage to `budget_functions` and `tests/target_budg
 
 See [BUILDING.md](../BUILDING.md#engine-build-profiles) for generation/freshness and
 [profile evidence](build-profiles.md) for compatibility and device qualification gates.
+
+### Planned GPL collection and mixed profiles
+
+The additional collection is
+[Felucca-Engines-GPL](https://github.com/kmplngj/Felucca-Engines-GPL) (GPL-3.0-only),
+with its license and integration design published. WAVE is its first planned port
+([collection #1](https://github.com/kmplngj/Felucca-Engines-GPL/issues/1)); the engine
+implementation and firmware dependency/resolver integration are pending. See
+[modularity](modularity.md#gpl-collection-and-mixed-engine-builds--agreed-2026-10-16)
+and [#360](https://github.com/kmplngj/Felucca/issues/360). The published seed has no
+usable engine yet; add its reviewed firmware pin/includes with the implemented module
+and profile support, rather than implying the seed already supplies WAVE.
+
+New reusable GPL engine source/tests/assets belong in that collection; firmware keeps
+the host glue, stable IDs, UI metadata, voice/arena ownership and platform/persistence
+policy. Reuse the MIT engine contract/shared DSP rather than forking it. Both collections
+will use independent reviewed pins, with one firmware resolver selecting modules across
+them and the native catalog. The linked firmware is GPL; MIT sources keep their terms.
+
+Update source-archive/release inventory, CI and profile provenance with the second pin,
+including required sources/generators/notices. Profiles excluding GPL engines must not
+require their checkout; selected modules must fail clearly on absent/dirty/wrong pins.
+Commit and test engine changes in their owning collection before the firmware pin PR.
+The current two-repository commands and profiles above remain the delivered workflow
+until this integration is implemented; no new working build command is implied here.

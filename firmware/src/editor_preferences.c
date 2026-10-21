@@ -40,27 +40,13 @@ static void ed_ui_state(void)
     ed_u28(sig);
     ed_u28(up_gen);
 }
-/* Writes use the same flash path as the panel. rc 3 means applied in RAM,
- * but not saved (absent flash or a failed write); rc 4 means queued until STOP.
- * Repeated unchanged writes
- * do not wear flash. */
-static uint32_t ed_ui_save(void)
+/* Every editor settings write (UI_SET, FAV_SET, MENU_SET, LEARN_SET, PALETTE_SET) saves through the panel's flash
+ * path, and its rc is project.c settings_save_result's durability (#296) on the wire: 0 saved (or unchanged: no
+ * erase), 3 applied in RAM only (no flash, a failed write: retried by the settings path), 4 queued until STOP */
+static uint32_t ed_settings_save(void)
 {
-    settings_save();
-#if FELUCCA_FLASH
-    if (!flash_ok || persist_pending == 2u) return 3;
-    if (persist_pending == 1u) return 4;
-    if (palette_from_stored(persist_saved.palette) != settings.palette) return 3;
-#ifdef FELUCCA_MONITOR
-    if (persist_saved.monitor != settings.monitor) return 3;
-#endif
-#ifdef FELUCCA_FAVORITES
-    if (settings_unsaved()) return 3;              /* (#212: the favourites as the whole record holds them) */
-#endif
-    return 0;
-#else
-    return 3;
-#endif
+    uint32_t d = settings_save_result();
+    return d == SETTINGS_SAVED ? 0u : d == SETTINGS_QUEUED ? 4u : 3u;
 }
 static uint32_t ed_ui_set(const uint8_t *a, uint32_t n)
 {
@@ -83,7 +69,7 @@ static uint32_t ed_ui_set(const uint8_t *a, uint32_t n)
 #endif
     }
     ui.force = 1;
-    return ed_ui_save();
+    return ed_settings_save();
 }
 #ifdef FELUCCA_FAVORITES
 /* FAV_GET / FAV_SET's engine byte (#212) -> engine id, ENG_USER for a user preset slot, ED_FAV_BAD: an engine this
@@ -138,7 +124,7 @@ static int ed_ui_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
                 (e != ENG_USER || !a[3] || up_used((uint32_t)preset))) {
                 favorite_set(e, (uint32_t)preset, a[3]);
                 ui.force = 1;
-                ed_b(ed_ui_save()); ed_b(a[0]); ed_v(preset); ed_b(a[3]);
+                ed_b(ed_settings_save()); ed_b(a[0]); ed_v(preset); ed_b(a[3]);
                 return 1;
             }
         }

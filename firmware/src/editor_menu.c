@@ -43,19 +43,6 @@ static const uint8_t ED_MENU[][2] = {
 };
 #define ED_MENU_N NELEM(ED_MENU)
 
-/* rc as UI_SET: 0 applied and saved, 3 applied in RAM only (no flash, a failed write), 4 queued until STOP */
-static uint32_t ed_menu_save(void)
-{
-    settings_save();
-#if FELUCCA_FLASH
-    if (!flash_ok || persist_pending == 2u) return 3;
-    if (persist_pending == 1u) return 4;
-    return settings_unsaved() ? 3u : 0u;
-#else
-    return 3;
-#endif
-}
-
 static int ed_menu_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     uint32_t i, row, k;
@@ -101,7 +88,8 @@ static int ed_menu_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
     if (row == MI_SERIAL)
         menu_serial_at = fm1_ms | 1u;                  /* (applied 200 ms after this reply: usb_serial_apply) */
     ui.force = 1;                                      /* (the MENU page, if shown, redraws) */
-    ed_b(MI_PROJECT(row) ? 0u : ed_menu_save());       /* (the project's: in the music, no settings to save) */
+    ed_b(MI_PROJECT(row) ? 0u : ed_settings_save());   /* (the project's: in the music, no settings to save; else rc
+                                                        * as UI_SET, editor_preferences.c) */
     ed_b(a[0]);
     ed_v((int32_t)menu_get(row) + lo);
     return 1;
