@@ -224,7 +224,15 @@ static const uint8_t DIV_DEN[6] = {1, 2, 4, 8, 3, 6};    /* original IDs stay fi
 static uint32_t midi_beat_samples;                    /* zero until an external clock has a measured tempo */
 static uint32_t beat_samples(void)
 {
-    return song.g[G_CLOCK] && midi_beat_samples ? midi_beat_samples : (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM];
+    int32_t bpm;
+    if (song.g[G_CLOCK] && midi_beat_samples)
+        return midi_beat_samples;
+    /* Defensive fallback for invalid or not-yet-initialized globals. Read
+     * once; use the declared default without publishing a tempo repair. */
+    bpm = song.g[G_BPM];
+    if (bpm < GP[G_BPM].min || bpm > GP[G_BPM].max)
+        bpm = GP[G_BPM].def;
+    return (uint32_t)FS * 60u / (uint32_t)bpm;
 }
 static uint32_t div_samples(uint32_t div)
 {
