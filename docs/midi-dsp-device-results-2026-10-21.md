@@ -87,6 +87,11 @@ with zero host timestamp discontinuities, missing frames and write errors.
 A one-second midpoint sample has RMS 1441.14 and peak 7508 (s16), proving signal
 presence only; no listening verdict is inferred.
 
+This allocation attribution is specific to the controlled recorded traffic: all
+four wire logs contain zero CC120 (All Sound Off), UART byte deltas are zero and
+shedding deltas are zero. CC120 is another production `voice_kill` caller; CC123
+uses ordinary release. The aggregate counter itself does not encode the cause.
+
 CPU2 OFF / 48000 Hz also passes1440 progress clocks, the480-pulse mixed-effects
 tempo stage and Continue, with all listed error deltas zero and945 allocation
 victims. Natural acquisition completes4319232 frames (89.984 s), with zero host
