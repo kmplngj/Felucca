@@ -33,6 +33,9 @@ class Target(unittest.TestCase):
         F.Download.setUpClass()
 
     def setUp(self):
+        environment = patch.dict(os.environ, {"FELUCCA_PROFILE": "standard"})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -103,6 +106,61 @@ class Target(unittest.TestCase):
         (self.output / "build-identity.json").write_text('{}')
         with self.assertRaisesRegex(ValueError, "build identity"):
             T.package(self.ci, "target")
+
+    def test_profile_package_matches_fresh_sources_and_both_build_records(self):
+        selected = {"profile": "macro", "selection_sha256": "f" * 64}
+        (self.root / "profiles").mkdir()
+        (self.root / "profiles/catalog.json").write_text('{}')
+        (self.output / "gen").mkdir()
+        generated = self.output / "gen/resolved-profile.json"
+        dis_record = self.output / "felucca.dis.profile.json"
+        def reset():
+            self.record.write_text(json.dumps(self.metadata | {"profile": selected}))
+            generated.write_text(json.dumps(selected))
+            dis_record.write_text(json.dumps({"resolved_profile": selected}))
+        reset()
+        package = self.output / "felucca-macro.fwsc"
+        package.write_bytes(F.Download.raw)
+        resolver = SimpleNamespace(generated=lambda root, name: {"resolved-profile.json": json.dumps(selected)})
+        with patch.dict(os.environ, {"FELUCCA_PROFILE": "macro"}), patch.dict(sys.modules, {"profile": resolver}):
+            T.package(self.ci, "target")
+            self.assertEqual((self.output / "ci/package.sha256").read_text().split()[1], "build/felucca-macro.fwsc")
+            # Simulate the uploaded artifact containing just the selected package.
+            (self.output / "felucca.fwsc").unlink()
+            self.assertEqual(F.P.verify_download(self.output, self.identity["revision"], "target", "macro"), package)
+            for path, replacement in (
+                    (self.record, self.metadata | {"profile": {"profile": "standard"}}),
+                    (generated, {"profile": "standard"}),
+                    (dis_record, {"resolved_profile": {"profile": "standard"}})):
+                reset()
+                path.write_text(json.dumps(replacement))
+                with self.subTest(path=path), self.assertRaisesRegex(ValueError, "Package profile"):
+                    T.package(self.ci, "full")
+
+    def test_standard_profile_keeps_historical_package_metadata_compatibility(self):
+        # Standard full builds retain their pre-profile artifact contract even
+        # when an older source revision has a catalog but no disassembly metadata.
+        (self.root / "profiles").mkdir()
+        (self.root / "profiles/catalog.json").write_text('{}')
+        T.package(self.ci, "full")
+        self.assertEqual(json.loads(self.record.read_text()), self.metadata)
+
+    def test_nonstandard_profile_requires_source_profile_support(self):
+        with patch.dict(os.environ, {"FELUCCA_PROFILE": "macro"}), \
+                self.assertRaisesRegex(ValueError, "do not support"):
+            T.package(self.ci, "full")
+
+    def test_nonstandard_workflow_profile_requires_verified_manual_nonrelease_sources(self):
+        script = step_script("Validate requested scope")
+        valid = dict(os.environ, VALIDATION="full", FELUCCA_PROFILE="macro", GITHUB_EVENT_NAME="workflow_dispatch",
+                     VERIFIED_PR="27", SOURCE_REF="a" * 40, VERSION="")
+        result = subprocess.run(["bash", "-e", "-c", script], env=valid, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for changes in ({"GITHUB_EVENT_NAME": "pull_request"}, {"VERSION": "1.6"},
+                        {"VERIFIED_PR": ""}, {"SOURCE_REF": ""}, {"FELUCCA_PROFILE": "../macro"}):
+            with self.subTest(changes=changes):
+                result = subprocess.run(["bash", "-e", "-c", script], env=valid | changes, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
 
     def test_cache_key_changes_for_each_dependency_pin_and_install_recipe(self):
         key = T.cache_key(self.ci)

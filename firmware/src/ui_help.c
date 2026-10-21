@@ -70,6 +70,16 @@ static const char *help_page(void)
 {
     uint32_t i;
     const char *t;
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    static const char *const MACRO_HELP[2][3] = {
+        {"[K1]SCAN[K2]TEXTURE[EDIT]OSC", "[K1]FOLD[K2]BLEND[EDIT]OSC", "[K1]DEPTH[K2]MOD PIT[EDIT]OSC"},
+        {"[K2]SCAN[K3]TEXTURE[EDIT]TONE", "[K2]FOLD[K3]BLEND[EDIT]TONE", "[K2]DEPTH[K3]MOD PIT[EDIT]TONE"}
+    };
+    if (eng_is(TSEL->eng_req, ENGI_MACRO) && ((ui.home && !home_levels() && !home_tracks()) || macro_page()))
+        return (uint32_t)TSEL->p[P_E0] % MAC_NSHAPE < 3u ?
+            MACRO_HELP[!ui.home][(uint32_t)TSEL->p[P_E0] % MAC_NSHAPE] :
+            (ui.home ? "[K1]TIMBRE[K2]COLOR[EDIT]OSC" : "[K2]TIMBRE[K3]COLOR[EDIT]TONE");
+#endif
     if (ui.home)
         return home_levels() ? H_LEVELS : H_HOME;
     if (grid_on() && !detail_on())

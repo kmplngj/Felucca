@@ -485,6 +485,26 @@ uv run --locked --group midi tools/fm1_pr.py 123 --automatic
 uv run --locked --group midi tools/fm1_pr.py 123 --validation target --worktree-dir ../Felucca-pr123
 ```
 
+Use `--profile NAME` to opt into an engine profile defined in that exact PR
+commit; the default remains `standard`, including automatic PR/main/release CI.
+For example, to download a MACRO test package without accessing hardware:
+
+```sh
+uv run --locked tools/fm1_pr.py 123 --commit FULL_40_CHARACTER_SHA --profile macro \
+  --workflow-ref feat/macro27-current-main --download-only
+```
+
+The workflow branch must support the `profile` input. Nonstandard profiles require
+an exact verified manual PR revision and cannot create releases. The helper checks
+the pinned profile definition, keeps profile run/artifact identities separate, and
+verifies the downloaded profile against provenance before installation. Resume with
+the same commit, profile, validation mode and workflow branch. `--automatic` supports
+only `standard`; omit `--download-only` when ready to use the normal installer.
+For MACRO device checks, the full macro-profile artifact also contains the
+[project/song and MIDI test pack](docs/macro-hardware-test.md#prepare-the-project-and-song-pack).
+It prepares four importable project files and a deterministic MIDI workload;
+importing them and recording physical results remain separate user actions.
+
 `--validation target` uses the same target build and flags as full validation:
 it checks the pinned SDK/toolchain, source and Engines identity, app/loader and
 resource guards, static target instruction budgets, FWSC structure/CRCs and

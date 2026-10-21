@@ -89,6 +89,14 @@ int main(void)
     bad += check("UP_PUT slot 32 -> args", up_parse(a, n, &r, &slot) == 1);
     n = put_frame(a, 0, NENGINES, "X", 0);
     bad += check("UP_PUT bad engine -> args", up_parse(a, n, &r, &slot) == 1);
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    n = put_frame(a, 4, ENGI_MACRO, "MACRO", 0);
+    bad += check("UP_PUT MACRO keeps stable engine 14 and all eight engine values",
+                 up_parse(a, n, &r, &slot) == 0 && slot == 4u && r.engine == 14u && up_valid(&r) &&
+                 up_value(&r, P_E0) == P_E0 && up_value(&r, P_E7) == P_E7);
+    got = r; up_migrate(&r);
+    bad += check("MACRO user preset migration is byte-identical", !memcmp(&got, &r, sizeof r));
+#endif
     n = put_frame(a, 3, ENGI_DIGITAL, "OLD FM", 0);   /* (DIGITAL, retired: a record keeps it, its load converts) */
     bad += check("UP_PUT engine 1 (DIGITAL): kept as it is", up_parse(a, n, &r, &slot) == 0 && slot == 3u &&
                                                         r.engine == ENGI_DIGITAL && up_valid(&r));

@@ -1073,7 +1073,12 @@ static uint16_t part_cost[NTRK];                        /* the last block's, per
 static const uint16_t ENG_VCOST[NENGINES] = {163, FELUCCA_FM4 ? 181 : 0, 162, 67, 70, 174, 144, 143, 189, 309, 113, 134,
                                              181,
 #if FELUCCA_SLICE
-                                             129
+                                             [13] = 129,
+#endif
+#if FELUCCA_PROFILE_ENGINE_14
+                                             /* Bank maximum 759.8 minus idle 316.3, rounded up.
+                                              * Host steering estimate, not measured FM-1 cycles. */
+                                             [ENGI_MACRO] = 450
 #endif
 };
 #endif
@@ -1085,7 +1090,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
     int32_t *b = SM(b);
     uint32_t i;
 #if FELUCCA_CPU2
-    uint32_t nr;
+    uint32_t nr, vcost;
 #endif
     if (!n)
         return;
@@ -1093,7 +1098,17 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
     T_SPREAD(t) = t->p[P_SPRD] > 0 && (trk_vmode(t) == V_POLY || trk_vmode(t) == V_UNISON);   /* (SPREAD, mix_spread) */
 #if FELUCCA_CPU2
     nr = track_render(t, b, n);
-    part_cost[(uint32_t)(t - trk) % NTRK] = (uint16_t)(nr * ENG_VCOST[t->engine % NENGINES] + (nr || t->tail ? 60u : 0u));
+    vcost = ENG_VCOST[t->engine % NENGINES];
+#if FELUCCA_PROFILE_ENGINE_14
+    if (eng_is(t->engine, ENGI_MACRO)) {
+        /* Legacy maxima 237.1/204.6/133.8 net host instructions per voice;
+         * the bank uses one full oscillator per part. See docs/macro-engine.md. */
+        static const uint16_t legacy_cost[] = {238, 205, 134};
+        uint32_t shape = (uint32_t)t->p[P_E0] % MAC_NSHAPE;
+        if (shape < 3u) vcost = legacy_cost[shape];
+    }
+#endif
+    part_cost[(uint32_t)(t - trk) % NTRK] = (uint16_t)(nr * vcost + (nr || t->tail ? 60u : 0u));
     if (nr)
 #else
     if (track_render(t, b, n))

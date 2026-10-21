@@ -59,6 +59,8 @@ audible workload and any diagnostics needed even if no new panel function exists
 3. **Reach the function.** Give numbered physical actions from the starting
    state. Name the button, whether to tap or hold and when to release it, repeated
    page cycling, menu tab/row selection, knob number and visible label/value.
+   Use the label printed on the physical panel: the FM-1 button for the firmware's
+   `SCL` pages is **SEL**, between FX and ENV; distinguish it from the SELECT knob.
    For example, a `SAVE > PRESETS` breadcrumb needs the SAVE taps required to
    reach PRESETS; `MENU > ABOUT` needs the hold, tab, row and open actions.
    A link to a manual supplements these actions; it does not replace them.

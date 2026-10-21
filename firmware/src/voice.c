@@ -112,6 +112,11 @@ static void track_lfo_tick(track_t *t)                  /* (one core: the whole 
 static uint32_t trk_nvoice(const track_t *t)
 {
     uint32_t c = ENGINES[t->engine]->poly;
+#if FELUCCA_PROFILE_ENGINE_14
+    /* Firmware-native model policy; keep the portable engine API v1 unchanged. */
+    if (eng_is(t->engine, ENGI_MACRO))
+        c = macro_poly(t);
+#endif
     return c && c < NVOICE ? c : NVOICE;
 }
 
