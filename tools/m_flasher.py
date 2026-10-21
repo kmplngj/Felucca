@@ -12,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 
-REPOSITORY = 'kmplngj/m-flasher'
+REPOSITORY = 'kmplngj/m-flasher-legacy'
+# Pre-rename Actions artifacts and caches retain this name at the same exact pin.
+HISTORICAL_REPOSITORY = 'kmplngj/m-flasher'
 REVISION = 'af3cd2b75e175e09b695a261481774952d6e414f'
 PROTOCOL = 'felucca-device-pull-v1'
 SOURCE_BINARY = 'm-flasher-midi.exe' if os.name == 'nt' else 'm-flasher-midi'
@@ -69,9 +71,11 @@ def verify_directory(directory):
         source = json.loads(manifest.read_text())
     except (ValueError, OSError) as error:
         raise ValueError('Invalid M-Flasher source manifest') from error
-    if not isinstance(source, dict) or any(source.get(key) != expected for key, expected in (
-            ('repository', REPOSITORY), ('revision', REVISION), ('platform', host_platform()),
-            ('binary', binary_name()))):
+    if (not isinstance(source, dict)
+            or source.get('repository') not in (REPOSITORY, HISTORICAL_REPOSITORY)
+            or any(source.get(key) != expected for key, expected in (
+            ('revision', REVISION), ('platform', host_platform()),
+            ('binary', binary_name())))):
         raise ValueError('M-Flasher artifact does not match the pinned source/platform')
     digest = hashlib.sha256(binary.read_bytes()).hexdigest()
     if source.get('sha256') != digest:

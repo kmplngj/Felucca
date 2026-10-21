@@ -70,6 +70,17 @@ class Setup(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'regular'):
                 F.verify_directory(self.destination)
 
+    def test_pre_rename_manifest_is_accepted_only_at_the_exact_pin(self):
+        binary = self.artifact(self.destination)
+        manifest = self.destination / 'source.json'
+        source = json.loads(manifest.read_text())
+        source['repository'] = F.HISTORICAL_REPOSITORY
+        manifest.write_text(json.dumps(source))
+        self.assertEqual(F.verify_directory(self.destination), binary)
+        manifest.write_text(json.dumps(source | {'revision': 'a' * 40}))
+        with self.assertRaisesRegex(ValueError, 'pinned'):
+            F.verify_directory(self.destination)
+
     def test_capability_query_is_the_only_executable_invocation(self):
         binary = self.base / 'm-flasher'
         with patch.object(F, 'run', return_value=json.dumps(CAPABILITIES)) as call:
@@ -106,6 +117,7 @@ class Setup(unittest.TestCase):
         def cargo(arguments, timeout):
             self.assertEqual(arguments[:3], ['cargo', 'install', '--git'])
             self.assertIn(F.REVISION, arguments)
+            self.assertEqual(arguments[3], 'https://github.com/kmplngj/m-flasher-legacy.git')
             self.assertIn('--locked', arguments)
             destination = Path(arguments[arguments.index('--root') + 1]) / 'bin'
             destination.mkdir(parents=True)
@@ -143,6 +155,7 @@ class Setup(unittest.TestCase):
         args = call.call_args_list[-1].args[0]
         self.assertEqual(args[:4], ['gh','run','download','10'])
         self.assertIn(str(self.base), args)
+        self.assertEqual(args[args.index('--repo') + 1], 'kmplngj/m-flasher-legacy')
         self.assertNotIn('11', args)
 
     def test_no_artifact_never_fetches_arbitrary_source(self):

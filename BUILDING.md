@@ -492,6 +492,10 @@ python3 tools/fm1_pr.py 123 --m-flasher /absolute/path/to/m-flasher
 ```
 
 The CI artifacts are development builds, not releases. Retain their `source.json`.
+The native helper keeps its exact source pin in `kmplngj/m-flasher-legacy` after
+the repository rename; adopting the recreated upstream fork is separate work.
+Existing artifacts and caches bearing the original repository name remain valid
+only with the same pinned revision, platform, binary name and SHA-256.
 An expired/missing artifact fails before firmware CI; it never downloads an
 unreviewed latest binary. Source builds require Cargo/Rust and, on Linux, ALSA
 development headers. Installation writes only the user cache and does not change
@@ -508,7 +512,7 @@ MIDI loader handoff, package exchange and reconnection to running `FM-1_900` wer
 confirmed by the owner on macOS with PR #477 on 2026-10-19. That shared identity
 still requires checking the ABOUT build commit; it does not establish physical
 data preservation or rollback, or qualification on other hosts/devices.
-See [m-flasher MIDI OTA](https://github.com/kmplngj/m-flasher/blob/main/docs/midi-ota.md).
+See [m-flasher MIDI OTA](https://github.com/kmplngj/m-flasher-legacy/blob/af3cd2b75e175e09b695a261481774952d6e414f/docs/midi-ota.md).
 
 The command prints the fixed commit and Actions run URL, waits for all selected
 validation to pass, and downloads into a fresh directory under
