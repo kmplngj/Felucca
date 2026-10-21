@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """PR firmware orchestration, corruption guards and installer handoff; no hardware."""
 import contextlib
+import base64
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -24,12 +26,97 @@ OLD = "b" * 40
 MERGE = "c" * 40
 REPO = "kmplngj/Felucca"
 TITLE = "Sequencer: Wiedergabe & Übergänge"
+PYTHON_INSTALLER = [sys.executable, str(Path(P.__file__).with_name("fm1_install.py"))]
 
 
 def run(state="completed", conclusion="success", number=42):
     return {"id": number, "status": state, "conclusion": conclusion,
             "html_url": f"https://github.com/{REPO}/actions/runs/{number}",
             "display_title": P.run_title(333, SHA), "head_branch": "main"}
+
+
+class InstallerPreflight(unittest.TestCase):
+    def test_preflight_uses_the_same_interpreter_and_trusted_python_installer(self):
+        with patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as check:
+            self.assertEqual(P.prepare_installer(),
+                             PYTHON_INSTALLER)
+        check.assert_called_once_with([sys.executable, "-c", "import mido, rtmidi"],
+                                      capture_output=True, text=True)
+
+    def test_missing_dependencies_stop_before_github_build_or_install(self):
+        for flags in ([], ["--automatic"]):
+            error = io.StringIO()
+            arguments = ["333", "--port", "FM-1 user's port", *flags]
+            with patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
+                    patch.object(P, "resolve_pr") as resolve, patch.object(P, "ensure_run") as build, \
+                    patch.object(P, "resolve_automatic_pr") as automatic, patch.object(P, "api") as api, \
+                    patch.object(P, "install") as install, contextlib.redirect_stderr(error):
+                self.assertEqual(P.main(arguments), 2)
+            for call in (resolve, automatic, api, build, install):
+                call.assert_not_called()
+            self.assertEqual(shlex.split(error.getvalue().split("Run:\n  ", 1)[1]),
+                             ["uv", "run", "--project", str(P.SOURCE), "--locked", "--group", "midi",
+                              "python", str(Path(P.__file__).resolve()), *arguments])
+
+    def test_dependency_retry_quotes_trusted_source_and_arguments_from_other_directories(self):
+        script = Path("/trusted source/Felucca/tools/fm1_pr.py")
+        arguments = ["333", "--out", "relative output", "--port", "FM-1 $(echo unsafe)"]
+        with patch.object(P, "__file__", str(script)), \
+                patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
+                self.assertRaises(ValueError) as error:
+            P.prepare_installer(arguments)
+        self.assertEqual(shlex.split(str(error.exception).split("Run:\n  ", 1)[1]),
+                         ["uv", "run", "--project", str(script.parents[1]), "--locked", "--group", "midi",
+                          "python", str(script), *arguments])
+
+    def test_windows_dependency_retry_uses_literal_powershell_arguments(self):
+        script = Path("/trusted source/user's Felucca/tools/fm1_pr.py")
+        arguments = ["333", "--out", "relative output", "--port", "FM-1's ‘$(echo unsafe)’‚‛; & %PATH%"]
+        with patch.object(P, "__file__", str(script)), patch.object(sys, "platform", "win32"), \
+                patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
+                self.assertRaises(ValueError) as error:
+            P.prepare_installer(arguments)
+        self.assertEqual(str(error.exception),
+                         "Python MIDI installer needs mido and python-rtmidi. Run in PowerShell:\n  "
+                         "& 'uv' 'run' '--project' '/trusted source/user''s Felucca' "
+                         "'--locked' '--group' 'midi' 'python' "
+                         "'/trusted source/user''s Felucca/tools/fm1_pr.py' "
+                         "'333' '--out' 'relative output' '--port' 'FM-1''s ‘‘$(echo unsafe)’’‚‚‛‛; & %PATH%'")
+
+    def test_removed_native_options_fail_before_preflight_or_github(self):
+        for flags in (["--installer", "native"], ["--m-flasher", "/unused/binary"]):
+            with patch.object(P, "prepare_installer") as prepare, \
+                    patch.object(P, "resolve_pr") as resolve, self.assertRaises(SystemExit) as result:
+                P.main(["333", *flags])
+            self.assertEqual(result.exception.code, 2)
+            prepare.assert_not_called()
+            resolve.assert_not_called()
+
+    def test_download_and_source_only_modes_skip_midi_dependencies(self):
+        with patch.object(P, "prepare_installer") as prepare, \
+                patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
+                patch.object(P, "prepare_worktree"), patch.object(P, "remove_worktree"), \
+                patch.object(P, "api", return_value={"default_branch": "main"}), \
+                patch.object(P, "ensure_run", return_value=run()), \
+                patch.object(P, "download", return_value=Path("inert.fwsc")):
+            for flags in (["--download-only"], ["--prepare-only"], ["--resolve-only"],
+                          ["--remove-worktree", "unused"]):
+                self.assertEqual(P.main(["333", *flags]), 0)
+        prepare.assert_not_called()
+
+    def test_default_and_explicit_python_selection_use_the_same_handoff(self):
+        package = Path("a path/firmware.fwsc")
+        command = PYTHON_INSTALLER
+        for flags in ([], ["--installer", "python"]):
+            with patch.object(P, "prepare_installer", return_value=command) as prepare, \
+                    patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
+                    patch.object(P, "api", return_value={"default_branch": "main"}), \
+                    patch.object(P, "ensure_run", return_value=run()), \
+                    patch.object(P, "download", return_value=package), \
+                    patch.object(P, "install", return_value=5) as install:
+                self.assertEqual(P.main(["333", "--port", "FM-1", "--yes", *flags]), 5)
+            prepare.assert_called_once_with(["333", "--port", "FM-1", "--yes", *flags])
+            install.assert_called_once_with(package, "FM-1", True, command=command)
 
 
 class Selection(unittest.TestCase):
@@ -152,8 +239,53 @@ class Selection(unittest.TestCase):
             self.assertEqual(P.ensure_run(REPO, 333, SHA, "main", 30, False, "target"), target)
         self.assertEqual(gh.call_args.kwargs["payload"]["inputs"]["validation"], "target")
         for call in matching.call_args_list:
-            self.assertEqual(call.args[-1], "target")
-        self.assertEqual(artifact.call_args.args[-1], "target")
+            self.assertEqual(call.args[-2:], ("target", "standard"))
+        self.assertEqual(artifact.call_args.args[-2:], ("target", "standard"))
+
+
+class Profiles(unittest.TestCase):
+    def test_profile_names_are_literal_and_checked_before_network_or_installer(self):
+        for name in ("../macro", "Macro", "macro/standard", "--macro", "macro\n", "macro--test", ""):
+            with patch.object(P, "api") as api, patch.object(P, "prepare_installer") as install:
+                self.assertEqual(P.main(["333", "--profile=" + name]), 2)
+            api.assert_not_called()
+            install.assert_not_called()
+        with patch.object(P, "api") as api:
+            P.validate_profile_source(REPO, SHA, "standard")
+        api.assert_not_called()
+
+    def test_opt_in_profile_is_read_from_pinned_source_and_filename_must_match(self):
+        item = {"type": "file", "path": "profiles/macro.json", "encoding": "base64",
+                "content": base64.b64encode(b'{"name":"macro"}').decode()}
+        with patch.object(P, "api", return_value=item) as api:
+            P.validate_profile_source(REPO, SHA, "macro")
+        api.assert_called_once_with(f"repos/{REPO}/contents/profiles/macro.json?ref={SHA}")
+        for changes in ({"type": "symlink"}, {"path": "profiles/standard.json"},
+                        {"content": base64.b64encode(b'{"name":"standard"}').decode()},
+                        {"content": "not JSON"}):
+            with patch.object(P, "api", return_value=item | changes), self.assertRaises(ValueError):
+                P.validate_profile_source(REPO, SHA, "macro")
+
+    def test_profile_run_selection_artifact_and_dispatch_are_separate(self):
+        standard = run()
+        macro = run(number=43) | {"display_title": P.run_title(333, SHA, "full", "macro")}
+        with patch.object(P, "pages", return_value=[standard, macro]):
+            self.assertEqual(P.matching_runs(REPO, 333, SHA, "main", "full", "macro"), [macro])
+            self.assertEqual(P.matching_runs(REPO, 333, SHA, "main"), [standard])
+        self.assertEqual(P.artifact_name(macro, "full", "macro"), "firmware-macro-43")
+        self.assertEqual(P.artifact_name(macro, "target", "macro"), "firmware-target-macro-43")
+        with patch.object(P, "matching_runs", side_effect=[[], [macro]]) as matching, \
+                patch.object(P, "firmware_artifact", return_value={"name": "firmware-macro-43"}), \
+                patch.object(P, "gh") as gh:
+            self.assertEqual(P.ensure_run(REPO, 333, SHA, "main", 30, False, "full", "macro"), macro)
+        self.assertEqual(gh.call_args.kwargs["payload"]["inputs"],
+                         {"pr": "333", "commit": SHA, "profile": "macro"})
+        self.assertTrue(all(call.args[-1] == "macro" for call in matching.call_args_list))
+
+    def test_automatic_profile_request_is_rejected_before_api(self):
+        with patch.object(P, "api") as api:
+            self.assertEqual(P.main(["333", "--automatic", "--profile", "macro"]), 2)
+        api.assert_not_called()
 
 
 class Automatic(unittest.TestCase):
@@ -410,7 +542,7 @@ class Worktrees(unittest.TestCase):
         self.assertEqual(self.git(self.source, "for-each-ref", "refs/felucca-pr"), "")
 
     def test_cli_prepare_and_cleanup_skip_ci_download_and_installer(self):
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "remove_worktree") as remove, \
@@ -424,7 +556,7 @@ class Worktrees(unittest.TestCase):
                 call.assert_not_called()
 
     def test_cli_preparation_failure_blocks_build_and_install(self):
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree", side_effect=ValueError("submodule failed")), \
                 patch.object(P, "ensure_run") as build, patch.object(P, "install") as install:
@@ -434,7 +566,7 @@ class Worktrees(unittest.TestCase):
 
     def test_cli_resolve_only_has_no_git_mutations(self):
         output = io.StringIO()
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "remove_worktree") as remove, patch.object(P, "ensure_run") as build, \
@@ -446,7 +578,7 @@ class Worktrees(unittest.TestCase):
 
     def test_cli_worktree_keeps_pinned_ci_download_and_installer_flow(self):
         package = self.base / "firmware.fwsc"
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(self.revision, TITLE)), \
                 patch.object(P, "prepare_worktree") as prepare, \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
@@ -455,9 +587,9 @@ class Worktrees(unittest.TestCase):
                 patch.object(P, "install", return_value=0) as install:
             self.assertEqual(P.main(["333", "--worktree"]), 0)
         prepare.assert_called_once_with(REPO, "333", self.revision, None)
-        build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False, "full")
+        build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False, "full", "standard")
         self.assertEqual(download.call_args.args[2], self.revision)
-        install.assert_called_once_with(package, None, False, command=["flasher", "midi", "firmware"])
+        install.assert_called_once_with(package, None, False, command=PYTHON_INSTALLER)
 
 
 class Download(unittest.TestCase):
@@ -500,7 +632,7 @@ class Download(unittest.TestCase):
                 self.artifact(root)
                 (root / "provenance.json").write_text(json.dumps({"revision": recorded}))
                 return ""
-            with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]) as prepare, \
+            with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER) as prepare, \
                     patch.object(P, "resolve_automatic_pr", return_value=(SHA, OLD, MERGE, TITLE)), \
                     patch.object(P, "automatic_run", return_value=run()) as automatic, \
                     patch.object(P, "resolve_pr") as exact, patch.object(P, "ensure_run") as dispatch, \
@@ -518,7 +650,7 @@ class Download(unittest.TestCase):
                 install.assert_not_called()
             else:
                 self.assertEqual(install.call_count, 1)
-                self.assertEqual(install.call_args.kwargs["command"], ["flasher", "midi", "firmware"])
+                self.assertEqual(install.call_args.kwargs["command"], PYTHON_INSTALLER)
             self.assertIn(f"Commit: {MERGE}", output.getvalue())
             self.assertIn(f"PR head: {SHA}", output.getvalue())
             self.assertIn(f"Base commit: {OLD}", output.getvalue())
@@ -538,17 +670,47 @@ class Download(unittest.TestCase):
 
     def test_target_cli_warns_and_downloads_without_installing(self):
         output = io.StringIO()
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()) as build, \
                 patch.object(P, "download", return_value=self.root / "felucca.fwsc") as download, \
                 patch.object(P, "install") as install, contextlib.redirect_stdout(output):
             self.assertEqual(P.main(["333", "--validation", "target", "--download-only"]), 0)
-        build.assert_called_once_with(REPO, "333", SHA, "main", 3600, False, "target")
-        self.assertEqual(download.call_args.args[-1], "target")
+        build.assert_called_once_with(REPO, "333", SHA, "main", 3600, False, "target", "standard")
+        self.assertEqual(download.call_args.args[-2:], ("target", "standard"))
         install.assert_not_called()
         self.assertIn("does not replace full PR validation", output.getvalue())
+
+    def test_profile_download_requires_matching_provenance_and_generated_selection(self):
+        record = self.root / "provenance.json"
+        with self.assertRaisesRegex(ValueError, "profile provenance"):
+            P.verify_download(self.root, SHA, profile="macro")
+        selection = {"profile": "macro", "selection_sha256": "f" * 64}
+        record.write_text(json.dumps({"revision": SHA, "profile": selection}))
+        with self.assertRaisesRegex(ValueError, "requested profile"):
+            P.verify_download(self.root, SHA)
+        with self.assertRaisesRegex(ValueError, "resolved-profile"):
+            P.verify_download(self.root, SHA, profile="macro")
+        generated = self.root / "resolved-profile.json"
+        generated.write_text(json.dumps(selection | {"profile": "standard"}))
+        with self.assertRaisesRegex(ValueError, "differs from provenance"):
+            P.verify_download(self.root, SHA, profile="macro")
+        generated.write_text(json.dumps(selection))
+        self.assertEqual(P.verify_download(self.root, SHA, profile="macro"), self.root / "felucca.fwsc")
+
+    def test_profile_cli_propagates_and_rejects_wrong_package_before_install(self):
+        with patch.object(P, "prepare_installer", return_value=["flasher"]), \
+                patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
+                patch.object(P, "validate_profile_source") as source, \
+                patch.object(P, "ensure_run", return_value=run()) as build, \
+                patch.object(P, "download", side_effect=ValueError("Firmware profile mismatch")) as download, \
+                patch.object(P, "install") as install:
+            self.assertEqual(P.main(["333", "--profile", "macro", "--workflow-ref", "candidate"]), 2)
+        source.assert_called_once_with(REPO, SHA, "macro")
+        build.assert_called_once_with(REPO, "333", SHA, "candidate", 3600, False, "full", "macro")
+        self.assertEqual(download.call_args.args[-1], "macro")
+        install.assert_not_called()
 
     def test_corruption_wrong_manifest_and_duplicate_packages(self):
         package = self.root / "felucca.fwsc"
@@ -581,7 +743,7 @@ class Download(unittest.TestCase):
         def download(*args, **kwargs):
             self.artifact(Path(args[args.index("--dir") + 1]))
             return ""
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
@@ -591,7 +753,7 @@ class Download(unittest.TestCase):
         self.assertEqual(len(list((self.root / "out").rglob("*.fwsc"))), 1)
 
     def test_verification_error_blocks_installer(self):
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \
@@ -616,7 +778,7 @@ class Download(unittest.TestCase):
                     # GitHub may be unavailable once the device update finishes.
                     api.side_effect = ValueError("GitHub unavailable after installation")
                     return 0
-                with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+                with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                         patch.object(P, "api", side_effect=[{"head": {"sha": SHA}, "title": TITLE},
                                                           {"default_branch": "main"}]) as api, \
                         patch.object(P, "ensure_run", return_value=run()), \
@@ -625,14 +787,14 @@ class Download(unittest.TestCase):
                         contextlib.redirect_stdout(output):
                     self.assertEqual(P.main(["333", "--repo", repository, "--port", "Felucca"]), 0)
                 install.assert_called_once_with(self.root / "felucca.fwsc", "Felucca", False,
-                                                command=["flasher", "midi", "firmware"])
+                                                command=PYTHON_INSTALLER)
                 self.assertIn("still require hardware validation", output.getvalue())
                 self.assertTrue(output.getvalue().endswith(
                     f"PR #333: {TITLE}\nhttps://github.com/{repository}/pull/333\n"))
 
     def test_failed_installer_has_no_success_summary(self):
         output = io.StringIO()
-        with patch.object(P, "prepare_installer", return_value=["flasher", "midi", "firmware"]), \
+        with patch.object(P, "prepare_installer", return_value=PYTHON_INSTALLER), \
                 patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
                 patch.object(P, "api", return_value={"default_branch": "main"}), \
                 patch.object(P, "ensure_run", return_value=run()), \

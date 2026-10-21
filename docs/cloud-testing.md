@@ -8,14 +8,15 @@ remain the detailed regression checks; this adds the actual browser path.
 
 ## Run locally or in a cloud workspace
 
-Install Python dependencies from `tools/ci-requirements.txt`, Clang, Node 22 and
+Install uv, Clang, Node 22 and
 Emscripten 6.0.11 as described in [CI dependencies](../.github/CI.md#dependencies-and-provenance).
-Then, from the repository root:
+The locked `build` group supplies the Python dependencies automatically. Then,
+from the repository root:
 
 ```sh
 npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
 npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
-python3 tools/ci.py emulator-tests
+uv run --locked --group build tools/ci.py emulator-tests
 npm test --prefix web/emu
 ```
 

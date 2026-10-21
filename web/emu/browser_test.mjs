@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { readFile, writeFile, mkdir, mkdtemp } from "node:fs/promises";
 import { resolve, relative, extname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { installProbe } from "./browser_probe.js";
+import { installProbe, observeMacroWorklet } from "./browser_probe.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const build = resolve(root, "build"), site = resolve(build, "emu");
@@ -95,7 +95,11 @@ try {
       if (path === "/favicon.ico") { res.writeHead(204).end(); return; }
       const file = resolve(site, "." + decodeURIComponent(path === "/" ? "/index.html" : path));
       if (!file.startsWith(site + sep)) { res.writeHead(403).end(); return; }
-      const bytes = await readFile(file);
+      let bytes = await readFile(file);
+      if (file === resolve(site, "worklet.js")) {
+        bytes = Buffer.from(observeMacroWorklet(bytes.toString("utf8")));
+        report.inputs.observed_worklet = hash(bytes);
+      }
       const mime = { ".html": "text/html", ".js": "text/javascript", ".wasm": "application/wasm", ".woff": "font/woff" };
       res.writeHead(200, { "Content-Type": mime[extname(file)] || "application/octet-stream", "Cache-Control": "no-store" }).end(bytes);
     } catch { res.writeHead(404).end(); }
@@ -194,6 +198,97 @@ try {
     return { sectors: Object.keys(JSON.parse(saved)).length, storage_sha256: hash(saved),
       restored_graph_sha256: restored.graph_sha256 };
   });
+  // MACRO stays opt-in. Read availability and applied controls from the real
+  // worklet's observed frame; every edit below still travels through DOM input.
+  await waitFor(() => __feluccaTest.macro);
+  const macroCount = await page.evaluate(() => __feluccaTest.macro.count);
+  if (macroCount) {
+    // The generic persistence check restarted the worklet; attach its new output
+    // to the PCM observer before exercising MACRO audio.
+    await page.evaluate(() => __feluccaTest.listen());
+    const turn = async (name, delta) => {
+      const slider = page.getByRole("slider", { name, exact: true });
+      for (let i = 0; i < Math.abs(delta); i++) await slider.press(delta > 0 ? "ArrowUp" : "ArrowDown");
+    };
+    const state = () => page.evaluate(() => __feluccaTest.macro);
+    const model = async (value) => waitFor((v) => {
+      const m = __feluccaTest.macro;
+      return m.engine === 14 && m.params[0] === v && m;
+    }, value);
+    await check("MACRO profile and real panel model controls", async () => {
+      assert.equal(macroCount, 51);
+      await tap("HOME");
+      // Hold EDIT for the profile's engine map, then press its actual white key.
+      const rank = (await state()).rank;
+      const names = ["F3", "G3", "A3", "B3", "C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5", "D5", "E5", "F5", "G5"];
+      assert(rank < names.length, "MACRO missing from engine map");
+      const edit = page.getByRole("button", { name: "EDIT", exact: true });
+      await edit.focus(); await page.keyboard.down("Enter");
+      await page.waitForTimeout(800);
+      await page.getByRole("button", { name: names[rank], exact: true }).click();
+      // Deliver keyup to EDIT even if the pointer interaction changed focus.
+      await edit.focus(); await page.keyboard.up("Enter");
+      await page.waitForTimeout(500);
+      await model(0);
+      const before = (await state()).params;
+      await turn("KNOB 1", 3); await turn("KNOB 2", -2);
+      await waitFor(({ a, b }) => __feluccaTest.macro.params[1] !== a && __feluccaTest.macro.params[2] !== b,
+        { a: before[1], b: before[2] });
+      await page.getByRole("button", { name: "F3", exact: true }).focus();
+      await page.keyboard.down("z"); const audio = await freshAudio(true); await page.keyboard.up("z");
+      await screen("macro-desktop-wave");
+      // HOME KNOB 4 is MODEL; visit an added model and the highest stored ID.
+      await turn("KNOB 4", 3); await model(3);
+      await page.getByRole("button", { name: "F3", exact: true }).focus();
+      await page.keyboard.down("z"); await freshAudio(true); await page.keyboard.up("z");
+      await turn("KNOB 4", 44); const last = await model(47);
+      await page.getByRole("button", { name: "F3", exact: true }).focus();
+      await page.keyboard.down("z"); await freshAudio(true); await page.keyboard.up("z");
+      await screen("macro-desktop-question");
+      return { engine: last.engine, models: [0, 3, 47], params: last.params, audio };
+    });
+    await check("MACRO portrait controls and sound", async () => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 600);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "portrait horizontal overflow");
+      const before = (await state()).params[1];
+      await turn("KNOB 1", 2);
+      await waitFor((v) => __feluccaTest.macro.params[1] !== v, before);
+      assert.equal((await state()).params[0], 47);
+      await page.getByRole("button", { name: "F3", exact: true }).focus();
+      await page.keyboard.down("z"); const audio = await freshAudio(true); await page.keyboard.up("z");
+      await screen("macro-portrait-question");
+      return audio;
+    });
+    await check("MACRO saved controls survive browser worklet restart", async () => {
+      await page.setViewportSize({ width: 1200, height: 900 });
+      await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 1000);
+      const expected = (await state()).params;
+      // Existing generic test occupied U01: explicitly confirm overwrite, then NAME.
+      const previous = await page.evaluate(() => localStorage.getItem("felucca-emu-flash"));
+      await tap("SAVE"); await tap("OCT+"); await tap("OCT+"); await tap("OCT+");
+      const saved = await waitFor((before) => {
+        const value = localStorage.getItem("felucca-emu-flash");
+        return value && value !== before && value;
+      }, previous);
+      messages.push(...await page.evaluate(() => __feluccaTest.errors));
+      capturedAudio = await page.evaluate(() => ({ blocks: __feluccaTest.audio, rate: __feluccaTest.context.sampleRate }));
+      await page.reload();
+      await page.getByRole("button", { name: "Switch on", exact: true }).click();
+      await page.locator("#start").waitFor({ state: "hidden" });
+      await waitFor(() => __feluccaTest.frames > 5 && (__feluccaTest.leds[0] & (1 << 6)));
+      assert.equal(await page.evaluate(() => __feluccaTest.restoredSectors), Object.keys(JSON.parse(saved)).length);
+      await page.evaluate(() => __feluccaTest.listen());
+      await tap("SAVE"); await turn("KNOB 2", 1); await tap("OCT+"); await tap("HOME");
+      const restored = await model(47);
+      assert.deepEqual(restored.params, expected, "MACRO controls changed across saved-sector restart/load");
+      await page.getByRole("button", { name: "F3", exact: true }).focus();
+      await page.keyboard.down("z"); const audio = await freshAudio(true); await page.keyboard.up("z");
+      await screen("macro-restored-question");
+      capturedAudio = await page.evaluate(() => ({ blocks: __feluccaTest.audio, rate: __feluccaTest.context.sampleRate }));
+      return { params: restored.params, sectors: Object.keys(JSON.parse(saved)).length, audio };
+    });
+  }
   await check("no browser or worklet errors", async () => {
     messages.push(...await page.evaluate(() => __feluccaTest.errors));
     assert.deepEqual(messages, []);

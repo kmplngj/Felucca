@@ -508,13 +508,23 @@ static void span_param(const card_span_t *sp, int32_t v, char *val)
     param_format((const param_desc_t *)sp->p, v, val, &u);
     fmt_named = named;
 }
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+static void span_track_param(const card_span_t *sp, int32_t v, char *val)
+{
+    const track_t *t = (const track_t *)sp->p;
+    const char *u;
+    uint8_t named = fmt_named;
+    ui_param_format(t, (uint32_t)sp->ctx, track_desc(t, (uint32_t)sp->ctx), v, val, &u);
+    fmt_named = named;
+}
+#endif
 static void span_names(const card_span_t *sp, int32_t v, char *val)
 {
     str_cpy(val, ((const char *const *)sp->p)[v], 16);
 }
 static void span_mod_dst(const card_span_t *sp, int32_t v, char *val)   /* MOD's DST: the track's (its engine's) names */
 {
-    str_cpy(val, mod_dst_name((const track_t *)sp->p, v), 16);
+    str_cpy(val, ui_mod_dst_name((const track_t *)sp->p, v), 16);
 }
 static void span_fop(const card_span_t *sp, int32_t v, char *val)       /* FM6's operator pages: card ctx's byte = v */
 {
@@ -534,6 +544,17 @@ static void card_span_by(void (*fn)(const card_span_t *, int32_t, char *), const
 static void card_span_of(const param_desc_t *d)          /* a parameter: its whole range */
 {
     card_span_by(span_param, d, d->min, d->max, (int32_t)d->fmt);
+}
+static void card_span_track(const track_t *t, uint32_t id, const param_desc_t *d)
+{
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    if (eng_is(t->eng_req, ENGI_MACRO) && id == P_E2 && t->p[P_E0] == MAC_FBFM) {
+        card_span_by(span_track_param, t, d->min, d->max, (int32_t)id);
+        return;
+    }
+#endif
+    (void)t; (void)id;
+    card_span_of(d);
 }
 /* the face of a tall card's value s (0 L, 1 M, 2 S): L where the sparse L face has its glyphs and it fits with 3 px
  * either side, M where it fits with 2 (52 px: "THUMB"), else S (cut by cv_text_fit when even S is too wide) */
@@ -980,13 +1001,14 @@ static void draw_columns(void)
         for (c = 0; c < 4u; c++) {
             int16_t *vp;
             const param_desc_t *d = home_param(c, &vp);
-            param_format(d, *vp, val, &unit);
+            uint32_t id = (uint32_t)(vp - home_trk(c)->p);
+            ui_param_format(home_trk(c), id, d, *vp, val, &unit);
             card_mot_of(vp);
-            card_span_of(d);
+            card_span_track(home_trk(c), id, d);
             if (home_levels())                         /* 1.5: T1..T4 LEVEL, the track's cushion, muted: DIM */
                 draw_column(c, "LEVEL", val, unit, trk[c].p[P_MUTE] ? T_DIM : VAL(c), RATIO(d, *vp), trk_icon(c, 1));
             else
-                draw_column(c, d->label, val, unit, VAL(c), RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
+                draw_column(c, ui_param_label(home_trk(c), id), val, unit, VAL(c), RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
         }
         return;
     }
@@ -1092,7 +1114,7 @@ static void draw_columns(void)
         }
         v = k == EVK_REC ? motion.event[c & 0xFFu].value : motion_base_value(t, id);
         d = track_desc(t, id);
-        param_format(d, v, val, &unit);
+        ui_param_format(t, id, d, v, val, &unit);
         draw_column(3, k == EVK_ADD ? "VALUE" : (motion.event[c & 0xFFu].param & MOTION_LOCK) ? "LOCK" : "AUTO", val, unit,
                     k != EVK_ADD ? VAL(3u) : T_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
         return;
@@ -1200,7 +1222,7 @@ static void draw_columns(void)
         card_span_by(span_names, N_MSRC, 0, MS_N - 1, 0);
         draw_column(1, "SRC", N_MSRC[clamp(s, 0, MS_N - 1)], "", s ? VAL(1u) : T_DIM, -1, mod_src_icon(s));
         card_span_by(span_mod_dst, t, 0, MD_N - 1, 0);
-        draw_column(2, "DST", mod_dst_name(t, d), "", d ? VAL(2u) : T_DIM, -1, mod_dst_icon(t, d));
+        draw_column(2, "DST", ui_mod_dst_name(t, d), "", d ? VAL(2u) : T_DIM, -1, mod_dst_icon(t, d));
         param_format(&TP[id + 2u], a, val, &unit);
         card_span_of(&TP[id + 2u]);
         draw_column(3, "AMT", val, unit, a ? VAL(3u) : T_DIM, RATIO(&TP[id + 2u], a), mod_src_icon(MS_OFF));
@@ -1255,8 +1277,8 @@ static void draw_columns(void)
             on = motion_lock_get(TSEL, st, id, &v);
             if (!on)
                 v = motion_base_value(TSEL, id);      /* not locked: the sound's own, DIM */
-            param_format(d, v, val, &unit);
-            draw_column(c, d->label, val, unit, on ? VAL(c) : T_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
+            ui_param_format(TSEL, id, d, v, val, &unit);
+            draw_column(c, ui_param_label(TSEL, id), val, unit, on ? VAL(c) : T_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
         }
         return;
     }
@@ -1329,15 +1351,20 @@ static void draw_columns(void)
             draw_act_column(c, d->label, T_THEME, ICON_AUTO);
             continue;
         }
-        param_format(d, *vp, val, &unit);
+        if (cur_page()->scope == SC_ENGINE) {
+            ui_param_format(TSEL, cur_page()->id[c], d, *vp, val, &unit);
+            card_span_track(TSEL, cur_page()->id[c], d);
+        } else {
+            param_format(d, *vp, val, &unit);
+            card_span_of(d);
+        }
         card_mot_of(vp);                                /* (a global: never) */
-        card_span_of(d);
         if (vp == &TSEL->p[P_LRATE] && TSEL->p[P_LSYNC]) {   /* LFO 2 SYNC on: RATE does nothing, DIM (1.2) */
             draw_column(c, d->label, val, unit, T_DIM, RATIO(d, *vp), param_icon(d, *vp));
             continue;
         }
-        draw_column(c, d->label, val, unit, VAL(c), d->fmt == F_ENUM && d->max < 2 ? -1 : RATIO(d, enum_rank(d, *vp)),
-                    param_icon(d, *vp));
+        draw_column(c, cur_page()->scope == SC_ENGINE ? ui_param_label(TSEL, cur_page()->id[c]) : d->label, val, unit, VAL(c),
+                    d->fmt == F_ENUM && d->max < 2 ? -1 : RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
     }
 }
 

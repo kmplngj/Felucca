@@ -200,8 +200,8 @@ the firmware and relevant host/emulator compilation paths, not merely added to d
 Use the setup and environment overrides in `BUILDING.md`. From the repository root:
 
 ```sh
-./build.sh
-tests/run_tests.sh
+uv run --locked --group build ./build.sh
+uv run --locked --group build tests/run_tests.sh
 ```
 
 For a short DSP iteration after a successful build, the runner produces these binaries:

@@ -190,7 +190,7 @@ at 1..3 and hides 6 5 8: what it sets still plays the right kit, and the device 
 | 2 GET | scope, id | scope, id, v14 |
 | 3 SET | scope, id, v14 | scope, id, v14 (the value after clamping). Setting global `G_ENGSEL` (id from DESC label "ENG") changes the engine: its defaults, then its first preset (as on the device) |
 | 4 DUMP | — | engine, preset, then P_COUNT × v14 (the selected track), then G_COUNT × v14 (globals) |
-| 5 DESC | scope, id | scope, id, fmt, min v14, max v14, def v14, label string, unit string, then for an enum (fmt 8) one name string per value (at most 24; firmware before the matrix: at most 16) |
+| 5 DESC | scope, id | scope, id, fmt, min v14, max v14, def v14, label string, unit string, then for an enum (fmt 8) one name string per value (at most 24, or 48 for MACRO SHAPE; firmware before the matrix: at most 16) |
 | 6 STEP_GET | index 0..NSTEP−1 | index, n (0..4 notes), note0..note3, time (0 NOTE, 1 TIE, 2 REST), flags (1 accent, 2 slide), vel, then (v5) hits (3 bytes, below), then (v7) chance 0..100, then (`52 01`) ratchet 1..4, then (`54 01`, 1.2) nudge + 8 (0..15: −8..+7 sixteenths of the step), then (`4B 01`, 1.5.5) condition 0..11 (0 none; with one the chance byte says 100) |
 | 7 STEP_SET | index, n, note0..3, time, flags, vel [, hits (3 bytes, v5) [, chance 0..100 (v7) [, ratchet 1..4 [, nudge + 8, 0..15 (1.2) [, condition 0..11 (1.5.5)]]]]] | same as STEP_GET (after the write). Without the hits the step keeps its own; without the chance, the ratchet or the nudge it keeps its own. The chance can only follow the hits, the ratchet the chance, the nudge the ratchet, the condition the nudge; a nudge byte above 15 or a condition above 11: no reply, nothing written. Without the condition byte a chance of 100 keeps the step's condition (below) |
 | 8 PRESET | engine, preset | engine, preset (applies the preset's sound to the selected track and sends; the steps and the track's own parameters stay, see "Sound loads and undo"). For another track, select it with `TRACK` first |
@@ -1426,3 +1426,19 @@ device gone at ~0.3 s, the MIDI port gone at ~0.57 s and back at ~1.15 s; ON -> 
 at ~0.6 s while the MIDI port was not seen to disappear at all (so do not wait for a disconnect event: after
 a real change, wait ~1.5 s and open again). What the editor sends in that window is lost, `WATCH` ends with the
 bus reset (send `INFO` and `WATCH` again after reconnecting), and a backup in progress answers rc 5 (stale).
+
+## Optional MACRO profile (#27)
+
+The `macro` build profile adds engine 14; the standard profile leaves it unavailable.
+Use INFO's engine catalog bitmap to discover availability. Its SHAPE enum retains
+WAVE/FOLD/FBFM at values 0/1/2 and appends 45 Braids models at 3..47. DESC returns all
+48 model names, up to 12 characters each; other descriptors keep the existing limits
+(24 values, eight-character value names). The bounded 664-byte reply buffer accommodates
+the complete model descriptor. The canonical SHAPE/TIMBRE/COLOR labels and 0..127
+TIMBRE/COLOR values stay unchanged even where the panel uses model-specific words
+or displays FBFM COLOR as semitones.
+
+NAMES keeps the six original preset indices and appends 45 starter sounds (51 total).
+Projects, user presets and backups keep engine 14 and the model value. Firmware that
+lacks MACRO cannot load those sounds; old three-model builds cannot represent models
+3..47. Keep a backup before downgrading.

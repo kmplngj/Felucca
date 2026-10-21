@@ -23,7 +23,16 @@ FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_l
          "px_string_excite", "px_string_run", "px_symp_run",
          "dv_metal_run", "dv_kick_run", "dv_snare_run", "dv_clap_run", "dv_hat_run", "dv_tom_run",   # drum_voice.c
          "dv_rim_run", "dv_bell_run", "dv_cym_run", "dv_out", "dv_metal_mix",
-         "slicer_track",
+         "slicer_track", "macro_render", "mac_waveline", "mac_fold", "mac_fbfm",
+         # Clang inlines the other full-bank methods into these dispatchers and
+         # macro_render. Check their actual target boundaries, including reset.
+         "macro_block", "braids_AnalogOscillator_Render",
+         "braids_DigitalOscillator_ComputeDelay", "braids_DigitalOscillator_ComputePhaseIncrement",
+         "braids_DigitalOscillator_InterpolateFormantParameter", "braids_DigitalOscillator_Render",
+         "braids_DigitalOscillator_RenderDigitalFilter", "braids_DigitalOscillator_dispatch",
+         "braids_MacroOscillator_RenderDigital", "braids_MacroOscillator_RenderDualSync",
+         "braids_MacroOscillator_RenderSub", "braids_MacroOscillator_RenderTriple", "braids_Svf_Process",
+
          "slice_render", "slc_rev",                          # SLICE (eng_slice.c): the render, the reverse windows
          "fm1_alnk0_irq", "fm1_timer5_irq",               # the audio ISR; TIMER5: the key / LED scan (hal/fm1_input.h)
          "usb_poll", "fm1_input_tick", "fm1__frame", "fm1__keys",  # shared rescue calls can outline TIMER5 work

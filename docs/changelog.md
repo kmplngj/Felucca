@@ -16,6 +16,17 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Added
 
+- **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
+  51 factory sounds alongside all thirteen standard engines, using stable engine
+  ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.
+  Full-bank parts use distinct deterministic random streams, and optional
+  second-core scheduling accounts for their model costs.
+  The standard profile is unchanged. User reports cover models, controls and
+  switching during held notes; the raised-key symptom was a corrected QNT setting.
+  Specific FM-1 listening, persistence, USB/TRS transport and timing checks remain
+  pending. See the [engine guide](macro-engine.md),
+  [device procedure](macro-hardware-test.md) and [results](macro-device-results.md),
+  including the remaining model-rate qualification.
 - **Early USB rescue:** holding OCT− at power-on or repeated incomplete warm boots
   selects a MIDI-only installer before settings, projects and audio initialize;
   another warm reset in rescue escalates to ROM USB. FM-1 hardware qualification
@@ -38,7 +49,7 @@ in issues and roadmaps, not among implemented changes below.
 - **Testing and installation tools:** deterministic interaction replay, native/WASM
   partition comparisons, host stress scenarios and a Chromium UI/audio gate.
   PR installation supports isolated source worktrees, exact-revision artifacts and
-  a pinned native MIDI updater, including its macOS reconnect fix.
+  the Python USB-MIDI updater with dependency checks before firmware CI.
 - **Fork distribution and tracking:** a hosted browser demo, editor and installer
   with source revisions, complete reproducible source archives with dependency pins
   and checksums, and a repository-backed firmware-watch ledger for reviewing other forks.
@@ -68,6 +79,15 @@ in issues and roadmaps, not among implemented changes below.
   [second-core behavior and recovery](fork-features.md#optional-second-core).
 
 ### Changed
+
+- **Python tooling setup:** locked uv dependency groups separate build/font tooling
+  from MIDI installation. Build and PR handoff commands synchronize their environment
+  automatically, including on macOS without manual pip setup; see
+  [Python environments](../BUILDING.md#python-environments).
+
+- **PR installation:** the CLI uses the maintained Python updater again. Native Rust
+  updater setup, cached artifacts and backend selection have been removed; the locked
+  `midi` group supplies `mido`/`python-rtmidi` in the trusted caller checkout. See [BUILDING](../BUILDING.md#test-a-pull-request-on-hardware).
 
 - **Update-loader compatibility:** installers bind current Felucca packages to loader
   `900`, with the digest-pinned original V15 using loader `015` through Python/the

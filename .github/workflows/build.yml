@@ -4,6 +4,10 @@ name: Firmware validation
 on:
   workflow_call:
     inputs:
+      profile:
+        description: Engine profile; nonstandard requires a verified manual PR revision
+        default: standard
+        type: string
       validation:
         description: full, or target-only for a verified manual PR revision
         default: full
@@ -26,6 +30,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  FELUCCA_PROFILE: ${{ inputs.profile }}
 
 defaults:
   run:
@@ -54,12 +61,15 @@ jobs:
           scope = os.environ['VALIDATION']
           if scope not in ('full', 'target'):
               raise SystemExit('Unknown validation scope')
-          if scope == 'target' and (
+          profile = os.environ.get('FELUCCA_PROFILE', 'standard')
+          if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', profile):
+              raise SystemExit('Invalid engine profile name')
+          if (scope == 'target' or profile != 'standard') and (
               os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or os.environ['VERSION'] or
               not re.fullmatch(r'[0-9a-f]{40}', os.environ['SOURCE_REF']) or
               not re.fullmatch(r'[1-9][0-9]*', os.environ['VERIFIED_PR'])
           ):
-              raise SystemExit('Target-only scope requires a verified manual PR revision and no release version')
+              raise SystemExit('Target-only scope or nonstandard profile requires a verified manual PR revision and no release version')
           PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,6 +77,20 @@ jobs:
           persist-credentials: false
           submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
+      - name: Validate profile in selected sources
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path.cwd()
+          if (root / 'profiles/catalog.json').is_file():
+              import sys
+              sys.path.insert(0, str(root / 'tools'))
+              import profile
+              profile.validate_selection(root, os.environ['FELUCCA_PROFILE'])
+          elif os.environ['FELUCCA_PROFILE'] != 'standard':
+              raise SystemExit('Selected sources do not support engine profiles')
+          PY
       - name: Select validation from complete change range
         id: changes
         env:
@@ -118,13 +142,19 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: tools/ci-requirements.txt
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.23'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - name: Run portable fixtures without firmware outputs
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/felucca-python
         run: |
           set -o pipefail
           mkdir -p build/ci
-          python3 -m pip install -r tools/ci-requirements.txt
+          uv sync --locked --only-group build --python "$(command -v python3)" --no-python-downloads
+          export PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
           python3 tools/ci.py portable-tests 2>&1 | tee build/ci/portable-tests.log
       - name: Upload Python diagnostics
         if: always()
@@ -175,8 +205,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: tools/ci-requirements.txt
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.23'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
@@ -190,11 +223,14 @@ jobs:
       - name: Install pinned generation and emulator dependencies
         env:
           EMSDK: ${{ runner.temp }}/emsdk
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/felucca-python
         run: |
           mkdir -p build/ci
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
-          python3 -m pip install -r tools/ci-requirements.txt
+          uv sync --locked --only-group build --python "$(command -v python3)" --no-python-downloads
+          echo "$UV_PROJECT_ENVIRONMENT/bin" >> "$GITHUB_PATH"
+          echo "PYTHON=$UV_PROJECT_ENVIRONMENT/bin/python" >> "$GITHUB_ENV"
           if [ ! -d "$EMSDK/.git" ]; then
             git init "$EMSDK"
             git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
@@ -277,9 +313,12 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.workflow_sha }}
-      - name: Preserve target orchestration outside PR sources
+      - name: Preserve orchestration and locked dependencies outside PR sources
         if: needs.workflow-checks.outputs.full == 'true'
-        run: cp tools/ci_target.py "$RUNNER_TEMP/felucca-ci-target.py"
+        run: |
+          cp tools/ci_target.py "$RUNNER_TEMP/felucca-ci-target.py"
+          mkdir -p "$RUNNER_TEMP/felucca-python-project"
+          cp pyproject.toml uv.lock .python-version "$RUNNER_TEMP/felucca-python-project/"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.workflow-checks.outputs.full == 'true'
         with:
@@ -317,8 +356,13 @@ jobs:
         if: needs.workflow-checks.outputs.full == 'true'
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: tools/ci-requirements.txt
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        if: needs.workflow-checks.outputs.full == 'true'
+        with:
+          version: '0.12.23'
+          enable-cache: true
+          working-directory: ${{ runner.temp }}/felucca-python-project
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         with:
@@ -327,12 +371,19 @@ jobs:
           cache-dependency-path: web/emu/package-lock.json
       - name: Install pinned image-generation dependencies
         if: needs.workflow-checks.outputs.full == 'true'
+        env:
+          # Keep dependencies outside both Git sources and verified source archives.
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/felucca-python
         run: |
           sudo apt-get update -q
           packages=(libfribidi0 libraqm0)
           if [ "$VALIDATION" = full ]; then packages+=(clang); fi
           sudo apt-get install -y --no-install-recommends "${packages[@]}"
-          python3 -m pip install -r tools/ci-requirements.txt
+          # Use workflow-owned pins even when the selected PR predates uv.
+          uv sync --locked --only-group build --project "$RUNNER_TEMP/felucca-python-project" \
+            --python "$(command -v python3)" --no-python-downloads
+          echo "$UV_PROJECT_ENVIRONMENT/bin" >> "$GITHUB_PATH"
+          echo "PYTHON=$UV_PROJECT_ENVIRONMENT/bin/python" >> "$GITHUB_ENV"
       - name: Cache target inputs
         if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -433,6 +484,14 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/emu/package-lock.json') }}
+      - name: Prepare MACRO device acceptance projects and MIDI
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.profile == 'macro'
+        run: |
+          if [ -f tools/macro_device_pack.py ]; then
+            python3 tools/macro_device_pack.py --out build/macro-device-pack
+          else
+            echo 'Selected revision predates the optional MACRO device pack; firmware validation continues.'
+          fi
       - name: Browser UI and AudioWorklet smoke test
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
@@ -450,6 +509,7 @@ jobs:
             if [ -n "$VERSION" ]; then ./build.sh --release "$VERSION"; else ./build.sh; fi
           ) 2>&1 | tee build/ci/reproduce.log
           package=felucca.fwsc
+          if [ "$FELUCCA_PROFILE" != standard ]; then package="felucca-$FELUCCA_PROFILE.fwsc"; fi
           if [ -n "$VERSION" ]; then package="felucca-$VERSION.fwsc"; fi
           cmp "build/$package" "$RUNNER_TEMP/reproduce/build/$package"
           sha256sum "build/$package" | tee build/ci/package.sha256
@@ -539,7 +599,7 @@ jobs:
         if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ github.run_id }}
+          name: firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ inputs.profile != 'standard' && format('{0}-', inputs.profile) || '' }}${{ github.run_id }}
           retention-days: 30
           if-no-files-found: error
           path: |
@@ -547,7 +607,9 @@ jobs:
             build/felucca.bin
             build/ci/provenance.json
             build/build-identity.json
+            build/gen/resolved-profile.json
             build/ci/package.sha256
+            build/macro-device-pack/
             LICENSE
             LICENSING.md
             LICENSES/
@@ -571,6 +633,7 @@ jobs:
           {
             echo '### Felucca firmware validation'
             echo "Result: ${{ job.status }}. Diagnostics retain available outputs for 14 days."
+            echo "Engine profile: $FELUCCA_PROFILE."
             echo "Validation scope: ${VALIDATION:-full}. Firmware build selected: ${{ needs.workflow-checks.outputs.full }}."
             if [ "$VALIDATION" = target ]; then
               echo 'TARGET ONLY: build/resource/loader guards, static target budgets and package integrity. Host, sanitizer, browser/emulator and reproducibility tests were omitted; full PR validation is still required.'

@@ -36,13 +36,15 @@
 #define ENG_USER 0xFFu           /* a user preset slot, not an engine (never < ENG_ID_MAX) */
 #define ENG_USER_WIRE 0x7Fu      /* .. on the wire (editor_preferences.c; INFO's 49 01 block says it) */
 #ifndef FELUCCA_ENG_TEST14
-#define FELUCCA_ENG_TEST14 0     /* host tests only: a placeholder engine with id 14 (engines.c ENG_TEST14) */
+#define FELUCCA_ENG_TEST14 0     /* host tests only: append a placeholder at ENGI_TEST (legacy flag name) */
 #endif
 #ifndef FELUCCA_ENG_OMIT
 #define FELUCCA_ENG_OMIT (-1)    /* host tests only: an engine id this build's catalog leaves out (a sparse catalog:
                                   * its sounds are kept as unavailable), -1 = none */
 #endif
-#define NENGINES (FELUCCA_ENG_TEST14 ? 15 : FELUCCA_PROFILE_NSLOTS)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
+#define ENGI_TEST FELUCCA_PROFILE_NSLOTS   /* host fixture follows every real stable catalog slot */
+#define ENGI_MACRO 14u
+#define NENGINES (FELUCCA_PROFILE_NSLOTS + FELUCCA_ENG_TEST14)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
                                                   * leaves 13 out of the catalog, its slot stays: engines.c) */
 #ifndef FELUCCA_CPU2
 #define FELUCCA_CPU2 1           /* the second core (src/felucca.c): 1 = built in, MENU > 2ND CORE ON lets it render
@@ -64,7 +66,7 @@ typedef struct {
 static const engine_meta_t ENGINE_META[ENG_ID_MAX] = {
 #include "engine_metadata.inc"
 #if FELUCCA_ENG_TEST14
-    [14] = {"T14", "", 0, 8, 0, 13, 0},
+    [ENGI_TEST] = {"T14", "", 0, 8, 0, 15},
 #endif
 };
 _Static_assert(sizeof ENGINE_META / sizeof ENGINE_META[0] == ENG_ID_MAX, "identity adapter: stable ID space");
