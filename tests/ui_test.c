@@ -41,6 +41,7 @@
 #endif
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/mman.h>
 static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty), as the flash at 0xA0000 */
 #define SMP_USER_XIP(k) ((const uint8_t *)host_slots + (k) * SMP_USER_SIZE)
 #if FELUCCA_CPU2 || !defined(FELUCCA_CPU2)
@@ -10085,6 +10086,34 @@ static int test_knob_policy(void)
     bad += check("#295 HOME: KNOB 1 the selected track's engine knob only; captured, LEARN picks it", ok);
     kp_end();
 
+    /* a fixed value (min == max) is not turned on HOME, as on a page or MOMENTARY: no turn, no automation event, no
+     * LEARN pick. No shipped engine maps a fixed value to a HOME knob, so SAMPLE's CUT (KNOB 2) is made fixed for
+     * the case (its descriptor is const data: its page made writable here, restored below); KNOB 1 (SET) still turns */
+    kp_start(HV_SCOPE);
+    if (eng_ok(ENGI_SAMPLE)) {
+        const engine_t *se = ENGINES[ENGI_SAMPLE];
+        volatile param_desc_t *cut = (volatile param_desc_t *)&se->edit[4];
+        uintptr_t pg = (uintptr_t)cut & ~(uintptr_t)4095u;
+        int16_t lo = cut->min, hi = cut->max;
+        uint8_t e = TSEL->eng_req;
+        mprotect((void *)pg, 8192, PROT_READ | PROT_WRITE | PROT_EXEC);
+        cut->min = cut->max = 100;
+        TSEL->eng_req = ENGI_SAMPLE;
+        id = se->knob[1];
+        vp = &TSEL->p[id];
+        *vp = 100;
+        ok = track_desc(TSEL, id)->min == track_desc(TSEL, id)->max;
+        ok &= kp_turn(1, 5, vp, 100, sel, id, 0, 0) && kp_turn(1, -7, vp, 100, sel, id, 0, 0);
+        id = se->knob[0];
+        vp = &TSEL->p[id];
+        d = track_desc(TSEL, id);
+        ok &= kp_turn(0, 1, vp, param_turn(d, *vp, 1), sel, id, motion_param(id), 1);
+        cut->min = lo; cut->max = hi;
+        TSEL->eng_req = e;
+        bad += check("#295 HOME: a fixed engine value (min == max) is not turned, captured or picked; the others are", ok);
+    }
+    kp_end();
+
     kp_start(HV_LEVELS);
     vp = &trk[0].p[P_LEVEL];
     ok = kp_turn(0, -4, vp, clamp(*vp - 4, TP[P_LEVEL].min, TP[P_LEVEL].max), 0, P_LEVEL, 0, 1);
@@ -10927,7 +10956,7 @@ static int test_catalog_controls(void)
     uint8_t patch[FP_SIZE + 1u];
     for (e = 10; e <= 12u; e += 2u) {
         ui_power_on();
-        TSEL->eng_req = (uint8_t)e;
+        TSEL->eng_req = e;
         ok = 1;
         for (i = 0; i < NPAGES; i++) {
             if (PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7)
