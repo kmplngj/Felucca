@@ -3414,6 +3414,41 @@ static int test_layer(void)
     hold(B_HOME);
     bad += check("menu LEDS: DIM HI by default; KNOB 1 OFF < DIM LO < DIM HI < INV < INV LO < INV HI (stops at the ends), OCT+ / OCT- the same; "
                  "a change from the editor redraws the shown MENU", ok && !ui.menu);
+    {   /* Compare panel edits with the three correctly drawn values, without forcing any redraw in an edit sequence. */
+        static const uint8_t values[] = {4, 5, 4, 3};
+        uint32_t style, large, input, v, j, pixels, offset, expected[3];
+        for (style = 0; style < 2u; style++)
+            for (large = 0; large < 2u; large++) {
+                ui_power_on();
+                menu_put(MI_STYLE, style); menu_put(MI_LARGE, large);
+                hold(B_HOME); ui.menu_sel = MI_LEDS;
+                offset = (uint32_t)mr_y(MI_LEDS - mtab_first(MTAB_DISPLAY)) * 240u;
+                pixels = (uint32_t)mr_h() * 240u;
+                for (v = 3; v < 6u; v++) {
+                    menu_put(MI_LEDS, v); ui.force = 1; frame();
+                    expected[v - 3u] = host_lcd_hash(host_screen + offset, pixels);
+                }
+                ok = expected[0] != expected[1] && expected[1] != expected[2] && expected[0] != expected[2];
+                for (input = 0; input < 2u; input++) {
+                    menu_put(MI_LEDS, 3); ui.force = 1; frame();
+                    for (j = 0; j < NELEM(values); j++) {
+                        int32_t step = j < 2u ? 1 : -1;
+                        if (input)
+                            press(step > 0 ? B_OCTUP : B_OCTDN);
+                        else
+                            turn(EN_K1, step);
+                        ok &= menu_get(MI_LEDS) == values[j] && !ui.force &&
+                              host_lcd_hash(host_screen + offset, pixels) == expected[values[j] - 3u];
+                    }
+                }
+                bad += check(style ? large ? "menu LEDS labels: LINE LARGE, knob and OCT+/- redraw INV / INV LO / INV HI both ways" :
+                                             "menu LEDS labels: LINE, knob and OCT+/- redraw INV / INV LO / INV HI both ways" :
+                                    large ? "menu LEDS labels: FLAT LARGE, knob and OCT+/- redraw INV / INV LO / INV HI both ways" :
+                                            "menu LEDS labels: FLAT, knob and OCT+/- redraw INV / INV LO / INV HI both ways", ok);
+                hold(B_HOME);
+            }
+        ui_power_on();
+    }
     {
         persist_t p = {0};
         uint32_t m;
