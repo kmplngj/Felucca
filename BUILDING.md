@@ -413,7 +413,7 @@ The client needs Python 3 on macOS/Linux and an explicitly selected serial port;
 `tools/fm1_pr.py` snapshots a PR's current head commit, requests or reuses a CI
 build of that exact revision (full validation by default), downloads its firmware artifact, verifies the
 recorded revision, SHA-256 and package structure, then starts the existing
-native `m-flasher` USB-MIDI installer. After the installer succeeds, the helper
+Python USB-MIDI installer (`tools/fm1_install.py`). After the installer succeeds, the helper
 prints the PR title and GitHub link so you can open its **User test instructions**.
 You do not need the JieLi toolchain, SDK or Docker locally.
 Normal automatic PR CI builds the merge with the target branch. By default,
@@ -421,17 +421,21 @@ this helper requests a separate, exact-commit build; `--automatic` reuses a
 successful automatic PR merge build instead, without requesting another build.
 
 Install Python 3 and the [GitHub CLI](https://cli.github.com/), sign in with
-`gh auth login`, and get this fork's sources. The default installer is our native MIDI-capable `m-flasher`. On first use the
-helper downloads a successful Actions artifact for a reviewed, pinned m-flasher
-commit, checks its source/platform and executable SHA-256, and installs it under
-`~/.local/share/felucca/m-flasher/COMMIT/PLATFORM/`. Later runs reuse it. No Rust,
-Python MIDI packages, GUI installation or administrator access is needed on macOS.
-The macOS CLI is universal for Apple silicon and Intel; Linux x86-64 and Windows
-x86-64 are also available. The source pin and setup live in `tools/m_flasher.py`,
-from the trusted checkout running this helper, never the PR being tested.
-The pinned macOS CLI refreshes CoreMIDI's endpoint cache before reconnecting to
-the update loader and restarted firmware. Older native builds could time out
-with `update loader did not appear` despite USB detecting `Felucca Update`.
+`gh auth login`, and get this fork's sources. Install the MIDI dependencies in
+the same Python interpreter that runs the helper, preferably in a virtual environment:
+
+```sh
+python3 -m venv .venv
+# macOS/Linux:
+. .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install mido python-rtmidi
+```
+
+The helper checks those imports before preparing sources or starting firmware CI.
+It uses `tools/fm1_install.py` from the trusted checkout running the helper,
+never an installer from the PR being tested. No native updater binary, Cargo/Rust
+build or m-flasher artifact download is needed.
 
 Connect one FM-1 with running firmware using a USB data cable. Close other
 applications using its MIDI ports; do not enter ROM download mode. From the checkout:
@@ -476,39 +480,19 @@ never cancels a target run, or vice versa. Both can also be requested manually
 under **Actions > CI > Run workflow**, selecting `validation` and filling in
 `pr` and `commit`; target-only mode requires both fields and cannot make a release.
 
-Before source preparation or any firmware CI request, the helper sets up/checks
-the selected installer's **offline** capabilities. It does not probe or open MIDI
-until the verified package is handed off for installation. `--download-only`,
-`--prepare-only`, cleanup and resolve-only modes skip installer setup entirely.
+Before source preparation or any firmware CI request, the helper checks the
+Python MIDI dependencies without discovering or opening ports. `--download-only`,
+`--prepare-only`, cleanup and resolve-only modes skip that check entirely.
+The former `--installer python` spelling is accepted for existing commands;
+native backend selection and `--m-flasher` have been removed.
 
-To install the native tool ahead of time, without accessing a device:
-
-```sh
-python3 tools/m_flasher.py
-# If the pinned CI artifact expired, build the same commit with existing Rust:
-python3 tools/m_flasher.py --from-source
-# Select an already built MIDI-capable executable explicitly:
-python3 tools/fm1_pr.py 123 --m-flasher /absolute/path/to/m-flasher
-```
-
-The CI artifacts are development builds, not releases. Retain their `source.json`.
-An expired/missing artifact fails before firmware CI; it never downloads an
-unreviewed latest binary. Source builds require Cargo/Rust and, on Linux, ALSA
-development headers. Installation writes only the user cache and does not change
-PATH, install a system service, or touch the FM-1. `--from-source` reuses an already
-valid cached installation too. For the original Python backend, explicitly choose
-`--installer python` and install `mido`/`python-rtmidi` in the same interpreter
-(prefer a virtual environment). Its dependencies are checked before CI as well.
-
-Native MIDI OTA validates the Felucca package and delegates loader staging and
-writes to the device; it creates no raw backup or verified preboot checkpoint.
-It does not silently fall back to m-flasher's ROM USB route. Firmware/settings
-compatibility and backups remain part of the selected hardware test. The native
-MIDI loader handoff, package exchange and reconnection to running `FM-1_900` were
-confirmed by the owner on macOS with PR #477 on 2026-10-19. That shared identity
-still requires checking the ABOUT build commit; it does not establish physical
-data preservation or rollback, or qualification on other hosts/devices.
-See [m-flasher MIDI OTA](https://github.com/kmplngj/m-flasher/blob/main/docs/midi-ota.md).
+The Python updater validates the package, stages its selected loader and checks
+the final application identity. It creates no raw backup or verified preboot
+checkpoint and has no automatic fallback to ROM USB. Package/loader compatibility,
+backups and pending hardware qualification are documented in the
+[recovery guide](docs/usb-rescue.md). The previously observed native updater
+exchange remains historical evidence in `m-flasher-legacy`, not validation of
+this Python handoff.
 
 The command prints the fixed commit and Actions run URL, waits for all selected
 validation to pass, and downloads into a fresh directory under

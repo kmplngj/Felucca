@@ -83,6 +83,9 @@ cd Felucca
 ./build.sh
 ```
 
+The command-line PR testing helper uses the Python USB-MIDI updater; see
+[its setup and usage](BUILDING.md#test-a-pull-request-on-hardware).
+
 The fork site follows successful full builds of `main`: the demo and installer use
 that firmware revision, and the editor comes from a pinned revision of
 [our WebApp fork](https://github.com/kmplngj/Felucca-WebApp). Check the site's
