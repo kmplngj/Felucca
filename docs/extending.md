@@ -13,9 +13,10 @@ The firmware is one translation unit: [felucca.c](../firmware/src/felucca.c) inc
 dependency order, and [tests/hostsim.c](../tests/hostsim.c) (also used by
 [web/emu/felucca_web.c](../web/emu/felucca_web.c)) includes the same
 sources against simulated hardware. A file that is not included from those places is not built.
-The exception is `sound.c`, which `tools/build.py` compiles as its own unit (the #454 pilot). Its interface is `sound.h`,
-and `sound_port.c` implements what it needs. [modules.md](modules.md) records the layer direction, the implicit
-cross-file accesses and the rules a separate module must follow.
+Module boundaries (#454) are headers inside that one unit: `sound.c` is the first, with `sound.h` as its interface and
+`sound_port.h` / `sound_port.c` as what it needs; `tests/module_boundary_test.py` fails if `sound.c` uses another
+file's function or state directly. [modules.md](modules.md) records the layer direction, the implicit cross-file
+accesses, the rules for a module and why separate compilation was measured and not adopted.
 Target order is HAL/generated tables, display, core/engines/modulation/voices/mixer,
 USB/sequencer/audio, UI, storage/update/editor, then boot/main. Do not add an independent audio
 or main-loop wrapper. Feature defaults are defined beside their features: `felucca.c`
@@ -421,7 +422,7 @@ unresolved ISR dispatch needs a reviewed entry in `ISR_INDIRECT`. Adding a callb
 `ENGINES[]` and are declared in `ISR_INDIRECT` (`track_render`, `voice_start`, `chord_kit`,
 `kb_engine`, `seq_step`); a new kind of indirect call from interrupt code needs a reviewed entry
 there. Interrupt-reachable code must not call a function defined in a separately compiled module
-(`build.py` `SEPARATE`): `isr_reach` fails on such a call. A separate module is annotated with
+(`build.py` `SEPARATE`, empty today): `isr_reach` fails on such a call. A separate module is annotated with
 `size_fns.py --module`. Compare with `FELUCCA_SIZE=0 ./build.sh`
 ([performance.md](performance.md), "Firmware size").
 

@@ -144,9 +144,9 @@ the moved ideas and retained integration owners.
 
 | Location | Responsibility |
 | --- | --- |
-| `firmware/src/felucca.c` | Main translation unit: includes the other C files in dependency order; layers, cycles and the separate-compilation pilot in [docs/modules.md](docs/modules.md) |
+| `firmware/src/felucca.c` | Main translation unit: includes the other C files in dependency order; layers, cycles, the module boundary rule and the separate-compilation measurement in [docs/modules.md](docs/modules.md) |
 | `firmware/src/core.h`, `engines.c`, `voice.c` | Types, stable engine IDs, per-part engine memory, voice allocation |
-| `firmware/src/sound.c` | Sound install: the one path that publishes engine, preset and values into a track ([extending](docs/extending.md#14-switching-fades-and-reset)); its own translation unit (`sound.h` interface, `sound_port.h` needs) |
+| `firmware/src/sound.c` | Sound install: the one path that publishes engine, preset and values into a track ([extending](docs/extending.md#14-switching-fades-and-reset)); a header-bounded module in the one unit (`sound.h` interface, `sound_port.h` needs; `tests/module_boundary_test.py` enforces it) |
 | `firmware/src/audio.c`, `fx.c`, `eng_*.c` | Audio interrupt, mixer, effects, engines, fixed-point helpers |
 | `firmware/src/main.c`, `ui*.c`, `panel.c` | Boot, main loop, UI and panel event handling |
 | `firmware/src/ui_knob.c` | Panel knob editing: the value a knob edits on HOME, MIXER, a page, GLO and MOMENTARY, and its turn/capture/LEARN policy ([extending](docs/extending.md#38-panel-drawing-and-main-loop-services)) |

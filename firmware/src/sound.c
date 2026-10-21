@@ -20,22 +20,24 @@
  * translation of retired sounds (DIGITAL, PHYS, SAMPLE PERC: #299 / #456), which hands its result to this module.
  * Main loop only; no interrupt path calls it.
  *
- * Its own translation unit (#454 pilot, docs/modules.md): tools/build.py compiles it apart from felucca.c and links
- * it. sound.h is all a consumer sees of it; sound_port.h is all it sees of the rest of the firmware (sound_port.c,
- * inside felucca.c's unit, implements that). It owns no state (build.py checks: no .data / .bss in its object), so
- * core.h's static objects (trk, song, ENGINE_META) must stay unused here: a copy of them in this unit would be a
- * second, different one. The host builds (tests/hostsim.c) still include it, with sound_port.c, in their one unit;
- * tests/sound_install_test.c also builds it apart (SOUND_SEPARATE). */
+ * Module boundary (#454, docs/modules.md): sound.h is all a consumer sees of it; sound_port.h is all it sees of the rest
+ * of the firmware (sound_port.c implements that from the owners' static functions and state). Both are header
+ * boundaries inside felucca.c's one translation unit (static, inlined: 0 B), enforced by tests/module_boundary_test.py.
+ * It owns no state. It can still be built as its own unit (FELUCCA_OWN_UNIT, build.py SEPARATE; measured and not
+ * adopted), where core.h's static objects (trk, song, ENGINE_META) would be a second copy: it must not use them.
+ * tests/hostsim.c includes it, with sound_port.c; tests/sound_install_test.c also builds it apart (SOUND_SEPARATE). */
 #ifdef FELUCCA_OWN_UNIT           /* its own unit: the types, then the two interfaces (else: the including unit's) */
 #include "felucca_tables.h"       /* FS, CTL: core.h's engine contract needs them first (unused tables: no bytes) */
 #include "core.h"
 #endif
 #include "sound.h"
 #include "sound_port.h"
+#ifdef FELUCCA_OWN_UNIT
 #ifdef __PI32V2__
 void *memcpy(void *d, const void *s, unsigned n);   /* libc.c */
 #else
 #include <string.h>
+#endif
 #endif
 
 /* the track's settings, not the sound's: what a sound load (factory or user preset, an engine jump,
@@ -101,7 +103,8 @@ void sound_install(track_t *t, uint32_t eng, uint32_t preset, const int16_t *p, 
     int fslot = 0;
     sound_port_assert_thread();                       /* sound loads are main-loop work (#428; isr_assert.h's state
                                                        * is felucca.c's unit's, so it expands there) */
-    if (!patch && (flags & SND_FM6_SLOT) && sound_port_is_fm6(eng) && sound_port_fm6_factory(slot, fv)) {
+    if (!patch && (flags & SND_FM6_SLOT) && sound_port_is_fm6(eng) && sound_port_fm6_slot_ok(slot)) {
+        sound_port_fm6_unpack(slot, fv);
         patch = fv;                                   /* a factory SLOT: its patch goes in the window with the values */
         fslot = 1;                                    /* (a same-engine reload has no engine-switch fade to hide new
                                                        * values on the old patch from fm6_sync) */

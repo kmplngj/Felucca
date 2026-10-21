@@ -273,6 +273,7 @@ u_portable() {
     run "build --product: precedence, validation, no job on bad input (mocked)" python3 tests/build_product_test.py
     run "JieLi 64-bit arithmetic compile/link smoke (explicit skip without toolchain)" python3 tests/build_guard_target_test.py
     run "selective minsize: ISR symbol graph and annotation fixtures" python3 tests/size_fns_test.py
+    run "module boundaries (#454): sound.c uses only sound.h / sound_port.h of the firmware; violation fixtures rejected" python3 tests/module_boundary_test.py
     run "selective minsize: real JieLi LLVM IR smoke (explicit skip without toolchain)" python3 tests/size_fns_target_test.py
     run "package flash boundaries (synthetic SDK)" python3 tests/fm1pkg_test.py
     run "package flash boundaries (Python -O, synthetic SDK)" python3 -O tests/fm1pkg_test.py
@@ -573,7 +574,7 @@ if [ -f build/gen/felucca_tables.h ]; then
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/sound_install_test" tests/sound_install_test.c -lm
         run "Sound install (#298): every sound load publishes engine, preset and values in one interrupt-off window" \
             "$OUT/sound_install_test"
-        # #454 pilot: sound.c as its own unit, as the target links it (sound.h / sound_port.h only; no state of its own)
+        # #454: sound.c can also be built as its own unit (build.py SEPARATE, not adopted): kept working (sound.h / sound_port.h only; no state of its own)
         $CC -Wextra -Ifirmware/src -DFELUCCA_OWN_UNIT=1 -c firmware/src/sound.c -o "$OUT/sound_unit.o"
         run "Sound install as its own unit: no data or bss of its own" sh -c \
             "! nm '$OUT/sound_unit.o' | grep -E ' [BbDdCc] '"

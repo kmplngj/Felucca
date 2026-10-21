@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* FELUCCA: one compilation unit (the HAL is header-only). Each file uses what the files above it
- * define, so the order matters. The exception (#454 pilot, docs/modules.md): sound.c is compiled as its own unit
- * (tools/build.py); here only its interface (sound.h) and what it needs from this unit (sound_port.c). */
+ * define, so the order matters. Module boundaries (#454, docs/modules.md) are headers (sound.h, sound_port.h) checked
+ * at the source level (tests/module_boundary_test.py); build.py SEPARATE (empty) can still compile a module apart. */
 
 /* ---------------------------------------------------- build options --- */
 /* build.py: FELUCCA_<NAME>=0 / 1 in the environment overrides these. Elsewhere: FELUCCA_SLICE, FELUCCA_FM4
@@ -93,8 +93,10 @@
 #endif
 #include "song_chain.c"
 #include "seq.c"
-#include "sound.h"               /* Sound install (#298): every sound load into a track, before ui.c; sound.c is */
-#include "sound_port.c"          /* its own unit (#454), reaching this one only through sound_port.c */
+#include "sound_port.c"          /* what sound.c requires of the files above (sound_port.h), inlined here (#454) */
+#ifndef SOUND_SEPARATE
+#include "sound.c"               /* Sound install (#298): every sound load into a track, before ui.c (sound.h) */
+#endif
 #include "audio.c"
 
 /* -------------------------------------------------------------- UI --- */

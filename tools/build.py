@@ -74,9 +74,11 @@ LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
 CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
-# Modules compiled as their own translation unit and linked with felucca.o (#454 pilot, docs/modules.md): each one's
-# interface is its .h, what it needs of felucca.c's unit its _port.h. They own no state (separate_check)
-SEPARATE = ("sound",)
+# Modules compiled as their own translation unit and linked with felucca.o (#454, docs/modules.md): each one's
+# interface is its .h, what it needs of felucca.c's unit its _port.h. They own no state (separate_check). Empty: the
+# pilot (sound) was measured and not adopted (+bytes, +ISR cycles); the boundary is the headers plus
+# tests/module_boundary_test.py. ("sound",) turns the mechanism on (felucca.c then leaves sound.c out: SOUND_SEPARATE)
+SEPARATE = ()
 LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$", re.I)
 
 # SDK files of AC79NN_SDK_V1.2.1_2023-12-13 (the tested version)
@@ -386,8 +388,8 @@ def build_app():
     # felucca.c goes to LLVM IR without the optimizer, the main-loop functions (UI, stores, editor) are
     # marked minsize (tools/size_fns.py), then the IR is compiled at -Os. FELUCCA_SIZE=0: -Os everywhere
     size = os.environ.get("FELUCCA_SIZE") != "0"
-    units = [("felucca", FW / "src" / "felucca.c", [])] + [(m, FW / "src" / f"{m}.c", ["-DFELUCCA_OWN_UNIT=1"])
-                                                         for m in SEPARATE]
+    units = [("felucca", FW / "src" / "felucca.c", ["-DSOUND_SEPARATE=1"] if "sound" in SEPARATE else [])] + \
+            [(m, FW / "src" / f"{m}.c", ["-DFELUCCA_OWN_UNIT=1"]) for m in SEPARATE]
     cunits = [(("cc", *flags, *extra, "-S", "-emit-llvm", "-Xclang", "-disable-llvm-optzns", "-c", src,
                 "-o", OUT / f"{name}.ll") if size else
                ("cc", *flags, *extra, "-c", src, "-o", OUT / f"{name}.o")) for name, src, extra in units]

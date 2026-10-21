@@ -4,8 +4,9 @@
 This page documents how the firmware's source files depend on each other today, the dependency
 direction new work should follow, and what separate compilation
 ([#454](https://github.com/kmplngj/Felucca/issues/454)) requires. It also records the separate-compilation pilot
-for `sound.c` and its measurements. The owner decided on a pilot plus measurement only: the rest of the
-firmware remains one translation unit.
+for `sound.c` and its measurements. The owner decided on **header boundaries**: modules stay in the one
+translation unit, with a public header and a port header, and a source check enforces the boundary (section 4). The
+pilot's separate compilation was measured and is not adopted.
 
 Source facts refer to `main` at [`13343d5`](https://github.com/kmplngj/Felucca/tree/13343d5cb288913954f9118e347a92d17005260a)
 plus this pilot. Cross-file counts come from a source scan that follows `felucca.c`'s
@@ -112,7 +113,33 @@ configuration header first.
 (`hostsim.c` includes `sound_port.c` and `sound.c`). A dedicated host program links the module as its own
 unit (section 4). Converting every host build is part of each later step's cost.
 
-## 4. Pilot: `sound.c` as its own translation unit
+## 4. Pilot: `sound.c` behind header boundaries
+
+**Final state (owner decision: "Header boundaries").** `sound.c` is back in `felucca.c`'s single translation unit
+(after `sound_port.c`, before `ui.c`), so the target build is as before the pilot: 0 B, 0 interrupt cycles.
+
+- [`sound.h`](../firmware/src/sound.h) is the documented interface and
+  [`sound_port.h`](../firmware/src/sound_port.h) lists what `sound.c` needs of the rest of the firmware. In the
+  one unit both are `static` / `static inline` (`SND_API`, `SND_PORT`), so they inline into their callers and the
+  compiler sees the same code as without them.
+- [`tests/module_boundary_test.py`](../tests/module_boundary_test.py), run by `tests/run_tests.sh`, enforces the
+  boundary at the source level: `sound.c` may include only `sound.h`, `sound_port.h`, `core.h`,
+  `felucca_tables.h` and `stdint.h` / `string.h`, and of the firmware's functions and objects it may name only what
+  the two headers declare. A function or object defined by another file (including `core.h`'s `trk`, `song`,
+  `swing_step_len`, and macros that expand to them such as `TSEL`) fails the check. It ships with fixtures,
+  mutations of `sound.c` that must be rejected.
+- The mechanism for building a module as its own unit stays, dormant and tested: `build.py` `SEPARATE` is empty
+  (`("sound",)` turns it on and makes `felucca.c` skip `sound.c` through `SOUND_SEPARATE`); `FELUCCA_OWN_UNIT`
+  (the `core.h` state guards), `separate_check`, `size_fns.py --module` and the ISR-reachability check cost
+  nothing in the default build. `tests/run_tests.sh` still compiles `sound.c` as its own object (no data or bss) and
+  runs `tests/sound_install_test.c` against it.
+- The next module follows the same pattern: a public header, a port header for its needs, an entry in the boundary
+  test.
+
+The rest of this section keeps the pilot's history: the candidate choice, the separate-compilation shape and its
+measurements, which is why separate compilation was not adopted.
+
+### Candidate choice
 
 **Choice.** The candidates had these implicit dependencies before the pilot:
 
@@ -129,7 +156,7 @@ loop, and uses all three of the hard cases: data owned by another unit (`TP`, th
 tables), an interrupt guard, and HAL/assertion state. `ui_knob.c` depends on most of the UI's private state
 and would only move the UI's own cycle into headers.
 
-**Shape.**
+**Shape of the separate-compilation pilot** (measured, not adopted; the headers and `sound_port.c` are shared with the final state):
 
 - [`sound.h`](../firmware/src/sound.h) is the public interface: `param_kept`, `preset_orig`, `sound_defaults`,
   `sound_preset_values`, `sound_install`, `sound_load_factory` and `SND_*`. The consumers' source is
@@ -148,7 +175,7 @@ and would only move the UI's own cycle into headers.
   object, checks that it holds no data or bss, and runs `tests/sound_install_test.c` linked against it
   (`SOUND_SEPARATE`).
 
-**Measurements.** All figures are target builds with JieLi Clang 4.0.1, the standard profile and
+**Measurements of the pilot.** All figures are target builds with JieLi Clang 4.0.1, the standard profile and
 the M8Stealth font. Each pair has the same flags and the same build-identity length. Baseline is `main`
 `13343d5`; pilot is this change.
 
@@ -175,7 +202,7 @@ Inbound calls were already out of line in the baseline (27 call sites to `param_
 lost inlining. Outbound, `sound_install` now makes up to 9 calls through the port where the
 baseline had inlined code. That code runs only in the main loop, once per sound load.
 
-**Interrupt-reachable code.** No interrupt reaches the module or the port; the build fails if one does.
+**Interrupt-reachable code in the pilot.** No interrupt reaches the module or the port; the build fails if one does.
 The pilot still changes code that interrupts reach. `tests/target_budget.py` (no `BUDGET_UPDATE`)
 reports for the default build:
 
@@ -216,22 +243,28 @@ means re-baselining the interrupt budgets and measuring deadlines on hardware. N
 
 ## 5. Next step
 
-The pilot cost +424 B of flash and no RAM. It changed interrupt code by a few instructions, through
+Final state: **header boundaries plus a source check**. Measured against `main` `b4b7a45`, the target app image, its
+`.text`, `.data`, `.ram_text` and `.c1_text` sections and the `tests/target_budget.py` output are identical (the default
+build's 487,024 B and `FELUCCA_SIZE=0`'s 503,536 B; the only differing bytes are the commit id in the build
+identity), including `perf_block` 908 insns / cost 847, `perf_begin` 230 / 28 and `perf_pre` 37 / 26. Getting there took
+care: a first port with one combined FM6 factory function cost +8 B in `sound_install` by register allocation alone;
+splitting it into `sound_port_fm6_slot_ok` and `sound_port_fm6_unpack`, as the original code's two steps, removed it.
+
+The separate-compilation pilot cost +424 B of flash and no RAM. It changed interrupt code by a few instructions, through
 data layout only. Making the boundary explicit (two headers, a port, and checks against duplicated state
 and cross-unit interrupt calls) found two hazards that would otherwise have been silent: per-unit copies of
 `core.h`/HAL state, and interrupt reachability hidden across units. On these numbers:
 
-- **Recommended:** keep the pilot and stop at **documented header boundaries**. For the main-loop
+- **Adopted:** stop at **documented header boundaries**. For the main-loop
   modules (application services, UI, persistence, editor), add public headers and port headers inside the
   single unit, so dependencies are visible and reviewed. Break the cycles in section 3 at their owners,
-  starting with persistence below the UI. A checker can enforce the headers, for example "no name
-  from another module except through its header". That costs no bytes and no interrupt cycles.
+  starting with persistence below the UI. `tests/module_boundary_test.py` is that checker ("no name
+  from another module except through its header"), extended one module at a time. It costs no bytes and no interrupt cycles.
 - Separate one more module only when the layering work already produces its header, and only for
   main-loop code, measuring each step as here. Each step costs roughly the size of its port and
   can move interrupt code through data layout.
-- Do not adopt LTO now: it would change the whole audio path and needs its own qualification project.
+- LTO is **not adopted**: it would change the whole audio path and needs its own qualification project.
 
-Open questions for the owner: whether to keep `sound.c` separate or return it to the unit with its
-headers kept; whether to accept the `perf_block` layout change (+7 weighted loop instructions, within
-budget) or to stabilize the audio path's variables against global-merge reordering first, as a
-separate issue.
+Decided by the owner: header boundaries, not separate compilation (open question 1). Still open: whether to
+stabilize the audio path's variables against global-merge reordering (the `perf_block` layout effect above) as a
+separate issue; it affects any change, not only separate compilation.
