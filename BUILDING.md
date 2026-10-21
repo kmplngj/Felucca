@@ -383,6 +383,73 @@ the guide also explains testing another compatible checked-out FX revision.
 The [autosave audio regression](tests/autosave_audio_test.md) exercises real stereo FX/master
 output and automatic saves against mocked NOR, including long tails and quiet residuals.
 
+The native cross-feature audio transition check (#479) runs separately with:
+
+```sh
+python3 tests/audio_transition_test.py
+```
+
+It needs fresh generated assets from the selected build, a host C compiler and
+POSIX threads, with no FM-1. The full runner includes it. Sixteen deterministic
+scenarios cover real factory sound installation during held notes and release
+tails, engine changes with a queued note, low-note voice stealing, performance
+mute and return, DIST, INSERT type/bypass, sends, chorus depth, rapid edits,
+four-part stereo HALL/delay/chorus with held and released parts, silence,
+near-zero levels, a high saw attack, and a loud-left/quiet-right mix. Tails and
+shared effects keep running throughout; this short capture does not establish
+that long tails eventually drain.
+
+Each capture renders 49,152 stereo frames (about 1.115 s), with edits starting at
+frame 16,384. Per-channel maximum first and second differences in the next 2,048
+frames are bounded against the same channel's waveform before and after the
+edit. The report records the exact reference windows, peaks, derivatives and
+limits. Smooth fixtures use 3x first and 6x second differences with floors of
+6/12 Q15 counts; these are fixture regression bounds, not audibility thresholds.
+The two engine-switch fixtures additionally compare with a separately rendered
+native FM6 attack, since the note queued during the fade intentionally starts
+the new sound. This reference does not replace or clear their old release tails.
+DIST's existing abrupt transfer-function change also allows 3x/6x the measured
+reference amplitude. The high saw attack uses twice the steady saw derivatives,
+and an injected full-range impulse must still fail. Noisy/sharp waveforms can hide
+smaller clicks inside their normal derivatives; the test asserts neither
+universal click detection nor hardware sound quality.
+
+Every configuration runs twice from a fresh process. Full stereo PCM and a
+per-block hash of selected voice/control state must repeat exactly. Builds cover
+`-O2`, `-Os` without vectorization, ASan/UBSan when available (the established
+fixed-point shift exclusion, with undefined behavior made fatal), compile-time
+CPU2 off, and an isolated generated `reduced-lofi` selection. No case relies on
+LOFI or is skipped for that catalog.
+An actual signed-overflow probe in the capture harness must exit nonzero and
+retain its `.stderr` diagnostic and partial `.pcm` under the output directory.
+The CPU2 build compares runtime OFF with a real worker thread rendering parts
+1–3 while part 4 stays on the main thread; counters require the edited parts to
+be assigned to the worker during the transition. A refusal fixture takes worker
+jobs before the edit, then refuses submission so the real serial fallback runs.
+Both policies must match complete OFF PCM and the selected state hash.
+This covers submission refusal, not a worker stopped halfway through rendering,
+HAL recovery, data races or physical inter-core timing.
+
+Captures group native 32-frame mixer calls either singly or into 128-frame DMA
+halves, as `audio.c` does; both groups must produce identical PCM and selected
+state. They retain the FM-1's 32-frame controls and fade timing. Calling the mixer
+directly with shorter blocks is outside this native fixture; variable browser
+requests remain covered by the existing emulator partition suite.
+
+Mandatory negative controls inject gain steps and one-sample impulses into
+rendered PCM and require the same evaluator to reject them, including silence,
+near-zero levels, the high saw attack, and the quiet right channel independently
+of the loud left.
+For an observable failing command, run
+`python3 tests/audio_transition_test.py --inject impulse` or `--inject gain-step`:
+both must exit nonzero and retain a short stereo WAV and JSON counters/metrics.
+Normal runs save `build/host/audio-transitions/summary.json`; failed cases save
+WAV/JSON pairs named by build, scenario, partition and CPU2 route. Use `--out DIR`
+for independent outputs, `--optimization O2` for a focused iteration, or
+`SANITIZE=0` to explicitly skip sanitizers. Existing focused FX/send/INSERT and
+golden/budget regressions remain separate. FM-1 listening, deadlines, USB/MIDI
+and physical control interaction remain pending qualification.
+
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
 cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). It runs a second time built as

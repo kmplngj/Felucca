@@ -842,6 +842,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     }
     unit fx_rest "" u_fx_rest
 
+    u_audio_transitions() {
+        run "Native audio transitions: stereo waveform metrics, injected defects, CPU2 and reduced catalog" \
+            python3 tests/audio_transition_test.py --out "$OUT/audio-transitions"
+    }
+    unit audio_transitions "" u_audio_transitions
+
     u_chorus() {
         run "Chorus depth: continuity, exact PCM, short blocks and restart" python3 tests/chorus_depth_test.py
     }
