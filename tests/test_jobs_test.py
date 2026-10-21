@@ -222,7 +222,7 @@ unit fixture "" u_fixture
         node = self.root / "bin/node"
         node.write_text("#!/bin/sh\nexit 0\n")
         node.chmod(0o755)
-        env = dict(self.env, SANITIZE="0", CC="false")
+        env = dict(self.env, SANITIZE="0", CC="false", FELUCCA_PROFILE="standard")
         env["PATH"] = str(node.parent) + os.pathsep + env.get("PATH", os.defpath)
         result = subprocess.run(["sh", "tests/run_tests.sh", "--plan"], cwd=self.root,
                                 env=env, capture_output=True, text=True, check=True)

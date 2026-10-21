@@ -1,15 +1,36 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # MACRO engine
 
-Implemented on `kori/macro-engine`, based on revision
-`ef1f561b6b105f20350f6b1eac0dc0789a357f00`.
-Tracking: [MACRO implementation #27](https://github.com/kmplngj/Felucca/issues/27).
-[Build-time engine selection #28](https://github.com/kmplngj/Felucca/issues/28) is separate work.
-Every existing engine remains in the default build.
+The 48-model, 51-preset experiment has been rebased onto current main for issue
+[#27](https://github.com/kmplngj/Felucca/issues/27). It is an **opt-in hardware-test
+candidate**, not part of the standard profile or the hosted main demo.
+
+```sh
+FELUCCA_PROFILE=macro ./build.sh
+FELUCCA_PROFILE=macro tests/run_tests.sh
+```
+
+Use the [exact-revision artifact and FM-1 checklist](macro-hardware-test.md) for
+installation and hardware acceptance. The [rebase validation report](macro-rebase-validation.md)
+records the current comparison and separates host, static target, browser and device
+evidence. No hardware acceptance is claimed until that checklist is actually run.
+The source collection/extraction decision remains separate: the existing firmware
+wrapper and generators are GPL, while Braids/stmlib and the adapted DSP retain MIT.
+
+The `macro` profile selects every standard engine plus stable MACRO ID **14**.
+`standard` and `reduced-lofi` exclude its source, exclusive tables/generator work and
+larger state allocation. Their current unavailable-engine handling preserves saved
+ID14/parameters without selecting another instrument. Never use an ordinary
+standard-profile package as the MACRO test artifact.
+
+The original branch and dated measurements below are retained as historical evidence
+from 2026-10-11. Their flash/RAM/timing figures and old-build downgrade statements are
+not measurements or compatibility guarantees for the rebased candidate. Current
+profile resources, compatibility and tests are authoritative in the report above.
 
 ## Playing
 
-MACRO appears between PHYS and NOISE in PRESETS and the EDIT engine map. Its stable
+MACRO appears after DRUM in PRESETS and the EDIT engine map in the opt-in profile. Its stable
 stored/protocol ID is **14**, with **48 models and 51 factory sounds**. The six
 original sounds and WAVE/FOLD/FBFM IDs 0/1/2 retain eight-voice operation. The
 45 appended models (IDs 3..47) use **one Felucca voice per part**, including in

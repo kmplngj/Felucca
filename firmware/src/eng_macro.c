@@ -19,7 +19,7 @@ typedef uint32_t macro_clear_word_t __attribute__((may_alias));
 
 static macro_part_t *macro_part(track_t *t)
 {
-    return (macro_part_t *)ENG_MEM((uint32_t)(t - trk));
+    return (macro_part_t *)ENG_MEM_OF(t, ENGI_MACRO, (uint32_t)(t - trk));
 }
 
 static uint8_t macro_poly(const track_t *t)
@@ -288,7 +288,6 @@ static const engine_t ENG_MACRO = {
     .note_on = macro_note_on,
     .render = macro_render,
     .block = macro_block,
-    .poly_for = macro_poly,
     .knob = {P_E1, P_E2, P_E4, P_E0},
     .mem = sizeof(macro_part_t),
 };

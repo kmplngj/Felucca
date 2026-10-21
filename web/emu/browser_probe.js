@@ -18,6 +18,7 @@ export function installProbe() {
       this.port.addEventListener("message", ({ data: m }) => {
         if (m.type === "error") probe.errors.push(m.message);
         if (m.type === "frame") {
+          if (m.testMacro) probe.macro = m.testMacro;
           probe.frames++;
           if (m.fb) probe.draws++;
           if (m.leds) probe.leds = m.leds;
@@ -71,4 +72,18 @@ export function installProbe() {
     probe.node.connect(tap);
     tap.connect(probe.context.destination);
   };
+}
+
+// The loopback test server adds read-only fields to the real worklet's existing
+// frame messages. No request handler or parameter setter is added to the page.
+export function observeMacroWorklet(source) {
+  const marker = 'const msg = { type: "frame" };';
+  if (source.split(marker).length !== 2) throw new Error("worklet observation marker changed");
+  return source.replace(marker, `${marker}
+      msg.testMacro = {
+        count: ex.web_test_macro_count(), engine: ex.web_test_engine(),
+        rank: ex.web_test_engine_rank(14),
+        params: Array.from({ length: 8 }, (_, i) => ex.web_test_param(ex.web_test_engine_param_base() + i)),
+        used: ex.web_test_user_preset(0), category: ex.web_test_user_category(0)
+      };`);
 }

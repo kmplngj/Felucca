@@ -30,6 +30,12 @@ remain planned. The optional second-core worker is beta, off by default, and sti
 real-device reliability validation in this fork; after a recorded worker failure it is
 held off across resets until the player retries it ([guide](docs/fork-features.md#retained-exclusion-after-a-failed-worker-410)). Shared effect-control smoothing
 experiments are implemented, with FM-1 listening and timing qualification pending.
+
+An opt-in [MACRO/Braids test profile](docs/macro-engine.md) adds 48 oscillator models
+and 51 factory sounds while keeping every standard engine. It is experimental and
+requires `FELUCCA_PROFILE=macro`; the normal build and hosted demo do not include it.
+Host/emulator evidence and the remaining [FM-1 test procedure](docs/macro-hardware-test.md)
+are tracked under [#27](https://github.com/kmplngj/Felucca/issues/27).
 Early USB rescue and explicit update-loader compatibility are implemented;
 the [recovery guide](docs/usb-rescue.md) describes OCT− entry, existing installers
 and the combined FM-1 checks that remain pending.

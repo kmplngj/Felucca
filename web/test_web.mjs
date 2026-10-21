@@ -7,7 +7,7 @@
 //   the user preset bank / librarian, library files, live pushes, older-firmware fallback, the v3 tracks
 //   and the mixer, the v5 drum grid in steps and user presets), its tab layout and ja/en strings,
 //   and the user-sample pipeline byte for byte against tools/sampleio.py
-// - fm1pkg.js: productOf and logicalImage on build/felucca.fwsc (skipped without a build)
+// - fm1pkg.js: productOf and logicalImage on the selected profile package (skipped without a build)
 // - fm1ota.js: a full install and an unplug during the write against a simulated FM-1
 
 import { execFileSync } from "node:child_process";
@@ -26,8 +26,11 @@ const HERE = new URL(".", import.meta.url).pathname;
 /* what lives outside web/, each overridable (a web-only checkout passes them, or the checks skip):
    FELUCCA_DESC  the firmware's parameter / protocol table (tests/descdump.c -> build/host/desc.json)
    FELUCCA_TOOLS the firmware's tools (tools/fm1_sample_upload.py, the sample format's reference)
-   FELUCCA_ROOT  the Felucca tree with a ./build.sh build (the package check) */
+   FELUCCA_ROOT  the Felucca tree with a ./build.sh build (the package check)
+   FELUCCA_MOCK_DESC current firmware's explicitly scoped IDs 0..13 legacy-client fixture
+   FELUCCA_PROFILE / FELUCCA_FWSC selected build profile / exact package path */
 const DESC = process.env.FELUCCA_DESC || join(HERE, "../build/host/desc.json");
+const MOCK_DESC = process.env.FELUCCA_MOCK_DESC || join(DESC, "../desc-legacy-web.json");
 const TOOLS = process.env.FELUCCA_TOOLS || join(HERE, "../tools");
 const FW_ROOT = process.env.FELUCCA_ROOT || join(HERE, "..");
 
@@ -381,8 +384,10 @@ async function editorSamplePresets() {
   done();
 }
 
-/* the mock's tables == the firmware's (build/host/desc.json from tests/descdump.c, written by run_tests.sh):
-   parameter descriptors, engines (titles, EDIT, presets), factory patterns, power-on sounds */
+/* web/editor.html is a retained legacy client snapshot; client development lives in
+   Felucca-WebApp. Compare its IDs 0..13 against a separately scoped current-firmware
+   fixture, without extending the old mock to claim MACRO support. desc.json remains
+   the complete selected-profile contract and is checked independently below. */
 function mockTables() {
   {
     const m0 = E.makeMockDevice({ auto: false }), ph = m0.tables.ENG[9], dr = m0.tables.ENG[10];
@@ -394,9 +399,12 @@ function mockTables() {
        dr.presets.length === 4 && dr.presets.every((p) => p.pat === 12) && dr.presets[0].name === "DRUM KIT",
        "editor: DRUM engine 10 (KIT TUNE TONE DECY SNAP ACC KICK DRV), four kits (1.5.6: DEEP TIGHT PERC) suggesting BEAT");
   }
-  const dj = DESC;
+  const dj = existsSync(MOCK_DESC) ? MOCK_DESC : DESC;
   if (!existsSync(dj)) { console.log("editor: mock tables == firmware (no build/host/desc.json)        skip"); return; }
   const fw = JSON.parse(readFileSync(dj, "utf8"));
+  if (dj === MOCK_DESC)
+    ok(fw.MOCK_ENGINE_SLOTS === 14 && fw.ENG.length === 14,
+      "editor: legacy snapshot fixture explicitly covers firmware IDs 0..13");
   const m = E.makeMockDevice({ auto: false }), T = m.tables;
   m.stop();
   const norm = (d) => ({ label: d.label, fmt: d.fmt, min: d.min, max: d.max, def: d.def, names: d.names || null, unit: d.unit || "" });
@@ -464,6 +472,35 @@ function mockTables() {
   ok(swg.length === 3 && swg.every((d) => E.fmtValue(d, 100)[0] === "100" && E.fmtValue(d, 50)[0] === "50") &&
      E.fmtValue({ fmt: swg[0].fmt, min: 0, max: 127 }, 127)[0] === "100" && E.fmtValue({ fmt: swg[0].fmt, min: 0, max: 127 }, 64)[0] === "50",
      "editor: SWG 100 shows 100 % (not 79), 0..127 percents unchanged");
+}
+
+/* Check the complete selected catalog independently of the archived mock fixture. */
+function firmwareCatalog() {
+  if (!existsSync(DESC)) return;
+  const fw = JSON.parse(readFileSync(DESC, "utf8"));
+  const selector = fw.GP[fw.G_ENGSEL], names = selector.names;
+  const available = names.filter(n => n !== "-");
+  ok(!fw.MOCK_ENGINE_SLOTS && selector.max === fw.ENG.length - 1 && names.length === fw.ENG.length &&
+    names.every((n, i) => n === "-" ? ["-", "N/A"].includes(fw.ENG[i].name) && !fw.ENG[i].presets.length : n === fw.ENG[i].name) &&
+    new Set(fw.ORDER).size === available.length &&
+    fw.ORDER.length === available.length && fw.ORDER.every(n => available.includes(n)),
+    "firmware: full selected catalog, selector and display order are consistent");
+  const macro = fw.ENG[14];
+  if (macro?.name === "MACRO") {
+    const modelsPath = join(FW_ROOT, "assets/braids/models.json");
+    const models = existsSync(modelsPath) ? JSON.parse(readFileSync(modelsPath, "utf8")) : null;
+    ok(macro.edit[0].label === "SHAPE" && macro.edit[0].min === 0 && macro.edit[0].max === 47 &&
+      macro.edit[0].names.length === 48 && macro.edit[0].names.every(n => n.length <= 12) &&
+      (!models || js(macro.edit[0].names) === js(models.map(m => m.name))) &&
+      js(macro.edit.slice(1, 3).map(d => d.label)) === js(["TIMBRE", "COLOR"]) &&
+      macro.presets.length === 51 &&
+      macro.presets.every((p, i) => p.e[0] === (i < 6 ? Math.floor(i / 2) : i - 3)) &&
+      fw.ORDER.at(-1) === "MACRO",
+      "firmware: MACRO adds all 48 full model names and 51 stable preset indices");
+  } else {
+    ok(!macro || (selector.names[14] === "-" && !macro.presets.length),
+      "firmware: standard catalog keeps optional engine 14 unavailable");
+  }
 }
 
 /* ------------------------------------------------------------------ DIGITAL retired --- */
@@ -1622,9 +1659,12 @@ function samplesMatch() {
 
 /* ------------------------------------------------------- packages: JS == Python --- */
 async function packages() {
-  const pkg = join(FW_ROOT, "build/felucca.fwsc");
+  const profile = process.env.FELUCCA_PROFILE || "standard";
+  const pkg = process.env.FELUCCA_FWSC || join(FW_ROOT, "build", profile === "standard" ? "felucca.fwsc" : `felucca-${profile}.fwsc`);
   if (!existsSync(pkg)) {
-    console.log("packages: skipped (run ./build.sh first)");
+    if (process.env.FELUCCA_FWSC || process.env.FELUCCA_PROFILE)
+      ok(false, `packages: selected package missing (${pkg})`);
+    else console.log("packages: skipped (run ./build.sh first)");
     return;
   }
   const raw = readFileSync(pkg);
@@ -1719,6 +1759,7 @@ async function updater() {
 await editorMock();
 await editorSamplePresets();
 mockTables();
+firmwareCatalog();
 await editorLibrarian();
 await editorGrid();
 await editorRatchet();

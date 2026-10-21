@@ -180,7 +180,7 @@ static int preferences(void)
         for (i = 0; i < ENG_ID_MAX; i++)
             ok &= ((host_wire[n - 11 + i / 7u] >> (i % 7u)) & 1u) == (uint32_t)(eng_ok(i) != 0);
         ok &= (host_wire[n - 11] & 1u) && !(host_wire[n - 11] & 2u) == !FELUCCA_FM4 &&   /* 0 yes, 1 (DIGITAL) no, */
-              ((host_wire[n - 11 + 2] & 1u) != 0) == FELUCCA_ENG_TEST14;                /* 14 only in a test build */
+              ((host_wire[n - 11 + 2] & 1u) != 0) == (eng_ok(14) != 0);                /* optional MACRO at id 14 */
         bad += check("INFO #212: 49 01 64 7F and the id bitmap, last", ok);
         n -= 14u;                                         /* (the tags before it, as before) */
     }
@@ -1388,11 +1388,70 @@ static int backup_extended_absent(void)
     return bad;
 }
 
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+static int macro_model_protocol(void)
+{
+    const uint8_t desc[] = {0, P_E0}, names[] = {ENGI_MACRO};
+    uint32_t i, k, n, p;
+    int bad = 0, ok = 1;
+    reset(); set_engine_of(TSEL, ENGI_MACRO);
+    n = request(ED_DESC, desc, sizeof desc);
+    ok &= n > 14u && n <= sizeof ed_out && ed_rv(host_wire + 10) == 47 && host_wire[n - 1] == 0xF7;
+    p = 14; while (host_wire[p]) p++; p++; while (host_wire[p]) p++; p++;
+    for (i = 0; i < MAC_NSHAPE && p < n - 1; i++) {
+        ok &= !strcmp((const char *)host_wire + p, N_MACRO_SHAPE[i]);
+        p += (uint32_t)strlen((const char *)host_wire + p) + 1;
+    }
+    ok &= i == MAC_NSHAPE && p == n - 1;
+    bad += check("MACRO DESC: all 48 full model names fit the bounded reply", ok);
+    ok = 1;
+    n = request(ED_NAMES, names, sizeof names);
+    ok &= n < sizeof ed_out && host_wire[6] == 51 && host_wire[n - 1] == 0xF7;
+    p = 7;
+    for (i = 0; i < 51 && p < n - 1; i++) {
+        ok &= !strcmp((const char *)host_wire + p, MACRO_PRESETS[i].name);
+        p += (uint32_t)strlen((const char *)host_wire + p) + 1;
+    }
+    ok &= i == 51u;
+    for (i = 0; i < 2u && p < n - 1u; i++) {
+        ok &= !strcmp((const char *)host_wire + p, ENG_MACRO.page_title[i]);
+        p += (uint32_t)strlen((const char *)host_wire + p) + 1u;
+    }
+    ok &= i == 2u && p == n - 1u;
+    bad += check("MACRO NAMES: 51 complete preset names and the two edit-page titles", ok);
+    ok = 1;
+    for (i = 0; i < MAC_NSHAPE; i++) {
+        uint8_t set[] = {0, P_E0, (uint8_t)i, 64};
+        request(ED_SET, set, sizeof set);
+        ok &= TSEL->p[P_E0] == (int16_t)i;
+        int16_t value[8] = {(int16_t)i, (int16_t)(i * 2u), (int16_t)(127u - i), (int16_t)((int32_t)i - 24),
+                            (int16_t)(i + 64u), (int16_t)i, (int16_t)(127u - i), (int16_t)((int32_t)i - 24)};
+        memcpy(TSEL->p + P_E0, value, sizeof value);
+        int rc = up_store(5, "MODEL");
+        ok &= rc == 0 || rc == 3;
+        host_preset(TSEL, 0, 0);
+        ok &= up_load(5) == 0 && TSEL->eng_req == ENGI_MACRO;
+        for (k = 0; k < 8u; k++) ok &= TSEL->p[P_E0 + k] == value[k];
+        project_capture(&proj_scratch);
+        ok &= proj_pack(&proj_wire, &proj_scratch) && proj_import(&proj_scratch, &proj_wire, sizeof proj_wire);
+        host_preset(TSEL, 0, 0);
+        ok &= !project_restore_runtime(&proj_scratch) && TSEL->eng_req == ENGI_MACRO;
+        for (k = 0; k < 8u; k++) ok &= TSEL->p[P_E0 + k] == value[k];
+    }
+    bad += check("MACRO: SET, user presets and packed projects round-trip all 48 models and eight controls", ok);
+    return bad;
+}
+#endif
+
 int main(void)
 {
     int bad = backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + usb_burst() + menu_protocol() + drum_kit_retired() +
-              learn_protocol() + custom_palette();
+              learn_protocol() + custom_palette()
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+              + macro_model_protocol()
+#endif
+              ;
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
     return bad != 0;
 }

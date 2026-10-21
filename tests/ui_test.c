@@ -1508,7 +1508,9 @@ static int test_recent(void)
 {
     int bad = 0, ok;
     uint32_t total, k, i;
-    persist_t p0, p1;
+    /* settings_export preserves unknown bits in its destination (including bold).
+     * Start both records from the same stored bytes before comparing them. */
+    persist_t p0 = {0}, p1 = {0};
     track_t before;
     ui_power_on();
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
@@ -4287,11 +4289,11 @@ static int test_quick_layers(void)
     key_down(white(1)); key_up(white(1)); frame();
     ok &= TSEL->eng_req == ENGI_FM6;                    /* (G3: FM6, second in ENGINE_ORDER) */
     key_down(white(NENG_SHOWN - 1u)); key_up(white(NENG_SHOWN - 1u)); frame();
-    ok &= TSEL->eng_req == ENGI_DRUM;                   /* (the last key: DRUM) */
+    ok &= TSEL->eng_req == eng_vis(NENG_SHOWN - 1u);     /* the catalog's last engine */
     ok &= !memcmp(TSEL->step, before.step, sizeof before.step) && TSEL->p[P_SLEN] == before.p[P_SLEN] &&
           TSEL->p[P_SLCR] == SL_STUT;
     btn_up(B_EDIT); frame();
-    bad += check("EDIT + white key n: the n-th engine shown (FM6 2nd, DRUM last), while playing; steps, LEN, SLICER stay", ok);
+    bad += check("EDIT + white key n: the catalog order (FM6 second), while playing; steps, LEN, SLICER stay", ok);
     hold(B_SAVE);
     bad += check("  SAVE held: UNDO back to before the layer's loads, the steps untouched",
                  TSEL->eng_req == 0u && TSEL->preset == before.preset && !memcmp(TSEL->step, before.step, sizeof before.step));
@@ -5460,8 +5462,10 @@ static int test_fm6_charts(void)
 static int test_fm4_retired(void)
 {
     int bad = 0, ok = 1;
-    uint32_t i, k, e, total, seen = 0, all = ((1u << NENGINES) - 1u) & ~(1u << ENGI_DIGITAL);
+    uint32_t i, k, e, total, seen = 0, all = 0, available = 0;
     int16_t p[P_COUNT];
+    for (e = 0; e < NENGINES; e++)
+        if (eng_ok(e) && e != ENGI_DIGITAL) { all |= 1u << e; available++; }
     uint8_t v[FP_SIZE + 1u];
     ui_power_on();
     bad += check("power-on: track 2 is FM6 PAD (TRK_DEF, was DIGITAL PAD)", trk[1].eng_req == ENGI_FM6 &&
@@ -5472,7 +5476,7 @@ static int test_fm4_retired(void)
         if (e < NENGINES)
             seen |= 1u << e;
     }
-    bad += check("PRESETS: the list holds every engine's presets but DIGITAL's", seen == all && NENG_SHOWN == NENGINES - 1u);
+    bad += check("PRESETS: the list holds every engine's presets but DIGITAL's", seen == all && NENG_SHOWN == available);
     go_page(GR_BROWSE);
     set_engine_of(TSEL, 0);
     for (i = 0, seen = 0; i < NENG_SHOWN; i++) {
@@ -5481,10 +5485,14 @@ static int test_fm4_retired(void)
     }
     bad += check("PRESETS KNOB 2: the engines in order, DIGITAL skipped, back to the first",
                  seen == all && TSEL->eng_req == 0u && eng_step(0, 1) == ENGI_FM6 && eng_step(ENGI_FM6, 1) == 2u &&
-                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == ENGI_DRUM);
+                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == eng_vis(NENG_SHOWN - 1u));
     {   /* the display order (engines.c ENGINE_ORDER): every engine one can pick once; the PRESETS list follows it */
         static const char *const ORDER[] = {"ANALOG", "FM6", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN",
-                                            "PHYS", "NOISE", "SLICE", "DRUM"};
+                                            "PHYS", "NOISE", "SLICE", "DRUM",
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+                                            "MACRO",
+#endif
+        };
         uint32_t last = 0xFFu, r = 0, n = 0;
         ok = NENG_SHOWN == NELEM(ORDER);
         for (i = 0; ok && i < NENG_SHOWN; i++)
@@ -5499,7 +5507,7 @@ static int test_fm4_retired(void)
             last = e;
             r++;
         }
-        bad += check("engines shown ANALOG FM6 PHASE ... NOISE SLICE DRUM (ENGINE_ORDER); PRESETS lists them so",
+        bad += check("engines shown in the profile order (ENGINE_ORDER); PRESETS lists them so",
                      ok && r == NENG_SHOWN);
     }
     /* a user preset stored with engine 1: kept as it is, it loads as FM6 with the converted patch */
@@ -11176,6 +11184,95 @@ static int test_project_readiness_cache(void)
     return bad;
 }
 
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+/* Model words are presentation only. The preview must work while silent, match settled
+ * oscillator tables, and leave all live DSP state alone. Layout sweeps live in ui_render.c. */
+static int test_macro_ui(void)
+{
+    static const char *const LABEL[3][2] = {{"SCAN", "TEXTURE"}, {"FOLD", "BLEND"}, {"DEPTH", "MOD PIT"}};
+    static const char *const SHORT[3] = {"TEX", "BLEND", "MPIT"};
+    static const int16_t CORNER[] = {0, 31, 32, 63, 64, 95, 96, 127};
+    uint32_t s, j, k, phase, before, track_hash, mem_hash, sig;
+    int bad = 0, words = 1, fits = 1, preview = 1, idle = 1, pure = 1;
+    char val[12], name[12];
+    const char *unit;
+    ui_power_on(); set_engine_of(TSEL, ENGI_MACRO);
+    song.playing = 0;
+    for (s = 0; s < 3u; s++) {
+        apply_preset_to(TSEL, 2u * s);
+        TSEL->p[P_E0] = (int16_t)s;
+        go_home(); draw_columns();
+        words &= !strncmp(ui.col[0], LABEL[s][0], strlen(LABEL[s][0])) &&
+                 !strncmp(ui.col[1], LABEL[s][1], strlen(LABEL[s][1])) && !strncmp(ui.col[3], "MODEL|", 6);
+        fits &= help_fits(help_page());
+        go_title("EDIT 1"); draw_columns();
+        words &= !strncmp(ui.col[1], LABEL[s][0], strlen(LABEL[s][0])) &&
+                 !strncmp(ui.col[2], LABEL[s][1], strlen(LABEL[s][1]));
+        fits &= help_fits(help_page());
+        words &= str_eq(ui_mod_dst_name(TSEL, MD_E1 + 1), LABEL[s][0]) && str_eq(ui_mod_dst_name(TSEL, MD_E1 + 2), SHORT[s]);
+        ev_name(TSEL, P_E2, name); words &= str_eq(name, SHORT[s]);
+        ui_param_format(TSEL, P_E0, track_desc(TSEL, P_E0), (int32_t)s, val, &unit);
+        words &= !strncmp(val, N_MACRO_SHAPE[s], 5) && strlen(val) <= 5u && fmt_named;
+        words &= str_eq(track_desc(TSEL, P_E1)->label, "TIMBRE") && str_eq(track_desc(TSEL, P_E2)->label, "COLOR") &&
+                 str_eq(track_desc(TSEL, P_E0)->label, "SHAPE") && track_desc(TSEL, P_E2)->fmt == F_PCT;
+        track_hash = fnv(2166136261u, trk, sizeof trk);
+        mem_hash = fnv(2166136261u, eng_mem, sizeof eng_mem);
+        ui.force = 1; draw_graph(); ui.force = 0;
+        sig = graph_signature(); host_blit_rows = 0; ui.frame += 2; draw_graph();
+        idle &= graph_signature() == sig && host_blit_rows == 0;
+        pure &= fnv(2166136261u, trk, sizeof trk) == track_hash && fnv(2166136261u, eng_mem, sizeof eng_mem) == mem_hash;
+        if (s == MAC_FBFM) continue;
+        before = fnv(2166136261u, host_screen, sizeof host_screen);
+        TSEL->p[P_E1] = 127; TSEL->p[P_E2] = 127; draw_graph();
+        preview &= graph_signature() != sig && fnv(2166136261u, host_screen, sizeof host_screen) != before;
+        for (j = 0; j < 128u; j++)
+            for (k = 0; k < NELEM(CORNER); k++)
+                for (phase = 0; phase < 128u; phase += 7u) {
+                    macro_osc_t osc = {0};
+                    uint32_t ph = phase << 25;
+                    int16_t sample;
+                    TSEL->p[P_E1] = (int16_t)j; TSEL->p[P_E2] = CORNER[k];
+                    osc.timbre = j == 127u ? 32767 : (int32_t)j * 256;
+                    osc.color = CORNER[k] == 127 ? 32767 : CORNER[k] * 256;
+                    osc.scan = osc.timbre * 2;
+                    if (s == MAC_WAVE) mac_waveline(&osc, &ph, 0, osc.timbre, osc.color, &sample, 1);
+                    else mac_fold(&osc, &ph, 0, 60 * 128, osc.timbre, osc.color, &sample, 1);
+                    if (macro_preview_sample(TSEL, phase << 25) != sample) {
+                        if (preview) printf("ui: MACRO preview %u timbre %u color %d phase %u differs from settled DSP\n", s, j, CORNER[k], phase);
+                        preview = 0;
+                    }
+                }
+    }
+    for (s = 3; s < MAC_NSHAPE; s++) {
+        TSEL->p[P_E0] = (int16_t)s;
+        go_home(); draw_columns();
+        words &= str_eq(ui_param_label(TSEL, P_E1), MACRO_LABEL[s][0]) && str_eq(ui_param_label(TSEL, P_E2), MACRO_LABEL[s][1]);
+        ui_param_format(TSEL, P_E0, track_desc(TSEL, P_E0), (int32_t)s, val, &unit);
+        words &= !strncmp(val, N_MACRO_SHAPE[s], 5) && strlen(val) <= 5u && fmt_named;
+        fits &= help_fits(help_page());
+        go_title("EDIT 1"); draw_columns();
+        fits &= help_fits(help_page());
+        track_hash = fnv(2166136261u, trk, sizeof trk);
+        mem_hash = fnv(2166136261u, eng_mem, sizeof eng_mem);
+        ui.force = 1; draw_graph(); ui.force = 0;
+        sig = graph_signature(); host_blit_rows = 0; ui.frame += 2; draw_graph();
+        idle &= graph_signature() == sig && host_blit_rows == 0;
+        pure &= fnv(2166136261u, trk, sizeof trk) == track_hash && fnv(2166136261u, eng_mem, sizeof eng_mem) == mem_hash;
+    }
+    TSEL->p[P_E0] = MAC_FBFM;
+    for (j = 0; j < 128u; j++) {
+        int32_t want = j == 127u ? 64 : (int32_t)j - 64;
+        ui_param_format(TSEL, P_E2, track_desc(TSEL, P_E2), (int32_t)j, val, &unit);
+        words &= atoi(val) == want && str_eq(unit, "st");
+    }
+    bad += check("MACRO: model labels on HOME/OSC, modulation and automation; wire DESC unchanged", words);
+    bad += check("MACRO: all model hints fit; idle OSC cached without touching voices or engine memory", fits && idle && pure);
+    bad += check("MACRO: silent preview responds; 128 timbres x texture corners match settled WAVE/FOLD", preview);
+    ui_power_on();
+    return bad;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -11274,6 +11371,9 @@ int main(int argc, char **argv)
     bad += test_scope_redraw();
     bad += test_fx_map_columns();
     bad += test_help();
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    bad += test_macro_ui();
+#endif
     bad += test_prev_page();
     bad += test_footer_first();
     bad += test_no_flash();

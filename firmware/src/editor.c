@@ -21,6 +21,10 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
        ED_MOTION = 64, ED_BACKUP_LIST, ED_BACKUP_GET, ED_BACKUP_PUT };                              /* v6: song chain */
 
 static uint8_t ed_out[664] __attribute__((section(".pool")));   /* (MOTION op 8: 128 records and their kinds, 653 bytes) */
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+_Static_assert(14u + 2u * (8u + 1u) + MAC_NSHAPE * (12u + 1u) + 1u <= sizeof ed_out,
+               "MACRO model descriptor fits the complete editor reply");
+#endif
 static uint32_t ed_n;
 
 static void ed_begin(uint32_t cmd)
@@ -551,9 +555,15 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_v(d->def);
         ed_str(d->label, 8);
         ed_str(d->unit, 8);
-        if (d->fmt == F_ENUM && d->names)                  /* up to 24 (the matrix DST has 20) */
-            for (i = 0; i <= (uint32_t)(d->max - d->min) && i < 24u; i++)
-                ed_str(d->names[i], 8);
+        if (d->fmt == F_ENUM && d->names) {
+            uint32_t count = 24u, width = 8u;
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+            if (d == &ENG_MACRO.edit[0]) { count = MAC_NSHAPE; width = 12u; }
+#endif
+            /* 48 * (12 + 1) plus the fixed fields fits the bounded 664-byte reply. */
+            for (i = 0; i <= (uint32_t)(d->max - d->min) && i < count; i++)
+                ed_str(d->names[i], width);
+        }
         break;
     case ED_STEP_GET:
     case ED_STEP_SET: {

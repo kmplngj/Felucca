@@ -20,5 +20,5 @@ int main() {
    if(memcmp(a,b,sizeof a)) { printf("FAIL model %d t%d c%d block %d\n",model,t,c,block); failures++;break; }
   }
  }
- printf("original 96 kHz C++ / C translation: %d failures\n",failures);return failures!=0;
+ printf("96 kHz C++ / C translation (WAV LINE endpoint guarded): %d failures\n",failures);return failures!=0;
 }

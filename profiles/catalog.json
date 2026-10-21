@@ -366,6 +366,53 @@
         "slice_render",
         "slc_rev"
       ]
+    },
+    {
+      "id": 14,
+      "name": "MACRO",
+      "symbol": "ENG_MACRO",
+      "source": "firmware/src/eng_macro.c",
+      "owner": "firmware",
+      "tag": "MACR",
+      "icon": "wave",
+      "category": 8,
+      "preset_categories": "PBLPUBLLLLLLLLLLLLLPLFLLLLLKKLLLUUKKUDDDDLLPFFFFFFF",
+      "cc": 0,
+      "order": 14,
+      "union_control": false,
+      "requires": [
+        "braids"
+      ],
+      "tests": [
+        "tests/macro_core_test.c",
+        "tests/macro_test.c",
+        "tests/braids_test.c",
+        "tests/braids_reference.py",
+        "tests/macro_switch_test.c"
+      ],
+      "assets": [
+        "assets/braids"
+      ],
+      "render": "macro_render",
+      "budget_functions": [
+        "macro_render",
+        "mac_waveline",
+        "mac_fold",
+        "mac_fbfm",
+        "macro_block",
+        "braids_AnalogOscillator_Render",
+        "braids_DigitalOscillator_ComputeDelay",
+        "braids_DigitalOscillator_ComputePhaseIncrement",
+        "braids_DigitalOscillator_InterpolateFormantParameter",
+        "braids_DigitalOscillator_Render",
+        "braids_DigitalOscillator_RenderDigitalFilter",
+        "braids_DigitalOscillator_dispatch",
+        "braids_MacroOscillator_RenderDigital",
+        "braids_MacroOscillator_RenderDualSync",
+        "braids_MacroOscillator_RenderSub",
+        "braids_MacroOscillator_RenderTriple",
+        "braids_Svf_Process"
+      ]
     }
   ],
   "providers": [
@@ -416,6 +463,41 @@
       "tests": [
         "firmware/engines/tests/fe_host.c",
         "firmware/engines/tests/golden.txt"
+      ]
+    },
+    {
+      "id": "braids",
+      "requires": [
+        "native-core"
+      ],
+      "licenses": [
+        "LICENSES/MIT-Braids.txt"
+      ],
+      "generator_inputs": [
+        "tools/gen_macro.py",
+        "tools/gen_braids.py",
+        "firmware/src/macro_dsp.c",
+        "assets/braids/README.md",
+        "assets/braids/c-arithmetic.json",
+        "assets/braids/macro.json",
+        "assets/braids/models.json",
+        "assets/braids/upstream/SHA256.json",
+        "assets/braids/upstream/analog_oscillator.cc",
+        "assets/braids/upstream/analog_oscillator.h",
+        "assets/braids/upstream/digital_oscillator.cc",
+        "assets/braids/upstream/digital_oscillator.h",
+        "assets/braids/upstream/dsp.h",
+        "assets/braids/upstream/excitation.h",
+        "assets/braids/upstream/macro_oscillator.cc",
+        "assets/braids/upstream/macro_oscillator.h",
+        "assets/braids/upstream/parameter_interpolation.h",
+        "assets/braids/upstream/random.cc",
+        "assets/braids/upstream/random.h",
+        "assets/braids/upstream/resources.cc",
+        "assets/braids/upstream/resources.h",
+        "assets/braids/upstream/settings.h",
+        "assets/braids/upstream/stmlib.h",
+        "assets/braids/upstream/svf.h"
       ]
     }
   ],

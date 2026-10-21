@@ -12,6 +12,7 @@ build/felucca.fwsc check is skipped without a build)."""
 import hashlib
 import json
 import io
+import os
 import queue
 import shutil
 import subprocess
@@ -534,7 +535,8 @@ def js_synthetic():
 
 
 def against_js():
-    clean = ROOT / "build/felucca.fwsc"
+    profile = os.environ.get("FELUCCA_PROFILE", "standard")
+    clean = ROOT / "build" / ("felucca" + ("-" + profile if profile != "standard" else "") + ".fwsc")
     if not clean.exists():
         print("built package preflight / fm1pkg.js parity: skipped (needs build/felucca.fwsc)")
         return

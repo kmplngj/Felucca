@@ -201,6 +201,18 @@ out = out.replace("kHighestNote = 140 * 128", "kDigitalHighestNote = 140 * 128")
 # Digital references retain their 140-note bound; analog retains 128.
 start = out.index("static uint32_t DigitalOscillator_ComputePhaseIncrement(", out.index("static uint32_t DigitalOscillator_ComputePhaseIncrement(") + 1)
 out = out[:start] + out[start:].replace("kHighestNote", "kDigitalHighestNote")
+# Upstream WAV LINE has 64 entries but interpolates entry 63 against entry 64.
+# Production MACRO already uses gen_macro.py's clamped 65-entry table and omits
+# this duplicate oscillator path. Keep reference mode defined at full TIMBRE too.
+if "--reference" in sys.argv:
+    def wave_line_endpoint(match):
+        values = re.findall(r"\b\d+\b", match[2])
+        assert len(values) == 64
+        return match[1] + match[2].rstrip() + ", " + values[-1] + "\n" + match[3]
+    out, endpoints = re.subn(r"(static const uint8_t wave_line\[\] = \{)(.*?)(\};)",
+                             wave_line_endpoint, out, flags=re.S)
+    assert endpoints == 1
+
 # Namespacing the generated unit keeps its helpers out of the rest of Felucca.
 tokens = set(re.findall(r"\b(?:br_\w+|(?:AnalogOscillator|DigitalOscillator|MacroOscillator|Svf|Excitation)_\w+|(?:OSC_|MACRO_OSC_|SVF_)\w+|k\w+|lut_\w+|wav_\w+|wt_\w+|ws_\w+|chr_\w+|intervals|PhonemeDefinition|phonemes|WavetableDefinition|wavetable_definitions|AdditiveState|PluckState|Grain|[A-Z]\w+State|DigitalOscillatorState|SvfMode|SyncMode|MacroOscillatorShape|DigitalOscillatorShape|AnalogOscillatorShape|AnalogOscillator|DigitalOscillator|MacroOscillator|Excitation|Svf)\b", out))
 for token in sorted(tokens, key=len, reverse=True):

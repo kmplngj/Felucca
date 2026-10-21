@@ -175,7 +175,7 @@ static void costs(void)
 int main(void)
 {
     check("MACRO is ID 14 in every FM4/SLICE configuration; disabled slots stay reserved",
-          NENGINES == 15 && ENGI_MACRO == 14 && ENGINES[ENGI_MACRO] == &ENG_MACRO &&
+          NENGINES == FELUCCA_PROFILE_NSLOTS + FELUCCA_ENG_TEST14 && ENGI_MACRO == 14 && ENGINES[ENGI_MACRO] == &ENG_MACRO &&
           eng_ok(ENGI_MACRO) && eng_rank(ENGI_MACRO) < NENG_SHOWN &&
           eng_ok(ENGI_SLICE) == !!FELUCCA_SLICE && eng_ok(ENGI_DIGITAL) == !!FELUCCA_FM4);
     printf("macro: state %zu B/voice, %u B/part, arena %u B/part\n", sizeof(macro_note_t), ENG_MACRO.mem, ENG_MEM_PART);
