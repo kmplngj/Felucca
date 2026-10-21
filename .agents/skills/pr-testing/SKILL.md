@@ -37,7 +37,16 @@ audible workload and any diagnostics needed even if no new panel function exists
    and build commands for that revision with a link to prerequisites. Identify
    the installable `.fwsc` package; a raw `.bin` is not a user install package.
    For hardware changes, give the install command or verified installer procedure
-   from [BUILDING](../../../BUILDING.md#install). The default hosted release or
+   from [BUILDING](../../../BUILDING.md#install). Give the uv setup and an executable
+   command from a trusted caller checkout, for example `brew install uv` on macOS,
+   then `uv run --locked --group midi tools/fm1_pr.py NUMBER` (or append `--automatic`
+   only when the existing automatic artifact is the intended revision/variant).
+   No installer-backend flag or manual pip setup is needed. The caller's locked
+   environment and installer must not come from unreviewed PR scripts. For local
+   builds use `uv run --locked --group build ./build.sh`; image-dependent tests
+   use the same `build` group. Preserve explicit build-profile/variant requirements;
+   the standard artifact does not establish testing of a different profile.
+   The default hosted release or
    browser demo does not establish testing of the PR. State required cables,
    headphones/output, MIDI source/channel, host OS/browser, samples or test data.
    If the test changes stored data, explain how to back up and use a disposable

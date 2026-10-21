@@ -18,13 +18,14 @@ stages the selected package's RAM loader. Entry and idle cause no flash writes.
 Use the same reviewed `.fwsc` as for ordinary OTA, not a raw `.bin`:
 
 ```sh
-python3 tools/fm1_pr.py NUMBER --automatic
+uv run --locked --group midi tools/fm1_pr.py NUMBER --automatic
 # For a locally built package:
-python3 tools/fm1_install.py build/felucca.fwsc
+uv run --locked --group midi tools/fm1_install.py build/felucca.fwsc
 ```
 
-The helper uses `tools/fm1_install.py` from the trusted caller checkout. Install
-`mido` and `python-rtmidi` in the same interpreter first, as described in
+The helper uses `tools/fm1_install.py` from the trusted caller checkout. Install uv
+first (`brew install uv` on macOS); the `midi` group supplies locked dependencies
+automatically, as described in
 [BUILDING](../BUILDING.md#test-a-pull-request-on-hardware). The maintained browser
 client is **kmplngj/Felucca-WebApp**, pinned by the main-site workflow. Use the
 corresponding PR/client checkout when testing: an older hosted installer does not

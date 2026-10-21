@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -42,12 +43,30 @@ class InstallerPreflight(unittest.TestCase):
                                       capture_output=True, text=True)
 
     def test_missing_dependencies_stop_before_github_build_or_install(self):
-        with patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
-                patch.object(P, "resolve_pr") as resolve, patch.object(P, "ensure_run") as build, \
-                patch.object(P, "install") as install:
-            self.assertEqual(P.main(["333"]), 2)
-        for call in (resolve, build, install):
-            call.assert_not_called()
+        for flags in ([], ["--automatic"]):
+            error = io.StringIO()
+            arguments = ["333", "--port", "FM-1 user's port", *flags]
+            with patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
+                    patch.object(P, "resolve_pr") as resolve, patch.object(P, "ensure_run") as build, \
+                    patch.object(P, "resolve_automatic_pr") as automatic, patch.object(P, "api") as api, \
+                    patch.object(P, "install") as install, contextlib.redirect_stderr(error):
+                self.assertEqual(P.main(arguments), 2)
+            for call in (resolve, automatic, api, build, install):
+                call.assert_not_called()
+            self.assertEqual(shlex.split(error.getvalue().split("Run:\n  ", 1)[1]),
+                             ["uv", "run", "--project", str(P.SOURCE), "--locked", "--group", "midi",
+                              "python", str(Path(P.__file__).resolve()), *arguments])
+
+    def test_dependency_retry_quotes_trusted_source_and_arguments_from_other_directories(self):
+        script = Path("/trusted source/Felucca/tools/fm1_pr.py")
+        arguments = ["333", "--out", "relative output", "--port", "FM-1 $(echo unsafe)"]
+        with patch.object(P, "__file__", str(script)), \
+                patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
+                self.assertRaises(ValueError) as error:
+            P.prepare_installer(arguments)
+        self.assertEqual(shlex.split(str(error.exception).split("Run:\n  ", 1)[1]),
+                         ["uv", "run", "--project", str(script.parents[1]), "--locked", "--group", "midi",
+                          "python", str(script), *arguments])
 
     def test_removed_native_options_fail_before_preflight_or_github(self):
         for flags in (["--installer", "native"], ["--m-flasher", "/unused/binary"]):
@@ -81,7 +100,7 @@ class InstallerPreflight(unittest.TestCase):
                     patch.object(P, "download", return_value=package), \
                     patch.object(P, "install", return_value=5) as install:
                 self.assertEqual(P.main(["333", "--port", "FM-1", "--yes", *flags]), 5)
-            prepare.assert_called_once_with()
+            prepare.assert_called_once_with(["333", "--port", "FM-1", "--yes", *flags])
             install.assert_called_once_with(package, "FM-1", True, command=command)
 
 
