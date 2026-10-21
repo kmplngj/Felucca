@@ -43,17 +43,17 @@ saved. Setup/readback completed before native audio recording began. The musical
 state was replaced only in temporary runtime.
 
 All four parts use ANALOG with all 111 parameters initialized from firmware DESC
-defaults, then a deliberately modified patch: SAW, DTN10, MIX64, NOISE0, CUT90,
-RES30, DRV0, KTR64, ADSR10/70/90/60. Although the preset label remains SAW LEAD,
-this is not the unchanged factory patch. Each of 64 steps has pitch48/52/56/60 by
-part, velocity80, chance100, ratchet1, nudge0, no condition/automation/locks.
-SEQ DIV is 1/16,1/32,8T,16T; LEN64/17/23/64. All ARPs are UP, one octave, held
-60+64, DIV1/16,1/32,16T,1/4, gate64, swing0. Levels90, CH1–4; CC7 sweeps80..99
+defaults, then a deliberately modified patch: SAW, DTN 10, MIX 64, NOISE 0, CUT 90,
+RES 30, DRV 0, KTR 64, ADSR 10/70/90/60. Although the preset label remains SAW LEAD,
+this is not the unchanged factory patch. Each of 64 steps has pitch 48/52/56/60 by
+part, velocity 80, chance 100, ratchet 1, nudge0, no condition/automation/locks.
+SEQ DIV is 1/16,1/32,8T,16T; LEN 64/17/23/64. All ARPs are UP, one octave, held
+60+64, DIV 1/16,1/32,16T,1/4, gate 64, swing 0. Levels 90, CH1–4; CC7 sweeps 80..99
 and unsupported NRPN no-ops accompany the clock stream. The long stage is dry.
 
-The short stage adds SOFT insert1 (A32/B96/C96/MIX64), chorus24/delay32/reverb24,
-global delay1/8/feedback60/color70/mix90, HALL reverb size90/damp60 and chorus
-rate40/depth60. It sends 120→97→240→40→120 BPM with requested 1 ms jitter,
+The short stage adds SOFT insert 1 (A 32/B 96/C 96/MIX 64), chorus 24/delay 32/reverb 24,
+global delay 1/8/feedback 60/color 70/mix 90, HALL reverb size 90/damp 60 and chorus
+rate 40/depth 60. It sends 120→97→240→40→120 BPM with requested 1 ms jitter,
 96 progress clocks per segment, then Stop/Continue. Full parameter/project readbacks,
 host send timestamps and command sources are retained with each case.
 
@@ -92,44 +92,44 @@ four wire logs contain zero CC120 (All Sound Off), UART byte deltas are zero and
 shedding deltas are zero. CC120 is another production `voice_kill` caller; CC123
 uses ordinary release. The aggregate counter itself does not encode the cause.
 
-CPU2 OFF / 48000 Hz also passes1440 progress clocks, the480-pulse mixed-effects
-tempo stage and Continue, with all listed error deltas zero and945 allocation
-victims. Natural acquisition completes4319232 frames (89.984 s), with zero host
+CPU2 OFF / 48000 Hz also passes 1440 progress clocks, the 480-pulse mixed-effects
+tempo stage and Continue, with all listed error deltas zero and 945 allocation
+victims. Natural acquisition completes 4319232 frames (89.984 s), with zero host
 acquisition defects.
 
-CPU2 ON / 44100 Hz **fails device acceptance**. After1376 worker blocks,
-`cpu2_bad` and `cpu2_gave_up` each increase1; CPU2 preference/runtime fall1→0.
-Late increases1 and UAC missed5, with boot3 continuous and no crash record.
+CPU2 ON / 44100 Hz **fails device acceptance**. After 1376 worker blocks,
+`cpu2_bad` and `cpu2_gave_up` each increase by 1; CPU2 preference/runtime fall 1→0.
+Late increases by 1 and UAC missed increases by 5, with boot 3 continuous and no crash record.
 Musical endpoints pass after the worker fallback, so they do not qualify continuous
-active-CPU2 phase; the the failure teardown aborts capture at51.15 s; this
-is not a successful natural90-second recording.48000 Hz ON is not attempted
+phase during continuous CPU2 operation. Failure teardown aborts capture at 51.15 s; this
+is not a successful natural 90-second recording. 48000 Hz ON is not attempted
 after the protective fallback.
 
 Read-only exact-ELF mailbox preservation records `bad_job=0x1000055f` and
-`bad_done=0x55f`, XOR0x10000000, with `bad_fn=0`. The worker reports a non-successor
+`bad_done=0x55f`, XOR 0x10000000, with `bad_fn=0`. The worker reports a non-successor
 job; this is consistent with a transient incorrect read but does not prove its
-physical cause. Core0 mailbox readback remains consistent. Retained BAD_JOB
-exclusion is honored, then deliberately retried through supported MENU_SET row32
-OFF→ON for one unchanged-main comparison; no raw guard write or protection change.
-Source for the worker, its retained guard, audio/voice paths and engine pin is
-unchanged between e987 and76107. Target C1 code is164 B, with only one byte
-changed for the trace-address relocation (+64 B BSS); other163 code bytes match.
+physical cause. Core 0 mailbox readback remains consistent. Retained BAD_JOB
+exclusion is honored, then deliberately retried through supported MENU_SET row 32
+OFF→ON for one comparison with unchanged main; no raw guard write or protection change.
+The source files `fm1_cpu1.h`, `fm1_sys.h`, `audio.c`, `voice.c` and engine pin
+are unchanged between e987 and 76107. Target C1 code is 164 B, with only one byte
+changed for the trace-address relocation (+64 B BSS); other 163 code bytes match.
 This static comparison alone does not prove the hardware failure is unrelated
 to the integration.
 
 The unchanged e987 baseline reproduces the same BAD_JOB class under the same
-30-second/mixed-effects/CC/tempo/Continue workload:736 worker blocks, bad/gave_up
-each+1, CPU2 preference/runtime1→0, late+1, UAC missed+5, shed0, boot4 continuous.
-Its mailbox records job/done736, bad_job0x100002df, bad_done0x2df, XOR0x10000000
-and bad_fn0. The baseline rational-grid oracle is explicitly UNMEASURED because
+30-second/mixed-effects/CC/tempo/Continue workload: 736 worker blocks, bad/gave_up
+each +1, CPU2 preference/runtime 1→0, late +1, UAC missed +5, shed 0, boot 4 continuous.
+Its mailbox records job/done 736, bad_job 0x100002df, bad_done 0x2df, XOR 0x10000000
+and bad_fn 0. The baseline rational-grid oracle is explicitly UNMEASURED because
 that firmware has the old scheduler; Continue passes. Collection completes
-naturally3967488 frames (89.966 s), zero acquisition defects, nonzero PCM
-(RMS1368.84/peak5791). Device acceptance remains FAIL/exit2.
+naturally with 3967488 frames (89.966 s), zero acquisition defects, nonzero PCM
+(RMS 1368.84/peak 5791). Device acceptance remains FAIL/exit 2.
 
 This establishes the failure on unchanged main as well as the candidate; it does
 not establish a candidate-specific cause, a physical SRAM fault or a fix. CPU2
-remains beta/defaultOFF and unqualified on this unit. Its protection, clocks,
-voltage and fallback policy are unchanged. No48kON retry or repeated attempt to
+remains beta/default OFF and unqualified on this unit. Its protection, clocks,
+voltage and fallback policy are unchanged. No 48 kHz ON retry or repeated attempt to
 obtain a green result is performed. Retained recovery policy is owned by
 [#410](https://github.com/kmplngj/Felucca/issues/410).
 
@@ -139,23 +139,23 @@ exclusions. Its cumulative counters are not merged with these clock-test interva
 
 ## Restoration and remaining checks
 
-Original restoration completes successfully after the paired baseline. Full489256-byte
+Original restoration completes successfully after the paired baseline. Full 489256-byte
 app readback matches original SHA-256
 `77b64fa7ed674df8a8ff4616d95006ce396a4f3653aee38828cc469130a3eefa`; original
 package SHA-256 is
 `c6383098e9fd8d12de6d3dfa8169c70e5e8583ed8458236aa5b1b2b63b757cec`.
-All15 backup payloads are byte-equal, all33 menu replies match, settings payload
-is exact and all10 raw nonsettings objects retain exact metadata/payload, including
-autosave sequence40/CRC1462438099. No stored project/preset/sample object was
+All 15 backup payloads are byte-equal, all 33 menu replies match, settings payload
+is exact and all 10 raw nonsettings objects retain exact metadata/payload, including
+autosave sequence 40/CRC 1462438099. No stored project/preset/sample object was
 written. Runtime was restored with autosave OFF, then original settings immediately
 before rebooting the original package; boot loads the untouched original autosave.
 
-Final verifier status: boot5, CPU2 preference/runtimeOFF, stopped, UAC alternate0.
-The test-triggered retained BAD_JOB exclusion remains1; it is a diagnostic safety
+Final verifier status: boot 5, CPU2 preference/runtime OFF, stopped, UAC alternate 0.
+The test-triggered retained BAD_JOB exclusion remains 1; it is a diagnostic safety
 record, separate from exact restored user data/settings. It was not erased to make
 the result appear pristine. No raw guard writes or remaining device handles exist.
-The recovery BOTH5m settings snapshot is also retained separately; final user
-settings match the original pre-test SCREEN5m snapshot. Proofs are
+The recovery BOTH 5m settings snapshot is also retained separately; final user
+settings match the original pre-test SCREEN 5m snapshot. Proofs are
 `build/deadline540/restored/restoration.json` and `runtime-guard-proof.json`.
 
 No accessible external TRS sender was identified; the port was idle throughout USB
