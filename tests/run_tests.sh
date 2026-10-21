@@ -376,6 +376,12 @@ u_cc_scale() {
 }
 unit cc_scale "" u_cc_scale
 
+u_lcd_backlight_probe() {
+    $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_backlight_probe_test" tests/lcd_backlight_probe_test.c
+    run "experimental LCD backlight: actual driver, command order and delayed DMA ownership" "$OUT/lcd_backlight_probe_test"
+}
+unit lcd_backlight_probe "" u_lcd_backlight_probe
+
 [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {

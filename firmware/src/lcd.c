@@ -46,6 +46,27 @@ static void lcd_data(const void *p, uint32_t n)
     lcd_busy = 1;                  /* completed by lcd_sync */
 }
 
+/* Experimental #546 probe: ST7789V's LED_EN/LED_PWM connection on the FM-1 is unverified.
+ * PA2 stays enabled: switching it off also disables panel input. WRCTRLD's BCTRL (bit 5)
+ * enables manual brightness, BL (bit 2) gates its output; DD and reserved bits stay zero.
+ * Hold BL off while loading WRDISBV, then enable it only after the visible frame is ready.
+ * lcd_cmd completes the preceding DMA before each write to lcd_small. */
+static void lcd_controller_backlight(uint32_t on)
+{
+    lcd_cmd(0x53);                                /* WRCTRLD: manual control enabled, backlight off */
+    lcd_small[0] = 0x20;
+    lcd_data(lcd_small, 1);
+    lcd_cmd(0x51);                                /* WRDISBV: sleep resets the brightness value */
+    lcd_small[0] = on ? 0xFF : 0x00;
+    lcd_data(lcd_small, 1);
+    if (on) {
+        lcd_cmd(0x53);
+        lcd_small[0] = 0x24;                      /* manual control enabled, backlight on, no dimming */
+        lcd_data(lcd_small, 1);
+    }
+    lcd_sync();
+}
+
 static void lcd_window(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1)
 {
     lcd_sync();
@@ -128,21 +149,25 @@ static void lcd_init(void)
     fm1_lcd_baud(LCD_BAUD);
     lcd_fill(0, 0, 240, 240, 0);
     lcd_cmd(0x29);
+    lcd_controller_backlight(1);
 }
 
 /* MENU > SCREEN OFF (ui.c scr_frame): the panel dark while the sound goes on. s 0: DISPOFF, SLPIN; 1: SLPOUT (the
  * panel wants 120 ms after it, and 120 ms after SLPIN before it: ui.c waits, a frame at a time, never here); 2: DISPON
  * (after the frame that redrew it all). The panel keeps its RAM asleep, but the UI redraws everything before it shows
- * (ui.force). The backlight stays on: PA2 is also the key matrix 595's /OE, so with it
- * high no button, key or knob reads and nothing could wake the screen (#157 follow-up, found on 1.1.5) */
+ * (ui.force). This experimental branch asks the controller to gate its backlight output;
+ * actual FM-1 wiring remains unverified. PA2 stays on: it also enables the key matrix,
+ * so with it high no button, key or knob could wake the screen (#157 follow-up, found on 1.1.5) */
 static void lcd_power(uint32_t s)
 {
     if (s == 1u)
         lcd_cmd(0x11);                             /* SLPOUT */
-    else if (s == 2u)
+    else if (s == 2u) {
         lcd_cmd(0x29);                             /* DISPON */
-    else {
+        lcd_controller_backlight(1);
+    } else {
         lcd_cmd(0x28);                             /* DISPOFF */
+        lcd_controller_backlight(0);              /* before SLPIN; no new command during its settling time */
         lcd_cmd(0x10);                             /* SLPIN */
     }
 }
@@ -154,5 +179,6 @@ static void lcd_wake_now(void)
     lcd_cmd(0x11);
     lcd_spin(3000000u);
     lcd_cmd(0x29);
+    lcd_controller_backlight(1);
     fm1_lcd_backlight(1);
 }
