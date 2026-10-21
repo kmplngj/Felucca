@@ -68,6 +68,28 @@ static double bank_cost(uint32_t model, uint32_t timbre, uint32_t color, uint32_
     end = bank_instructions();
     return start ? (double)(end - start) / (blocks * CTL) : 0;
 }
+
+static void bank_noise_separation(void)
+{
+    int32_t samples[NPART][CTL * 8], repeat[CTL * 8];
+    uint32_t p, q, b;
+    bank_setup(41, 64, 64, 60);                 /* NOISE: identical parts must not share a stream */
+    for (p = 1; p < NPART; p++) {
+        host_preset(&trk[p], ENGI_MACRO, 44);
+        memcpy(trk[p].p, trk[0].p, sizeof trk[p].p);
+        trk_note_on(&trk[p], 60, 100);
+    }
+    for (b = 0; b < 8u; b++)
+        for (p = 0; p < NPART; p++)
+            track_render(&trk[p], samples[p] + b * CTL, CTL);
+    for (p = 0; p < NPART; p++)
+        for (q = 0; q < p; q++)
+            assert(memcmp(samples[p], samples[q], sizeof samples[p]));
+    bank_setup(41, 64, 64, 60);
+    for (b = 0; b < 8u; b++) track_render(&trk[0], repeat + b * CTL, CTL);
+    assert(!memcmp(samples[0], repeat, sizeof repeat));
+    puts("braids: identical NOISE parts have distinct streams; part-zero reset stays deterministic");
+}
 int main(void)
 {
     uint32_t model, corner, i;
@@ -76,6 +98,7 @@ int main(void)
     printf("braids: core %zu B, wrapper %zu B/part, arena %u B/part, 48 models\n",
            sizeof(braids_MacroOscillator), sizeof(macro_part_t), ENG_MEM_PART);
     assert(MAC_NSHAPE == 48 && ENG_MACRO.npresets == 51);
+    bank_noise_separation();
     for (model = 3; model < MAC_NSHAPE; model++) {
         uint64_t hash, repeat;
         bank_setup(model, 64, 64, 60); hash = bank_hash(8192);

@@ -254,7 +254,7 @@ check(`the heavy song plays (peak ${s1.peak.toFixed(3)}), twice the same samples
 if (nativePath) {                                             // web/emu/native_check.c: the same song, built with cc
   const nat = new Float32Array(new Uint8Array(fs.readFileSync(nativePath)).buffer);
   const web = s1.samples;
-  let diff = nat.length === web.length ? 0 : Infinity;
+  let diff = nat.length > 0 && nat.length === web.length ? 0 : Infinity;
   for (let i = 0; i < web.length && diff === 0; i++) if (nat[i] !== web[i]) diff = i + 1;
   check(`the same song from the native build (cc): ${web.length / 2} frames, ${diff === 0 ? "bit for bit" : "differs at " + diff}`, diff === 0);
 }
@@ -270,6 +270,7 @@ for (let i = 0; i < 3; i++) {
 const ratio = best / 1000, max = +(process.env.BENCH_MAX || 0.5);
 check(`1 s of the heavy song (FM6 PHYS GRAIN chords + DRUM) in ${best.toFixed(1)} ms: ${(ratio * 100).toFixed(1)} % of real time`, ratio < max);
 // All 51 MACRO presets, real key events, TIMBRE/COLOR knob turns and release tails.
+// Keep this gesture/render/record sequence paired with native_check.c's macro replay.
 if (a.ex.web_test_macro_count()) {
 check("MACRO bank exposes 51 presets", a.ex.web_test_macro_count() === 51);
 const models = new Set();
@@ -292,7 +293,7 @@ check("all 48 MACRO models exercised by factory bank", models.size === 48 && Mat
 check("MACRO native oracle supplied", !!macroPath);
 if (macroPath) {
   const nat = new Float32Array(new Uint8Array(fs.readFileSync(macroPath)).buffer), web = macro.samples;
-  let diff = nat.length === web.length ? 0 : Infinity;
+  let diff = nat.length > 0 && nat.length === web.length ? 0 : Infinity;
   for (let i = 0; i < web.length && diff === 0; i++) if (nat[i] !== web[i]) diff = i + 1;
   check(`51 MACRO presets native/Wasm: ${web.length / 2} frames, ${diff === 0 ? "bit for bit" : "differs at " + diff}`, diff === 0);
 }

@@ -10,8 +10,6 @@ int main() {
  unsigned char sync[24]={0}; short a[24],b[24]; int failures=0;
  for(int model=0;model<48;model++) for(int t=0;t<3;t++) for(int c=0;c<3;c++) {
   int timbre=t==2?32767:t*16384,color=c==2?32767:c*16384;
-  // Comb's historical negative-delay shift is corrected in the C adaptation.
-  if(model==15 && t==0)continue;
   memset((void*)&osc,0,sizeof osc); osc.Init();osc.set_shape(static_cast<braids::MacroOscillatorShape>(model));
   osc.set_pitch(69*128);osc.set_parameters(timbre,color); stmlib::Random::Seed(0x21);
   port_init(model,69*128,timbre,color);

@@ -248,6 +248,19 @@ transport checks. Record host OS, audio application, USB sample rate and routing
    expect no dropouts, resets or worker failures. Compare the same setup with OFF,
    and restore the original setting after testing (restart to apply it). A host
    split estimate does not establish device deadline headroom.
+5. Exercise repeated four-part model resets separately. Reload B, then on each
+   T1–T4 tap LFO until the LFO page appears: KNOB 1 RATE fully clockwise (40 Hz),
+   KNOB 2 WAVE SAW, KNOB 3 PHASE 0, KNOB 4 FADE 0. Tap LFO to LFO 2: KNOB 1 SYNC
+   OFF, KNOB 2 TRIG NOTE, KNOB 3 POL BI. Continue tapping LFO to MOD: KNOB 1 slot 1,
+   KNOB 2 SRC LFO, KNOB 3 DST MODEL (engine E1), KNOB 4 AMT +63. Leave B's base
+   HARMONICS model intact. HOME → PLAY for 60 seconds sweeps all four model banks;
+   expect rapid timbre changes without resets, stuck notes or audio dropouts.
+   The matching host setup changes all four models in 475/1,000 control blocks,
+   including 446 consecutive pairs; these are host workload counts, not device
+   timing measurements. Record actual FM-1 render timing/lateness separately.
+   Stop, reload B to remove this temporary modulation, then run its fixed four
+   HARMONICS parts for another 60 seconds. Repeat the comparison with the same
+   core setting and diagnostics; do not save the temporary stress edits over B.
 
 ## Diagnostics and report
 

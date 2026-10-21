@@ -105,7 +105,7 @@ for (const [index, name] of process.argv.slice(2).entries()) {
   if (p.slot !== index || p.size !== 3840) throw Error('wrong slot/size');
   const bad = JSON.parse(text); bad.object.crc ^= 1;
   let rejected = false;
-  try { readProject(bad); } catch (_) { rejected = true; }
+  try { readProject(JSON.stringify(bad)); } catch (_) { rejected = true; }
   if (!rejected) throw Error('corrupt CRC accepted');
 }
 console.log('WebApp production readProject: all four files accepted; corrupt CRCs refused');

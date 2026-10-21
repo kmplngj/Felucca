@@ -29,6 +29,7 @@ int main(int argc, char **argv)
     web_nor_erase();
     web_boot();
     render(500);
+    /* Keep this gesture/render/record sequence paired with emu_test.mjs's MACRO replay. */
     if (argc > 2 && !strcmp(argv[2], "macro")) {
         uint32_t pi;
         for (pi = 0; pi < web_test_macro_count(); pi++) {

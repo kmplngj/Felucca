@@ -144,6 +144,9 @@ static void macro_block(track_t *t)
             macro_clear_word_t *words = (macro_clear_word_t *)&part->full;
             for (i = 0; i < sizeof part->full / 4u; i++) words[i] = 0;
         }
+        /* Independent deterministic streams, including after model resets.
+         * Part zero retains the source/reference seed and existing goldens. */
+        part->full.digital_oscillator_.rng_ = 0x21u + 0x9e3779b9u * (uint32_t)(t - trk);
         braids_MacroOscillator_Init(&part->full);
         part->full.shape_ = (braids_MacroOscillatorShape)MACRO_UPSTREAM[shape];
         part->full_shape = (uint8_t)shape;

@@ -85,5 +85,9 @@ Remaining device qualification: https://github.com/kmplngj/Felucca/issues/27
 Issue [#27](https://github.com/kmplngj/Felucca/issues/27) remains the acceptance
 owner for the pending physical checks. Portable collection extraction is tracked
 separately in [Felucca-Engines-GPL #25](https://github.com/kmplngj/Felucca-Engines-GPL/issues/25).
+Model timing/filter coefficient qualification at the port's internal rate is
+tracked in [#506](https://github.com/kmplngj/Felucca/issues/506); no exact source
+timing parity is claimed. The separately discovered editor compatibility guard
+defect is tracked in [Felucca-WebApp: #505](https://github.com/kmplngj/Felucca/issues/505).
 This record does not claim that the complete checklist passed or that the opt-in
 candidate has been merged.

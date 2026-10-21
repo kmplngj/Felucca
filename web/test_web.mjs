@@ -486,6 +486,9 @@ function firmwareCatalog() {
     fw.ORDER.length === available.length && fw.ORDER.every(n => available.includes(n)),
     "firmware: full selected catalog, selector and display order are consistent");
   const macro = fw.ENG[14];
+  const macroRequired = process.env.FELUCCA_PROFILE === "macro";
+  if (macroRequired)
+    ok(macro?.name === "MACRO", "firmware: macro profile requires MACRO at stable engine ID 14");
   if (macro?.name === "MACRO") {
     const modelsPath = join(FW_ROOT, "assets/braids/models.json");
     const models = existsSync(modelsPath) ? JSON.parse(readFileSync(modelsPath, "utf8")) : null;
@@ -497,7 +500,7 @@ function firmwareCatalog() {
       macro.presets.every((p, i) => p.e[0] === (i < 6 ? Math.floor(i / 2) : i - 3)) &&
       fw.ORDER.at(-1) === "MACRO",
       "firmware: MACRO adds all 48 full model names and 51 stable preset indices");
-  } else {
+  } else if (!macroRequired) {
     ok(!macro || (selector.names[14] === "-" && !macro.presets.length),
       "firmware: standard catalog keeps optional engine 14 unavailable");
   }

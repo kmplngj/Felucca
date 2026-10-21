@@ -283,6 +283,19 @@ below. It adds the same part overhead as other engines. The mixed-engine host
 regression checks automatic allocation and identical serial/threaded audio;
 real-device deadline and worker-failure qualification remain pending.
 
+The port rescales the original 96 kHz phase/delay tables to 88.2 kHz; other
+source-model time/filter coefficients are retained. For example, KICK/SNARE
+excitation updates emit two samples each, so their original 48 kHz stages run at
+44.1 kHz here: 48/192 ticks last approximately 1.088/4.354 ms. This is not exact
+source timing parity. [#506](https://github.com/kmplngj/Felucca/issues/506) tracks
+the coefficient-domain audit and measured retain/adapt decisions; blanket scaling
+or a pitch offset would be inappropriate.
+
+Each full-bank part has a deterministic, distinct random seed, including after
+model resets. T1 retains the source seed; identical NOISE parts on T2–T4 now use
+different streams. This changes correlated new-bank layers while retaining
+single-part T1 and legacy WAVE/FOLD/FBFM initialization.
+
 Model-change reset is bounded: fresh ownership is already zeroed by
 `eng_mem_claim`; later changes clear 4,250 aligned words. The target emits a
 store plus decrement/branch per word: **8,500 reset-loop instructions per part**,
