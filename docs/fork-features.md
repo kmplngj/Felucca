@@ -42,6 +42,24 @@ remains future work. Cancelling retires the preview's undo entry without clearin
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
+## MIDI timing and arithmetic hardening
+
+TRS input is polled at 2 kHz even while audio renders. Packets and timestamps are
+published by TIMER5; sequencers and synth state remain owned by the audio consumer.
+Only receive/overtime events consume UART DMA counts. USB MIDI remains deferred.
+External USB/TRS clock uses fixed musical units with separate fractional carries
+for each sequencer and arpeggiator, including tempo changes and SONG sections.
+An extreme live ARP rate reduction can create a temporary backlog: at most eight
+notes are generated per control block and remaining phase is retained for later
+blocks. Stop freezes that backlog; a new key tapped while stopped still sounds
+once and its gate ends in real time. Internal-clock timing and stored IDs are unchanged.
+
+Invalid internal tempo uses the declared 120 BPM default locally; valid 40–240 BPM
+and a measured external beat retain their timing. This guard does not establish
+the cause of the previously reported intermittent zero tempo. Signed DC/low-cut,
+FM6 and PHYS scaling is defined without changing the normal vectors/PCM.
+See [evidence and combined device procedure](midi-dsp-reliability.md).
+
 ## Effect control smoothing
 
 Shared chorus Depth changes glide while the bus sounds: tap and release **FX**

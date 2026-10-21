@@ -56,6 +56,12 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **MIDI timing and arithmetic:** TRS packets keep timely timestamps during audio
+  renders, UART counts require a receive event, and external sequencer/ARP phase
+  retains fractional progress through tempo and SONG changes. Signed DSP scaling
+  is defined and invalid tempo has a bounded default. Normal PCM and valid-tempo
+  behavior remain covered by regressions; see [evidence and device qualification](midi-dsp-reliability.md).
+
 - **Early rescue entry:** enable the shared key/LED power rail before reading
   OCT− at startup, allow it to settle and use the normal input scan cadence.
   Both-OCT calibration remains available; corrected entry awaits FM-1 retesting

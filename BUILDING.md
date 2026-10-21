@@ -465,6 +465,17 @@ The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_e
 `tests/cpu_baseline_<os>_<arch>_<compiler>_<version>_<build-id>[_os].txt`, skipped with a reason
 when absent or when any counter is unavailable. See [docs/performance.md](docs/performance.md).
 
+### MIDI and arithmetic reliability
+
+After a fresh target build, `python3 tests/run_midi_dsp_focused.py` runs optimized
+and fatal ASan/UBSan fixtures without general DSP sanitizer exclusions. It covers
+nested TRS scheduling, UART events/register widths, signed arithmetic, all stored
+tempo values and the real stress-event publisher. Run the long-run clock fixture
+with `cc -O1 -w -Ibuild/gen -Ifirmware/src tests/midi_drift_test.c -lm -o build/host/midi_drift_test`
+then `build/host/midi_drift_test`. These checks also run in the full suite.
+Their host timing tolerance and hardware boundaries are documented in the
+[reliability guide](docs/midi-dsp-reliability.md).
+
 ### Host stress matrix
 
 For reproducible host stress workloads, run `python3 tests/stress_matrix.py` after
