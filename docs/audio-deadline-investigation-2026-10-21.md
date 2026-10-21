@@ -3,7 +3,7 @@
 
 Repeated note attacks reproduce audio deadline misses on the physical FM-1, including without USB capture. A render-only timing record exceeded the nominal deadline. Dense requests recover by shedding voices; the resulting smaller load is not successful rendering of the original requested workload. No #540 firmware change or universal polyphony limit is delivered here.
 
-The local PHYS DRONE STRING test retained five voices without new late/shed/USB errors in one 60-second USB-48 kHz run; six requests were marginal and eight were not retained. This applies only to the tested pitches, part distribution, parameters, USB configuration and image. It is not a universal five-voice guarantee. Local, intermediate CI and delivery HEAD images are distinct; the delivery hardware artifact comes from a target-only CI workflow, independently of the full PR merge build.
+The local PHYS DRONE STRING test retained five voices without new late/shed/USB errors in one 60-second USB-48 kHz run; six requests were marginal and eight were not retained. This applies only to the tested pitches, part distribution, parameters, USB configuration and image. It is not a universal five-voice guarantee. Local, intermediate CI and exact-HEAD target artifacts are distinct. Fresh current-main `e987cbe` and integrated `76107db4` controls both retained four requested voices without new errors; eight requests reproduced 45 late/45 shed with five sampled gated survivors. Actual hardware identities remain exact `e987cbe`/`76107db4`; the later integration artifact's byte equivalence is separate evidence below.
 
 ## Images and provenance
 
@@ -12,11 +12,17 @@ The local PHYS DRONE STRING test retained five voices without new late/shed/USB 
 | Local screen | `c0f637c5003b111b59cac3d4bf60b0e583eff0cc-dirty` | 488852 | `d620ec7b20216b97dbeea312d106c3a1d7c831fef8869a1711696cf62ababfb9` | `8a7808042b358f5d8ce38766dce250be98862c39ab06dc3f104d75076c6f4b1c` |
 | Clean CI baseline | PR #509 merge `d33f0d35883de7c35d98de8ae3eb1d9d1227c287`; head `c0f637c5003b111b59cac3d4bf60b0e583eff0cc` | 489256 | `66c1f7209a29855178762a3f72456dafb2b31cc242a8106205fa557a1a73a81d` | `d4efc34f2d0e50252ab19c1beafc584bb13f2d8e5a9b8460d894f39622062190` |
 | Intermediate CI candidate | PR #541 merge `a0813bdb059fa54fb789912eb617d275b0e55ad5`; head `02d90cc54f6c64151772eae3fc83ac8caab7ba75` | 489048 | `1dc4c6366df13b8c91bb01a42c793afcf3798583dfbe408ff358fc33d351bd16` | `b2b7bdfd92aaee6b20841405825b6fd6821d9e3ee2e324ca917ddf60035fabdd` |
-| Delivery HEAD target-only CI | Exact PR #541 head `9144ed2cc8b71f425c2769500c67c1f0a877a317`; target run `39668797779`, clean | 489044 | `72d3110a238eb512d4d03b6a0b1f3b697d6b6edef6c03ce616ccfd6243a83d35` | `7c2360e0028a8571f3a7d805dda646eb2fb04a6443f6044b4073d9439c719ccf` |
+| Superseded HEAD target-only CI | Exact PR #541 head `9144ed2cc8b71f425c2769500c67c1f0a877a317`; target run `39668797779`, clean | 489044 | `72d3110a238eb512d4d03b6a0b1f3b697d6b6edef6c03ce616ccfd6243a83d35` | `7c2360e0028a8571f3a7d805dda646eb2fb04a6443f6044b4073d9439c719ccf` |
+| Hardware baseline | Exact `e987cbe621a33ba58a9d57ab3d97f03f17a6ad55`; target run `39670527616`, clean | 489748 | `b2657957c0447d6256c1e641c031bc82cc9a82b60fe08445a848b86dd9ae33ec` | `06c5c6196ae40f0220fa3c944fbebc4afecf4484f3f18c145fe2ffbf64cb58f3` |
+| Integrated hardware candidate | Exact `76107db4b903dd737210ff207e1cd8863ef7960d`; target run `39670531943`, clean | 489456 | `81f538c6bfcafb8a160e5d058de111516fd2f4ed1a40b7cfed40aea49b8a4894` | `71ec7a691bd2881e6d066d7f95ad0a6ad59e927323ba46955e04a351c75f679e` |
 
 The coordinator observed baseline C-to-LLVM translation before production edits and attributed its dirty flag to untracked regression fixtures. No starting working-tree/source-diff manifest was retained. Baseline and merged-main `fcb69c3` committed trees both hash to `30c72e6cba43f893ab3143b566d019ce0944be5c`; that does not reconstruct the dirty tree. Archived target instructions independently show deferred nested UART polling, unconditional word-width HRXCNT consumption and the original sample-based external clock. Local basic-layout Pillow assets and development identity differ from CI Raqm and compiled PR-label/UI code. Do not combine local and CI byte deltas or call the local image a clean CI artifact.
 
-Both CI builds use standard profile/M8Stealth, JieLi Clang4.0.1 (SHA `c45189ee624de0430deb0db02e6dce171fb5538e7fe323e3964dc8ac6236240f`), selective minsize defaults, Engines `9630426f5c4a34a209ca851356fbe8ba3c4c6d19`, CPU2 compiled in but runtime OFF, and normal crash/reproducer flags OFF. CI provenance retains SDK/blob, sample and profile identities. Package validation checks every extent/CRC and known loader family. Complete installed app readbacks establish each running image.
+The CI builds use standard profile/M8Stealth, JieLi Clang4.0.1 (SHA `c45189ee624de0430deb0db02e6dce171fb5538e7fe323e3964dc8ac6236240f`), selective minsize defaults, Engines `9630426f5c4a34a209ca851356fbe8ba3c4c6d19`, CPU2 compiled in but runtime OFF for these deadline controls, and normal crash/reproducer flags OFF. CI provenance retains SDK/blob, sample and profile identities. Package validation checks every extent/CRC and known loader family. Complete installed app readbacks establish each running image.
+
+For the exact current-main→integrated target pair, app size489748→489456B (−292B) and RAM extent62088→62152B (+64B), leaving11640→11576B of the72KiB RAM region. POOL remains336440B used/32200B spare; NOINIT15576B used/120B spare; `.ram_text`2924B. Both packages are610134B. These are ELF section/extent and file-byte observations (`current-target-sections.json`), not live RAM, stack high-water or runtime speed measurements. The72KiB RAM extent includes alignment between `.data` and `.bss`, as the target checker does. This integrated delta belongs to the MIDI/DSP batch, not a #540 optimization.
+
+Main subsequently advanced with changes confined to three test files and `web/EDITOR_PROTOCOL.md`; integrating them produced `9d80408b`. Fresh target builds compare the whole app image (`delivery-binary-diff.json`): qualified76107→delivery9d804 remains489456B, differing in exactly7 ASCII bytes inside the embedded8-character build identity; every other app byte is identical. App SHA changes from `81f538c6bfcafb8a160e5d058de111516fd2f4ed1a40b7cfed40aea49b8a4894` to `bd79572491bd918cdbaa166f1a7ec160acc90fa9f9517096e8f168171ceee986`. Similarly e987→latest-main3c7d43e0 remains489748B and differs only in7 build-identity ASCII bytes (new app SHA `a7642ce82c0657b0426c1f389eeb4792a2e65f4e9cb3fa954fe884676d046937`). Target runs39675188662/39675190655 establish this metadata-only delivery equivalence. No new hardware result or reflash is implied; retain the actual device case identities and distinguish final CI evidence supplied by the integration coordinator.
 
 ## Workload and acquisition
 
@@ -27,7 +33,7 @@ Both CI builds use standard profile/M8Stealth, JieLi Clang4.0.1 (SHA `c45189ee62
 5. Endpoint `status/dbg/inp/crash` snapshots enclose60s load with about1s lead/2s tail (about63s total). Phased status requests target attack+0.2s, sustain+1.8s and release+3.8s; dbg is also read after attacks. An ordinary attack-ending window spans roughly t−0.2s to t+0.2s; the first includes lead-in idle. These are not timestamps of specific DMA halves. Endpoint-only controls omit ongoing queries.
 6. Read-only `memr` snapshots at first/last1.8s sustain use exact ELF/disassembly-derived addresses and source field offsets. Four-part reads take about0.26–0.59s and are non-atomic. Retain note/gate/active/stage and exclude stage4 fades as `voices_busy()` does. They measure sampled sustained/recovery state, never initial admission or every intervening half. No firmware instrumentation or clock/voltage/protection change is used.
 
-Normalized retained parameter ID:value pairs are `0:104,39:0,40:0,17:0,18:2,19:1,20:64,21:0,22:127,23:0,24:0,25:0,26:0,27:0,28:0,29:16,30:2,31:0,32:64,45:0,46:1,47:1,48:127,81:0,82:0,94:1`. The complete dumps retain the remaining factory engine/effect values. Four-part dumps and selected-part/global DUMP match byte-for-byte across all six completed CI baseline/intermediate/delivery controls (`ci-parameter-parity.json`).
+Normalized retained parameter ID:value pairs are `0:104,39:0,40:0,17:0,18:2,19:1,20:64,21:0,22:127,23:0,24:0,25:0,26:0,27:0,28:0,29:16,30:2,31:0,32:64,45:0,46:1,47:1,48:127,81:0,82:0,94:1`. The complete dumps retain the remaining factory engine/effect values. Four-part dumps, normalized defaults and selected-part/global DUMP match byte-for-byte across ten completed CI controls, including the fresh main recovery pair and integrated candidate (`ci-parameter-parity.json`).
 
 ## Clean CI baseline, intermediate and delivery comparison
 
@@ -39,8 +45,14 @@ Normalized retained parameter ID:value pairs are `0:104,39:0,40:0,17:0,18:2,19:1
 | `delivery-head9144-phys-48-8-on` | 8 | 45 | 45 | 0 | 181 | 5/5 |
 | `final-ci-phys-48-4-on` | 4 | 0 | 0 | 0 | 0 | 4/4 |
 | `final-ci-phys-48-8-on` | 8 | 45 | 45 | 0 | 182 | 5/5 |
+| `current-main-e987-recovery-phys-48-4-on` | 4 | 0 | 0 | 0 | 0 | 4/4 |
+| `current-main-e987-recovery-phys-48-8-on` | 8 | 45 | 45 | 0 | 172 | 5/5 |
+| `current-integrated7610-phys-48-4-on` | 4 | 0 | 0 | 0 | 0 | 4/4 |
+| `current-integrated7610-phys-48-8-on` | 8 | 45 | 45 | 0 | 177 | 5/5 |
 
 The legacy local path prefix `final-ci-` identifies intermediate merge `a0813bdb` only; it does not identify the revised delivery artifact. Hardware was released idle after those controls, with CPU2 OFF, while the threshold fix was reviewed. No long clock run began on the intermediate image. The `delivery-head9144-` prefix identifies the exact HEAD target-only artifact. Its compiled head identity differs from the independently built full-PR synthetic merge identity; those package/app hashes must not be substituted.
+
+After the HEAD9144 controls, main advanced to `e987cbe621a33ba58a9d57ab3d97f03f17a6ad55` via #547. The planned long clock attempt was rejected before any valid long-run result, and hardware was released. HEAD9144 controls remain historical evidence; they do not qualify a later integrated image. Read-only migration review (`migration547.json`) finds unchanged menu IDs/counts and persistence/project sizes. Original settings byte559 is historical SCREEN5m code2, valid unchanged in both readers. Only menu17 descriptor names/bounds change; final original-app restoration can still compare original descriptors exactly. Fresh target memory layouts are required.
 
 `ci-overhead-comparison.json` retains input-window timing, IRQ counts, scan costs/gaps, cumulative render maxima before/after and UART-idle limitations. No small single-run difference is an improvement claim. The table is populated only from completed runs.
 
@@ -50,12 +62,18 @@ The legacy local path prefix `final-ci-` identifies intermediate merge `a0813bdb
 | Baseline, 8 requests | 629646 | 437427 | 5916 / 11 | 102 | 2394 → 3678 |
 | Intermediate, 4 requests | 629567 | 391531 | 5875 / 10 | 102 | 740 → 2467 |
 | Intermediate, 8 requests | 629654 | 440212 | 5875 / 10 | 102 | 2467 → 3684 |
-| Delivery HEAD, 4 requests | 629491 | 392651 | 5875 / 11 | 102 | 741 → 2400 |
-| Delivery HEAD, 8 requests | 629616 | 441882 | 5875 / 10 | 102 | 2400 → 3684 |
+| Superseded 9144, 4 requests | 629491 | 392651 | 5875 / 11 | 102 | 741 → 2400 |
+| Superseded 9144, 8 requests | 629616 | 441882 | 5875 / 10 | 102 | 2400 → 3684 |
+| Fresh main, 4 requests | 629571 | 388199 | 5916 / 11 | 103 | 728 → 2461 |
+| Fresh main, 8 requests | 629597 | 437141 | 5916 / 10 | 103 | 2461 → 3676 |
+| Integrated76107, 4 requests | 629551 | 391874 | 5875 / 9 | 103 | 750 → 2407 |
+| Integrated76107, 8 requests | 629559 | 440743 | 5875 / 9 | 103 | 2407 → 3689 |
 
 The scan measurements cover `fm1_input_tick`, not the complete TIMER5 handler. Nested entries do not measure nested duration. Each row established a new cumulative render maximum; the maximum still does not time a named stage or include nested TIMER5 execution. UART receive bytes and drops remained zero throughout.
 
-The delivery image retained all four sampled voices in the four-request control with no new lateness, shedding or underruns. At eight requests it reproduced the baseline's45 late/45 shed/181 underruns and five gated voices in both sampled sustains. These15-cycle controls do not establish a #540 fix or a universal lower voice limit. All six CI captures passed the host acquisition checks. The full completed-case audit covers29 cases and1228 status snapshots; only the previously excluded local24-request repeat WAV fails capture validation.
+The superseded delivery image retained all four sampled voices in the four-request control with no new lateness, shedding or underruns. At eight requests it reproduced the old baseline's45 late/45 shed/181 underruns and five gated voices in both sampled sustains. The fresh current-main and integrated pair repeat that envelope: all-zero four-request counters, then45 late/45 shed with172/177 underruns and five gated voices. The small underrun difference is not an improvement claim. These15-cycle controls do not establish a #540 fix or a universal lower voice limit. All ten matched CI captures passed host acquisition checks. The full completed-case audit covers34 cases and1463 status snapshots; only the previously excluded local24-request repeat WAV fails capture validation.
+
+For the superseded 9144 eight-request case, all 45 late, 45 shed and 181 underrun increments fall in attack-ending windows. Sustain-, release- and final-ending windows add zero. Those windows include the preceding tail and new attack; they do not locate the causal instruction. The later clean windows describe the smaller recovered load, with five sampled gated voices.
 
 ## Local screening and discriminators
 
@@ -104,6 +122,10 @@ The outcome is a bounded measured envelope with protection preserved, not a glob
 A preliminary voice probe was rejected before memr by the diagnostic Console's intentional four-command allowlist. The explicit read-only memory transport was separated and rerun; the production collector was unchanged.
 
 One12-request attempt lost CDC during stream startup before MIDI began. The device returned at boots1 instead of3, default runtime, no retained crash and `dbg.prev_rst=1` (recorded P3 power-on class; WDT bit2 absent). This identifies no firmware cause and does not prove manual power cycling. Exclude the attempt. Before further writes, fresh15-object backup and full baseline-app read were retained: stored objects unchanged, settings differed only by authorized RESTORE LAST OFF. A20s idle collector was VALID with continuous boots1→1/uptime and zero error deltas. Subsequent runs use their own endpoint deltas, never aggregates across this boundary.
+
+The host/app session was later interrupted during `current-main-e987-phys-48-8-on`. That directory contains setup and partial audio, but no endpoint result or natural capture completion; exclude it entirely. The preceding `current-main-e987-phys-48-4-on` is complete with valid native capture and all-zero counters, retained as a separate pre-interruption epoch. Recovery found no old process or open CDC handle, verified all489748 installed main-app bytes, and exported fresh15-object/11-raw-object snapshots (`recovery-20261021`). The device boot counter was1 rather than the earlier5; the device restart's cause is unassigned, separate from the known host interruption. All13 non-runtime/settings backup objects and all10 raw nonsettings objects, including autosave sequence40/CRC1462438099, matched the original exactly.
+
+Recovery settings also showed AUTO OFF BOTH5m (menu17=9, byte559=18) rather than the earlier SCREEN5m (menu17=1, byte559=2), plus the authorized RESTORE LAST OFF bit (byte5624→132). The AUTO OFF change's cause is unassigned. Full recovery backup/raw/menu snapshots preserve BOTH5m for recovery if it was intentional. The previously authorized comparison configuration was normalized to original SCREEN5m; raw comparison proves only byte55918→2 changed. Fresh main4/8 and integrated4/8 controls then ran in that known configuration. After the integrated controls, all10 raw nonsettings objects were still exact original, and settings differed from original only by RESTORE LAST OFF. Never aggregate cumulative counters across the interrupted/reboot boundary.
 
 Original installed app/package, validated15-object backup and11 raw store objects were preserved before tests. Raw autosave sequence40/CRC1462438099 equaled initial live music. Original app SHA `77b64fa7ed674df8a8ff4616d95006ce396a4f3653aee38828cc469130a3eefa`; package SHA `c6383098e9fd8d12de6d3dfa8169c70e5e8583ed8458236aa5b1b2b63b757cec`. Final restoration/readback is recorded after the combined hardware handoff; this draft does not claim restoration yet.
 
