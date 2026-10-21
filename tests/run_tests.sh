@@ -731,7 +731,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     u_catalog() {
         omit=$1
         ENGX="-DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit"
-        for t in engid_test editor_test project_test upreset_test backup_test robust_test; do
+        for t in engid_test editor_test project_test upreset_test backup_test robust_test engine_metadata_test; do
             $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/${t}_omit$omit" tests/$t.c -lm
             run "test build, engine 14 + catalog without $omit (#306): $t" "$OUT/${t}_omit$omit"
         done
