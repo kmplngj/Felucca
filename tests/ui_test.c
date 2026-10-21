@@ -41,13 +41,13 @@
 #endif
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/mman.h>
 static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty), as the flash at 0xA0000 */
 #define SMP_USER_XIP(k) ((const uint8_t *)host_slots + (k) * SMP_USER_SIZE)
 #if FELUCCA_CPU2 || !defined(FELUCCA_CPU2)
 static int c1_exclusion, c1_recovers;                   /* #410: a retained exclusion the player's ON may clear (menu_items.c) */
 #define C1_RECOVER() (c1_exclusion ? (c1_exclusion = 0, ++c1_recovers, 1) : 0)
 #endif
+#define ENGINES_QUAL                                   /* (a writable ENGINES[]: test_knob_policy swaps in a copy) */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -10088,16 +10088,15 @@ static int test_knob_policy(void)
 
     /* a fixed value (min == max) is not turned on HOME, as on a page or MOMENTARY: no turn, no automation event, no
      * LEARN pick. No shipped engine maps a fixed value to a HOME knob, so SAMPLE's CUT (KNOB 2) is made fixed for
-     * the case (its descriptor is const data: its page made writable here, restored below); KNOB 1 (SET) still turns */
+     * the case (a writable copy of its engine stands in for ENGINES[] meanwhile); KNOB 1 (SET) still turns */
     kp_start(HV_SCOPE);
     if (eng_ok(ENGI_SAMPLE)) {
-        const engine_t *se = ENGINES[ENGI_SAMPLE];
-        volatile param_desc_t *cut = (volatile param_desc_t *)&se->edit[4];
-        uintptr_t pg = (uintptr_t)cut & ~(uintptr_t)4095u;
-        int16_t lo = cut->min, hi = cut->max;
+        static engine_t fixed;                           /* a writable copy of SAMPLE whose CUT is fixed */
+        const engine_t *se0 = ENGINES[ENGI_SAMPLE], *se = &fixed;
         uint8_t e = TSEL->eng_req;
-        mprotect((void *)pg, 8192, PROT_READ | PROT_WRITE | PROT_EXEC);
-        cut->min = cut->max = 100;
+        fixed = *se0;
+        fixed.edit[4].min = fixed.edit[4].max = 100;
+        ENGINES[ENGI_SAMPLE] = &fixed;
         TSEL->eng_req = ENGI_SAMPLE;
         id = se->knob[1];
         vp = &TSEL->p[id];
@@ -10108,7 +10107,7 @@ static int test_knob_policy(void)
         vp = &TSEL->p[id];
         d = track_desc(TSEL, id);
         ok &= kp_turn(0, 1, vp, param_turn(d, *vp, 1), sel, id, motion_param(id), 1);
-        cut->min = lo; cut->max = hi;
+        ENGINES[ENGI_SAMPLE] = se0;
         TSEL->eng_req = e;
         bad += check("#295 HOME: a fixed engine value (min == max) is not turned, captured or picked; the others are", ok);
     }
