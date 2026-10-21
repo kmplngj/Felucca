@@ -74,6 +74,9 @@ def midi_dependency_message(script, argv):
     script = Path(script).resolve()
     command = ["uv", "run", "--project", str(script.parents[1]), "--locked", "--group", "midi",
                "python", str(script), *map(str, argv)]
+    if sys.platform == "win32":
+        quoted = " ".join("'" + arg.replace("'", "''") + "'" for arg in command)
+        return "needs mido and python-rtmidi. Run in PowerShell:\n  & " + quoted
     return "needs mido and python-rtmidi. Run:\n  " + shlex.join(command)
 
 

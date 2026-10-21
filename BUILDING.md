@@ -126,8 +126,9 @@ suitable local Python is unavailable.
 
 Direct `python3` and shell entry points remain supported when the necessary
 packages are already available in their interpreter. Their dependency checks
-report the uv command to run; they do not install packages themselves. Standard
-library tools such as source-archive verification, diagnostics and package checks
+report the uv command to run; they do not install packages themselves. On Windows,
+generated retry commands explicitly target PowerShell. Standard library tools
+such as source-archive verification, diagnostics and package checks
 continue to work with plain `python3`.
 
 For a verified source archive, keep the uv environment **outside the extracted
