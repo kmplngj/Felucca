@@ -95,6 +95,48 @@ static int phys_separation(void)
     return 0;
 }
 
+#if FELUCCA_PROFILE_ENGINE_14
+/* A sounding bank model must outweigh either lighter single-voice part. With
+ * these three parts, the useful split isolates MACRO from FM6 and ANALOG. */
+static int macro_split_cost(void)
+{
+    static const uint8_t engines[NPART] = {ENGI_MACRO, ENGI_FM6, 0, 0};
+    int32_t out[CTL * 2];
+    uint32_t k, b, mask, bad, bank_cost, legacy[3];
+    host_tracks_init();
+    c1h_off = 1;
+    for (k = 0; k < NPART; k++) {
+        track_t *t = &trk[k];
+        host_preset(t, engines[k], k ? 0 : 29); /* HARMONICS, one voice per part */
+        t->p[P_ATK] = t->p[P_REL] = 0;
+        t->p[P_SUS] = 127;
+        t->p[P_VOICE] = V_POLY;
+        t->p[P_CHOR] = t->p[P_DLY] = t->p[P_REV] = 0;
+        if (k < 3u) trk_note_on(t, 60u + k, 100);
+    }
+    for (b = 0; b < 32u; b++) mix_block(out, CTL);
+    mask = mix_split();
+    printf("dualcore: MACRO mixed costs %u %u %u %u, automatic split 0x%x\n",
+           part_cost[0], part_cost[1], part_cost[2], part_cost[3], mask);
+    fflush(stdout);
+    bad = part_cost[0] <= part_cost[1] || part_cost[0] <= part_cost[2] || part_cost[3] ||
+          !mask || ((mask & 1u) != 0) == ((mask & 2u) != 0) ||
+          ((mask & 1u) != 0) == ((mask & 4u) != 0);
+    bank_cost = part_cost[0];
+    for (k = 0; k < 3u; k++) {
+        trk[0].p[P_E0] = (int16_t)k;
+        for (b = 0; b < 32u; b++) mix_block(out, CTL);
+        legacy[k] = part_cost[0];
+    }
+    /* One held voice survives each model change. Preserve the measured model
+     * ordering instead of charging every legacy voice for a whole bank core. */
+    printf("dualcore: MACRO one-voice legacy costs %u %u %u; bank %u\n",
+           legacy[0], legacy[1], legacy[2], bank_cost);
+    fflush(stdout);
+    return bad || !(bank_cost > legacy[0] && legacy[0] > legacy[1] && legacy[1] > legacy[2] && legacy[2] > 60u);
+}
+#endif
+
 static int separation_fork(uint32_t kind)
 {
     pid_t pid;
@@ -103,8 +145,12 @@ static int separation_fork(uint32_t kind)
     pid = fork();
     if (pid < 0)
         return 1;
-    if (!pid)
+    if (!pid) {
+#if FELUCCA_PROFILE_ENGINE_14
+        if (kind == 3u) _exit(macro_split_cost());
+#endif
         _exit(kind == 2 ? phys_separation() : formant_separation(kind));
+    }
     if (waitpid(pid, &status, 0) != pid)
         return 1;
     return !WIFEXITED(status) || WEXITSTATUS(status) != 0;
@@ -234,6 +280,13 @@ int main(void)
     static char names[256][40];
     static const char *const MASKS[] = {"rot", "auto", "5", "10", "3", "12", "1"};
     uint32_t n = 0, e, i, k, g, fail = 0;
+#if FELUCCA_PROFILE_ENGINE_14
+    {
+        uint32_t bad = (uint32_t)separation_fork(3);
+        printf("dualcore: MACRO mixed automatic split accounts for bank DSP   %s\n", bad ? "FAIL" : "ok");
+        fail += bad;
+    }
+#endif
     for (i = 0; i < 2; i++) {
         uint32_t bad = (uint32_t)separation_fork(i);
         printf("dualcore: identical VOICE parts, %-6s streams separated   %s\n", i ? "breath" : "RAND", bad ? "FAIL" : "ok");
@@ -258,6 +311,9 @@ int main(void)
         }
     }
     sc[n++] = (scen_t){"PHYS FM6 ANALOG DRUM", {ENGI_PHYS, ENGI_FM6, 0, ENGI_DRUM}, {1, 4, 7, 0}, 0};
+#if FELUCCA_PROFILE_ENGINE_14
+    sc[n++] = (scen_t){"MACRO bank/legacy FM6 ANALOG", {ENGI_MACRO, ENGI_MACRO, ENGI_FM6, 0}, {29, 0, 4, 7}, 0};
+#endif
     sc[n++] = (scen_t){"GRAIN NOISE VOICE LOFI", {8, 11, 5, 3}, {1, 4, 7, 10}, 0};
     sc[n++] = (scen_t){"TRIO WHEEL PHASE FM6", {6, 7, 2, ENGI_FM6}, {1, 4, 7, 10}, 0};
     sc[n++] = (scen_t){"PHYS morph + DRUM GRAIN ANALOG", {ENGI_PHYS, ENGI_DRUM, 8, 0}, {2, 1, 3, 5}, 1};

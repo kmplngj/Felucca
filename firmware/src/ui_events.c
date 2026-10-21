@@ -74,7 +74,7 @@ static void ev_name(const track_t *t, uint32_t id, char *b)
         return;
     }
     str_cpy(b, pre, 12);
-    str_cpy(b + str_len(b), id == P_LEVEL ? "LEVEL" : id == P_GLIDE ? "GLIDE" : track_desc(t, id)->label, 12 - str_len(b));
+    str_cpy(b + str_len(b), id == P_LEVEL ? "LEVEL" : id == P_GLIDE ? "GLIDE" : ui_param_short_label(t, id), 12 - str_len(b));
 }
 
 /* a step's CHANCE (kind EVK_CHANCE), RATCH (EVK_RATCH), NUDGE (EVK_NUDGE) or VEL (EVK_VEL): its value, its default

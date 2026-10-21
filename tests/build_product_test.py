@@ -21,6 +21,11 @@ class Stop(Exception):
 
 
 class Resolve(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ, {"FELUCCA_PROFILE": "standard"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def test_release_refuses_diagnostic_builds(self):
         """FELUCCA_CRASH_CTX / FELUCCA_MUL64_REPRO (#425, #428) are development builds only"""
         self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO"))
@@ -106,6 +111,9 @@ class NoJobs(unittest.TestCase):
     """main() with mocked generators and compilers: bad input starts none of them, good input uses one identity."""
 
     def setUp(self):
+        environment = patch.dict(os.environ, {"FELUCCA_PROFILE": "standard"})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         out = Path(self.tmp.name) / "out"

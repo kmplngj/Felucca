@@ -263,6 +263,23 @@ unit() {
 note() { unit "$1" "" echo "$2"; }
 HALF=$(sed -n 's/^#define HALF_FRAMES \([0-9]*\).*/\1/p' firmware/src/core.h)
 FV=$(sed -n 's/^#define FELUCCA_VERSION "\([^"]*\)".*/\1/p' firmware/src/felucca.c)
+# A selected test profile keeps the package name explicit; never flash a default
+# artifact when validating an opt-in engine collection.
+FWSC=build/felucca.fwsc
+if [ "${FELUCCA_PROFILE:-standard}" != standard ]; then
+    FWSC="build/felucca-${FELUCCA_PROFILE}.fwsc"
+fi
+GOLDEN=tests/golden.txt
+UNION_FLAGS=
+if [ -f build/gen/felucca_profile.h ] && grep -q '^#define FELUCCA_PROFILE_ENGINE_14 1' build/gen/felucca_profile.h; then
+    GOLDEN="$OUT/macro_golden.txt"
+    if [ "$MODE" != --unit ] || [ ! -f "$GOLDEN" ]; then
+        cat tests/golden.txt tests/macro_golden.txt > "$GOLDEN"
+    fi
+    # Keep the legacy companion-engine schedule and its historical oracle.
+    # MACRO ownership/cap transitions have a separate focused fixture below.
+    UNION_FLAGS=-DFELUCCA_UNION_EXTRA_OMIT=14
+fi
 
 u_portable() {
     run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
@@ -359,7 +376,7 @@ u_cc_scale() {
 }
 unit cc_scale "" u_cc_scale
 
-[ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
+[ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
     $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/boot_policy_test" tests/boot_policy_test.c
@@ -367,14 +384,14 @@ u_loader() {
     $CC -o "$OUT/rescue_input_test" tests/rescue_input_test.c
     run "early rescue: real input HAL, shift register, delayed rows, OCT combinations and timer wrap" "$OUT/rescue_input_test"
     $CC -o "$OUT/rescue_test" tests/rescue_test.c
-    run "early USB rescue: real OTA staging, zero idle writes, unsupported flash, timer wrap and reconnect" "$OUT/rescue_test" build/felucca.fwsc
+    run "early USB rescue: real OTA staging, zero idle writes, unsupported flash, timer wrap and reconnect" "$OUT/rescue_test" "$FWSC"
     $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
-    run "M-UPGRADE entry (own loader)" "$OUT/ota_test" build/felucca.fwsc
+    run "M-UPGRADE entry (own loader)" "$OUT/ota_test" "$FWSC"
 
     head -c 200000 build/felucca.bin > "$OUT/old_app.bin"
     python3 tools/fm1pkg_make.py "$OUT/old_app.bin" build/loader/ota.bin "$OUT/old.fwsc" >/dev/null
     $CC -o "$OUT/ldr_test" tests/ldr_test.c
-    run "update loader: other app -> this build" "$OUT/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
+    run "update loader: other app -> this build" "$OUT/ldr_test" "$OUT/old.fwsc" "$FWSC"
 }
 unit loader "" u_loader
 
@@ -615,14 +632,18 @@ if [ -f build/gen/felucca_tables.h ]; then
     fi
 
     u_ui_fm4() {
-        $CC -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_fm4" tests/ui_test.c -lm
+        # DIGITAL is a legacy host fixture, excluded by the production macro profile.
+        # Its extra key would exceed EDIT's 16 white keys with INIT/CLEAN; keep the
+        # original catalog here. The normal UI unit covers MACRO and both actions.
+        fm4_cc="$CC -DFELUCCA_ENG_OMIT=14"
+        $fm4_cc -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_fm4" tests/ui_test.c -lm
         run "UI built with FELUCCA_FM4=1 (DIGITAL, kept in the tree): its OP pages, EDIT cycle, algorithm charts" "$OUT/ui_test_fm4"
         mkdir -p build/ui_fm4/ppm build/ui_fm4_slot
         if python3 -c "import PIL" 2>/dev/null; then
             run "UI renders with FELUCCA_FM4=1: DIGITAL screens, lint, PNGs and comparison manifest" \
-                python3 tests/ui_render.py build/ui_fm4 build/ui_fm4_slot --renderer "$OUT/ui_render_fm4" --fm4 --cc "$CC"
+                python3 tests/ui_render.py build/ui_fm4 build/ui_fm4_slot --renderer "$OUT/ui_render_fm4" --fm4 --cc "$fm4_cc"
         else
-            $CC -O1 -w -DFELUCCA_FM4=1 "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render_fm4" tests/ui_render.c -lm
+            $fm4_cc -O1 -w -DFELUCCA_FM4=1 "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render_fm4" tests/ui_render.c -lm
             run "UI renders with FELUCCA_FM4=1: DIGITAL screens and lint (PNG/manifest skipped)" \
                 "$OUT/ui_render_fm4" build/ui_fm4 build/ui_fm4_slot
         fi
@@ -714,11 +735,11 @@ if [ -f build/gen/felucca_tables.h ]; then
         else
             union_ref="$OUT/union_control$omit.txt"
             $CC -O2 -w -DFELUCCA_ENG_TEST14=1 -DFELUCCA_UNION_OMIT=$omit -Ibuild/gen -Ifirmware/src \
-                -o "$OUT/union_control$omit" tests/union_test.c -lm
+                $UNION_FLAGS -o "$OUT/union_control$omit" tests/union_test.c -lm
             "$OUT/union_control$omit" > "$union_ref"
         fi
         $CC -O2 -w $ENGX -DFELUCCA_ARENA_CHECK=1 -Ibuild/gen -Ifirmware/src \
-            -o "$OUT/union_test_omit$omit" tests/union_test.c -lm
+            $UNION_FLAGS -o "$OUT/union_test_omit$omit" tests/union_test.c -lm
         run "test build, catalog without $omit: owner-checked engine switches against full-catalog control" \
             "$OUT/union_test_omit$omit" "$union_ref"
     }
@@ -821,6 +842,12 @@ if [ -f build/gen/felucca_tables.h ]; then
     }
     unit fx_rest "" u_fx_rest
 
+    u_audio_transitions() {
+        run "Native audio transitions: stereo waveform metrics, injected defects, CPU2 and reduced catalog" \
+            python3 tests/audio_transition_test.py --out "$OUT/audio-transitions"
+    }
+    unit audio_transitions "" u_audio_transitions
+
     u_chorus() {
         run "Chorus depth: continuity, exact PCM, short blocks and restart" python3 tests/chorus_depth_test.py
     }
@@ -840,22 +867,22 @@ if [ -f build/gen/felucca_tables.h ]; then
         [ -f "$CPU_B" ] || [ -n "$BUDGET_UPDATE" ] || CPU_B=-
         [ -f "$CPU_B_OS" ] || [ -n "$BUDGET_UPDATE" ] || CPU_B_OS=-
         $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress" tests/regress.c -lm
-        run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" tests/golden.txt "$CPU_B"
+        run "regression: golden renders, health, voices, CPU budget" "$OUT/regress" "$GOLDEN" "$CPU_B"
         $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/stage_unroll_test_os" tests/stage_unroll_test.c -lm
         run "SPRING and both PHASER callers: original-loop PCM/state equivalence and mutation sensitivity (-Os, no SIMD)" "$OUT/stage_unroll_test_os"
         $CC -Os $NOVEC -w -Ibuild/gen -Ifirmware/src -o "$OUT/regress_os" tests/regress.c -lm
         run "regression built as the target (-Os, no vectorising): the same goldens, CPU budget" \
-            "$OUT/regress_os" tests/golden.txt "$CPU_B_OS"
+            "$OUT/regress_os" "$GOLDEN" "$CPU_B_OS"
         run "regression CPU counter failures: whole-budget skip, exit status and baseline preservation" \
             python3 tests/regress_counter_test.py "$OUT/regress" "$OUT/regress_os"
         $CC -O2 -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/regress_cpu2_0" tests/regress.c -lm
         run "regression, a FELUCCA_CPU2=0 build (none of the second core): the same golden renders and CPU budget" \
-            "$OUT/regress_cpu2_0" tests/golden.txt "$CPU_B"
+            "$OUT/regress_cpu2_0" "$GOLDEN" "$CPU_B"
         # the second core (2ND CORE ON: fx.c mix_block, tests/c1_host.h): a thread renders the parts handed to it, bit for
         # bit
         $CC -O2 -w -Ibuild/gen -Ifirmware/src -DC1_HOST -pthread -o "$OUT/regress_c1" tests/regress.c -lm
         run "second core: the golden renders with a thread taking every split of the parts in turn" \
-            "$OUT/regress_c1" tests/golden.txt -
+            "$OUT/regress_c1" "$GOLDEN" -
     }
     unit regression "" u_regression
 
@@ -918,10 +945,10 @@ if [ -f build/gen/felucca_tables.h ]; then
     unit engines "" u_engines
 
     u_union() {
-        $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/union_test" tests/union_test.c -lm
+        $CC -O2 -w -Ibuild/gen -Ifirmware/src $UNION_FLAGS -o "$OUT/union_test" tests/union_test.c -lm
         run "engine memory (1.5): every switch between the engines with per-part state sounds as in 1.4 (720 sequences)" \
             "$OUT/union_test" tests/union_golden.txt
-        $CC -O2 -w -DFELUCCA_ARENA_CHECK=1 -Ibuild/gen -Ifirmware/src -o "$OUT/union_test_chk" tests/union_test.c -lm
+        $CC -O2 -w -DFELUCCA_ARENA_CHECK=1 -Ibuild/gen -Ifirmware/src $UNION_FLAGS -o "$OUT/union_test_chk" tests/union_test.c -lm
         run "engine memory, owner-checked (FELUCCA_ARENA_CHECK=1): the same 720 hashes, every arena access by its owner" \
             "$OUT/union_test_chk" tests/union_golden.txt
     }
@@ -938,6 +965,9 @@ if [ -f build/gen/felucca_tables.h ]; then
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/descdump" tests/descdump.c -lm
         echo "== parameter and engine tables as JSON (for the editor mock test)"
         "$OUT/descdump" > "$OUT/desc.json" || fail=1
+        # Frozen editor snapshot: strict common-contract comparison, independent
+        # of optional catalog extensions checked against the complete dump.
+        "$OUT/descdump" --legacy-web-mock > "$OUT/desc-legacy-web.json" || fail=1
     }
     unit descriptors "" u_descriptors
 
@@ -1084,11 +1114,11 @@ else
         $SCC -o "$A/rescue_input_test" tests/rescue_input_test.c
         run "ASan/UBSan: early panel rail and actual input HAL" "$A/rescue_input_test"
         $SCC -o "$A/rescue_test" tests/rescue_test.c
-        run "ASan/UBSan: early application rescue and real OTA staging" "$A/rescue_test" build/felucca.fwsc
+        run "ASan/UBSan: early application rescue and real OTA staging" "$A/rescue_test" "$FWSC"
         $SCC -o "$A/ldr_test" tests/ldr_test.c
-        run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
+        run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" "$FWSC"
         $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
-        run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
+        run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" "$FWSC"
     }
     unit asan_loader "loader" u_asan_loader
 
@@ -1116,7 +1146,7 @@ else
     unit asan_arena "" u_asan_arena
 
     u_asan_union() {
-        $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/union_test_chk" tests/union_test.c -lm
+        $SCC -DFELUCCA_ARENA_CHECK=1 $UNION_FLAGS -o "$A/union_test_chk" tests/union_test.c -lm
         run "ASan/UBSan: engine memory switches, owner-checked (720 sequences)" "$A/union_test_chk" tests/union_golden.txt
     }
     unit asan_union "" u_asan_union
@@ -1141,6 +1171,39 @@ else
 
 fi
 
+if [ -f build/gen/felucca_braids.h ]; then
+    u_macro() {
+        $CC -O2 -w -Ifirmware/src -o "$OUT/macro_test" tests/macro_test.c -lm
+        run "MACRO legacy: controls, independent parts, retriggers and release" "$OUT/macro_test"
+        $CC -O2 -w -Ifirmware/src -o "$OUT/braids_test" tests/braids_test.c -lm
+        run "MACRO full bank: all models, bounds, controls and live cap changes" "$OUT/braids_test"
+        $CC -O2 -w -Ifirmware/src -o "$OUT/macro_switch_test" tests/macro_switch_test.c -lm
+        run "MACRO: owned arena transitions with every installed memory engine" "$OUT/macro_switch_test"
+        $CC -O2 -w -Ifirmware/src -o "$OUT/macro_keyboard_test" tests/macro_keyboard_test.c -lm
+        run "MACRO/FM6: all 27 keys, held-key switches and track QNT modes" "$OUT/macro_keyboard_test"
+        run "MACRO device projects, song sections and MIDI workload" python3 tests/macro_device_pack_test.py
+        run "Braids: pinned original C++ versus generated C output" python3 tests/braids_reference.py
+    }
+    unit macro "" u_macro
+    if [ "${SANITIZE:-1}" != 0 ] && san_ok; then
+        u_asan_macro() {
+            for src in macro_core_test braids_test macro_switch_test macro_keyboard_test; do
+                if [ "$src" = macro_switch_test ] || [ "$src" = macro_keyboard_test ]; then
+                    # This cross-engine fixture reaches PHYS and other existing DSP:
+                    # retain the same documented wrap/shift exclusions as their suite.
+                    $SCC -DFELUCCA_ARENA_CHECK=1 -o "$A/$src" "tests/$src.c" -lm
+                    run "ASan/UBSan: MACRO cross-engine $src" env NOCOST=1 "$A/$src"
+                else
+                    ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ifirmware/src -Ibuild/gen \
+                        -o "$A/$src" "tests/$src.c" -lm
+                    run "strict ASan/UBSan: MACRO $src" env NOCOST=1 "$A/$src"
+                fi
+            done
+        }
+        unit asan_macro "" u_asan_macro
+    fi
+fi
+
 u_target_budget() {
     run "regression: target cost of the render loops (pi32v2 disassembly)" python3 tests/target_budget.py \
         build/felucca.dis tests/target_budget.txt
@@ -1163,7 +1226,8 @@ elif [ ! -f build/gen/felucca_tables.h ]; then
     note web_no_assets "== skip web tests (needs build/gen: run ./build.sh once)"
 else
     u_web() {
-        run "web pages: editor protocol + samples, package builder, update protocol" node web/test_web.mjs
+        run "web pages: editor protocol + samples, package builder, update protocol" \
+            env FELUCCA_DESC="$OUT/desc.json" FELUCCA_MOCK_DESC="$OUT/desc-legacy-web.json" FELUCCA_FWSC="$FWSC" node web/test_web.mjs
         run "web backup: capture, validation before writes, restore order" node web/test_backup.mjs
     }
     unit web "editor descriptors" u_web
@@ -1188,8 +1252,9 @@ u_emulator() {
         run "browser emulator: the firmware to WebAssembly (web/emu/build.sh -> build/emu)" sh web/emu/build.sh
         cc -O2 -ffp-contract=off -w -Ibuild/gen -Ifirmware/src -o "$OUT/emu_native" web/emu/native_check.c -lm
         run "browser emulator: the same song from the native build" "$OUT/emu_native" "$OUT/emu_native.f32"
+        run "browser emulator: MACRO preset reference from the selected native profile" "$OUT/emu_native" "$OUT/emu_macro.f32" macro
         run "browser emulator: boot, keys, MIDI, screen, LEDs, PLAY, a save kept across instances, = native, cost" \
-            node web/emu/emu_test.mjs build/emu/felucca.wasm "$OUT/emu_native.f32"
+            node web/emu/emu_test.mjs build/emu/felucca.wasm "$OUT/emu_native.f32" "$OUT/emu_macro.f32"
     fi
 }
 unit emulator "" u_emulator
