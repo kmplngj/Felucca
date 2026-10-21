@@ -6,15 +6,6 @@ registered source commits against current Felucca, including gradual complete-hi
 backfill. It records why a change is useful, already present, owned by an existing
 issue or inapplicable. Scanning never implements firmware or claims device validation.
 
-This replaces [tracker #152](https://github.com/kmplngj/Felucca/issues/152).
-Its source registry, checkpoint fields, immutable historical targets, historical
-reconciliation and all journal records are imported. The original tracker body
-and all 115 comments are retained in `legacy-issue-152.json`, with original URLs.
-The migration has 109 distinct repository/SHA records: 108 terminal assessments
-and one pending assessment. The registry contains 26 initialized repositories
-tracking 29 branches and one pending repository/branch (DUELL). Snapshot research
-does not increase coverage. The migration does not fetch or review newer commits.
-
 ## Canonical files and branch
 
 The [Optimist adoption review](optimist-adoption-2026-10-19.md) registers
@@ -195,8 +186,7 @@ explicit operator cleanup. Helpers also acquire a short per-command writer lock.
 
 ## Scheduled Codex task
 
-The requested schedule is daily at **09:00 Europe/Berlin**, retaining the old
-tracker's cadence. The task prompt is in
+The requested schedule is daily at **09:00 Europe/Berlin**. The task prompt is in
 [the skill reference](../.agents/skills/firmware-watch/references/task-prompt.md).
 Preferred execution is GPT-6.1 Sol with medium reasoning, with up to two disjoint
 workers: low for metadata and medium for substantive source review. Model selection
@@ -211,7 +201,5 @@ Routine progress stays in Git; notify only for actionable findings, material blo
 completed historical coverage or required input. Firmware implementation, flashing,
 release publication and unrelated writes remain outside this maintenance task.
 
-The replacement task must be active and the state branch published before closing
-#152. Its final closure links the new guide and implementation PR without deleting
-the original evidence. Disable an old runner if one is accessible before enabling a
-replacement, so both cannot process the same queues.
+Keep a single active runner for the published state branch. Disable an existing
+runner before enabling a replacement so both cannot process the same queues.
