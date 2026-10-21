@@ -241,6 +241,13 @@ transport checks. Record host OS, audio application, USB sample rate and routing
    which source drives each channel to avoid unintended duplicate notes. Record audio,
    panel responsiveness and any stream or note failures. Stop transport with PLAY if
    running; send note-offs/sustain-off and release keys before saving.
+4. After recording the primary run with 2ND CORE OFF, repeat A/B/C and the same
+   MIDI/audio workload with the optional worker enabled. Hold HOME, select SYSTEM
+   with ALGORITHM and 2ND CORE with PRESETS, choose ON with OCT+, then HOME and
+   restart normally. Record worker status and errors alongside audio/controls;
+   expect no dropouts, resets or worker failures. Compare the same setup with OFF,
+   and restore the original setting after testing (restart to apply it). A host
+   split estimate does not establish device deadline headroom.
 
 ## Diagnostics and report
 

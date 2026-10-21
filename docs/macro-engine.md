@@ -276,6 +276,13 @@ This grid is a repeatable workload, not an exhaustive worst case over pitches,
 note strikes, model automation, effects and USB traffic. Host instruction counts
 are not pi32v2 cycles or FM-1 CPU percentages.
 
+The optional second-core split uses these historical host counts only as steering
+estimates: 450 per active added-model voice (759.8 less idle 316.3, rounded up),
+and 238/205/134 for legacy WAVE/FOLD/FBFM from their net per-voice measurements
+below. It adds the same part overhead as other engines. The mixed-engine host
+regression checks automatic allocation and identical serial/threaded audio;
+real-device deadline and worker-failure qualification remain pending.
+
 Model-change reset is bounded: fresh ownership is already zeroed by
 `eng_mem_claim`; later changes clear 4,250 aligned words. The target emits a
 store plus decrement/branch per word: **8,500 reset-loop instructions per part**,
