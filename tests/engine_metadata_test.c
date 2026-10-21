@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Host metadata completeness and compiled descriptor identity. */
+/* Host metadata completeness and compiled descriptor identity. Also runs in the FELUCCA_ENG_TEST14 / FELUCCA_ENG_OMIT
+ * catalog builds (run_tests.sh catalog_*): the host-only placeholder engine 14 has ENGINE_META but, being no catalog
+ * engine, no generated PRESET_CAT string (NULL, which preset_cat treats as ""); an omitted id is not eng_ok, so skipped. */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -15,7 +17,7 @@ int main(void)
             (m->cc >> 4) > 8 || (m->cc & 15) > 8) bad++;
         if (!eng_ok(e)) continue;
         if (strcmp(N_ENGNAME[e], eng_of(e)->name)) bad++;
-        if (MIDI_CC_ENG[e] != m->cc || strcmp(PRESET_CAT[e],m->preset_categories)) bad++;
+        if (MIDI_CC_ENG[e] != m->cc || strcmp(PRESET_CAT[e] ? PRESET_CAT[e] : "", m->preset_categories)) bad++;
         for (n = 0; n < NENG_SHOWN && eng_vis(n) != e; n++);
         if (n == NENG_SHOWN) bad++;
         if (e != 1 && e != 14 && strlen(m->preset_categories) != eng_of(e)->npresets) bad++;
