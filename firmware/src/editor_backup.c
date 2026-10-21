@@ -455,9 +455,15 @@ static uint32_t ed_raw_kind(uint32_t id, const uint8_t *b, uint32_t n)
             {sizeof(project_v5_t), PROJ_MAGIC_V5}, {sizeof(project_v4_t), PROJ_MAGIC_V4},
             {sizeof(project_v3_t), PROJ_MAGIC_V3}, {sizeof(project_v2_t), PROJ_MAGIC_V2}, {sizeof(project_v1_t), PROJ_MAGIC_V1}};
         for (k = 0; k < 10u; k++)                       /* every format: magic, size = its length, FNV-1a last */
-            if (n == F[k][0] && m == F[k][1] && w == n && s == proj_hash(b, n - 4u))
-                return k ? ED_RAW_LEGACY : b[66] == P_COUNT ? ED_RAW_CURRENT :   /* FUN10 of fewer parameters: by count */
-                       b[66] >= 8u && b[66] < P_COUNT ? ED_RAW_LEGACY : ED_RAW_UNKNOWN;
+            if (n == F[k][0] && m == F[k][1] && w == n && s == proj_hash(b, n - 4u)) {
+                if (k < 4u) {                         /* serialized layouts: the count must fit, as in proj_unpack */
+                    uint32_t end = n - 4u - PROJ_NAME_LEN - (k == 3u ? 0u : NTRK * FM6_PACKED);
+                    uint32_t tail = k ? sizeof(chain_v9_t) + PROJ_MOTION_V9 : sizeof(chain_config_t) + sizeof(motion_store_t);
+                    if (b[66] < 8u || b[66] > P_COUNT || 68u + NTRK * (b[66] + 2u + NSTEP * 9u) + tail > end)
+                        return ED_RAW_UNKNOWN;
+                }
+                return k || b[66] < P_COUNT ? ED_RAW_LEGACY : ED_RAW_CURRENT;
+            }
         return ED_RAW_UNKNOWN;
     }
     if (id == OBJ_UPRESET0 || id == OBJ_UPRESET0 + 1u) {
@@ -469,7 +475,8 @@ static uint32_t ed_raw_kind(uint32_t id, const uint8_t *b, uint32_t n)
         return n == sizeof(fm6_bank_t) && fm6_bank_valid((const fm6_bank_t *)(const void *)b) ? ED_RAW_LEGACY : ED_RAW_UNKNOWN;
     if (id == OBJ_UPFM6)
         return n == sizeof(upf_t) && upf_valid((const upf_t *)(const void *)b) ? ED_RAW_CURRENT : ED_RAW_UNKNOWN;
-    return n == FVB_LEN && m == FVB_MAGIC && ((const fvb_info_t *)(const void *)b)->ver == 1u ? ED_RAW_CURRENT : ED_RAW_UNKNOWN;
+    return n == FVB_LEN && m == FVB_MAGIC && ((const fvb_info_t *)(const void *)b)->ver == 1u &&
+           ((const fvb_info_t *)(const void *)b)->n == FM6_NBANK ? ED_RAW_CURRENT : ED_RAW_UNKNOWN;
 }
 static uint32_t ed_raw_rc(void)                         /* 4 no flash, 3 the transport runs (no stop: read only), 0 */
 {

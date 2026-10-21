@@ -124,7 +124,8 @@ ok(await athrows(() => restoreBackup(failing.request, file)) && failing.log.incl
           if (!o) out.push(t, 0, 127, ...bkU32(0), ...bkU32(0), ...bkU32(0), ...bkU32(0));
           else out.push(t, o.state, o.copy, ...bkU32(o.bytes.length), ...bkU32(o.crc ?? bkCrc(o.bytes)),
             ...bkU32(o.seq + (opt.bumpSecondList && d.lists > 1 && t === 3 ? 1 : 0)),
-            ...bkU32(o.bytes[0] | o.bytes[1] << 8 | o.bytes[2] << 16 | o.bytes[3] << 24));
+            ...bkU32((o.bytes[0] | o.bytes[1] << 8 | o.bytes[2] << 16 | o.bytes[3] << 24) ^
+              (opt.changeSecondMagic && d.lists > 1 && t === 3 ? 1 : 0)));
         }
         return out;
       }
@@ -151,10 +152,22 @@ ok(await athrows(() => restoreBackup(failing.request, file)) && failing.log.incl
   ok(d.log.every((c) => c === RAW_CMD.LIST || c === RAW_CMD.GET) && d.lists === 2, "raw store: read only (LIST, GET, a second LIST), no write");
   ok(await athrows(() => captureRawStore(rawDevice({ changeOnGet: 2 }).request, "TEST")), "raw store: an intact object that changes fails the export");
   ok(await athrows(() => captureRawStore(rawDevice({ bumpSecondList: true }).request, "TEST")), "raw store: a damaged object rewritten meanwhile fails the export");
+  ok(await athrows(() => captureRawStore(rawDevice({ changeSecondMagic: true }).request, "TEST")), "raw store: damaged object's changed identification fails the export");
   ok(await athrows(() => captureRawStore(rawDevice({ playing: true }).request, "TEST")), "raw store: rc 3 (playing) is reported");
   ok(throws(() => rawManifest([1, 0, 1, 1, 9, 0, ...bkU32(4), ...bkU32(0), ...bkU32(0), ...bkU32(0)])) &&
      throws(() => rawManifest([1, 0, 1, 1, 0, 127, ...bkU32(4), ...bkU32(0), ...bkU32(0), ...bkU32(0)])) &&
      throws(() => rawManifest([1, 0, 2])) && RAW_STATES.length === 5, "raw store: unknown states, an empty entry with bytes, short lists refused");
+  const entry = (t, state, copy, size, crc = 0, seq = 0, magic = 0) =>
+    [t, state, copy, ...bkU32(size), ...bkU32(crc), ...bkU32(seq), ...bkU32(magic)];
+  ok(throws(() => rawManifest([1, 0, 0])) &&
+     throws(() => rawManifest([1, 0, 2, ...entry(1, 0, 127, 0), ...entry(1, 0, 127, 0)])) &&
+     throws(() => rawManifest([1, 0, 1, ...entry(1, 1, 0, 0)])) &&
+     throws(() => rawManifest([1, 0, 1, ...entry(1, 0, 127, 0, 1)])),
+    "raw store: zero-object lists, duplicate types, nonempty zero-length entries and empty CRCs refused");
+  const erased = rawManifest([1, 0, 1, ...entry(1, 0, 1, 0, 0, 2)]);
+  ok(erased[0].copy === 1 && erased[0].seq === 2 &&
+     rawManifest([1, 0, 1, ...entry(42, 3, 0, 1)]).at(0).type === 42,
+    "raw store: erased commit sequence preserved; future storage types accepted");
 }
 
 console.log(fails ? `BACKUP WEB TESTS FAILED (${fails})` : "backup web tests passed");

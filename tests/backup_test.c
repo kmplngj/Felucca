@@ -912,6 +912,7 @@ static int raw_tests(void)
     static project_v6_t v6;
     static up_bank_t ub;
     static fm6_bank_t bk;
+    static persist_rec_t ext;
     persist_t ps;
     bank_t vb;
 
@@ -1078,6 +1079,73 @@ static int raw_tests(void)
     bad += check("  a torn commit record: EMPTY (nothing committed)", raw_ent(OBJ_PROJECT0 + 2).state == ED_RAW_EMPTY &&
                  raw_get(OBJ_PROJECT0 + 2, 0, 16) == 1u);
     bad += check("  .. and the export wrote nothing", raw_untouched());
+
+    /* Stable ids are independent of a profile's playable engines. These bytes also occur on standard firmware. */
+    reset();
+    settings_export_rec(&ext);
+    ext.magic = PERSIST_MAGIC_EXT;
+    ext.x.ver = PERSIST_EXT_VER; ext.x.rows = FAV_ROWS; ext.x.ml_n = ext.x.dev_n = 32;
+    ext.x.fav[ENGI_MACRO][6] = 4;                       /* MACRO factory preset 50 */
+    st_save(OBJ_SETTINGS, &ext, persist_len(&ext));
+    project_capture(&proj_scratch);
+    proj_scratch.t[0].engine = ENGI_MACRO;
+    proj_scratch.t[0].preset = 50;
+    proj_scratch.t[0].p[P_E0] = 47;                     /* last MACRO model, unchanged FUN10 parameter layout */
+    proj_pack(&st, &proj_scratch);
+    st_save(OBJ_PROJECT0, &st, sizeof st);
+    memset(&ub, 0, sizeof ub);
+    ub.magic = UP_BANK_MAGIC; ub.rsize = sizeof(up_rec_t); ub.nslot = UP_PER_BANK;
+    ub.r[0].used = UP_USED; ub.r[0].ver = UP_VER; ub.r[0].engine = ENGI_MACRO; ub.r[0].np = P_COUNT;
+    ub.r[0].p[P_E0] = 47 + 64;
+    st_save(OBJ_UPRESET0, &ub, sizeof ub);
+    raw_snap();
+    bad += check("raw export: CURRENT PER6 preserves stable engine 14's favourites, even when unavailable",
+                 raw_list_keep() == 0 && raw_same(OBJ_SETTINGS, ED_RAW_CURRENT, persist_len(&ext)) && raw_untouched());
+    bad += check("  CURRENT FUN10 and UPB1 preserve MACRO's stable id, model and preset without decoding",
+                 raw_same(OBJ_PROJECT0, ED_RAW_CURRENT, sizeof st) && raw_same(OBJ_UPRESET0, ED_RAW_CURRENT, sizeof ub) &&
+                 raw_untouched());
+    ext.x.ver = PERSIST_EXT_VER + 1u;
+    st_save(OBJ_SETTINGS, &ext, persist_len(&ext));
+    raw_snap();
+    bad += check("  PER6 with a future extension is LEGACY, exported byte for byte without normalizing its base",
+                 raw_list_keep() == 0 && raw_same(OBJ_SETTINGS, ED_RAW_LEGACY, persist_len(&ext)) && raw_untouched());
+    ext.magic = PERSIST_MAGIC_V5;
+    memset((uint8_t *)&ext + sizeof(persist_t), 0xA6, 32);
+    st_save(OBJ_SETTINGS, &ext, sizeof(persist_t) + 32u);
+    raw_snap();
+    bad += check("  historical PER5 is LEGACY, its appended MACRO row exported as stored",
+                 raw_list_keep() == 0 && raw_same(OBJ_SETTINGS, ED_RAW_LEGACY, sizeof(persist_t) + 32u) && raw_untouched());
+
+    /* Identification must reject unsupported counts without interpreting or changing the content. */
+    reset();
+    project_capture(&proj_scratch);
+    old_pack(v7, &proj_scratch, OLD_FUN7, 89u);
+    v7[66] = 7;
+    raw_proj(v7, sizeof v7, PROJ_MAGIC_V7);
+    st_save(OBJ_PROJECT0, v7, sizeof v7);
+    old_pack(v9, &proj_scratch, OLD_FUN9, 99u);
+    v9[66] = P_COUNT + 1u;
+    raw_proj(v9, sizeof v9, PROJ_MAGIC_V9);
+    st_save(OBJ_PROJECT0 + 1, v9, sizeof v9);
+    memset(buf, 0, PROJ_STORE_V8);
+    buf[66] = P_COUNT;                                 /* within today's count, too large for FUN8's extent */
+    raw_proj(buf, PROJ_STORE_V8, PROJ_MAGIC_V8);
+    st_save(OBJ_PROJECT0 + 2, buf, PROJ_STORE_V8);
+    make_bank(&vb, 'R', 1u, "RAW COUNT");
+    ok = send_bank(&vb) == 0;
+    memcpy(buf, nor + FVB_HOME + FVB_INFO, FVB_LEN);
+    ((fvb_info_t *)(void *)buf)->n = FM6_NBANK - 1u;
+    memcpy(st_buf, buf, FVB_LEN);
+    st_erase(FVB_HOME);
+    fvb_prog(FVB_HOME + FVB_INFO, buf, FVB_LEN);
+    fvb_commit(FVB_HOME, 0, 2u);
+    raw_snap();
+    bad += check("raw identification: FUN7/FUN9 invalid counts and FUN8 count beyond its extent are UNKNOWN",
+                 raw_list_keep() == 0 && raw_same(OBJ_PROJECT0, ED_RAW_UNKNOWN, sizeof v7) &&
+                 raw_same(OBJ_PROJECT0 + 1, ED_RAW_UNKNOWN, sizeof v9) &&
+                 raw_same(OBJ_PROJECT0 + 2, ED_RAW_UNKNOWN, PROJ_STORE_V8) && raw_untouched());
+    bad += check("  FM6V with an unsupported voice count is UNKNOWN, stored bytes still downloadable",
+                 ok && raw_same(OBJ_FM6VB, ED_RAW_UNKNOWN, FVB_LEN) && raw_untouched());
 
     /* an erased slot (project_erase commits 0 bytes) */
     reset();

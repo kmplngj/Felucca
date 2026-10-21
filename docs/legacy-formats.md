@@ -14,7 +14,7 @@ When this page and the source disagree, the source wins and this page needs a fi
 
 | Item | Value |
 | --- | --- |
-| Source revision | `main` at `7389fff` (2026-10-20) |
+| Source revision | refreshed against `main` at `6379cf4` (2026-10-21), including the opt-in MACRO profile (#503) |
 | Raw recovery path | `STORE_LIST` / `STORE_GET` (82, 83; INFO `59 01`): [EDITOR_PROTOCOL.md "Raw store export"](../web/EDITOR_PROTOCOL.md#raw-store-export-82-83-456), `firmware/src/editor_backup.c` `ed_raw_handle` |
 | Flash map and capacity | [flash-capacity.md](flash-capacity.md) (#213), allocations A2 (SETX, #315) and A3 (PRX, #316) |
 | Related | #299 (retired sounds), #300 (project codec), #310 (backup kinds), #422 (engine ids), #455 (settings model) |
@@ -97,7 +97,13 @@ saved again):
 | FM6 SLOT bank slots | SLOT 8..34 (1.0..1.0.2 B1..B27) or 9..40 (1.4.1 B1..B32) | `param_fit`, `eng_fm6.c fm6_adopt` | 8 (OWN); the patch is the project's own (FUN8+; FUN7 and older: init voice) | `fm6bank_test.c`, `persistence_test.c`, `backup_test.c` |
 | SAMPLE / GRAIN aliases | SET / SRC 1 (TRANH), 4 (PERC) | `params.c enum_orig`, `sound.c preset_orig` | play PIANO (value kept) | `ui_test.c` |
 | Reverb type | G_RTYPE was G_DRCH (pre-FUN7) | `proj_rtype_room` | 0 ROOM | `project_test.c` |
-| Unavailable engine (#212) | engine id < 64 the build lacks | `proj_engines_ok`, `engines.c ENG_NONE` | kept as stored, plays nothing (not a conversion; keep) | `engid_test.c` |
+| Unavailable engine (#212) | engine id < 64 the build lacks, including MACRO id 14 on standard/reduced profiles | `proj_engines_ok`, `engines.c ENG_NONE` | kept as stored, plays nothing (not a conversion; keep) | `engid_test.c`, `backup_test.c` raw MACRO fixture |
+
+The merged opt-in [MACRO profile](macro-engine.md#persistence-and-compatibility) uses stable engine id **14**,
+models 0..47 and presets 0..50 without changing FUN10's magic, size or parameter count. A project carrying MACRO is
+therefore CURRENT even on a profile that cannot play it. The same rule applies to a CURRENT `UPB1` container holding
+a MACRO preset: its stored engine id and values remain the source of truth. Earlier experimental three-model builds
+cannot represent models 3..47; this is an engine-content limitation, not a new project container schema.
 
 ### 2.2 User presets (types 5, 6; records inside a `UPB1` bank)
 
@@ -138,8 +144,8 @@ block in place and applies it to the runtime (`settings`, `panel`, `favorites`, 
 | PER2 | `PER2`, + low-cut, zoom | 48 | bold 0, no favourites | `settings_test.c` | yes |
 | PER3 | `PER3`, + bold | 52 | no favourites | `settings_test.c`, `ui_test.c` | yes |
 | PER4 | `PER4` 0x50455234, + favourites (16 rows x 32 B, user, filter) | 572 | **current** (written while every favourite is below engine id 14) | all settings suites | current writer, firmware up to 1.6 |
-| PER5 | `PER5`, PER4 + MACRO's row | 604 | that row -> engine 14 | `settings_test.c` | only from the unmerged MACRO branch (#27) |
-| PER6 ver 1 | `PER6` 0x50455236, PER4 + extension (ver 1, rows 1..64, ml 32, dev 32) | 672..2688 | **current** | `settings_test.c`, `engid_test.c` | this fork after #212 (not upstream) |
+| PER5 | `PER5`, PER4 + MACRO's row | 604 | that row -> engine 14 | `settings_test.c`, `backup_test.c` | historical experimental MACRO branch (#27); the merged MACRO profile does not write it |
+| PER6 ver 1 | `PER6` 0x50455236, PER4 + extension (ver 1, rows 1..64, ml 32, dev 32) | 672..2688 | **current**, including MACRO favourites in row 14 (a distinct row from PER4's MIDI LEARN map) | `settings_test.c`, `engid_test.c`, `backup_test.c` | this fork after #212; written by the merged MACRO profile when a factory favourite uses id 14 |
 | PER6 other ext | `PER6`, extension version or counts unknown | <= 2688 | read by its PER4 block (rows 0..13, map, device bytes); written back as this firmware's record at the next save | `settings_test.c` | from later firmware |
 
 Field-level migrations inside the PER4 block (all in `settings_import`, all on every boot):
@@ -157,6 +163,10 @@ Field-level migrations inside the PER4 block (all in `settings_import`, all on e
 | favourites row 1 (DIGITAL) | `FM4_TO_FM6` | stars on the FM6 presets; row cleared |
 | favourites SAMPLE preset 4 (PERC) | `drum_from_perc` rule | DRUM preset 0 starred; bit cleared |
 | panel | `PANEL_MAGIC` | the learned panel table (**calibration**, device-specific) |
+
+The standard profile also preserves PER6 favourite rows for unavailable engines when settings are re-exported.
+PER5 remains LEGACY input. A CURRENT PER6 containing MACRO favourites remains CURRENT on every current profile;
+raw export does not migrate PER5, normalize the PER4 prefix, or discard a future PER6 extension.
 
 ### 2.5 Backup archives (web/fm1backup.js, not flash)
 
@@ -226,6 +236,13 @@ implementation and the fixtures that pin today's result. Capture conversion resu
 | FM6 patches | `eng_fm6.c fm6_pack` / `fm6_unpack`, `fm6_adopt`, `FM6_INIT`; `up_fm6.c upf_tag`, `upf_migrate` (a migrated record changes its tag: recompute the `UPF6` entry) | `fm6bank_test.c`, `persistence_test.c`, `backup_test.c` |
 | User preset records | `upreset.c up_valid`, `up_values`, `up_to_v4`, `up_migrate`, `up_pat_norm` | `upreset_test.c`, `robust_test.c` |
 | Settings | `settings_persist.c settings_import` (PER1..PER6, field rules in 2.4), `gfx.c palette_from_stored`, `panel.c hold_from_stored` / `leds_from_stored` | `settings_test.c`, `engid_test.c` |
+
+The raw checks in `backup_test.c` additionally pin byte-for-byte export and no flash writes for PER5, PER6 with MACRO
+favourites, a future PER6 extension, FUN10 / `UPB1` carrying MACRO's stable id, unsupported serialized-project counts,
+and `FM6V` with a voice count other than 32. Classification is based on container identification, not full semantic
+validation; clients must validate content separately before conversion or upload. A second manifest detects changed
+commit metadata, but is not an atomic snapshot and cannot detect damage changing elsewhere in a payload while its
+commit record and identification bytes remain unchanged.
 
 Client obligations from #456/#457, restated: keep the original file; never convert or upload on connect; report losses
 (retired-engine motion on EDIT/OP ENV values, PERC/PHYS DRUM E values, unavailable engines, patches of FUN7 and older,

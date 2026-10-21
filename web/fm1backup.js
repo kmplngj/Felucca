@@ -162,12 +162,17 @@ function rawCheck(rc) {
 export function rawManifest(a) {
   if (a[0] !== 1) throw new Error("Unsupported raw store protocol");
   rawCheck(a[1]);
-  if (a.length !== 3 + a[2] * RAW_REC) throw new Error("Incomplete raw store manifest");
+  if (!a[2] || a.length !== 3 + a[2] * RAW_REC) throw new Error("Incomplete raw store manifest");
+  const seen = new Set();
   return Array.from({ length: a[2] }, (_, i) => {
     const p = 3 + i * RAW_REC, state = RAW_STATES[a[p + 1]], size = bkR32(a, p + 3);
-    if (!state || (a[p + 2] > 1 && a[p + 2] !== 127) || size > 3840 || (state === "empty" ? size : a[p + 2] === 127))
+    const crc = bkR32(a, p + 8), seq = bkR32(a, p + 13), magic = bkR32(a, p + 18);
+    if (seen.has(a[p]) || !state || (a[p + 2] > 1 && a[p + 2] !== 127) || size > 3840 ||
+        (state === "empty" ? size || crc || magic || (a[p + 2] === 127 && seq) :
+          (state !== "damaged" && !size) || a[p + 2] === 127))
       throw new Error("Invalid raw store entry");
-    return { type: a[p], state, copy: a[p + 2] === 127 ? null : a[p + 2], size, crc: bkR32(a, p + 8), seq: bkR32(a, p + 13), magic: bkR32(a, p + 18) };
+    seen.add(a[p]);
+    return { type: a[p], state, copy: a[p + 2] === 127 ? null : a[p + 2], size, crc, seq, magic };
   });
 }
 export async function captureRawStore(request, firmware, onProgress = () => {}) {
@@ -188,7 +193,7 @@ export async function captureRawStore(request, firmware, onProgress = () => {}) 
     objects.push({ ...o, data: bkBase64(bytes) });
   }
   const again = await list(), same = (a, b) => a.type === b.type && a.state === b.state && a.copy === b.copy && a.size === b.size &&
-    a.crc === b.crc && a.seq === b.seq;
+    a.crc === b.crc && a.seq === b.seq && a.magic === b.magic;
   if (again.length !== manifest.length || !again.every((o, i) => same(o, manifest[i])))
     throw new Error("The device changed during the export. Try again while stopped.");
   return { format: "felucca-store", version: 1, firmware, created: new Date().toISOString(), objects };

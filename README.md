@@ -64,6 +64,8 @@ is initialized; WAVE implementation and mixed-build integration remain pending.
 The [modularity roadmap](docs/modularity.md) and [capacity plan](docs/flash-capacity.md)
 track the larger work. The [performance guide](docs/performance.md) explains measurements;
 [engine extension contracts](docs/extending.md) describe integration boundaries.
+The [stored-format inventory](docs/legacy-formats.md) documents the first recovery stage:
+a read-only raw export, with historical firmware readers retained while browser migration is pending.
 This README summarizes the overall direction and meaningful milestones. The
 [changelog](docs/changelog.md) gives a curated overview of additions, fixes, changes
 and optimizations. Detailed controls and evidence belong in focused guides, issues,

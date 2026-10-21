@@ -40,7 +40,7 @@ in issues and roadmaps, not among implemented changes below.
   A read-only raw store export (editor commands 82/83) downloads every stored
   object byte for byte, including projects, presets and settings the firmware
   cannot load, as the first step of moving legacy conversion to the web editor;
-  no client uses it yet. See [persistence contracts](extending.md#4-persistence-and-protocol)
+  a reference reader is included, with browser migration still pending. See [persistence contracts](extending.md#4-persistence-and-protocol)
   and the [stored-format inventory](legacy-formats.md).
 - **Build identification and diagnostics:** startup, ABOUT and INFO identify the
   release, commit or PR; ABOUT includes the fork source. USB serial diagnostics,

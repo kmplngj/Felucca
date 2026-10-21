@@ -973,14 +973,16 @@ version and count fields and a project's own FNV-1a hash; the bytes are never de
 | state | meaning |
 | --- | --- |
 | 0 EMPTY | no valid commit record (never written, erased, a torn first write, or a stock-firmware area), or one of 0 bytes (an erased project slot): size 0. `copy` 127 when there is no record |
-| 1 CURRENT | the schema this firmware writes: PER4 / PER6, FUN10 with today's P_COUNT, `UPB1` 192-byte records x 16, `UPF6` 1, `FM6V` 1 |
+| 1 CURRENT | the schema this firmware writes: PER4 / PER6, FUN10 with today's P_COUNT, `UPB1` 192-byte records x 16, `UPF6` 1, `FM6V` 1 with 32 voices |
 | 2 LEGACY | an older schema this firmware still converts when it loads it: FUN1..FUN9, a FUN10 of fewer parameters (mapped by count), PER1/2/3/5, a PER6 whose extension it cannot read (its PER4 block is read), the retired FM6 bank |
-| 3 UNKNOWN | intact on flash but no schema this firmware loads: a later format, a FUN10 of more parameters than P_COUNT, a project whose own hash fails, another bank shape. The firmware does not load it (a project slot shows EMPTY; see docs/legacy-formats.md for which writes can still replace it) |
+| 3 UNKNOWN | intact on flash but no supported container identification: a later format, a serialized project count outside 8..P_COUNT or beyond its layout's extent, a project whose own hash fails, another bank shape. The firmware does not load it (a project slot shows EMPTY; see docs/legacy-formats.md for which writes can still replace it) |
 | 4 DAMAGED | a valid commit record whose payload fails the record's CRC on every copy |
 
 The state describes the container. Records inside it are the client's to read: a CURRENT user preset bank can hold
 records of older versions or retired engines (each record's `ver`, `np` and `engine`), and a CURRENT FUN10 can hold
-a DIGITAL or SAMPLE PERC track. `magic` is the first four payload bytes as stored (little endian; 0 for fewer than 4).
+a DIGITAL or SAMPLE PERC track. FUN10 / `UPB1` with stable MACRO id 14 and PER6 with its favourites are CURRENT even
+when this profile cannot play MACRO. The historical PER5 settings format remains LEGACY input.
+`magic` is the first four payload bytes as stored (little endian; 0 for fewer than 4).
 
 `STORE_GET` reads `count` bytes from `offset` of the object `STORE_LIST` describes, chosen again for each request by
 the same rule. rc: 0 ok; 1 arguments (the length, an argument byte, a count of 0 or above 256), a type that is not in
@@ -988,7 +990,10 @@ the list, an EMPTY object, or a range past its size; 3 the transport is running 
 running: stop first); 4 no flash. `STORE_LIST` with any argument answers `1, 1, 0`; `GET` without arguments answers
 type 127. There is no snapshot and no stale rc: check each object's bytes against the listed CRC (an object that
 changed between `LIST` and `GET` fails it); for a DAMAGED object, which fails it anyway, send `STORE_LIST` again
-afterwards and compare its `copy`, `size`, `crc` and `seq`. The firmware holds the autosave off while these requests
+afterwards and compare its `copy`, `size`, `crc`, `seq` and `magic`. This detects changed commit metadata and
+identification bytes, not damage changing elsewhere in the payload under an unchanged commit record; it does not
+provide an atomic snapshot. Keep the device stopped and avoid concurrent editors or storage operations.
+The firmware holds the autosave off while these requests
 come in, as for the backup transfers. The reference reader is `captureRawStore` in `web/fm1backup.js`
 (`web/test_backup.mjs`); no page uses it yet.
 
