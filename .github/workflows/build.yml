@@ -539,7 +539,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: f3c72544a34aa613227b210d3adc4ae8843d836d
+          ref: ba7ae17af7a1b7285aa2e2f263b82e2814be5375
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
