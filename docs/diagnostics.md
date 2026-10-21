@@ -159,8 +159,12 @@ or changes while it is copied, the reply is `no crash record`; a later request c
 `cpu_pct` is the smoothed render/deadline ratio with nested TIMER5 scan time subtracted.
 It excludes the main loop and is not whole-chip CPU utilization. `audio_max_us` and
 `dbg.max_us` are cumulative maxima which can persist across reboot; they are not maxima
-for the measured interval. Compare audio lateness, overload `voices_shed`, voice-budget
+for the measured interval. Compare audio lateness, overload `voices_shed`,
 `voices_given_up`, USB audio errors, USB stalls and UART drops together.
+`voices_given_up` counts all `voice_kill()` calls, including overload, allocator
+victims and MIDI All Sound Off. It does not measure rejected or admitted requests;
+`voices_shed` is its overload subset. A clean sustain after shedding is a smaller
+workload, so retain actual surviving-voice observations when available.
 
 `inp` resets scan gaps/histograms, encoder statistics and key latency on read. Its
 `timer_irqs` and `nested` fields are cumulative and receive separate deltas. Later input
