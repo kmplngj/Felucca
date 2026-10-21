@@ -152,7 +152,9 @@ int main(void)
     check("40000 NRPN+note-off streams:840000bytes, every packet exact", ok && um.bytes == 840000u);
     /* A full-rate wire with no idle/timeout. Poll at nominal .5ms, with a
      * 5.12ms audio deferral every1024bytes. Count only actual DMA events.
-     * RXCNT32 must give the 128-byte ring enough space during that delay. */
+     * The production RX event threshold must give the 128-byte ring enough
+     * space during that delay; the timer integration test separately checks
+     * timestamp latency under that same event policy. */
     reset(); uint64_t reference = UINT64_C(1469598103934665603), observed = reference;
     uint32_t queued = 0, max_waiting = 0;
     for (uint32_t step = 0; step < 10000; step++) {

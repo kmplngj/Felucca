@@ -46,6 +46,16 @@ def main():
             binary = out / label
             invoke(base + flags + extra + [f"tests/{name}_test.c", "-lm", "-o", str(binary)], label + "-build.log")
             invoke([str(binary)], label + ".log")
+            if name == "timer5_midi" and not extra:
+                invoke([str(binary), "--gapped"], label + "-gapped.log")
+                # Only the backend event threshold changes for this historical
+                # negative control; production HAL, parser and TIMER5 stay real.
+                # Positive runs above derive their threshold from the HAL macro.
+                control = out / (label + "-frame32-control")
+                invoke(base + flags + ["-DTEST_RX_FRAME=32", "tests/timer5_midi_test.c",
+                                       "-lm", "-o", str(control)], label + "-frame32-build.log")
+                invoke([str(control)], label + "-frame32.log", 1,
+                       "max clock timestamp lag: 10 ms")
             if name == "signed_audio_scaling":
                 invoke([str(binary), "--fm6"], label + "-fm6.log")
 

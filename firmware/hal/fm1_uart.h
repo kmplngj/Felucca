@@ -28,10 +28,11 @@
 #define FM1_UM_PH_PU     (*(volatile uint32_t *)0x501D0u)
 #define FM1_UM_PH_PD     (*(volatile uint32_t *)0x501D4u)
 
-/* Signal before the whole DMA ring fills: TIMER5 can defer UART service while
- * audio renders. With a 128-byte ring, 32-byte events leave 96 bytes of margin.
- * RXCNT is the event threshold, not the wrap address (wl82 SDK uart_dev.h). */
-#define FM1_UART1_RX_FRAME 32u
+/* RXCNT is the event threshold, not the DMA wrap address (wl82 uart_dev.h).
+ * Signal each byte: continuous MIDI has no timeout, and a 32-byte threshold
+ * would batch clock timestamps by 10.24 ms despite the 2 kHz TIMER5 poll.
+ * UART interrupts stay off; one poll normally drains one or two wire bytes. */
+#define FM1_UART1_RX_FRAME 1u
 
 FM1_INLINE void fm1_uart1_midi_init(volatile uint8_t *ring, uint32_t len)
 {

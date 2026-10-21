@@ -12,11 +12,54 @@
 #ifndef FELUCCA_UART
 #define FELUCCA_UART 1
 #endif
+static uint32_t host_us, rx_pending, rx_write, rx_polls, rx_latched;
+static uint32_t rx_last_us, rx_writes, rx_count_reads, rx_events, rx_timeouts, rx_max_take;
+/* Independent DMA/event model: only register I/O is substituted. The retained
+ * latch outside an event is deliberately stale. Idle 2 ms is a fixture choice,
+ * not a measurement of OTCNT or the undocumented latch/ack race on hardware. */
+#define RX_IDLE_US 2000u
+#ifndef TEST_RX_FRAME
+#define TEST_RX_FRAME FM1_UART1_RX_FRAME
+#endif
+static uint32_t rx_con_read(void);
+static void rx_con_write(uint32_t value);
+static uint32_t rx_count_read(void);
+#define FM1_UART1_CON_READ() rx_con_read()
+#define FM1_UART1_CON_WRITE(v) rx_con_write(v)
+#define FM1_UART1_COUNT_READ() rx_count_read()
+#define FM1_UART1_SYNC() __asm__ volatile("" ::: "memory")
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
 #include "../firmware/hal/fm1_uart.h"
-static uint32_t rx_pending, rx_write, rx_polls;
-static uint32_t host_rx_take(void) { uint32_t n = rx_pending; rx_pending = 0; rx_polls++; return n; }
+static uint32_t rx_available;
+static uint32_t rx_con_read(void)
+{
+    if (rx_available && !(rx_pending & 0x0800u) && host_us - rx_last_us >= RX_IDLE_US) {
+        rx_pending |= 0x0800u;
+        rx_timeouts++;
+    }
+    return 0x41u | rx_pending;
+}
+static void rx_con_write(uint32_t value)
+{
+    rx_writes++;
+    if (value & 0x80u) rx_latched = rx_available;
+    if (value & 0x1400u) {
+        rx_pending = rx_available = 0;
+        rx_events++;
+    }
+}
+static uint32_t rx_count_read(void)
+{
+    rx_count_reads++;
+    if (rx_latched > rx_max_take) rx_max_take = rx_latched;
+    return rx_latched;
+}
+static uint32_t host_rx_take(void)
+{
+    rx_polls++;
+    return fm1_uart1_rx_take();
+}
 #define fm1_uart1_rx_take() host_rx_take()
 #ifdef TIMER5_SYNTH_TEST
 #define UI_TEST_NO_MAIN 1
@@ -30,7 +73,7 @@ static uint32_t host_rx_take(void) { uint32_t n = rx_pending; rx_pending = 0; rx
 #include "../firmware/src/usb.c"
 #include "../firmware/src/midi_uart.c"
 #endif
-static uint32_t host_us, scans, acks, usb_polls, uac_polls;
+static uint32_t scans, acks, usb_polls, uac_polls;
 #ifndef TIMER5_SYNTH_TEST
 static uint32_t fm1_ticks(void) { return host_us; }
 #endif
@@ -53,13 +96,31 @@ static int check(const char *name, int ok) { printf("%s: %s\n", name, ok ? "ok" 
 #endif
 static void wire_byte(uint32_t b) {
     um_ring[rx_write++ % UM_RING] = (uint8_t)b;
-    rx_pending++;
+    rx_available++;
+    rx_last_us = host_us;
+    if (rx_available >= TEST_RX_FRAME) rx_pending |= 0x4000u;
 }
-int main(void) {
+int main(int argc, char **argv) {
+    int gapped = argc == 2 && !strcmp(argv[1], "--gapped");
     int bad = 0, clock_timing_ok = 1, cc_ok = 1, usb_deferred_ok = 1;
     uint32_t next_byte = 320u, next_clock = 20833u, byte_phase = 0, value = 0;
     uint32_t clocks_sent = 0, clocks_seen = 0, cc_seen = 0, cc_sent = 0, bytes_sent = 0, clock_lag_max = 0;
     uint32_t clock_sent_ms[512];
+    rx_latched = 37u;
+    bad += check("empty DMA: production HAL ignores stale latch without RX/timeout event",
+                 fm1_uart1_rx_take() == 0 && !rx_writes && !rx_count_reads);
+    /* Deliberately withhold service across an idle gap: OTPND must drain a
+     * byte with no RX event as well as coexist with RXPND. Normal threshold-1
+     * polling consumes each byte before this modeled idle timeout can expire. */
+    host_us = RX_IDLE_US + 100u;
+    rx_available = 1u;
+    bad += check("idle timeout alone drains one byte through production HAL",
+                 fm1_uart1_rx_take() == 1u && rx_timeouts == 1u && !rx_available);
+    rx_available = 1u; rx_pending = 0x4000u;
+    bad += check("idle timeout and RX event share one latch/ack/count batch",
+                 fm1_uart1_rx_take() == 1u && rx_timeouts == 2u && !rx_available);
+    host_us = rx_pending = rx_available = rx_latched = rx_polls = rx_writes = 0;
+    rx_count_reads = rx_events = rx_timeouts = rx_max_take = 0;
 #ifdef TIMER5_SYNTH_TEST
     int bpm_min = 240, bpm_max = 40;
     ui_power_on(); ml_clear_all(); song.g[G_CLOCK] = 2; song.g[G_ROUTE] = ROUTE_TRACK;
@@ -98,6 +159,7 @@ int main(void) {
             else { wire_byte(value++ & 127u); byte_phase = 0; cc_sent++; }
             next_byte += 320u;
             bytes_sent++;
+            if (gapped && bytes_sent % 64u == 0u) next_byte += 2500u;
         }
         /* 4.5 ms renders alternate with 1.5 ms outside the render. */
         felucca_dbg.in_audio = host_us % 6000u < 4500u;
@@ -172,12 +234,18 @@ int main(void) {
     bad += check("TRS clock timestamps stay within 1 ms under saturated CC and 4.5 ms audio renders", clock_timing_ok && clocks_seen == clocks_sent);
     bad += check("interleaved realtime preserves every CC, with no DMA/queue drops", cc_ok && cc_seen == cc_sent && !um.drops && !midi_in_overflow && um.bytes == bytes_sent);
     bad += check("TRS is polled at 2 kHz throughout nested audio", rx_polls >= 20000u && rx_polls <= 20020u);
+    bad += check("RX event batches stay bounded to two wire bytes per 500 us poll", rx_max_take <= 2u);
+    bad += check("production event gate drains exact batches and retains empty polls",
+                 rx_events == rx_count_reads && rx_writes == 2u * rx_events && rx_events < rx_polls);
+    bad += check("500 us polling consumes each byte before a 2 ms idle timeout", rx_timeouts <= 1u);
 #else
     (void)clock_timing_ok; (void)cc_ok; (void)cc_sent;
     bad += check("UART-disabled build never polls or queues TRS input", !rx_polls && !mi_w);
 #endif
     bad += check("USB MIDI remains deferred during audio while USB audio is serviced", usb_deferred_ok && usb_polls && uac_polls);
     bad += check("panel scan and nested accounting remain active", scans == acks && scans == felucca_dbg.timer_irqs && felucca_dbg.nested > 70000u);
+    printf("DMA model: threshold=%u idle=%u us, events=%u timeouts=%u max batch=%u, %s wire\n",
+           (uint32_t)TEST_RX_FRAME, RX_IDLE_US, rx_events, rx_timeouts, rx_max_take, gapped ? "gapped" : "continuous");
     printf("wire: %u CC messages, %u clock pulses, %u bytes; drops: %u; max clock timestamp lag: %u ms\n", cc_seen, clocks_seen, bytes_sent, um.drops, clock_lag_max);
     return bad != 0;
 }

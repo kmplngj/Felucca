@@ -10,7 +10,7 @@ thresholds are updated. #540 remains a separate measurement-led deadline diagnos
 | Owner | Production change | Focused regression |
 | --- | --- | --- |
 | #525 | 2 kHz TRS polling also nested in audio; consumer ownership unchanged | `timer5_midi_test.c`, including learned CC/four sequencers and UART disabled |
-| #526 | RX/overtime event gate, 16-bit control/count registers, 32-byte event threshold within 128-byte ring | `uart_dma_test.c`, empty/stale polls, running status, partial/wrapped/deferred traffic |
+| #526 | RX/overtime event gate, 16-bit control/count registers, one-byte event threshold within 128-byte ring | `uart_dma_test.c`, empty/stale polls, running status, partial/wrapped/deferred traffic |
 | #527 | Fixed 24,000-unit quarter notes and per-consumer carries; tempo phase rescaling, queued Start, bounded ARP overshoot | `midi_drift_test.c`, 20-minute pulse counts, all ten rates, swing, Stop/Continue, wrap, SONG clock-track changes |
 | #528 | Defined signed DC/low-cut/FM6/PHYS scaling; unsigned FM6 phase additions | `signed_audio_scaling_test.c`, `phys_signed_test.c`, normal goldens/transition suite |
 | #529 | Descriptor-based local 120 BPM fallback for invalid stored tempo | `beat_samples_test.c`, exhaustive int16 and real stress-event publication |
@@ -30,6 +30,15 @@ defines CON0/CON1/BAUD/HRXCNT as 16-bit and RXCNT as 32-bit. `cpu.a` SHA-256
 gates on `0x4800`, sets RDC `0x80`, performs CSYNC, acknowledges `0x1400`, then
 reads 16-bit HRXCNT; its interrupt-enable checks are not needed in the polled host.
 No-event stale-count fixtures model permitted retention, not a measured silicon race.
+
+The event threshold is one byte, with UART interrupts still disabled. Review of the
+combined timestamp/event fixes caught a 32-byte threshold that delayed continuous
+MIDI by up to 10 ms: without an idle gap no timeout flushes that batch. The integrated
+TIMER5 timing fixture now exercises the production HAL event gate, RDC/latch/ack
+sequence and parser together. A retained 32-byte negative reproduces the delay;
+one-byte events preserve the 2 kHz poll's at-most-1 ms timestamp bound. The SDK
+describes a byte-count threshold and programs RXCNT directly without a minimum or
+alignment clamp; this changes no UART interrupt enable or queue ownership.
 
 ## Baseline and focused host evidence
 
