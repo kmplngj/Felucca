@@ -16,6 +16,8 @@ reviewed and tested; the fork does not automatically include every upstream or f
 
 The standard profile combines thirteen engines with factory presets, four tracks sharing eight voices,
 a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
+Eight is the shared allocation pool; deadline headroom depends on the sound and USB load
+([measured PHYS example](docs/audio-deadline-investigation-2026-10-21.md)).
 The [fork feature guide](docs/fork-features.md) covers controls, defaults,
 compatibility limits and build identification. The
 [upstream manual](https://github.com/hugelton/Felucca/wiki/Home) documents the shared
