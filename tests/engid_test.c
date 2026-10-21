@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* The engine id space (#212): ids are stored and sent as they are, whatever engines a build has. Run on the default
- * build and on a test build with a placeholder engine 14 and a sparse catalog (FELUCCA_ENG_TEST14=1
+ * build and on a test build with a placeholder after the real catalog and a sparse catalog (FELUCCA_ENG_TEST14=1
  * FELUCCA_ENG_OMIT=10/11/12: DRUM/NOISE/FM6 left out; tests/run_tests.sh builds each):
  *   - the catalog: eng_ok / eng_idx / eng_of, an unknown id never another engine, ENGINE_ORDER
  *   - INFO: the old prefix (NENGINES names, "-" for an id this build cannot play), the 49 01 block's bitmap
  *   - FAV_GET / FAV_SET: the new user marker (127), the old one (INFO's count), unavailable ids refused
- *   - favourites of ids past 13 (engine 14 in the test build) into the settings as PER6, back as PER4 without them
+ *   - favourites of ids past 13 (ENGI_TEST in the test build) into the settings as PER6, back as PER4 without them
  *   - projects, user presets and a full backup with an id this build lacks: kept (id, preset, E values), shown N/A,
  *     silent, packed again byte for byte; past the id space: refused
  *   - the editor's PRESET / SET G_ENGSEL / UP_PUT to an unavailable engine: refused, nothing changes */
@@ -129,9 +129,9 @@ static int catalog(void)
     ok = !eng_ok(ID_GONE) && !eng_ok(ID_FAR) && eng_of(ID_FAR) == &ENG_NONE && eng_of(ID_GONE) == &ENG_NONE;
     ok &= eng_ok(eng_step(ID_GONE, 1)) && eng_ok(eng_step(ID_FAR, -1));   /* (a step away from one: a real engine) */
 #if FELUCCA_ENG_TEST14
-    ok &= NENGINES == 15 && eng_ok(14) && str_eq(eng_of(14)->name, "TEST14");
+    ok &= NENGINES == FELUCCA_PROFILE_NSLOTS + 1u && eng_ok(ENGI_TEST) && str_eq(eng_of(ENGI_TEST)->name, "TEST14");
 #else
-    ok &= NENGINES == 14 && !eng_ok(14);              /* (14 also with FELUCCA_SLICE=0: its 13 left out, kept) */
+    ok &= NENGINES == FELUCCA_PROFILE_NSLOTS && !eng_ok(NENGINES);              /* reserved slots remain even when their engine is absent */
 #endif
     for (e = 10; e <= 12u; e++) ok &= (eng_ok(e) != 0) == (FELUCCA_ENG_OMIT != (int)e);
     ok &= (eng_ok(13) != 0) == (FELUCCA_SLICE && FELUCCA_ENG_OMIT != 13);
@@ -162,8 +162,11 @@ static int info(void)
         ok &= eng_ok(e) ? str_eq(nm, ENGINES[e]->name) : str_eq(nm, "-");
     }
     bad += check("INFO's old prefix: NENGINES names, \"-\" where this build cannot play the id", ok);
-    ok = host_wire[n - 4u] == 0x58 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == ED_BK_XCAPS;   /* #321: 58 01 caps, last */
-    bad += check("INFO 58 01: the full backup's capabilities (#321), last", ok);
+    ok = host_wire[n - 4u] == 0x59 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == (FELUCCA_FLASH ? ED_RAW_CAPS : 0u);
+    bad += check("INFO 59 01: the raw store export (#456: cmds 82, 83), last", ok);
+    n -= 3u;                                                    /* (the 58 01 block before it, as before) */
+    ok = host_wire[n - 4u] == 0x58 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == ED_BK_XCAPS;   /* #321: 58 01 caps */
+    bad += check("INFO 58 01: the full backup's capabilities (#321), before it", ok);
     n -= 3u;                                                    /* (the 49 01 block before it, as before) */
     ok = host_wire[n - 15u] == 0x49 && host_wire[n - 14u] == 1u && host_wire[n - 13u] == ENG_ID_MAX &&
          host_wire[n - 12u] == ENG_USER_WIRE;
@@ -203,15 +206,15 @@ static int fav(void)
     ok &= host_wire[5] == 1u;
     bad += check("FAV_SET / FAV_GET of an id this build lacks, DIGITAL, a byte that is no marker: rc 1, nothing kept", ok);
 #if FELUCCA_ENG_TEST14
-    a[0] = 14; a[1] = 1; a[2] = 64; a[3] = 1;          /* 14 is an engine here (NENGINES 15): the old marker is 15 */
+    a[0] = ENGI_TEST; a[1] = 1; a[2] = 64; a[3] = 1;   /* the appended fixture is an engine, never the user marker */
     request(ED_FAV_SET, a, 4);
-    ok = host_wire[5] == 3u && favorite_has(14, 1) && !favorite_has(ENG_USER, 1);
+    ok = host_wire[5] == 3u && favorite_has(ENGI_TEST, 1) && !favorite_has(ENG_USER, 1);
     {
         static persist_rec_t r;
         settings_export_rec(&r);
-        ok &= r.magic == PERSIST_MAGIC_EXT && r.x.fav[14][0] == 2u && persist_len(&r) > sizeof(persist_t);
+        ok &= r.magic == PERSIST_MAGIC_EXT && r.x.fav[ENGI_TEST][0] == 2u && persist_len(&r) > sizeof(persist_t);
     }
-    bad += check("test build: engine 14's presets starred like any (PER6 settings); 14 is no user marker here", ok);
+    bad += check("test build: appended engine presets starred like any (PER6 settings); no user-marker collision", ok);
 #endif
     return bad;
 }
@@ -510,7 +513,7 @@ int main(void)
     int bad;
     setvbuf(stdout, NULL, _IONBF, 0);
     bad = catalog() + info() + fav() + projects() + presets() + backup() + unavailable_controls() + unavailable_storage();
-    printf("%s (NENGINES %u, test engine 14 %d, catalog omits %d)\n", bad ? "ENGINE ID TEST FAILED" : "engine id test passed",
+    printf("%s (NENGINES %u, appended test engine %d, catalog omits %d)\n", bad ? "ENGINE ID TEST FAILED" : "engine id test passed",
            (unsigned)NENGINES, FELUCCA_ENG_TEST14, FELUCCA_ENG_OMIT);
     return bad != 0;
 }

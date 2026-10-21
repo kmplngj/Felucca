@@ -8,6 +8,14 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [FM Lab adoption review](fm-lab-adoption-2026-10-21.md) registers
+`jsmith13/fm_lab` main as a pending source at
+`cf35dc26709ede9c974654dfc2135f8c25a00082` (37 reachable commits, zero individually
+reviewed by this snapshot). After registration reaches main and the state branch,
+the existing runner verifies repository identity, branch, immutable pin and complete
+history before initialization. This review creates no per-commit coverage and needs
+no new schedule or automation.
+
 The [Optimist adoption review](optimist-adoption-2026-10-19.md) registers
 `w0ts/optimist` main as a pending source, pinned initially at
 `5fc3ee51a4aa64fd22cef217c8498c9be567eb69` (2,018 reachable commits, zero reviewed

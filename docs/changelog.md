@@ -16,6 +16,17 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Added
 
+- **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
+  51 factory sounds alongside all thirteen standard engines, using stable engine
+  ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.
+  Full-bank parts use distinct deterministic random streams, and optional
+  second-core scheduling accounts for their model costs.
+  The standard profile is unchanged. User reports cover models, controls and
+  switching during held notes; the raised-key symptom was a corrected QNT setting.
+  Specific FM-1 listening, persistence, USB/TRS transport and timing checks remain
+  pending. See the [engine guide](macro-engine.md),
+  [device procedure](macro-hardware-test.md) and [results](macro-device-results.md),
+  including the remaining model-rate qualification.
 - **Early USB rescue:** holding OCT− at power-on or repeated incomplete warm boots
   selects a MIDI-only installer before settings, projects and audio initialize;
   another warm reset in rescue escalates to ROM USB. FM-1 hardware qualification
@@ -26,7 +37,11 @@ in issues and roadmaps, not among implemented changes below.
 - **Project recovery and backup:** deferred automatic project saves that wait for
   stopped, idle operation and quiet stereo output, including effect tails and
   fixed-level USB audio; full backups now include the FM6 voice bank and SLICE records.
-  See [persistence contracts](extending.md#4-persistence-and-protocol).
+  A read-only raw store export (editor commands 82/83) downloads every stored
+  object byte for byte, including projects, presets and settings the firmware
+  cannot load, as the first step of moving legacy conversion to the web editor;
+  a reference reader is included, with browser migration still pending. See [persistence contracts](extending.md#4-persistence-and-protocol)
+  and the [stored-format inventory](legacy-formats.md).
 - **Build identification and diagnostics:** startup, ABOUT and INFO identify the
   release, commit or PR; ABOUT includes the fork source. USB serial diagnostics,
   retained crash reporting, opt-in crash register context and interrupt-context

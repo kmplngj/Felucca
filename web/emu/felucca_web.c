@@ -506,6 +506,30 @@ EXPORT void web_test_heavy(void)
 }
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
+EXPORT uint32_t web_test_engine(void) { return TSEL->eng_req; }
+EXPORT int32_t web_test_param(uint32_t i) { return i < P_COUNT ? TSEL->p[i] : 0; }
+EXPORT uint32_t web_test_engine_param_base(void) { return P_E0; }
+EXPORT uint32_t web_test_engine_rank(uint32_t e) { return eng_ok(e) ? eng_rank(e) : UINT32_MAX; }
+EXPORT const char *web_test_user_name(uint32_t i) { return i < UP_SLOTS ? up_rec(i)->name : 0; }
+EXPORT uint32_t web_test_user_category(uint32_t i) { return up_cat(i); }
+EXPORT uint32_t web_test_macro_count(void)
+{
+#if FELUCCA_PROFILE_ENGINE_14
+    return ENG_MACRO.npresets;
+#else
+    return 0;
+#endif
+}
+/* Use the ordinary deferred sound install; model/oscillator state is not injected. */
+EXPORT void web_test_macro(uint32_t preset)
+{
+#if FELUCCA_PROFILE_ENGINE_14
+    host_preset_req(&trk[0], ENGI_MACRO, preset);
+    ui.force = 1;
+#else
+    (void)preset;
+#endif
+}
 
 EXPORT uint16_t *web_screen(void) { return web_fb; }
 EXPORT uint32_t web_screen_draws(void) { return web_draws; }

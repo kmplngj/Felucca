@@ -9,6 +9,10 @@
 #include "hostsim.c"
 #undef main
 
+/* The retained web/editor.html mock is a frozen client snapshot (IDs 0..13).
+ * Its fixture still comes from current firmware tables, scoped explicitly to that
+ * legacy catalog. The normal dump keeps every current slot and descriptor. */
+static uint32_t js_engine_slots = NENGINES;
 static void js_str(const char *s)
 {
     putchar('"');
@@ -33,6 +37,12 @@ static void js_ints(const int32_t *v, uint32_t n)
 static void js_desc(const param_desc_t *d)
 {
     int32_t i;
+    param_desc_t scoped;
+    if (d == &GP[G_ENGSEL] && js_engine_slots != NENGINES) {
+        scoped = *d;
+        scoped.max = (int16_t)(js_engine_slots - 1u);
+        d = &scoped;
+    }
     printf("{\"label\":");
     js_str(d->label);
     printf(",\"fmt\":%d,\"min\":%d,\"max\":%d,\"def\":%d,\"names\":", d->fmt, d->min, d->max, d->def);
@@ -64,18 +74,25 @@ static void js_descs(const param_desc_t *d, uint32_t n)
     putchar(']');
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     uint32_t e, i, k;
+    if (argc == 2 && !strcmp(argv[1], "--legacy-web-mock")) {
+        if (NENGINES < 14u) return 1;
+        js_engine_slots = 14u;
+    } else if (argc != 1) {
+        return 1;
+    }
     int32_t v[16];
     printf("{\"P_COUNT\":%d,\"G_COUNT\":%d,\"NSTEP\":%d,\"P_E0\":%d,\"G_ENGSEL\":%d,\"P_SLCR\":%d,\"NTRK\":%d,\n",
            P_COUNT, G_COUNT, NSTEP, P_E0, G_ENGSEL, P_SLCR, NTRK);
+    printf("\"MOCK_ENGINE_SLOTS\":%u,\n", js_engine_slots != NENGINES ? js_engine_slots : 0u);
     printf("\"TP\":");
     js_descs(TP, P_E0);                                  /* P_E0.. are the engine's */
     printf(",\n\"GP\":");
     js_descs(GP, G_COUNT);
     printf(",\n\"ENG\":[");
-    for (e = 0; e < NENGINES; e++) {
+    for (e = 0; e < js_engine_slots; e++) {
         const engine_t *en = ENGINES[e];
         printf("%s\n {\"name\":", e ? "," : "");
         js_str(en->name);
@@ -103,8 +120,9 @@ int main(void)
         printf("]}");
     }
     printf("],\n\"ORDER\":[");                      /* the engines as shown (engines.c ENGINE_ORDER), by name */
-    for (k = 0; k < NENG_SHOWN; k++) {
-        if (k)
+    for (k = 0, e = 0; k < NENG_SHOWN; k++) {
+        if (eng_vis(k) >= js_engine_slots) continue;
+        if (e++)
             putchar(',');
         js_str(ENGINES[eng_vis(k)]->name);
     }
@@ -223,7 +241,13 @@ int main(void)
     {                                                   /* every F_ENUM: [scope, index, the names from the left end] */
         for (k = 0, e = 0; k < (uint32_t)P_E0 + G_COUNT; k++) {
             const param_desc_t *d = k < (uint32_t)P_E0 ? &TP[k] : &GP[k - P_E0];
+            param_desc_t scoped;
             int32_t v = d->def, n;
+            if (d == &GP[G_ENGSEL] && js_engine_slots != NENGINES) {
+                scoped = *d;
+                scoped.max = (int16_t)(js_engine_slots - 1u);
+                d = &scoped;
+            }
             if (d->fmt != F_ENUM || !d->names || d->max <= d->min)
                 continue;
             for (n = 0; n < 64; n++)

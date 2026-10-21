@@ -75,3 +75,27 @@ rev_side_mix 9
 track_insert 3
 ins_drive 277
 ins_swept 230
+
+# MACRO-only historical boundaries, rechecked against the rebased target listing.
+# Full Braids bank: the target compiler inlines model loops into the wrapper.
+macro_render 19591
+mac_waveline 975
+mac_fold 302
+mac_fbfm 43
+
+# Full-bank target dispatchers and model-reset path (remaining methods inline).
+macro_block 21
+braids_AnalogOscillator_Render 1207
+braids_DigitalOscillator_ComputeDelay 0
+braids_DigitalOscillator_ComputePhaseIncrement 0
+braids_DigitalOscillator_InterpolateFormantParameter 0
+braids_DigitalOscillator_Render 3
+braids_DigitalOscillator_RenderDigitalFilter 114
+# Rebased return block is before model bodies:37 exits create a phantom outer span.
+# Keep the conservative score; see docs/macro-rebase-validation.md.
+braids_DigitalOscillator_dispatch 17649
+braids_MacroOscillator_RenderDigital 0
+braids_MacroOscillator_RenderDualSync 16
+braids_MacroOscillator_RenderSub 19
+braids_MacroOscillator_RenderTriple 64
+braids_Svf_Process 0

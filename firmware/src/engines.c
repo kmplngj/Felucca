@@ -5,14 +5,18 @@
 #include "../engines/src/dsp.c"   /* Felucca-Engines (MIT): the shared DSP blocks */
 
 /* The parts' engine memory (1.5): a part plays one engine at a time, so the engines with large per-part state
- * (engine_t.mem: PHYS's slots, GRAIN's grains and index, DRUM's lanes, FM6's notes, SLICE's reverse windows)
+ * (engine_t.mem: PHYS's slots, GRAIN's grains and index, DRUM's lanes, FM6's notes, SLICE's reverse windows, optional MACRO oscillators)
  * keep it in one region per part instead of an array each. The region holds the state of the engine that
  * last claimed it (eng_mem_owner); a switch to another such engine zeroes its engine_t.mem bytes, which is
  * the state each had at power-on, so a switch sounds as it did with the arrays (tests/union_test.c). State
  * that runs on across notes and switches stays outside (WHEEL's wheels, GRAIN's random numbers).
- * Sized by the largest, PHYS (3 x SYMP's slot); an engine that needs more than ENG_MEM_PART grows it for
+ * Sized by PHYS (3 x SYMP's slot), or MACRO when selected; an engine needing more grows it for
  * every part (x NPART of the pool). Zero-initialised pool section: main.c fm1_cstart clears it. */
+#if FELUCCA_PROFILE_ENGINE_14
+#define ENG_MEM_PART 17328u  /* MACRO full Braids state, aligned to the arena's eight-byte boundary */
+#else
 #define ENG_MEM_PART 12888u
+#endif
 static union {
     uint64_t align;
     uint8_t b[ENG_MEM_PART];
@@ -22,7 +26,7 @@ static uint8_t eng_mem_owner[NPART];       /* engine index + 1 whose state is in
 #define ENG_MEM_FITS(name, size) _Static_assert((size) <= ENG_MEM_PART, name " state over ENG_MEM_PART")
 
 /* Host/test-only owner check (FELUCCA_ARENA_CHECK=1; off: ENG_MEM_OF is ENG_MEM, no code or data). The arena
- * consumers (GRAIN, PHYS, DRUM, FM6, SLICE) reach their state through ENG_MEM_OF(t, engine, p): at the access it
+ * consumers (GRAIN, PHYS, DRUM, FM6, SLICE, MACRO) reach their state through ENG_MEM_OF(t, engine, p): at the access it
  * checks the part (t in trk[], aligned), the engine being RENDERED (t->engine; eng_req may already name the next
  * one during a fade and is no owner), and the claimed owner (eng_mem_owner, set by eng_mem_claim). A failure
  * calls eng_arena_fail first and returns a scratch block, never the invalid pointer. Not caught: an in-arena
@@ -87,7 +91,7 @@ static const engine_t ENG_NONE = {
     .knob = {P_LEVEL, P_ATK, P_DEC, P_REL},
 };
 #if FELUCCA_ENG_TEST14
-/* host tests only (FELUCCA_ENG_TEST14=1, #212): a placeholder engine with id 14, so the stores, favourites, the
+/* host tests only (FELUCCA_ENG_TEST14=1, #212): a placeholder after the real catalog, so the stores, favourites, the
  * editor and the UI are tested with an id past the old 16-row favourites table's MIDI LEARN row. Silent */
 static const preset_t TEST14_PRESETS[] = {
     {"T14 ONE", {0, 0, 0, 0, 0, 0, 0, 0}, {0, 64, 100, 40}, 0, 0, {0, 0, 0, 0}, 0},

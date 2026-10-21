@@ -40,6 +40,12 @@ static const menu_credit_t MENU_CREDITS[] = {
     {"Emilie Gillet / MIT", MC_TEXT},
     {"https://github.com/pichenettes/eurorack", MC_URL},
     {"", MC_TEXT},
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    {"BRAIDS (MACRO)", MC_TITLE},
+    {"Emilie Gillet / MIT", MC_TEXT},
+    {"https://github.com/pichenettes/eurorack", MC_URL},
+    {"", MC_TEXT},
+#endif
 #if UI_FONT_BITMAP
 #if UI_FONT_M8STEALTH
     {"M8STEALTH", MC_TITLE},
