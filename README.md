@@ -79,9 +79,13 @@ PRs and release notes.
 ```sh
 git clone --recurse-submodules https://github.com/kmplngj/Felucca.git
 cd Felucca
-# Install the prerequisites in BUILDING.md, then:
-./build.sh
+# Install the prerequisites in BUILDING.md (macOS: brew install uv), then:
+uv run --locked --group build ./build.sh
 ```
+
+The command-line PR testing helper uses the Python USB-MIDI updater with locked
+dependencies: `uv run --locked --group midi tools/fm1_pr.py NUMBER`. See
+[its setup and usage](BUILDING.md#test-a-pull-request-on-hardware).
 
 The fork site follows successful full builds of `main`: the demo and installer use
 that firmware revision, and the editor comes from a pinned revision of

@@ -15,7 +15,6 @@ import time
 import uuid
 
 import fm1_install
-import m_flasher
 
 
 DEFAULT_REPO = "kmplngj/Felucca"
@@ -325,21 +324,18 @@ def download(repository, run, revision, output, validation="full"):
     return package
 
 
-def prepare_installer(installer, executable=None):
-    if installer == "native":
-        return [str(m_flasher.ensure(executable)), "midi", "firmware"]
-    if executable:
-        raise ValueError("--m-flasher requires --installer native")
+def prepare_installer(argv=()):
+    # Check the caller's interpreter before any GitHub/build work. Importing
+    # the MIDI packages here does not enumerate or open a port.
     check = subprocess.run([sys.executable, "-c", "import mido, rtmidi"], capture_output=True, text=True)
     if check.returncode:
-        raise ValueError("Python MIDI installer needs mido and python-rtmidi in this interpreter. "
-                         "Use --installer native or install them in a virtual environment before starting CI.")
-    return [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]
+        raise ValueError("Python MIDI installer " + fm1_install.midi_dependency_message(__file__, argv))
+    return [sys.executable, str(Path(__file__).resolve().with_name("fm1_install.py"))]
 
 
 def install(package, port=None, yes=False, command=None):
     command = [*(command if command is not None else
-                 [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]), str(package)]
+                 [sys.executable, str(Path(__file__).resolve().with_name("fm1_install.py"))]), str(package)]
     if port:
         command.extend(["--port", port])
     if yes:
@@ -369,10 +365,9 @@ def main(argv=None):
                         help="source worktree destination (implies --worktree); default sibling PR/SHA directory")
     parser.add_argument("--no-build", action="store_true", help="reuse a run without dispatching a build")
     parser.add_argument("--out", type=Path, help="download parent; default build/pr-PR/SHA")
-    parser.add_argument("--installer", choices=("native", "python"), default="native",
-                        help="native m-flasher MIDI OTA (default), or the Python MIDI installer")
-    parser.add_argument("--m-flasher", type=Path, metavar="PATH",
-                        help="explicit MIDI-capable executable; default installs/reuses the pinned user-local CLI")
+    # Retain the former explicit Python selection for existing commands.
+    parser.add_argument("--installer", choices=("python",), default="python",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--port", help="USB-MIDI port name passed to the installer")
     parser.add_argument("--yes", action="store_true", help="skip the installer's flash confirmation")
     parser.add_argument("--timeout", type=int, default=3600, help="maximum CI wait in seconds")
@@ -393,7 +388,7 @@ def main(argv=None):
         validate_selection(args.repo, args.pr, args.commit)
         installer_command = None
         if not (args.download_only or args.prepare_only or args.resolve_only):
-            installer_command = prepare_installer(args.installer, args.m_flasher)
+            installer_command = prepare_installer(argv if argv is not None else sys.argv[1:])
         if args.automatic:
             head, base, revision, title = resolve_automatic_pr(args.repo, args.pr, args.commit)
         else:

@@ -9,17 +9,21 @@ The packages are genuine ones, built with tools/fm1pkg_make.py from synthetic SD
 files, app and loader; the preflight (#118) gets them damaged one cause at a time.
 Also checks logical_image/product_of against web/fm1pkg.js (needs node; the
 build/felucca.fwsc check is skipped without a build)."""
+import contextlib
 import hashlib
 import json
 import io
 import queue
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import wave
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -502,6 +506,51 @@ def preflight():
     ok(r.returncode == 0 and "refused" in r.stdout and "list CRC" in r.stdout, "preflight: active under python -O")
 
 
+def dependency_guidance():
+    """Missing MIDI packages give a complete retry; offline paths still run without them."""
+    import fm1_sample_upload as U
+    arguments = ["--info", "--port", "FM-1 user's port"]
+    sample_arguments = ["erase", "1"]
+    for missing, modules in (("mido", {"mido": None}),
+                             ("rtmidi", {"mido": object(), "rtmidi": None})):
+        error = io.StringIO()
+        with patch.dict(sys.modules, modules), contextlib.redirect_stderr(error):
+            result = I.main(arguments)
+        command = shlex.split(error.getvalue().split("Run:\n  ", 1)[1])
+        expected = ["uv", "run", "--project", str(ROOT), "--locked", "--group", "midi",
+                    "python", str(ROOT / "tools/fm1_install.py"), *arguments]
+        ok(result == 2 and command == expected, f"missing {missing}: installer gives locked MIDI retry with original flags")
+        with patch.dict(sys.modules, modules), patch.object(sys, "argv", [U.__file__, *sample_arguments]):
+            try:
+                U.Link()
+                ok(False, f"missing {missing}: sample uploader stops before MIDI discovery")
+            except SystemExit as error:
+                command = shlex.split(str(error).split("Run:\n  ", 1)[1])
+                expected = ["uv", "run", "--project", str(ROOT), "--locked", "--group", "midi",
+                            "python", str(ROOT / "tools/fm1_sample_upload.py"), *sample_arguments]
+                ok(command == expected, f"missing {missing}: sample uploader gives locked MIDI retry")
+    help_ok = False
+    with patch.dict(sys.modules, {"mido": None, "rtmidi": None}), contextlib.redirect_stdout(io.StringIO()):
+        try:
+            I.main(["--help"])
+        except SystemExit as error:
+            help_ok = error.code == 0
+    ok(help_ok, "installer help needs no MIDI dependencies")
+    wav = TMP / "offline sample.wav"
+    with wave.open(str(wav), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(22050)
+        output.writeframes(bytes(128))
+    prefix = TMP / "offline slot"
+    with patch.dict(sys.modules, {"mido": None, "rtmidi": None}), \
+            patch.object(sys, "argv", [U.__file__, "build", "Offline", str(prefix), str(wav)]), \
+            contextlib.redirect_stdout(io.StringIO()):
+        U.main()
+    ok(prefix.with_suffix(".hdr").is_file() and prefix.with_suffix(".bin").is_file(),
+       "sample slot build needs no MIDI dependencies")
+
+
 def js_synthetic():
     """the synthetic packages through web/fm1pkg.js: same identity, logical image, entries; same CRC refusals"""
     if not shutil.which("node"):
@@ -631,6 +680,7 @@ installs()
 errors()
 compatibility()
 preflight()
+dependency_guidance()
 js_synthetic()
 against_js()
 stock_policy()

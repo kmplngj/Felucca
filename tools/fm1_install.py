@@ -25,8 +25,10 @@ loader / no restart), 6 wrong model, or another identity after the install.
 """
 import argparse
 import hashlib
+from pathlib import Path
 import queue
 import re
+import shlex
 import sys
 import time
 
@@ -65,6 +67,19 @@ class InstallError(Exception):
     def __init__(self, code, msg):
         super().__init__(msg)
         self.code = code
+
+
+def midi_dependency_message(script, argv):
+    """Retry the same trusted script with its locked MIDI environment from any directory."""
+    script = Path(script).resolve()
+    command = ["uv", "run", "--project", str(script.parents[1]), "--locked", "--group", "midi",
+               "python", str(script), *map(str, argv)]
+    if sys.platform == "win32":
+        # PowerShell recognizes typographic apostrophes as string delimiters too.
+        escapes = {ord(char): char * 2 for char in "'\u2018\u2019\u201a\u201b"}
+        quoted = " ".join("'" + arg.translate(escapes) + "'" for arg in command)
+        return "needs mido and python-rtmidi. Run in PowerShell:\n  & " + quoted
+    return "needs mido and python-rtmidi. Run:\n  " + shlex.join(command)
 
 
 # ------------------------------------------------------------ wire format ---
@@ -349,6 +364,7 @@ class MidoLink:
 class MidoBackend:
     def __init__(self):
         import mido
+        import rtmidi  # Check the required backend before MIDI discovery.
         self.mido = mido
 
     def input_names(self):
@@ -635,7 +651,8 @@ def main(argv=None, backend=None, out=sys.stdout, ask=ask_tty):
             try:
                 backend = MidoBackend()
             except ImportError:
-                raise InstallError("usage", "needs mido and python-rtmidi (pip install mido python-rtmidi)")
+                raise InstallError("usage", midi_dependency_message(
+                    __file__, argv if argv is not None else sys.argv[1:])) from None
         return run(a, backend, out, ask)
     except InstallError as e:
         print(f"error: {e}", file=sys.stderr)

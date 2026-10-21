@@ -1,4 +1,0 @@
-# SPDX-License-Identifier: GPL-3.0-only
-Pillow==11.1.0
-fonttools==4.66.1
-brotli==1.2.0
