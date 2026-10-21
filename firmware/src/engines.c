@@ -116,11 +116,7 @@ _Static_assert(FELUCCA_ENG_OMIT != (int)ENGI_DIGITAL, "engine 1 is reserved alre
 /* the editor protocol, user presets and projects store these indices: append, never reorder. The entry past the
  * last id (ENG_IDX_NONE) is ENG_NONE: what eng_idx gives for an id this build lacks */
 #define ENG_IDX_NONE ((uint32_t)NENGINES)
-/* (ENGINES_QUAL: const, the firmware's; a host test may define it empty to swap an entry for a writable copy) */
-#ifndef ENGINES_QUAL
-#define ENGINES_QUAL const
-#endif
-static const engine_t *ENGINES_QUAL ENGINES[] = {
+static const engine_t *ENGINES_QUAL ENGINES[] = {   /* (core.h: const; a host test swaps an entry) */
 #include "engine_registry.inc"
     &ENG_NONE,                   /* ENG_IDX_NONE */
 };
