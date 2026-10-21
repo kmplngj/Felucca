@@ -181,3 +181,15 @@ engine-switch, dense ratchet/modulation, throw and MIDI-parser workloads, plus r
 emulator panel/save timelines. It retains exact PCM, WAVs, LCD captures and health
 results without an FM-1, with a separate [FM-1 capture procedure](stress-device.md)
 and result template for pending physical observations.
+
+## Display and LED idle controls
+
+**MENU > DISPLAY > AUTO OFF** combines the former SCREEN OFF delay with a target:
+SCREEN, LEDS or BOTH after 5, 15, 30 or 60 minutes; NEVER remains the default.
+Timed LED blanking overrides ANIM IDLE and leaves a brief rotating key-LED alive
+signal every 30 seconds. LED-only wake acts on the first input; screen wake
+consumes its panel gesture. Existing LEDS OFF still means no idle glow, with
+active indicators retained; INV LO/HI now redraw immediately when selected.
+See the [controls, compatibility and combined FM-1 procedure](display-idle.md).
+Physical visibility, wake and MIDI/audio checks remain pending; the LCD backlight
+stays on and no power-saving benefit is claimed.

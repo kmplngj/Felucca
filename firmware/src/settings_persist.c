@@ -115,8 +115,11 @@ static int settings_import(persist_t *p, int n)
                 b &= ~(3u << (2u * f));
         p->favorites.factory[15][28] = (uint8_t)b;
     }
-    if (p->favorites.factory[15][27] > 7u)         /* SCREEN OFF (1.1.5, ui.c SCR_CODE): unknown = 0 (NEVER since 1.1.5.1) */
-        p->favorites.factory[15][27] = 0;
+    {   /* AUTO OFF: old 0..7 timer bytes unchanged; LEDS/BOTH target bits only with a known nonzero timer. */
+        uint32_t v = p->favorites.factory[15][27], time = v & 7u;
+        if (v > 7u && ((v >> 3) > 2u || (time != 1u && time != 2u && time != 4u && time != 7u)))
+            p->favorites.factory[15][27] = 0;
+    }
     if (p->favorites.factory[15][11] > 8u)         /* PRESETS LIST's category (1.2, ui.c ui_lcat, CAT_*): unknown = none */
         p->favorites.factory[15][11] = 0;
     /* [15][26] HOME (1.3, ui.c ui_home_view): kept as saved; a value this firmware does not know draws SCOPE */

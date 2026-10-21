@@ -6574,6 +6574,196 @@ static int test_idle_leds(void)
     settings_leds = LEDS_DIM;
     return bad;
 }
+static int test_auto_off(void)
+{
+    static const uint8_t decoded[24] = {0, 2, 1, 0, 3, 0, 0, 4, 0, 6, 5, 0, 7, 0, 0, 8, 0, 10, 9, 0, 11, 0, 0, 12};
+    static const uint8_t stored[13] = {0, 2, 1, 4, 7, 10, 9, 12, 15, 18, 17, 20, 23};
+    static const uint32_t limits[4] = {300000u, 900000u, 1800000u, 3600000u};
+    int bad = 0, ok = 1;
+    uint32_t v, c, i, wrap, start, lim, n;
+    int16_t *vp, before;
+    persist_t p = {0};
+
+    ui_power_on(); p.magic = PERSIST_MAGIC; p.panel = panel;
+    for (v = 0; v < 13u; v++) {
+        menu_put(MI_SCROFF, v); settings_export(&p);
+        ok &= menu_get(MI_SCROFF) == v && p.favorites.factory[15][27] == stored[v];
+        ui_scr = 0;
+        ok &= settings_import(&p, sizeof p) == 1 && menu_get(MI_SCROFF) == v;
+    }
+    for (v = 0; v < 256u; v++) {
+        uint32_t want = v < NELEM(decoded) ? decoded[v] : 0u;
+        p.favorites.factory[15][27] = (uint8_t)v;
+        ok &= settings_import(&p, sizeof p) == 1 && scr_get() == want &&
+              ui_scr == (v <= 7u || want ? v : 0u);
+    }
+    bad += check("AUTO OFF: all 13 settings round-trip; all 256 stored bytes normalize or decode safely, legacy codes unchanged", ok);
+
+    ok = 1;
+    for (wrap = 0; wrap < 2u; wrap++)
+        for (v = 1; v < 13u; v++) {
+            ui_power_on(); host_pw_n = 0; host_bl = 1; host_idle = host_anim = 0;
+            fm1_ms = wrap ? UINT32_MAX - 150000u : 1000u;
+            menu_put(MI_SCROFF, v); start = fm1_ms; lim = limits[(v - 1u) % 4u];
+            fm1_ms = start + lim - 1u;
+            ok &= scr_frame() && !scr_led_dark() && !host_pw_n;
+            fm1_ms++;
+            scr_frame();
+            ok &= (scrn.st == SCR_OFF) == (v <= 4u || v >= 9u) &&
+                  host_pw_n == (v <= 4u || v >= 9u ? 1u : 0u) &&
+                  scr_led_dark() == (v >= 5u) && kb_asleep == (v <= 4u || v >= 9u);
+        }
+    bad += check("AUTO OFF: all 12 target/timer boundaries expire exactly, including millisecond wrap; LEDS sends no LCD command", ok);
+
+    ok = 1;
+    for (v = 5; v <= 9u; v += 4u) {
+        static const uint32_t ages[] = {UINT32_MAX - 1u, UINT32_MAX, 0u, 1u, 299999u};
+        ui_power_on(); host_pw_n = 0; host_bl = 1; host_idle = host_anim = 0;
+        menu_put(MI_SCROFF, v); start = scrn.idle;
+        fm1_ms = start + 300000u; scr_frame(); ui_leds();
+        ok &= scr_led_dark();
+        for (i = 0; i < NELEM(ages); i++) {
+            fm1_ms = start + ages[i]; scr_frame(); ui_leds();
+            ok &= scr_led_dark() && (scrn.st == SCR_OFF) == (v == 9u);
+            for (c = 0; c < FM1_NCOL; c++)
+                ok &= !(fm1_led[c] | fm1_led_dim[c] | fm1_led_breath[c] | fm1_led_mid[c]);
+        }
+        scr_touch(); ui_leds();
+        ok &= !scr_led_dark();
+    }
+    bad += check("AUTO OFF LEDS/BOTH: expired LEDs stay dark through a full 49.7-day inactivity cycle until activity", ok);
+
+    ok = 1;
+    for (v = 5; v <= 9u; v += 4u) {
+        uint32_t target = v == 5u ? 9u : 5u;
+        ui_power_on(); host_pw_n = 0; host_bl = 1; host_idle = host_anim = 0;
+        menu_put(MI_SCROFF, v); fm1_ms = scrn.idle + 300000u; frame(); ui_leds();
+        ok &= scr_led_dark();
+        settings_export(&p); p.favorites.factory[15][27] = stored[target];
+        fm1_ms += 1000u;
+        ok &= settings_import(&p, sizeof p) == 1 && scr_get() == target &&
+              !scr_led_dark() && scrn.idle == fm1_ms;
+        frames(300u); ui_leds();
+        ok &= scrn.st == SCR_ON && !scr_led_dark() && !kb_asleep && !scrn.eat;
+    }
+    bad += check("AUTO OFF settings import: changed LEDS/BOTH policy clears latched expiry, restarts its interval and wakes obsolete LCD sleep", ok);
+
+    ui_power_on(); ui_leds(); host_idle = host_anim = 0;
+    for (i = 0; i < 41u; i++)
+        led_pos[i] = (uint8_t)((i / 4u) << 3 | (1u + i % 4u));
+    ok = 1;
+    for (v = 5; v <= 9u; v += 4u)
+        for (i = 0; i < 6u; i++) {
+            menu_put(MI_LEDS, i); menu_put(MI_SCROFF, v);
+            song.playing = 1;                          /* PLAY green must be blanked too. */
+            fm1_ms += 300000u;
+            memset(fm1_led, 0xFF, sizeof fm1_led); memset(fm1_led_dim, 0xFF, sizeof fm1_led_dim);
+            memset(fm1_led_breath, 0xFF, sizeof fm1_led_breath); memset(fm1_led_mid, 0xFF, sizeof fm1_led_mid);
+            ui_leds();
+            for (c = 0; c < FM1_NCOL; c++)
+                ok &= !(fm1_led[c] | fm1_led_dim[c] | fm1_led_breath[c] | fm1_led_mid[c]);
+        }
+    bad += check("AUTO OFF LEDS/BOTH: all four LED maps dark in every LEDS mode, including PLAY green, INV LO and INV HI", ok);
+
+    ui_power_on(); menu_put(MI_SCROFF, 5); start = scrn.idle;
+    ok = 1;
+    for (wrap = 0; wrap < 2u; wrap++) {
+        if (wrap) { fm1_ms = UINT32_MAX - 150000u; menu_put(MI_SCROFF, 5); start = scrn.idle; }
+        fm1_ms = start + 300000u + 29999u; ui_leds();
+        ok &= !lit_keys(fm1_led_mid);
+        for (i = 0; i < 28u; i++) {
+            uint32_t pos = led_pos[14u + i % 27u];
+            fm1_ms = start + 300000u + (i + 1u) * 30000u; ui_leds();
+            ok &= lit_keys(fm1_led_mid) == (1u << (i % 27u)) && host_dim_lo;
+            for (c = 0; c < FM1_NCOL; c++)
+                ok &= !(fm1_led[c] | fm1_led_dim[c] | fm1_led_breath[c]) &&
+                      fm1_led_mid[c] == (c == (pos >> 3) ? 1u << (pos & 7u) : 0u);
+            fm1_ms += 119u; ui_leds();
+            ok &= lit_keys(fm1_led_mid) == (1u << (i % 27u));
+            fm1_ms++; ui_leds();
+            ok &= !lit_keys(fm1_led_mid);
+        }
+    }
+    bad += check("AUTO OFF heartbeat: none on entry; one low-mid key for exactly 120 ms each 30 s, rotates all 27 keys and wraps time", ok);
+
+    ui_power_on(); host_idle = host_anim = 0;
+    menu_put(MI_ANIM, 2); menu_put(MI_SCROFF, 5);
+    fm1_ms = scrn.idle + 60000u; ui_leds(); ok = host_idle;
+    fm1_ms = scrn.idle + 300000u; ui_leds();
+    ok &= !host_idle && !host_anim;
+    for (c = 0; c < FM1_NCOL; c++) ok &= !(fm1_led[c] | fm1_led_dim[c] | fm1_led_breath[c] | fm1_led_mid[c]);
+    menu_put(MI_ANIM, 1); fm1_ms = scrn.idle + 330000u; ui_leds();
+    ok &= lit_keys(fm1_led_mid) == 1u && !host_idle;
+    bad += check("AUTO OFF: blanking stops ANIM IDLE; ANIM OFF still permits the quiet heartbeat", ok);
+
+    ui_power_on(); host_pw_n = 0; host_bl = 1; menu_put(MI_SCRWAKE, 1); menu_put(MI_SCROFF, 5);
+    song.playing = 1; fm1_ms = scrn.idle + 300000u; frame(); ui_leds();
+    ok = song.playing && !host_pw_n && host_bl && scrn.st == SCR_ON && !kb_asleep && scr_led_dark();
+    press(B_ENV); ui_leds();
+    ok &= !ui.home && cur_fam() == FAM_ENV && !scr_led_dark() && !scrn.eat;
+    stop_transport(); go_home(); frame(); menu_put(MI_SCROFF, 5);
+    fm1_ms = scrn.idle + 300000u; frame();
+    home_param(0, &vp); before = *vp; turn(EN_K1, 1);
+    ok &= *vp != before && !scrn.eat;
+    frame(); ui_leds(); ok &= !scr_led_dark();
+    menu_put(MI_SCROFF, 5); fm1_ms = scrn.idle + 300000u; frame();
+    key_down(white(0)); frame(); ui_leds();
+    ok &= gates() == 1u && !scr_led_dark() && !kb_asleep;
+    key_up(white(0)); frame();
+    bad += check("AUTO OFF LEDS: playback continues, LCD stays on; first button, knob and key act normally and restore LEDs", ok && !host_pw_n);
+
+    ok = 1;
+    for (v = 5; v <= 9u; v += 4u)
+        for (i = 0; i < 2u; i++) {
+            ui_power_on(); host_pw_n = 0; host_bl = 1;
+            menu_put(MI_SCRWAKE, i); menu_put(MI_SCROFF, v);
+            fm1_ms = scrn.idle + 300000u; frame(); ui_leds();
+            usb_note(0, 60, 100); frames(300u); ui_leds();
+            ok &= gates() == 1u && (scr_led_dark() != 0) == (i != 0u) &&
+                  (scrn.st == SCR_OFF) == (v == 9u && i == 1u) &&
+                  host_pw_n == (v == 5u ? 0u : i ? 1u : 3u);
+            usb_note(0, 60, 0); frame();
+        }
+    bad += check("AUTO OFF LEDS/BOTH: +MIDI wakes on accepted notes, PANEL keeps it dark; the MIDI note plays in both modes", ok);
+
+    ui_power_on(); host_pw_n = 0; host_bl = 1;
+    menu_put(MI_SCRWAKE, 1); menu_put(MI_SCROFF, 9);
+    song.playing = 1; fm1_ms = scrn.idle + 300000u; frame(); ui_leds();
+    ok = song.playing && scrn.st == SCR_OFF && kb_asleep && scr_led_dark();
+    n = host_pw_n; key_down(white(0)); frame(); frames(300u); ui_leds();
+    ok &= song.playing && !gates() && scr_woke(n) && !scr_led_dark();
+    key_up(white(0)); frame(); frames(100u);
+    ok &= !kb_asleep && !scrn.eat;
+    bad += check("AUTO OFF BOTH: playback continues while dark; panel key wakes LCD and LEDs silently through release", ok);
+
+    ok = 1;
+    for (v = 5; v <= 9u; v += 4u)
+        for (i = 0; i < 3u; i++) {
+            ui_power_on(); host_pw_n = 0; host_bl = 1; menu_put(MI_SCROFF, v);
+            fm1_ms = scrn.idle + 300000u;
+            if (!i) ui.confirm = CF_CLEAR_SEQ;
+            else if (i == 1u) cin_left = 1000u;
+            else ui.uboot = 3;
+            ok &= scr_frame() && !scr_led_dark() && !host_pw_n;
+            ui.confirm = 0; cin_left = 0; ui.uboot = 0;
+            fm1_ms += 299999u; ok &= scr_frame() && !scr_led_dark();
+            fm1_ms++; scr_frame(); ok &= scr_led_dark();
+        }
+    bad += check("AUTO OFF LEDS/BOTH: dialog, count-in and UPDATE countdown block expiry and restart the full idle interval", ok);
+
+    {
+        uint32_t f0 = 0, fl = 0, fb = 0;
+        uint64_t base, leds, both;
+        host_bl = 1;
+        base = scr_session_fork(0, &f0); leds = scr_session_fork(5, &fl); both = scr_session_fork(9, &fb);
+        bad += check("AUTO OFF: LEDS and BOTH preserve the NEVER audio hash and active playback; only BOTH sleeps the LCD",
+                     base && base == leds && base == both && (f0 & 6u) == 6u && (fl & 6u) == 6u &&
+                     (fb & 6u) == 6u && !(fl & 1u) && (fb & 1u));
+    }
+    led_pos_init(); ui_power_on(); settings_leds = LEDS_DIM; host_idle = host_anim = 0;
+    return bad;
+}
+
 static int test_screen_off(void)
 {
     int bad = 0, ok;
@@ -6581,10 +6771,10 @@ static int test_screen_off(void)
     int16_t *vp, v0;
 
     ui_power_on();
-    ok = ui_scr == 0u && scr_get() == 0u && SCR_MIN[scr_get()] == 0u && str_eq(MI_NAME[MI_SCROFF], "SCREEN OFF") &&
-         MI_TAB[MI_SCROFF] == MTAB_DISPLAY && menu_n(MI_SCROFF) == 5u && str_eq(menu_vname(MI_SCROFF, 0), "NEVER") &&
-         str_eq(menu_vname(MI_SCROFF, 1), "5 MIN") && str_eq(menu_vname(MI_SCROFF, 2), "15 MIN") &&
-         str_eq(menu_vname(MI_SCROFF, 3), "30 MIN") && str_eq(menu_vname(MI_SCROFF, 4), "60 MIN") &&
+    ok = ui_scr == 0u && scr_get() == 0u && SCR_MIN[scr_get()] == 0u && str_eq(MI_NAME[MI_SCROFF], "AUTO OFF") &&
+         MI_TAB[MI_SCROFF] == MTAB_DISPLAY && menu_n(MI_SCROFF) == 13u && str_eq(menu_vname(MI_SCROFF, 0), "NEVER") &&
+         str_eq(menu_vname(MI_SCROFF, 1), "SCREEN 5m") && str_eq(menu_vname(MI_SCROFF, 2), "SCREEN 15m") &&
+         str_eq(menu_vname(MI_SCROFF, 3), "SCREEN 30m") && str_eq(menu_vname(MI_SCROFF, 4), "SCREEN 60m") &&
          menu_get(MI_SCROFF) == 0u;
     bad += check("SCREEN OFF: MENU > DISPLAY row, NEVER 5 15 30 60 MIN, NEVER by default (stored 0, 1.1.5.1)", ok);
     menu_put(MI_SCROFF, 3u);                         /* 30 MIN for what follows */
@@ -6721,8 +6911,8 @@ static int test_screen_off(void)
     for (i = 0; i < 5u; i++) turn(EN_PRESET, 1);
     ok = ui.menu == 1 && ui.menu_sel == MI_SCROFF;
     press(B_OCTUP); ok &= scr_get() == 4u;
-    press(B_OCTUP); ok &= scr_get() == 4u;           /* (stops at the end) */
-    for (i = 0; i < 4u; i++) turn(EN_K2, -1);
+    press(B_OCTUP); ok &= scr_get() == 5u;           /* LEDS follows the historical SCREEN values */
+    for (i = 0; i < 5u; i++) turn(EN_K2, -1);
     ok &= scr_get() == 0u;
     press(B_OCTDN); ok &= scr_get() == 0u && ui.menu == 1;
     press(B_OCTUP); press(B_OCTUP); press(B_OCTUP); ok &= scr_get() == 3u;
@@ -11394,6 +11584,7 @@ int main(int argc, char **argv)
     bad += test_breath();
     bad += test_step_leds();
     bad += test_scale_leds();
+    bad += test_auto_off();
     bad += test_screen_off();
     bad += test_screen_wake();
     bad += test_idle_leds();
