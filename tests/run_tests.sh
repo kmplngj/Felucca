@@ -521,6 +521,14 @@ if [ -f build/gen/felucca_tables.h ]; then
     }
     unit midi_control "" u_midi_control
 
+    u_midi_dsp_reliability() {
+        run "Nested TRS, UART events, defined DSP and tempo guards (strict sanitizers)" \
+            python3 tests/run_midi_dsp_focused.py --out "$OUT/midi-dsp-reliability"
+        $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_drift_test" tests/midi_drift_test.c -lm
+        run "External musical phase: 20-minute pulses, boundaries and bounded ARP catch-up" "$OUT/midi_drift_test"
+    }
+    unit midi_dsp_reliability "" u_midi_dsp_reliability
+
     u_digital() {
         $CC -O1 -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/digital_test" tests/digital_test.c -lm
         run "DIGITAL (retired, built here with FELUCCA_FM4=1): operator envelopes/levels" "$OUT/digital_test"
