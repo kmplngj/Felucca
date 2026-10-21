@@ -70,7 +70,7 @@ class InstallerPreflight(unittest.TestCase):
 
     def test_windows_dependency_retry_uses_literal_powershell_arguments(self):
         script = Path("/trusted source/user's Felucca/tools/fm1_pr.py")
-        arguments = ["333", "--out", "relative output", "--port", "FM-1's $(echo unsafe); & %PATH%"]
+        arguments = ["333", "--out", "relative output", "--port", "FM-1's ‘$(echo unsafe)’‚‛; & %PATH%"]
         with patch.object(P, "__file__", str(script)), patch.object(sys, "platform", "win32"), \
                 patch.object(P.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
                 self.assertRaises(ValueError) as error:
@@ -80,7 +80,7 @@ class InstallerPreflight(unittest.TestCase):
                          "& 'uv' 'run' '--project' '/trusted source/user''s Felucca' "
                          "'--locked' '--group' 'midi' 'python' "
                          "'/trusted source/user''s Felucca/tools/fm1_pr.py' "
-                         "'333' '--out' 'relative output' '--port' 'FM-1''s $(echo unsafe); & %PATH%'")
+                         "'333' '--out' 'relative output' '--port' 'FM-1''s ‘‘$(echo unsafe)’’‚‚‛‛; & %PATH%'")
 
     def test_removed_native_options_fail_before_preflight_or_github(self):
         for flags in (["--installer", "native"], ["--m-flasher", "/unused/binary"]):

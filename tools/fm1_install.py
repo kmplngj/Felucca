@@ -75,7 +75,9 @@ def midi_dependency_message(script, argv):
     command = ["uv", "run", "--project", str(script.parents[1]), "--locked", "--group", "midi",
                "python", str(script), *map(str, argv)]
     if sys.platform == "win32":
-        quoted = " ".join("'" + arg.replace("'", "''") + "'" for arg in command)
+        # PowerShell recognizes typographic apostrophes as string delimiters too.
+        escapes = {ord(char): char * 2 for char in "'\u2018\u2019\u201a\u201b"}
+        quoted = " ".join("'" + arg.translate(escapes) + "'" for arg in command)
         return "needs mido and python-rtmidi. Run in PowerShell:\n  & " + quoted
     return "needs mido and python-rtmidi. Run:\n  " + shlex.join(command)
 
