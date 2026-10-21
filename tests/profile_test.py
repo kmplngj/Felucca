@@ -31,6 +31,37 @@ class ResolverTests(unittest.TestCase):
         self.assertEqual(set(e['id'] for e in a)-set(e['id'] for e in b),{3})
         self.assertEqual(self.catalog['defaults'],[0,12,4,10])
         self.assertNotIn('FELUCCA_CPU2',json.dumps(self.catalog))
+    def test_macro_is_opt_in_and_fixture_follows_catalog(self):
+        standard=profile.generated(ROOT,'standard')
+        macro=profile.generated(ROOT,'macro')
+        a=json.loads(standard['resolved-profile.json'])
+        b=json.loads(macro['resolved-profile.json'])
+        self.assertEqual(set(b['engine_ids'])-set(a['engine_ids']),{14})
+        self.assertNotIn('braids',a['providers'])
+        self.assertIn('braids',b['providers'])
+        self.assertFalse(any('braids/' in p for p in a['input_sha256']))
+        self.assertIn('assets/braids/upstream/digital_oscillator.cc',b['input_sha256'])
+        self.assertIn('firmware/src/macro_dsp.c',b['input_sha256'])
+        self.assertIn('#define FELUCCA_PROFILE_NSLOTS 15',macro['felucca_profile.h'])
+        self.assertIn('ENG_AT(FELUCCA_PROFILE_NSLOTS, &ENG_TEST14)',macro['engine_registry.inc'])
+        self.assertNotIn('requires the original',macro['felucca_profile.h'])
+
+    def test_macro_transitive_asset_change_invalidates_only_selected_profile(self):
+        outputs=profile.generated(ROOT,'macro')
+        pins=json.loads(outputs['resolved-profile.json'])['source_pins']
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            paths=set(json.loads(outputs['resolved-profile.json'])['input_sha256'])
+            paths.add('profiles/standard.json')
+            for rel in paths:
+                dest=root/rel;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy(ROOT/rel,dest)
+            with patch.object(profile,'source_pins',return_value=pins):
+                before={n:profile.generated(root,n) for n in ('standard','macro')}
+                helper=root/'assets/braids/upstream/digital_oscillator.cc'
+                helper.write_text(helper.read_text()+'\n// mutation fixture\n')
+                self.assertEqual(before['standard'],profile.generated(root,'standard'))
+                self.assertNotEqual(before['macro'],profile.generated(root,'macro'))
+
     def test_unknown_and_duplicate_ids(self):
         self.standard['engines'].append(63);self.fails('unknown')
         self.standard['engines'].pop();self.standard['engines'].append(3);self.fails('duplicate')
@@ -45,7 +76,7 @@ class ResolverTests(unittest.TestCase):
         self.catalog['providers'][0]['requires']=['portable-dsp'];self.fails('cycle')
         self.catalog['providers'][0]['requires']=[];self.standard['exclude_providers']=['portable-dsp'];self.fails('conflict')
     def test_metadata_is_required(self):
-        for key in ['tag','icon','cc','category','preset_categories','order','kit']:
+        for key in ['tag','icon','cc','category','preset_categories','order','union_control']:
             c=copy.deepcopy(self.catalog);del c['engines'][3][key];self.fails('metadata',c=c)
     def test_target_budget_render_coverage_is_complete(self):
         import ast

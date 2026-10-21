@@ -135,6 +135,21 @@ can escape the caller's count; keep coverage in `FUNCS` and inspect the callee a
 Missing budget entries are reported but do not themselves fail. Passing this check alone
 does not prove deadline headroom.
 
+Early USB rescue shares the physical scan and USB poll with startup/main-loop
+code. JieLi consequently outlines `usb_poll`, `fm1_input_tick`, `fm1__frame` and
+`fm1__keys` from TIMER5. The caller's loop score drops because those instructions
+move to callees; this is not evidence of faster interrupt service. All four stay
+in the ISR-protected `-Os` closure. Separate optional budgets retain coverage when
+they are outlined: 23757, 14, 134 and 204 respectively, using the largest measured
+default/CPU2-off target score for this change. Existing ISR and engine baselines
+are unchanged. These heuristic scores must not be summed into a timing claim.
+The physical-entry correction powers PA2 before scanning and uses the tick scanner
+in place of the old full-frame caller. `fm1__frame` and `fm1__keys` explicitly stay
+outlined: otherwise JieLi folds them into `fm1_input_tick`, changing its isolated
+score from 14 to 220. With the boundaries preserved, the default build retains
+the original 344/137/82 total instructions and 14/134/204 scores for those three
+functions, with no budget changes.
+
 The combined optimization integration calibrates only the optional `mix_part`
 score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
 the same JieLi Clang 4.0.1 default build has 679→684 total instructions and
@@ -151,6 +166,10 @@ improvement. This adjustment leaves the 10% tolerance, other function budgets an
 goldens unchanged; the separate ANALOG, TOM and FX calibrations belong to their
 original optimization changes and are recorded in `tests/target_budget.txt`.
 Real-device timing and nested-interrupt stack checks remain pending.
+
+`tests/mul64_hload_check.py` is a separate, informational target listing check: it counts 64-bit
+multiplies and 16-bit loads per function and their ISR reachability (issue #425). It is not part of
+the budget and gates nothing; see [the audit](mul64-hload-audit.md).
 
 ### Device timing and stress procedure
 
@@ -213,8 +232,13 @@ The linker script defines no symbols for this section, so the used size is the l
 section's end in `objdump -h` (which also covers allocations without a sized symbol, such as `.space` data or
 tail padding) and the end of the highest `.noinit` object in `objdump -t` (the snippet below lists the same
 rows); the linker itself already refuses an overflow. The v1.6 baseline uses 15,564 B (132 B spare). In the 1.6.1 backport, the default
-`FELUCCA_CPU2=1` build uses 15,568 B (128 B spare): the existing crash record gains a
-4-byte core identifier. `FELUCCA_CPU2=0` retains 15,564 B (132 B spare).
+`FELUCCA_CPU2=1` build used 15,568 B (128 B spare): the existing crash record gains a
+4-byte core identifier. The retained CPU1 exclusion guard (#410, 8 B, `fm1_c1_guard` in
+`hal/fm1_sys.h`) brings the default build to 15,576 B (120 B spare); `FELUCCA_CPU2=0`
+retains 15,564 B (132 B spare).
+The only exception is the opt-in diagnostic build `FELUCCA_CRASH_CTX=1` (#428): its crash record keeps
+one full register set (+76 B, 15,652 B used, 44 B spare), so that build alone checks a floor of 24 B
+(`CRASH_CTX_NOINIT`); release and standard builds keep 100 B, and `--release` refuses the flag.
 `tests/build_guard_test.py` covers the exact 100 B boundary, the one-byte failure and padding without a symbol. Raising the floor or
 adding a `.noinit` user needs the plan's rule A7 review first.
 

@@ -13,6 +13,9 @@
  * 1.2: TUNE and MIDI IN are not settings: they edit the project's G_TUNE and G_ROUTE (up to 1.1.5 on GLO > GLOBAL and
  * GLO > SYSTEM), the values the project holds and saves as before (no format change; a project load brings its own);
  * nothing of theirs is in the settings record (MI_PROJECT: menu_get / menu_put read and write song.g) */
+#if FELUCCA_CPU2 && !defined(C1_RECOVER)
+#define C1_RECOVER() 0                                  /* (the host and the browser: no retained exclusion, felucca.c has the target's) */
+#endif
 enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_HOME, MI_HOLD, MI_ACCEL, MI_LATCH, MI_BPMLOCK, MI_SCLLED,
        MI_PREVIEW, MI_CHADD, MI_SELECT, MI_LOWCUT, MI_USB,
        MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_MIDIIN, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_MFOLLOW, MI_SCRWAKE, MI_LCLEAR, MI_SERIAL, MI_RESTORE, MI_HELP,
@@ -258,6 +261,9 @@ static void menu_put(uint32_t row, uint32_t v)
 {
     const menu_flag_t *f = menu_flag(row);
     if (f) {
+#if FELUCCA_CPU2
+        uint32_t was_cpu2 = (ui_prefs2 & (PREF_CPU2_ON >> 16)) != 0u;
+#endif
         if (f->bit & PREF_X)
             ui_prefs2 = (uint8_t)(v ? ui_prefs2 | f->bit >> 16 : ui_prefs2 & ~(f->bit >> 16));
         else if (f->bit & PREF_REC)
@@ -267,9 +273,13 @@ static void menu_put(uint32_t row, uint32_t v)
         fx_usb_fixed = (ui_prefs & PREF_USB_FIXED) != 0u;   /* (at once; every frame too: ui_input) */
         scope_mix = (ui_prefs2 & (PREF_SCOPE_MIX >> 16)) != 0u;
 #if FELUCCA_CPU2
-        if (row == MI_CPU2)                            /* (the second core starts at power-on only, main.c; and
+        if (row == MI_CPU2) {                          /* (the second core starts at power-on only, main.c; and
                                                         * once running it stays until the next one) */
-            ui_message(v ? "2ND CORE ON: RESTART" : "2ND CORE OFF: RESTART");
+            if (v && !was_cpu2 && C1_RECOVER())        /* the explicit retry of a retained exclusion (hal/fm1_sys.h) */
+                ui_message("2ND CORE RETRY: RESTART");
+            else
+                ui_message(v ? "2ND CORE ON: RESTART" : "2ND CORE OFF: RESTART");
+        }
 #endif
         return;
     }

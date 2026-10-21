@@ -112,6 +112,11 @@ static void track_lfo_tick(track_t *t)                  /* (one core: the whole 
 static uint32_t trk_nvoice(const track_t *t)
 {
     uint32_t c = ENGINES[t->engine]->poly;
+#if FELUCCA_PROFILE_ENGINE_14
+    /* Firmware-native model policy; keep the portable engine API v1 unchanged. */
+    if (eng_is(t->engine, ENGI_MACRO))
+        c = macro_poly(t);
+#endif
     return c && c < NVOICE ? c : NVOICE;
 }
 
@@ -525,6 +530,10 @@ static void engine_block(track_t *t)
         }
     }
     eng_mem_claim(t);                                   /* (an engine set directly: power-on, a test) */
+#if FELUCCA_PROFILE_ENGINE_12
+    if (t->engine != ENGI_FM6)                          /* FM6's effective patch does not outlive the engine (#419) */
+        fm6_eff_drop(t);
+#endif
     for (i = 0; i < 8u; i++)                            /* the engine's own values, for a later fade */
         t->pe_old[i] = t->p[P_E0 + i];
 }

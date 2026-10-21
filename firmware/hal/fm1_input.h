@@ -313,7 +313,10 @@ static void fm1__key(uint32_t id, uint32_t closed)
     }
 }
 
-static void fm1__keys(uint32_t p)                  /* the keys of column p, just read */
+/* Keep the IRQ scan's existing helper boundaries when early boot changes which
+ * scan entry points are used. Otherwise removing the full-frame caller folds
+ * debounce/frame work into fm1_input_tick and invalidates its separate budget. */
+static __attribute__((noinline)) void fm1__keys(uint32_t p) /* the keys of column p, just read */
 {
     uint32_t r, raw = fm1_in.raw[p];
     for (r = 1; r < 5u; r++)
@@ -339,7 +342,7 @@ static void fm1_input_scan(void)
     fm1__frame();
 }
 
-static void fm1__frame(void)
+static __attribute__((noinline)) void fm1__frame(void)
 {
     uint32_t e;
     for (e = 0; e < FM1_NENC; e++) {               /* stock SOFT2 decoder + detents */

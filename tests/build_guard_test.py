@@ -83,6 +83,57 @@ class AppGuards(unittest.TestCase):
             self.assertIn(".ram_text contains calls", " ".join(self.check(rt=ram.replace("ret", "call r0") + section)))
         self.assertIn("second-core code or data", " ".join(self.check(rt=ram + section)))
 
+    def test_empty_flash_ram_with_second_core_needs_elf_proof(self):
+        rt = ("build/felucca.elf:\tfile format ELF32-pi32v2\n\n"
+              "Disassembly of section .c1_text:\nfm1_c1_main:\n 1c00000: 00 00 \tcall r0\n")
+        hdr = noinit_header(self.noinit_used) + " 2 .ram_text 00000000 01c00000 DATA\n"
+        syms = symbols(dict(self.values, _rt_start=0x01C00000, _rt_end=0x01C00000)) + noinit_symbols(self.noinit_used)
+        with patch.object(B, "CPU2", True):
+            self.assertEqual(self.check(hdr=hdr, syms=syms, rt=rt), [])
+            self.assertEqual(self.check(hdr=hdr, rt=rt), [])       # zero section size is sufficient
+            self.assertEqual(self.check(syms=syms, rt=rt), [])     # equal linker bounds also prove empty
+            self.assertIn("missing or malformed .ram_text", " ".join(self.check(rt=rt)))
+            for nonempty_hdr, nonempty_syms in (
+                    (hdr.replace("00000000 01c00000", "00000004 01c00000"), syms),
+                    (hdr, syms.replace("01c00000 g .bss 00000000 _rt_end", "01c00004 g .bss 00000000 _rt_end"))):
+                with self.subTest(hdr=nonempty_hdr, syms=nonempty_syms):
+                    self.assertIn("missing or malformed .ram_text", " ".join(
+                        self.check(hdr=nonempty_hdr, syms=nonempty_syms, rt=rt)))
+
+    def test_empty_ram_proof_does_not_allow_damaged_disassembly(self):
+        rt = ("file format ELF32-pi32v2\nDisassembly of section .c1_text:\n"
+              "fm1_c1_main:\n 1c00000: 00 00 \tcall r0\n")
+        hdr = noinit_header(self.noinit_used) + " 2 .ram_text 00000000 01c00000 DATA\n"
+        with patch.object(B, "CPU2", True):
+            for damaged in ("", "file format ELF32-pi32v2\n", rt.replace("file format ELF32-pi32v2\n", ""),
+                            "garbage\n" + rt, rt + "garbage\n", rt.replace("call r0", ""),
+                            rt.replace("00 00", "zz 00"), rt.replace("call r0", ".word 0x1234"),
+                            rt.replace("call r0", "unknown"), rt.replace("call r0", "call 4 <f: 2000120 >"),
+                            rt + "Disassembly of section .other:\n 1c01000: 00 00 \tcall r0\n"):
+                with self.subTest(rt=damaged):
+                    self.assertTrue(self.check(hdr=hdr, rt=damaged))
+            ram = "Disassembly of section .ram_text:\n 1c00000: 00 00 \tcall r0\n"
+            self.assertIn(".ram_text contains calls", " ".join(self.check(hdr=hdr, rt=rt + ram)))
+
+    def test_standalone_empty_ram_still_rejects_nonempty_elf_evidence(self):
+        rt = "file format ELF32-pi32v2\n"
+        self.assertEqual(self.check(rt=rt), [])   # retain existing standalone objdump fixture
+        hdr = noinit_header(self.noinit_used) + " 2 .ram_text 00000004 01c00000 DATA\n"
+        self.assertIn("missing or malformed .ram_text", " ".join(self.check(hdr=hdr, rt=rt)))
+        syms = symbols(dict(self.values, _rt_start=0x01C00000, _rt_end=0x01C00004)) + noinit_symbols(self.noinit_used)
+        self.assertIn("missing or malformed .ram_text", " ".join(self.check(syms=syms, rt=rt)))
+
+    def test_empty_ram_section_and_linker_evidence(self):
+        hdr = " 2 .ram_text 00000000 01c00000 DATA\n"
+        syms = "01c00000 .ram_text 00000000 _rt_start\n01c00000 .ram_text 00000000 _rt_end\n"
+        self.assertIsNone(B.ram_text_empty("", ""))
+        self.assertTrue(B.ram_text_empty(hdr, syms))
+        self.assertFalse(B.ram_text_empty(hdr.replace("00000000", "00000004"), syms))
+        self.assertFalse(B.ram_text_empty(hdr, syms.replace("01c00000 .ram_text 00000000 _rt_end", "01c00004 .ram_text 00000000 _rt_end")))
+        self.assertFalse(B.ram_text_empty(hdr.replace("00000000", "invalid"), syms))
+        self.assertFalse(B.ram_text_empty(hdr, syms.replace("01c00000 .ram_text 00000000 _rt_end", "invalid .ram_text 00000000 _rt_end")))
+        self.assertFalse(B.ram_text_empty(hdr, syms.splitlines()[0] + "\n"))
+
     def test_entry_and_stub(self):
         self.values["_start"] += 2
         self.assertIn("_start is not at", " ".join(self.check()))
@@ -118,6 +169,27 @@ class AppGuards(unittest.TestCase):
         self.values["_bss_end"] -= 1
         self.values["_pool_end"] += 1
         self.assertIn("pool headroom 8191 B", " ".join(self.check()))
+
+    def test_crash_ctx_diagnostic_build_floor(self):
+        """FELUCCA_CRASH_CTX=1 (#428): only that build may put its 76 B register context below the 100 B floor"""
+        self.assertEqual(B.CRASH_CTX_NOINIT, 76)
+        with patch.dict(os.environ, {"FELUCCA_CRASH_CTX": "1"}):
+            self.noinit_used = NOINIT_LEN - 24                   # 24 B spare: the floor of this build
+            errors, notes = self.run_check()
+            self.assertEqual(errors, [])
+            self.assertIn("NOINIT floor 24 B: FELUCCA_CRASH_CTX=1", " ".join(notes))
+            self.noinit_used += 1
+            self.assertEqual(self.check(), ["NOINIT headroom 23 B < 24 B"])
+        for env in ({"FELUCCA_CRASH_CTX": "0"}, {}):
+            with patch.dict(os.environ, env):
+                if not env:
+                    os.environ.pop("FELUCCA_CRASH_CTX", None)
+                self.noinit_used = NOINIT_LEN - 99               # standard and release builds: still 100 B
+                self.assertEqual(self.check(), ["NOINIT headroom 99 B < 100 B"])
+                self.noinit_used = NOINIT_LEN - 100
+                errors, notes = self.run_check()
+                self.assertEqual(errors, [])
+                self.assertNotIn("NOINIT floor", " ".join(notes))
 
     def test_noinit_spare_floor_and_one_byte_failure(self):
         floor = NOINIT_LEN - B.NOINIT_SPARE_MIN

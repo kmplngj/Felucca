@@ -23,7 +23,8 @@ void isr_alnk0(void) {}
 static int32_t host_tap[2 * 64];
 static uint32_t host_tap_n;
 static void uac_tap(const int32_t *out, uint32_t n) { memcpy(host_tap, out, 8u * n); host_tap_n = n; }
-static void uac_render_start(void) {}
+static int probe_isr;                                  /* isr_assert(): the stub calls a main-loop-only check from the render */
+static void uac_render_start(void) { if (probe_isr) FM1_ASSERT_THREAD(); }
 #include "../firmware/src/audio.c"
 enum { FM1_ADC_BATT = 3, FM1_ADC_MASTER = 4 };
 static int32_t host_pot = 1023;                        /* the MASTER pot as the ADC reads it (-1: timeout) */
@@ -141,6 +142,26 @@ static void dma(void)
     for (i = 0; i < 512u; i++) fm1_alnk0_irq();
     expected = host_us * 256u / (HALF_FRAMES * 1000000u / FS);
     check("steady CPU load converges without integer smoothing bias", song.cpu_q8 >= expected - 1u && song.cpu_q8 <= expected);
+}
+/* #428: FM1_ASSERT_THREAD fires inside the real audio ISR (fm1_alnk0_irq brackets itself with FM1_ISR_SIM_ENTER/LEAVE)
+ * and stays quiet in the main loop, before and after. */
+static uint32_t isr_hits;
+static void isr_hook(const char *file, int line) { (void)file; (void)line; isr_hits++; }
+static void isr_assert(void)
+{
+    fm1_isr_assert_hook = isr_hook;
+    fresh();
+    FM1_ASSERT_THREAD();
+    check("FM1_ASSERT_THREAD is quiet in the main loop", isr_hits == 0 && fm1_host_isr_depth == 0);
+    probe_isr = 1;
+    host_pending = FM1_AUDIO_HALF; host_us = 100;
+    fm1_alnk0_irq();
+    probe_isr = 0;
+    check("FM1_ASSERT_THREAD fires once inside the audio ISR", isr_hits == 1u);
+    check("the simulated ISR context ends with the handler", fm1_host_isr_depth == 0);
+    FM1_ASSERT_THREAD();
+    check("FM1_ASSERT_THREAD is quiet again in the main loop", isr_hits == 1u);
+    fm1_isr_assert_hook = 0;
 }
 /* MENU > USB LEVEL (fx.c fx_usb_fixed, audio.c audio_block): MASTER (default) as before, USB = the DAC's signal and
  * follows the knob; FIXED: USB at the full level whatever MASTER is (MASTER 0: USB still plays, the DAC is silent),
@@ -273,7 +294,7 @@ int main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
     usb_level();
     boot_keys();
-    overload(); dma();
+    overload(); dma(); isr_assert();
     printf(bad ? "audio: %d FAILED\n" : "audio: all passed\n", bad);
     return bad != 0;
 }

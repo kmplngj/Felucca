@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "isr_assert.h"                    /* FM1_ASSERT_THREAD / FM1_ISR_SIM_* (#428) */
 /* The firmware side of storage.c (FELUCCA_FLASH): flash reads in short IRQ-off windows so the
  * audio keeps up, erases and writes only inside the storage areas, the audio buffer silenced
  * first. The host tests (storage_test.c) provide their own st_* on a simulated NOR. */
@@ -29,6 +30,7 @@ static int st_erase(uint32_t off)
 {
     uint32_t took, f;
     int rc;
+    FM1_ASSERT_THREAD();                        /* (#428) before irq_save: an erase stops audio and scan */
     if (!FL_STORE_OK(off, 0x1000u))
         return -8;
     f = irq_save();
@@ -40,6 +42,7 @@ static int st_erase(uint32_t off)
 }
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
+    FM1_ASSERT_THREAD();                        /* (#428) */
     if (!FL_STORE_OK(off, n))                   /* only inside the storage areas */
         return -8;
     return fl_write(off, src, n);

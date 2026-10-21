@@ -71,6 +71,43 @@ unreliable units fall back to one core. Device reliability remains unverified in
 this fork. The separate fork experiment is retired; see the
 [modularity plan](modularity.md#combining-our-plan-with-felucca-161--2026-10-14).
 
+### Retained exclusion after a failed worker (#410)
+
+A worker that failed must not start again just because the unit reset before the OFF
+preference was saved. While the worker answers, the firmware keeps an 8-byte guard in
+retained RAM (`.noinit`, present only in `FELUCCA_CPU2=1` builds). A failure records
+the reason in it **before** the worker is held or the chip resets:
+
+| Reason (console `cpu2_excl`) | Meaning |
+| --- | --- |
+| 1 `BAD JOB` | the worker refused a job whose check word did not match |
+| 2 `TIMEOUT` | it did not finish a block within 4 ms (it stalled or faulted) |
+| 3 `FAULT` | core 0 itself faulted while the worker answered |
+| 4 `HANG` | the watchdog reset the chip while the worker answered (found at the next boot) |
+| 5 `CORRUPT` | the guard's magic matched but its contents did not; refused, never trusted |
+
+While an exclusion is held, a saved **2ND CORE ON** is not honoured: at startup the
+worker is not started, the preference is cleared again (a normal deferred save from
+the main loop), and the screen shows `2ND CORE HELD: <reason>`. A failure during the
+session shows the same notice. The unit runs on one core, as with the setting OFF.
+
+**Recovery.** Open **MENU > SYSTEM > 2ND CORE**, set it to **OFF**, then back to **ON
+(BETA)**. The screen shows `2ND CORE RETRY: RESTART`, which clears the exclusion; the
+worker is tried again at the next power-on or restart. Leaving it OFF keeps the unit on one core and
+the exclusion in place. The editor's MENU_SET of the same item has the same effect.
+A restart alone, a firmware update or the saved ON never clears the exclusion.
+
+Limits: the guard is judged by what the firmware wrote, not by proof that the worker
+caused a fault. Whether `.noinit` survives a given reset class or a short power-off on
+a real FM-1 has not been established, so the policy does not rely on it: a valid
+exclusion is kept through every reset class including power-on, and if the RAM was in
+fact lost the guard is simply absent (then only the saved preference decides, which a
+normal failure has already cleared unless power was lost before that deferred save).
+Real-device warm-reset and power-cycle checks are pending. `FELUCCA_CPU2=0` builds have
+none of this. The design adapts the idea and record of
+[fm1-x0x ed35a452](https://github.com/charlesvestal/fm1-x0x/commit/ed35a45235d506564440b707bb7cf5f491d4e2b8)
+(GPL-3.0) to this HAL.
+
 ## Project compatibility
 
 Projects with conditional steps do not open on 1.5 or 1.5.1; projects saved by

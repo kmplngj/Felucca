@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "isr_assert.h"
 /* Persistent storage on the SPI NOR.
  *
  * Every object has an A/B sector pair. A save goes to the copy that is not
@@ -138,6 +139,7 @@ static int st_save_to(uint32_t obj, const void *src, uint32_t len, int to)
     uint32_t seq, base, off;
     int cur, rc;
     st_hdr_t h;
+    FM1_ASSERT_THREAD();                         /* erases and programs flash: main loop only (#428) */
     if (obj >= OBJ_COUNT || len > ST_PAYLOAD_MAX || to > 1)
         return -1;
     cur = st_current(obj, &h);

@@ -30,6 +30,24 @@ static int check(const char *what, int ok)
     return ok ? 0 : 1;
 }
 
+/* #418: the update-record shape the loader cleanup and the SPL look for (ldr_core.c): u16 0x5441 at +6, a nonzero
+ * u16 at +0 equal to the CRC16 (poly 0x1021, init 0, = ota_crc16) of bytes 2..79 */
+static const uint8_t CRC_CHECK[9] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+static uint32_t crc16_x(const uint8_t *p, uint32_t n)
+{
+    uint32_t c = 0, b;
+    while (n--) {
+        c ^= (uint32_t)*p++ << 8;
+        for (b = 0; b < 8u; b++) c = (c & 0x8000u ? (c << 1) ^ 0x1021u : c << 1) & 0xFFFFu;
+    }
+    return c;
+}
+static int rec_at(const uint8_t *r)
+{
+    uint32_t w = (uint32_t)(r[0] | r[1] << 8);
+    return (r[6] | r[7] << 8) == 0x5441u && w && w == crc16_x(r + 2, 78u);
+}
+
 /* the value parameter k (old id) of track t had in the old project */
 static int16_t oldv(uint32_t t, uint32_t k) { return (int16_t)(t * 100u + k * 3u + 1u); }
 
@@ -684,6 +702,55 @@ int main(void)
         ok = proj_import(&c, &buf, (int)sizeof w4) && PERC_OK(c);
         bad += check("FUN4 with a SAMPLE PERC track: DRUM's kit, the same", ok);
 #undef PERC_OK
+    }
+    {   /* #418: can a VALID current project (the autosave's FUN10) hold the update-record shape at sector + 0xF00?
+         * The loader cleanup (ldr_core.c) and the SPL classify the 80 bytes at 4K boundary - 256 as a record when
+         * u16 at +6 is 0x5441 and the nonzero u16 at +0 is the CRC16 (poly 0x1021, init 0) of bytes 2..79. The
+         * autosave payload starts at sector + 0x100 (storage.c ST_PAYLOAD_OFF), so the record is payload bytes
+         * 3584..3663 = PROJ_FM6_OFF + 2 * 128 + 16 .. + 95: inside TRACK 3's packed FM6 patch (bytes 16..95 of its
+         * 17-byte operator records: byte 16 is operator 0's FF, 17 operator 1's R1, 22/23 its L2/L3). Everything in
+         * that range is a patch byte the firmware's own fm6_pack writes, so no arbitrary storage object is needed
+         * to reach it, only a crafted voice (the editor's patch write, an FM6 voice). This shows the shape is
+         * reachable, not that any ordinary patch comes near it (a random one matches with probability ~2^-32).
+         * No validator is changed or relaxed by this. */
+        project_t a, c;
+        static project_store_t st;
+        uint8_t v[FP_SIZE + 1u], v2[FP_SIZE + 1u], pk[FM6_PACKED], pk2[FM6_PACKED];
+        uint32_t i, tries, seed = 12345u, crc = 0, found = 0;
+        ok = crc16_x(CRC_CHECK, 9u) == 0x31C3u;                /* CRC-16/XMODEM, as ldr_test.c pins ota_crc16 */
+        ok &= 0x100u + 3584u == 0xF00u && PROJ_FM6_OFF + 2u * FM6_PACKED + 16u == 3584u &&
+              PROJ_FM6_OFF + 2u * FM6_PACKED + 95u == 3663u;
+        for (tries = 0; tries < 100000u && !found; tries++) {
+            for (i = 0; i < FP_SIZE; i++) {
+                seed = seed * 1664525u + 1013904223u;
+                v[i] = (uint8_t)((seed >> 16) % (fm6_max(i) + 1u));
+            }
+            v[FP_OP + 5] = 0x41; v[FP_OP + 6] = 0x54;          /* record u16 0x5441 at +6: operator 1's L2, L3 (<= 99) */
+            fm6_sanitize(v);
+            fm6_pack(v, pk);
+            crc = crc16_x(pk + 18, 78u);                       /* record bytes 2..79; the CRC goes in bytes 0, 1 */
+            if (crc && (crc & 255u) <= 99u && (crc >> 8) <= 99u) {   /* = operator 0's FF and operator 1's R1: <= 99 */
+                v[FP_FF] = (uint8_t)(crc & 255u);
+                v[FP_OP + 0] = (uint8_t)(crc >> 8);
+                found = 1;
+            }
+        }
+        ok &= found;
+        fm6_pack(v, pk);
+        fm6_unpack(pk, v2);                                    /* the firmware's own load, then its own capture */
+        fm6_pack(v2, pk2);
+        ok &= !memcmp(pk, pk2, FM6_PACKED) && !memcmp(v, v2, FP_SIZE);   /* a fixed point: a patch autosave_poll writes */
+        memset(&a, 0, sizeof a);
+        a.magic = PROJ_MAGIC; a.size = sizeof a; a.parts = NPART; a.phys = PROJ_PHYS;
+        chain_defaults(&a.chain);
+        for (i = 0; i < NTRK; i++) memcpy(a.fm6[i], FM6_INIT, FM6_PACKED);
+        bad += check("  an ordinary project (init patches): no record at sector + 0xF00",
+                     (a.sum = proj_sum(&a), proj_pack(&st, &a)) && !rec_at(st.raw + 3584u));
+        memcpy(a.fm6[2], pk2, FM6_PACKED);
+        a.sum = proj_sum(&a);
+        ok &= proj_pack(&st, &a) && proj_import(&c, &st, sizeof st) && !memcmp(c.fm6[2], pk2, FM6_PACKED);
+        ok &= rec_at(st.raw + 3584u);
+        bad += check("#418: a valid FUN10 (crafted FM6 patch, track 3) holds a loader-matching record at sector + 0xF00", ok);
     }
     printf("%s\n", bad ? "PROJECT FORMAT TEST FAILED" : "project format test passed");
     return bad != 0;

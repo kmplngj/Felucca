@@ -195,22 +195,18 @@ static void upf_boot(void)                       /* up_boot, after the user pres
 #endif
 }
 
-/* up_load: track t (its values just loaded from slot k) gets the record's patch; without one, as before 1.0.3:
- * SLOT F n that factory patch, OWN the init voice. Copy retained patches even without FM6; only
- * SLOT adoption (F n or OWN, fm6_adopt) needs an installed engine. */
-static void upf_track_load(track_t *t, uint32_t k)
+/* up_load: the patch slot k's sound (engine eng, SLOT s) brings into v (FP_SIZE + 1 bytes), installed with the record's
+ * values (sound.c: SLOT adoption, F n or OWN, after it); 0 for a sound of another engine. The record's patch; without
+ * one, as before 1.0.3: SLOT F n that factory patch, OWN the init voice */
+static const uint8_t *upf_patch(uint32_t k, uint32_t eng, int32_t s, uint8_t *v)
 {
-    uint8_t pk[FM6_PACKED], v[FP_SIZE + 1u];
-    uint32_t tr = (uint32_t)(t - trk);
-    if (tr >= NTRK || t->eng_req != ENGI_FM6)
-        return;
-    if (upf_get(k, pk)) {
-        int32_t s = t->p[P_E7];
+    uint8_t pk[FM6_PACKED];
+    if (eng != ENGI_FM6)
+        return 0;
+    if (upf_get(k, pk))
         memcpy(pk, s >= 0 && s < (int32_t)FM6_NFACTORY ? FM6_FACTORY[s] : FM6_INIT, FM6_PACKED);
-    }
     fm6_unpack(pk, v);
-    fm6_set_patch(tr, v);
-    fm6_adopt(tr);
+    return v;
 }
 
 /* up_store: slot k (its record just written from track tr) gets that track's patch; upf_save's result */

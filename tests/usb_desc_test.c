@@ -389,6 +389,41 @@ int main(void)
                  CDC_SHOWN ? "presented" : "not presented");
         check(name, ok);
     }
+    /* The early application rescue persona must stay MIDI-only in every normal
+     * composite build and must never fill a queue with no audio consumer. */
+    {
+        const uint8_t *rd, *rcfg;
+        uint16_t rn;
+        uint32_t before = mi_w, before_r = mi_r, endpoints = 0, interfaces = 0;
+        int valid = 1;
+        usb_rescue_mode = 1;
+        get_desc(0x100, &rd, &rn);
+        check("rescue device remains application PID; revision differs from normal", rn == 18 &&
+              le16(rd + 10) == FELUCCA_USB_PID && le16(rd + 12) == 0x400 && !USB_CDC_ON);
+        get_desc(0x200, &rcfg, &rn);
+        for (off = 0; off < rn; off += rcfg[off]) {
+            const uint8_t *d = rcfg + off;
+            if (d[0] < 2 || off + d[0] > rn) { valid = 0; break; }
+            if (d[1] == 4) { interfaces++; valid &= d[5] == 1 && (d[6] == 1 || d[6] == 3); }
+            if (d[1] == 5) { endpoints++; valid &= d[2] == 1 || d[2] == 0x81; }
+            valid &= d[1] != 0x0B;
+        }
+        check("rescue configuration has AC+MIDI and EP1 only", valid && rn == 101 &&
+              le16(rcfg + 2) == rn && interfaces == 2 && endpoints == 2);
+        for (i = 0; i < 1000; i++) {
+            static const uint8_t NOTE[4] = {9, 0x90, 60, 127};
+            valid &= ep1_take(NOTE, sizeof NOTE);
+        }
+        check("rescue drops note flood without ring backpressure or overflow", valid &&
+              mi_w == before && mi_r == before_r && !midi_in_overflow);
+        usb.ota_req = 0;
+        sysex_byte(0xF0); sysex_byte(0x22); sysex_byte(0x24);
+        sysex_byte(0x35); sysex_byte(0x7F); sysex_byte(0xF7);
+        check("rescue still accepts OTA command after note flood", usb.ota_req);
+        usb_rescue_mode = 0;
+        get_desc(0x100, &rd, &rn);
+        check("leaving rescue preserves normal descriptor selection", rd == dev);
+    }
     printf(fails ? "USB DESCRIPTOR TEST FAILED (%d)\n" : "usb_desc: all ok\n", fails);
     return fails != 0;
 }

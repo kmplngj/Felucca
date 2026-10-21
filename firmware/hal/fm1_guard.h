@@ -44,6 +44,17 @@ extern uint32_t _rt_start[], _rt_end[];
 #define FM1_RAMCODE_END _rt_end
 #endif
 
+/* #428: sp is on the system (interrupt) stack, [_guard1, _sstack_top]: an interrupt handler (or code it calls) is
+ * running on core 0. The main loop runs on the user stack (_ustack_lo.._ustack_top, below _guard1; crt0.S) and the
+ * wrappers in fm1_isr.S push on the stack the core switched to. Core 0 only: core 1 has its own stacks
+ * (_c1_ustack.._c1_sstack_top, fm1_cpu1.S), so there it is always 0. Not for use in .ram_text. */
+static inline int fm1_sp_in_isr(void)
+{
+    uint32_t sp;
+    __asm__ volatile("%0 = sp" : "=r"(sp));
+    return sp >= (uint32_t)(uintptr_t)_guard1 && sp <= (uint32_t)(uintptr_t)_sstack_top;
+}
+
 enum { FM1_GUARD_STACK = 1, FM1_GUARD_WRITE = 2, FM1_GUARD_BUS = 4, FM1_GUARD_PC = 8 };
 
 static void fm1__dbg_unlock(void)

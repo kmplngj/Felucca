@@ -274,6 +274,24 @@ class CommandLineFixtures(unittest.TestCase):
         self.write_budget(extra="uac_tap48 555\n")
         self.assert_status(self.cli(), 0)
 
+    def test_outlined_timer5_helpers_retain_independent_growth_checks(self):
+        helpers = ("usb_poll", "fm1_input_tick", "fm1__frame", "fm1__keys")
+        before = self.budget.read_bytes()
+        self.write_dis(extra=helpers)
+        result = self.cli()
+        self.assert_status(result, 0)
+        for name in helpers:
+            with self.subTest(function=name):
+                self.assertIn(name, FUNCS)
+                limit = OPTIONAL[name]
+                self.write_dis(extra=helpers, loops={name: limit * 11 // 10 + 1})
+                result = self.cli()
+                self.assert_status(result, 1)
+                row = next(line for line in result.stdout.splitlines()
+                           if line.split()[:2] == ["target:", name])
+                self.assertIn(f"(budget {limit}) OVER BUDGET", row)
+                self.assertEqual(self.budget.read_bytes(), before)
+
     def test_update_rewrites_required_only_then_checks(self):
         self.budget.unlink()
         self.write_dis(extra=("uac_tap48",), loops={"analog_render": 12})

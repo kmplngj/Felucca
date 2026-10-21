@@ -39,6 +39,11 @@
 #endif
 #define FM1_CPU1_USED FELUCCA_CPU2   /* hal/fm1_sys.h: the second core is built in; every reset holds it first (its
                                       * waiting loop is in RAM the ROM and the SPL use at boot) */
+#ifndef FELUCCA_MUL64_REPRO
+#define FELUCCA_MUL64_REPRO 0    /* 1: the #425 synthetic reproducer runs in the main loop's idle wait (mul64_repro.c,
+                                  * `status` mul64_*); a diagnostic build, never a release. FELUCCA_CRASH_CTX:
+                                  * hal/fm1_irq.h */
+#endif
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "v1.6.1" /* shown in the menu, the console and the editor; build.py --release X.Y */
 #endif
@@ -57,6 +62,7 @@
 #define C1_ON() fm1_c1_on                    /* fx.c mix_block: a second core is answering */
 #define C1_RUN(fn, arg) fm1_cpu1_run(fn, arg)
 #define C1_WAIT() fm1_cpu1_wait()
+#define C1_RECOVER() fm1_c1g_recover()       /* menu_items.c: MENU > 2ND CORE set ON again clears a retained exclusion (hal/fm1_sys.h) */
 #endif
 #include "fm1_input.h"
 #include "fm1_timer.h"
@@ -86,6 +92,7 @@
 #endif
 #include "song_chain.c"
 #include "seq.c"
+#include "sound.c"               /* Sound install (#298): every sound load into a track, before ui.c */
 #include "audio.c"
 
 /* -------------------------------------------------------------- UI --- */
@@ -96,6 +103,7 @@
 #include "ui_graph.c"
 #include "ui_draw.c"
 #include "ui_menu.c"
+#include "ui_knob.c"              /* panel knob editing (#295): the value a knob edits and its turn */
 #include "ui_input.c"
 #include "ui_layer.c"              /* the quick layers (FX GLO SCL EDIT REC held; SEQ TOOLS: ui_tools.c) */
 
@@ -112,8 +120,13 @@
 #include "ota_hw.c"
 #include "editor.c"              /* web editor SysEx (needs the OTA SysEx plumbing) */
 #endif
+#if FELUCCA_MUL64_REPRO
+#include "mul64_repro.c"         /* #425 reproducer (-Os like the audio code; run by main.c, read by console.c). Late in
+                                  * the unit: its state comes after every other object, as little layout change as possible */
+#endif
 #if FELUCCA_CDC
 #include "console.c"
 #endif
 #include "master.c"              /* the MASTER pot (#137: read before the audio starts) */
+#include "rescue.c"              /* #116: polled recovery before normal services start */
 #include "main.c"

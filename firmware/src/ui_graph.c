@@ -530,7 +530,7 @@ static void graph_mod(const track_t *t, uint16_t c)
         cv_line(84, y + 8, 98, y + 8, col);              /* an arrow */
         cv_line(94, y + 4, 98, y + 8, col);
         cv_line(94, y + 12, 98, y + 8, col);
-        cv_text_on(106, y + CAP_IN(M, 17), &AF_M, mod_dst_name(t, p[1]), col, bg);
+        cv_text_on(106, y + CAP_IN(M, 17), &AF_M, ui_mod_dst_name(t, p[1]), col, bg);
         param_format(&TP[P_M1AMT], p[2], b, &unit);
         GFX_HOOK_ALIGN(0, y, 0, y + 17, AL_V, "mod row text centred up/down");
         x = cv_text_on(172, y + CAP_IN(M, 17), &AF_M, b, col, bg) + 2;
@@ -1133,9 +1133,111 @@ static int32_t song_follow(const song_lay_t *L)
     return sgv.off;
 }
 
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+/* MACRO's OSC page: a settled, unmodulated cycle before the filter, using the DSP's immutable
+ * tables and interpolation. No voice state, phase, smoothing history or audio buffer is touched.
+ * The 129-point plot is bounded main-loop work; FBFM shows its actual feedback topology instead. */
+static int macro_page(void)
+{
+    return !ui.home && eng_is(TSEL->eng_req, ENGI_MACRO) && cur_page()->scope == SC_ENGINE && cur_page()->id[0] == P_E0;
+}
+static int32_t macro_preview_sample(const track_t *t, uint32_t phase)
+{
+    int32_t timbre = t->p[P_E1] == 127 ? 32767 : t->p[P_E1] * 256;
+    int32_t color = t->p[P_E2] == 127 ? 32767 : t->p[P_E2] * 256;
+    if ((uint32_t)t->p[P_E0] % MAC_NSHAPE == MAC_WAVE) {
+        uint32_t scan = (uint32_t)timbre * 2u, smooth = (scan << 6) & 65535u, p = phase >> 1;
+        const uint8_t *a = MACRO_WAVES[scan >> 10], *b = MACRO_WAVES[(scan >> 10) + 1u];
+        int32_t x, y;
+        if (color < 8192) {
+            x = mac_wave(a, p & 0xfe000000u);
+            y = mac_wave(a, p);
+        } else if (color < 16384) {
+            x = mac_wave(a, p);
+            y = mac_cross(a, b, p, smooth);
+        } else {
+            x = mac_cross(a, b, p & (color < 24576 ? 0xffffffffu : 0xfe000000u), smooth);
+            y = mac_cross(a, b, p & (color < 24576 ? 0xfe000000u : 0xf8000000u), smooth);
+        }
+        return mac_mix(x, y, (uint32_t)(color & 8191) * 8u);
+    } else {
+        int32_t gain = 2048 + (((timbre * 32767) >> 15) * 30720 >> 15);
+        int32_t x = mac_folder(MACRO_SINE_FOLD, (mac_sine(phase) * gain) >> 15), y;
+        uint16_t tri = (uint16_t)(phase >> 16);
+        y = (int16_t)((uint16_t)((tri << 1) ^ (tri & 32768u ? 65535u : 0u)) + 32768u);
+        y = mac_folder(MACRO_TRIANGLE_FOLD, (y * gain) >> 15);
+        return mac_mix(x, y, (uint32_t)color * 2u);
+    }
+}
+static void graph_macro(const track_t *t, uint16_t c, int small)
+{
+    static const char *const HINT[3][2] = {
+        {"SCAN: MOVE THROUGH 64 WAVES", "TEXTURE: STEP / SMOOTH / CRUSH"},
+        {"FOLD: ADD HARMONICS", "BLEND: SINE TO TRIANGLE"},
+        {"DEPTH: FM + CARRIER FEEDBACK", "MOD PIT: MODULATOR TRANSPOSE"}
+    };
+    uint32_t shape = (uint32_t)t->p[P_E0] % MAC_NSHAPE, i;
+    int32_t cy = small ? 18 : 50, amp = small ? 11 : 23, py = cy;
+    if (shape >= 3u) {
+        int32_t y = small ? 3 : 30;
+        if (!small) {
+            cv_text_on(12, 5, &AF_S, N_MACRO_SHAPE[shape], T_TEXT, T_SURF);
+            cv_text_r(228, 5, &AF_S, "BRAIDS", T_MID, T_SURF);
+        }
+        cv_text_on(12, y, &AF_S, "ONE VOICE / PART", T_MID, T_SURF);
+        cv_text_on(12, y + 17, &AF_S, MACRO_LABEL[shape][0], T_TEXT, T_SURF);
+        cv_rect(115, y + 21, 104, 2, T_RAISE);
+        cv_rect(115, y + 21, t->p[P_E1] * 104 / 127, 2, c);
+        cv_text_on(12, y + 34, &AF_S, MACRO_LABEL[shape][1], T_TEXT, T_SURF);
+        cv_rect(115, y + 38, 104, 2, T_RAISE);
+        cv_rect(115, y + 38, t->p[P_E2] * 104 / 127, 2, c);
+        if (!small) cv_text_on(12, 105, &AF_S, "NOTE TRIGGERS MODEL", T_MID, T_SURF);
+        return;
+    }
+    if (!small) {
+        cv_text_on(12, 5, &AF_S, shape == MAC_WAVE ? "WAVETABLE" : shape == MAC_FOLD ? "WAVEFOLD" : "FEEDBACK FM", T_TEXT, T_SURF);
+        cv_text_r(228, 5, &AF_S, shape == MAC_FBFM ? "SIGNAL PATH" : "PRE-FILTER", T_MID, T_SURF);
+    }
+    if (shape == MAC_FBFM) {
+        int32_t y = small ? 3 : 27, h = small ? 18 : 24, mid = y + h / 2, loop = small ? 30 : 76;
+        cv_rrect(28, y, 70, h, 3, T_RAISE, T_SURF);
+        cv_rrect(142, y, 70, h, 3, T_RAISE, T_SURF);
+        cv_text_in(28, y + CAP_IN(S, h), 70, &AF_S, "MOD", T_TEXT, T_RAISE);
+        cv_text_in(142, y + CAP_IN(S, h), 70, &AF_S, "CARRIER", T_TEXT, T_RAISE);
+        cv_line_t(99, mid, 140, mid, c, 2);
+        cv_line_t(136, mid - 3, 140, mid, c, 1);
+        cv_line_t(136, mid + 3, 140, mid, c, 1);
+        cv_line_t(177, y + h, 177, loop, c, 1);
+        cv_line_t(177, loop, 63, loop, c, 1);
+        cv_line_t(63, loop, 63, y + h + 1, c, 1);
+        cv_line_t(60, y + h + 5, 63, y + h + 1, c, 1);
+        cv_line_t(66, y + h + 5, 63, y + h + 1, c, 1);
+    } else {
+        cv_rect(16, cy, 209, 1, T_RAISE);
+        for (i = 0; i <= 128u; i++) {
+            uint32_t phase = i << 25;             /* endpoint wraps to the start of the cycle */
+            int32_t y = cy - macro_preview_sample(t, phase) * amp / 32768;
+            int32_t x = 16 + (int32_t)i * 208 / 128;
+            if (i) cv_line_t(16 + (int32_t)(i - 1u) * 208 / 128, py, x, y, c, small ? 1 : 2);
+            py = y;
+        }
+        if (!small && shape == MAC_WAVE) {        /* scan position among the 64 waves */
+            int32_t x = 16 + t->p[P_E1] * 208 / 127;
+            cv_rect(16, 80, 209, 1, T_DIM);
+            cv_rrect(x - 2, 78, 5, 5, 2, c, T_SURF);
+        }
+    }
+    cv_text_on(12, small ? 33 : 89, &AF_S, HINT[shape][0], T_MID, T_SURF);
+    cv_text_on(12, small ? 46 : 105, &AF_S, HINT[shape][1], T_MID, T_SURF);
+}
+
+#else
+static int macro_page(void) { return 0; }
+#endif
+
 /* MENU > LARGE's strip under the tall cards (ui.c LK_TALL): HOME's scope, ENV's ADSR, LFO's wave,
  * MIXER's tracks drawn small; on the other pages the page's title and number (their charts need the whole panel) */
-enum { SK_NONE, SK_SCOPE, SK_ADSR, SK_LFO, SK_TRK, SK_TITLE };
+enum { SK_NONE, SK_SCOPE, SK_ADSR, SK_LFO, SK_TRK, SK_TITLE, SK_MACRO };
 static uint32_t strip_kind(void)
 {
     uint32_t g;
@@ -1143,6 +1245,7 @@ static uint32_t strip_kind(void)
         return SK_NONE;
     if (ui.home)
         return SK_SCOPE;
+    if (macro_page()) return SK_MACRO;
     g = cur_page()->graph;
     return g == GR_ADSR ? SK_ADSR : g == GR_LFO ? SK_LFO : g == GR_TRK ? SK_TRK : SK_TITLE;
 }
@@ -1202,7 +1305,7 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
     h ^= (uint32_t)pg->graph * 131u + TSEL->eng_req + song.sel * 7777u + ui.page * 1291u;
     if (strip_kind() == SK_TITLE)                    /* MENU > LARGE: the page's title (its engine, its number) */
         return h ^ 0x5A17u;
-    if (pg->graph == GR_NONE || pg->graph == GR_ARP) h ^= ui.frame / 2u;
+    if ((pg->graph == GR_NONE && !macro_page()) || pg->graph == GR_ARP) h ^= ui.frame / 2u;
     for (i = 0; i < P_COUNT; i++)
         h = (h ^ (uint32_t)t->p[i]) * 16777619u;
     h ^= (uint32_t)TSEL->preset * 7u + (uint32_t)song.g[G_SLOT] * 13u + TSEL->user * 257u + up_gen * 7919u + ui.uslot * 104729u +
@@ -1553,7 +1656,7 @@ static void graph_events(void)
             cv_text_on(14, y + LIST_TY, &AF_M, lock ? "LOCK" : "AUTO", sel ? T_INK : lock ? T_ACCENT : T_MID, bg);
             GFX_HOOK_ALIGN(0, y, 0, y + 16, AL_V, "list row text centred up/down");
             cv_text_on(EV_SX, y + LIST_TY, &AF_M, b, sel ? T_INK : T_MID, bg);
-            param_format(d, e->value, b, &unit);
+            ui_param_format(t, id, d, e->value, b, &unit);
             ev_name(t, id, nm);
             x = ev_value(y, b, unit, sel ? T_INK : T_TEXT, bg);
             GFX_HOOK_ALIGN(0, y, 0, y + 16, AL_V, "list row text centred up/down");
@@ -2292,6 +2395,9 @@ static void draw_graph(void)
         if (k == SK_SCOPE) graph_scope(c);
         else if (k == SK_ADSR) graph_adsr(t, c);
         else if (k == SK_LFO) graph_lfo(t, c);
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+        else if (k == SK_MACRO) graph_macro(t, c, 1);
+#endif
         else graph_title();
         graph_ht = 100;
     } else if (ui.home) {
@@ -2376,6 +2482,10 @@ static void draw_graph(void)
             if (fop_ok()) graph_fm6env(t, c);
             break;
         default:
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+            if (macro_page()) { cv_oy = 0; graph_macro(t, c, 0); }
+            else
+#endif
             if (pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_WHEEL) graph_wheel(t, c);
             else if (pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_SAMPLE && sample_wave.ready) graph_sample(c);
             else if (pg->scope == SC_ENGINE && eng_is(t->eng_req, ENGI_FM6)) graph_fm6(t, c, 6u);   /* EDIT 1 and 2 */

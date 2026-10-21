@@ -75,6 +75,129 @@ FM1_INLINE void fm1_cpu1_halt(void)
         FM1__DBG_WR_EN = 0xE7u;                  /* lock again */
     __asm__ volatile("csync" ::: "memory");
 }
+
+/* ---------------------------------------------------- retained CPU1 guard --- */
+/* An opt-in worker that failed must not start again just because a reset came before the ON preference was saved
+ * off, or because the failure was core 0's own fault or hang while it ran (#410; the idea and the 8-byte retained
+ * record are fm1-x0x's ed35a452, github.com/charlesvestal/fm1-x0x, GPL-3.0, rewritten for this HAL and policy).
+ *
+ * Two words in .noinit (8 B, only with the second core built in): MAGIC, and a state word
+ * reason | count << 8 | ~(reason | count << 8) << 16. Reasons: 1 BAD_JOB and 2 TIMEOUT (fm1_cpu1_wait, recorded
+ * before the worker is held), 3 FAULT (core 0 faulted while the worker answered), 4 HANG (a watchdog reset while it
+ * answered, found at the next boot), 5 CORRUPT (the magic matched, the rest did not: refused, not trusted), 0x0F
+ * ACTIVE (it answers; no failure yet). Any other magic is the same as no record: the cold-RAM case, nothing refuses.
+ * Each store is one word and the state is stored before the magic, so a reset between two stores leaves either no
+ * record or a whole one. Written by core 0 only (the audio ISR, the fault handler, the main loop); never by the
+ * worker and never in flash.
+ *
+ * Policy: an exclusion (1..5) stays through every reset class, power-on included, because decay of NOINIT after
+ * power-off is not established on this device. Only fm1_c1g_recover (MENU > 2ND CORE set ON again by the player)
+ * clears it; the deferred ON preference is cleared by main.c but never decides this. ACTIVE is consumed at every
+ * boot: a WDT reset means HANG, anything else (power-off, UBOOT, update, planned reboot) leaves no record. */
+#define FM1_C1G_MAGIC 0x43315847u                /* "C1XG" */
+enum { FM1_C1X_NONE = 0, FM1_C1X_BAD_JOB = 1, FM1_C1X_TIMEOUT = 2, FM1_C1X_FAULT = 3, FM1_C1X_HANG = 4,
+       FM1_C1X_CORRUPT = 5, FM1_C1X_ACTIVE = 0x0Fu };
+typedef struct { volatile uint32_t magic, state; } fm1_c1g_t;
+/* Not static: .noinit holds whatever the last run left, and the compiler must not fold the magic check away. */
+fm1_c1g_t fm1_c1_guard __attribute__((section(".noinit")));
+
+static uint32_t fm1_c1g_pack(uint32_t reason, uint32_t count)
+{
+    uint32_t low = (reason & 0xFFu) | (count & 0xFFu) << 8;
+    return low | (~low & 0xFFFFu) << 16;
+}
+
+/* the record's reason (NONE without a matching magic; CORRUPT for a bad check or an unknown reason); *count: how
+ * many starts it has refused, saturating at 255 */
+static uint32_t fm1_c1g_read(uint32_t *count)
+{
+    uint32_t st, r;
+    if (count)
+        *count = 0;
+    if (fm1_c1_guard.magic != FM1_C1G_MAGIC)
+        return FM1_C1X_NONE;
+    st = fm1_c1_guard.state;
+    r = st & 0xFFu;
+    if ((st >> 16) != (~st & 0xFFFFu) || !((r >= FM1_C1X_BAD_JOB && r <= FM1_C1X_CORRUPT) || r == FM1_C1X_ACTIVE))
+        return FM1_C1X_CORRUPT;
+    if (count)
+        *count = (st >> 8) & 0xFFu;
+    return r;
+}
+
+static void fm1_c1g_set(uint32_t reason, uint32_t count)
+{
+    fm1_c1_guard.state = fm1_c1g_pack(reason, count);
+    __asm__ volatile("csync" ::: "memory");
+    fm1_c1_guard.magic = FM1_C1G_MAGIC;
+    __asm__ volatile("csync" ::: "memory");
+}
+
+static void fm1_c1g_clear(void)
+{
+    fm1_c1_guard.magic = 0;
+    __asm__ volatile("csync" ::: "memory");
+}
+
+static int fm1_c1g_excluded(uint32_t r)
+{
+    return r >= FM1_C1X_BAD_JOB && r <= FM1_C1X_CORRUPT;
+}
+
+/* first thing at boot (fm1_cstart), p3 = the P33 reset source (bit 2: WDT). Settles the record for this session */
+static void fm1_c1g_boot(uint32_t p3)
+{
+    uint32_t n, r = fm1_c1g_read(&n);
+    if (r == FM1_C1X_NONE)
+        fm1_c1g_clear();                         /* cold RAM or never used: a clean record from here */
+    else if (r == FM1_C1X_ACTIVE) {
+        if (p3 & 4u)
+            fm1_c1g_set(FM1_C1X_HANG, 0);        /* the worker answered and the chip reset on the watchdog */
+        else
+            fm1_c1g_clear();                     /* power-off or a planned reset: not a failure */
+    } else if (r == FM1_C1X_CORRUPT)
+        fm1_c1g_set(FM1_C1X_CORRUPT, 0);         /* normalised: one whole record that stays refused */
+}
+
+/* the worker answers: record it, unless an earlier failure is still held (that stays) */
+static void fm1_c1g_active(void)
+{
+    if (!fm1_c1g_excluded(fm1_c1g_read(0)))
+        fm1_c1g_set(FM1_C1X_ACTIVE, 0);
+}
+
+/* a failure, before the worker is held or the system resets: the first reason is kept */
+static void fm1_c1g_mark(uint32_t reason)
+{
+    if (!fm1_c1g_excluded(fm1_c1g_read(0)))
+        fm1_c1g_set(reason, 0);
+}
+
+/* core 0 faulted (fm1_fault_c): only while the worker answered */
+static void fm1_c1g_fault(void)
+{
+    if (fm1_c1g_read(0) == FM1_C1X_ACTIVE)
+        fm1_c1g_set(FM1_C1X_FAULT, 0);
+}
+
+/* 0: the worker may start; else the reason it is refused (the count of refusals is kept, bounded) */
+static uint32_t fm1_c1g_refuse(void)
+{
+    uint32_t n, r = fm1_c1g_read(&n);
+    if (!fm1_c1g_excluded(r))
+        return 0;
+    fm1_c1g_set(r, n < 255u ? n + 1u : n);
+    return r;
+}
+
+/* the player's explicit retry: 1 = an exclusion was cleared */
+static int fm1_c1g_recover(void)
+{
+    if (!fm1_c1g_excluded(fm1_c1g_read(0)))
+        return 0;
+    fm1_c1g_clear();
+    return 1;
+}
 #define FM1_RESET_PREP() fm1_cpu1_halt()
 #else
 #define FM1_RESET_PREP() ((void)0)

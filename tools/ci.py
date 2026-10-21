@@ -130,8 +130,9 @@ def emulator_tests():
                     "-Ifirmware/src", "-o", str(host / "emu_native"),
                     "web/emu/native_check.c", "-lm"], check=True)
     subprocess.run([str(host / "emu_native"), str(host / "emu_native.f32")], check=True)
+    subprocess.run([str(host / "emu_native"), str(host / "emu_macro.f32"), "macro"], check=True)
     subprocess.run(["node", "web/emu/emu_test.mjs", "build/emu/felucca.wasm",
-                    str(host / "emu_native.f32")], check=True)
+                    str(host / "emu_native.f32"), str(host / "emu_macro.f32")], check=True)
     subprocess.run(["sh", "web/emu/partition_test.sh", "--require-wasm"], check=True)
     # The replay adapter includes the emulator's DSP/UI/event integration, so
     # emulator-only changes must exercise its native capture contract as well.

@@ -57,9 +57,9 @@ Run selector regressions locally with:
 
 ```sh
 python3 -m unittest discover -s tests -p ci_changes_test.py -v
-python3 tools/ci.py portable-tests
+uv run --locked --group build tools/ci.py portable-tests
 node web/test_backup.mjs
-python3 tools/ci.py emulator-tests  # needs the pinned Python deps, clang, emcc and Node
+uv run --locked --group build tools/ci.py emulator-tests  # needs the pinned Python deps, clang, emcc and Node
 ```
 
 The emulator command regenerates assets and compiles both peers. It does not
@@ -112,22 +112,26 @@ paths land, require the regression rather than accepting its dependency skip.
 ## Dependencies and provenance
 
 Python 3.12 and Node 22 are selected explicitly. Pillow, fontTools and Brotli versions
-are in `tools/ci-requirements.txt`; Raqm is mandatory and Brotli decodes the M8Stealth
-WOFF2 inputs. Provenance records all three versions and the selected UI font. Emscripten 6.0.11 and DaisySP
+are locked in `uv.lock` from the `pyproject.toml` `build` group; Raqm is mandatory
+and Brotli decodes the M8Stealth WOFF2 inputs. CI synchronizes this group with uv
+and keeps its environment outside the source checkout, including for verified
+source-archive reproduction. Exact-PR builds retain the trusted workflow
+revision's dependency project before selecting historical firmware sources.
+Provenance records all three versions and the selected UI font. Emscripten 6.0.11 and DaisySP
 are fetched from fixed source commits. The target cache contains only JieLi's
 `jieli-linux-toolchains-20260730.1` and the three AC79 SDK files. Its key includes
 runner OS/architecture, actual toolchain/SDK pins, expected SDK hashes and the
 toolchain installer recipe, so unrelated build/checker edits do not invalidate it. Every cache hit rechecks the
 compiler/package identity and SDK SHA-256 values from `tools/build.py`.
 
-Python pip and npm download caches use their respective dependency/lock files.
+uv and npm download caches use their respective dependency/lock files.
 Emscripten caches are keyed by runner OS/architecture, emsdk source commit and
 SDK version; DaisySP uses its exact source commit. Restored reference checkouts
 must match their pins and tracked files must be clean; emsdk install/activate
 still runs to establish the current environment. Playwright's browser download
 cache uses OS/architecture and the emulator's package lock. Browser system
-dependencies are still installed, and npm/pip install still verify/install the
-requested packages. Cache misses remain supported normal operation. GitHub's
+dependencies are still installed; locked uv synchronization and npm install
+verify/install the requested packages. Cache misses remain supported normal operation. GitHub's
 branch/PR cache scoping applies; a PR cache is not promoted to the default branch.
 No firmware objects, generated assets, test binaries/results, goldens or build
 directories are cached. Target builds and all selected tests always execute.
@@ -161,6 +165,19 @@ therefore produces the same release archive even when local file metadata change
 
 ## Debug artifacts and cost
 
+The full host runner schedules independent compile-and-test units concurrently,
+with at most four workers by default. Shared FX/UI outputs and web fixture
+consumers have explicit dependencies. Every existing compiler configuration,
+golden, sanitizer and coverage check still runs. `TEST_JOBS=1` uses the same unit
+plan serially for debugging and comparisons; see [host runner controls](../BUILDING.md#tests).
+Each unique `build/host/test-run-*/summary.json` records unit timings, dependencies
+and results. Its adjacent unit logs are retained in diagnostics even on failure,
+and the merged test log remains ordered for `tools/ci.py verify-tests`. An
+unsuccessful dependency unit, failing compile/test or interrupted runner cannot
+produce the success banner. Optional local skips remain explicit and CI still
+rejects them through its coverage verifier. The runner's process groups are terminated on
+cancellation; a killed runner still has the upload limits described below.
+
 Each run uploads available diagnostics with `if: always()`, including failures:
 setup/build/test/reproduction logs, provenance, target ELF/map/disassembly,
 loader ELF/disassembly, UI PNGs, host WAVs and selected FM6/reverb examples.
@@ -180,6 +197,44 @@ at most one target/test job per run, with focused independent jobs when applicab
 and no recurring nightly schedule. Focused emulator diagnostics include its fresh
 WASM, copied browser files and native song output; focused checks do not upload a
 validated firmware package. Documentation-only runs upload workflow diagnostics.
+
+### Host runner measurement (2026-10-18)
+
+One before/after comparison used firmware revision `2a8221a929a127fe4a155e31e1dd78658fd45ecf`
+and Engines pin `9630426f5c4a34a209ca851356fbe8ba3c4c6d19` in separate fresh worktrees:
+
+| Full host runner | Elapsed |
+| --- | ---: |
+| Original serial script | 1,825.95 s (30:26) |
+| Concurrent units, `TEST_JOBS=4` | 514.21 s (8:34) |
+
+That pair is **3.55 times faster, with 71.84% less elapsed time**. Measurements
+include runner preflight and all host/sanitizer/web/native-Wasm tests, excluding
+dependency setup, target builds and the separate Chromium gate. The Linux x86-64
+cloud host had a four-CPU quota and 16 GiB RAM; Python 3.12.14, Clang 19.1.7,
+GCC/G++ 14.2.0, Node 24.19.0 and Emscripten 6.0.11 were identical for both runs.
+Target builds used the pinned JieLi Clang 4.0.1 package and SDK inputs above,
+default standard profile/M8Stealth, checked-in samples and selective minsize.
+This is a local cloud comparison, not a measured post-change GitHub Actions time.
+
+Both complete logs pass `tools/ci.py verify-tests`. All 208 runtime headings match
+in order; all 151 original `run` labels and 107 compiler-command lines are retained.
+All 116 scheduled units pass. Nine scheduler fixtures cover overlap and limits,
+dependency ordering, compile/test failure propagation, cancellation including
+grandchildren, checkout locking, serial overrides and invocation from another
+directory. CI helper/source-archive/selection fixtures and actionlint pass. The
+fresh emulator also passes all seven Chromium UI/AudioWorklet smoke checks.
+
+Normalizing both builds to the same commit and dirty display identity gives
+byte-identical app (485,924 B), loader (6,934 B) and FWSC (610,090 B), with zero
+firmware/RAM/POOL/NOINIT delta. RAM is 62,024 B, POOL 336,440 B and NOINIT 15,568 B;
+all existing target guards pass. The original timed baseline used its clean
+identity (485,916 B app); the extra eight bytes in the dirty identity are metadata.
+No sound, CPU, target or union baselines were updated. Host instruction counts
+are unavailable through `perf_event_open`, and C1_HOST does not check CPU budgets;
+both runs retain those explicit exceptions. The only fixture skip is the
+unredistributed official V15 package. No physical FM-1 was needed for this runner
+change, and no device performance claim follows from the host elapsed times.
 
 ## Downloads and checksums
 
@@ -270,7 +325,7 @@ FM-1 update/recovery, Web MIDI or device audio reliability.
 ## Exact PR revision builds
 
 The [PR firmware helper](../BUILDING.md#test-a-pull-request-on-hardware) uses
-manual `CI` dispatch with `pr` and a full `commit` SHA. A short resolver job
+manual `CI` dispatch with `pr` and a full `commit` SHA by default. A short resolver job
 checks the PR and verifies that the commit is reachable from its current head.
 The reusable validation workflow checks out that SHA in every job; manual
 dispatch defaults to the complete pipeline, including target guards, host,
@@ -330,6 +385,28 @@ permissions and pinned dependencies. Dispatch requires Actions write access;
 artifact reads require sign-in and appropriate repository access. No release,
 Pages deployment or remote flashing occurs. The helper runs on the computer
 connected to the FM-1 and preserves the installer's interactive confirmation.
+
+### Reuse an automatic PR merge build
+
+From a trusted caller checkout with uv installed (`brew install uv` on macOS),
+`uv run --locked --group midi tools/fm1_pr.py NUMBER --automatic` downloads and installs an existing
+automatic PR artifact without dispatching CI. Add `--download-only` to verify
+without installer setup or hardware access. `--no-build` is accepted but redundant.
+
+The helper snapshots an open PR's head, base and GitHub merge commit, verifies the
+merge's ordered parents against that base/head, and searches the `ci.yml`
+`pull_request` runs for that head. It requires a successful run associated with
+the same repository PR and base/head, with one live `firmware-RUN_ID` artifact.
+The existing provenance, SHA-256 and package checks must then verify the merge
+revision. The printed firmware commit and download directory use that merge SHA;
+the PR head and base SHA are also printed. Failed, running, stale or artifactless
+runs cannot be installed. A later push does not change the selected snapshot.
+
+This mode installs the PR merged with its target branch. Exact-head and reachable
+historical builds remain the default mode; automatic mode's optional `--commit`
+must pin the current PR head. Target-only validation, custom workflow branches
+and source worktree operations are rejected with `--automatic`. No workflow or
+required-check behavior changes, and no new firmware build is requested.
 
 ## Releasing
 

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "isr_assert.h"                    /* FM1_ASSERT_THREAD / FM1_ISR_SIM_* (#428) */
 /* FELUCCA boot and main loop. Boot order: WDT first, boot-loop guard, fatal vectors,
  * guards; then LCD, input (TIMER5 IRQ, 10 kHz), audio (ALNK0 IRQ). */
 extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end[];
@@ -22,6 +23,7 @@ void fm1_timer5_irq(void)
 {
     static uint32_t sub, owed;
     uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u;
+    FM1_ISR_SIM_ENTER();                        /* host: simulated interrupt context (isr_assert.h) */
     fm1_timer5_ack();
     felucca_dbg.timer_irqs++;
     fm1_input_tick();
@@ -49,6 +51,7 @@ void fm1_timer5_irq(void)
             uac_service();
 #endif
         t5_nested_ticks += fm1_ticks() - t0;
+        FM1_ISR_SIM_LEAVE();
         return;
     }
     if (owed & 1u)
@@ -58,6 +61,7 @@ void fm1_timer5_irq(void)
         uart_midi_poll();
 #endif
     owed = 0;
+    FM1_ISR_SIM_LEAVE();
 }
 extern void isr_timer5(void);
 
@@ -166,11 +170,78 @@ static int boot_splash_wait(uint32_t start)
            (uint32_t)(fm1_ticks() - start) < BOOT_SPLASH_MS * 1000u * FM1_TICKS_PER_US;
 }
 
+/* The musical frame (#297): the steady-state work main.c's loop and the emulator (web/emu/felucca_web.c web_ms, and
+ * through it native replay and the partition tests) share, in this one order. Each platform keeps its own scheduling
+ * and services around it:
+ *
+ *   step                 firmware fm1_main                     emulator web_ms (1 ms of device time)
+ *   frame gate           busy wait: fm1_ms - m >= 15           fm1_ms - web_last_frame >= 15
+ *   before               WDT, usb_retry, bootguard, 2ND CORE   (the audio halves due by this ms)
+ *   music_frame_sense    battery IIR, MASTER                   the same
+ *   between              UBOOT hold, editor/OTA, UBOOT (USB),  nothing (no USB, editor, console)
+ *                        console (cdc_task)
+ *   music_frame_run      breadcrumbs, input, settings save, autosave, LEDs, screen (felucca_dbg.stage 1 -> 2 -> 9)
+ *   music_frame_poll     ui_input on every pass of the wait     ui_input on each ms without a frame
+ *                        (+ ed_service, #425 mr_step)
+ *
+ * Input precedes the queued settings save (settings_poll: stopped only), which precedes the autosave, which
+ * precedes the LED composition and the drawing. Boot, splash, calibration and recovery are not frame work.
+ * MUSIC_FRAME_STEP marks each step for the host frame test (tests/frame_test.c); empty in the firmware and emulator builds */
+#ifndef MUSIC_FRAME_STEP
+#define MUSIC_FRAME_STEP(s) ((void)0)
+#endif
+enum { MF_SENSE, MF_INPUT, MF_SETTINGS, MF_AUTOSAVE, MF_LEDS, MF_DRAW, MF_POLL };
+static void music_frame_sense(void)
+{
+    int32_t b;
+    MUSIC_FRAME_STEP(MF_SENSE);
+    b = fm1_adc_read(FM1_ADC_BATT);                     /* battery: slow IIR */
+    if (b > 0)
+        song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
+    master_poll();
+}
+static void music_frame_run(void)
+{
+    felucca_dbg.ui_frames++;
+    felucca_dbg.page = ui.page;
+    felucca_dbg.home = ui.home;
+    felucca_dbg.stage = 1;
+    MUSIC_FRAME_STEP(MF_INPUT);
+    ui_input();
+    MUSIC_FRAME_STEP(MF_SETTINGS);
+    settings_poll();                                    /* queued settings save: only while stopped */
+    MUSIC_FRAME_STEP(MF_AUTOSAVE);
+    autosave_poll();                                    /* (1.2) the music, stopped and idle: project.c */
+    felucca_dbg.stage = 2;
+    MUSIC_FRAME_STEP(MF_LEDS);
+    ui_leds();
+    MUSIC_FRAME_STEP(MF_DRAW);
+    ui_draw();
+    felucca_dbg.stage = 9;
+}
+static void music_frame_poll(void)                      /* between frames: input is not held to the frame rate */
+{
+    MUSIC_FRAME_STEP(MF_POLL);
+    ui_input();
+}
+
+#if FELUCCA_CPU2
+/* the notice for a retained exclusion (ui.msg: 23 characters at most); reasons from hal/fm1_sys.h */
+static const char *c1_held_msg(uint32_t reason)
+{
+    static const char *const m[] = {"2ND CORE HELD", "2ND CORE HELD: BAD JOB", "2ND CORE HELD: TIMEOUT",
+                                    "2ND CORE HELD: FAULT", "2ND CORE HELD: HANG", "2ND CORE HELD: CORRUPT"};
+    return m[reason <= FM1_C1X_CORRUPT ? reason : 0u];
+}
+#endif
+
 static void fm1_main(void)
 {
     uint32_t splash_start, master_ms;
+    boot_policy_live_t boot_live;
 #if FELUCCA_CPU2
-    uint8_t c1_told = 0;                                /* 2ND CORE MISREAD shown (and ON cleared) */
+    uint8_t c1_told = 0;                                /* 2ND CORE HELD shown (and ON cleared) */
+    uint32_t c1_refused = 0;                            /* the retained exclusion that kept it from starting (fm1_c1g_*) */
 #endif
     persist_boot();
 #if FELUCCA_OTA
@@ -201,14 +272,20 @@ static void fm1_main(void)
     master_boot();
     kb_boot_hold = 1;                         /* #137: no notes from the keys before the UI (seq.c keyboard_block) */
 #if FELUCCA_CPU2
-    if (!bootguard.failed && (ui_prefs2 & (PREF_CPU2_ON >> 16))) {
+    if (ui_prefs2 & (PREF_CPU2_ON >> 16)) {
         /* the second core (hal/fm1_cpu1.h; fx.c mix_block hands it parts), at power-on, before the audio and
          * the timers (started later it never reaches its entry). It starts in the chip's ROM: the PC limits open
-         * meanwhile. MENU > 2ND CORE OFF (the default), a crash in the last boot's first 30 s, or no answer: it is
-         * never started, one core, as 1.6 */
-        fm1_guard_pc_open();
-        fm1_cpu1_start();
-        fm1_guard_enable(FM1_GUARD_PC);
+         * meanwhile. MENU > 2ND CORE OFF (the default), a crash in the last boot's first 30 s, a retained exclusion
+         * (a bad job, a timeout, core 0's fault or a hang while it answered: fm1_c1g_refuse, hal/fm1_sys.h; the saved
+         * ON does not override it, MENU > 2ND CORE set ON again does) or no answer: it is never started, one core,
+         * as 1.6. The exclusion is read even after a bootguard failure (the worker's own watchdog reset is one): the
+         * notice and the cleared ON preference follow from it, or a lost RAM would start the failed worker again */
+        c1_refused = fm1_c1g_refuse();
+        if (!bootguard.failed && !c1_refused) {
+            fm1_guard_pc_open();
+            fm1_cpu1_start();
+            fm1_guard_enable(FM1_GUARD_PC);
+        }
     }
 #endif
     audio_init();
@@ -240,31 +317,29 @@ static void fm1_main(void)
     lcd_fill(0, 0, 240, 240, T_BG);
     scrn.idle = fm1_ms;                        /* (MENU > SCREEN OFF: from here) */
 
+    boot_policy_live_begin(&boot_live, fm1_ms);
     for (;;) {
         uint32_t m = fm1_ms;
         fm1_wdt_feed();
         usb_retry(fm1_ms);
-        if (fm1_ms > 30000u && bootguard.pending) {     /* a crash or hang in the first 30 s counts */
-            bootguard.pending = 0;
-            bootguard.failed = 0;
-        }
+        boot_policy_service(&bootguard, &boot_live, fm1_ms);
 #if FELUCCA_CPU2
-        if (*(volatile uint8_t *)&fm1_c1_gave_up && !c1_told) {   /* (the ISR's) */
-            c1_told = 1;                                /* (once: ON set again afterwards stays, for the next power-on) */
-            if (ui_prefs2 & (PREF_CPU2_ON >> 16)) {
-                ui_prefs2 &= (uint8_t)~(PREF_CPU2_ON >> 16);   /* core 1 misread or stopped answering on this FM-1: one
-                                                         * core from now on (MENU > 2ND CORE ON tries again) */
-                settings_later();
+        if (!c1_told) {                                 /* (fm1_c1_gave_up is the ISR's) */
+            uint32_t why = c1_refused;
+            if (!why && *(volatile uint8_t *)&fm1_c1_gave_up)
+                why = fm1_c1g_read(0);                  /* its wait recorded BAD_JOB or TIMEOUT before holding it */
+            if (why) {
+                c1_told = 1;                            /* (once: ON set again afterwards stays, for the next power-on) */
+                if (ui_prefs2 & (PREF_CPU2_ON >> 16)) {
+                    ui_prefs2 &= (uint8_t)~(PREF_CPU2_ON >> 16);   /* one core from now on: a bad job, a timeout or a
+                                                         * retained exclusion; MENU > 2ND CORE ON tries again */
+                    settings_later();                   /* (main loop only: never from the ISR or before the exclusion) */
+                }
+                ui_message(c1_held_msg(why));
             }
-            ui_message("2ND CORE MISREAD: OFF");     /* (ui.msg: 23 characters at most) */
         }
 #endif
-        {
-            int32_t b = fm1_adc_read(FM1_ADC_BATT);     /* battery: slow IIR */
-            if (b > 0)
-                song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
-        }
-        master_poll();
+        music_frame_sense();                            /* battery, MASTER (before the platform services, as ever) */
         {   /* OCT- + OCT+ held 5 s: enter UBOOT with RAM intact (debug / update); a countdown
              * shows from 2 s over the whole screen (the menu and the dialogs too: ui_draw), letting
              * go cancels it */
@@ -290,7 +365,7 @@ static void fm1_main(void)
                 draw_text_box(0, 110, 240, &AF_M, "UBOOT", T_THEME, 1);
                 usb_detach();
                 fm1_delay_ms(30);
-                bootguard.pending = 0;                  /* intentional reset: not a failed boot */
+                boot_policy_intentional(&bootguard);     /* intentional reset */
                 fm1_enter_uboot();
             }
         }
@@ -315,27 +390,20 @@ static void fm1_main(void)
             fm1_delay_ms(20);
             usb_detach();
             fm1_delay_ms(30);
-            bootguard.pending = 0;
+            boot_policy_intentional(&bootguard);
             fm1_enter_uboot();
         }
 #if FELUCCA_CDC
         cdc_task();
 #endif
-        felucca_dbg.ui_frames++;
-        felucca_dbg.page = ui.page;
-        felucca_dbg.home = ui.home;
-        felucca_dbg.stage = 1;
-        ui_input();
-        settings_poll();                              /* queued settings save: only while stopped */
-        autosave_poll();                              /* (1.2) the music, stopped and idle: project.c */
-        felucca_dbg.stage = 2;
-        ui_leds();
-        ui_draw();
-        felucca_dbg.stage = 9;
+        music_frame_run();                              /* input, settings, autosave, LEDs, screen */
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */
-            ui_input();
+            music_frame_poll();
 #if FELUCCA_OTA
             ed_service();                       /* editor replies without waiting for the next frame */
+#endif
+#if FELUCCA_MUL64_REPRO
+            mr_step();                          /* #425 reproducer: one bounded step of idle time (mul64_repro.c) */
 #endif
         }
     }
@@ -344,6 +412,7 @@ static void fm1_main(void)
 void fm1_cstart(void)
 {
     uint32_t *s, *d, p3, src, wdt;
+    boot_policy_path_t boot_path;
 #if FELUCCA_CPU2
     fm1_cpu1_halt();                           /* (after Jangada, X0X): a second core still running from before
                                                 * this reset (a watchdog, a fault, another firmware) would read the RAM
@@ -352,22 +421,15 @@ void fm1_cstart(void)
     fm1_time_init();
     fm1_reset_reason();
     p3 = fm1_boot.p3_rst;
+#if FELUCCA_CPU2
+    fm1_c1g_boot(p3);                          /* the retained worker guard, settled before anything reads it (fm1_sys.h) */
+#endif
     src = fm1_boot.rst_src;
     wdt = fm1_boot.wdt_con;
     fm1_wdt_arm(0x0D);
-    if (bootguard.magic != BOOTGUARD_MAGIC) {
-        bootguard.magic = BOOTGUARD_MAGIC;
-        bootguard.failed = 0;
-        bootguard.pending = 0;
-    }
-    if (bootguard.pending)
-        bootguard.failed++;
-    bootguard.pending = 1;
-    if (bootguard.failed >= 2u) {
-        bootguard.failed = 0;
-        bootguard.pending = 0;
-        fm1_enter_uboot();
-    }
+    boot_path = boot_policy_begin(&bootguard, p3, src);
+    if (boot_path == BOOT_POLICY_ROM)
+        fm1_enter_uboot();                     /* another reset while in rescue */
     fm1_irq_init();
     for (d = _bss_start; d < _bss_end; d++)
         *d = 0;
@@ -386,6 +448,13 @@ void fm1_cstart(void)
     fm1_boot.p3_rst = (uint8_t)p3;
     fm1_boot.rst_src = src;
     fm1_boot.wdt_con = (uint8_t)wdt;
+    boot_path = boot_policy_select(&bootguard, boot_path, rescue_boot_buttons(), FELUCCA_OTA);
+    if (boot_path == BOOT_POLICY_ROM)
+        fm1_enter_uboot();                     /* builds without OTA retain the ROM fallback */
+#if FELUCCA_OTA
+    if (boot_path == BOOT_POLICY_RESCUE)
+        rescue_run();
+#endif
     fm1_main();
     for (;;)
         ;
