@@ -42,6 +42,24 @@ remains future work. Cancelling retires the preview's undo entry without clearin
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
+## MIDI timing and arithmetic hardening
+
+TRS input is polled at 2 kHz even while audio renders. Packets and timestamps are
+published by TIMER5; sequencers and synth state remain owned by the audio consumer.
+Only receive/overtime events consume UART DMA counts. USB MIDI remains deferred.
+External USB/TRS clock uses fixed musical units with separate fractional carries
+for each sequencer and arpeggiator, including tempo changes and SONG sections.
+An extreme live ARP rate reduction can create a temporary backlog: at most eight
+notes are generated per control block and remaining phase is retained for later
+blocks. Stop freezes that backlog; a new key tapped while stopped still sounds
+once and its gate ends in real time. Internal-clock timing and stored IDs are unchanged.
+
+Invalid internal tempo uses the declared 120 BPM default locally; valid 40–240 BPM
+and a measured external beat retain their timing. This guard does not establish
+the cause of the previously reported intermittent zero tempo. Signed DC/low-cut,
+FM6 and PHYS scaling is defined without changing the normal vectors/PCM.
+See [evidence and combined device procedure](midi-dsp-reliability.md).
+
 ## Effect control smoothing
 
 Shared chorus Depth changes glide while the bus sounds: tap and release **FX**
@@ -181,3 +199,15 @@ engine-switch, dense ratchet/modulation, throw and MIDI-parser workloads, plus r
 emulator panel/save timelines. It retains exact PCM, WAVs, LCD captures and health
 results without an FM-1, with a separate [FM-1 capture procedure](stress-device.md)
 and result template for pending physical observations.
+
+## Display and LED idle controls
+
+**MENU > DISPLAY > AUTO OFF** combines the former SCREEN OFF delay with a target:
+SCREEN, LEDS or BOTH after 5, 15, 30 or 60 minutes; NEVER remains the default.
+Timed LED blanking overrides ANIM IDLE and leaves a brief rotating key-LED alive
+signal every 30 seconds. LED-only wake acts on the first input; screen wake
+consumes its panel gesture. Existing LEDS OFF still means no idle glow, with
+active indicators retained; INV LO/HI now redraw immediately when selected.
+See the [controls, compatibility and combined FM-1 procedure](display-idle.md).
+Physical visibility, wake and MIDI/audio checks remain pending; the LCD backlight
+stays on and no power-saving benefit is claimed.
