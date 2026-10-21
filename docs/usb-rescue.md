@@ -18,8 +18,9 @@ stages the selected package's RAM loader. Entry and idle cause no flash writes.
 Use the same reviewed `.fwsc` as for ordinary OTA, not a raw `.bin`:
 
 ```sh
+# Download/verify a successful automatic build for this PR's current base/head:
 uv run --locked --group midi tools/fm1_pr.py NUMBER --automatic
-# For a locally built package:
+# Install an already downloaded or locally built package:
 uv run --locked --group midi tools/fm1_install.py build/felucca.fwsc
 ```
 
