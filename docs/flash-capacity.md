@@ -214,6 +214,10 @@ Findings:
 - **The device-bytes row has one spare byte.** `settings_dev[0..12]`, `[14..31]` are claimed
   (favorites.c, ui.c, ui_layer.c); a source search finds no use of `settings_dev[13]`. It travels in
   PER4, so a value there needs no record change and no downgrade cost.
+  AUTO OFF uses bits 3–4 of its already-owned byte `[27]` for the output target;
+  its historical timer codes stay in bits 0–2. It claims no additional byte or
+  sector; older firmware resets a LEDS/BOTH selection to NEVER. See
+  [display settings compatibility](display-idle.md#storage-and-editor-compatibility).
 - A record longer than 2,688 B (`sizeof(persist_rec_t)`) is *invalid* to a firmware built from `a373657`
   (`settings_import` returns 0 for `n` beyond it), not merely "not understood". A tail that keeps the
   total at or below 2,688 B with a different extension `ver` falls into that firmware's `ext_other`

@@ -1305,7 +1305,7 @@ before MIDI IN the first 21, 1.2 the first 23, 1.3 / 1.4 the first 24, 1.5 / 1.5
 | 14 | 14 | COUNT-IN | 0 | 0 OFF, 1 "1 BAR", 2 "2 BARS" (1.1) | OFF | 2 AUDIO |
 | 15 | 15 | RESTORE LAST | 0 | 0 ON, 1 OFF (1.2) | ON | 4 SYSTEM (up to 1.2's MIDI tab: 3) |
 | 16 | 16 | SCALE LEDS | 0 | 0 OFF, 1 ON (1.2) | OFF | 1 CONTROL |
-| 17 | 17 | SCREEN OFF | 0 | 0 NEVER, 1 "5 MIN", 2 "15 MIN", 3 "30 MIN", 4 "60 MIN" (1.1.5) | NEVER (1.1.5.1; 1.1.5: 30 MIN) | 0 DISPLAY |
+| 17 | 17 | AUTO OFF | 0 | 0 NEVER; 1–4 SCREEN 5m/15m/30m/60m; 5–8 LEDS 5m/15m/30m/60m; 9–12 BOTH 5m/15m/30m/60m | NEVER | 0 DISPLAY |
 | 18 | 18 | SCOPE | 0 | 0 OUT, 1 MIX (1.2) | OUT | 0 DISPLAY |
 | 19 | 19 | STEP PREVIEW | 0 | 0 OFF, 1 ON (1.2) | OFF | 1 CONTROL |
 | 20 | 20 | CHORD ENTRY | 0 | 0 HOLD, 1 ADD (1.2) | HOLD | 1 CONTROL |
@@ -1338,11 +1338,33 @@ SCALE LEDS (id 16, 1.2, Discussion #127; the CONTROL tab shows HOLD, KNOB ACCEL,
 index 5..8 and 16): ON shows the selected track's scale on the key LEDs outside the layers (README: Key LEDs).
 Applied at once.
 
-SCREEN OFF (id 17, 1.1.5; the DISPLAY tab shows COLOR, STYLE, LARGE, ANIM, LEDS and SCREEN OFF, index 0..4 and 17):
-after that long without input on the panel (a button, a key, a knob; not the editor; 1.5.5: with SCREEN WAKE +MIDI,
-id 31, the default, a MIDI IN note-on counts too and plays) the screen and its
-backlight go off while the sound, the sequencer, MIDI and USB go on; the next touch wakes it and does nothing else.
-NEVER keeps it on. A change counts from then (a MENU_SET to 5 MIN does not turn it off at once). Applied at once.
+AUTO OFF (id 17, originally SCREEN OFF): values 0–4 retain their historical meaning;
+the descriptor now names the target explicitly. Values 5–8 blank LEDs alone and
+9–12 blank both LEDs and LCD. `m` means minutes. The setting count and all other IDs
+are unchanged. Editors must use the advertised bounds and names.
+
+After the selected interval without panel activity (button/key pressed or held,
+encoder turned; not MASTER or ordinary editor traffic), the selected output goes
+dark. SCREEN WAKE +MIDI (id 31, default) also counts accepted MIDI IN note-ons;
+PANEL ignores them for this timer. Audio, sequencing, MIDI and USB continue even
+while dark. SCREEN/BOTH consume the panel wake gesture; LEDS alone restores normal
+feedback and lets the same gesture act. MIDI wake notes always play. Dialogs,
+count-in and the update countdown keep the outputs awake. NEVER disables the timer;
+changing id 17 restarts it, and wakes a sleeping LCD.
+
+LED darkness overrides ANIM IDLE and all ordinary lit/dim/mid/breath maps. One key
+LED briefly pulses at low brightness for 120 ms every 30 seconds, starting 30 seconds
+after darkness and rotating through the 27 keyboard LEDs. PLAY/REC are not used.
+The physical LCD backlight stays on: its enable also controls input scanning.
+This is a visual inactivity policy, not a claimed power-saving feature.
+
+Settings byte `[15][27]` keeps its historical low-three-bit timer codes
+(`0,2,1,4,7` for NEVER/5/15/30/60 minutes); bits 3–4 select SCREEN=0, LEDS=1,
+BOTH=2. Unknown targets/bits or new target bytes without a valid nonzero timer
+import as NEVER. Historical bytes 0–7 retain their old interpretation. Record and
+backup sizes are unchanged. Older firmware resets LEDS/BOTH bytes (>7) to NEVER
+on import; SCREEN settings retain their existing compatibility. See the
+[control and test guide](../docs/display-idle.md).
 
 SCOPE (id 18, 1.2, Discussion #165; DISPLAY now shows COLOR, STYLE, LARGE, ANIM, LEDS, SCREEN OFF and SCOPE, index
 0..4, 17, 18): what HOME's oscilloscope draws. OUT (the default, as before) the sound after MASTER, so it shrinks with

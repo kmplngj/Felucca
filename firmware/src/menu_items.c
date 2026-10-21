@@ -39,7 +39,7 @@ static int menu_valued(uint32_t row) { return row < MI_VALUES && row != MI_LCLEA
 #define MI_PROJECT(row) ((row) == MI_TUNE || ((row) >= MI_MIDIIN && (row) <= MI_TCH4))   /* the project's values (song.g,
                                                                                          * song.mch), not settings */
 #define MI_TCH(row) ((row) >= MI_TCH1 && (row) <= MI_TCH4)   /* 1.5.5 (#202): T1..T4 CHANNEL, MIDI IN TRACK's */
-static const char *const MI_NAME[MI_COUNT] = {"COLOR", "STYLE", "LARGE", "ANIM", "LEDS", "SCREEN OFF", "SCOPE", "HOME", "HOLD", "KNOB ACCEL",
+static const char *const MI_NAME[MI_COUNT] = {"COLOR", "STYLE", "LARGE", "ANIM", "LEDS", "AUTO OFF", "SCOPE", "HOME", "HOLD", "KNOB ACCEL",
                                               "FX LATCH", "BPM LOCK", "SCALE LEDS", "STEP PREVIEW", "CHORD ENTRY", "SELECT",
                                               "SPEAKER EQ", "USB LEVEL", "CLICK", "CLICK LEVEL", "COUNT-IN", "TUNE",
                                               "MIDI IN", "T1 CHANNEL", "T2 CHANNEL", "T3 CHANNEL", "T4 CHANNEL",
@@ -137,8 +137,10 @@ static const char *const HOLD_N[4] = {"0.3 s", "0.4 s", "0.5 s", "0.6 s"};   /* 
 static const char *const CLICK_N[3] = {"OFF", "REC", "ON"};          /* REC: while a track is armed and playing */
 static const char *const CLKLVL_N[3] = {"LOW", "MID", "HIGH"};
 static const char *const COUNTIN_N[3] = {"OFF", "1 BAR", "2 BARS"};
-/* 1.1.5: SCREEN OFF (ui.c scr_*: the screen dark after this long without panel input; NEVER the default since 1.1.5.1) */
-static const char *const SCROFF_N[5] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"};
+/* AUTO OFF (ui.c scr_*): target and delay in one row; values 0..4 retain SCREEN OFF's meaning. */
+static const char *const SCROFF_N[13] = {"NEVER", "SCREEN 5m", "SCREEN 15m", "SCREEN 30m", "SCREEN 60m",
+                                      "LEDS 5m", "LEDS 15m", "LEDS 30m", "LEDS 60m",
+                                      "BOTH 5m", "BOTH 15m", "BOTH 30m", "BOTH 60m"};
 /* ANIM (#46: OFF, values snap: ui_draw.c roll_note, ui_graph.c pr_follow; no power-on sweep, main.c boot_leds). 1.2
  * (Discussion #135): IDLE, as ON and the LEDs' idle animation after a minute without input (ui_input.c idle_leds; ui.c
  * ui_idle). Its values keep 1.1's: 0 ON, 1 OFF (the editor's), 2 IDLE; the menu steps them OFF, ON, IDLE (ANIM_ORD) */
