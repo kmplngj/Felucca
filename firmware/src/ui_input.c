@@ -371,6 +371,24 @@ static void ui_leds(void)
     uint32_t fam = cur_fam(), mode = settings_leds, inv = leds_inv();   /* (1.5.6: INV LO 1, INV HI 2) */
     int keys_map = keys_own();
     static uint8_t ready;
+    if (scr_led_dark()) {                             /* AUTO OFF owns all LED levels, ahead of ANIM IDLE. Scan stays on. */
+        uint32_t elapsed = fm1_ms - scrn.idle - scr_limit();
+        if (fm1_led_anim_on())
+            fm1_led_anim_stop();
+        if (!ready) {
+            led_pos_init();
+            ready = 1;
+        }
+        /* No pulse on entry; one 120 ms low-level key every 30 s, never PLAY/REC. */
+        if (elapsed >= 30000u && elapsed % 30000u < 120u)
+            led_put(nm, 14u + ((elapsed / 30000u - 1u) % 27u), 1);
+        fm1_led_dim_level(1u);
+        for (c = 0; c < FM1_NCOL; c++) {
+            fm1_led[c] = fm1_led_dim[c] = fm1_led_breath[c] = 0;
+            fm1_led_mid[c] = nm[c];
+        }
+        return;
+    }
     if (idle_leds() || fm1_led_anim_on())              /* the idle animation, the power-on sweep have them (main.c */
         return;                                         /* boot_leds) */
     if (!ready) {

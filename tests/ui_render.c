@@ -2098,6 +2098,18 @@ static void align_sweeps(void)
                 settings_leds = (uint8_t)(k % LEDS_COUNT); ui.force = 1;   /* (every LEDS name) */
                 draw_menu();
             }
+        cur_name = st ? "sweep LINE: AUTO OFF / INV levels" : "sweep FLAT: AUTO OFF / INV levels";
+        for (i = 0; i < 2u; i++)
+            for (k = 0; k < 4u * menu_n(i ? MI_LEDS : MI_SCROFF); k++) {
+                uint32_t row = i ? MI_LEDS : MI_SCROFF;
+                menu_put(row, k / 4u);
+                ui.menu_sel = (uint8_t)(k & 2u ? row : MI_COLOR);
+                ui_prefs = k & 1u ? PREF_LARGE : 0u;
+                ui.force = 1;
+                draw_menu();
+            }
+        menu_put(MI_SCROFF, 0);
+        menu_put(MI_LEDS, 2);
         ui_prefs = 0; ui_rec_prefs = 0;
         cur_name = st ? "sweep LINE: menu TUNE / MIDI IN" : "sweep FLAT: menu TUNE / MIDI IN";   /* (1.2: the project's) */
         for (k = 0; k < 2u * TUNE_N; k++) {             /* every TUNE (the cents, signed), selected or not, S and M */

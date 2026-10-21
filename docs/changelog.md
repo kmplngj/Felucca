@@ -62,6 +62,9 @@ in issues and roadmaps, not among implemented changes below.
   is defined and invalid tempo has a bounded default. Normal PCM and valid-tempo
   behavior remain covered by regressions; see [evidence and device qualification](midi-dsp-reliability.md).
 
+- **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
+  immediately when their brightness is changed without leaving the row. Physical
+  brightness/readability checks remain pending; see [display controls](display-idle.md).
 - **Early rescue entry:** enable the shared key/LED power rail before reading
   OCT− at startup, allow it to settle and use the normal input scan cadence.
   Both-OCT calibration remains available; corrected entry awaits FM-1 retesting
@@ -86,6 +89,11 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Changed
 
+- **Display inactivity:** AUTO OFF combines the existing screen timeout with LED-only
+  and combined darkness, retaining NEVER as default and the existing screen-only
+  values. Timed LED darkness includes a quiet rotating key-LED pulse every 30 seconds;
+  audio and input scanning continue. The LCD backlight remains on. See
+  [controls, downgrade behavior and pending FM-1 checks](display-idle.md).
 - **Python tooling setup:** locked uv dependency groups separate build/font tooling
   from MIDI installation. Build and PR handoff commands synchronize their environment
   automatically, including on macOS without manual pip setup; see
