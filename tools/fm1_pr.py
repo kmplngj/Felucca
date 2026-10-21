@@ -324,19 +324,18 @@ def download(repository, run, revision, output, validation="full"):
     return package
 
 
-def prepare_installer():
+def prepare_installer(argv=()):
     # Check the caller's interpreter before any GitHub/build work. Importing
     # the MIDI packages here does not enumerate or open a port.
     check = subprocess.run([sys.executable, "-c", "import mido, rtmidi"], capture_output=True, text=True)
     if check.returncode:
-        raise ValueError("Python MIDI installer needs mido and python-rtmidi in this interpreter. "
-                         "Install them in a virtual environment before starting CI.")
-    return [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]
+        raise ValueError("Python MIDI installer " + fm1_install.midi_dependency_message(__file__, argv))
+    return [sys.executable, str(Path(__file__).resolve().with_name("fm1_install.py"))]
 
 
 def install(package, port=None, yes=False, command=None):
     command = [*(command if command is not None else
-                 [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]), str(package)]
+                 [sys.executable, str(Path(__file__).resolve().with_name("fm1_install.py"))]), str(package)]
     if port:
         command.extend(["--port", port])
     if yes:
@@ -389,7 +388,7 @@ def main(argv=None):
         validate_selection(args.repo, args.pr, args.commit)
         installer_command = None
         if not (args.download_only or args.prepare_only or args.resolve_only):
-            installer_command = prepare_installer()
+            installer_command = prepare_installer(argv if argv is not None else sys.argv[1:])
         if args.automatic:
             head, base, revision, title = resolve_automatic_pr(args.repo, args.pr, args.commit)
         else:

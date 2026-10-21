@@ -16,7 +16,12 @@ emulator and real FM-1 evidence; name skipped checks and remaining limitations. 
 For documentation/tooling-only changes, explain why hardware testing is unnecessary
 and supply the relevant verification procedure. -->
 
-1. **Build/setup:** <!-- PR commit/artifact, flags, prerequisites, install procedure if applicable. -->
+1. **Build/setup:** <!-- PR commit/artifact, flags/profile, prerequisites, install procedure if applicable.
+   CLI handoff from a trusted caller checkout: install uv (macOS: brew install uv),
+   then uv run --locked --group midi tools/fm1_pr.py NUMBER.
+   Use --automatic only for the intended existing merge artifact/variant.
+   Local builds: uv run --locked --group build ./build.sh.
+   No manual pip setup or installer-backend flag; don't run unreviewed PR installer scripts. -->
 2. **Reach the function:** <!-- Known starting state, track/engine, physical buttons,
    tap/hold/release, page/menu route, knob numbers and visible labels. -->
 3. **Test and expect:** <!-- Actions and observable expected results for each relevant scenario/regression. -->

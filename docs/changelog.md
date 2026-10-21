@@ -65,9 +65,14 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Changed
 
+- **Python tooling setup:** locked uv dependency groups separate build/font tooling
+  from MIDI installation. Build and PR handoff commands synchronize their environment
+  automatically, including on macOS without manual pip setup; see
+  [Python environments](../BUILDING.md#python-environments).
+
 - **PR installation:** the CLI uses the maintained Python updater again. Native Rust
-  updater setup, cached artifacts and backend selection have been removed; install
-  `mido`/`python-rtmidi` in the caller's interpreter. See [BUILDING](../BUILDING.md#test-a-pull-request-on-hardware).
+  updater setup, cached artifacts and backend selection have been removed; the locked
+  `midi` group supplies `mido`/`python-rtmidi` in the trusted caller checkout. See [BUILDING](../BUILDING.md#test-a-pull-request-on-hardware).
 
 - **Update-loader compatibility:** installers bind current Felucca packages to loader
   `900`, with the digest-pinned original V15 using loader `015` through Python/the
