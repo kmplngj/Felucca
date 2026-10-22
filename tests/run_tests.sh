@@ -702,6 +702,8 @@ if [ -f build/gen/felucca_tables.h ]; then
             env MENU_JSON="$OUT/menu.json" "$OUT/editor_test"
         $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/editor_test_c1" tests/editor_test.c -lm
         run "editor, a FELUCCA_CPU2=0 build: MENU settings without 2ND CORE (ids 0..31)" "$OUT/editor_test_c1"
+        run "SysEx ownership: real editor/OTA arrival race, handshakes, unknown cleanup and unsafe-policy mutation" \
+            env SYSEX_DISPATCH_OUT="$OUT/sysex-dispatch" python3 tests/sysex_dispatch_test.py
     }
     unit editor "" u_editor
 
