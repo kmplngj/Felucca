@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Check the actual framebuffer difference from an empty cushion, independently
  * of the text placement expression and alignment hook. Native M8 1..4: all
- * palettes, FLAT/LINE, active/lit/idle/dim, 12/16 px used by normal/LARGE callers
+ * built-in palettes and CUSTOM, FLAT/LINE, active/lit/idle/dim, 12/16 px used by normal/LARGE callers
  * and the supported 24 px path. A parity tie must go left/up, at most 0.5 px.
  * Optional argv[1]: RGB PPM, palette/state rows and 12/16/24 px columns. */
 #include <stdint.h>
@@ -31,7 +31,7 @@ static int32_t hook_box[4];
 static uint16_t empty[W * H], actual[W * H];
 static unsigned failures, cases;
 #define SHEET_W 360u
-#define SHEET_H (NPALETTES * 4u * 36u)
+#define SHEET_H ((NPALETTES + 1u) * 4u * 36u)
 static uint16_t sheet[SHEET_W * SHEET_H];
 static void bounds(const uint16_t *a, const uint16_t *b, int32_t box[4])
 {
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
 #else
     static const unsigned sizes[] = {12, 16, 24};
     uint32_t st, p, s, si, k, x, y;
-    for (st = ST_FLAT; st <= ST_LINE; st++) for (p = 0; p < NPALETTES; p++) {
+    for (st = ST_FLAT; st <= ST_LINE; st++) for (p = 0; p <= NPALETTES; p++) {
         ux.style = (uint8_t)st;
         palette_set(p);
         for (s = 0; s < 4; s++) {
