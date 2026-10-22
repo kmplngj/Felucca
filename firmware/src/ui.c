@@ -246,8 +246,9 @@ enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PA
  * other codes, 30 MIN now 4. Bits 0..2 retain these codes; bits 3..4 select SCREEN (0), LEDS (1), BOTH (2), remembered
  * even with the first timer at NEVER. Bits 5..7 hold ALL DARK's independent NEVER/5/15/30/60 index. Both timers count
  * from the same activity, and ALL DARK, when both are on, must be later. It sleeps the LCD and suppresses every LED,
- * including the first-stage heartbeat. Physical backlight control is still the unqualified lcd.c controller probe;
- * PA2, input scanning, audio and MIDI stay enabled. Record size is unchanged; older readers reset new bytes to NEVER.
+ * including the first-stage heartbeat. The physical backlight remains powered; the controller probe was removed
+ * after a colour regression. PA2, input scanning, audio and MIDI stay enabled. Record size is unchanged;
+ * older readers reset new bytes to NEVER.
  * Input is the panel's: a button or key held or pressed, a knob turned (not the editor or MASTER, an analogue pot);
  * WAKE +MIDI (the default since 1.5.5; PANEL: the panel only) also accepts a MIDI IN note-on,
  * USB or TRS, on any channel that plays a track (seq.c midi_seen: the ISR only sets its bit), not clock, CC or SysEx.
