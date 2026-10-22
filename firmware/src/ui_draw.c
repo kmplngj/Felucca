@@ -1572,19 +1572,64 @@ static void style_apply(void)
     }
 }
 
+#if FELUCCA_SCREEN_CAPTURE
+static uint32_t scap_input_time;
+static int scap_scene_supported(void)
+{
+    return !song.playing && !seq_counting() && (ui.menu == 1u || ui.menu == 2u || ui.menu == 4u) &&
+           !ui.uboot && !ui.confirm && !ui.layer && !name_on() &&
+           !fm1_in.notes && !fm1_in.buttons;
+}
+static void scap_scene_check(void)
+{
+    scap_tick(fm1_ms);
+    if (scap.state == SCAP_PENDING || scap.state == SCAP_READY || scap.state == SCAP_COMPLETE) {
+        if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+        else if (scrn.idle != scap_input_time) scap.state = SCAP_CHANGED;
+        else if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
+    }
+}
+#endif
 static void ui_draw_page(uint32_t counting);
 static void ui_draw(void)
 {
     static uint8_t counting;
     style_apply();
+#if FELUCCA_SCREEN_CAPTURE
+    scap_scene_check();
+#endif
     ui.frame++;
     if (counting != (uint8_t)seq_counting()) {          /* a count-in began or ended: the page drawn again after it */
         counting = (uint8_t)seq_counting();
         ui.force = 1;
     }
-    if (!scr_frame())                                   /* MENU > SCREEN OFF: dark (or waking), nothing drawn */
+    if (!scr_frame()) {                                 /* MENU > SCREEN OFF: dark (or waking), nothing drawn */
+#if FELUCCA_SCREEN_CAPTURE
+        if (scap.state == SCAP_PENDING || scap.state == SCAP_READY) scap.state = SCAP_ASLEEP;
+#endif
         return;
+    }
+#if FELUCCA_SCREEN_CAPTURE
+    scap_tick(fm1_ms);
+    if (scap.state == SCAP_PENDING) {
+        /* Initial diagnostic scope: stopped static MENU pages. INFO contains live
+         * values; HOME scopes, names, overlays and ongoing input are unsupported.
+         * Never wake the display, pause music or refresh its inactivity timer. */
+        if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+        else if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
+        else {
+            ui.force = 1;                            /* bypass every MENU draw cache */
+            scap_render_begin();
+        }
+    }
+#endif
     ui_draw_page(counting);
+#if FELUCCA_SCREEN_CAPTURE
+    if (scap.tapping) {
+        lcd_sync();                                  /* complete the last asynchronous source read */
+        scap_render_end();
+    }
+#endif
     scr_shown();
 }
 static void ui_draw_page(uint32_t counting)

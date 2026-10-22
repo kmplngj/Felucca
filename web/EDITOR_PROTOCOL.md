@@ -2058,3 +2058,56 @@ Discover features from INFO and descriptor replies rather than the version strin
 | #321 | [Extended backup objects](#the-fm6-voice-bank-and-the-slice-records-321-ids-20-21) |
 | #456 | [Raw store export 82..83](#raw-store-export-82-83-456) |
 | Optional #27 | [MACRO profile descriptors and presets](#optional-macro-profile-27) |
+
+## Debug screen capture (CDC)
+
+This optional diagnostic transport is ASCII over USB SERIAL, separate from MIDI
+SysEx. It adds no MIDI command IDs or persistent settings. Build with
+`FELUCCA_SCREEN_CAPTURE=1`; the normal/default build reports only
+`SCAP CAPS version=1 enabled=0`. See the [capture guide](../docs/screen-capture.md)
+for scope, installation and the host PNG/JSON tool.
+
+Commands end with CR; the console echoes the command, emits one SCAP record and
+returns its normal `> ` prompt. Numbers are decimal uint32, hashes/CRC and raw
+pixel bytes are uppercase hexadecimal. Arguments, token, state and bounds are
+validated before data access. Only one session owns the bounded capture band.
+
+| Command | Response/meaning |
+| --- | --- |
+| `screen caps` | `SCAP CAPS` capability and actual compiled-build metadata |
+| `screen begin` | New nonzero token and `SCAP STATE`; busy if a live capture owns the band |
+| `screen status TOKEN` | Current state and scene diagnostics, without advancing |
+| `screen read TOKEN OFFSET LENGTH` | `SCAP DATA` for 1–96 bytes within the current ready band |
+| `screen next TOKEN OFFSET` | Release the band and request exactly the next 3,840-byte offset; final offset 115,200 completes |
+| `screen cancel TOKEN` | Cancel ownership; stale tokens fail |
+
+An enabled CAPS record carries `version=1 enabled=1 width=240 height=240
+format=RGB565BE band_bytes=3840 max_read=96 ttl_ms=120000`, plus `build`, full
+40-character `commit`, `dirty`, `source`, `mode=stopped-static` and read-only
+`scr_state`, `led_stage`, `idle_ms`. Unknown provenance must not be replaced with
+a locally supplied commit. A dirty flag identifies modified inputs; its commit
+does not identify those modifications.
+
+STATE carries `token state offset length draw_hash awake page home menu
+scr_state led_stage idle_ms`. States are `idle`, `pending`, `ready`, `complete`,
+`changed`, `expired`, `cancelled`, `coverage`, `asleep`, `unsupported`. Acquisition
+supports only awake, stopped static MENU views; INFO/live HOME views, held input,
+overlays and unsafe states are rejected. The underlying LCD/input state is never
+changed to make a capture succeed. Screen state and LED stage describe commanded
+firmware state, not optical brightness or hardware readback.
+
+DATA carries `token offset length crc data`. CRC is IEEE CRC32 of the raw bytes
+in `data`; pixels are big-endian RGB565. The host must validate every absolute
+offset/length/token, compare scene/draw identity across all bands, receive all
+115,200 bytes, advance to complete and recheck status/build identity before
+publishing an image. Firmware permits rereads within a ready band; client-side
+completion checks prevent skipped or duplicate chunks becoming a valid PNG.
+
+The fixed session lifetime is 120 seconds from BEGIN, including host stalls;
+requests do not extend it. Unsigned elapsed-time checks handle timer wrap.
+Failed commands emit `SCAP ERROR code=argument|stale|state|bounds|busy|unsupported`
+as appropriate. Missing coverage or a changed repeated full draw aborts the
+session; no partial frame is a successful screenshot. `draw_hash` is an ordered
+draw-operation FNV32 fingerprint, **not** the final image CRC. The host computes
+the latter after complete assembly. This transport captures intended LCD pixels,
+not physical panel colours, controller interpretation or backlight glow.

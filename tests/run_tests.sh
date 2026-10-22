@@ -382,6 +382,14 @@ u_lcd_power() {
 }
 unit lcd_power "" u_lcd_power
 
+u_screen_capture() {
+    $CC -std=c11 -Wall -Wextra -Werror -Wno-unused-function -o "$OUT/screen_capture_test" tests/screen_capture_test.c
+    run "Screen capture: actual LCD delayed DMA, coverage, coherence, expiry and cancellation" "$OUT/screen_capture_test"
+    run "Screenshot CLI: strict framing, CRC, provenance and atomic output" python3 tests/fm1_screenshot_test.py
+    run "Screen capture CDC: actual command parser, bounded replies and slow-host backpressure" python3 tests/screen_capture_console_test.py
+}
+unit screen_capture "" u_screen_capture
+
 [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
@@ -628,6 +636,14 @@ if [ -f build/gen/felucca_tables.h ]; then
         fi
     }
     unit ui_render "" u_ui_render
+
+    u_screen_capture_ui() {
+        $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/screen_capture_ui_test" tests/screen_capture_ui_test.c -lm
+        run "Screen capture: real MENU rendering, exact pixels and safe unsupported states" "$OUT/screen_capture_ui_test"
+        $CC -O1 -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/screen_capture_ui_test_c1" tests/screen_capture_ui_test.c -lm
+        run "Screen capture without CPU2: real MENU rendering and safe rejection" "$OUT/screen_capture_ui_test_c1"
+    }
+    unit screen_capture_ui "screen_capture" u_screen_capture_ui
 
     # These generators use their own directories, independent of ui_new/ui_fm4.
     if python3 -c "import PIL" 2>/dev/null; then
@@ -1117,6 +1133,14 @@ else
         run "LCD power model (ASan/UBSan)" "$A/lcd_power_test"
     }
     unit asan_lcd_power "lcd_power" u_asan_lcd_power
+
+    u_asan_screen_capture() {
+        ${CC%% *} -std=c11 -Wall -Wextra -Werror -Wno-unused-function \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -o "$A/screen_capture_test" tests/screen_capture_test.c
+        run "Screen capture delayed-DMA model (ASan/UBSan)" "$A/screen_capture_test"
+    }
+    unit asan_screen_capture "screen_capture" u_asan_screen_capture
 
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
 

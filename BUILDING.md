@@ -525,6 +525,9 @@ differing PCM/state word appear in the output; fixture code is in
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
+For static native-menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
+and standard-library host CLI are described in [screen capture](docs/screen-capture.md).
+Normal builds leave it disabled; release packaging rejects the diagnostic flag.
 
 ## Test a pull request on hardware
 

@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Collecting device diagnostics
 
+For opt-in PNG capture of firmware-rendered static menu pixels, use the separate
+[screen capture guide](screen-capture.md). The collector below remains read-only
+and sends only its existing four diagnostic commands.
+
 For early boot failure, see [USB rescue and compatible loaders](usb-rescue.md).
 Rescue is MIDI-only and has no CDC diagnostics console; this guide applies after
 normal application startup.
