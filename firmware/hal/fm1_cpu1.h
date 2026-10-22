@@ -80,8 +80,18 @@ void __attribute__((section(".c1_text"), noreturn, used)) fm1_c1_main(void)
     for (;;) {
         uint32_t j = fm1_c1_mb.job;
         FM1_C1_SYNC();
-        if (j == done)
+        if (j == done) {
+            /* Pace idle mailbox traffic: an unpaced poll observes invalid jobs on the tested FM-1
+             * even with an empty worker. The bounded pause stays in RAM; every invalid observation
+             * still takes the normal failure path below. */
+            __asm__ volatile(
+                "nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\n"
+                "nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\n"
+                "nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\n"
+                "nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\n"
+                : : : "memory");
             continue;
+        }
         if (j == done + 1u) {
             void (*fn)(uint32_t) = fm1_c1_mb.fn;
             uint32_t arg = fm1_c1_mb.arg;

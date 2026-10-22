@@ -708,6 +708,8 @@ if [ -f build/gen/felucca_tables.h ]; then
             env MENU_JSON="$OUT/menu.json" "$OUT/editor_test"
         $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/editor_test_c1" tests/editor_test.c -lm
         run "editor, a FELUCCA_CPU2=0 build: MENU settings without 2ND CORE (id 32 reserved; ALL DARK id 33)" "$OUT/editor_test_c1"
+        run "SysEx ownership: real editor/OTA arrival race, handshakes, unknown cleanup and unsafe-policy mutation" \
+            env SYSEX_DISPATCH_OUT="$OUT/sysex-dispatch" python3 tests/sysex_dispatch_test.py
     }
     unit editor "" u_editor
 
@@ -852,6 +854,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     unit reverb "perform" u_reverb
 
     u_fx_rest() {
+        run "FX rest: parser rejects incomplete mutation coverage" python3 tests/fx_rest_parser_test.py
         run "FX rest: burst/silence audio and state equivalence (-O2/-Os)" python3 tests/fx_rest_test.py --require-rest
     }
     unit fx_rest "" u_fx_rest

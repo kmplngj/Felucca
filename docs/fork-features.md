@@ -85,8 +85,10 @@ Real FM-1 listening and timing qualification remain pending for these experiment
 
 The upstream 1.6.1 second-core worker is integrated, with its device preference off
 by default. Set **MENU > SYSTEM > 2ND CORE > ON (BETA)** and restart to enable it;
-unreliable units fall back to one core. Device reliability remains unverified in
-this fork. The separate fork experiment is retired; see the
+unreliable units fall back to one core. A bounded in-RAM idle-poll pause mitigates
+the observed BAD_JOB failure in the [documented one-unit comparisons](cpu2-idle-polling.md).
+Broader unit, engine/profile, TRS and reset/flash qualification remains pending.
+The separate fork experiment is retired; see the
 [modularity plan](modularity.md#combining-our-plan-with-felucca-161--2026-10-14).
 
 ### Retained exclusion after a failed worker (#410)
@@ -98,7 +100,7 @@ the reason in it **before** the worker is held or the chip resets:
 
 | Reason (console `cpu2_excl`) | Meaning |
 | --- | --- |
-| 1 `BAD JOB` | the worker refused a job whose check word did not match |
+| 1 `BAD JOB` | the worker observed an unexpected job number, invalid function or mismatched payload check |
 | 2 `TIMEOUT` | it did not finish a block within 4 ms (it stalled or faulted) |
 | 3 `FAULT` | core 0 itself faulted while the worker answered |
 | 4 `HANG` | the watchdog reset the chip while the worker answered (found at the next boot) |
