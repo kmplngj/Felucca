@@ -14,7 +14,11 @@ publishes tested main builds and a pinned WebApp fork; its
   keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
   [autosave contract](extending.md#41-flash-map-and-deferred-save-example).
 - **UI fonts:** source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects
-  `m8stealth`, `tamzen` or `inter-tight` at build time; keycaps retain Inter Tight.
+  `m8stealth`, `tamzen` or `inter-tight` at build time. All builds use native
+  M8Stealth57 keycap and state-badge legends, including SAVE, OCT−/+, REC and MUTE.
+  Rounded pill edges and Fukiai icons remain antialiased. Numeric card/MOD units
+  have a fixed right edge, and small-value fallbacks share the primary value band;
+  see [LCD typography and fit rules](lcd-typography.md).
   The [controlled font comparison](font-experiment.md) records about 39 KB less
   firmware flash and 1,032 B less POOL RAM for pixel-font decode caches than Inter Tight.
   Physical FM-1 readability and redraw checks remain pending. [Compare real renderer captures](ui-comparison.md).

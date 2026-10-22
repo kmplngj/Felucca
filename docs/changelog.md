@@ -108,6 +108,12 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Changed
 
+- **LCD typography:** control hints and state badges now use native M8Stealth57
+  lettering alongside the default M8 text. Numeric card and MOD units stay in a
+  fixed slot, and small-value fallbacks share a consistent vertical band.
+  Rounded pill edges, icons, text-font comparison builds and LARGE mode remain
+  available. See [roles, fit rules and validation scope](lcd-typography.md);
+  physical readability and loaded-panel qualification remain pending.
 - **Display inactivity:** AUTO OFF combines the existing screen timeout with LED-only
   and combined darkness, retaining NEVER as default and the existing screen-only
   values. Timed LED darkness includes a quiet rotating key-LED pulse every 30 seconds;

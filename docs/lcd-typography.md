@@ -57,7 +57,7 @@ when its accent and label colors coincide.
 | Piano roll, drum grid and STEP DETAIL, `ui_graph.c` | Piano note labels center within their row; drum labels center within the 10 px hit band; DETAIL labels center in each lane. Their native S size preserves the graph's density. |
 | PRESETS, USER, PROJECT, SONG and automation | M rows carry primary names/values; S carries metadata and compact cells. Existing free-name ellipsis, selected-row detail, scrolling, parameter short names and HELP paths retain their meaning. |
 | FM6/operator pages and quick layers | Retain compact S graph/cell annotations and existing M titles/values. LARGE changes the supported card role rather than enlarging every dense graph cell. |
-| HELP, `ui_help.c` | Up to three keycap/action groups fit the 8..232 px footer row. Keep action words and hint priority; do not silently drop a word to accommodate a new legend. |
+| HELP, `ui_help.c` | Up to three keycap/action groups fit the 8..232 px footer row. Preserve every required keycap and the existing hint priority: when space runs short, optional action words yield before control legends. |
 | NAME and dialogs | Preserve mixed-case names, the existing cursor/grid and bounded question fit. Names ellipsize at their assigned size instead of shrinking on each edit. |
 | ABOUT/credits, `menu_text` | S text wraps by actual advance within 226 px, at 18 px line spacing. Long URL segments continue without losing characters. The same layout computes the scroll limit and draws both canvas bands. |
 | Splash | The sparse L wordmark and bounded S build identity retain their existing placement and dismiss behavior. |
@@ -71,7 +71,7 @@ lint to make a new value fit. Reuse these roles for future UI features, includin
 
 ## Intentional changes and evidence
 
-The #248/#249 batch changes M8 keycap ink and hint spacing, fixes stationary
+The #248/#249 batch changes M8 keycap ink and legend widths, fixes stationary
 unit slots on normal cards and MOD rows, centers dense card fallbacks in the
 same value band, and derives drum/DETAIL label positions from their ink bands.
 The normal label-band expressions preserve the prior S/M pixels. Header

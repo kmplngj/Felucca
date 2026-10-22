@@ -573,6 +573,7 @@ if [ -f build/gen/felucca_tables.h ]; then
         if python3 -c "import PIL" 2>/dev/null; then
             run "bitmap font storage: reject narrowed glyph metrics" python3 tests/bitmap_font_test.py
             run "text: M8Stealth ASCII matches upstream bitmaps" python3 tests/m8_font_test.py build/gen/ui_fonts.h
+            run "keycaps: native M8 ink, stable labels, pill masks and unchanged knob data" python3 tests/keycap_font_test.py build/gen/ui_keycaps.h
             run "text spacing: glyph gaps against the font's own (16x supersampled), S M <= 0.25 px, L <= 0.5 px" \
                 python3 tests/text_spacing_test.py build/gen/ui_fonts.h
         else
@@ -605,6 +606,8 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"
         $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_c1" tests/ui_test.c -lm
         run "UI, a FELUCCA_CPU2=0 build: MENU > SYSTEM without 2ND CORE, the rest as the default build" "$OUT/ui_test_c1"
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/lcd_typography_test" tests/lcd_typography_test.c -lm
+        run "LCD typography: stationary units, native capital bands and signed MOD range" "$OUT/lcd_typography_test"
     }
     unit ui "" u_ui
 
