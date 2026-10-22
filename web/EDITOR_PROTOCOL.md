@@ -38,6 +38,8 @@ only. IDs 39..63 and all unlisted IDs have no handler and get no reply.
 Every data byte is 7 bit. MIDI realtime bytes may occur inside SysEx; another status
 aborts the partial frame. Pushes may arrive while a request is outstanding. Send
 one request at a time, including PING; see [editor notes](#notes-for-the-editor).
+The [shared Editor/updater dispatch investigation](../docs/sysex-dispatch-race.md)
+records the regression, device evidence and qualification scope for retained replies.
 
 All request and reply lengths below count **argument bytes only**, excluding the
 six framing bytes. A v14 consumes two bytes; a u32 consumes five; a string includes

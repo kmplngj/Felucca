@@ -56,6 +56,11 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **Editor SysEx replies:** a request arriving between the Editor and updater's
+  main-loop checks is retained for the correct consumer instead of silently
+  discarded. The wire format and one-request-at-a-time contract are unchanged;
+  see [the ownership regression and device evidence](sysex-dispatch-race.md).
+
 - **MIDI timing and arithmetic:** TRS packets keep timely timestamps during audio
   renders, UART counts require a receive event, and external sequencer/ARP phase
   retains fractional progress through tempo and SONG changes. Signed DSP scaling
