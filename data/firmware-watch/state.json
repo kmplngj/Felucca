@@ -5,13 +5,17 @@
   "current_summary": {
     "blockers": [
       {
+        "reason": "branch rewrite: live tip does not contain frozen target for main",
+        "repository": "zvenson/zp12"
+      },
+      {
         "reason": "branch rewrite: live tip does not contain frozen target for smk37",
         "repository": "genkigenki/Felucca"
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 5248,
-    "known_remaining_recent": 288,
+    "known_remaining_history": 7330,
+    "known_remaining_recent": 581,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
@@ -23,12 +27,12 @@
           "total": 38
         },
         "recent": {
-          "remaining": 2,
-          "reviewed": 3,
-          "total": 5
+          "remaining": 1,
+          "reviewed": 0,
+          "total": 1
         },
         "repository": "hugelton/Felucca",
-        "terminal_pairs": 13
+        "terminal_pairs": 15
       },
       {
         "history": {
@@ -37,12 +41,12 @@
           "total": 296
         },
         "recent": {
-          "remaining": 24,
-          "reviewed": 14,
+          "remaining": 23,
+          "reviewed": 15,
           "total": 38
         },
         "repository": "keremimo/melodee",
-        "terminal_pairs": 21
+        "terminal_pairs": 22
       },
       {
         "history": {
@@ -85,20 +89,6 @@
         },
         "repository": "zvenson/dinghy",
         "terminal_pairs": 2
-      },
-      {
-        "history": {
-          "remaining": 150,
-          "reviewed": 1,
-          "total": 151
-        },
-        "recent": {
-          "remaining": 152,
-          "reviewed": 0,
-          "total": 152
-        },
-        "repository": "zvenson/zp12",
-        "terminal_pairs": 11
       },
       {
         "history": {
@@ -163,9 +153,9 @@
           "total": 3230
         },
         "recent": {
-          "remaining": 0,
+          "remaining": 4,
           "reviewed": 0,
-          "total": 0
+          "total": 4
         },
         "repository": "charlesvestal/schwung",
         "terminal_pairs": 4
@@ -303,9 +293,9 @@
           "total": 405
         },
         "recent": {
-          "remaining": 0,
+          "remaining": 110,
           "reviewed": 0,
-          "total": 0
+          "total": 110
         },
         "repository": "DeadActive/hortator",
         "terminal_pairs": 5
@@ -317,9 +307,9 @@
           "total": 39
         },
         "recent": {
-          "remaining": 0,
+          "remaining": 278,
           "reviewed": 0,
-          "total": 0
+          "total": 278
         },
         "repository": "Wulgaren/Araminta",
         "terminal_pairs": 9
@@ -373,16 +363,72 @@
           "total": 8
         },
         "recent": {
+          "remaining": 7,
+          "reviewed": 0,
+          "total": 7
+        },
+        "repository": "oscillr/DUELL",
+        "terminal_pairs": 0
+      },
+      {
+        "history": {
+          "remaining": 42,
+          "reviewed": 0,
+          "total": 42
+        },
+        "recent": {
           "remaining": 0,
           "reviewed": 0,
           "total": 0
         },
-        "repository": "oscillr/DUELL",
+        "repository": "hugelton/felucca-bsp",
+        "terminal_pairs": 0
+      },
+      {
+        "history": {
+          "remaining": 135,
+          "reviewed": 0,
+          "total": 135
+        },
+        "recent": {
+          "remaining": 16,
+          "reviewed": 0,
+          "total": 16
+        },
+        "repository": "charlesvestal/fm1-base",
+        "terminal_pairs": 0
+      },
+      {
+        "history": {
+          "remaining": 2018,
+          "reviewed": 0,
+          "total": 2018
+        },
+        "recent": {
+          "remaining": 32,
+          "reviewed": 0,
+          "total": 32
+        },
+        "repository": "w0ts/optimist",
+        "terminal_pairs": 0
+      },
+      {
+        "history": {
+          "remaining": 37,
+          "reviewed": 0,
+          "total": 37
+        },
+        "recent": {
+          "remaining": 0,
+          "reviewed": 0,
+          "total": 0
+        },
+        "repository": "jsmith13/fm_lab",
         "terminal_pairs": 0
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 208
+    "terminal_pairs": 211
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -593,13 +639,13 @@
       "identity_verified": true,
       "last_reviewed_sha": "b0cb5840a6345523dc1996f6e89f895ec49b345e",
       "observed_tips": {
-        "main": "5738617968a22b5d4c0d3470cfcc95559052f446"
+        "main": "63f88ec18b71c6ed4371d03d6f04dd93f4193ad3"
       },
       "pinned_recent_targets": {
-        "main": "5738617968a22b5d4c0d3470cfcc95559052f446"
+        "main": "63f88ec18b71c6ed4371d03d6f04dd93f4193ad3"
       },
       "recent_frontiers": {
-        "main": "1727537624390cc3f9c7dff2456b43b3a8edb005"
+        "main": "5738617968a22b5d4c0d3470cfcc95559052f446"
       },
       "recent_reviewed": 0,
       "repository": "hugelton/Felucca"
@@ -609,8 +655,8 @@
       "identity_verified": true,
       "last_reviewed_sha": "3ad8542b68899b9772ba8d0b9c39aa155ba794bc",
       "observed_tips": {
-        "main": "ff36924091b6b7799fb1667cda90db57f764e361",
-        "next": "ff36924091b6b7799fb1667cda90db57f764e361"
+        "main": "398ada1e09d864c12f3b778a43e45c7c2a8031b8",
+        "next": "738cfb4027b5cd52873e89297633704df1a7f84c"
       },
       "pinned_recent_targets": {
         "main": "16daf99ea797f2e4f6b5e40065942df3648d08b9",
@@ -628,7 +674,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "85d8fae7a288f66833bbce5269cf58e181f9bd5a",
       "observed_tips": {
-        "main": "13b0adba62b98f95478992cdb16bec956f8cbeb2"
+        "main": "7d97982a7db3dad2da456a3e4d4478548b6571d9"
       },
       "pinned_recent_targets": {
         "main": "722fe71dd0a1a272e23ce658d1ed64f384c6b6ea"
@@ -644,7 +690,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "8fad1a15ff59d5c3ed0bfe2d7a9ae90962cf4d5e",
       "observed_tips": {
-        "main": "4ec1ac829fd2bdf2c571ea215fb3d62477d01220"
+        "main": "ec9e53721cc576816a5750220391f2d0217c01cb"
       },
       "pinned_recent_targets": {
         "main": "4ec1ac829fd2bdf2c571ea215fb3d62477d01220"
@@ -672,6 +718,7 @@
       "repository": "zvenson/dinghy"
     },
     {
+      "blocker": "branch rewrite: live tip does not contain frozen target for main",
       "historical_reviewed": 0,
       "identity_verified": true,
       "last_reviewed_sha": "59821f0eb7f882ccb8a3275b41a9936ac500fd3a",
@@ -743,7 +790,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "6cce818e31b84851967fafcd949902729cc55e5c",
       "observed_tips": {
-        "main": "0912abb2f0c71cd26252d441dc74f3cdf825e6fb"
+        "main": "dc8d025526eecdd89d0bdf0cc3669c22cbde1b71"
       },
       "pinned_recent_targets": {
         "main": "1c1474544c2dc3fd24e486e4819a3c4b1eaa583c"
@@ -759,10 +806,10 @@
       "identity_verified": true,
       "last_reviewed_sha": "16a8687177f872f8cd0d39433f128644e8435725",
       "observed_tips": {
-        "main": "586aebd4367952384e1b447e8e3a2fd627974ec8"
+        "main": "9dca92b56759c423a972e4b88089e7006320e317"
       },
       "pinned_recent_targets": {
-        "main": "586aebd4367952384e1b447e8e3a2fd627974ec8"
+        "main": "9dca92b56759c423a972e4b88089e7006320e317"
       },
       "recent_frontiers": {
         "main": "586aebd4367952384e1b447e8e3a2fd627974ec8"
@@ -919,10 +966,10 @@
       "identity_verified": true,
       "last_reviewed_sha": "9d1287241c62124337bbbd6daa569d1da393dbfd",
       "observed_tips": {
-        "main": "7e3415971c5800b4a3ad0146a7d95615883d7d96"
+        "main": "05d97a51a06888da56de205336f7f6a832af728c"
       },
       "pinned_recent_targets": {
-        "main": "7e3415971c5800b4a3ad0146a7d95615883d7d96"
+        "main": "05d97a51a06888da56de205336f7f6a832af728c"
       },
       "recent_frontiers": {
         "main": "7e3415971c5800b4a3ad0146a7d95615883d7d96"
@@ -935,10 +982,10 @@
       "identity_verified": true,
       "last_reviewed_sha": "9d1287241c62124337bbbd6daa569d1da393dbfd",
       "observed_tips": {
-        "main": "b16f1b2ed424172fe238779e9101328d8e732d8a"
+        "main": "7c4becc743ea708f35a4265e8ecfdafb40833f8d"
       },
       "pinned_recent_targets": {
-        "main": "b16f1b2ed424172fe238779e9101328d8e732d8a"
+        "main": "7c4becc743ea708f35a4265e8ecfdafb40833f8d"
       },
       "recent_frontiers": {
         "main": "b16f1b2ed424172fe238779e9101328d8e732d8a"
@@ -1015,16 +1062,80 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
+        "main": "fce31b55b0220a11f3e99df2e2f1faf7a0137894"
       },
       "pinned_recent_targets": {
-        "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
+        "main": "fce31b55b0220a11f3e99df2e2f1faf7a0137894"
       },
       "recent_frontiers": {
         "main": "0bd7f904a18efd20fd6092a8bc645945c3fedf74"
       },
       "recent_reviewed": 0,
       "repository": "oscillr/DUELL"
+    },
+    {
+      "historical_reviewed": 0,
+      "identity_verified": true,
+      "last_reviewed_sha": null,
+      "observed_tips": {
+        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+      },
+      "pinned_recent_targets": {
+        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+      },
+      "recent_frontiers": {
+        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+      },
+      "recent_reviewed": 0,
+      "repository": "hugelton/felucca-bsp"
+    },
+    {
+      "historical_reviewed": 0,
+      "identity_verified": true,
+      "last_reviewed_sha": null,
+      "observed_tips": {
+        "main": "93bee3fe9def08127dd5dff638df5bd57cebcc80"
+      },
+      "pinned_recent_targets": {
+        "main": "93bee3fe9def08127dd5dff638df5bd57cebcc80"
+      },
+      "recent_frontiers": {
+        "main": "bbfd4615e344028c90375bbdd79968e1b6ba2cd9"
+      },
+      "recent_reviewed": 0,
+      "repository": "charlesvestal/fm1-base"
+    },
+    {
+      "historical_reviewed": 0,
+      "identity_verified": true,
+      "last_reviewed_sha": null,
+      "observed_tips": {
+        "main": "8c392850ef67f244d07008a2168ff9d1d221a18f"
+      },
+      "pinned_recent_targets": {
+        "main": "8c392850ef67f244d07008a2168ff9d1d221a18f"
+      },
+      "recent_frontiers": {
+        "main": "5fc3ee51a4aa64fd22cef217c8498c9be567eb69"
+      },
+      "recent_reviewed": 0,
+      "repository": "w0ts/optimist"
+    },
+    {
+      "historical_reviewed": 0,
+      "identity_verified": true,
+      "last_reviewed_sha": null,
+      "observed_tips": {
+        "main": "cf35dc26709ede9c974654dfc2135f8c25a00082"
+      },
+      "pinned_recent_targets": {
+        "main": "cf35dc26709ede9c974654dfc2135f8c25a00082"
+      },
+      "recent_frontiers": {
+        "main": "cf35dc26709ede9c974654dfc2135f8c25a00082"
+      },
+      "recent_reviewed": 0,
+      "repository": "jsmith13/fm_lab"
     }
   ],
   "review_evidence_corrections": [
@@ -1070,12 +1181,16 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "995ebb925500e614510b8641975f04d40e8ca2a99579ecc068f463d1adfa4f10",
-  "round_robin_next_repository_index": 22,
-  "round_robin_processed_records": 213,
+  "round_robin_journal_prefix_sha256": "e98c020cf9786e60ab06aa32eeea489e9fb407ecc55629ae3cf71d9a9671ecc2",
+  "round_robin_next_repository_index": 1,
+  "round_robin_processed_records": 216,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [
+    {
+      "reason": "branch rewrite: live tip does not contain frozen target for main",
+      "repository": "zvenson/zp12"
+    },
     {
       "reason": "branch rewrite: live tip does not contain frozen target for smk37",
       "repository": "genkigenki/Felucca"

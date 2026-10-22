@@ -1,13 +1,17 @@
 {
   "blockers": [
     {
+      "reason": "branch rewrite: live tip does not contain frozen target for main",
+      "repository": "zvenson/zp12"
+    },
+    {
       "reason": "branch rewrite: live tip does not contain frozen target for smk37",
       "repository": "genkigenki/Felucca"
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 5248,
-  "known_remaining_recent": 288,
+  "known_remaining_history": 7330,
+  "known_remaining_recent": 581,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -19,12 +23,12 @@
         "total": 38
       },
       "recent": {
-        "remaining": 2,
-        "reviewed": 3,
-        "total": 5
+        "remaining": 1,
+        "reviewed": 0,
+        "total": 1
       },
       "repository": "hugelton/Felucca",
-      "terminal_pairs": 13
+      "terminal_pairs": 15
     },
     {
       "history": {
@@ -33,12 +37,12 @@
         "total": 296
       },
       "recent": {
-        "remaining": 24,
-        "reviewed": 14,
+        "remaining": 23,
+        "reviewed": 15,
         "total": 38
       },
       "repository": "keremimo/melodee",
-      "terminal_pairs": 21
+      "terminal_pairs": 22
     },
     {
       "history": {
@@ -81,20 +85,6 @@
       },
       "repository": "zvenson/dinghy",
       "terminal_pairs": 2
-    },
-    {
-      "history": {
-        "remaining": 150,
-        "reviewed": 1,
-        "total": 151
-      },
-      "recent": {
-        "remaining": 152,
-        "reviewed": 0,
-        "total": 152
-      },
-      "repository": "zvenson/zp12",
-      "terminal_pairs": 11
     },
     {
       "history": {
@@ -159,9 +149,9 @@
         "total": 3230
       },
       "recent": {
-        "remaining": 0,
+        "remaining": 4,
         "reviewed": 0,
-        "total": 0
+        "total": 4
       },
       "repository": "charlesvestal/schwung",
       "terminal_pairs": 4
@@ -299,9 +289,9 @@
         "total": 405
       },
       "recent": {
-        "remaining": 0,
+        "remaining": 110,
         "reviewed": 0,
-        "total": 0
+        "total": 110
       },
       "repository": "DeadActive/hortator",
       "terminal_pairs": 5
@@ -313,9 +303,9 @@
         "total": 39
       },
       "recent": {
-        "remaining": 0,
+        "remaining": 278,
         "reviewed": 0,
-        "total": 0
+        "total": 278
       },
       "repository": "Wulgaren/Araminta",
       "terminal_pairs": 9
@@ -369,14 +359,70 @@
         "total": 8
       },
       "recent": {
+        "remaining": 7,
+        "reviewed": 0,
+        "total": 7
+      },
+      "repository": "oscillr/DUELL",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 42,
+        "reviewed": 0,
+        "total": 42
+      },
+      "recent": {
         "remaining": 0,
         "reviewed": 0,
         "total": 0
       },
-      "repository": "oscillr/DUELL",
+      "repository": "hugelton/felucca-bsp",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 135,
+        "reviewed": 0,
+        "total": 135
+      },
+      "recent": {
+        "remaining": 16,
+        "reviewed": 0,
+        "total": 16
+      },
+      "repository": "charlesvestal/fm1-base",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 2018,
+        "reviewed": 0,
+        "total": 2018
+      },
+      "recent": {
+        "remaining": 32,
+        "reviewed": 0,
+        "total": 32
+      },
+      "repository": "w0ts/optimist",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 37,
+        "reviewed": 0,
+        "total": 37
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "jsmith13/fm_lab",
       "terminal_pairs": 0
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 208
+  "terminal_pairs": 211
 }
