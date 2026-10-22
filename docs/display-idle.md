@@ -79,12 +79,10 @@ changes nothing; applied settings retain the existing durability results:
 The generic WebApp can discover the additional row; its companion reply-handling
 fix [#556](https://github.com/kmplngj/Felucca/issues/556), delivered for review in
 [WebApp PR #7](https://github.com/kmplngj/Felucca-WebApp/pull/7), keeps deferred/rejected
-changes visible accurately. Its tested client commit is
-`3a138c985ea150c2cf36db65dd4e9d53193b8e54`; use that checkout for browser testing.
-The hosted site still uses its existing client pin: changing the workflow pin
-requires GitHub workflow permission unavailable in this session. This firmware
-PR does not change deployment or publish the site. Direct MIDI settings are
-available independently of the client deployment.
+changes visible accurately. Use that PR's current reviewed checkout for browser
+testing. The hosted site still uses its existing client pin; updating and
+deploying that pin is separate from this firmware candidate. Direct MIDI settings
+are available independently of the hosted client. PR builds do not publish the site.
 
 No setting-record or backup-size growth: settings_dev[27] retains bits 0–2 for
 historic timer codes 0,2,1,4,7 and bits 3–4 for SCREEN/LEDS/BOTH. Bits 5–7 hold the
