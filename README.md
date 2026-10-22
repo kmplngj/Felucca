@@ -31,7 +31,9 @@ phase, timestamps TRS input during rendering, and guards invalid tempo.
 phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
 Five portable engines live in the pinned
 [Felucca-Engines fork](https://github.com/kmplngj/Felucca-Engines); initial standard/reduced
-engine build profiles are implemented. Broader engine selection and startup usage modes
+engine build profiles are implemented. Versioned [profile contracts and exact post-link
+resource reports](docs/build-profiles.md#machine-readable-build-evidence) expose supported
+recipes and their measured build allocations. Broader engine selection and startup usage modes
 remain planned. The optional second-core worker is beta and off by default.
 [Bounded FM-1 comparisons](docs/cpu2-idle-polling.md) cover an idle-poll mitigation
 for observed BAD_JOB failures on one unit; broader unit, engine/profile and TRS

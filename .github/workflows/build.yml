@@ -465,6 +465,9 @@ jobs:
             ./build.sh 2>&1 | tee build/ci/build.log
           fi
           test -s build/felucca.dis
+          if [ -f tools/build_report.py ]; then
+            python3 tools/build_report.py --verify build/resource-report.json
+          fi
       - name: Target instruction budget and package validation
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
@@ -608,6 +611,8 @@ jobs:
             build/felucca.bin
             build/ci/provenance.json
             build/build-identity.json
+            build/profile-contract.json
+            build/resource-report.json
             build/gen/resolved-profile.json
             build/ci/package.sha256
             build/macro-device-pack/

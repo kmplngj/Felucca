@@ -284,6 +284,8 @@ fi
 u_portable() {
     run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
     run "64-bit multiply / 16-bit load inventory: parser, window and baseline fixtures (#425)" python3 tests/mul64_hload_check_test.py
+    run "supported profile contract (portable fixtures)" python3 tests/profile_contract_test.py
+    run "post-link resource reports (portable fixtures)" python3 tests/build_report_test.py
     run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
     run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py
     run "generated sample inputs: stale/extra WAVs and header cache" python3 tests/gen_samples_test.py

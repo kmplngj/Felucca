@@ -36,6 +36,10 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+ENGINE_ID_LIMIT = 64
+
+SUPPORTED_PROFILES = ('standard', 'reduced-lofi', 'macro')
+
 OUTPUTS = ('felucca_profile.h', 'engine_includes.inc', 'engine_registry.inc',
            'engine_metadata.inc', 'engine_cc.inc', 'engine_categories.inc', 'engine_names.inc', 'engine_order.inc', 'resolved-profile.json')
 
@@ -61,7 +65,7 @@ def resolve(catalog, profile):
     if catalog['schema_version'] != 1 or profile['schema_version'] != 1:
         raise ValueError('unsupported profile schema')
     ids = unique([e['id'] for e in catalog['engines']], 'engine IDs in registry')
-    if any(type(i) is not int or not 0 <= i < 64 for i in ids):
+    if any(type(i) is not int or not 0 <= i < ENGINE_ID_LIMIT for i in ids):
         raise ValueError('engine IDs must be in stable range 0..63')
     if ids != set(range(max(ids) + 1)):
         raise ValueError('missing reserved stable slot in registry')
@@ -161,11 +165,12 @@ def validate_selection(root, name):
     return catalog, profile, engines, providers
 
 
-def generated(root, name, font_variant=None):
+def generated(root, name, font_variant=None, *, feature_flags=None):
     catalog, profile, engines, providers = validate_selection(root, name)
     selected = {e['id'] for e in engines}
     # Existing developer options remain independent; DIGITAL's retired implementation can be requested.
-    flags = {f: os.environ.get(f, d) for f, d in [('FELUCCA_FM4','0'), ('FELUCCA_SLICE','1')]}
+    flags = (dict(feature_flags) if feature_flags is not None else
+             {f: os.environ.get(f, d) for f, d in [('FELUCCA_FM4','0'), ('FELUCCA_SLICE','1')]})
     if any(v not in ('0','1') for v in flags.values()):
         raise ValueError('FELUCCA_FM4 and FELUCCA_SLICE must be 0 or 1')
     if flags['FELUCCA_FM4'] == '1':
@@ -244,6 +249,56 @@ def generated(root, name, font_variant=None):
     return out
 
 
+def contract(root):
+    """Export only the current supported recipes, using the production resolver.
+
+    Developer feature overrides never change canonical recipes. This is a registry
+    contract, not a promise that arbitrary selections or future collections build.
+    """
+    recipes = {}
+    catalog = read_json(root / 'profiles/catalog.json')
+    for name in SUPPORTED_PROFILES:
+        _, recipe, engines, providers = validate_selection(root, name)
+        resolved = json.loads(generated(root, name, 'm8stealth', feature_flags={
+            'FELUCCA_FM4': '0', 'FELUCCA_SLICE': '1'})['resolved-profile.json'])
+        reasons = {p['id']: [] for p in providers}
+        for provider in recipe['providers']:
+            reasons[provider].append({'kind': 'profile', 'id': name})
+        for engine in engines:
+            for provider in engine['requires']:
+                reasons[provider].append({'kind': 'engine', 'id': engine['id']})
+        for provider in providers:
+            for dependency in provider['requires']:
+                reasons[dependency].append({'kind': 'provider', 'id': provider['id']})
+        recipes[name] = {'recipe': recipe, 'resolved': resolved,
+                         'provider_reasons': reasons}
+    license_paths = sorted({path for recipe in recipes.values()
+                            for path in recipe['resolved']['licenses']})
+    return {'schema_version': 1, 'kind': 'felucca-supported-profile-contract',
+            'source_pins': source_pins(root), 'registry': catalog,
+            'validation': {
+                'authority': 'tools/profile.py resolve, validate_selection, generated and source_pins',
+                'engine_id_min': 0, 'engine_id_max': ENGINE_ID_LIMIT - 1,
+                'stable_slots_must_be_contiguous': True, 'retired_engine_ids': [1],
+                'boot_default_engine_ids_required': catalog['defaults'],
+                'provider_dependency_cycles_allowed': False,
+                'explicit_exclusions_must_not_conflict_with_selection_or_dependencies': True,
+                'provider_required_engines_must_be_selected': True,
+                'engine_checkout_must_match_exact_gitlink': True,
+                'developer_boolean_flags': {'FELUCCA_FM4': ['0', '1'], 'FELUCCA_SLICE': ['0', '1']},
+                'font_variants': ['inter-tight', 'm8stealth', 'tamzen']},
+            'supported_profiles': recipes,
+            'canonical_features': {'FELUCCA_FM4': '0', 'FELUCCA_SLICE': '1',
+                                   'FELUCCA_FONT': 'm8stealth'},
+            'license_sha256': {path: hashlib.sha256((root / path).read_bytes()).hexdigest()
+                               for path in license_paths},
+            'scope': 'Current supported profiles only; no cost prediction or arbitrary selection support'}
+
+
+def contract_json(root):
+    return json.dumps(contract(root), indent=2, sort_keys=True) + '\n'
+
+
 def check_outputs(outputs, directory):
     for name, content in outputs.items():
         path = directory / name
@@ -256,8 +311,19 @@ def main():
     ap.add_argument('--profile',default=os.environ.get('FELUCCA_PROFILE','standard'))
     ap.add_argument('--out',type=Path,default=ROOT/'build/gen')
     ap.add_argument('--check',action='store_true')
+    ap.add_argument('--export-contract', type=Path, metavar='PATH',
+                    help='export the versioned canonical supported-profile contract; --check verifies it')
     args=ap.parse_args()
     try:
+        if args.export_contract is not None:
+            content = contract_json(ROOT)
+            if args.check:
+                if args.export_contract.read_text() != content:
+                    raise ValueError('stale supported-profile contract')
+            else:
+                args.export_contract.parent.mkdir(parents=True, exist_ok=True)
+                args.export_contract.write_text(content)
+            return
         font_variant = None
         if args.check and 'FELUCCA_FONT' not in os.environ:
             # Host/emulator builds have always consumed the generated font. Keep that

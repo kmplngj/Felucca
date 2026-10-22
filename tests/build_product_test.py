@@ -134,7 +134,16 @@ class NoJobs(unittest.TestCase):
             p = patch.object(B, n, new)
             p.start()
             self.addCleanup(p.stop)
-        for p in (patch("build_identity.resolve", return_value={}), patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"), patch.object(B, "GEN", gen),
+        import build_report
+        for name in ('input_hashes', 'configuration'):
+            report_patch = patch.object(build_report, name, return_value={})
+            report_patch.start()
+            self.addCleanup(report_patch.stop)
+        report_patch = patch.object(build_report, 'write', side_effect=lambda *args:
+                                   (out / 'resource-report.json').write_text('{}\n'))
+        report_patch.start()
+        self.addCleanup(report_patch.stop)
+        for p in (patch('profile.contract_json', return_value='{}\n'), patch("build_identity.resolve", return_value={}), patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"), patch.object(B, "GEN", gen),
                   patch.object(B.subprocess, "run", self.m["run"]),
                   patch.object(B.fm1pkg_make, "sdk_file", lambda rel: b""),
                   patch.object(B.fm1pkg_make, "flash_image", lambda img, key: img),
@@ -202,6 +211,19 @@ class NoJobs(unittest.TestCase):
         B.main([])
         self.assertEqual(self.packed, ["FM-1_ACME", "FM-1_900"])
         self.assertEqual((self.out / "felucca.fwsc").read_bytes(), b"pkg:FM-1_900")
+
+    def test_failed_attempt_removes_previous_success_report(self):
+        report = self.out / 'resource-report.json'
+        report.write_text('{"validation":"old success"}\n')
+        self.m['check'].return_value = (['target guard failed'], [])
+        with self.assertRaisesRegex(SystemExit, 'checks failed'):
+            B.main([])
+        self.assertFalse(report.exists())
+        self.assertEqual(self.packed, [])
+        report.write_text('old success')
+        with self.assertRaises(SystemExit):
+            B.main(['--product', 'bad'])
+        self.assertFalse(report.exists())
 
     def test_default_dev_outputs(self):
         B.main([])
