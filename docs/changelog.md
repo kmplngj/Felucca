@@ -43,9 +43,19 @@ in issues and roadmaps, not among implemented changes below.
   a reference reader is included, with browser migration still pending. See [persistence contracts](extending.md#4-persistence-and-protocol)
   and the [stored-format inventory](legacy-formats.md).
 - **Build identification and diagnostics:** startup, ABOUT and INFO identify the
-  release, commit or PR; ABOUT includes the fork source. USB serial diagnostics,
-  retained crash reporting, opt-in crash register context and interrupt-context
-  assertions support investigation. See the [diagnostics guide](diagnostics.md).
+  release, commit or PR; ABOUT includes the fork source. USB serial health/input
+  counters and consistent main/worker crash snapshots support device investigation.
+  A read-only host collector retains raw replies, JSONL samples and a summary with
+  counter deltas and supplied build provenance. Opt-in crash-register context,
+  interrupt-misuse counters and a bounded 64-bit multiply/16-bit-load reproducer
+  support targeted debugging; normal FM-1 builds leave these probes disabled.
+  The synthetic reproducer adds a test workload, not an audio fix. See the
+  [capability overview and activation requirements](diagnostics.md#diagnostic-capabilities).
+- **Rendered-screen screenshots:** an opt-in development build exports bounded
+  RGB565 HOME/menu captures over USB SERIAL, with full device build identity and a
+  host PNG/JSON tool. Unsupported, asleep or changed scenes fail explicitly;
+  normal builds leave capture disabled. Digital captures do not qualify physical
+  panel colours or backlight behaviour. See [scope and device checks](screen-capture.md).
 - **Testing and installation tools:** deterministic interaction replay, native/WASM
   partition comparisons, host stress scenarios and a Chromium UI/audio gate.
   PR installation supports isolated source worktrees, exact-revision artifacts and
@@ -56,6 +66,22 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **Editor SysEx replies:** a request arriving between the Editor and updater's
+  main-loop checks is retained for the correct consumer instead of silently
+  discarded. The wire format and one-request-at-a-time contract are unchanged;
+  see [the ownership regression and device evidence](sysex-dispatch-race.md).
+
+- **MIDI timing and arithmetic:** TRS packets keep timely timestamps during audio
+  renders, UART counts require a receive event, and external sequencer/ARP phase
+  retains fractional progress through tempo and SONG changes. Signed DSP scaling
+  is defined and invalid tempo has a bounded default. Normal PCM and valid-tempo
+  behavior remain covered by regressions. The [device results](midi-dsp-device-results-2026-10-21.md)
+  pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
+  See [implementation evidence and test procedure](midi-dsp-reliability.md).
+
+- **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
+  immediately when their brightness is changed without leaving the row. Physical
+  brightness/readability checks remain pending; see [display controls](display-idle.md).
 - **Early rescue entry:** enable the shared key/LED power rail before reading
   OCT− at startup, allow it to settle and use the normal input scan cadence.
   Both-OCT calibration remains available; corrected entry awaits FM-1 retesting
@@ -75,11 +101,25 @@ in issues and roadmaps, not among implemented changes below.
 - **Second-core failure handling:** parallel rendering uses per-part state where
   required, and failed work falls back to serial rendering. A retained exclusion
   prevents automatic retries after a recorded worker failure until explicitly
-  retried. Real FM-1 reset and reliability checks remain pending; see
+  retried. A bounded in-RAM idle-poll pause mitigates observed BAD_JOB read faults
+  in [matched tests on one FM-1](cpu2-idle-polling.md), while preserving all guards
+  and default OFF. Broader unit/engine, TRS and reset/flash checks remain pending; see
   [second-core behavior and recovery](fork-features.md#optional-second-core).
 
 ### Changed
 
+- **LCD typography:** control hints and state badges now use native M8Stealth57
+  lettering alongside the default M8 text. Numeric card and MOD units stay in a
+  fixed slot, and small-value fallbacks share a consistent vertical band.
+  Track digits center on their cushion, removing the old extra shift for “1”.
+  Rounded pill edges, icons, text-font comparison builds and LARGE mode remain
+  available. See [roles, fit rules and validation scope](lcd-typography.md);
+  physical readability and loaded-panel qualification remain pending.
+- **Display inactivity:** AUTO OFF combines the existing screen timeout with LED-only
+  and combined darkness, retaining NEVER as default and the existing screen-only
+  values. Timed LED darkness includes a quiet rotating key-LED pulse every 30 seconds;
+  audio and input scanning continue. The LCD backlight remains on. See
+  [controls, downgrade behavior and pending FM-1 checks](display-idle.md).
 - **Python tooling setup:** locked uv dependency groups separate build/font tooling
   from MIDI installation. Build and PR handoff commands synchronize their environment
   automatically, including on macOS without manual pip setup; see

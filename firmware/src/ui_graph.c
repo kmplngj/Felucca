@@ -287,7 +287,7 @@ static void graph_grid(const track_t *t, uint16_t c)
             cv_rrect(6, y, 228, 14, 3, T_RAISE, T_SURF);   /* (6 .. 234, as a list row; the hits 40 .. 230) */
         }
         GFX_HOOK_ALIGN(0, y + 2, 0, y + 12, AL_V, "drum lane label on its hits' line");
-        cv_text_on(10, y - 1, &AF_S, drum_lane_abbr(t, l), mu ? T_DIM : sel ? T_ACCENT : T_MID, row);   /* ink rows 2 .. 11, as the hits */
+        cv_text_on(10, y + 2 + CAP_IN(S, 10), &AF_S, drum_lane_abbr(t, l), mu ? T_DIM : sel ? T_ACCENT : T_MID, row);
         if (mu) {                                    /* (27 .. 39: between the name and the first hit) */
             GFX_HOOK_ALIGN(0, y, 0, y + 14, AL_V, "drum lane mute icon centred up/down");
             cv_icon_in(27, y, 0, 14, 12, ICON_MUTE, T_DIM, row);
@@ -326,7 +326,8 @@ static void graph_detail(const track_t *t, uint16_t c)
     for (l = 0; l < 4u; l++) {
         int32_t yb = LY[l] + LH[l];
         cv_rect(SD_X0, yb, (int32_t)ncol * 12 + 1, 1, T_GRID);   /* the lane's floor */
-        cv_text_on(8, LY[l] + LH[l] / 2 - 8, &AF_S, NAME[l], ui.hot_t && ui.hot_col == l ? T_ACCENT : T_MID, T_SURF);
+        GFX_HOOK_ALIGN(0, LY[l], 0, LY[l] + LH[l], AL_V, "step detail label centred in its lane");
+        cv_text_on(8, LY[l] + CAP_IN(S, LH[l]), &AF_S, NAME[l], ui.hot_t && ui.hot_col == l ? T_ACCENT : T_MID, T_SURF);
     }
     for (i = 0; i < ncol; i++) {
         uint32_t si = base + i;
@@ -508,14 +509,14 @@ static void graph_slicer(const track_t *t, uint16_t c)
     }
 }
 /* MOD page: the four slots as rows "1 LFO > CUT +50%" (M, a list's rows: the source to x 78, the arrow 84..98, the
- * destination of up to 5 characters 106..160, the amount from 172), the one KNOB 2..4 edit selected, slots that do
+ * destination of up to 5 characters 106..160, the amount from 172 and its S unit ending at 228), the one KNOB 2..4 edit selected, slots that do
  * nothing (SRC, DST or AMT at 0) dim */
 static void graph_mod(const track_t *t, uint16_t c)
 {
     uint32_t k;
     for (k = 0; k < NMSLOT; k++) {
         const int16_t *p = &t->p[P_M1SRC + 3u * k];
-        int32_t y = 14 + (int32_t)k * 24, on = p[0] && p[1] && p[2], sel = k == mod_ui_slot, x;
+        int32_t y = 14 + (int32_t)k * 24, on = p[0] && p[1] && p[2], sel = k == mod_ui_slot;
         uint16_t bg = sel ? T_THEME : T_SURF, col = sel ? T_INK : on ? c : T_DIM;
         char b[8];
         const char *unit;
@@ -533,9 +534,10 @@ static void graph_mod(const track_t *t, uint16_t c)
         cv_text_on(106, y + CAP_IN(M, 17), &AF_M, ui_mod_dst_name(t, p[1]), col, bg);
         param_format(&TP[P_M1AMT], p[2], b, &unit);
         GFX_HOOK_ALIGN(0, y, 0, y + 17, AL_V, "mod row text centred up/down");
-        x = cv_text_on(172, y + CAP_IN(M, 17), &AF_M, b, col, bg) + 2;
+        cv_text_fit(172, y + CAP_IN(M, 17), &AF_M, b, col, bg,
+                    228 - 172 - UI_VALUE_UNIT_GAP - text_w(&AF_S, unit));
         GFX_HOOK_ALIGN(0, 0, 0, y + CAP_IN(M, 17) + AF_M.asc, AL_B, "mod row unit on its amount's baseline");
-        cv_text_on(x, y + CAP_IN(M, 17) + AF_M.asc - AF_S.asc, &AF_S, unit, sel ? T_INK : T_DIM, bg);   /* (a unit: S) */
+        cv_text_r(228, y + CAP_IN(M, 17) + AF_M.asc - AF_S.asc, &AF_S, unit, sel ? T_INK : T_DIM, bg);
     }
 }
 

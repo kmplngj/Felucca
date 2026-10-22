@@ -376,6 +376,20 @@ u_cc_scale() {
 }
 unit cc_scale "" u_cc_scale
 
+u_lcd_power() {
+    $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_power_test" tests/lcd_power_test.c
+    run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
+}
+unit lcd_power "" u_lcd_power
+
+u_screen_capture() {
+    $CC -std=c11 -Wall -Wextra -Werror -Wno-unused-function -o "$OUT/screen_capture_test" tests/screen_capture_test.c
+    run "Screen capture: actual LCD delayed DMA, coverage, coherence, expiry and cancellation" "$OUT/screen_capture_test"
+    run "Screenshot CLI: strict framing, CRC, provenance and atomic output" python3 tests/fm1_screenshot_test.py
+    run "Screen capture CDC: actual command parser, bounded replies and slow-host backpressure" python3 tests/screen_capture_console_test.py
+}
+unit screen_capture "" u_screen_capture
+
 [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
@@ -521,6 +535,14 @@ if [ -f build/gen/felucca_tables.h ]; then
     }
     unit midi_control "" u_midi_control
 
+    u_midi_dsp_reliability() {
+        run "Nested TRS, UART events, defined DSP and tempo guards (strict sanitizers)" \
+            python3 tests/run_midi_dsp_focused.py --out "$OUT/midi-dsp-reliability"
+        $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_drift_test" tests/midi_drift_test.c -lm
+        run "External musical phase: 20-minute pulses, boundaries and bounded ARP catch-up" "$OUT/midi_drift_test"
+    }
+    unit midi_dsp_reliability "" u_midi_dsp_reliability
+
     u_digital() {
         $CC -O1 -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/digital_test" tests/digital_test.c -lm
         run "DIGITAL (retired, built here with FELUCCA_FM4=1): operator envelopes/levels" "$OUT/digital_test"
@@ -551,6 +573,7 @@ if [ -f build/gen/felucca_tables.h ]; then
         if python3 -c "import PIL" 2>/dev/null; then
             run "bitmap font storage: reject narrowed glyph metrics" python3 tests/bitmap_font_test.py
             run "text: M8Stealth ASCII matches upstream bitmaps" python3 tests/m8_font_test.py build/gen/ui_fonts.h
+            run "keycaps: native M8 ink, stable labels, pill masks and unchanged knob data" python3 tests/keycap_font_test.py build/gen/ui_keycaps.h
             run "text spacing: glyph gaps against the font's own (16x supersampled), S M <= 0.25 px, L <= 0.5 px" \
                 python3 tests/text_spacing_test.py build/gen/ui_fonts.h
         else
@@ -583,6 +606,10 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"
         $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_c1" tests/ui_test.c -lm
         run "UI, a FELUCCA_CPU2=0 build: MENU > SYSTEM without 2ND CORE, the rest as the default build" "$OUT/ui_test_c1"
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/lcd_typography_test" tests/lcd_typography_test.c -lm
+        run "LCD typography: stationary units, native capital bands and signed MOD range" "$OUT/lcd_typography_test"
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/track_badge_test" tests/track_badge_test.c -lm
+        run "Track badges: actual 1..4 ink centered in every cushion size and theme state" "$OUT/track_badge_test"
     }
     unit ui "" u_ui
 
@@ -614,6 +641,14 @@ if [ -f build/gen/felucca_tables.h ]; then
         fi
     }
     unit ui_render "" u_ui_render
+
+    u_screen_capture_ui() {
+        $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/screen_capture_ui_test" tests/screen_capture_ui_test.c -lm
+        run "Screen capture: real MENU rendering, exact pixels and safe unsupported states" "$OUT/screen_capture_ui_test"
+        $CC -O1 -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/screen_capture_ui_test_c1" tests/screen_capture_ui_test.c -lm
+        run "Screen capture without CPU2: real MENU rendering and safe rejection" "$OUT/screen_capture_ui_test_c1"
+    }
+    unit screen_capture_ui "screen_capture" u_screen_capture_ui
 
     # These generators use their own directories, independent of ui_new/ui_fm4.
     if python3 -c "import PIL" 2>/dev/null; then
@@ -693,7 +728,9 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "editor: real C protocol, malformed transfers, queue recovery, MENU settings (writes build/host/menu.json)" \
             env MENU_JSON="$OUT/menu.json" "$OUT/editor_test"
         $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/editor_test_c1" tests/editor_test.c -lm
-        run "editor, a FELUCCA_CPU2=0 build: MENU settings without 2ND CORE (ids 0..31)" "$OUT/editor_test_c1"
+        run "editor, a FELUCCA_CPU2=0 build: MENU settings without 2ND CORE (id 32 reserved; ALL DARK id 33)" "$OUT/editor_test_c1"
+        run "SysEx ownership: real editor/OTA arrival race, handshakes, unknown cleanup and unsafe-policy mutation" \
+            env SYSEX_DISPATCH_OUT="$OUT/sysex-dispatch" python3 tests/sysex_dispatch_test.py
     }
     unit editor "" u_editor
 
@@ -723,7 +760,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     u_catalog() {
         omit=$1
         ENGX="-DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit"
-        for t in engid_test editor_test project_test upreset_test backup_test robust_test; do
+        for t in engid_test editor_test project_test upreset_test backup_test robust_test engine_metadata_test; do
             $CC -w $ENGX -Ibuild/gen -Ifirmware/src -o "$OUT/${t}_omit$omit" tests/$t.c -lm
             run "test build, engine 14 + catalog without $omit (#306): $t" "$OUT/${t}_omit$omit"
         done
@@ -838,9 +875,16 @@ if [ -f build/gen/felucca_tables.h ]; then
     unit reverb "perform" u_reverb
 
     u_fx_rest() {
+        run "FX rest: parser rejects incomplete mutation coverage" python3 tests/fx_rest_parser_test.py
         run "FX rest: burst/silence audio and state equivalence (-O2/-Os)" python3 tests/fx_rest_test.py --require-rest
     }
     unit fx_rest "" u_fx_rest
+
+    u_audio_transitions() {
+        run "Native audio transitions: stereo waveform metrics, injected defects, CPU2 and reduced catalog" \
+            python3 tests/audio_transition_test.py --out "$OUT/audio-transitions"
+    }
+    unit audio_transitions "" u_audio_transitions
 
     u_chorus() {
         run "Chorus depth: continuity, exact PCM, short blocks and restart" python3 tests/chorus_depth_test.py
@@ -1087,6 +1131,21 @@ else
         run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     }
     unit asan_libc "" u_asan_libc
+
+    u_asan_lcd_power() {
+        ${CC%% *} -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -o "$A/lcd_power_test" tests/lcd_power_test.c
+        run "LCD power model (ASan/UBSan)" "$A/lcd_power_test"
+    }
+    unit asan_lcd_power "lcd_power" u_asan_lcd_power
+
+    u_asan_screen_capture() {
+        ${CC%% *} -std=c11 -Wall -Wextra -Werror -Wno-unused-function \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -o "$A/screen_capture_test" tests/screen_capture_test.c
+        run "Screen capture delayed-DMA model (ASan/UBSan)" "$A/screen_capture_test"
+    }
+    unit asan_screen_capture "screen_capture" u_asan_screen_capture
 
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
 

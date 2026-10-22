@@ -7,7 +7,7 @@
  * ENTRY; 1.5.5: SELECT, BPM or PAGE), the sound (SPEAKER EQ: FLAT LOWCUT BASS+,
  * USB LEVEL; 1.1: CLICK, CLICK LEVEL, COUNT-IN; 1.2: TUNE), MIDI (1.2: MIDI IN; 1.5.5: T1..T4 CHANNEL, AUTO SELECT, SCREEN WAKE; 1.5: LEARN CLEAR), USB SERIAL, RESTORE
  * LAST (1.2), then CALIBRATION (the setup screen: HARDWARE CALIBRATION), INFO (1.2) and ABOUT, the rows with no value
- * (MI_VALUES: the rows before them hold one, but LEARN CLEAR: menu_valued). 1.0.5: in four tabs (MI_TAB); 1.2: five.
+ * (MI_VALUES: ordinary values precede them; ALL DARK is a hidden descriptor row). 1.0.5: four tabs; 1.2: five.
  * 1.5: LEARN CLEAR (MIDI) is an action, not a setting: OCT+ clears MIDI LEARN's map (midi_learn.c ml_clear_all; the editor
  * has LEARN_SET op 2 for it, so MENU_DESC does not offer it); the row shows how many CCs are learned
  * 1.2: TUNE and MIDI IN are not settings: they edit the project's G_TUNE and G_ROUTE (up to 1.1.5 on GLO > GLOBAL and
@@ -22,7 +22,7 @@ enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_H
 #if FELUCCA_CPU2
        MI_CPU2,                                        /* (not in a FELUCCA_CPU2=0 build: core.h) */
 #endif
-       MI_PANEL, MI_INFO, MI_ABOUT, MI_COUNT };
+       MI_PANEL, MI_INFO, MI_ABOUT, MI_DARK, MI_COUNT };
                                                        /* (1.1: the metronome's rows in AUDIO; 1.2: RESTORE LAST in
                                                         * SYSTEM, SCALE LEDS STEP PREVIEW CHORD ENTRY in CONTROL, SCOPE in
                                                         * DISPLAY, TUNE in AUDIO, MIDI IN in MIDI, INFO in SYSTEM;
@@ -35,22 +35,25 @@ enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_H
 #else
 #define MI_TEXT(row) 0
 #endif
-static int menu_valued(uint32_t row) { return row < MI_VALUES && row != MI_LCLEAR; }   /* (a row with a value) */
+static int menu_valued(uint32_t row) { return (row < MI_VALUES && row != MI_LCLEAR) || row == MI_DARK; }
+/* AUTO OFF remains the legacy combined wire setting; its native row opens the detail page. WAKE and ALL DARK
+ * are described in DISPLAY to clients but only appear on that native detail page, never as extra tab rows. */
+static int menu_native_row(uint32_t row) { return row != MI_SCRWAKE && row != MI_DARK; }
 #define MI_PROJECT(row) ((row) == MI_TUNE || ((row) >= MI_MIDIIN && (row) <= MI_TCH4))   /* the project's values (song.g,
                                                                                          * song.mch), not settings */
 #define MI_TCH(row) ((row) >= MI_TCH1 && (row) <= MI_TCH4)   /* 1.5.5 (#202): T1..T4 CHANNEL, MIDI IN TRACK's */
-static const char *const MI_NAME[MI_COUNT] = {"COLOR", "STYLE", "LARGE", "ANIM", "LEDS", "SCREEN OFF", "SCOPE", "HOME", "HOLD", "KNOB ACCEL",
+static const char *const MI_NAME[MI_COUNT] = {"COLOR", "STYLE", "LARGE", "ANIM", "LEDS", "AUTO OFF", "SCOPE", "HOME", "HOLD", "KNOB ACCEL",
                                               "FX LATCH", "BPM LOCK", "SCALE LEDS", "STEP PREVIEW", "CHORD ENTRY", "SELECT",
                                               "SPEAKER EQ", "USB LEVEL", "CLICK", "CLICK LEVEL", "COUNT-IN", "TUNE",
                                               "MIDI IN", "T1 CHANNEL", "T2 CHANNEL", "T3 CHANNEL", "T4 CHANNEL",
-                                              "AUTO SELECT", "SCREEN WAKE", "LEARN CLEAR", "USB SERIAL", "RESTORE LAST", "HELP",
+                                              "AUTO SELECT", "WAKE", "LEARN CLEAR", "USB SERIAL", "RESTORE LAST", "HELP",
 #if FELUCCA_CPU2
                                               "2ND CORE",
 #endif
                                               "CALIBRATION", "INFO",
-                                              "ABOUT"};
-/* 1.0.5: the MENU's tabs (ui_menu.c: ALGORITHM steps between them, PRESETS among one tab's rows; the editor gets a
- * row's tab after its MENU_DESC reply). A tab's rows follow each other in MI order (tests/ui_test.c checks it); at
+                                              "ABOUT", "ALL DARK"};
+/* 1.0.5: the MENU's tabs (ui_menu.c: ALGORITHM steps between them, PRESETS among one tab's visible rows; the editor
+ * gets a row's tab after its MENU_DESC reply). Descriptor-only rows are skipped by the native ordinal helpers; at
  * most MTAB_ROWS each (the page does not scroll: ui_menu.c fits them; 1.2: 7, the rows of such a tab 21 px; 1.3: 8,
  * 18 px). A new row
  * joins a tab here. Tabs are in the order the device shows them; a tab's index is what the editor is told, not an id
@@ -73,13 +76,14 @@ static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_MIDI,                                                              /* MIDI IN (1.2) */
     MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI,                             /* T1..T4 CHANNEL (1.5.5) */
     MTAB_MIDI,                                                              /* AUTO SELECT (1.5.5) */
-    MTAB_MIDI,                                                              /* SCREEN WAKE (1.5.5: DISPLAY is full) */
+    MTAB_DISPLAY,                                                           /* WAKE: native AUTO OFF detail, same wire id 31 */
     MTAB_MIDI,                                                              /* LEARN CLEAR (1.5) */
     MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM,                                  /* USB SERIAL, RESTORE LAST, HELP (1.5) */
 #if FELUCCA_CPU2
     MTAB_SYSTEM,                                                            /* 2ND CORE (1.6.1) */
 #endif
     MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM,                                  /* CALIBRATION, INFO (1.2), ABOUT */
+    MTAB_DISPLAY,                                                           /* ALL DARK: native AUTO OFF detail, wire id 33 */
 };
 /* TUNE: the project's tuning in cents (G_TUNE, -50..+50); as a row its values 0..TUNE_N - 1 (value - TUNE_MIN). The
  * editor gets it as a number (EDM_INT: the cents, min..max, its unit) */
@@ -89,7 +93,7 @@ typedef char mtab_fits_ui[sizeof ui.menu_row >= MTAB_COUNT ? 1 : -1];   /* (ui.c
 static uint32_t mtab_first(uint32_t t)                 /* a tab's first row */
 {
     uint32_t i = 0;
-    while (i < MI_COUNT && MI_TAB[i] != t)
+    while (i < MI_COUNT && (!menu_native_row(i) || MI_TAB[i] != t))
         i++;
     return i;
 }
@@ -97,8 +101,23 @@ static uint32_t mtab_rows(uint32_t t)                  /* .. and how many it has
 {
     uint32_t i, n = 0;
     for (i = 0; i < MI_COUNT; i++)
-        n += MI_TAB[i] == t;
+        n += menu_native_row(i) && MI_TAB[i] == t;
     return n;
+}
+static uint32_t mtab_row(uint32_t t, uint32_t k)     /* a visible ordinal, independent of hidden descriptor rows */
+{
+    uint32_t i;
+    for (i = 0; i < MI_COUNT; i++)
+        if (menu_native_row(i) && MI_TAB[i] == t && k-- == 0u)
+            return i;
+    return mtab_first(t);
+}
+static uint32_t mtab_index(uint32_t row)
+{
+    uint32_t i, k = 0;
+    for (i = 0; i < row; i++)
+        k += menu_native_row(i) && MI_TAB[i] == MI_TAB[row];
+    return k;
 }
 /* STYLE (ui_style, gfx.c ST_*): FLAT the filled cards; LINE black areas divided by 1 px rules (#50, #57: the 0.9 look)
  * (1.0.2: PIXEL retired, a saved PIXEL reads as LINE) */
@@ -137,8 +156,13 @@ static const char *const HOLD_N[4] = {"0.3 s", "0.4 s", "0.5 s", "0.6 s"};   /* 
 static const char *const CLICK_N[3] = {"OFF", "REC", "ON"};          /* REC: while a track is armed and playing */
 static const char *const CLKLVL_N[3] = {"LOW", "MID", "HIGH"};
 static const char *const COUNTIN_N[3] = {"OFF", "1 BAR", "2 BARS"};
-/* 1.1.5: SCREEN OFF (ui.c scr_*: the screen dark after this long without panel input; NEVER the default since 1.1.5.1) */
-static const char *const SCROFF_N[5] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"};
+/* AUTO OFF (ui.c scr_*): target and delay in one row; values 0..4 retain SCREEN OFF's meaning. */
+static const char *const SCROFF_N[13] = {"NEVER", "SCREEN 5m", "SCREEN 15m", "SCREEN 30m", "SCREEN 60m",
+                                      "LEDS 5m", "LEDS 15m", "LEDS 30m", "LEDS 60m",
+                                      "BOTH 5m", "BOTH 15m", "BOTH 30m", "BOTH 60m"};
+static const char *const OFF_TIME_N[5] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"};
+static const char *const OFF_SHORT_N[5] = {"-", "5m", "15m", "30m", "60m"};
+static const char *const OFF_MODE_N[3] = {"SCREEN", "LEDS", "BOTH"};
 /* ANIM (#46: OFF, values snap: ui_draw.c roll_note, ui_graph.c pr_follow; no power-on sweep, main.c boot_leds). 1.2
  * (Discussion #135): IDLE, as ON and the LEDs' idle animation after a minute without input (ui_input.c idle_leds; ui.c
  * ui_idle). Its values keep 1.1's: 0 ON, 1 OFF (the editor's), 2 IDLE; the menu steps them OFF, ON, IDLE (ANIM_ORD) */
@@ -186,7 +210,7 @@ static const char *const SELECT_N[SEL_N] = {"BPM", "PAGE", "MODW", "VEL"};
 static uint32_t menu_n(uint32_t row)
 {
     return row == MI_COLOR ? palette_n() : row == MI_LOWCUT || (row >= MI_CLICK && row <= MI_COUNTIN) ? 3u :
-           row == MI_HOLD ? 4u : row == MI_LEDS ? LEDS_ROWS : row == MI_SCROFF ? NELEM(SCROFF_N) :
+           row == MI_HOLD ? 4u : row == MI_LEDS ? LEDS_ROWS : row == MI_SCROFF ? NELEM(SCROFF_N) : row == MI_DARK ? 5u :
            row == MI_TUNE ? TUNE_N : row == MI_MIDIIN ? NELEM(N_ROUTE) : MI_TCH(row) ? MCH_N : row == MI_ANIM ? 3u : row == MI_HOME ? HV_COUNT :
            row == MI_SELECT ? SEL_N : 2u;
 }
@@ -202,6 +226,7 @@ static uint32_t menu_get(uint32_t row)
     case MI_LOWCUT: return settings.lowcut % 3u;
     case MI_HOLD: return settings_hold % 4u;
     case MI_SCROFF: return scr_get();
+    case MI_DARK: return scr_dark_get();
     case MI_ANIM: return ui_prefs & PREF_ANIM_OFF ? 1u : (ui_idle & 1u) ? 2u : 0u;
     case MI_HOME: return ui_home_view < HV_COUNT ? ui_home_view : HV_SCOPE;
     case MI_SELECT: return sel_mode();
@@ -230,6 +255,7 @@ static const char *menu_vname(uint32_t row, uint32_t v)
     case MI_CLKLVL: return CLKLVL_N[v % 3u];
     case MI_COUNTIN: return COUNTIN_N[v % 3u];
     case MI_SCROFF: return SCROFF_N[v % NELEM(SCROFF_N)];
+    case MI_DARK: return OFF_TIME_N[v % NELEM(OFF_TIME_N)];
     case MI_ANIM: return ANIM_N[v % 3u];
     case MI_HOME: return HOME_N[v % HV_COUNT];
     case MI_SELECT: return SELECT_N[v % SEL_N];
@@ -257,7 +283,7 @@ static const char *menu_vname(uint32_t row, uint32_t v)
  * USB SERIAL when the menu has closed (usb_serial_apply). Saved by the caller (menu_close, the editor). TUNE and MIDI IN:
  * the project's values, as their page knobs set them up to 1.1.5 (voice.c reads TUNE, seq.c events_block ROUT's change);
  * kept with the project (PROJECT SAVE, the autosave), not by settings_save */
-static void menu_put(uint32_t row, uint32_t v)
+static int menu_try_put(uint32_t row, uint32_t v)
 {
     const menu_flag_t *f = menu_flag(row);
     if (f) {
@@ -281,7 +307,7 @@ static void menu_put(uint32_t row, uint32_t v)
                 ui_message(v ? "2ND CORE ON: RESTART" : "2ND CORE OFF: RESTART");
         }
 #endif
-        return;
+        return 1;
     }
     switch (row) {
     case MI_COLOR:
@@ -290,7 +316,8 @@ static void menu_put(uint32_t row, uint32_t v)
     case MI_STYLE: ui_style = (uint8_t)(v ? ST_LINE : ST_FLAT); break;   /* (drawn so from the next frame) */
     case MI_LOWCUT: settings.lowcut = v; fx_lowcut = (uint8_t)v; break;
     case MI_HOLD: settings_hold = (uint8_t)v; break;
-    case MI_SCROFF: scr_put(v); break;                 /* (read every frame: ui.c scr_frame) */
+    case MI_SCROFF: return scr_put(v);                 /* legacy 13 values; refuse an invalid timer ordering */
+    case MI_DARK: return scr_dark_put(v);
     case MI_ANIM:                                      /* (read where they are used, every frame) */
         ui_prefs = (uint8_t)(v == 1u ? ui_prefs | PREF_ANIM_OFF : ui_prefs & ~PREF_ANIM_OFF);
         ui_idle = (uint8_t)(v == 2u ? ui_idle | 1u : ui_idle & ~1u);
@@ -315,7 +342,9 @@ static void menu_put(uint32_t row, uint32_t v)
         midi_route = MIDI_ROUTE_AGAIN;
         break;
     }
+    return 1;
 }
+static void menu_put(uint32_t row, uint32_t v) { (void)menu_try_put(row, v); }
 /* the menu's step, any of KNOB 1..4 or OCT+ (s > 0) / OCT- (s < 0): the next / previous value, stopping at the ends;
  * COLOR wraps round its palettes. On an ON / OFF row up is ON (MENU_FLAGS). TUNE: s cents at a time (101 values: a fast
  * turn goes as far as the knob went, as the old page's knob did) */

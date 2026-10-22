@@ -28,7 +28,7 @@ class Resolve(unittest.TestCase):
 
     def test_release_refuses_diagnostic_builds(self):
         """FELUCCA_CRASH_CTX / FELUCCA_MUL64_REPRO (#425, #428) are development builds only"""
-        self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO"))
+        self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE"))
         for flag in B.DIAG_FLAGS:
             with patch.dict(os.environ, {flag: "1"}):
                 with self.assertRaises(SystemExit) as raised:

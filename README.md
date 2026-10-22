@@ -16,6 +16,8 @@ reviewed and tested; the fork does not automatically include every upstream or f
 
 The standard profile combines thirteen engines with factory presets, four tracks sharing eight voices,
 a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
+Eight is the shared allocation pool; deadline headroom depends on the sound and USB load
+([measured PHYS example](docs/audio-deadline-investigation-2026-10-21.md)).
 The [fork feature guide](docs/fork-features.md) covers controls, defaults,
 compatibility limits and build identification. The
 [upstream manual](https://github.com/hugelton/Felucca/wiki/Home) documents the shared
@@ -23,12 +25,27 @@ instrument; some details may differ in this fork.
 
 This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
 pixel-font options, performance diagnostics and broader host/emulator regression coverage.
+The default M8Stealth display uses native pixel lettering for both regular text
+and control/status badges, with stable number/unit placement
+([LCD typography](docs/lcd-typography.md)).
+The [diagnostic capability overview](docs/diagnostics.md#diagnostic-capabilities) distinguishes
+the normal USB console and read-only host collector from opt-in assertion, crash-register,
+arithmetic-reproducer and screenshot builds, with their activation and evidence limits.
+An opt-in [device-screen capture diagnostic](docs/screen-capture.md) exports
+firmware-rendered static HOME/menu pixels with device build provenance over USB SERIAL.
+It is disabled in normal builds and does not measure physical LCD colours or backlight glow.
+[MIDI timing and DSP hardening](docs/midi-dsp-reliability.md) retains external-clock
+phase, timestamps TRS input during rendering, and guards invalid tempo.
+[Device results](docs/midi-dsp-device-results-2026-10-21.md) qualify USB pulse-count
+phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
 Five portable engines live in the pinned
 [Felucca-Engines fork](https://github.com/kmplngj/Felucca-Engines); initial standard/reduced
 engine build profiles are implemented. Broader engine selection and startup usage modes
-remain planned. The optional second-core worker is beta, off by default, and still needs
-real-device reliability validation in this fork; after a recorded worker failure it is
-held off across resets until the player retries it ([guide](docs/fork-features.md#retained-exclusion-after-a-failed-worker-410)). Shared effect-control smoothing
+remain planned. The optional second-core worker is beta and off by default.
+[Bounded FM-1 comparisons](docs/cpu2-idle-polling.md) cover an idle-poll mitigation
+for observed BAD_JOB failures on one unit; broader unit, engine/profile and TRS
+qualification remains pending. After a recorded worker failure it is held off
+across resets until the player retries it ([guide](docs/fork-features.md#retained-exclusion-after-a-failed-worker-410)). Shared effect-control smoothing
 experiments are implemented, with FM-1 listening and timing qualification pending.
 
 The opt-in [MACRO/Braids profile](docs/macro-engine.md) adds a fourteenth engine with

@@ -788,6 +788,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_DETAIL_COND, S_DETAIL_FILL, S_AUTO_COND, S_GLO_FILL, S_SEQ_EUCLID, S_SEQ_EUCLID_DRUM, S_SEQ_EUCLID_64,
        S_MENU_SELECT, S_PROJECT_ERASE, S_CONFIRM_ERASE_PROJ, S_TOOLS_CLEAN, S_CONFIRM_CLEAN,
        S_MENU_MIDI_TRACK, S_MENU_MIDI_TCH_UNUSED, S_MENU_MIDI_AUTO, S_HOME_TRACKS_MIDI, S_MIXER_MIDI, S_EDIT_PHASE_FOLD,
+       S_MENU_OFF_IDLE, S_MENU_OFF_MODE, S_MENU_OFF_DARK, S_MENU_OFF_WAKE, S_MENU_OFF_BACK, S_MENU_OFF_ERROR,
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
        S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO,
        S_MACRO_SYNC, S_MACRO_TRIPLE, S_MACRO_QUESTION,
@@ -824,6 +825,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "layer_seq_euclid_64",
     "menu_select", "project_erase", "confirm_erase_project", "tools_clean", "confirm_clean",
     "menu_midi_track", "menu_midi_channels_unused", "menu_midi_auto_select", "home_tracks_midi", "mixer_midi", "edit_phase_fold",
+    "menu_auto_off_idle", "menu_auto_off_mode", "menu_auto_off_dark", "menu_auto_off_wake", "menu_auto_off_back", "menu_auto_off_error",
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
     "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto",
     "macro_sync", "macro_triple", "macro_question",
@@ -1307,6 +1309,16 @@ static void setup(int s)
     case S_CONFIRM_PAT: ui.confirm = CF_LOAD_PAT; ui.confirm_trk = 0; ui.ppick = 4; break;
     case S_CONFIRM_MOTION: ui.confirm = CF_CLEAR_MOTION; ui.confirm_trk = 3; break;
     case S_CONFIRM_ERASE: song.playing = 0; up_store(6, "A VERY LONG SOUND NAME"); ui.confirm = CF_ERASE_USER; ui.confirm_trk = 6; break;
+    case S_MENU_OFF_IDLE: case S_MENU_OFF_MODE: case S_MENU_OFF_DARK:
+    case S_MENU_OFF_WAKE: case S_MENU_OFF_BACK: case S_MENU_OFF_ERROR:
+        ui_scr = (uint8_t)(SCR_CODE[1] | 1u << 3 | 3u << 5);
+        menu_off_open();
+        menu_off_sel = s == S_MENU_OFF_ERROR ? MO_DARK : (uint8_t)(s - S_MENU_OFF_IDLE);
+        if (s == S_MENU_OFF_ERROR) {
+            menu_off_put(MO_DARK, 1u);
+            ui.msg_t = 0;                              /* persistent explanation after the short toast */
+        }
+        break;
     case S_MENU: ui.menu = 1; ui.menu_sel = 0; song.rec = 1; break;
     case S_MENU_SPEAKER: ui.menu = 1; ui.menu_sel = MI_LOWCUT; settings.lowcut = 2; break;
     case S_ABOUT: ui.menu = 2; ui.menu_scroll = 0; break;
@@ -2047,6 +2059,48 @@ static void roll_cost(void)
  * track cushions 1..4 at 12 16 24 px; every icon in a card's icon slot; the dialogs of every kind; every menu row with
  * each of its values; NAME's every key, letter and cycle in ABC and 123, the field holding every character; the
  * piano roll's C labels C-1 .. C9; the drum lanes of every kit; the mixer's LEVEL, PAN and REV over their ranges */
+/* Every valid pair of absolute timers, native mode/selection and wake policy,
+ * independently drawn and linted in every palette/style/size. This is separate
+ * from alignment sweeps, whose piled-up draws intentionally skip layout lint. */
+static void auto_off_sweep(void)
+{
+    uint32_t p, st, idle, dark, mode, sel, large, wake, err, scenes = 0, before = nfind;
+    char name[96];
+    for (p = 0; p < NPALETTES; p++)
+        for (st = ST_FLAT; st <= ST_LINE; st++) {
+            state(); pal(p);
+            ui_style = (uint8_t)st; style_apply();
+            for (idle = 0; idle < 5u; idle++)
+                for (dark = 0; dark < 5u; dark++) {
+                    if (idle && dark && dark <= idle) continue;
+                    for (mode = 0; mode < 3u; mode++)
+                        for (large = 0; large < 2u; large++) {
+                            ui_scr = (uint8_t)(SCR_CODE[idle] | mode << 3 | dark << 5);
+                            ui_prefs = large ? PREF_LARGE : 0u;
+                            for (wake = 0; wake < 2u; wake++) {
+                                menu_put(MI_SCRWAKE, wake);
+                                for (sel = 0; sel < MO_COUNT; sel++)
+                                    for (err = 0; err < 2u; err++) {
+                                        snprintf(name, sizeof name, "AUTO OFF p%u st%u i%u d%u m%u l%u w%u s%u e%u",
+                                                 p, st, idle, dark, mode, large, wake, sel, err);
+                                        cur_name = name;
+                                        ui.menu = MENU_OFF; ui.menu_sel = MI_SCROFF;
+                                        menu_off_sel = (uint8_t)sel; menu_off_error = (uint8_t)err;
+                                        draw(-1); lint(); mono_check(); scenes++;
+                                    }
+                            }
+                            ui.menu = 1; menu_off_error = 0;
+                            for (sel = 0; sel < 2u; sel++) {
+                                cur_name = "AUTO OFF root summary";
+                                ui.menu_sel = sel ? MI_SCROFF : MI_COLOR;
+                                draw(-1); lint(); mono_check(); scenes++;
+                            }
+                        }
+                }
+        }
+    fprintf(rep, "AUTO OFF detail/summary: %u independent scenes, %u lint findings\n", scenes, nfind - before);
+}
+
 static void align_sweeps(void)
 {
     uint32_t st, i, k, nf = nfind;
@@ -2092,12 +2146,25 @@ static void align_sweeps(void)
         cur_name = st ? "sweep LINE: menu rows" : "sweep FLAT: menu rows";
         ui.menu = 1;
         for (i = 0; i < MI_COUNT; i++)
+            if (menu_native_row(i))
             for (k = 0; k < 4u; k++) {
                 ui.menu_sel = (uint8_t)i; ui_prefs = k & 1u ? 0xFFu : 0u; settings_hold = (uint8_t)k; settings.lowcut = (uint8_t)(k % 3u);
                 ui_rec_prefs = (uint8_t)((k % 3u) | (k % 3u) << 2 | ((k + 1u) % 3u) << 4);   /* (CLICK, LEVEL, COUNT-IN: each value) */
                 settings_leds = (uint8_t)(k % LEDS_COUNT); ui.force = 1;   /* (every LEDS name) */
                 draw_menu();
             }
+        cur_name = st ? "sweep LINE: AUTO OFF / INV levels" : "sweep FLAT: AUTO OFF / INV levels";
+        for (i = 0; i < 2u; i++)
+            for (k = 0; k < 4u * menu_n(i ? MI_LEDS : MI_SCROFF); k++) {
+                uint32_t row = i ? MI_LEDS : MI_SCROFF;
+                menu_put(row, k / 4u);
+                ui.menu_sel = (uint8_t)(k & 2u ? row : MI_COLOR);
+                ui_prefs = k & 1u ? PREF_LARGE : 0u;
+                ui.force = 1;
+                draw_menu();
+            }
+        menu_put(MI_SCROFF, 0);
+        menu_put(MI_LEDS, 2);
         ui_prefs = 0; ui_rec_prefs = 0;
         cur_name = st ? "sweep LINE: menu TUNE / MIDI IN" : "sweep FLAT: menu TUNE / MIDI IN";   /* (1.2: the project's) */
         for (k = 0; k < 2u * TUNE_N; k++) {             /* every TUNE (the cents, signed), selected or not, S and M */
@@ -2589,6 +2656,7 @@ int main(int argc, char **argv)
     }
     al_off = 0;
     al_keycaps();
+    auto_off_sweep();
     align_sweeps();
     al_table();
     if (al_rep) fclose(al_rep);

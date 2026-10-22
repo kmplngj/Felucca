@@ -5,9 +5,63 @@
  * MENU_DESC / MENU_SET; 1.2: TUNE and MIDI IN, the project's). No BACK row: HOME closes it (ui_input.c). The two-valued
  * rows are bits of ui_prefs (MENU_FLAGS). PRESETS scrolls from ABOUT through all credits (OCT- back to the tabs).
  * ui.menu: 1 the tabs, 2 ABOUT (information and credits), 3 INFO (1.2: the device's state, the old SYSTEM page's USB and
- * CPU readings). */
+ * CPU readings), 4 AUTO OFF (five editable/detail rows, explicit BACK). */
 /* ------------------------------------------------------------ menu --- */
 /* (the rows, their values and names, usb_serial_apply: menu_items.c) */
+enum { MENU_OFF = 4 };
+enum { MO_IDLE, MO_MODE, MO_DARK, MO_WAKE, MO_BACK, MO_COUNT };
+static uint8_t menu_off_sel, menu_off_error;
+static int menu_has_value(void)
+{
+    return ui.menu == MENU_OFF ? menu_off_sel < MO_BACK : menu_valued(ui.menu_sel) && ui.menu_sel != MI_SCROFF;
+}
+static uint32_t menu_off_get(uint32_t row)
+{
+    return row == MO_IDLE ? scr_idle_get() : row == MO_MODE ? scr_mode_get() :
+           row == MO_DARK ? scr_dark_get() : row == MO_WAKE ? menu_get(MI_SCRWAKE) : 0u;
+}
+static uint32_t menu_off_n(uint32_t row) { return row == MO_MODE ? 3u : row == MO_WAKE ? 2u : row == MO_BACK ? 0u : 5u; }
+static int menu_off_put(uint32_t row, uint32_t v)
+{
+    if (row >= MO_BACK || v >= menu_off_n(row)) return 0;
+    int ok = row == MO_IDLE ? scr_idle_put(v) : row == MO_MODE ? scr_mode_put(v) :
+             row == MO_DARK ? scr_dark_put(v) : row == MO_WAKE ? menu_try_put(MI_SCRWAKE, v) : 0;
+    menu_off_error = (uint8_t)!ok;
+    ui.force = 1;
+    return ok;
+}
+static uint32_t menu_off_next(uint32_t row, int32_t s)
+{
+    uint32_t v = menu_off_get(row), n = menu_off_n(row);
+    int32_t next, step = (s > 0) - (s < 0);
+    if (!s || !n) return v;
+    if (row == MO_WAKE) return menu_step(MI_SCRWAKE, s);
+    /* Walk at most five timer values. NEVER is independent; enabled ALL DARK must be later than IDLE. */
+    for (next = (int32_t)v + step; next >= 0 && next < (int32_t)n; next += step)
+        if ((row != MO_IDLE || !next || !scr_dark_get() || (uint32_t)next < scr_dark_get()) &&
+            (row != MO_DARK || !next || !scr_idle_get() || (uint32_t)next > scr_idle_get()))
+            return (uint32_t)next;
+    return v;
+}
+static void menu_off_step(int32_t s)
+{
+    if (s && menu_off_sel < MO_BACK)
+        menu_off_put(menu_off_sel, menu_off_next(menu_off_sel, s));
+}
+static void menu_off_open(void)
+{
+    ui.menu = MENU_OFF;
+    ui.menu_sel = MI_SCROFF;
+    menu_off_sel = menu_off_error = 0;
+    ui.force = 1;
+}
+static void menu_off_back(void)
+{
+    ui.menu = 1;
+    ui.menu_sel = MI_SCROFF;
+    menu_off_error = 0;
+    ui.force = 1;
+}
 
 /* All notices are in flash. Wrap at the font's actual width, without dropping URL
  * characters; the same layout computes the scroll limit and draws clipped bands.
@@ -46,27 +100,26 @@ static const menu_credit_t MENU_CREDITS[] = {
     {"https://github.com/pichenettes/eurorack", MC_URL},
     {"", MC_TEXT},
 #endif
-#if UI_FONT_BITMAP
-#if UI_FONT_M8STEALTH
+    /* Every build uses M8Stealth57 for keycap legends. */
     {"M8STEALTH", MC_TITLE},
     {"Trash80 / CC BY-SA 3.0", MC_TEXT},
     {"With local extra bitmap marks", MC_TEXT},
     {"https://fontstruct.com/fontstructors/100463/trash80", MC_URL},
     {"", MC_TEXT},
-#else
+#if UI_FONT_BITMAP && !UI_FONT_M8STEALTH
     {"TAMZEN / TAMSYN", MC_TITLE},
     {"Suraj N. Kurapati / Scott Fial", MC_TEXT},
     {"Free use, copy, modify, distribute", MC_TEXT},
     {"https://github.com/sunaku/tamzen-font", MC_URL},
     {"", MC_TEXT},
 #endif
-#endif
-    /* Keycap legends still use Inter Tight in the pixel-font experiments. */
+#if !UI_FONT_BITMAP
     {"INTER TIGHT", MC_TITLE},
     {"The Inter Project Authors", MC_TEXT},
     {"SIL Open Font License 1.1", MC_TEXT},
     {"https://github.com/rsms/inter-tight", MC_URL},
     {"", MC_TEXT},
+#endif
     {"VSCO-2 CE + VCSL", MC_TITLE},
     {"Versilian Studios / CC0 1.0", MC_TEXT},
     {"https://github.com/sgossner/VSCO-2-CE", MC_URL},
@@ -155,21 +208,21 @@ static void menu_head(void)
 {
     cv_begin(240, H_HEAD, T_BG);
     GFX_HOOK_ALIGN(0, HEAD_MY + AF_M_CAP_Y, 0, HEAD_MY + AF_M_CAP_Y + AF_M_CAP_H, AL_V, "header icon on its title's line");
-    cv_icon_mid(8, H_HEAD / 2, 16, ui.menu >= 2 ? ICON_X_INFO : ICON_X_COG, T_THEME, T_BG);   /* (as draw_head's) */
+    cv_icon_mid(8, H_HEAD / 2, 16, ui.menu == 2 || ui.menu == 3 ? ICON_X_INFO : ICON_X_COG, T_THEME, T_BG);
     GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
-    cv_text(30, HEAD_MY, &AF_M, ui.menu == 3 ? "INFO" : ui.menu == 2 ? "ABOUT / CREDITS" : "MENU", T_TEXT);
-    if (ui.menu >= 2) {                               /* the way back at the right, the REC mark before it (then */
+    cv_text(30, HEAD_MY, &AF_M, ui.menu == MENU_OFF ? "AUTO OFF" : ui.menu == 3 ? "INFO" : ui.menu == 2 ? "ABOUT / CREDITS" : "MENU", T_TEXT);
+    if (ui.menu == 2 || ui.menu == 3) {                /* the way back at the right, the REC mark before it (then */
         const char *w = song.rec ? 0 : "BACK";        /* the keycap goes without its word: no room for both) */
         int32_t x = 232 - kh_w(KC_OCTDN, w);
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_OCTDN, w, 1, T_BG);
         draw_rec_mark(x - 20, T_BG);
     } else {
-        int32_t x = 232 - (12 + (int32_t)(MTAB_COUNT - 1u) * 8) - 8 - kh_w(KC_HOME, "CLOSE");   /* (menu_dots' left) */
+        int32_t x = 232 - (ui.menu == MENU_OFF ? 0 : (12 + (int32_t)(MTAB_COUNT - 1u) * 8) + 8) - kh_w(KC_HOME, "CLOSE");
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_HOME, "CLOSE", 1, T_BG);
         draw_rec_mark(x - 20, T_BG);
-        menu_dots();
+        if (ui.menu != MENU_OFF) menu_dots();
     }
     cv_blit(0, Y_HEAD);
 }
@@ -291,6 +344,52 @@ static void menu_switch(int32_t xr, int32_t y, int32_t h, int on, int sel)
     cv_rrect(x, ty, 26, 14, -7, track, under);
     cv_rrect(on ? x + 14 : x + 2, ty + 2, 10, 10, -5, knob, track);
 }
+static void menu_off_summary(char *b)
+{
+    uint32_t a = scr_idle_get(), d = scr_dark_get(), n;
+    if (!(a | d)) {
+        str_cpy(b, "NEVER", 16);
+        return;
+    }
+    str_cpy(b, OFF_SHORT_N[a], 16);
+    n = str_len(b);
+    str_cpy(b + n, " / ", 16u - n);
+    n = str_len(b);
+    str_cpy(b + n, OFF_SHORT_N[d], 16u - n);
+}
+static void menu_off_rows(void)
+{
+    static const char *const NAME[MO_COUNT] = {"IDLE AFTER", "IDLE MODE", "ALL DARK", "WAKE", "BACK"};
+    int32_t h = menu_large() ? 28 : 24;
+    uint32_t k;
+    if (!ux.style)
+        cv_rrect(4, 32, 232, (int32_t)MO_COUNT * (h + 2) + 4, 8, T_SURF, T_BG);
+    for (k = 0; k < MO_COUNT; k++) {
+        int32_t y = 35 + (int32_t)k * (h + 2), vy = y + CAP_IN(M, h);
+        int sel = k == menu_off_sel;
+        uint16_t bg = sel ? T_THEME : T_SURF, fg = sel ? T_INK : T_TEXT;
+        uint16_t val = sel ? T_INK : T_THEME;
+        if (sel)
+            cv_rrect(MR_X, y, MR_W, h, 6, T_THEME, T_SURF);
+        else if (k && k - 1u != menu_off_sel)
+            cv_rect(MR_X + 6, y - 1, MR_W - 12, 1, ux.style ? T_RULE : T_LINE);
+        GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "auto off row name centred up/down");
+        cv_text_on(MR_LX, vy, &AF_M, NAME[k], fg, bg);
+        if (k == MO_BACK) {
+            GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "auto off row chevron centred up/down");
+            cv_icon_in(MR_VR - 12, y, 0, h, 12, ICON_X_RIGHT, sel ? T_INK : T_MID, bg);
+        } else {
+            uint32_t v = menu_off_get(k);
+            const char *name = k == MO_MODE ? OFF_MODE_N[v] : k == MO_WAKE ? menu_vname(MI_SCRWAKE, v) : OFF_TIME_N[v];
+            GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "auto off row value centred up/down");
+            cv_text_r(MR_VR, vy, &AF_M, name, val, bg);
+        }
+    }
+    if (menu_off_error)
+        cv_text(8, 185, &AF_S, "ALL DARK MUST BE LATER", T_TEXT);
+    GFX_HOOK_ALIGN(0, 0, 240, 0, AL_H, "auto off time caption centred across screen");
+    cv_text((240 - text_w(&AF_S, "TIMES SINCE INPUT")) / 2, 202, &AF_S, "TIMES SINCE INPUT", T_MID);
+}
 /* the tab's row k (menu_items.c row `row`) */
 static void menu_row(uint32_t k, uint32_t row)
 {
@@ -303,10 +402,17 @@ static void menu_row(uint32_t k, uint32_t row)
     v = menu_valued(row) ? menu_vname(row, menu_get(row)) : "";
     if (sel)
         cv_rrect(MR_X, y, MR_W, h, 6, T_THEME, T_SURF);
-    else if (k && row - 1u != ui.menu_sel)             /* a rule from the row above (none beside the selected one) */
+    else if (k && mtab_row(menu_tab(), k - 1u) != ui.menu_sel)
         cv_rect(MR_X + 6, y - 1, MR_W - 12, 1, ux.style ? T_RULE : T_LINE);
     GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row name centred up/down");
     cv_text_on(MR_LX, vy, &AF_M, MI_NAME[row], fg, bg);
+    if (row == MI_SCROFF) {
+        char b[16];
+        menu_off_summary(b);
+        cv_text_r(MR_VR - 18, vy, &AF_M, b, val, bg);
+        cv_icon_in(MR_VR - 12, y, 0, h, 12, ICON_X_RIGHT, sel ? T_INK : T_MID, bg);
+        return;
+    }
     if (row == MI_LCLEAR) {                            /* LEARN CLEAR (1.5): how many CCs are learned, "NONE" */
         char b[8] = "NONE";
         if (ml_count()) {
@@ -327,7 +433,7 @@ static void menu_row(uint32_t k, uint32_t row)
         b[2] = (char)('0' + HOLD_MS[settings_hold % 4u] / 100u);
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row value centred up/down");
         GFX_HOOK_ALIGN(0, 0, 0, vy + AF_M.asc, AL_B, "menu row unit on its value's baseline");
-        cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, row == MI_TUNE ? "ct" : "s", sel ? T_INK : T_MID, bg) - 3,
+        cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, row == MI_TUNE ? "ct" : "s", sel ? T_INK : T_MID, bg) - UI_VALUE_UNIT_GAP,
                   vy, &AF_M, row == MI_TUNE ? v : b, val, bg);
         return;
     }
@@ -417,7 +523,8 @@ static void info_rows(void)                            /* (in screen rows: cv_oy
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "info row value centred up/down");
         if (row == 3u) {                               /* CPU: the value and its unit, as HOLD's */
             GFX_HOOK_ALIGN(0, 0, 0, vy + AF_M.asc, AL_B, "info row unit on its value's baseline");
-            cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, "%", T_MID, T_SURF) - 3, vy, &AF_M, cpu, T_THEME, T_SURF);
+            cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, "%", T_MID, T_SURF) - UI_VALUE_UNIT_GAP,
+                      vy, &AF_M, cpu, T_THEME, T_SURF);
         } else if (row == 1u) {
             cv_text_r(MR_VR, y + CAP_IN(S, h), &AF_S, FELUCCA_BUILD_ID, T_THEME, T_SURF);
         } else {
@@ -440,18 +547,20 @@ static void draw_menu(void)
     static const khint_t KEYS[3][3] = {{{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
                                        {{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}},
                                        {{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTUP, "CLEAR"}}};
-    uint32_t pass, k, first, n, split, sig;
+    uint32_t pass, k, n, split, sig;
     int32_t pos0 = mt.pos;
     if (ui.menu == 1)
         mt_follow();
     sig = ui.menu * 7u + ui.menu_sel * 131u + palette_cur() * 1009u + settings.lowcut * 7919u + settings_hold * 3511u +
-          settings_leds * 6151u + ui_prefs * 4099u + ui_style * 257u + song.rec * 65537u + song.sel * 13u +
+          settings_leds * 6151u + ui_leds_inv * 12289u + ui_prefs * 4099u + ui_style * 257u + song.rec * 65537u + song.sel * 13u +
           ui_rec_prefs * 92821u + ui_scr * 131071u +          /* (#157: SCREEN OFF's value redraws its row) */
           ui_prefs2 * 524287u + ui_idle * 1048573u +      /* (1.2: ANIM IDLE's value redraws its row) */
           ui_home_view * 7340033u +    /* (1.3: HOME) */
           (uint32_t)(song.g[G_TUNE] + 64) * 8191u + (uint32_t)song.g[G_ROUTE] * 27449u +   /* (1.2: the project's rows) */
           (song.mch[0] | (uint32_t)song.mch[1] << 8 | (uint32_t)song.mch[2] << 16 | (uint32_t)song.mch[3] << 24) *
           2246822519u +                                   /* (1.5.5: T1..T4 CHANNEL) */
+          scr_dark_get() * 67867967u + scr_mode_get() * 2147483647u +
+          (ui.menu == MENU_OFF ? menu_off_sel * 48611u + menu_off_error * 374761393u : 0u) +
           (ui.menu == 2 ? ui.menu_scroll * 48611u : 0u) + (ui.menu == 3 ? info_sig() * 2654435761u : 0u);
     if (!ui.force && sig == ui.menu_sig) {
         if (ui.menu == 1 && mt.pos != pos0) {          /* only the tabs slid: their strip */
@@ -465,6 +574,21 @@ static void draw_menu(void)
     }
     ui.menu_sig = sig;
     menu_head();
+    if (ui.menu == MENU_OFF) {
+        static const khint_t OFF_KEYS[2][2] = {{{KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
+                                               {{KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}}};
+        for (pass = 0; pass < 2u; pass++) {
+            uint32_t top_y = pass ? 132u : (uint32_t)H_HEAD;
+            cv_begin(240, pass ? 240u - 132u : 132u - H_HEAD, T_BG);
+            cv_oy = -(int32_t)top_y;
+            menu_off_rows();
+            if (pass)
+                cv_key_row(8, 232, MK_Y, OFF_KEYS[!menu_has_value()], 2, 7u, T_BG);
+            cv_oy = 0;
+            cv_blit(0, top_y);
+        }
+        return;
+    }
     if (ui.menu == 3) {                                /* INFO: identity and live state span both bands */
         for (pass = 0; pass < 2u; pass++) {
             uint32_t top_y = pass ? 132u : (uint32_t)H_HEAD;
@@ -496,7 +620,6 @@ static void draw_menu(void)
         cv_blit(0, H_HEAD + MENU_DOC_H);
         return;
     }
-    first = mtab_first(menu_tab());
     n = mtab_rows(menu_tab());
     split = menu_split(n);
     for (pass = 0; pass < 2u; pass++) {
@@ -509,9 +632,9 @@ static void draw_menu(void)
             cv_rrect(4, MP_Y, 232, mr_y(n) - mr_gap() + MP_PAD - MP_Y, 8, T_SURF, T_BG);
         for (k = 0; k < n; k++)
             if (mr_y(k) + mr_h() > top_y && mr_y(k) - 1 < top_y + (int32_t)cv_h)
-                menu_row(k, first + k);
+                menu_row(k, mtab_row(menu_tab(), k));
         if (pass)
-            cv_key_row(8, 232, MK_Y, KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_valued(ui.menu_sel)], 3, 7u, T_BG);
+            cv_key_row(8, 232, MK_Y, KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_has_value()], 3, 7u, T_BG);
         cv_oy = 0;
         cv_blit(0, (uint32_t)top_y);
     }
@@ -533,26 +656,41 @@ static void menu_close(void)
 
 /* menu: ALGORITHM steps between the tabs, PRESETS between the rows of one (both wrap; a tab comes back at the row
  * last picked in it), any of KNOB 1..4 or OCT+ / OCT- change a value (menu_items.c menu_step), OCT+ opens CALIBRATION /
- * INFO / ABOUT (OCT- nothing there); OCT- in INFO and ABOUT goes back to the tabs. HOME closes it, from them too
+ * INFO / ABOUT / AUTO OFF (OCT- nothing there); OCT- in INFO and ABOUT goes back to the tabs. AUTO OFF keeps
+ * OCT-/+ for values and uses its BACK action. HOME closes every page
  * (ui_input.c) */
 static void menu_move(int32_t s)                       /* PRESETS: the next / previous row of the tab */
 {
-    uint32_t t = menu_tab(), f = mtab_first(t), n = mtab_rows(t), k = (ui.menu_sel - f + (s > 0 ? 1u : n - 1u)) % n;
-    ui.menu_sel = (uint8_t)(f + k);
+    uint32_t t = menu_tab(), n = mtab_rows(t), k = (mtab_index(ui.menu_sel) + (s > 0 ? 1u : n - 1u)) % n;
+    ui.menu_sel = (uint8_t)mtab_row(t, k);
     ui.menu_row[t] = (uint8_t)k;
 }
 static void menu_tab_go(int32_t s)                     /* ALGORITHM: the next / previous tab, at its last row */
 {
     uint32_t t = menu_tab(), k;
-    ui.menu_row[t] = (uint8_t)(ui.menu_sel - mtab_first(t));
+    ui.menu_row[t] = (uint8_t)mtab_index(ui.menu_sel);
     t = (t + (s > 0 ? 1u : MTAB_COUNT - 1u)) % MTAB_COUNT;
     k = ui.menu_row[t] < mtab_rows(t) ? ui.menu_row[t] : 0u;
-    ui.menu_sel = (uint8_t)(mtab_first(t) + k);
+    ui.menu_sel = (uint8_t)mtab_row(t, k);
 }
 static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_taps */
 {
     int32_t s;
     uint32_t k, up = (oct >> 1) & 1u, dn = oct & 1u;
+    if (ui.menu == MENU_OFF) {
+        if ((s = panel_enc(EN_PRESET)) != 0) {
+            menu_off_sel = (uint8_t)((menu_off_sel + (s > 0 ? 1u : MO_COUNT - 1u)) % MO_COUNT);
+            menu_off_error = 0;
+        }
+        for (s = 0, k = 0; k < 4u; k++)
+            s += panel_enc(EN_K1 + k);
+        if (menu_has_value())
+            menu_off_step(s + (int32_t)up - (int32_t)dn);
+        else if (up)
+            menu_off_back();
+        enc_drop();
+        return;
+    }
     if (ui.menu >= 2) {                                /* ABOUT: PRESETS scrolls (bounded); INFO, ABOUT: OCT- back to
                                                         * the tabs */
         if (dn)
@@ -568,14 +706,16 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
         menu_tab_go(s);
     for (s = 0, k = 0; k < 4u; k++)                    /* KNOB 1..4, any of them */
         s += panel_enc(EN_K1 + k);
-    if (menu_valued(ui.menu_sel)) {
+    if (menu_has_value()) {
         /* a step (OCT+ the next value, OCT- the previous); COLOR previews the palette, STYLE is drawn so from the next
          * frame (FX LATCH: the latched effects are off while the menu is up) */
         s += (int32_t)up - (int32_t)dn;
         if (s)
             menu_put(ui.menu_sel, menu_step(ui.menu_sel, s));
     } else if (up) {
-        if (ui.menu_sel == MI_LCLEAR) {                 /* LEARN CLEAR (1.5): every learned CC; no dialog (the menu has
+        if (ui.menu_sel == MI_SCROFF) {
+            menu_off_open();
+        } else if (ui.menu_sel == MI_LCLEAR) {         /* LEARN CLEAR (1.5): every learned CC; no dialog (the menu has
                                                          * none: every other row's change is undone the same way) */
             ui_message(ml_clear_all() ? "LEARN CLEARED" : "NOTHING LEARNED");
         } else if (ui.menu_sel == MI_PANEL) {
