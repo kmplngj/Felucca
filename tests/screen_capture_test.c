@@ -164,6 +164,15 @@ static void test_lifecycle(void)
     }
     token = scap.token; need(scap_begin(200) && scap.token != token, "expired session can be replaced without accepting stale token");
     need(!scap_cancel(token) && scap_cancel(scap.token), "new session protects against old cancellation");
+    need(scap_begin(100u), "start waking lifecycle");
+    scap.state = SCAP_WAKING; scap.wake = 1;
+    need(scap_holding(100u) && !scap_begin(101u), "waking is live, holds awake and rejects competing BEGIN");
+    need(scap_holding(100u + SCAP_TTL - 1u), "waking hold lasts to fixed expiry");
+    need(!scap_holding(100u + SCAP_TTL) && scap.state == SCAP_EXPIRED, "abandoned waking expires without host polls");
+    for (i = SCAP_CHANGED; i <= SCAP_UNSUPPORTED; i++) {
+        scap.state = (uint8_t)i;
+        need(!scap_holding(100u), "every terminal error or cancellation releases wake hold");
+    }
     need(scap_crc((const uint8_t *)"123456789", 9) == 0xCBF43926u && scap_crc(NULL, 0) == 0u, "IEEE CRC32 known vectors");
 }
 int main(int argc, char **argv)

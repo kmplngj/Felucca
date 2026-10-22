@@ -9,31 +9,42 @@
 #define SCAP_BYTES (SCAP_W * SCAP_ROWS * 2u)
 #define SCAP_TTL 120000u
 enum { SCAP_IDLE, SCAP_PENDING, SCAP_READY, SCAP_COMPLETE, SCAP_CHANGED,
-       SCAP_EXPIRED, SCAP_CANCELLED, SCAP_COVERAGE, SCAP_ASLEEP, SCAP_UNSUPPORTED };
+       SCAP_EXPIRED, SCAP_CANCELLED, SCAP_COVERAGE, SCAP_ASLEEP, SCAP_UNSUPPORTED, SCAP_WAKING };
 static struct {
     uint8_t pixels[SCAP_BYTES], coverage[SCAP_W * SCAP_ROWS / 8u];
     uint32_t token, offset, started, hash, draw_hash;
     uint16_t covered;
-    uint8_t state, tapping;
+    uint8_t state, tapping, wake;
 } scap;
 
+static int scap_live(void)
+{
+    return scap.state == SCAP_WAKING || scap.state == SCAP_PENDING ||
+           scap.state == SCAP_READY || scap.state == SCAP_COMPLETE;
+}
 static void scap_tick(uint32_t now)
 {
-    if ((scap.state == SCAP_PENDING || scap.state == SCAP_READY || scap.state == SCAP_COMPLETE) &&
-        now - scap.started >= SCAP_TTL) {
+    if (scap_live() && now - scap.started >= SCAP_TTL) {
         scap.state = SCAP_EXPIRED;
         scap.tapping = 0;
     }
 }
+/* Main-loop AUTO OFF guard, including time waiting for redraw or a stalled host.
+ * Terminal states release it immediately; polling never renews the fixed TTL. */
+static int scap_holding(uint32_t now)
+{
+    scap_tick(now);
+    return scap.wake && scap_live();
+}
 static int scap_begin(uint32_t now)
 {
     scap_tick(now);
-    if (scap.state == SCAP_PENDING || scap.state == SCAP_READY)
+    if (scap.state == SCAP_WAKING || scap.state == SCAP_PENDING || scap.state == SCAP_READY)
         return 0;
     if (!++scap.token) ++scap.token;
     scap.offset = scap.draw_hash = 0;
     scap.started = now;
-    scap.tapping = 0;
+    scap.tapping = scap.wake = 0;
     scap.state = SCAP_PENDING;
     return 1;
 }

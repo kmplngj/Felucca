@@ -331,12 +331,21 @@ static uint32_t scr_limit(void)
 static int scr_expired(void)
 {
     uint32_t lim = scr_limit();
+#if FELUCCA_SCREEN_CAPTURE
+    if (scap_holding(fm1_ms)) return 0;
+#endif
     return lim && !scr_blocked() && fm1_ms - scrn.idle >= lim;
 }
 static int scr_dark_active(void)
 {
     uint32_t dark;
     scr_sync();
+#if FELUCCA_SCREEN_CAPTURE
+    if (scap_holding(fm1_ms)) {
+        scrn.led_off = 0;
+        return 0;
+    }
+#endif
     dark = scr_dark_get();
     if (!dark || scr_blocked())
         scrn.led_off &= (uint8_t)~SCR_LED_ALL;
@@ -447,6 +456,11 @@ static void scr_shown(void)                            /* after the frame: the r
         return;
     lcd_power(2);
     scrn.st = SCR_ON;
+#if FELUCCA_SCREEN_CAPTURE
+    /* Explicit capture already touched once at BEGIN. Keep input invalidation
+     * separate from the asynchronous wake redraw's completion. */
+    if (scap.state == SCAP_WAKING && scap.wake) return;
+#endif
     scr_touch();
 }
 

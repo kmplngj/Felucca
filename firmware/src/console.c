@@ -426,7 +426,7 @@ static void con_screen_idle(void)
 static void con_screen_state(void)
 {
     static const char *const states[] = {"idle", "pending", "ready", "complete", "changed", "expired",
-                                         "cancelled", "coverage", "asleep", "unsupported"};
+                                         "cancelled", "coverage", "asleep", "unsupported", "waking"};
     con_puts("SCAP STATE token="); con_screen_uint(scap.token);
     con_puts(" state="); con_puts(states[scap.state]);
     con_puts(" offset="); con_dec((int32_t)scap.offset);
@@ -463,7 +463,7 @@ static void con_screen(const char *p)
 {
     if (con_word(&p, "caps") && con_screen_end(p)) {
 #if FELUCCA_SCREEN_CAPTURE
-        con_puts("SCAP CAPS version=1 enabled="); con_dec(FELUCCA_SCREEN_CAPTURE != 0);
+        con_puts("SCAP CAPS version=2 enabled="); con_dec(FELUCCA_SCREEN_CAPTURE != 0);
         con_puts(" width=240 height=240 format=RGB565BE band_bytes=3840 max_read=96 ttl_ms=120000 build=");
 #ifdef FELUCCA_BUILD_ID
         con_puts(FELUCCA_BUILD_ID);
@@ -498,10 +498,10 @@ static void con_screen(const char *p)
     }
 #if FELUCCA_SCREEN_CAPTURE
     scap_scene_check();
-    if (con_word(&p, "begin") && con_screen_end(p)) {
-        if (!scap_begin(fm1_ms)) { con_screen_error("busy"); return; }
-        scap_input_time = scrn.idle;
-        if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+    if (con_word(&p, "begin")) {
+        int wake = con_word(&p, "wake");
+        if (!con_screen_end(p)) { con_screen_error("argument"); return; }
+        if (!scap_start((uint8_t)wake)) { con_screen_error("busy"); return; }
         con_screen_state();
     } else {
         uint32_t token, offset, n, i;

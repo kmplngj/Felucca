@@ -53,9 +53,12 @@ in issues and roadmaps, not among implemented changes below.
   [capability overview and activation requirements](diagnostics.md#diagnostic-capabilities).
 - **Rendered-screen screenshots:** an opt-in development build exports bounded
   RGB565 HOME/menu captures over USB SERIAL, with full device build identity and a
-  host PNG/JSON tool. Unsupported, asleep or changed scenes fail explicitly;
+  host PNG/JSON tool. Explicit `--wake` silently wakes the current stopped view,
+  waits for redraw and holds it awake for the bounded capture; default capture
+  still rejects sleep. Unsupported or changed scenes fail explicitly;
   normal builds leave capture disabled. Digital captures do not qualify physical
-  panel colours or backlight behaviour. See [scope and device checks](screen-capture.md).
+  panel colours or backlight behaviour; the new explicit wake path awaits FM-1
+  validation. See [scope and device checks](screen-capture.md).
 - **Testing and installation tools:** deterministic interaction replay, native/WASM
   partition comparisons, host stress scenarios and a Chromium UI/audio gate.
   PR installation supports isolated source worktrees, exact-revision artifacts and

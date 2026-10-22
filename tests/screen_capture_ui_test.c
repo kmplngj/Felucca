@@ -293,9 +293,139 @@ static void test_home_dynamic(void)
                 capture_checks += result[0]; capture_frames += result[1]; capture_dynamic++;
             }
 }
+static void test_explicit_wake(void)
+{
+    uint32_t view, token, power, idle, at, offset, home, menu;
+    uint8_t saved_dev[sizeof settings_dev], saved_settings[sizeof settings];
+    for (view = 0; view < 2u; view++) {
+        if (view) capture_home_setup(0, ST_FLAT, 0, HV_SCOPE);
+        else capture_setup(0, ST_FLAT, 0, MO_IDLE);
+        home = ui.home; menu = ui.menu;
+        capture_need(scr_mode_put(0) && scr_dark_put(2), "configure SCREEN5m and ALL DARK15m");
+        ui_prefs2 |= PREF_WAKE_PANEL >> 16;       /* no MIDI wake required */
+        fm1_ms = scrn.idle + 900000u;
+        ui_draw(); lcd_sync();
+        capture_need(scrn.st == SCR_OFF && scr_led_dark(), "real idle timeout sleeps display and LEDs");
+        idle = scrn.idle; power = host_pw_n;
+        capture_need(scap_start(0) && scap.state == SCAP_ASLEEP && scrn.idle == idle && host_pw_n == power,
+                     "default capture still rejects sleep without side effects");
+        memcpy(saved_dev, settings_dev, sizeof saved_dev); memcpy(saved_settings, &settings, sizeof settings);
+        at = fm1_ms;
+        capture_need(scap_start(1) && scap.state == SCAP_WAKING && scrn.st == SCR_WAKE,
+                     "explicit silent wake enters nonblocking waking state");
+        token = scap.token; idle = scrn.idle;
+        capture_need(!scap_start(1) && scap.token == token && scrn.idle == idle,
+                     "second wake cannot replace or prolong waking session");
+        ui_draw(); lcd_sync();
+        capture_need(scrn.st == SCR_WAKE && scap.state == SCAP_WAKING, "SLPIN settling remains asynchronous");
+        fm1_ms = at + 119u; ui_draw(); lcd_sync();
+        capture_need(scrn.st == SCR_WAKE, "SLPOUT cannot precede120ms since SLPIN");
+        fm1_ms = at + 120u; ui_draw(); lcd_sync();
+        capture_need(scrn.st == SCR_SLPOUT && scap.state == SCAP_WAKING && !scap.tapping,
+                     "SLPOUT first; no screenshot before wake redraw");
+        fm1_ms = at + 239u; ui_draw(); lcd_sync();
+        capture_need(scap.state == SCAP_WAKING && scrn.st == SCR_SLPOUT, "wait full120ms without blocking");
+        fm1_ms = at + 240u; ui_draw(); lcd_sync();
+        capture_need(scrn.st == SCR_ON && scap.state == SCAP_PENDING && !scap.covered &&
+                     scrn.idle == idle && !scr_led_dark(), "completed wake redraw precedes first captured band");
+        for (offset = 0; offset < SCAP_W * SCAP_H * 2u; offset += SCAP_BYTES) {
+            capture_frame();
+            capture_need(scap.state == SCAP_READY && !memcmp(scap.pixels, (uint8_t *)host_screen + offset, SCAP_BYTES),
+                         "post-wake image matches completed real LCD bytes");
+            capture_need(scap_next(token, offset + SCAP_BYTES), "advance wake capture");
+        }
+        capture_need(scap.state == SCAP_COMPLETE && scap_holding(fm1_ms) && !song.playing && !gates() &&
+                     !memcmp(saved_dev, settings_dev, sizeof saved_dev) && !memcmp(saved_settings, &settings, sizeof settings) &&
+                     ui.home == home && ui.menu == menu,
+                     "silent capture retains view, settings and stopped transport through final verification");
+        capture_need(scap_cancel(token) && !scap_holding(fm1_ms), "cancel releases wake hold");
+    }
+}
+static void test_wake_release_and_rejection(void)
+{
+    uint32_t kind, token, idle, power, at;
+    for (kind = 0; kind < 8u; kind++) {
+        capture_setup(0, ST_FLAT, 0, MO_IDLE);
+        scrn.st = SCR_OFF;
+        if (kind == 0) song.playing = 1;
+        if (kind == 1) cin_left = cin_total = 4;
+        if (kind == 2) fm1_in.buttons = 1;
+        if (kind == 3) fm1_in.notes = 1;
+        if (kind == 4) ui.menu = 3;
+        if (kind == 5) ui.menu = ui.home = 0;
+        if (kind == 6) ui.confirm = 1;
+        if (kind == 7) ui.layer = 1;
+        idle = scrn.idle; power = host_pw_n;
+        capture_need(scap_start(1) && scap.state == SCAP_UNSUPPORTED && !scap_holding(fm1_ms) &&
+                     scrn.st == SCR_OFF && scrn.idle == idle && host_pw_n == power && song.playing == (kind == 0),
+                     "explicit wake rejects unsafe scenes before changing power, idle or transport");
+    }
+    for (kind = 0; kind < 4u; kind++) {
+        capture_setup(0, ST_FLAT, 0, MO_IDLE);
+        capture_need(scr_mode_put(2) && scr_dark_put(2), "configure BOTH5m ALL DARK15m for hold");
+        capture_need(scap_start(1), "begin wake lease"); token = scap.token; at = fm1_ms;
+        /* Put AUTO OFF at its boundary independently of the short session TTL,
+         * as if its idle clock predated the lease. No production timer writes. */
+        scap_input_time = scrn.idle = fm1_ms - 900000u;
+        capture_need(!scr_expired() && !scr_led_dark() && scr_frame() && scrn.st == SCR_ON,
+                     "live explicit capture inhibits both idle stages without refreshing input generation");
+        capture_need(scrn.idle == scap_input_time && scap.started == at, "hold does not renew idle or session timestamps");
+        if (kind == 0) capture_need(scap_cancel(token), "cancel live hold");
+        if (kind == 1) { fm1_ms += SCAP_TTL; scap_scene_check(); }
+        if (kind == 2) { scrn.idle++; scap_scene_check(); }
+        if (kind == 3) { song.playing = 1; scap_scene_check(); }
+        capture_need(!scap_holding(fm1_ms) && scr_expired() && scr_led_dark(),
+                     "cancel, expiry, input and unsupported scene release both AUTO OFF stages");
+        capture_need(scap.started == at && song.playing == (kind == 3), "release neither extends lease nor stops transport");
+    }
+    capture_setup(0, ST_FLAT, 0, MO_IDLE); scrn.st = SCR_OFF;
+    capture_need(scap_start(1), "start asynchronous wake for input race");
+    scrn.idle++; scap_scene_check();
+    capture_need(scap.state == SCAP_CHANGED && !scap_holding(fm1_ms), "input while waking invalidates before acquiring pixels");
+}
+static void test_wake_audio(void)
+{
+    uint32_t mode, result[2][2];
+    /* Fork the same DSP state: one awake read-only capture, one sleeping explicit
+     * wake. Both render the identical sounding voice and sample count. */
+    for (mode = 0; mode < 2u; mode++) {
+        int fd[2], status;
+        pid_t pid;
+        capture_need(!pipe(fd), "PCM comparison pipe");
+        pid = fork(); capture_need(pid >= 0, "isolate identical DSP inputs");
+        if (!pid) {
+            uint32_t step, i, hash = 2166136261u, nonzero = 0;
+            int32_t out[CTL * 2u];
+            close(fd[0]);
+            capture_setup(0, ST_FLAT, 0, MO_IDLE);
+            song.master_q12 = 4096;
+            host_preset(&trk[0], 0, 0); trk_note_on(&trk[0], 60, 100);
+            if (mode) { scrn.st = SCR_OFF; scrn.t = fm1_ms; }
+            capture_need(scap_start((uint8_t)mode), "begin PCM comparison capture");
+            for (step = 0; step < 100u; step++) {
+                fm1_ms += 15u; ui_draw(); lcd_sync();
+                if (scap.state == SCAP_READY)
+                    capture_need(scap_next(scap.token, scap.offset + SCAP_BYTES), "advance sounding MENU capture");
+                mix_block(out, CTL);
+                for (i = 0; i < CTL * 2u; i++) { hash = (hash ^ (uint32_t)out[i]) * 16777619u; nonzero += out[i] != 0; }
+            }
+            capture_need(scap.state == SCAP_COMPLETE && !song.playing && gates() == 1u,
+                         "capture preserves existing voice and stopped transport");
+            result[mode][0] = hash; result[mode][1] = nonzero;
+            if (write(fd[1], result[mode], sizeof result[mode]) != sizeof result[mode]) _exit(2);
+            close(fd[1]); _exit(0);
+        }
+        close(fd[1]);
+        capture_need(read(fd[0], result[mode], sizeof result[mode]) == sizeof result[mode], "collect real DSP output hash");
+        close(fd[0]);
+        capture_need(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && !WEXITSTATUS(status), "PCM comparison child passes");
+    }
+    capture_need(result[0][1] && !memcmp(result[0], result[1], sizeof result[0]),
+                 "silent wake preserves sample-exact sounding PCM versus awake capture");
+}
 int main(void)
 {
-    test_menu_matrix(); test_home_matrix(); test_rejections(); test_home_rejections(); test_last_band_status(); test_home_dynamic();
+    test_menu_matrix(); test_home_matrix(); test_rejections(); test_home_rejections(); test_last_band_status(); test_home_dynamic(); test_explicit_wake(); test_wake_release_and_rejection(); test_wake_audio();
     printf("PASS screen capture UI: %u static scenes, %u dynamic scenarios, %u render bands, %u checks; MENU/HOME exact pixels, coherence and safe rejections\n",
            capture_scenes, capture_dynamic, capture_frames, capture_checks);
     return 0;

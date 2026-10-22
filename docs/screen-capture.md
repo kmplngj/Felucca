@@ -2,7 +2,8 @@
 # FM-1 rendered-screen capture
 
 The opt-in `FELUCCA_SCREEN_CAPTURE=1` diagnostic build supports host-pulled
-screenshots of **awake, stopped, static HOME and MENU views** over USB SERIAL. The normal
+screenshots of **stopped, static HOME and MENU views** over USB SERIAL. By default
+the display must be awake; explicit `--wake` can wake it silently. The normal
 build defaults to `0`, reports capture disabled, and allocates no capture band.
 The pilot does not provide MIDI capture or remote panel navigation.
 
@@ -40,12 +41,15 @@ Close other serial clients first. From the same checkout:
 ```sh
 python3 tools/fm1_screenshot.py --port /dev/cu.usbmodem1234 \
   --expect-commit FULL_40_CHARACTER_COMMIT
+# Explicit silent wake, then capture the same view:
+python3 tools/fm1_screenshot.py --port /dev/cu.usbmodem1234 \
+  --expect-commit FULL_40_CHARACTER_COMMIT --wake
 ```
 
 Success prints the path to a new `build/screenshots/.../screen.png` and saves
 `screen.json` beside it. Metadata records device-reported full commit, dirty
 state, source, capture token, menu/page, RGB format, draw-stream fingerprint,
-image CRC/SHA256 and acquisition timestamps. A dirty build's commit alone does
+image CRC/SHA256, `wake_requested` and acquisition timestamps. A dirty build's commit alone does
 not identify its changed source bytes. Keep its matching source diff separately.
 
 The default command timeout is 2 seconds and overall deadline 110 seconds,
@@ -55,10 +59,22 @@ never overwritten. PNG/JSON are published only after complete verification and
 closing the tty. Unsupported/asleep/changed/incomplete/CRC/transport failures
 exit nonzero without publishing a partial screenshot.
 
-Do not touch the panel or change settings during acquisition. The command does
-not wake the screen, change navigation/settings, stop playback or refresh the
-inactivity timer. If the display is asleep, wake it physically and retry. Restore
-USB SERIAL and any intentionally changed test settings afterwards.
+Do not touch the panel or change settings during acquisition. Without `--wake`,
+the command leaves power/inactivity unchanged and rejects an asleep display.
+With `--wake`, protocol 2 firmware silently resets inactivity once, restores
+display/LED visibility, waits for the normal nonblocking LCD wake sequence and
+full redraw, then acquires the image. It sends no notes or panel gestures and
+works with either MIDI WAKE policy. Navigation, settings, transport and sound
+are preserved; unsupported/playing/held-control scenes fail before any wake.
+
+The explicit wake hold lasts through final verification until CANCEL, an error
+or the fixed 120-second expiry, including all redraw/host waiting. Cleanup sends
+CANCEL; after a disconnect the firmware expires the hold itself. No request
+extends the deadline. Normal AUTO OFF timers then resume from the single wake
+interaction (or any later real input); the tool does not force the screen back
+to sleep or modify timer settings. The new CLI still captures normally from
+protocol 1 firmware, but `--wake` fails clearly before BEGIN on that firmware.
+Restore USB SERIAL and any intentionally changed test settings afterwards.
 
 ## Bounded capture contract
 
@@ -77,7 +93,7 @@ CRC.** The host computes the final image checksum only after completing capture.
 Capture runs in the main loop, without heap allocation, flash writes or ISR
 capture work. CDC replies reserve ring space and defer input when the host is
 slow, rather than waiting for a full-frame transfer. An abandoned host holds
-only the bounded band until expiry; audio/input services continue.
+only the bounded band and any explicit wake hold until expiry; audio/input services continue.
 
 See [the CDC protocol](../web/EDITOR_PROTOCOL.md#debug-screen-capture-cdc) for
 the versioned command grammar. Existing MIDI command IDs are unchanged.
@@ -101,10 +117,18 @@ Keep author results separate from checks not yet performed on a real FM-1.
 4. Close MENU with HOME and retry: a quiet HOME capture must succeed. Tap ENV
    and retry: unsupported editing pages must fail without navigating. Repeat
    with playback active: capture must not stop transport. For an asleep
-   display, the command must fail without waking it. Restore the starting state.
+   display, the default command must fail without waking it.
+   **Pending hardware validation for `--wake`:** start with the same stopped HOME
+   or DISPLAY MENU, let AUTO OFF blank it, then run the command with `--wake`.
+   Expect silent LCD/LED wake, the same view/selected row, stopped transport and
+   a complete matching image. Repeat with MIDI WAKE set to PANEL; no note is sent.
+   Record/restore that preference. With playback active or ENV selected, even
+   `--wake` must fail without stopping/navigating/waking. Restore the starting state.
 5. Disconnect/stop reading during acquisition and verify normal controls/audio
    remain responsive; allow the session to expire, then retry from an eligible
-   menu. Check diagnostic deltas for new audio lateness, shedding and USB errors
+   menu. Repeat with `--wake`: cancellation, input/scene failure and expiry must
+   release the hold, with ordinary AUTO OFF behavior afterwards. Check diagnostic
+   deltas for new audio lateness, shedding and USB errors
    under the same defined workload, with capture disabled and enabled.
 6. Restore COLOR, USB SERIAL, project and idle/wake settings. Read settings back
    through MIDI and compare saved objects with the pre-test backup. Report only
