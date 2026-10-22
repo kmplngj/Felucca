@@ -214,8 +214,10 @@ is a distribution, not the complete ELF/source/toolchain verification workspace.
 
 User checks for this tooling change: export the contract twice and compare bytes; run
 `--check`; inspect the three supported recipes and unchanged boot IDs; build a chosen
-supported variant using [BUILDING](../BUILDING.md) and verify its report. In a copy of
-the build directory, change one ELF/package byte or one report resource value and confirm
-verification fails. Restore the copied file before comparing another case. No device
-installation is required because this work changes build metadata only; live timing,
+supported variant using [BUILDING](../BUILDING.md) and verify its report. Copy
+`build/resource-report.json` to `build/resource-report-copy.json`, change one resource
+value in that copied JSON, then run
+`python3 tools/build_report.py --verify build/resource-report-copy.json`: verification
+must fail while the original report and artifacts remain intact. No device installation
+is required because this work changes build metadata only; live timing,
 stack headroom and existing profile hardware qualification remain separate gates.
