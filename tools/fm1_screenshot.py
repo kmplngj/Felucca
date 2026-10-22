@@ -3,7 +3,8 @@
 """Capture supported, stopped/static FM-1 HOME or MENU pixels over an explicitly selected CDC tty.
 
 This reads firmware-rendered RGB565 pixels, not the physical LCD or its colours.
-It never wakes the screen, navigates the panel, changes settings or flashes firmware.
+Explicit --wake silently wakes and holds the display for this bounded capture.
+It never navigates the panel, changes settings/transport/sound or flashes firmware.
 """
 import argparse
 import datetime
@@ -26,7 +27,7 @@ TOTAL = WIDTH * HEIGHT * 2
 SOURCE = "github.com/kmplngj/Felucca"
 MAX_REPLY = 4096
 PROMPT = re.compile(rb"(?:^|\r?\n)> ")
-STATES = {"pending", "ready", "complete", "changed", "expired", "cancelled", "coverage", "asleep", "unsupported"}
+STATES = {"waking", "pending", "ready", "complete", "changed", "expired", "cancelled", "coverage", "asleep", "unsupported"}
 
 
 class ProtocolError(ValueError):
@@ -80,7 +81,7 @@ class Console:
         return left
 
     def request(self, command, retry_busy=True):
-        if not re.fullmatch(r"screen (caps|begin|(?:status|cancel) [0-9]+|next [0-9]+ [0-9]+|read [0-9]+ [0-9]+ [0-9]+)", command):
+        if not re.fullmatch(r"screen (caps|begin(?: wake)?|(?:status|cancel) [0-9]+|next [0-9]+ [0-9]+|read [0-9]+ [0-9]+ [0-9]+)", command):
             raise ProtocolError("command outside screenshot allowlist")
         while True:
             self.remaining()
@@ -140,7 +141,7 @@ def capabilities(reply, expected_commit=None):
     if f == {"version": "1", "enabled": "0"}:
         raise ProtocolError("device screenshot feature is disabled")
     exact(f, "version enabled width height format band_bytes max_read ttl_ms build commit dirty source mode scr_state led_stage idle_ms")
-    if any(f[k] != v for k, v in {"version": "1", "enabled": "1", "width": "240", "height": "240",
+    if f["version"] not in {"1", "2"} or any(f[k] != v for k, v in {"enabled": "1", "width": "240", "height": "240",
                                 "format": "RGB565BE", "band_bytes": "3840", "max_read": "96",
                                 "source": SOURCE, "mode": "stopped-static"}.items()):
         raise ProtocolError("unsupported or unexpected screenshot device/capability")
@@ -160,7 +161,7 @@ def diagnostics(fields):
     number(fields["idle_ms"])
 
 
-def state(reply, token=None, offset=None, scene=None):
+def state(reply, token=None, offset=None, scene=None, allow_waking=False):
     kind, f = reply
     if kind != "STATE":
         raise ProtocolError("expected screenshot state")
@@ -173,18 +174,21 @@ def state(reply, token=None, offset=None, scene=None):
         raise ProtocolError("invalid screenshot state")
     if token is not None and s["token"] != token:
         raise ProtocolError("stale screenshot token")
-    if s["state"] not in {"pending", "ready", "complete", "cancelled"}:
+    if s["state"] not in {"pending", "ready", "complete", "cancelled"} and not (allow_waking and s["state"] == "waking"):
         raise ProtocolError("device capture stopped: " + s["state"])
-    expected_length = 0 if s["state"] in {"complete", "cancelled"} else BAND
+    expected_length = 0 if s["state"] in {"waking", "complete", "cancelled"} else BAND
     if s["length"] != expected_length or s["offset"] > TOTAL or s["offset"] % BAND:
         raise ProtocolError("invalid screenshot band extent")
     if s["state"] == "complete" and s["offset"] != TOTAL:
         raise ProtocolError("premature screenshot completion")
     if offset is not None and s["offset"] != offset:
         raise ProtocolError("out-of-order screenshot band")
-    if s["state"] != "cancelled" and (s["awake"] != 1 or not (s["menu"] in {1, 2, 4} or (s["menu"] == 0 and s["home"] == 1))):
+    if s["state"] not in {"waking", "cancelled"} and (s["awake"] != 1 or not (s["menu"] in {1, 2, 4} or (s["menu"] == 0 and s["home"] == 1))):
         raise ProtocolError("unexpected or sleeping device scene")
-    if scene is not None and any(s[k] != scene[k] for k in ("awake", "page", "home", "menu")):
+    if s["state"] == "waking" and (s["awake"] != 0 or s["offset"] != 0 or s["draw_hash"] != 0 or
+                                    not (s["menu"] in {1, 2, 4} or (s["menu"] == 0 and s["home"] == 1))):
+        raise ProtocolError("unexpected waking device scene")
+    if scene is not None and any(s[k] != scene[k] for k in ("page", "home", "menu")):
         raise ProtocolError("device scene changed during screenshot")
     return s
 
@@ -204,19 +208,25 @@ def chunk(reply, token, offset, length):
     return data
 
 
-def capture(console, expected_commit=None):
+def capture(console, expected_commit=None, wake=False):
     caps = capabilities(console.request("screen caps"), expected_commit)
+    if wake and caps["version"] != "2":
+        raise ProtocolError("device firmware does not support --wake (screenshot protocol 2 required)")
     token, image, draw_hash = None, bytearray(), None
     try:
-        begun = console.request("screen begin", retry_busy=False)
+        begun = console.request("screen begin wake" if wake else "screen begin", retry_busy=False)
         if begun[0] == "STATE" and "token" in begun[1]:
             candidate = number(begun[1]["token"])
             if candidate:
                 token = candidate
-        current = state(begun, token, offset=0)
-        if current["state"] != "pending" or current["draw_hash"] != 0:
+        current = state(begun, token, offset=0, allow_waking=wake)
+        if current["state"] not in ({"pending", "waking"} if wake else {"pending"}) or current["draw_hash"] != 0:
             raise ProtocolError("unexpected initial screenshot state")
         token, scene = current["token"], current
+        while current["state"] == "waking":
+            console.sleep(min(0.02, console.remaining()))
+            current = state(console.request(f"screen status {token}"), token, 0, scene, allow_waking=True)
+        scene = current
         for offset in range(0, TOTAL, BAND):
             if draw_hash is not None and current["draw_hash"] != draw_hash:
                 raise ProtocolError("incoherent screenshot draw hash")
@@ -244,6 +254,7 @@ def capture(console, expected_commit=None):
             raise ProtocolError("screenshot final state changed")
         result = bytes(image), {"device": caps, "capture": final, "scene": {k: scene[k] for k in ("awake", "page", "home", "menu")},
                                 "final_diagnostics": {k: final[k] for k in ("scr_state", "led_stage", "idle_ms")},
+                                "wake_requested": wake,
                                 "pixel_crc32": f"{zlib.crc32(image):08X}", "pixel_sha256": hashlib.sha256(image).hexdigest()}
     finally:
         # Never send another command after a timeout/lost framing; firmware TTL releases its small buffer.
@@ -301,6 +312,7 @@ def main(argv=None, transport_factory=PosixSerial):
     parser.add_argument("--timeout", type=float, default=2.0, help="per-command timeout, seconds (maximum 10)")
     parser.add_argument("--duration", type=float, default=110.0, help="capture deadline, seconds (maximum 115; cleanup at most 2 more)")
     parser.add_argument("--expect-commit", help="required exact device-reported 40-character commit")
+    parser.add_argument("--wake", action="store_true", help="silently wake, await redraw and hold awake for this capture (protocol 2 firmware)")
     args = parser.parse_args(argv)
     if not all(math.isfinite(v) and 0 < v <= limit for v, limit in ((args.timeout, 10), (args.duration, 115))):
         parser.error("timeouts must be positive finite seconds within their limits")
@@ -316,7 +328,7 @@ def main(argv=None, transport_factory=PosixSerial):
     transport, result, error = None, None, None
     try:
         transport = transport_factory(args.port)
-        result = capture(Console(transport, args.timeout, args.duration), args.expect_commit)
+        result = capture(Console(transport, args.timeout, args.duration), args.expect_commit, wake=args.wake)
     except (OSError, ValueError, ImportError, KeyboardInterrupt) as exc:
         error = str(exc) or "interrupted"
     finally:

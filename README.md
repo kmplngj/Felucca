@@ -33,6 +33,7 @@ the normal USB console and read-only host collector from opt-in assertion, crash
 arithmetic-reproducer and screenshot builds, with their activation and evidence limits.
 An opt-in [device-screen capture diagnostic](docs/screen-capture.md) exports
 firmware-rendered static HOME/menu pixels with device build provenance over USB SERIAL.
+Its explicit `--wake` option silently wakes and holds the current view for capture.
 It is disabled in normal builds and does not measure physical LCD colours or backlight glow.
 [MIDI timing and DSP hardening](docs/midi-dsp-reliability.md) retains external-clock
 phase, timestamps TRS input during rendering, and guards invalid tempo.

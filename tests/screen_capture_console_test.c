@@ -119,13 +119,27 @@ static struct { uint32_t st, led_off, idle; } scrn = {SCR_ON, 0, 10000};
 static struct { uint32_t page, home, menu; } ui = {0, 1, 1};
 static uint32_t scap_input_time;
 static int fixture_supported = 1;
+static int scap_start(uint8_t wake)
+{
+    if (!scap_begin(fm1_ms)) return 0;
+    scap_input_time = scrn.idle;
+    if (wake) {
+        if (!fixture_supported) scap.state = SCAP_UNSUPPORTED;
+        else {
+            scap.wake = 1;
+            scrn.idle = scap_input_time = fm1_ms; scrn.led_off = 0;
+            if (scrn.st != SCR_ON) { scrn.st = SCR_WAKE; scap.state = SCAP_WAKING; }
+        }
+    } else if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+    return 1;
+}
 /* The UI scene check has its separate real-UI fixture; this fixture supplies the
  * same main-loop boundary while testing actual command parsing and ring output. */
 static void scap_scene_check(void)
 {
     scap_tick(fm1_ms);
-    if (scap.state == SCAP_PENDING || scap.state == SCAP_READY || scap.state == SCAP_COMPLETE) {
-        if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+    if (scap_live()) {
+        if (scrn.st != SCR_ON && scap.state != SCAP_WAKING) scap.state = SCAP_ASLEEP;
         else if (scrn.idle != scap_input_time) scap.state = SCAP_CHANGED;
         else if (!fixture_supported || (!ui.menu && !ui.home)) scap.state = SCAP_UNSUPPORTED;
     }
@@ -178,7 +192,7 @@ int main(void)
 {
     slow_reader();
 #if FELUCCA_SCREEN_CAPTURE
-    expect("screen caps", "SCAP CAPS version=1 enabled=1 width=240 height=240 format=RGB565BE band_bytes=3840 max_read=96 ttl_ms=120000 build=01234567-dirty commit=0123456789abcdef0123456789abcdef01234567 dirty=1 source=github.com/kmplngj/Felucca mode=stopped-static scr_state=0 led_stage=0 idle_ms=0");
+    expect("screen caps", "SCAP CAPS version=2 enabled=1 width=240 height=240 format=RGB565BE band_bytes=3840 max_read=96 ttl_ms=120000 build=01234567-dirty commit=0123456789abcdef0123456789abcdef01234567 dirty=1 source=github.com/kmplngj/Felucca mode=stopped-static scr_state=0 led_stage=0 idle_ms=0");
     expect("screen begin", "SCAP STATE token=1 state=pending offset=0 length=3840 draw_hash=00000000 awake=1 page=0 home=1 menu=1 scr_state=0 led_stage=0 idle_ms=0");
     expect("screen begin", "SCAP ERROR code=busy");
     expect("screen status 0", "SCAP ERROR code=stale");
@@ -252,9 +266,24 @@ int main(void)
     expect("screen cancel 4294967295", "token=4294967295 state=cancelled");
     expect("screen begin", "token=1 state=pending");
     expect("screen status 4294967295", "SCAP ERROR code=stale");
+    expect("screen cancel 1", "state=cancelled");
+    scrn.st = SCR_OFF;
+    expect("screen begin wake trailing", "SCAP ERROR code=argument");
+    CHECK(scrn.st == SCR_OFF && !scap.wake);
+    expect("screen begin wake", "token=2 state=waking offset=0 length=0");
+    CHECK(scrn.st == SCR_WAKE && scap_holding(fm1_ms));
+    expect("screen begin wake", "SCAP ERROR code=busy");
+    expect("screen status 2", "state=waking");
+    expect("screen read 2 0 96", "SCAP ERROR code=state");
+    expect("screen cancel 2", "state=cancelled");
+    CHECK(!scap_holding(fm1_ms));
+    fixture_supported = 0; scrn.st = SCR_OFF;
+    expect("screen begin wake", "state=unsupported");
+    CHECK(scrn.st == SCR_OFF && !scap_holding(fm1_ms));
 #else
     expect("screen caps", "SCAP CAPS version=1 enabled=0\r\n");
     expect("screen begin", "SCAP ERROR code=unsupported");
+    expect("screen begin wake", "SCAP ERROR code=unsupported");
     expect("screen read 1 0 96", "SCAP ERROR code=unsupported");
 #endif
     puts("screen capture console checks passed");

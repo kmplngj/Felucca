@@ -2076,25 +2076,36 @@ validated before data access. Only one session owns the bounded capture band.
 | --- | --- |
 | `screen caps` | `SCAP CAPS` capability and actual compiled-build metadata |
 | `screen begin` | New nonzero token and `SCAP STATE`; busy if a live capture owns the band |
+| `screen begin wake` | Protocol 2: explicitly wake a supported stopped view, await redraw, hold awake for the bounded session |
 | `screen status TOKEN` | Current state and scene diagnostics, without advancing |
 | `screen read TOKEN OFFSET LENGTH` | `SCAP DATA` for 1–96 bytes within the current ready band |
 | `screen next TOKEN OFFSET` | Release the band and request exactly the next 3,840-byte offset; final offset 115,200 completes |
 | `screen cancel TOKEN` | Cancel ownership; stale tokens fail |
 
-An enabled CAPS record carries `version=1 enabled=1 width=240 height=240
+An enabled CAPS record carries `version=2 enabled=1 width=240 height=240
 format=RGB565BE band_bytes=3840 max_read=96 ttl_ms=120000`, plus `build`, full
 40-character `commit`, `dirty`, `source`, `mode=stopped-static` and read-only
 `scr_state`, `led_stage`, `idle_ms`. Unknown provenance must not be replaced with
 a locally supplied commit. A dirty flag identifies modified inputs; its commit
-does not identify those modifications.
+does not identify those modifications. Protocol 1 diagnostic builds have the same
+default capture grammar but no `begin wake`; new clients retain default protocol 1
+support and reject an explicit wake before BEGIN unless CAPS advertises version2.
 
 STATE carries `token state offset length draw_hash awake page home menu
 scr_state led_stage idle_ms`. States are `idle`, `pending`, `ready`, `complete`,
-`changed`, `expired`, `cancelled`, `coverage`, `asleep`, `unsupported`. Acquisition
+`changed`, `expired`, `cancelled`, `coverage`, `asleep`, `unsupported`, and protocol 2
+`waking`. WAKING has offset/length/draw_hash 0 and awake 0: no band is readable.
+The normal SLPIN/SLPOUT settling and a complete redraw/DISPON precede PENDING;
+the first captured band is a subsequent frame. Acquisition
 supports awake, stopped static HOME and MENU views; INFO/other editing pages, held input,
 overlays and unsafe states are rejected. Changing HOME scopes, levels or transient
-indicators invalidate the draw stream. The underlying LCD/input state is never
-changed to make a capture succeed. Screen state and LED stage describe commanded
+indicators invalidate the draw stream. Default BEGIN leaves LCD/input state
+unchanged. Explicit BEGIN WAKE validates scene eligibility before waking,
+touches inactivity once and restores LCD/LED visibility independently of MIDI
+WAKE policy, without synthetic notes/controls, navigation or transport changes.
+It inhibits AUTO OFF through final verification until CANCEL, terminal failure
+or fixed expiry. Normal inactivity resumes from the wake interaction afterwards;
+neither polling nor lease cleanup refreshes it. Screen state and LED stage describe commanded
 firmware state, not optical brightness or hardware readback.
 
 DATA carries `token offset length crc data`. CRC is IEEE CRC32 of the raw bytes

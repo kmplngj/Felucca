@@ -1590,11 +1590,29 @@ static int scap_scene_supported(void)
            !ui.uboot && !ui.confirm && !ui.layer && !name_on() &&
            !fm1_in.notes && !fm1_in.buttons;
 }
+static int scap_start(uint8_t wake)
+{
+    if (!scap_begin(fm1_ms)) return 0;
+    scap_input_time = scrn.idle;
+    if (wake) {
+        /* Reject unsafe scenes before any power/input-timer side effect. No
+         * musical MIDI, synthetic panel gesture, navigation or transport edit. */
+        if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
+        else {
+            scap.wake = 1;
+            scr_touch();
+            scap_input_time = scrn.idle;
+            if (scrn.st == SCR_OFF) scrn.st = SCR_WAKE;
+            if (scrn.st != SCR_ON) scap.state = SCAP_WAKING;
+        }
+    } else if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+    return 1;
+}
 static void scap_scene_check(void)
 {
     scap_tick(fm1_ms);
-    if (scap.state == SCAP_PENDING || scap.state == SCAP_READY || scap.state == SCAP_COMPLETE) {
-        if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+    if (scap_live()) {
+        if (scrn.st != SCR_ON && scap.state != SCAP_WAKING) scap.state = SCAP_ASLEEP;
         else if (scrn.idle != scap_input_time) scap.state = SCAP_CHANGED;
         else if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
     }
@@ -1625,7 +1643,7 @@ static void ui_draw(void)
         /* Diagnostic scope: stopped static MENU pages and quiet HOME. Every band
          * must cover the whole display and repeat the same complete draw stream;
          * changing scopes/meters fail CHANGED rather than assembling mixed frames.
-         * Never wake the display, pause music or refresh its inactivity timer. */
+         * Explicit wake is complete before this path; no transport changes. */
         if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
         else if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
         else {
@@ -1642,6 +1660,21 @@ static void ui_draw(void)
     }
 #endif
     scr_shown();
+#if FELUCCA_SCREEN_CAPTURE
+    /* The first captured band is a subsequent frame, after the full wake redraw
+     * and DISPON. Never publish the transitional SCR_SHOW frame as READY. */
+    if (scap.state == SCAP_WAKING && scrn.st == SCR_ON) {
+        lcd_sync();
+        scap_scene_check();
+        if (scap.state == SCAP_WAKING) {
+            /* No panel gesture woke this display. Release sleep's suppression
+             * before a keyboard ISR can consume the first post-wake press. */
+            scrn.eat = 0;
+            kb_asleep = 0;
+            scap.state = SCAP_PENDING;
+        }
+    }
+#endif
 }
 static void ui_draw_page(uint32_t counting)
 {

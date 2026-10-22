@@ -50,7 +50,7 @@ class Device:
         if cmd == "screen caps":
             self.caps_calls += 1
             return CAPS
-        if cmd == "screen begin":
+        if cmd in {"screen begin", "screen begin wake"}:
             return self.state("pending").replace("draw_hash=1234ABCD", "draw_hash=00000000")
         if fields[1] == "status":
             return self.state("complete" if self.offset == shot.TOTAL else "ready")
@@ -131,7 +131,7 @@ class CaptureTests(unittest.TestCase):
 
     def test_caps_reject_before_begin(self):
         changes = [lambda r: r.replace("enabled=1", "enabled=0"),
-                   lambda r: r.replace("version=1", "version=2"),
+                   lambda r: r.replace("version=1", "version=3"),
                    lambda r: r.replace("width=240", "width=241"),
                    lambda r: r.replace("max_read=96", "max_read=999"),
                    lambda r: r.replace("commit=" + COMMIT, "commit=unknown"),
@@ -292,7 +292,77 @@ class CaptureTests(unittest.TestCase):
                 shot.capture(console(dev))
 
 
+    def test_explicit_wake_waits_before_reading_and_records_intent(self):
+        def wake(device, cmd, reply):
+            if cmd == "screen caps":
+                return reply.replace("version=1", "version=2")
+            if cmd == "screen begin wake" or (cmd == "screen status 7" and device.ready_polls < 3):
+                device.ready_polls += 1
+                return device.state("waking").replace("awake=1", "awake=0").replace("scr_state=0", "scr_state=2").replace("draw_hash=1234ABCD", "draw_hash=00000000")
+            if cmd.startswith("screen read"):
+                self.assertGreaterEqual(device.ready_polls, 3)
+            return reply
+        dev = Device(wake, fragmented=True)
+        pixels, meta = shot.capture(console(dev), COMMIT, wake=True)
+        self.assertEqual(pixels, PIXELS)
+        self.assertTrue(meta["wake_requested"])
+        self.assertTrue(dev.cancelled)
+        self.assertEqual(dev.writes[1], b"screen begin wake\r")
+        self.assertEqual(dev.writes[2:5], [b"screen status 7\r"] * 3)
+        # Already awake protocol2 capture requires no transitional state.
+        dev = Device(lambda d, c, r: r.replace("version=1", "version=2") if c == "screen caps" else r)
+        self.assertTrue(shot.capture(console(dev), wake=True)[1]["wake_requested"])
+        # Default capture still works against both protocol generations.
+        dev = Device()
+        self.assertFalse(shot.capture(console(dev))[1]["wake_requested"])
+
+    def test_wake_unsupported_firmware_timeout_and_unsafe_scene(self):
+        dev = Device()
+        with self.assertRaisesRegex(shot.ProtocolError, "does not support --wake"):
+            shot.capture(console(dev), wake=True)
+        self.assertEqual(dev.writes, [b"screen caps\r"])
+        def waking(device, cmd, reply):
+            if cmd == "screen caps": return reply.replace("version=1", "version=2")
+            if cmd == "screen begin wake" or cmd.startswith("screen status"):
+                return device.state("waking").replace("awake=1", "awake=0").replace("draw_hash=1234ABCD", "draw_hash=00000000")
+            return reply
+        dev = Device(waking)
+        with self.assertRaises(TimeoutError): shot.capture(console(dev, duration=0.1), wake=True)
+        self.assertTrue(dev.cancelled)
+        self.assertFalse(any(w.startswith(b"screen read") for w in dev.writes))
+        dev = Device(lambda d, c, r: d.state("unsupported") if c == "screen begin wake" else waking(d, c, r))
+        with self.assertRaisesRegex(shot.ProtocolError, "unsupported"): shot.capture(console(dev), wake=True)
+        self.assertTrue(dev.cancelled)
+        for old, new in [("page=3", "page=4"), ("offset=0", "offset=3840"),
+                         ("draw_hash=00000000", "draw_hash=12345678"), ("awake=0", "awake=1"),
+                         ("home=0 menu=1", "home=0 menu=0")]:
+            def invalid(device, cmd, reply, old=old, new=new):
+                reply = waking(device, cmd, reply)
+                if cmd == "screen status 7":
+                    changed = reply.replace(old, new)
+                    self.assertNotEqual(reply, changed)
+                    shot.record(changed)  # valid framing; fail at scene/state validation
+                    return changed
+                return reply
+            dev = Device(invalid)
+            with self.subTest(replacement=new), self.assertRaises(shot.ProtocolError):
+                shot.capture(console(dev), wake=True)
+            self.assertTrue(dev.cancelled)
+
+
 class OutputTests(unittest.TestCase):
+    def test_cli_explicit_wake_option(self):
+        dev = Device(lambda d, c, r: r.replace("version=1", "version=2") if c == "screen caps" else r)
+        (ROOT / "build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+            out = Path(tmp) / "wake"
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = shot.main(["--port", "/explicit/mock", "--output", str(out), "--wake"], lambda port: dev)
+            self.assertEqual(rc, 0)
+            self.assertTrue(json.loads((out / "screen.json").read_text())["wake_requested"])
+            self.assertIn(b"screen begin wake\r", dev.writes)
+            self.assertTrue(dev.cancelled and dev.closed)
+
     def test_png_decodes_expected_rgb_and_crc(self):
         encoded, at, compressed = shot.png(PIXELS), 8, bytearray()
         self.assertEqual(encoded[:8], b"\x89PNG\r\n\x1a\n")
