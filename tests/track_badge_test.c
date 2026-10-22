@@ -30,7 +30,9 @@ static int32_t hook_box[4];
 #define H 40u
 static uint16_t empty[W * H], actual[W * H];
 static unsigned failures, cases;
-static uint16_t sheet[360u * (10u * 4u * 36u)];
+#define SHEET_W 360u
+#define SHEET_H (NPALETTES * 4u * 36u)
+static uint16_t sheet[SHEET_W * SHEET_H];
 static void bounds(const uint16_t *a, const uint16_t *b, int32_t box[4])
 {
     uint32_t x, y;
@@ -88,7 +90,7 @@ int main(int argc, char **argv)
                 cv_begin(W, H, under); cv_icon_on(4,4,size,trk_icon(k,0),fill,under);
                 require(!memcmp(actual, cv_px, sizeof actual),"filled argument compatibility",p,s,size,k);
                 if (!st) for (y = 0; y < 32; y++) for (x = 0; x < 26; x++)
-                    sheet[((p * 4 + s) * 36 + y) * 360 + si * 120 + k * 28 + x] = swap16(actual[y * W + x]);
+                    sheet[((p * 4 + s) * 36 + y) * SHEET_W + si * 120 + k * 28 + x] = swap16(actual[y * W + x]);
                 cases++;
             }
         }
@@ -96,8 +98,8 @@ int main(int argc, char **argv)
     if (argc > 1) {
         FILE *f = fopen(argv[1], "wb");
         if (!f) return 2;
-        fprintf(f,"P6\n360 1440\n255\n");
-        for (x = 0; x < 360u * 1440u; x++) {
+        fprintf(f, "P6\n%u %u\n255\n", (unsigned)SHEET_W, (unsigned)SHEET_H);
+        for (x = 0; x < SHEET_W * SHEET_H; x++) {
             uint16_t v = sheet[x];
             fputc((v >> 11) * 255 / 31, f);
             fputc(((v >> 5) & 63) * 255 / 63, f);
