@@ -16,6 +16,7 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 | --- | --- |
 | Build, generate assets, or run tests | [BUILDING.md](BUILDING.md) |
 | Collect diagnostics from a connected FM-1 | [docs/diagnostics.md](docs/diagnostics.md), [docs/performance.md](docs/performance.md) |
+| Add or change diagnostic commands, fields, build flags or host tools | [Diagnostic capabilities](docs/diagnostics.md#diagnostic-capabilities), [BUILDING.md](BUILDING.md), and the affected usage/protocol guide |
 | Change DSP, interrupt scheduling, buffers, compiler options, or resource use | [docs/performance.md](docs/performance.md) |
 | Change MIDI, saved parameters, backup, or editor messages | [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md), the affected serializers and their tests |
 | Contribute or package third-party code/data | [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSING.md](LICENSING.md) |
@@ -89,10 +90,18 @@ adds a meaningful capability, fixes a significant bug, changes behavior or compa
 or delivers a noteworthy optimization. Group related work under Added, Fixed, Changed
 or Optimized and describe the outcome; do not list every commit, small fix or internal
 adjustment. Link focused guides or evidence instead of duplicating them, keep pending
-hardware qualification explicit, and exclude plans and unmerged work. Do not invent
-release versions or unsupported performance claims. Record the changelog assessment in
-the PR description (or completion report): identify entries updated, or explain why
+hardware qualification explicit. Prepare entries in the implementation PR; the published
+main-branch overview covers merged capabilities, while plans and other open PRs stay in
+issues and roadmaps. Do not invent release versions or unsupported performance claims.
+Record the changelog assessment in the PR description (or completion report):
+identify entries updated, or explain why
 the change does not warrant an entry.
+
+Apply this assessment to diagnostic capabilities too. Keep the linked capability overview
+and usage/protocol guide current in the same PR, including activation/defaults, transport
+and output, resource or workload impact, and validation limits. Record the affected guides
+alongside the README/changelog assessment; detailed command inventories belong in those
+guides rather than this file.
 
 Before completing the change, record the README assessment in the PR description
 (or completion report when there is no PR): name the sections updated, or explain

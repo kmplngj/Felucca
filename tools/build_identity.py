@@ -99,10 +99,12 @@ def outputs(data):
     header += '#ifndef FELUCCA_BUILD_IDENTITY_H\n#define FELUCCA_BUILD_IDENTITY_H\n'
     header += '#undef FELUCCA_VERSION\n'
     for name, value in [('FELUCCA_VERSION', data['version']), ('FELUCCA_BUILD_ID', data['build']),
+                        ('FELUCCA_BUILD_COMMIT', data.get('revision') or 'unknown'),
                         ('FELUCCA_BUILD_PR', data['pr_label']), ('FELUCCA_SPLASH_ID', splash),
                         ('FELUCCA_SOURCE_REPOSITORY', 'github.com/' + data['repository']
                          if data.get('repository') else 'Source repository unavailable')]:
         header += f'#define {name} {json.dumps(value)}\n'
+    header += f'#define FELUCCA_BUILD_DIRTY {int(bool(data.get("dirty")))}\n'
     header += '#endif\n'
     return {'build_identity.h': header, 'build-identity.json': json.dumps(data, indent=2, sort_keys=True) + '\n'}
 

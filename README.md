@@ -25,6 +25,12 @@ instrument; some details may differ in this fork.
 
 This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
 pixel-font options, performance diagnostics and broader host/emulator regression coverage.
+The [diagnostic capability overview](docs/diagnostics.md#diagnostic-capabilities) distinguishes
+the normal USB console and read-only host collector from opt-in assertion, crash-register,
+arithmetic-reproducer and screenshot builds, with their activation and evidence limits.
+An opt-in [device-screen capture diagnostic](docs/screen-capture.md) exports
+firmware-rendered static HOME/menu pixels with device build provenance over USB SERIAL.
+It is disabled in normal builds and does not measure physical LCD colours or backlight glow.
 [MIDI timing and DSP hardening](docs/midi-dsp-reliability.md) retains external-clock
 phase, timestamps TRS input during rendering, and guards invalid tempo.
 [Device results](docs/midi-dsp-device-results-2026-10-21.md) qualify USB pulse-count

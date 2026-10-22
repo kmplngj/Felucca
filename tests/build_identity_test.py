@@ -208,6 +208,18 @@ class IdentityTest(unittest.TestCase):
             self.assertIsNone(data['repository'])
             self.assertIn('Source repository unavailable', identity.outputs(data)['build_identity.h'])
 
+    def test_diagnostic_identity_retains_full_commit_and_dirty_state(self):
+        data = identity.resolve(self.root, env={})
+        header = identity.outputs(data)['build_identity.h']
+        self.assertIn(f'#define FELUCCA_BUILD_COMMIT "{self.sha}"', header)
+        self.assertIn('#define FELUCCA_BUILD_DIRTY 0\n', header)
+        (self.root / 'changed.c').write_text('dirty')
+        header = identity.outputs(identity.resolve(self.root, env={}))['build_identity.h']
+        self.assertIn(f'#define FELUCCA_BUILD_COMMIT "{self.sha}"', header)
+        self.assertIn('#define FELUCCA_BUILD_DIRTY 1\n', header)
+        data.update(revision=None, dirty=False)
+        self.assertIn('#define FELUCCA_BUILD_COMMIT "unknown"', identity.outputs(data)['build_identity.h'])
+
     def test_splash_uses_release_version_only_for_clean_identified_releases(self):
         def label(data):
             header = identity.outputs(data)['build_identity.h']

@@ -43,9 +43,19 @@ in issues and roadmaps, not among implemented changes below.
   a reference reader is included, with browser migration still pending. See [persistence contracts](extending.md#4-persistence-and-protocol)
   and the [stored-format inventory](legacy-formats.md).
 - **Build identification and diagnostics:** startup, ABOUT and INFO identify the
-  release, commit or PR; ABOUT includes the fork source. USB serial diagnostics,
-  retained crash reporting, opt-in crash register context and interrupt-context
-  assertions support investigation. See the [diagnostics guide](diagnostics.md).
+  release, commit or PR; ABOUT includes the fork source. USB serial health/input
+  counters and consistent main/worker crash snapshots support device investigation.
+  A read-only host collector retains raw replies, JSONL samples and a summary with
+  counter deltas and supplied build provenance. Opt-in crash-register context,
+  interrupt-misuse counters and a bounded 64-bit multiply/16-bit-load reproducer
+  support targeted debugging; normal FM-1 builds leave these probes disabled.
+  The synthetic reproducer adds a test workload, not an audio fix. See the
+  [capability overview and activation requirements](diagnostics.md#diagnostic-capabilities).
+- **Rendered-screen screenshots:** an opt-in development build exports bounded
+  RGB565 HOME/menu captures over USB SERIAL, with full device build identity and a
+  host PNG/JSON tool. Unsupported, asleep or changed scenes fail explicitly;
+  normal builds leave capture disabled. Digital captures do not qualify physical
+  panel colours or backlight behaviour. See [scope and device checks](screen-capture.md).
 - **Testing and installation tools:** deterministic interaction replay, native/WASM
   partition comparisons, host stress scenarios and a Chromium UI/audio gate.
   PR installation supports isolated source worktrees, exact-revision artifacts and

@@ -85,6 +85,9 @@ static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
 #endif
 static uint16_t host_screen[240 * 240];
+#if FELUCCA_SCREEN_CAPTURE
+#include "../firmware/src/screen_capture.c"
+#endif
 /* #181 a blank frame: while host_fl_on, every write of a frame is watched (host_fl_begin .. host_fl_end); a pixel that
  * shows, between two writes, a value that is neither the one before the frame nor the one after (a fill of the
  * background before a canvas lands over it) flashed */
@@ -114,6 +117,9 @@ static uint32_t host_fl_end(uint32_t y0, uint32_t y1)   /* the rows y0..y1-1: pi
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;
+#if FELUCCA_SCREEN_CAPTURE
+    scap_fill(x, y, w, h, c);
+#endif
 #ifdef UI_FILL_HOOK
     UI_FILL_HOOK(x, y, w, h);                     /* (tests/ui_render.c: what a fill covers is gone) */
 #endif
@@ -171,6 +177,9 @@ static struct { uint32_t y, h, stage; } host_blit_log[16];
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
     lcd_sync();
+#if FELUCCA_SCREEN_CAPTURE
+    scap_blit(x, y, w, h, p);
+#endif
     host_blit_rows += h;
 #ifndef UI_TEST_NO_MAIN
     if (host_blit_watch && host_blit_n < NELEM(host_blit_log)) {

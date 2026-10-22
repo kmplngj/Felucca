@@ -19,6 +19,9 @@
 #ifndef FELUCCA_CDC
 #define FELUCCA_CDC 1            /* USB CDC-ACM serial console */
 #endif
+#ifndef FELUCCA_SCREEN_CAPTURE
+#define FELUCCA_SCREEN_CAPTURE 0 /* opt-in stopped/static LCD diagnostic capture (#562) */
+#endif
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1            /* USB audio input: the master output, 16-bit stereo 44.1 kHz (usb.c) */
 #endif
@@ -73,6 +76,7 @@
 
 /* ----------------------------------------------------- base, display --- */
 #include "libc.c"
+#include "screen_capture.c"
 #include "lcd.c"
 #include "gfx.c"
 
