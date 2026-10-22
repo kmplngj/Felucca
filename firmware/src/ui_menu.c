@@ -100,27 +100,26 @@ static const menu_credit_t MENU_CREDITS[] = {
     {"https://github.com/pichenettes/eurorack", MC_URL},
     {"", MC_TEXT},
 #endif
-#if UI_FONT_BITMAP
-#if UI_FONT_M8STEALTH
+    /* Every build uses M8Stealth57 for keycap legends. */
     {"M8STEALTH", MC_TITLE},
     {"Trash80 / CC BY-SA 3.0", MC_TEXT},
     {"With local extra bitmap marks", MC_TEXT},
     {"https://fontstruct.com/fontstructors/100463/trash80", MC_URL},
     {"", MC_TEXT},
-#else
+#if UI_FONT_BITMAP && !UI_FONT_M8STEALTH
     {"TAMZEN / TAMSYN", MC_TITLE},
     {"Suraj N. Kurapati / Scott Fial", MC_TEXT},
     {"Free use, copy, modify, distribute", MC_TEXT},
     {"https://github.com/sunaku/tamzen-font", MC_URL},
     {"", MC_TEXT},
 #endif
-#endif
-    /* Keycap legends still use Inter Tight in the pixel-font experiments. */
+#if !UI_FONT_BITMAP
     {"INTER TIGHT", MC_TITLE},
     {"The Inter Project Authors", MC_TEXT},
     {"SIL Open Font License 1.1", MC_TEXT},
     {"https://github.com/rsms/inter-tight", MC_URL},
     {"", MC_TEXT},
+#endif
     {"VSCO-2 CE + VCSL", MC_TITLE},
     {"Versilian Studios / CC0 1.0", MC_TEXT},
     {"https://github.com/sgossner/VSCO-2-CE", MC_URL},
@@ -434,7 +433,7 @@ static void menu_row(uint32_t k, uint32_t row)
         b[2] = (char)('0' + HOLD_MS[settings_hold % 4u] / 100u);
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row value centred up/down");
         GFX_HOOK_ALIGN(0, 0, 0, vy + AF_M.asc, AL_B, "menu row unit on its value's baseline");
-        cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, row == MI_TUNE ? "ct" : "s", sel ? T_INK : T_MID, bg) - 3,
+        cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, row == MI_TUNE ? "ct" : "s", sel ? T_INK : T_MID, bg) - UI_VALUE_UNIT_GAP,
                   vy, &AF_M, row == MI_TUNE ? v : b, val, bg);
         return;
     }
@@ -524,7 +523,8 @@ static void info_rows(void)                            /* (in screen rows: cv_oy
         GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "info row value centred up/down");
         if (row == 3u) {                               /* CPU: the value and its unit, as HOLD's */
             GFX_HOOK_ALIGN(0, 0, 0, vy + AF_M.asc, AL_B, "info row unit on its value's baseline");
-            cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, "%", T_MID, T_SURF) - 3, vy, &AF_M, cpu, T_THEME, T_SURF);
+            cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, "%", T_MID, T_SURF) - UI_VALUE_UNIT_GAP,
+                      vy, &AF_M, cpu, T_THEME, T_SURF);
         } else if (row == 1u) {
             cv_text_r(MR_VR, y + CAP_IN(S, h), &AF_S, FELUCCA_BUILD_ID, T_THEME, T_SURF);
         } else {

@@ -692,6 +692,8 @@ static void text_ink(const aafont_t *f, const char *s, int32_t *b) { text_run(0,
 #define HALF_UP(v) ((v) >> 1)                       /* half, a pixel left over going left / up (also below 0) */
 /* the line top that centres face F's (S M) capitals' band in h rows (a row, a cell, a button): constant */
 #define CAP_IN(F, h) (HALF_UP((h) - AF_##F##_CAP_H) - AF_##F##_CAP_Y)
+/* Minimum advance-space between a numeric value and its separately anchored S unit. */
+#define UI_VALUE_UNIT_GAP 3
 /* the pen x that centres s's ink in w px */
 static int32_t ink_in(const aafont_t *f, const char *s, int32_t w)
 {
@@ -800,7 +802,7 @@ static int32_t cv_keycap(int32_t x, int32_t y, uint32_t id, uint16_t fill, uint1
 }
 
 /* a key hint: the keycap, then what it does (S, TEXT); unavailable: a DIM keycap and a DIM word. The word sits on
- * the keycap's centre line (S caps 9 rows, the keycap's 7). act may be 0 (the keycap alone); returns the end x */
+ * the keycap's centre line, using the selected S face's ink metrics. act may be 0 (the keycap alone); returns the end x */
 #define KH_GAP 4                                  /* keycap -> its word */
 static int32_t kh_w(uint32_t id, const char *act) { return kc_w(id) + (act && act[0] ? KH_GAP + text_w(&AF_S, act) : 0); }
 /* .. its ink: the keycap to the word's last inked column (centring a hint by what is seen) */
