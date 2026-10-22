@@ -1576,7 +1576,8 @@ static void style_apply(void)
 static uint32_t scap_input_time;
 static int scap_scene_supported(void)
 {
-    return !song.playing && !seq_counting() && (ui.menu == 1u || ui.menu == 2u || ui.menu == 4u) &&
+    return !song.playing && !seq_counting() &&
+           (ui.menu == 1u || ui.menu == 2u || ui.menu == 4u || (!ui.menu && ui.home)) &&
            !ui.uboot && !ui.confirm && !ui.layer && !name_on() &&
            !fm1_in.notes && !fm1_in.buttons;
 }
@@ -1612,13 +1613,14 @@ static void ui_draw(void)
 #if FELUCCA_SCREEN_CAPTURE
     scap_tick(fm1_ms);
     if (scap.state == SCAP_PENDING) {
-        /* Initial diagnostic scope: stopped static MENU pages. INFO contains live
-         * values; HOME scopes, names, overlays and ongoing input are unsupported.
+        /* Diagnostic scope: stopped static MENU pages and quiet HOME. Every band
+         * must cover the whole display and repeat the same complete draw stream;
+         * changing scopes/meters fail CHANGED rather than assembling mixed frames.
          * Never wake the display, pause music or refresh its inactivity timer. */
         if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
         else if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
         else {
-            ui.force = 1;                            /* bypass every MENU draw cache */
+            ui.force = 1;                            /* bypass the normal partial-redraw caches */
             scap_render_begin();
         }
     }

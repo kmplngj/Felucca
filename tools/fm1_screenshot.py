@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Capture supported, stopped/static FM-1 MENU pixels over an explicitly selected CDC tty.
+"""Capture supported, stopped/static FM-1 HOME or MENU pixels over an explicitly selected CDC tty.
 
 This reads firmware-rendered RGB565 pixels, not the physical LCD or its colours.
 It never wakes the screen, navigates the panel, changes settings or flashes firmware.
@@ -182,7 +182,7 @@ def state(reply, token=None, offset=None, scene=None):
         raise ProtocolError("premature screenshot completion")
     if offset is not None and s["offset"] != offset:
         raise ProtocolError("out-of-order screenshot band")
-    if s["state"] != "cancelled" and (s["awake"] != 1 or s["menu"] not in {1, 2, 4}):
+    if s["state"] != "cancelled" and (s["awake"] != 1 or not (s["menu"] in {1, 2, 4} or (s["menu"] == 0 and s["home"] == 1))):
         raise ProtocolError("unexpected or sleeping device scene")
     if scene is not None and any(s[k] != scene[k] for k in ("awake", "page", "home", "menu")):
         raise ProtocolError("device scene changed during screenshot")

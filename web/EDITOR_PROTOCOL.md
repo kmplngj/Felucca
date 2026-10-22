@@ -2091,8 +2091,9 @@ does not identify those modifications.
 STATE carries `token state offset length draw_hash awake page home menu
 scr_state led_stage idle_ms`. States are `idle`, `pending`, `ready`, `complete`,
 `changed`, `expired`, `cancelled`, `coverage`, `asleep`, `unsupported`. Acquisition
-supports only awake, stopped static MENU views; INFO/live HOME views, held input,
-overlays and unsafe states are rejected. The underlying LCD/input state is never
+supports awake, stopped static HOME and MENU views; INFO/other editing pages, held input,
+overlays and unsafe states are rejected. Changing HOME scopes, levels or transient
+indicators invalidate the draw stream. The underlying LCD/input state is never
 changed to make a capture succeed. Screen state and LED stage describe commanded
 firmware state, not optical brightness or hardware readback.
 

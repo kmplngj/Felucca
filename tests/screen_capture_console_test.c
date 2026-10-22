@@ -127,7 +127,7 @@ static void scap_scene_check(void)
     if (scap.state == SCAP_PENDING || scap.state == SCAP_READY || scap.state == SCAP_COMPLETE) {
         if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
         else if (scrn.idle != scap_input_time) scap.state = SCAP_CHANGED;
-        else if (!fixture_supported) scap.state = SCAP_UNSUPPORTED;
+        else if (!fixture_supported || (!ui.menu && !ui.home)) scap.state = SCAP_UNSUPPORTED;
     }
 }
 #endif
@@ -237,6 +237,14 @@ int main(void)
     fixture_supported = 0;
     expect("screen status 6", "state=unsupported offset=115200 length=0");
     fixture_supported = 1;
+    ui.menu = 0; ui.home = 1;
+    expect("screen begin", "token=7 state=pending");
+    scap_render_begin(); scap_fill(0, 0, 240, 240, 0xF800); scap_render_end();
+    expect("screen status 7", "state=ready offset=0 length=3840");
+    expect("screen status 7", "awake=1 page=0 home=1 menu=0");
+    ui.home = 0;                                    /* another non-MENU page is unsupported */
+    expect("screen status 7", "state=unsupported");
+    ui.menu = 1;
     scap.token = 0xFFFFFFFEu;
     fm1_ms = 0xFFFFFFFFu; scrn.idle = 0;
     expect("screen begin", "token=4294967295 state=pending");

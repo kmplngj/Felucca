@@ -2,7 +2,7 @@
 # FM-1 rendered-screen capture
 
 The opt-in `FELUCCA_SCREEN_CAPTURE=1` diagnostic build supports host-pulled
-screenshots of **awake, stopped, static MENU views** over USB SERIAL. The normal
+screenshots of **awake, stopped, static HOME and MENU views** over USB SERIAL. The normal
 build defaults to `0`, reports capture disabled, and allocates no capture band.
 The pilot does not provide MIDI capture or remote panel navigation.
 
@@ -25,12 +25,14 @@ is rejected with `--release`. Install the exact reviewed `.fwsc` with the
 [trusted installer](../BUILDING.md#install), retaining the package SHA256 and
 source/build provenance. Installation is separate from the screenshot command.
 
-On the connected FM-1, stop playback and release every control. Hold HOME for
+On the connected FM-1, stop playback and release every control. A quiet HOME
+view can be captured directly; changing scopes, levels or temporary indicators
+invalidate acquisition rather than producing a mixed frame. For menu captures, hold HOME for
 more than 0.7 seconds, then release. Turn ALGORITHM to SYSTEM, PRESETS to USB
 SERIAL and set it ON if needed; close MENU with HOME to apply USB enumeration.
 Record its previous value. Open MENU again and select DISPLAY with ALGORITHM.
-Leave the menu open, with no key/button held. SYSTEM INFO and dynamic HOME views
-are outside the initial capture scope.
+Leave the menu open, with no key/button held. SYSTEM INFO and other editing
+pages are outside the initial capture scope.
 
 Identify the FM-1's CDC tty explicitly; the CLI does not discover or choose one.
 Close other serial clients first. From the same checkout:
@@ -65,7 +67,7 @@ coverage and session state. It taps actual fill/blit submissions before source
 reuse and drains the last LCD DMA before declaring the band ready. The host pulls
 at most 96 bytes per READ, verifies chunk CRC32 and assembles all 30 bands.
 
-Each band requests an ordinary complete menu redraw. Every pixel in the band
+Each band requests an ordinary complete HOME/menu redraw. Every pixel in the band
 must be covered. The ordered draw-stream fingerprint must match the first
 band; input activity, sleep, unsupported scenes, missing coverage or a changed
 draw stream abort acquisition. Identical final pixels can have different draw
@@ -86,8 +88,9 @@ Keep author results separate from checks not yet performed on a real FM-1.
 
 1. Record the exact diagnostic revision, `FELUCCA_SCREEN_CAPTURE=1`, profile/font,
    package checksum, host OS/tty and preflash backup. Begin on stopped HOME;
-   open DISPLAY MENU using the route above. Capture with `--expect-commit` and
-   require a complete PNG/JSON, matching device commit and readable native menu.
+   capture the quiet HOME view, then open DISPLAY MENU using the route above.
+   Capture with `--expect-commit` and require a complete PNG/JSON, matching device
+   commit and readable native screen.
 2. Select COLOR with PRESETS; record its original value. Capture MONO, GREEN,
    PAPER and CUSTOM separately, changing each value before starting acquisition.
    Compare intended pixels with the matching renderer/browser reference; compare
@@ -95,8 +98,9 @@ Keep author results separate from checks not yet performed on a real FM-1.
 3. Select AUTO OFF with PRESETS and open with OCT+. Capture IDLE AFTER / IDLE
    MODE / ALL DARK / WAKE / BACK, including LARGE if relevant. A panel turn during
    a capture must produce a changed-scene failure, with no partial published PNG.
-4. Close MENU with HOME and retry: unsupported HOME must fail without navigating.
-   Repeat with playback active: capture must not stop transport. For an asleep
+4. Close MENU with HOME and retry: a quiet HOME capture must succeed. Tap ENV
+   and retry: unsupported editing pages must fail without navigating. Repeat
+   with playback active: capture must not stop transport. For an asleep
    display, the command must fail without waking it. Restore the starting state.
 5. Disconnect/stop reading during acquisition and verify normal controls/audio
    remain responsive; allow the session to expire, then retry from an eligible

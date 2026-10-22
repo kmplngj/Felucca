@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Collecting device diagnostics
 
-For opt-in PNG capture of firmware-rendered static menu pixels, use the separate
+For opt-in PNG capture of firmware-rendered static HOME/menu pixels, use the separate
 [screen capture guide](screen-capture.md). The collector below remains read-only
 and sends only its existing four diagnostic commands.
 

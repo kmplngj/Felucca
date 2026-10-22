@@ -178,6 +178,36 @@ class CaptureTests(unittest.TestCase):
                 with self.assertRaises(shot.ProtocolError): shot.capture(console(dev))
                 self.assertTrue(dev.cancelled)
 
+    def test_stopped_home_capture_and_home_page_rejection(self):
+        def home(device, cmd, reply):
+            if reply.startswith("SCAP STATE"):
+                return reply.replace("home=0 menu=1", "home=1 menu=0")
+            return reply
+        dev = Device(home)
+        pixels, metadata = shot.capture(console(dev))
+        self.assertEqual(pixels, PIXELS)
+        self.assertEqual(metadata["scene"]["home"], 1)
+        self.assertEqual(metadata["scene"]["menu"], 0)
+        for non_home in ("home=0 menu=0", "home=2 menu=0"):
+            dev = Device(lambda d, c, r: r.replace("home=0 menu=1", non_home) if r.startswith("SCAP STATE") else r)
+            with self.subTest(non_home=non_home), self.assertRaisesRegex(shot.ProtocolError, "scene"):
+                shot.capture(console(dev))
+            self.assertTrue(dev.cancelled)
+        def changed_home(device, cmd, reply):
+            reply = home(device, cmd, reply)
+            if cmd == "screen status 7" and device.offset == 3840:
+                return reply.replace("state=ready", "state=changed").replace("length=3840", "length=0")
+            return reply
+        dev = Device(changed_home)
+        with self.assertRaisesRegex(shot.ProtocolError, "changed"):
+            shot.capture(console(dev))
+        self.assertTrue(dev.cancelled)
+        # The reported view also stays fixed even if the firmware supplied a ready state.
+        dev = Device(lambda d, c, r: home(d, c, r).replace("home=1", "home=0")
+                     if c == "screen next 7 3840" else home(d, c, r))
+        with self.assertRaisesRegex(shot.ProtocolError, "scene"):
+            shot.capture(console(dev))
+
     def test_unsigned_bounds_and_interrupted_pending_cleanup(self):
         for invalid in ["-1", "00", "4294967296", "1e2", "9" * 1000]:
             with self.subTest(invalid=invalid), self.assertRaises(shot.ProtocolError): shot.number(invalid)
