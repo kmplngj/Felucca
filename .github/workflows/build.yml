@@ -539,7 +539,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: f3c72544a34aa613227b210d3adc4ae8843d836d
+          ref: a7a9dbbb95bb9d54eaa7ddb5f84dd2a4f658908d
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
@@ -556,9 +556,10 @@ jobs:
             cd "$webapp"
             node test_app.mjs
             node test_web.mjs
-            node test_ota.mjs
             FELUCCA_PROTO=app node test_web.mjs
             node test_backup.mjs
+            node test_project_import.mjs
+            FELUCCA_ROOT="$GITHUB_WORKSPACE" node test_legacy.mjs
             FELUCCA_ROOT="$GITHUB_WORKSPACE" node test_catalog.mjs
           ) 2>&1 | tee build/ci/pages-webapp-tests.log
           python3 tools/pages.py stage "$webapp" build/site

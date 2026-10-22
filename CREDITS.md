@@ -22,6 +22,10 @@ thanks the work below; each keeps its own licence (see [LICENSE](LICENSE), [LICE
   measurements and hardening after [Jangada](https://github.com/zednaked/jangada) by [zednaked](https://github.com/zednaked) (all GPL-3.0)
 - Browser emulator: after [X0X](https://github.com/charlesvestal/fm1-x0x) by [charlesvestal](https://github.com/charlesvestal) (GPL-3.0), a Felucca fork whose browser build showed the way
 - Package format and boot files: [JieLi AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK) ([Apache-2.0](LICENSES/Apache-2.0.txt); three of its files are in every package, none in this tree)
+- MIDI reliability and arithmetic hardening: [fgunited](https://github.com/fgunited)
+  (nested TRS input and musical clock phase, upstream #258/#269),
+  [ordenador](https://github.com/ordenador) (UART event handling and signed DSP, upstream #264/#265).
+  Adaptations and regression fixtures retain their GPL/Apache source notices.
 - Contributions: [keremimo](https://github.com/keremimo) (white-key scales, #2), [ChanceTheMaker](https://github.com/ChanceTheMaker)
   (TRS MIDI, bend, sustain and clock, palettes, favourites, editor display settings: #8, #10, #11, #12),
   [andreahaku](https://github.com/andreahaku) (sample recording and trim, #29; SLICE manual slices and tests, #27, #22),

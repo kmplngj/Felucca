@@ -56,6 +56,14 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **MIDI timing and arithmetic:** TRS packets keep timely timestamps during audio
+  renders, UART counts require a receive event, and external sequencer/ARP phase
+  retains fractional progress through tempo and SONG changes. Signed DSP scaling
+  is defined and invalid tempo has a bounded default. Normal PCM and valid-tempo
+  behavior remain covered by regressions. The [device results](midi-dsp-device-results-2026-10-21.md)
+  pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON remain unqualified.
+  See [implementation evidence and test procedure](midi-dsp-reliability.md).
+
 - **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
   immediately when their brightness is changed without leaving the row. Physical
   brightness/readability checks remain pending; see [display controls](display-idle.md).
