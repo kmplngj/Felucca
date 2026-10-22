@@ -44,6 +44,7 @@ def instrument(body):
     body = re.sub(r"fm1_c1_mb\.(\w+)\s*=(?!=)\s*([^;]+);",
                   r"STORE(\1, \2);", body)
     body = re.sub(r"fm1_c1_mb\.(\w+)", r"LOAD(\1)", body)
+    body = body.replace("LOAD(job)", "LOAD_JOB()")
     return body
 
 
@@ -69,6 +70,7 @@ static uint32_t clock_register, control_register, ticks;
 static unsigned scenario, worker, sequence, last_sync, body_store, work_store;
 static unsigned observation, acquired, job_reads, calls, halts, pending, payload, trace_store, boot_done_load;
 static uint32_t initial_done, next_job, argument;
+static uint32_t observed_job[2], backing_job[2];
 static jmp_buf worker_exit;
 static void fm1_c1_entry(void) {}
 static uint32_t timer(void) { ticks += 120001u; return ticks; }
@@ -94,6 +96,7 @@ static void observe_load(const char *field) {
     sequence++;
     if (worker && !strcmp(field, "job")) {
         if (job_reads++ == (scenario >= 11 ? 2u : 1u)) longjmp(worker_exit, 1);
+        if (scenario == 13 || scenario == 14) return;
         fm1_c1_mb.job = next_job;
         pending = 1;
         acquired = 0;
@@ -121,6 +124,18 @@ static void observe_load(const char *field) {
     if (worker && (!strcmp(field, "fn") || !strcmp(field, "arg") || !strcmp(field, "check")))
         assert(acquired && last_sync > observation);
 }
+static uint32_t job_observation(void) {
+    uint32_t value = fm1_c1_mb.job;
+    if (worker && (scenario == 13 || scenario == 14)) {
+        unsigned i = job_reads - 1u;
+        assert(i < 2u);
+        backing_job[i] = value;
+        /* Model a bad read, not a write to RAM; a later read may see the real word again. */
+        if (scenario == 14 || !i) value ^= 0x10000000u;
+        observed_job[i] = value;
+    }
+    return value;
+}
 static void observe_store(const char *field) {
     sequence++;
     if (!strcmp(field, "job")) assert(last_sync > body_store);
@@ -132,6 +147,7 @@ static void observe_store(const char *field) {
     else if (worker && !strcmp(field, "alive")) assert(last_sync > boot_done_load);
 }
 #define LOAD(field) (observe_load(#field), fm1_c1_mb.field)
+#define LOAD_JOB() (observe_load("job"), job_observation())
 #define STORE(field, value) do { observe_store(#field); fm1_c1_mb.field = (value); } while (0)
 #define STORE_TRACE(value) do { trace_store = ++sequence; fm1_c1_trace = (value); } while (0)
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -149,7 +165,13 @@ int main(int argc, char **argv) {
     fm1_c1_on = 1;
     fm1_c1_mb.job = 17;
     fm1_c1_mb.done = 16;
-    if (scenario <= 2) {
+    if (scenario == 15) {
+        fm1_c1_mb.done = fm1_c1_mb.job;
+        fm1_c1_mb.bad = 1;
+        assert(fm1_cpu1_wait() == -1 && !fm1_c1_on && halts == 1 && fm1_c1_gave_up == 1);
+        assert(fm1_c1_mb.done == fm1_c1_mb.job);
+        assert(guard_at_halt == FM1_C1X_BAD_JOB && fm1_c1g_read(0) == FM1_C1X_BAD_JOB);
+    } else if (scenario <= 2) {
         int result = fm1_cpu1_wait();
         if (!scenario) assert(!result && acquired && payload == 0xCAFEu && last_sync > observation && !halts &&
                               fm1_c1g_read(0) == FM1_C1X_NONE);
@@ -178,13 +200,24 @@ int main(int argc, char **argv) {
         worker = 1;
         initial_done = scenario == 10 ? UINT32_MAX : 17u;
         fm1_c1_mb.done = initial_done;
+        if (scenario == 13 || scenario == 14) fm1_c1_mb.job = initial_done;
         next_job = initial_done + (scenario == 7 ? 0u : scenario == 8 || scenario == 11 ? 2u : 1u);
         argument = 23u;
         if (!setjmp(worker_exit)) fm1_c1_main();
         assert(fm1_c1_trace == 0xC1000002u && fm1_c1_mb.alive && job_reads == (scenario >= 11 ? 3u : 2u));
         if (scenario == 6 || scenario == 10 || scenario == 12) assert(calls == 1 && fm1_c1_mb.done == next_job && !fm1_c1_mb.bad);
         else if (scenario == 7) assert(!calls && !fm1_c1_mb.bad && fm1_c1_mb.done == initial_done);
-        else assert(!calls && fm1_c1_mb.bad == 1 && fm1_c1_mb.bad_job == next_job && fm1_c1_mb.bad_done == initial_done);
+        else if (scenario == 13 || scenario == 14) {
+            assert(!calls && fm1_c1_mb.bad == 1 && fm1_c1_mb.bad_fn == 0);
+            assert(fm1_c1_mb.bad_job == (initial_done ^ 0x10000000u) && fm1_c1_mb.bad_done == initial_done);
+            assert(fm1_c1_mb.job == initial_done && fm1_c1_mb.done == initial_done);
+            assert(backing_job[0] == initial_done && backing_job[1] == initial_done);
+            assert(observed_job[0] == (initial_done ^ 0x10000000u));
+            assert(observed_job[1] == (scenario == 13 ? initial_done : initial_done ^ 0x10000000u));
+            worker = 0;
+            assert(fm1_cpu1_wait() == -1 && !fm1_c1_on && halts == 1 && fm1_c1_gave_up == 1);
+            assert(guard_at_halt == FM1_C1X_BAD_JOB && fm1_c1g_read(0) == FM1_C1X_BAD_JOB);
+        } else assert(!calls && fm1_c1_mb.bad == 1 && fm1_c1_mb.bad_job == next_job && fm1_c1_mb.bad_done == initial_done);
     }
     return 0;
 }
@@ -214,6 +247,18 @@ class Cpu1Protocol(unittest.TestCase):
         _, body = protocol_source()
         for scenario, result in enumerate(self.compile_run(body, range(13))):
             self.assertEqual(result.returncode, 0, f"scenario {scenario}: {result.stderr}")
+
+    def test_faulty_job_observations_preserve_bad_job_exclusion(self):
+        """Host fault injection checks refusal semantics, not physical read-error reproduction."""
+        _, body = protocol_source()
+        for scenario, result in zip((13, 14), self.compile_run(body, (13, 14))):
+            with self.subTest(persistent=scenario == 14):
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_bad_job_wins_over_matching_completion(self):
+        _, body = protocol_source()
+        result = self.compile_run(body, [15])[0]
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_acquires_are_detected(self):
         _, body = protocol_source()
