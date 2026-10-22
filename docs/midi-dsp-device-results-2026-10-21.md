@@ -157,9 +157,13 @@ the result appear pristine. No raw guard writes or remaining device handles exis
 The recovery BOTH 5m settings snapshot is also retained separately; final user
 settings match the original pre-test SCREEN 5m snapshot. Proofs are
 `build/deadline540/restored/restoration.json` and `runtime-guard-proof.json`.
+On 2026-10-22 the owner confirmed that the AUTO OFF change was a manual experiment;
+it is not evidence of a firmware settings regression. The separate restart's cause
+remains unassigned.
 
 No accessible external TRS sender was identified; the port was idle throughout USB
-tests. Continuous full-rate physical TRS with clocks/CC/NRPN/note-off, MIDI Learn,
+tests. On 2026-10-22 the owner confirmed that no TRS MIDI source is currently
+available. Continuous full-rate physical TRS with clocks/CC/NRPN/note-off, MIDI Learn,
 USB audio and CPU2 OFF/ON remains pending for #525/#526. Subjective FM6/PHYS sound,
 held preset/engine switches, effect tails and physical panel behavior also remain
 user checks. Follow the [combined test procedure](midi-dsp-reliability.md#combined-user-test-instructions)
