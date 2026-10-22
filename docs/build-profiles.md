@@ -188,8 +188,11 @@ the entire tracked source inventory, recursive engine sources, nonignored untrac
 inputs and generated header/include/JSON inputs. This deliberately supersets the compile
 closure, so a documentation or test edit also invalidates evidence. Complete verified
 source archives use their verified source inventory instead of Git. Actual bytes, not
-HEAD alone, identify dirty builds. Inputs/configuration must remain unchanged throughout
-the target build or report publication fails.
+HEAD alone, identify dirty builds. Source and tool/SDK file fingerprints are captured before loader/asset jobs and checked
+again after those jobs; this early inventory excludes the generated files those jobs
+are expected to replace. The full source/generated inventory and effective compiler
+configuration are then captured before the app compile/link and checked again before
+report publication. A mismatch in either phase fails the build.
 
 `artifact_sha256` requires the app, ELF, disassembly, profile sidecar, resolved profile,
 generated identity, canonical contract, loader and installable package. The verifier

@@ -45,7 +45,7 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
 
 
-def input_hashes(root):
+def input_hashes(root, *, include_generated=True):
     """A complete source inventory (a superset of the compilation closure), plus generated inputs.
 
     Hash actual working bytes, including nonignored untracked files; HEAD alone is
@@ -64,9 +64,25 @@ def input_hashes(root):
         # Git's outer untracked inventory does not descend into a submodule.
         names |= {'firmware/engines/' + name for name in
                   paths(root / 'firmware/engines', '--others', '--exclude-standard')}
-    names |= {str(path.relative_to(root)) for path in (root / 'build/gen').rglob('*')
-              if path.is_file() and path.suffix in {'.h', '.inc', '.json'}}
+    if include_generated:
+        names |= {str(path.relative_to(root)) for path in (root / 'build/gen').rglob('*')
+                  if path.is_file() and path.suffix in {'.h', '.inc', '.json'}}
     return {name: digest(root / name) for name in sorted(names) if (root / name).is_file()}
+
+
+def tool_fingerprints(build):
+    """Hash tool/SDK inputs before any jobs; do not launch the compiler here."""
+    return {'compiler_sha256': digest(build.toolchain() / 'pi32v2/bin/clang'),
+            'toolchain_sha256': {name: digest(build.toolchain() / name) for name in
+                                 ('pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy')},
+            'sdk_sha256': {name: hashlib.sha256(build.fm1pkg_make.sdk_file(name)).hexdigest()
+                           for name in build.SDK_SHA256}}
+
+
+def check_initial_inputs(build, sources, tools):
+    if (input_hashes(build.SRC, include_generated=False) != sources
+            or tool_fingerprints(build) != tools):
+        raise ValueError('source/tool/SDK inputs changed during asset or loader generation')
 
 
 def configuration(build):
@@ -77,18 +93,16 @@ def configuration(build):
     defines = dict(re.findall(r'^#define (FELUCCA_\w+)(?:[ \t]+(.*))?$', macros, re.M))
     if not {'FELUCCA_CPU2', 'FELUCCA_ID', 'FELUCCA_SLICE', 'FELUCCA_FM4'} <= defines.keys():
         raise ValueError('compiler did not expose required effective build defines')
-    compiler = build.toolchain() / 'pi32v2/bin/clang'
+    fingerprints = tool_fingerprints(build)
     return {'compile_flags': ['-target', 'pi32v2', *flags], 'effective_defines': defines,
             'selective_minsize': build.os.environ.get('FELUCCA_SIZE') != '0',
             'cpu2': build.CPU2, 'product': build.PRODUCT, 'version_override': build.VERSION,
             'compiler': {'version': '\n'.join(line for line in build.tc('pi32v2/bin/clang', '--version').strip().splitlines()
                                               if not line.startswith('InstalledDir:')),
-                         'sha256': digest(compiler)},
-            'toolchain_sha256': {name: digest(build.toolchain() / name) for name in
-                                 ('pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy')},
+                         'sha256': fingerprints['compiler_sha256']},
+            'toolchain_sha256': fingerprints['toolchain_sha256'],
             'sdk_reference': 'AC79NN_SDK_V1.2.1_2023-12-13',
-            'sdk_sha256': {name: hashlib.sha256(build.fm1pkg_make.sdk_file(name)).hexdigest()
-                           for name in build.SDK_SHA256}}
+            'sdk_sha256': fingerprints['sdk_sha256']}
 
 
 def symbol(syms, name):

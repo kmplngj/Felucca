@@ -675,15 +675,18 @@ def main(argv=None):
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
             print(f"warning: SDK {rel} differs from AC79NN_SDK_V1.2.1; the package will not match the reference")
     OUT.mkdir(parents=True, exist_ok=True)
+    import build_report
+    report_sources = build_report.input_hashes(SRC, include_generated=False)
+    report_tools = build_report.tool_fingerprints(sys.modules[__name__])
     with ThreadPoolExecutor(2) as ex:
         gen, ldr = ex.submit(generate), ex.submit(build_loader)
         gen.result()
         ota = ldr.result()
-    import build_report
     from profile import contract_json
     (OUT / 'profile-contract.json').write_text(contract_json(SRC))
     report_inputs = build_report.input_hashes(SRC)
     report_config = build_report.configuration(sys.modules[__name__])
+    build_report.check_initial_inputs(sys.modules[__name__], report_sources, report_tools)
     img, hdr, syms, dis, rt = build_app()
     errors, notes = check(img, hdr, syms, dis, rt)
     hal_err = mmio_check()

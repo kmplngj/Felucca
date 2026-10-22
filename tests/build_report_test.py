@@ -153,6 +153,25 @@ class ResourceReport(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'source.c'):
                     R.verify(root, before, config=config, measured=measured)
 
+    def test_initial_source_inventory_excludes_stale_generated_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / 'source.c'
+            source.write_text('source')
+            generated = root / 'build/gen/generated.h'
+            generated.parent.mkdir(parents=True)
+            generated.write_text('old generated')
+            def inventory(command):
+                return b'source.c\0' if '--recurse-submodules' in command else b''
+            with patch.object(R.subprocess, 'check_output', side_effect=inventory):
+                initial = R.input_hashes(root, include_generated=False)
+                generated.write_text('freshly generated')
+                self.assertEqual(initial, R.input_hashes(root, include_generated=False))
+                self.assertEqual(set(initial), {'source.c'})
+                self.assertEqual(set(R.input_hashes(root)), {'source.c', 'build/gen/generated.h'})
+                source.write_text('changed during generation')
+                self.assertNotEqual(initial, R.input_hashes(root, include_generated=False))
+
     def test_effective_flags_preprocess_only_and_normalize_compiler_directory(self):
         with tempfile.TemporaryDirectory() as folder:
             tc = Path(folder)

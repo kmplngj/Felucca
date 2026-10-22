@@ -135,8 +135,10 @@ class NoJobs(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         import build_report
-        for name in ('input_hashes', 'configuration'):
-            report_patch = patch.object(build_report, name, return_value={})
+        self.report_mocks = {}
+        for name in ('input_hashes', 'configuration', 'tool_fingerprints'):
+            self.report_mocks[name] = MagicMock(return_value={})
+            report_patch = patch.object(build_report, name, self.report_mocks[name])
             report_patch.start()
             self.addCleanup(report_patch.stop)
         report_patch = patch.object(build_report, 'write', side_effect=lambda *args:
@@ -211,6 +213,21 @@ class NoJobs(unittest.TestCase):
         B.main([])
         self.assertEqual(self.packed, ["FM-1_ACME", "FM-1_900"])
         self.assertEqual((self.out / "felucca.fwsc").read_bytes(), b"pkg:FM-1_900")
+
+    def test_generation_source_or_tool_change_prevents_compile_and_report(self):
+        for changed in ('input_hashes', 'tool_fingerprints'):
+            for mock in self.report_mocks.values():
+                mock.reset_mock(return_value=True, side_effect=True)
+                mock.return_value = {}
+            self.m['build_app'].reset_mock()
+            current = {}
+            self.report_mocks[changed].side_effect = lambda *args, **kwargs: dict(current)
+            self.m['generate'].side_effect = lambda: current.update(changed='during generation')
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'asset or loader'):
+                B.main([])
+            self.m['build_app'].assert_not_called()
+            self.assertFalse((self.out / 'resource-report.json').exists())
+            self.assertEqual(self.packed, [])
 
     def test_failed_attempt_removes_previous_success_report(self):
         report = self.out / 'resource-report.json'
