@@ -8,7 +8,8 @@
  * The PER4 block's favorites.factory[16][32]: rows 0..13 the favourites of engines 0..13, row 14 MIDI LEARN's map
  * (settings_ml), row 15 the device bytes (settings_dev; favorites.c):
  * [15][28..31]: CLICK / CLICK LEVEL / COUNT-IN (1.1), STYLE, MENU's flags, the layers seen (bytes no
- * engine uses; 0 in older settings = every one's default); [15][27]: SCREEN OFF (1.1.5; 0 = 30 MIN, the default);
+ * engine uses; 0 in older settings = every one's default); [15][27]: AUTO OFF (ui.c): historical timer codes bits 0..2,
+ * first-stage target bits 3..4, independent ALL DARK timer index bits 5..7 (0 = NEVER);
  * [15][26]: MENU > DISPLAY > HOME (1.3; 0 = SCOPE, 1 TRACKS, 2 LEVELS (1.5), ui.c ui_home_view);
  * [15][24]: MENU's 1.2 flags SCOPE MIX, STEP PREVIEW ON, CHORD ENTRY ADD (bits 0-2, ui.c ui_prefs2; 0 = the defaults),
  *   1.5 HELP ON (bit 3), 1.5.5 SELECT PAGE (bit 4; 0 = BPM, as before), 1.5.5 SCREEN WAKE PANEL (bit 5; 0 = +MIDI);
@@ -115,10 +116,17 @@ static int settings_import(persist_t *p, int n)
                 b &= ~(3u << (2u * f));
         p->favorites.factory[15][28] = (uint8_t)b;
     }
-    {   /* AUTO OFF: old 0..7 timer bytes unchanged; LEDS/BOTH target bits only with a known nonzero timer. */
-        uint32_t v = p->favorites.factory[15][27], time = v & 7u;
-        if (v > 7u && ((v >> 3) > 2u || (time != 1u && time != 2u && time != 4u && time != 7u)))
-            p->favorites.factory[15][27] = 0;
+    {   /* AUTO OFF: retain old 0..7 bytes, including legacy NEVER/unknown codes. A zero timer may remember MODE.
+         * Malformed new targets/timer codes never enable ALL DARK; unknown or unordered ALL DARK disables only it. */
+        uint32_t v = p->favorites.factory[15][27], low = v & 31u, time = low & 7u, target = low >> 3, dark = v >> 5;
+        uint32_t idle = time == 2u ? 1u : time == 1u ? 2u : time == 4u ? 3u : time == 7u ? 4u : 0u;
+        if (target > 2u || (target && time && !idle)) {
+            low = 0;
+            dark = 0;
+        }
+        if (dark > 4u || (time && !idle) || (idle && dark && dark <= idle))
+            dark = 0;
+        p->favorites.factory[15][27] = (uint8_t)(low | dark << 5);
     }
     if (p->favorites.factory[15][11] > 8u)         /* PRESETS LIST's category (1.2, ui.c ui_lcat, CAT_*): unknown = none */
         p->favorites.factory[15][11] = 0;

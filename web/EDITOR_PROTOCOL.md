@@ -222,7 +222,7 @@ payload length. Do not parse them as a generic TLV stream.
 | `46 01` | nfactory, nbank | FM6 patches; current 8, 0 |
 | `53 01` | caps | bit 0 WATCH preserves pending changes; bit 1 no own PRESET/G_ENGSEL RELOAD (current 3) |
 | `50 01` | caps | FM6 v2: bit 0 retired patch bank, bit 1 user-preset patch target (current 3) |
-| `4E 01` | count | MENU settings count (32, or 33 with CPU2) |
+| `4E 01` | count | MENU settings count (33, or 34 with CPU2) |
 | `52 01` | 4 | Step ratchet maximum |
 | `4C 01` | 1 | Parameter locks |
 | `41 01` | capacity lo, hi | Full motion capacity, 128 = `00 01` |
@@ -1243,7 +1243,7 @@ Available: INFO `4E 01` (1.0.4). Request length (argument bytes): **3**.
 - Request: id, value v14.
 - Reply: rc, id, value v14: the device's value after the write (clamped to min..max).
 
-Unknown id returns rc 1 and echoes the requested id/value. Other values clamp to the item’s range. Wrong length gets no reply.
+Unknown id returns rc 1 and echoes the requested id/value. Other values clamp to the item’s range. Conflicting AUTO OFF / ALL DARK timer order returns rc 2 and the unchanged actual value; no setting is applied or saved. Wrong length gets no reply.
 
 - **index** is the position in the device's list: up to 1.0.5 the menu's order; from 1.1 a new setting is appended
   (index = id), whatever tab it shows in, so an index keeps the setting it had and an older editor lists the ones it
@@ -1256,7 +1256,7 @@ Unknown id returns rc 1 and echoes the requested id/value. Other values clamp to
   was 0..9.
 - **rc** as `UI_SET`: 0 applied and saved, 3 applied in RAM only (no flash or a failed write; retried by the
   settings path), 4 applied and saved after STOP; 1 an unknown id (the request's id and value are echoed,
-  nothing changes). A value out of range is not refused: it is clamped and the reply says which value the device
+  nothing changes); 2 rejects an inconsistent AUTO OFF / ALL DARK timer order and returns the unchanged actual value. A value out of range is not refused: it is clamped and the reply says which value the device
   took. A wrong argument length gets no reply. 1.2: MIDI IN (21) and TUNE (22) answer rc 0: they are not settings
   but the current project's `G_ROUTE` and `G_TUNE` (global ids 14 and 3), set as a `SET` of that global sets them
   (a `GET` / `DUMP` reads the same value, the device pushes `CHANGED` for it while WATCHing); they are kept with the
@@ -1317,8 +1317,9 @@ before MIDI IN the first 21, 1.2 the first 23, 1.3 / 1.4 the first 24, 1.5 / 1.5
 | 28 | 28 | T3 CHANNEL | 0 | as T1 CHANNEL | 3 | 3 MIDI |
 | 29 | 29 | T4 CHANNEL | 0 | as T1 CHANNEL | 4 | 3 MIDI |
 | 30 | 30 | AUTO SELECT | 0 | 0 OFF, 1 ON (1.5.5) | OFF | 3 MIDI |
-| 31 | 31 | SCREEN WAKE | 0 | 0 +MIDI, 1 PANEL (1.5.5) | +MIDI | 3 MIDI |
+| 31 | 31 | WAKE | 0 | 0 +MIDI, 1 PANEL (1.5.5; formerly SCREEN WAKE) | +MIDI | 0 DISPLAY |
 | 32 | 32 | 2ND CORE | 0 | 0 OFF, 1 ON (BETA) (1.6.1, Discussion #141: the second core renders some of the parts; from the next power-on) | OFF | 4 SYSTEM |
+| 33 (32 without CPU2) | 33 | ALL DARK | 0 | 0 NEVER; 1–4 5 MIN/15 MIN/30 MIN/60 MIN | NEVER | 0 DISPLAY |
 
 The device's AUDIO tab shows SPEAKER EQ, USB LEVEL, CLICK, CLICK LEVEL, COUNT-IN and (1.2) TUNE (index 9, 10, 12, 13,
 14, 22).
@@ -1336,33 +1337,42 @@ SCALE LEDS (id 16, 1.2, Discussion #127; the CONTROL tab shows HOLD, KNOB ACCEL,
 index 5..8 and 16): ON shows the selected track's scale on the key LEDs outside the layers (README: Key LEDs).
 Applied at once.
 
-AUTO OFF (id 17, originally SCREEN OFF): values 0–4 retain their historical meaning;
-the descriptor now names the target explicitly. Values 5–8 blank LEDs alone and
-9–12 blank both LEDs and LCD. `m` means minutes. The setting count and all other IDs
-are unchanged. Editors must use the advertised bounds and names.
+AUTO OFF (id 17, originally SCREEN OFF) retains its combined enum: values 0–4
+mean NEVER and SCREEN 5/15/30/60m; 5–8 mean LEDS and 9–12 BOTH at those delays.
+The native AUTO OFF detail page splits time and target into IDLE AFTER / IDLE MODE;
+clients can keep the compatible combined row. WAKE (id 31) moves from MIDI to
+DISPLAY without changing values. ALL DARK (id 33) adds an independent threshold,
+0 NEVER or 1–4 for 5/15/30/60 MIN. ID 32 remains reserved for 2ND CORE: in a CPU2-off
+build descriptor index 32 returns id 33. Discover by index, then write by returned ID.
 
-After the selected interval without panel activity (button/key pressed or held,
-encoder turned; not MASTER or ordinary editor traffic), the selected output goes
-dark. SCREEN WAKE +MIDI (id 31, default) also counts accepted MIDI IN note-ons;
-PANEL ignores them for this timer. Audio, sequencing, MIDI and USB continue even
-while dark. SCREEN/BOTH consume the panel wake gesture; LEDS alone restores normal
-feedback and lets the same gesture act. MIDI wake notes always play. Dialogs,
-count-in and the update countdown keep the outputs awake. NEVER disables the timer;
-changing id 17 restarts it, and wakes a sleeping LCD.
+Both thresholds count total time since the same last qualifying input, not an
+additional delay after stage 1. When both are nonzero, ALL DARK must be later;
+a conflicting MENU_SET to id 17 or 33 returns rc 2 and the unchanged actual value,
+with no save. Either stage may independently be NEVER. A successful timer/mode
+change restarts inactivity and wakes obsolete LCD sleep.
 
-LED darkness overrides ANIM IDLE and all ordinary lit/dim/mid/breath maps. One key
-LED briefly pulses at low brightness for 120 ms every 30 seconds, starting 30 seconds
-after darkness and rotating through the 27 keyboard LEDs. PLAY/REC are not used.
-The physical LCD backlight stays on: its enable also controls input scanning.
-This is a visual inactivity policy, not a claimed power-saving feature.
+Panel button/key presses or holds and encoder turns count as activity, excluding
+MASTER and ordinary editor traffic. WAKE +MIDI (id 31, default) also counts routed
+MIDI IN note-ons; PANEL ignores those notes for wake. Clock/CC/SysEx do not count.
+Audio, sequencing, MIDI, USB and input scanning continue. LEDS-only first-stage
+wake acts normally; a sleeping LCD consumes its panel wake gesture through release
+and 0.3 s encoder rest. MIDI notes continue sounding normally. Dialogs, count-in,
+update and emergency visibility retain their existing safeguards.
 
-Settings byte `[15][27]` keeps its historical low-three-bit timer codes
-(`0,2,1,4,7` for NEVER/5/15/30/60 minutes); bits 3–4 select SCREEN=0, LEDS=1,
-BOTH=2. Unknown targets/bits or new target bytes without a valid nonzero timer
-import as NEVER. Historical bytes 0–7 retain their old interpretation. Record and
-backup sizes are unchanged. Older firmware resets LEDS/BOTH bytes (>7) to NEVER
-on import; SCREEN settings retain their existing compatibility. See the
-[control and test guide](../docs/display-idle.md).
+First-stage LED darkness overrides ANIM IDLE and all ordinary LED maps, leaving
+one low-level 120 ms rotating piano-key pulse every 30 s, starting 30 s after entry.
+ALL DARK suppresses that pulse too and sleeps the LCD regardless of IDLE MODE.
+This candidate requests optional LCD-controller backlight-off without disabling
+PA2. Physical backlight darkness and wake reliability remain unverified; no
+power-saving claim follows from host/emulator results.
+
+Settings byte [15][27] keeps historic timer codes 0,2,1,4,7 in bits 0–2 and target
+SCREEN=0/LEDS=1/BOTH=2 in bits 3–4. Bits 5–7 store ALL DARK index 0–4. A target can
+be remembered while its timer is NEVER; unknown target/timer combinations normalize
+safely and unknown/conflicting ALL DARK disables that stage. Historical bytes 0–7
+retain their interpretation. Record/backup sizes are unchanged; older readers
+without ALL DARK reject its high bits and fall back to NEVER. See the
+[control and combined test guide](../docs/display-idle.md).
 
 SCOPE (id 18, 1.2, Discussion #165; DISPLAY now shows COLOR, STYLE, LARGE, ANIM, LEDS, SCREEN OFF and SCOPE, index
 0..4, 17, 18): what HOME's oscilloscope draws. OUT (the default, as before) the sound after MASTER, so it shrinks with
@@ -1396,14 +1406,13 @@ together, a chord across tracks: the selection stays) or the last such switch wa
 IN SEL, nor while the device's menu or a layer is up. The editor is told as for any track change. Whatever the setting,
 a MIDI IN note lights its track's number cushion for about 90 ms (the header, HOME TRACKS / LEVELS, the MIXER).
 
-SCREEN WAKE (id 31, 1.5.5; the MIDI tab after AUTO SELECT, before LEARN CLEAR: DISPLAY, where SCREEN OFF is, has its
-eight rows; a setting, saved as the others): what wakes SCREEN OFF (id 17) and keeps the screen on. +MIDI (0, the
-default) a MIDI IN note-on too, USB or TRS, on a channel that plays a track (MIDI IN), as well as the panel: it resets
-the idle time, wakes a dark screen, and plays (unlike a key, whose wake press is swallowed). Clock, CCs, pitch bend,
-aftertouch, note-offs, Program Change, SysEx (the editor's too) and channels no track hears count for nothing. PANEL
-(1) only the panel, as up to 1.5.1. Nothing changes with SCREEN OFF at NEVER. A bit of the settings record (MENU's 1.2
-flags byte, bit 5, set for PANEL: every older record reads +MIDI; older firmware keeps it and ignores it). Applied at
-once.
+WAKE (id 31, formerly SCREEN WAKE) is displayed in AUTO OFF's native detail page
+and descriptor group DISPLAY. Values remain +MIDI (0, default) and PANEL (1), using
+bit 5 of the existing flags byte, set for PANEL. Older records read +MIDI; older
+firmware keeps the bit. It applies to both inactivity stages, including ALL DARK,
+without changing MIDI note playback. Accepted routed USB/TRS note-ons count;
+clock, CC, pitch bend, aftertouch, note-offs, Program Change, SysEx and unheard
+channels do not. With both stages at NEVER there is no timed darkness to wake.
 
 MIDI IN TRACK in a project (FUN10, no format change): the last 3 of the 16 spare bytes before the FM6 patches
 (`PROJ_MIDI_OFF` = 3309), 24 bits little-endian. Bits 5k..5k+4: track k's channel as stored, 0..15 = the channel
@@ -1417,7 +1426,7 @@ is index 4, id 4, kind 0, value 2 (`02 40`), min 0 (`00 40`), max 3 (`03 40`), "
 `F0 7D 46 4C 49 00 32 40 F7` (COLOR 50) answers `F0 7D 46 4C 49 00 00 09 40 F7` (clamped to 9, MONO).
 `F0 7D 46 4C 49 0E 01 40 F7` sets COUNT-IN to 1 BAR and answers `F0 7D 46 4C 49 00 0E 01 40 F7` (1.1).
 `F0 7D 46 4C 49 16 74 3F F7` (TUNE -12) answers `F0 7D 46 4C 49 00 16 74 3F F7` (rc 0, 1.2).
-`F0 7D 46 4C 48 21 F7` answers `F0 7D 46 4C 48 21 7F F7` (no index 33; index 32 exists only with FELUCCA_CPU2; 1.5.5 before SCREEN WAKE: none past 30, `1F`; 1.5 / 1.5.1: none past 24, `19`; 1.3 / 1.4: none past 23, `18`; 1.2: none past 22, `17`; before MIDI IN: none past 20, `15`; before SCOPE: none past 17, `12`; before SCREEN OFF: none past 16, `11`; 1.2 before SCALE LEDS: none past 15, `10`; 1.1 firmware: none past 14, `0F`; 1.0.5: none past 11, `0C`).
+`F0 7D 46 4C 48 22 F7` answers `F0 7D 46 4C 48 22 7F F7` (no index 34; without CPU2 the list ends at index 33, with ALL DARK id33 at index32; before ALL DARK, index33 did not exist and index32 existed only with FELUCCA_CPU2; 1.5.5 before SCREEN WAKE: none past 30, `1F`; 1.5 / 1.5.1: none past 24, `19`; 1.3 / 1.4: none past 23, `18`; 1.2: none past 22, `17`; before MIDI IN: none past 20, `15`; before SCOPE: none past 17, `12`; before SCREEN OFF: none past 16, `11`; 1.2 before SCALE LEDS: none past 15, `10`; 1.1 firmware: none past 14, `0F`; 1.0.5: none past 11, `0C`).
 
 HOME (id 23, 1.3, Discussions #112 / #134; DISPLAY now shows COLOR, STYLE, LARGE, ANIM, LEDS, SCREEN OFF, SCOPE and
 HOME, index 0..4, 17, 18, 23): what the device's HOME page shows under its four cards. SCOPE (the default, as before)

@@ -202,12 +202,12 @@ and result template for pending physical observations.
 
 ## Display and LED idle controls
 
-**MENU > DISPLAY > AUTO OFF** combines the former SCREEN OFF delay with a target:
-SCREEN, LEDS or BOTH after 5, 15, 30 or 60 minutes; NEVER remains the default.
-Timed LED blanking overrides ANIM IDLE and leaves a brief rotating key-LED alive
-signal every 30 seconds. LED-only wake acts on the first input; screen wake
-consumes its panel gesture. Existing LEDS OFF still means no idle glow, with
-active indicators retained; INV LO/HI now redraw immediately when selected.
+**MENU > DISPLAY > AUTO OFF** opens IDLE AFTER / IDLE MODE / ALL DARK / WAKE /
+BACK. The first stage keeps SCREEN, LEDS or BOTH with a rotating 30-second key-LED
+heartbeat; the independent ALL DARK threshold suppresses every LED and requests
+LCD/backlight-off. Both timers count from the same last interaction and default
+to NEVER. Existing LEDS / INV brightness remains separate. MIDI descriptors retain
+id 17 and append id 33 for ALL DARK; WAKE keeps id 31.
 See the [controls, compatibility and combined FM-1 procedure](display-idle.md).
-Physical visibility, wake and MIDI/audio checks remain pending; the LCD backlight
-stays on and no power-saving benefit is claimed.
+Controller backlight-off remains an experiment: PA2/scanning stay enabled, physical
+darkness and wake are pending FM-1 qualification, and no power-saving claim is made.

@@ -31,6 +31,7 @@ static void up_pat_load(track_t *t, uint32_t k);
 static void up_auto_name(char *b, uint32_t e, uint32_t k);   /* naming (ui_name.c) */
 static void up_ui_named(uint32_t op, uint32_t k, const char *name, uint32_t cat);
 static uint32_t up_cat(uint32_t k);
+static void ui_message(const char *s);
 static int project_save_as(uint32_t slot, const char *name);
 static int project_name(uint32_t slot, char *b);
 static int project_info(uint32_t slot, char *b, uint16_t *len48, uint32_t *den, uint8_t *n);
@@ -174,7 +175,7 @@ static struct {
     uint64_t plk_rm, plk_acc;    /* .. the grid's step keys pressed on a hit (bit = step): it goes when the key is let
                                   * go, unless the key was held for a lock (its accent: plk_acc) */
     uint8_t hot_col, hot_t;      /* column whose knob was just turned (drawn white) */
-    uint8_t menu;                /* 0 off, 1 list, 2 about + credits, 3 info (1.2) (HOME held) */
+    uint8_t menu;                /* 0 off, 1 list, 2 about + credits, 3 info, 4 AUTO OFF detail (HOME held) */
     uint8_t menu_sel;            /* MENU: the row (menu_items.c MI_*; its tab MI_TAB), kept while the device runs */
     uint8_t menu_row[5];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
     uint16_t menu_scroll;        /* continuous ABOUT + CREDITS position, pixels */
@@ -242,10 +243,13 @@ enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PA
  * normally; SCREEN/BOTH consume the wake gesture below. NEVER (the default since 1.1.5.1), 5, 15, 30, 60 minutes, kept in a byte no engine uses, saved
  * with the settings (SCR_CODE). 1.1.5 stored value ^ 3, 0 (its default and every older setting) being 30 MIN; 1.1.5.1
  * reads that 0 as NEVER (the new default: the panel went dark for good on 1.1.5, see lcd.c lcd_power) and keeps the
- * other codes, 30 MIN now 4. Bits 0..2 retain these codes; bits 3..4 select SCREEN (0), LEDS (1), BOTH (2).
- * All other bits/targets are invalid. Older readers reset a new LEDS/BOTH byte to NEVER; record size is unchanged.
+ * other codes, 30 MIN now 4. Bits 0..2 retain these codes; bits 3..4 select SCREEN (0), LEDS (1), BOTH (2), remembered
+ * even with the first timer at NEVER. Bits 5..7 hold ALL DARK's independent NEVER/5/15/30/60 index. Both timers count
+ * from the same activity, and ALL DARK, when both are on, must be later. It sleeps the LCD and suppresses every LED,
+ * including the first-stage heartbeat. Physical backlight control is still the unqualified lcd.c controller probe;
+ * PA2, input scanning, audio and MIDI stay enabled. Record size is unchanged; older readers reset new bytes to NEVER.
  * Input is the panel's: a button or key held or pressed, a knob turned (not the editor or MASTER, an analogue pot);
- * 1.5.5: with MENU > MIDI > SCREEN WAKE +MIDI (the default; PANEL: the panel only, as before) a MIDI IN note-on too,
+ * WAKE +MIDI (the default since 1.5.5; PANEL: the panel only) also accepts a MIDI IN note-on,
  * USB or TRS, on any channel that plays a track (seq.c midi_seen: the ISR only sets its bit), not clock, CC or SysEx.
  * The press, key or turn that wakes it is swallowed: no note (seq.c kb_asleep), no button, no value, until everything
  * is let go and the knobs rest for SCR_EAT_MS; a MIDI note that wakes it is not: it plays, as every MIDI note does.
@@ -266,12 +270,13 @@ enum { SCR_ON, SCR_OFF, SCR_WAKE, SCR_SLPOUT, SCR_SHOW };
 static struct {
     uint8_t st;                  /* SCR_*: SCR_WAKE asked, SCR_SLPOUT sent, SCR_SHOW the frame that redraws */
     uint8_t eat;                 /* the wake gesture: panel input swallowed (ui_input) */
-    uint8_t led_off;             /* latched until activity: stays dark across a complete millisecond-clock wrap */
+    uint8_t led_off;             /* SCR_LED_* latches: stay dark across a complete millisecond-clock wrap */
     uint8_t setting;             /* last applied AUTO OFF byte, including a backup/settings import */
     uint32_t idle;               /* fm1_ms of the last panel input (or blocker) */
     uint32_t t;                  /* fm1_ms of the last panel command (SLPIN, SLPOUT) */
     uint32_t eat_t;              /* fm1_ms of the last swallowed knob detent */
 } scrn;
+enum { SCR_LED_IDLE = 1u, SCR_LED_ALL = 2u };
 static void scr_touch(void) { scrn.idle = fm1_ms; scrn.led_off = 0; }
 static void scr_sync(void)
 {
@@ -282,39 +287,70 @@ static void scr_sync(void)
     if (scrn.st == SCR_OFF)
         scrn.st = SCR_WAKE;
 }
-static uint32_t scr_get(void)                          /* 0 NEVER; 1..4 SCREEN, 5..8 LEDS, 9..12 BOTH */
+static uint32_t scr_idle_get(void) { return SCR_DEC[ui_scr & 7u]; }
+static uint32_t scr_mode_get(void)
 {
-    uint32_t target = ui_scr >> 3, time = SCR_DEC[ui_scr & 7u];
-    return target < 3u && time ? time + target * 4u : SCR_DEF;
+    uint32_t target = (ui_scr >> 3) & 3u;
+    return target < 3u ? target : 0u;
 }
-static void scr_put(uint32_t v)                        /* (the time counts from the change: the editor's too) */
+static uint32_t scr_dark_get(void) { return (ui_scr >> 5) < 5u ? ui_scr >> 5 : 0u; }
+static uint32_t scr_get(void)                          /* legacy id 17: 0 NEVER; 1..4 SCREEN, 5..8 LEDS, 9..12 BOTH */
 {
-    v = v < 13u ? v : 0u;
-    ui_scr = (uint8_t)(v ? SCR_CODE[(v - 1u) % 4u + 1u] | ((v - 1u) / 4u) << 3 : SCR_DEF);
+    uint32_t time = scr_idle_get();
+    return ((ui_scr >> 3) & 3u) < 3u && time ? time + scr_mode_get() * 4u : SCR_DEF;
+}
+static int scr_write(uint32_t idle, uint32_t mode, uint32_t dark)
+{
+    if (idle >= NELEM(SCR_MIN) || mode >= 3u || dark >= NELEM(SCR_MIN))
+        return 0;
+    if (idle && dark && dark <= idle) {
+        ui_message("ALL DARK MUST BE LATER");
+        return 0;
+    }
+    ui_scr = (uint8_t)(SCR_CODE[idle] | mode << 3 | dark << 5);
     scrn.setting = ui_scr;
     scr_touch();
     if (scrn.st == SCR_OFF)
         scrn.st = SCR_WAKE;
+    return 1;
+}
+static int scr_idle_put(uint32_t v) { return scr_write(v, scr_mode_get(), scr_dark_get()); }
+static int scr_mode_put(uint32_t v) { return scr_write(scr_idle_get(), v, scr_dark_get()); }
+static int scr_dark_put(uint32_t v) { return scr_write(scr_idle_get(), scr_mode_get(), v); }
+static int scr_put(uint32_t v)                         /* time counts from an accepted change, including the editor's */
+{
+    v = v < 13u ? v : 0u;
+    return scr_write(v ? (v - 1u) % 4u + 1u : 0u, v ? (v - 1u) / 4u : scr_mode_get(), scr_dark_get());
 }
 static int scr_blocked(void) { return ui.confirm || ui.uboot || seq_counting(); }
 static uint32_t scr_limit(void)
 {
-    uint32_t v = scr_get();
-    return SCR_MIN[v ? (v - 1u) % 4u + 1u : 0u] * 60000u;
+    return SCR_MIN[scr_idle_get()] * 60000u;
 }
 static int scr_expired(void)
 {
     uint32_t lim = scr_limit();
     return lim && !scr_blocked() && fm1_ms - scrn.idle >= lim;
 }
+static int scr_dark_active(void)
+{
+    uint32_t dark;
+    scr_sync();
+    dark = scr_dark_get();
+    if (!dark || scr_blocked())
+        scrn.led_off &= (uint8_t)~SCR_LED_ALL;
+    else if (fm1_ms - scrn.idle >= SCR_MIN[dark] * 60000u)
+        scrn.led_off |= SCR_LED_ALL;
+    return (scrn.led_off & SCR_LED_ALL) != 0u;
+}
 static int scr_led_dark(void)
 {
-    scr_sync();
-    if (scr_get() <= 4u || scr_blocked())
-        scrn.led_off = 0;
+    int all = scr_dark_active();
+    if (!scr_idle_get() || !scr_mode_get() || scr_blocked())
+        scrn.led_off &= (uint8_t)~SCR_LED_IDLE;
     else if (scr_expired())
-        scrn.led_off = 1;
-    return scrn.led_off;
+        scrn.led_off |= SCR_LED_IDLE;
+    return all || (scrn.led_off & SCR_LED_IDLE) != 0u;
 }
 static void scr_wake(void)
 {
@@ -357,7 +393,7 @@ static int scr_input(uint32_t pressed, uint32_t notes)
     }
     if (pressed | notes | held | (uint32_t)moved)
         scr_wake();
-    if (scrn.st != SCR_ON || held || (int32_t)(fm1_ms - scrn.eat_t) < (int32_t)SCR_EAT_MS)
+    if (scrn.st != SCR_ON || held || fm1_ms - scrn.eat_t < SCR_EAT_MS)
         return 1;
     scrn.eat = 0;                                       /* all let go, the knobs at rest: input again */
     kb_asleep = 0;
@@ -366,7 +402,6 @@ static int scr_input(uint32_t pressed, uint32_t notes)
 /* ui_draw, every frame: 1 = draw it */
 static int scr_frame(void)
 {
-    uint32_t v = scr_get();
     scr_sync();
     if (scr_blocked()) {                            /* (never dark under these) */
         scr_touch();
@@ -375,7 +410,7 @@ static int scr_frame(void)
     }
     switch (scrn.st) {
     case SCR_ON:
-        if ((v > 4u && v <= 8u) || !scr_expired())
+        if (!scr_dark_active() && (scr_mode_get() == 1u || !scr_expired()))
             return 1;
         lcd_power(0);
         scrn.st = SCR_OFF;
