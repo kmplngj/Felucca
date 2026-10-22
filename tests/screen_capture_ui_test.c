@@ -328,6 +328,7 @@ static void test_explicit_wake(void)
         fm1_ms = at + 240u; ui_draw(); lcd_sync();
         capture_need(scrn.st == SCR_ON && scap.state == SCAP_PENDING && !scap.covered &&
                      scrn.idle == idle && !scr_led_dark(), "completed wake redraw precedes first captured band");
+        capture_need(!scrn.eat && !kb_asleep, "explicit wake releases input latches before the next input pass");
         for (offset = 0; offset < SCAP_W * SCAP_H * 2u; offset += SCAP_BYTES) {
             capture_frame();
             capture_need(scap.state == SCAP_READY && !memcmp(scap.pixels, (uint8_t *)host_screen + offset, SCAP_BYTES),
@@ -339,6 +340,16 @@ static void test_explicit_wake(void)
                      ui.home == home && ui.menu == menu,
                      "silent capture retains view, settings and stopped transport through final verification");
         capture_need(scap_cancel(token) && !scap_holding(fm1_ms), "cancel releases wake hold");
+        key_down(white(0));
+        capture_need(gates() == 1u, "first physical key after capture plays before the next UI input pass");
+        key_up(white(0));
+    }
+}
+static void capture_wake_input(void)
+{
+    if (scrn.st == SCR_ON) {
+        fm1_in.buttons = 1u;
+        host_lcd_sync_hook = NULL;
     }
 }
 static void test_wake_release_and_rejection(void)
@@ -382,6 +393,15 @@ static void test_wake_release_and_rejection(void)
     capture_need(scap_start(1), "start asynchronous wake for input race");
     scrn.idle++; scap_scene_check();
     capture_need(scap.state == SCAP_CHANGED && !scap_holding(fm1_ms), "input while waking invalidates before acquiring pixels");
+    capture_setup(0, ST_FLAT, 0, MO_IDLE);
+    scrn.st = SCR_OFF; scrn.eat = kb_asleep = 1; scrn.t = fm1_ms - 120u;
+    capture_need(scap_start(1), "start final wake input race");
+    ui_draw(); lcd_sync(); fm1_ms += 120u;
+    host_lcd_sync_hook = capture_wake_input;
+    ui_draw(); lcd_sync();
+    capture_need(scap.state == SCAP_UNSUPPORTED && !scap_holding(fm1_ms) && scrn.eat && kb_asleep,
+                 "input arriving at wake completion aborts before clearing gesture suppression");
+    fm1_in.buttons = 0;
 }
 static void test_wake_audio(void)
 {

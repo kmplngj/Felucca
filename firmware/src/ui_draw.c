@@ -1656,7 +1656,14 @@ static void ui_draw(void)
      * and DISPON. Never publish the transitional SCR_SHOW frame as READY. */
     if (scap.state == SCAP_WAKING && scrn.st == SCR_ON) {
         lcd_sync();
-        scap.state = SCAP_PENDING;
+        scap_scene_check();
+        if (scap.state == SCAP_WAKING) {
+            /* No panel gesture woke this display. Release sleep's suppression
+             * before a keyboard ISR can consume the first post-wake press. */
+            scrn.eat = 0;
+            kb_asleep = 0;
+            scap.state = SCAP_PENDING;
+        }
     }
 #endif
 }

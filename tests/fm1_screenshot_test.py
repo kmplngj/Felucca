@@ -333,15 +333,19 @@ class CaptureTests(unittest.TestCase):
         dev = Device(lambda d, c, r: d.state("unsupported") if c == "screen begin wake" else waking(d, c, r))
         with self.assertRaisesRegex(shot.ProtocolError, "unsupported"): shot.capture(console(dev), wake=True)
         self.assertTrue(dev.cancelled)
-        for replacement in ["page=4", "offset=3840", "draw_hash=12345678", "awake=1", "home=0 menu=0"]:
-            def invalid(device, cmd, reply):
+        for old, new in [("page=3", "page=4"), ("offset=0", "offset=3840"),
+                         ("draw_hash=00000000", "draw_hash=12345678"), ("awake=0", "awake=1"),
+                         ("home=0 menu=1", "home=0 menu=0")]:
+            def invalid(device, cmd, reply, old=old, new=new):
                 reply = waking(device, cmd, reply)
                 if cmd == "screen status 7":
-                    key = replacement.split("=")[0]
-                    return re.sub(key + r"=[^ ]+", replacement, reply)
+                    changed = reply.replace(old, new)
+                    self.assertNotEqual(reply, changed)
+                    shot.record(changed)  # valid framing; fail at scene/state validation
+                    return changed
                 return reply
             dev = Device(invalid)
-            with self.subTest(replacement=replacement), self.assertRaises(shot.ProtocolError):
+            with self.subTest(replacement=new), self.assertRaises(shot.ProtocolError):
                 shot.capture(console(dev), wake=True)
             self.assertTrue(dev.cancelled)
 
