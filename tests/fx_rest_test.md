@@ -87,6 +87,9 @@ copies: incorrect chorus and delay rest write-index advances, and a zero-input
 scan that overlooks the final sample. Each must fail the reference audio/state
 comparison or the input/live gate assertion. Compiler failures, crashes,
 timeouts and missing skip coverage do not qualify as successful detection.
+`python3 tests/fx_rest_parser_test.py` checks that missing required skips and
+forced-off skips remain coverage failures even when audio/state or gate checks
+also fail; the normal suite runs these parser controls before rendering.
 `--mutation-check` additionally changes the HALL rest phase advance and, when
 present, the SPRING rest write-index advance. All mutations use the compact
 14-trajectory boundary set at `-O2`; the unmodified 77 trajectories run at both

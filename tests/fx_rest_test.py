@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class EquivalenceMismatch(ValueError):
-    """Successful renders disagree on audio/state or violate a rest gate."""
+    """Renders with valid skip coverage disagree on audio/state or a rest gate."""
 
 
 def replace_once(source, old, new):
@@ -105,6 +105,7 @@ def compare(binary, spring, timeout, boundary=False):
             raise ValueError("duplicate configuration IDs")
     errors = []
     mismatch = False
+    invalid_coverage = False
     totals = [0] * 4
     for normal, forced in zip(*rows):
         if normal[0] != forced[0]:
@@ -118,14 +119,16 @@ def compare(binary, spring, timeout, boundary=False):
             mismatch = True
         if any(int(n) for n in forced[3:7]):
             errors.append(f"{normal[0]}: forced-off path still skips")
+            invalid_coverage = True
         model = int(normal[0].split("/")[0])
         required = [0, 1] + ([2] if model == 2 else []) + ([3] if model == 1 and spring else [])
         for bus in required:
             if skips[bus] == 0:
                 errors.append(f"{normal[0]}: bus {bus} never skipped")
+                invalid_coverage = True
         totals = [a + b for a, b in zip(totals, skips)]
     if errors:
-        raise (EquivalenceMismatch if mismatch else ValueError)("\n".join(errors))
+        raise (EquivalenceMismatch if mismatch and not invalid_coverage else ValueError)("\n".join(errors))
     return totals
 
 
