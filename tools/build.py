@@ -654,9 +654,13 @@ def mmio_check():
 
 def main(argv=None):
     global PRODUCT, VERSION, BUILD_IDENTITY
-    # Even an early refusal must invalidate an older successful sidecar.
+    try:
+        c = resolve(sys.argv[1:] if argv is None else argv)  # validated before any job starts
+    except SystemExit as error:
+        if error.code:  # --help is read-only; invalid build arguments invalidate old evidence.
+            (OUT / 'resource-report.json').unlink(missing_ok=True)
+        raise
     (OUT / 'resource-report.json').unlink(missing_ok=True)
-    c = resolve(sys.argv[1:] if argv is None else argv)     # validated before any job starts
     PRODUCT, VERSION, name = c["product"], c["version"], c["name"]
     if _source_verifier is not None:
         _source_verifier["verify_tree"](SRC)

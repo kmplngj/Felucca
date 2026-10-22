@@ -229,6 +229,17 @@ class NoJobs(unittest.TestCase):
             self.assertFalse((self.out / 'resource-report.json').exists())
             self.assertEqual(self.packed, [])
 
+    def test_help_preserves_existing_report_without_starting_jobs(self):
+        report = self.out / 'resource-report.json'
+        content = b'{"validation":"existing evidence"}\n'
+        report.write_bytes(content)
+        with self.assertRaises(SystemExit) as raised:
+            B.main(['--help'])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertEqual(report.read_bytes(), content)
+        self.assertEqual(self.started(), [])
+        self.assertEqual(self.packed, [])
+
     def test_failed_attempt_removes_previous_success_report(self):
         report = self.out / 'resource-report.json'
         report.write_text('{"validation":"old success"}\n')
