@@ -26,6 +26,11 @@ not scale the bitmap horizontally. S/M each have 105 records; L has 41 and is
 not a general face for names. The ten local extra marks retain their explicit
 bitmap adaptations and attribution. Keycap legends use the same native S
 grid, within the existing 13 px pills; icons remain the existing icon system.
+Track digits 1–4 use the selected text face, centered against their actual
+rounded cushion. The former extra left shift for “1” is removed. An odd-width
+glyph in an even-width cushion cannot land at an integer-pixel center; the
+nearest placement keeps the shared left/up half-pixel tie rule, without scaling
+or blurring its ink.
 
 [`gfx.c`](../firmware/src/gfx.c) owns the common placement rules:
 
@@ -83,6 +88,10 @@ real draw paths with text-emission hooks. It checks stationary units through
 signed, decimal and digit-width changes, M-to-S capital-center consistency,
 shared baselines and the signed MOD amount range. The ordinary UI behavior,
 normal/FM4 render sweeps and alignment checks cover the surrounding workflows.
+[`tests/track_badge_test.c`](../tests/track_badge_test.c) independently measures
+the rendered digit pixels against an empty cushion at 12, 16 and 24 px, across
+all palettes, FLAT/LINE and active/idle/dim states. The true cushion bounds also
+feed the general alignment gate.
 Use [BUILDING.md](../BUILDING.md) for reproducible capture and comparison commands;
 retain before/after source, asset and build provenance together.
 
