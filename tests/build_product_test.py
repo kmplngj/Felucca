@@ -251,14 +251,25 @@ class NoJobs(unittest.TestCase):
 class TargetDefine(unittest.TestCase):
     def test_felucca_id_define(self):
         for product, want in ((None, "FM-1_900"), ("FM-1_ACME", "FM-1_ACME")):
-            with self.subTest(product=product), patch.object(B, "PRODUCT", B.PRODUCT), \
-                    patch.object(B, "VERSION", None), patch.object(B, "tc_all", side_effect=Stop) as tc:
-                c = B.resolve(["--product", product] if product else [])
-                B.PRODUCT = c["product"]
-                with self.assertRaises(Stop):
-                    B.build_app()
-                cmds = tc.call_args.args
-                self.assertTrue(any(f'-DFELUCCA_ID="{want}"' in cmd for cmd in cmds))
+            with tempfile.TemporaryDirectory() as folder, self.subTest(product=product):
+                out = Path(folder) / "isolated"
+                out.mkdir()
+                shared = Path(folder) / "shared"
+                shared.mkdir()
+                sentinel = shared / "fm1_cpu1.o"
+                sentinel.write_bytes(b"another build owns this object")
+                isolated_object = out / "fm1_cpu1.o"
+                isolated_object.write_bytes(b"stale isolated object")
+                with patch.object(B, "OUT", out), patch.object(B, "PRODUCT", B.PRODUCT), \
+                        patch.object(B, "VERSION", None), patch.object(B, "tc_all", side_effect=Stop) as tc:
+                    c = B.resolve(["--product", product] if product else [])
+                    B.PRODUCT = c["product"]
+                    with self.assertRaises(Stop):
+                        B.build_app()
+                    cmds = tc.call_args.args
+                    self.assertTrue(any(f'-DFELUCCA_ID="{want}"' in cmd for cmd in cmds))
+                self.assertFalse(isolated_object.exists())
+                self.assertEqual(sentinel.read_bytes(), b"another build owns this object")
 
 
 if __name__ == "__main__":
