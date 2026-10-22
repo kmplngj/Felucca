@@ -9436,7 +9436,8 @@ static int test_menu_prefs(void)
         for (j = 0; j < k; j++) ok &= memcmp(shot[j], shot[k], sizeof shot[k]) != 0;
         turn(EN_ALGO, 1);
     }
-    ok &= seen == (1ull << MI_COUNT) - 1u && ui.menu_sel == 0u;
+    /* WAKE and ALL DARK belong to AUTO OFF; their descriptor IDs remain stable. */
+    ok &= seen == (((1ull << MI_COUNT) - 1u) & ~((1ull << MI_SCRWAKE) | (1ull << MI_DARK))) && ui.menu_sel == 0u;
     bad += check("MENU: ALGORITHM and PRESETS reach every row, each tab a page of its own", ok);
     /* ANIM */
     ui.menu_sel = MI_ANIM;
@@ -11781,7 +11782,7 @@ int main(int argc, char **argv)
     if (argc == 2 && !strcmp(argv[1], "--catalog"))
         return test_catalog_controls() + test_unknown_engine() != 0;
     if (argc == 2 && !strcmp(argv[1], "--menu"))
-        return test_menu_tabs() + test_auto_off_navigation() != 0;
+        return test_menu_tabs() + test_auto_off_navigation() + test_menu_prefs() != 0;
     if (argc == 2 && !strcmp(argv[1], "--auto-off"))
         return test_auto_off() + test_all_dark() + test_auto_off_navigation() + test_screen_off() + test_screen_wake() + test_idle_leds() != 0;
     bad += test_catalog_controls();
