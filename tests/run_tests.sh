@@ -379,9 +379,6 @@ unit cc_scale "" u_cc_scale
 u_lcd_power() {
     $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_power_test" tests/lcd_power_test.c
     run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
-    $CC -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
-        -o "$OUT/lcd_power_test_san" tests/lcd_power_test.c
-    run "LCD power model (ASan/UBSan)" "$OUT/lcd_power_test_san"
 }
 unit lcd_power "" u_lcd_power
 
@@ -1110,6 +1107,13 @@ else
         run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     }
     unit asan_libc "" u_asan_libc
+
+    u_asan_lcd_power() {
+        ${CC%% *} -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -o "$A/lcd_power_test" tests/lcd_power_test.c
+        run "LCD power model (ASan/UBSan)" "$A/lcd_power_test"
+    }
+    unit asan_lcd_power "lcd_power" u_asan_lcd_power
 
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
 

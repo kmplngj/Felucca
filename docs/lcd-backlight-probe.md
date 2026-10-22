@@ -1,134 +1,71 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
-# Experimental LCD controller backlight probe — #546
+# Historical LCD controller backlight probe — #546
 
-**2026-10-22 colour-regression A/B:** after installing the original probe, the owner
-reported wrong colours and unreadable text immediately after boot. The current
-local A/B restores the exact pre-probe LCD driver; it sends no `0x51`/`0x53`.
-The probe sequences and old test commands below are historical, available at
-[the tested PR head](https://github.com/kmplngj/Felucca/tree/df101a20b79475a4805deaaa9f1cb0765aa66b80).
-Use [the A/B guide](lcd-colour-ab-2026-10-22.md) for the current candidate and tests.
+The controller probe has been removed from the current candidate. The owner
+reported wrong colours and unreadable text immediately after installing PR #549
+merge `b392d9ae`; after the authorized rollback A/B `cfbcb596`, colours and text
+were correct immediately after reboot. See the [A/B evidence](lcd-colour-ab-2026-10-22.md).
 
-This branch tests whether the FM-1's LCD controller can extinguish its backlight
-without disabling panel input. It is an **unmerged experiment, pending real FM-1
-validation**, tracked in [#546](https://github.com/kmplngj/Felucca/issues/546).
-The initial isolated probe was based on AUTO OFF candidate
+The current `firmware/src/lcd.c` uses the exact command sequence from
+`d9c307265f6012d4df4b74128bb038580956f595` and sends no `0x51`/`0x53` commands.
+The two-stage AUTO OFF controls remain. ALL DARK blanks the image and every LED,
+but the physical backlight rail stays powered; independent backlight-off is
+unresolved. PA2/input scanning remain enabled, with no CPU sleep or power-saving
+claim. The [current control guide](display-idle.md) describes the retained menu,
+protocol compatibility and remaining timed/wake/audio checks.
+
+## Historical experiment
+
+This section records the removed experiment under
+[#546](https://github.com/kmplngj/Felucca/issues/546), not the current driver.
+Its source and original test are pinned at
+[PR head df101a20](https://github.com/kmplngj/Felucca/tree/df101a20b79475a4805deaaa9f1cb0765aa66b80).
+The initial isolated probe used AUTO OFF candidate
 `ba6582eb5913cbc30fc4ceea13d6c2025c581997` from
-[PR #547](https://github.com/kmplngj/Felucca/pull/547). PR #549 now combines that
-probe with the accepted two-stage AUTO OFF controls under [#555](https://github.com/kmplngj/Felucca/issues/555).
-The [current control and test guide](display-idle.md) describes the native submenu,
-new ALL DARK timer, MIDI descriptors and downgrade behavior. Hosted firmware or
-emulator results do not establish the experimental device result.
+[PR #547](https://github.com/kmplngj/Felucca/pull/547); it was later combined with
+[#555](https://github.com/kmplngj/Felucca/issues/555)'s two-stage controls in PR #549.
 
-## What is known, and what the probe changes
-
-PA2 enables the backlight and the input/LED matrix together. Turning it off has
-prevented panel wake; the recent early-rescue investigation also found that input
-needs this shared rail enabled. See the actual [LCD HAL](../firmware/hal/fm1_lcd_hw.h),
-[LCD driver](../firmware/src/lcd.c) and
+PA2 enables the backlight and input/LED matrix together. Disabling it has prevented
+panel wake; the early-rescue investigation also found input needs this shared rail.
+See the [LCD HAL](../firmware/hal/fm1_lcd_hw.h) and
 [physical-entry evidence](usb-rescue.md#physical-entry-evidence-and-related-firmware).
-The controller probe leaves PA2 enabled and does not change the scanner or add
-interrupt work. The companion controls reuse existing settings-byte bits; no
-record bytes are added.
+The probe retained PA2 and scanning and tried the controller's optional backlight
+outputs instead. The exact controller and FM-1 wiring remain unverified.
 
-The firmware identifies its panel as ST7789-class; the exact controller and the
-connection of its optional backlight outputs on the FM-1 are unverified. The
-[Sitronix ST7789V v1.3 datasheet](https://newhavendisplay.com/content/datasheets/ST7789V.pdf)
+The [Sitronix ST7789V v1.3 datasheet](https://newhavendisplay.com/content/datasheets/ST7789V.pdf)
 describes optional LED_PWM/LED_EN outputs (page 36), brightness command `0x51`
-(pages 233–235), and control command `0x53` (page 237). Their existence does not
-prove those outputs are connected on this device.
+(pages 233–235) and control command `0x53` (page 237). This was a lead, not proof
+that those outputs are connected or behave as assumed on the FM-1.
 
-| Command and parameter | Controller meaning used by this experiment |
+| Historical path | Added traffic around the existing display commands |
 | --- | --- |
-| `0x53 0x20` | Manual brightness block enabled; backlight output off; dimming disabled |
-| `0x51 0x00` | Minimum brightness; this alone is not a guaranteed backlight-off command |
-| `0x51 0xFF` | Maximum brightness |
-| `0x53 0x24` | Manual brightness block enabled; backlight output on; dimming disabled |
-
-WRCTRLD bit 5 is BCTRL, bit 3 is DD and bit 2 is BL. Reserved bits remain zero.
-The brightness register resets in sleep, so the probe reloads it on wake. The
-datasheet requires a quiet interval after sleep commands; the existing UI's
-120 ms wake intervals remain in place.
-
-The controller-probe portion changes only `firmware/src/lcd.c`:
-
-| Path | Command sequence added around the existing display commands |
-| --- | --- |
-| Sleep | `DISPOFF` → `53 20` → `51 00` → `SLPIN` last |
-| Wake begins | `SLPOUT` alone; existing wait and full redraw follow |
+| Sleep | `DISPOFF` → `53 20` → `51 00` → `SLPIN` |
 | Wake completes | Finish redraw DMA → `DISPON` → `53 20` → `51 FF` → `53 24` |
-| Boot | Existing initialization and black fill → `DISPON` → the same on sequence |
-| Immediate crash/update/UBOOT wake | Existing waits and `SLPOUT`/`DISPON` → the same on sequence; retain PA2 enable |
+| Boot | Existing initialization/black fill → `DISPON` → the same on sequence |
+| Crash/update/UBOOT wake | Existing waits and `SLPOUT`/`DISPON` → the same on sequence; retain PA2 enable |
 
-The helper synchronizes before reusing `lcd_small` and completes its last DMA
-before returning. Source-level cost is four additional SPI bytes per sleep and
-six per completed wake or initialization, using the existing scratch buffer.
-These counts are not firmware-size, CPU-load or power measurements. No target
-resource delta is claimed here.
+The intended settings were BCTRL enabled, BL gated on/off and DD/reserved bits
+zero. The helper synchronized before reusing `lcd_small` and completed its final
+DMA. Those properties did not establish correct physical colours or backlight
+control: the subsequent owner report exposed a device regression.
 
-## Author validation and remaining gates
+## Historical tests and current regression checks
 
-The historical [`tests/lcd_backlight_probe_test.c`](https://github.com/kmplngj/Felucca/blob/df101a20b79475a4805deaaa9f1cb0765aa66b80/tests/lcd_backlight_probe_test.c) compiles the actual LCD driver with a delayed
-DMA HAL model; it needs no generated assets or engine checkout. It verifies exact
-payloads and ordering for boot, sleep, normal wake and immediate wake, pending
-scratch/pixel DMA completion, 32 repeated cycles, and absence of a PA2-off call.
-A negative fixture deliberately overwrites an in-flight scratch byte and must be
-detected by the DMA oracle. The model does not establish controller recognition,
-backlight wiring, physical brightness, real timing or panel responsiveness.
+The removed [`tests/lcd_backlight_probe_test.c`](https://github.com/kmplngj/Felucca/blob/df101a20b79475a4805deaaa9f1cb0765aa66b80/tests/lcd_backlight_probe_test.c)
+passed its delayed-DMA model and sanitizers for the historical command contract.
+It verified transfer ownership and specified payloads, not whether those commands
+were appropriate for the actual panel. That test exists only in the pinned
+historical checkout; it is not the current test to run.
 
-The focused test passed with `-std=c11 -Wall -Wextra -Werror -O1 -g`, and with
-ASan/UBSan added. Reproduce from the repository root:
+The current [LCD power test](../tests/lcd_power_test.c) verifies the restored
+baseline commands, unchanged RGB565 payloads and delayed-DMA ownership. It rejects
+the removed probe traffic; its intentional in-flight scratch mutation also fails
+as expected. See [current validation and commands](lcd-colour-ab-2026-10-22.md#validation).
+No further probe flash is part of this historical guide. The already-installed
+A/B's colour recovery does not establish independent physical backlight-off or
+complete timed/wake/audio qualification.
 
-```sh
-mkdir -p build/lcd-backlight-probe
-cc -std=c11 -Wall -Wextra -Werror -O1 -g \
-  tests/lcd_backlight_probe_test.c \
-  -o build/lcd-backlight-probe/lcd_backlight_probe_test
-build/lcd-backlight-probe/lcd_backlight_probe_test
-cc -std=c11 -Wall -Wextra -Werror -O1 -g \
-  -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
-  tests/lcd_backlight_probe_test.c \
-  -o build/lcd-backlight-probe/lcd_backlight_probe_test_sanitized
-build/lcd-backlight-probe/lcd_backlight_probe_test_sanitized
-```
-
-Target build/package checks belong to the exact artifact's PR handoff. A
-target-only build is for this hardware experiment; it does not substitute for
-full integration validation before any later merge. Full firmware, browser and
-FM-1 checks have not been run as part of the focused test above. No merge or
-production-fix claim is justified until the physical result succeeds. An unchanged
-backlight means the experiment failed to demonstrate control, even if every
-software test passes.
-
-README assessment: its introduction already distinguishes integration experiments
-from adopted features; this isolated probe establishes no new capability or
-overall milestone. No README overview change is warranted. Changelog assessment:
-no entry is added for this unmerged, unqualified experiment. A proven backlight
-fix would warrant a later entry with its hardware scope.
-
-## User test instructions — pending FM-1 validation
-
-The owner has paused all FM-1 connections, flashing and settings changes while
-other tests run. **Wait for a fresh explicit release.** Prepare/download the exact
-candidate without device access using the PR handoff's `--download-only` command.
-
-After release, follow the [combined procedure](display-idle.md#combined-user-test-procedure--pending-fm-1-validation)
-for backup, installation, revision confirmation, complete wake/audio checks and
-restoration. Isolate the controller effect before relying on ALL DARK:
-
-1. From stopped HOME, hold HOME >0.7 seconds and release. Turn ALGORITHM to
-   DISPLAY, PRESETS to LEDS and KNOB 1 to DIM HI; set ANIM OFF. Select AUTO OFF
-   and tap OCT+ to open its detail page. PRESETS selects rows and KNOB 1 edits:
-   IDLE AFTER 5 MIN, IDLE MODE SCREEN, ALL DARK NEVER, WAKE PANEL. HOME closes.
-2. Leave controls untouched for five minutes in the same dim room used for the
-   baseline. Physical backlight glow must extinguish while ordinary LEDs remain
-   available. Black pixels with unchanged glow mean the probe has not succeeded.
-3. Tap PLAY once: brightness/image return and transport remains stopped. Release,
-   wait 0.3 seconds, then tap PLAY again; transport starts. Repeat with a piano
-   key and encoder, checking consumed first gestures, subsequent operation and
-   no stuck notes. Stop and restore the previous verified package if input or
-   brightness fails; do not try a PA2-off workaround.
-4. If successful, continue the combined guide's first/second-stage, repeated wake,
-   playback, +MIDI/PANEL, persistence and emergency visibility checks. Record the
-   exact commit/package, physical observations and remaining unperformed checks.
-
-No real backlight change is established for this probe by host or browser tests.
+README assessment: the existing integration/experiment overview remains accurate;
+this withdrawn probe adds no feature milestone. Changelog assessment: no entry
+for this unmerged experiment. The A/B record distinguishes confirmed owner colour
+recovery from unresolved backlight control and pending qualification.

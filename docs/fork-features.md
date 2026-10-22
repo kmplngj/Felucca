@@ -204,10 +204,14 @@ and result template for pending physical observations.
 
 **MENU > DISPLAY > AUTO OFF** opens IDLE AFTER / IDLE MODE / ALL DARK / WAKE /
 BACK. The first stage keeps SCREEN, LEDS or BOTH with a rotating 30-second key-LED
-heartbeat; the independent ALL DARK threshold suppresses every LED and requests
-LCD/backlight-off. Both timers count from the same last interaction and default
+heartbeat; the independent ALL DARK threshold suppresses every LED and blanks
+the LCD image. Both timers count from the same last interaction and default
 to NEVER. Existing LEDS / INV brightness remains separate. MIDI descriptors retain
 id 17 and append id 33 for ALL DARK; WAKE keeps id 31.
 See the [controls, compatibility and combined FM-1 procedure](display-idle.md).
-Controller backlight-off remains an experiment: PA2/scanning stay enabled, physical
-darkness and wake are pending FM-1 qualification, and no power-saving claim is made.
+The safe LCD driver sends no controller brightness commands. Its physical
+backlight stays powered with PA2/scanning enabled; ALL DARK does not provide
+complete physical darkness. The owner reports immediate colour/text recovery
+with the [LCD rollback A/B](lcd-colour-ab-2026-10-22.md); timed transitions and
+repeated wake/audio checks remain pending. Independent backlight-off is unresolved,
+and no power-saving claim is made.

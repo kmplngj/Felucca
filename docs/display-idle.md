@@ -1,17 +1,17 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Display and LED idle controls
 
-**Local colour-regression A/B:** the LCD driver is restored to its pre-probe command
-sequence. This candidate retains the timers and LED behavior below, but does not
-request controller backlight-off. Physical backlight control remains unresolved;
-see [the A/B guide](lcd-colour-ab-2026-10-22.md).
+This candidate retains the accepted two-stage menu under
+[#555](https://github.com/kmplngj/Felucca/issues/555) with the pre-probe LCD driver.
+The owner reports correct colours and readable text immediately after rebooting
+the rollback A/B `cfbcb596`; see [the A/B evidence](lcd-colour-ab-2026-10-22.md).
 
-
-This candidate implements the accepted two-stage menu under [#555](https://github.com/kmplngj/Felucca/issues/555)
-and retains the experimental LCD-controller probe under [#546](https://github.com/kmplngj/Felucca/issues/546).
-**Physical backlight-off is unverified.** A black LCD image is not proof that its
-backlight is off. PA2 and input scanning stay enabled; no CPU sleep or power-saving
-claim is made. See the [source research](display-power-research-2026-10-22.md).
+**ALL DARK blanks the LCD image and every LED; it does not turn off the physical
+backlight.** The backlight rail remains powered with PA2 and input scanning
+enabled. Independent backlight-off under [#546](https://github.com/kmplngj/Felucca/issues/546)
+remains unresolved. The current driver sends no controller `0x51`/`0x53` commands;
+there is no CPU sleep or power-saving claim. The withdrawn experiment is recorded
+in the [historical probe guide](lcd-backlight-probe.md).
 
 ## Panel controls
 
@@ -25,28 +25,28 @@ from either page. Returning keeps AUTO OFF selected.
 | --- | --- | --- |
 | IDLE AFTER | NEVER, 5 MIN, 15 MIN, 30 MIN, 60 MIN | First-stage delay; default NEVER |
 | IDLE MODE | SCREEN, LEDS, BOTH | Outputs affected by the first stage; remembered while IDLE AFTER is NEVER |
-| ALL DARK | NEVER, 5 MIN, 15 MIN, 30 MIN, 60 MIN | Independent second threshold; default NEVER |
+| ALL DARK | NEVER, 5 MIN, 15 MIN, 30 MIN, 60 MIN | Independent image/all-LED blanking threshold; default NEVER; backlight stays powered |
 | WAKE | +MIDI, PANEL | Existing wake preference, moved here from MIDI / SCREEN WAKE |
 | BACK | Open action | Return to DISPLAY |
 
 Both times count **total time since the same last qualifying interaction**.
 For IDLE AFTER 5 MIN, IDLE MODE LEDS, ALL DARK 30 MIN, first-stage LED blanking
-starts at minute 5 and complete darkness is requested at minute 30, not 35.
+starts at minute 5 and LCD image/all-LED blanking at minute 30, not 35.
 If both stages are enabled, ALL DARK must be later than IDLE AFTER. Panel value
 steps skip conflicting choices without moving the other timer: with IDLE AFTER
 5 MIN, ALL DARK steps directly from NEVER to 15 MIN. Direct conflicting editor
 writes are rejected. Either stage may independently be NEVER. Changing a timer/mode restarts inactivity and restores visibility.
 
-SCREEN sleeps the LCD and requests controller backlight-off; ordinary LEDs keep
+SCREEN sleeps the LCD image while the backlight remains powered; ordinary LEDs keep
 working. LEDS blanks the normal/dim/mid/breath maps while leaving the LCD awake.
 BOTH combines these first-stage effects. Timed LED blanking stops ANIM IDLE and
 leaves one low-level piano-key pulse every 30 seconds, starting 30 seconds after
 blanking. Each nominal 120 ms pulse rotates among the 27 keys; PLAY/REC are never
-used. ALL DARK takes precedence over either target, requests LCD sleep and
-backlight-off and blanks **every LED with no heartbeat or animation**. The desired
-physical darkness still requires the FM-1 experiment to succeed. If SCREEN/BOTH
-already slept the LCD in the first stage, ALL DARK adds complete LED suppression;
-it does not wait until the second threshold to request backlight-off.
+used. ALL DARK takes precedence over either target, sleeps the LCD image and
+blanks **every LED with no heartbeat or animation**. If SCREEN/BOTH already slept
+the LCD in the first stage, ALL DARK adds complete LED suppression. Neither stage
+disables PA2 or independently switches off the physical backlight, so the retained
+ALL DARK label does not promise complete physical darkness.
 
 The normal DISPLAY / LEDS setting remains separate: OFF, DIM LO, DIM HI, INV,
 INV LO, INV HI. DIM HI is the default. OFF removes idle glow but keeps active
@@ -99,18 +99,19 @@ Historical bytes 0–7 retain their interpretation. Older firmware without ALL D
 rejects bytes containing its high bits and falls back to NEVER; older firmware
 also rejects LEDS/BOTH selections. Keep a backup before downgrade.
 
-## Combined user test procedure — pending FM-1 validation
+## Combined user test procedure — remaining FM-1 checks
 
-**Wait for the owner's explicit release before flashing, connecting to, or changing
-settings on the FM-1 while its other tests are running.** The steps below describe
-future testing, not actions already performed.
+The rollback A/B is already installed with the owner's authorization. Immediate
+colour/text recovery and unchanged settings readbacks are recorded in the
+[A/B evidence](lcd-colour-ab-2026-10-22.md). The timed LED transitions, repeated
+wake and audio/MIDI scenarios below remain **pending** unless separately reported.
 
-1. Use the PR handoff's exact 40-character revision, standard-profile installable
-   `.fwsc`, checksum and flags. Back up through a compatible editor and retain the
-   previous verified package. From a trusted checkout, prepare without device
-   access using `uv run --locked --group midi tools/fm1_pr.py 549 --commit FULL_SHA --profile standard --download-only --no-build`.
-   After release, omit `--download-only` to install the same verified artifact.
-   See [setup and installer](../BUILDING.md#test-a-pull-request-on-hardware).
+1. Keep the installed candidate's exact revision, standard-profile `.fwsc`,
+   checksum, flags, preflash backup and previous package with the test report.
+   Continue remaining checks on that installed candidate; a new flash is not
+   needed for each scenario. For a subsequent artifact within the owner's test
+   scope, use the PR handoff's exact `FULL_SHA` and verified package with the
+   [documented installer](../BUILDING.md#test-a-pull-request-on-hardware).
 2. Tap HOME to reach HOME; stop transport if running and release all controls.
    Record the current project, track, engine/preset, LEDS, ANIM, AUTO OFF, WAKE,
    MIDI IN and RESTORE LAST settings. Hold HOME, select SYSTEM with ALGORITHM,
@@ -123,18 +124,18 @@ future testing, not actions already performed.
    LARGE enabled. Verify every INV brightness label separately in DISPLAY / LEDS.
 4. Set ANIM IDLE and LEDS DIM HI, close MENU and leave untouched. At five minutes,
    animation stops and ordinary LEDs blank while LCD stays awake. At 5:30 expect
-   one dim piano-key pulse; later pulses rotate. At minute 15, LCD image and
-   physical backlight must extinguish and all LEDs stay dark, including at later
-   30-second pulse boundaries. Compare glow in the same dim room. Unchanged LCD
-   glow is a failed controller probe even if every software test passes.
-5. Tap PLAY once: image, backlight and normal LED mode return, transport remains
+   one dim piano-key pulse; later pulses rotate. At minute 15, the LCD image
+   blanks and all LEDs stay dark, including at later 30-second pulse boundaries.
+   The physical backlight remains powered; do not count image blanking as a
+   successful independent backlight-off test.
+5. Tap PLAY once: the image and normal LED mode return, transport remains
    stopped. Release and wait 0.3 seconds, then PLAY acts. Repeat a fresh timeout
    and wake with a key/encoder: first gesture must be consumed, subsequent
    gestures work without stuck notes or parameter jumps. Repeat at least three
-   sleep/wake cycles; stop and restore the verified package on input/brightness
+   sleep/wake cycles; stop and restore the verified package on input/colour
    failure. Do not try a PA2-off workaround.
-6. Test SCREEN 5 MIN with ALL DARK NEVER to isolate independent backlight-off:
-   normal LEDs stay available. Test LEDS 5 MIN / ALL DARK NEVER to retain the
+6. Test SCREEN 5 MIN with ALL DARK NEVER: the image blanks, the backlight stays
+   powered and normal LEDs stay available. Test LEDS 5 MIN / ALL DARK NEVER to retain the
    heartbeat indefinitely. Test IDLE AFTER NEVER / ALL DARK 5 MIN for the
    independent second stage. Changing settings must safely restart inactivity.
 7. Load one known looping project: from HOME tap SAVE four times to PROJECT,
