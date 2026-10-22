@@ -10,16 +10,16 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 7330,
-  "known_remaining_recent": 581,
+  "known_remaining_history": 7322,
+  "known_remaining_recent": 573,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
   "repositories": [
     {
       "history": {
-        "remaining": 30,
-        "reviewed": 8,
+        "remaining": 29,
+        "reviewed": 9,
         "total": 38
       },
       "recent": {
@@ -28,12 +28,12 @@
         "total": 1
       },
       "repository": "hugelton/Felucca",
-      "terminal_pairs": 15
+      "terminal_pairs": 16
     },
     {
       "history": {
-        "remaining": 289,
-        "reviewed": 7,
+        "remaining": 288,
+        "reviewed": 8,
         "total": 296
       },
       "recent": {
@@ -42,7 +42,7 @@
         "total": 38
       },
       "repository": "keremimo/melodee",
-      "terminal_pairs": 22
+      "terminal_pairs": 23
     },
     {
       "history": {
@@ -65,17 +65,17 @@
         "total": 13
       },
       "recent": {
-        "remaining": 3,
-        "reviewed": 0,
+        "remaining": 2,
+        "reviewed": 1,
         "total": 3
       },
       "repository": "isod89/sloop-fm1",
-      "terminal_pairs": 5
+      "terminal_pairs": 6
     },
     {
       "history": {
-        "remaining": 6,
-        "reviewed": 1,
+        "remaining": 5,
+        "reviewed": 2,
         "total": 7
       },
       "recent": {
@@ -84,21 +84,21 @@
         "total": 0
       },
       "repository": "zvenson/dinghy",
-      "terminal_pairs": 2
+      "terminal_pairs": 3
     },
     {
       "history": {
-        "remaining": 155,
-        "reviewed": 8,
+        "remaining": 154,
+        "reviewed": 9,
         "total": 163
       },
       "recent": {
-        "remaining": 28,
-        "reviewed": 6,
+        "remaining": 26,
+        "reviewed": 8,
         "total": 34
       },
       "repository": "charlesvestal/fm1-x0x",
-      "terminal_pairs": 14
+      "terminal_pairs": 17
     },
     {
       "history": {
@@ -186,8 +186,8 @@
     },
     {
       "history": {
-        "remaining": 22,
-        "reviewed": 3,
+        "remaining": 21,
+        "reviewed": 4,
         "total": 25
       },
       "recent": {
@@ -196,7 +196,7 @@
         "total": 0
       },
       "repository": "charlesvestal/schwung-chiptune",
-      "terminal_pairs": 3
+      "terminal_pairs": 4
     },
     {
       "history": {
@@ -317,12 +317,12 @@
         "total": 45
       },
       "recent": {
-        "remaining": 1,
-        "reviewed": 6,
-        "total": 7
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
       },
       "repository": "genkigenki/Makkuro37",
-      "terminal_pairs": 9
+      "terminal_pairs": 10
     },
     {
       "history": {
@@ -331,17 +331,17 @@
         "total": 71
       },
       "recent": {
-        "remaining": 7,
-        "reviewed": 6,
+        "remaining": 6,
+        "reviewed": 7,
         "total": 13
       },
       "repository": "genkigenki/Snoop37",
-      "terminal_pairs": 7
+      "terminal_pairs": 8
     },
     {
       "history": {
-        "remaining": 25,
-        "reviewed": 9,
+        "remaining": 24,
+        "reviewed": 10,
         "total": 34
       },
       "recent": {
@@ -350,7 +350,7 @@
         "total": 7
       },
       "repository": "genkigenki/fm1-to-smk37",
-      "terminal_pairs": 15
+      "terminal_pairs": 16
     },
     {
       "history": {
@@ -368,8 +368,8 @@
     },
     {
       "history": {
-        "remaining": 42,
-        "reviewed": 0,
+        "remaining": 41,
+        "reviewed": 1,
         "total": 42
       },
       "recent": {
@@ -378,21 +378,21 @@
         "total": 0
       },
       "repository": "hugelton/felucca-bsp",
-      "terminal_pairs": 0
+      "terminal_pairs": 1
     },
     {
       "history": {
-        "remaining": 135,
-        "reviewed": 0,
+        "remaining": 134,
+        "reviewed": 1,
         "total": 135
       },
       "recent": {
-        "remaining": 16,
-        "reviewed": 0,
+        "remaining": 13,
+        "reviewed": 3,
         "total": 16
       },
       "repository": "charlesvestal/fm1-base",
-      "terminal_pairs": 0
+      "terminal_pairs": 4
     },
     {
       "history": {
@@ -424,5 +424,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 211
+  "terminal_pairs": 227
 }
