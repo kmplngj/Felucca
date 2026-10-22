@@ -181,7 +181,10 @@ M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and sh
 M ink at 2× for L, with 17 px large advances to fit three-digit card readouts.
 Its WOFF2 inputs require Brotli (`fonttools[woff]`); the WOFF2
 container is decoded only during asset generation. The ten extra Felucca marks
-are explicit local bitmap adaptations. All font variants retain Inter Tight keycaps.
+are explicit local bitmap adaptations. All font variants use native M8Stealth57
+keycap and badge legends; only their rounded pill edges retain antialiasing.
+The [LCD typography guide](docs/lcd-typography.md) describes the text roles,
+fixed unit positions and fit rules. The font selector still controls regular text.
 Measurements and validation are recorded in [the font experiment](docs/font-experiment.md).
 
 `uv run --locked --group build ./build.sh --release 1.0` makes a release build:
