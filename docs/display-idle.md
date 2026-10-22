@@ -26,9 +26,10 @@ from either page. Returning keeps AUTO OFF selected.
 Both times count **total time since the same last qualifying interaction**.
 For IDLE AFTER 5 MIN, IDLE MODE LEDS, ALL DARK 30 MIN, first-stage LED blanking
 starts at minute 5 and complete darkness is requested at minute 30, not 35.
-If both stages are enabled, ALL DARK must be later than IDLE AFTER. A conflicting
-edit is rejected without moving the other timer. Either stage may independently
-be NEVER. Changing a timer/mode restarts inactivity and restores visibility.
+If both stages are enabled, ALL DARK must be later than IDLE AFTER. Panel value
+steps skip conflicting choices without moving the other timer: with IDLE AFTER
+5 MIN, ALL DARK steps directly from NEVER to 15 MIN. Direct conflicting editor
+writes are rejected. Either stage may independently be NEVER. Changing a timer/mode restarts inactivity and restores visibility.
 
 SCREEN sleeps the LCD and requests controller backlight-off; ordinary LEDs keep
 working. LEDS blanks the normal/dim/mid/breath maps while leaving the LCD awake.
@@ -110,8 +111,9 @@ future testing, not actions already performed.
    INFO with PRESETS and tap OCT+. Record the compiled revision; OCT− returns.
 3. Follow the panel route above. Check all rows, both value directions and BACK;
    reopen AUTO OFF and close with HOME. Set IDLE AFTER 5 MIN, IDLE MODE LEDS,
-   ALL DARK 15 MIN and WAKE PANEL. Trying ALL DARK 5 MIN must be rejected and
-   leave 15 MIN; IDLE MODE and the other threshold must not change. Repeat with
+   ALL DARK 15 MIN and WAKE PANEL. From NEVER, ALL DARK must step directly to
+   15 MIN; one downward step must return to NEVER, skipping the conflicting
+   5 MIN. IDLE MODE and IDLE AFTER must not change. Restore 15 MIN. Repeat with
    LARGE enabled. Verify every INV brightness label separately in DISPLAY / LEDS.
 4. Set ANIM IDLE and LEDS DIM HI, close MENU and leave untouched. At five minutes,
    animation stops and ordinary LEDs blank while LCD stays awake. At 5:30 expect

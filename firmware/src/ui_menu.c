@@ -33,9 +33,15 @@ static int menu_off_put(uint32_t row, uint32_t v)
 static uint32_t menu_off_next(uint32_t row, int32_t s)
 {
     uint32_t v = menu_off_get(row), n = menu_off_n(row);
+    int32_t next, step = (s > 0) - (s < 0);
     if (!s || !n) return v;
-    return row == MO_WAKE ? menu_step(MI_SCRWAKE, s) :
-           (uint32_t)clamp((int32_t)v + (s > 0) - (s < 0), 0, (int32_t)n - 1);
+    if (row == MO_WAKE) return menu_step(MI_SCRWAKE, s);
+    /* Walk at most five timer values. NEVER is independent; enabled ALL DARK must be later than IDLE. */
+    for (next = (int32_t)v + step; next >= 0 && next < (int32_t)n; next += step)
+        if ((row != MO_IDLE || !next || !scr_dark_get() || (uint32_t)next < scr_dark_get()) &&
+            (row != MO_DARK || !next || !scr_idle_get() || (uint32_t)next > scr_idle_get()))
+            return (uint32_t)next;
+    return v;
 }
 static void menu_off_step(int32_t s)
 {

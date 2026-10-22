@@ -6777,6 +6777,59 @@ static int test_auto_off(void)
     return bad;
 }
 
+static int test_auto_off_navigation(void)
+{
+    /* Ordered native choices for each value of the other timer: DARK first, then IDLE. */
+    static const uint8_t count[2][5] = {{5, 4, 3, 2, 1}, {5, 1, 2, 3, 4}};
+    static const uint8_t values[2][5][5] = {
+        {{0, 1, 2, 3, 4}, {0, 2, 3, 4}, {0, 3, 4}, {0, 4}, {0}},
+        {{0, 1, 2, 3, 4}, {0}, {0, 1}, {0, 1, 2}, {0, 1, 2, 3}}
+    };
+    uint32_t which, other, k, row, n;
+    int bad = 0, ok = 1;
+    for (which = 0; which < 2u; which++)
+        for (other = 0; other < 5u; other++) {
+            ui_power_on();
+            if (which) scr_dark_put(other);
+            else scr_idle_put(other);
+            menu_off_open();
+            row = which ? MO_IDLE : MO_DARK;
+            menu_off_sel = (uint8_t)row;
+            n = count[which][other];
+            for (k = 0; k < n; k++) {
+                uint32_t next = values[which][other][k + (k + 1u < n)];
+                uint32_t leds = (k ? OCT_BREATH_DN : 0u) | (k + 1u < n ? OCT_BREATH : 0u);
+                ok &= menu_off_get(row) == values[which][other][k] && oct_leds() == leds &&
+                      menu_off_next(row, 0) == menu_off_get(row) && menu_off_next(row, 1) == next;
+                press(B_OCTUP);
+                ok &= menu_off_get(row) == next && !menu_off_error;
+            }
+            for (k = n; k > 0u; k--) {
+                uint32_t previous = values[which][other][k > 1u ? k - 2u : 0u];
+                ok &= menu_off_next(row, -1) == previous;
+                turn(EN_K1 + (k % 4u), -1);
+                ok &= menu_off_get(row) == previous && !menu_off_error && ui.menu == MENU_OFF;
+            }
+        }
+    bad += check("AUTO OFF navigation: both timer rows skip conflicting delays, retain independent NEVER and clamp at every legal boundary; OCT hints agree", ok);
+
+    ui_power_on();
+    hold(B_HOME);
+    for (k = 0; k < 5u; k++) turn(EN_PRESET, 1);
+    press(B_OCTUP); press(B_OCTUP);                /* AUTO OFF > IDLE AFTER: 5 MIN */
+    ok = ui.menu == MENU_OFF && menu_off_sel == MO_IDLE && scr_idle_get() == 1u;
+    turn(EN_PRESET, 1); turn(EN_PRESET, 1);        /* ALL DARK: NEVER -> 15 MIN -> 30 MIN */
+    press(B_OCTUP); ok &= scr_dark_get() == 2u && !menu_off_error;
+    press(B_OCTUP); ok &= scr_dark_get() == 3u && !menu_off_error;
+    turn(EN_K4, -1); ok &= scr_dark_get() == 2u;
+    press(B_OCTDN); ok &= scr_dark_get() == 0u;
+    press(B_OCTDN); ok &= scr_dark_get() == 0u && scr_idle_get() == 1u && !menu_off_error;
+    press(B_HOME);
+    bad += check("AUTO OFF panel route: IDLE 5 MIN then ALL DARK 30 MIN is reachable; reverse skips invalid 5 MIN to NEVER without changing IDLE", ok && !ui.menu);
+    ui_power_on();
+    return bad;
+}
+
 static int test_screen_off(void)
 {
     int bad = 0, ok;
@@ -6940,8 +6993,9 @@ static int test_screen_off(void)
     turn(EN_PRESET, 1); ok &= menu_off_sel == MO_DARK;
     press(B_OCTUP); ok &= scr_dark_get() == 1u;
     turn(EN_PRESET, -1); turn(EN_PRESET, -1);
-    press(B_OCTUP);                            /* equal thresholds rejected, with an inline hint */
-    ok &= scr_idle_get() == 0u && scr_dark_get() == 1u && menu_off_error && msg_is("ALL DARK MUST BE LATER");
+    press(B_OCTUP);                            /* no legal enabled IDLE value before ALL DARK 5 MIN */
+    ok &= scr_idle_get() == 0u && scr_dark_get() == 1u && !menu_off_error && !oct_leds();
+    ok &= !menu_off_put(MO_IDLE, 1u) && menu_off_error && msg_is("ALL DARK MUST BE LATER");
     press(B_OCTDN); ok &= !menu_off_error;
     turn(EN_ALGO, 1); ok &= ui.menu == MENU_OFF && menu_off_sel == MO_IDLE;
     turn(EN_PRESET, -1); ok &= menu_off_sel == MO_BACK && !menu_has_value() && oct_leds() == OCT_BREATH;
@@ -11727,9 +11781,9 @@ int main(int argc, char **argv)
     if (argc == 2 && !strcmp(argv[1], "--catalog"))
         return test_catalog_controls() + test_unknown_engine() != 0;
     if (argc == 2 && !strcmp(argv[1], "--menu"))
-        return test_menu_tabs() != 0;
+        return test_menu_tabs() + test_auto_off_navigation() != 0;
     if (argc == 2 && !strcmp(argv[1], "--auto-off"))
-        return test_auto_off() + test_all_dark() + test_screen_off() + test_screen_wake() + test_idle_leds() != 0;
+        return test_auto_off() + test_all_dark() + test_auto_off_navigation() + test_screen_off() + test_screen_wake() + test_idle_leds() != 0;
     bad += test_catalog_controls();
     bad += test_canvas_clear();
     bad += test_large_face();
@@ -11753,6 +11807,7 @@ int main(int argc, char **argv)
     bad += test_unknown_engine();
     bad += test_display_preferences();
     bad += test_menu_tabs();
+    bad += test_auto_off_navigation();
     bad += test_menu_project_rows();
     bad += test_information();
     bad += test_chain();
