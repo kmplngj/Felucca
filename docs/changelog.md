@@ -61,7 +61,7 @@ in issues and roadmaps, not among implemented changes below.
   retains fractional progress through tempo and SONG changes. Signed DSP scaling
   is defined and invalid tempo has a bounded default. Normal PCM and valid-tempo
   behavior remain covered by regressions. The [device results](midi-dsp-device-results-2026-10-21.md)
-  pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON remain unqualified.
+  pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
   See [implementation evidence and test procedure](midi-dsp-reliability.md).
 
 - **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
@@ -86,7 +86,9 @@ in issues and roadmaps, not among implemented changes below.
 - **Second-core failure handling:** parallel rendering uses per-part state where
   required, and failed work falls back to serial rendering. A retained exclusion
   prevents automatic retries after a recorded worker failure until explicitly
-  retried. Real FM-1 reset and reliability checks remain pending; see
+  retried. A bounded in-RAM idle-poll pause mitigates observed BAD_JOB read faults
+  in [matched tests on one FM-1](cpu2-idle-polling.md), while preserving all guards
+  and default OFF. Broader unit/engine, TRS and reset/flash checks remain pending; see
   [second-core behavior and recovery](fork-features.md#optional-second-core).
 
 ### Changed
