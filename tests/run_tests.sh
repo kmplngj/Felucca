@@ -376,6 +376,12 @@ u_cc_scale() {
 }
 unit cc_scale "" u_cc_scale
 
+u_lcd_power() {
+    $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_power_test" tests/lcd_power_test.c
+    run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
+}
+unit lcd_power "" u_lcd_power
+
 [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
@@ -701,7 +707,7 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "editor: real C protocol, malformed transfers, queue recovery, MENU settings (writes build/host/menu.json)" \
             env MENU_JSON="$OUT/menu.json" "$OUT/editor_test"
         $CC -w -DFELUCCA_CPU2=0 -Ibuild/gen -Ifirmware/src -o "$OUT/editor_test_c1" tests/editor_test.c -lm
-        run "editor, a FELUCCA_CPU2=0 build: MENU settings without 2ND CORE (ids 0..31)" "$OUT/editor_test_c1"
+        run "editor, a FELUCCA_CPU2=0 build: MENU settings without 2ND CORE (id 32 reserved; ALL DARK id 33)" "$OUT/editor_test_c1"
         run "SysEx ownership: real editor/OTA arrival race, handshakes, unknown cleanup and unsafe-policy mutation" \
             env SYSEX_DISPATCH_OUT="$OUT/sysex-dispatch" python3 tests/sysex_dispatch_test.py
     }
@@ -1104,6 +1110,13 @@ else
         run "ASan/UBSan: firmware libc, including exact allocation boundaries" "$A/libc_test"
     }
     unit asan_libc "" u_asan_libc
+
+    u_asan_lcd_power() {
+        ${CC%% *} -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -o "$A/lcd_power_test" tests/lcd_power_test.c
+        run "LCD power model (ASan/UBSan)" "$A/lcd_power_test"
+    }
+    unit asan_lcd_power "lcd_power" u_asan_lcd_power
 
     export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}"
 

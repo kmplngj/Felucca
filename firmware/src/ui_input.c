@@ -109,10 +109,16 @@ static uint32_t oct_leds(void)
         return 1u | OCT_BREATH;
     if (layer_set_open())                               /* a SET layer: OCT- puts back (UNDO), OCT+ nothing */
         return 1u;
+    if (ui.menu == MENU_OFF && !ui.confirm) {
+        if (!menu_has_value())
+            return OCT_BREATH;                         /* BACK: OCT+ opens, OCT- keeps its value-decrement meaning */
+        return (menu_off_next(menu_off_sel, -1) != menu_off_get(menu_off_sel) ? OCT_BREATH_DN : 0u) |
+               (menu_off_next(menu_off_sel, 1) != menu_off_get(menu_off_sel) ? OCT_BREATH : 0u);
+    }
     if (ui.menu && !ui.confirm)
         return ui.menu >= 2u ? 1u :                    /* (INFO, ABOUT: OCT- back, lit) */
                ui.menu_sel == MI_LCLEAR ? (ml_count() ? OCT_BREATH : 0u) :   /* LEARN CLEAR: while CCs are learned */
-               ui.menu_sel >= MI_VALUES ? OCT_BREATH :  /* CALIBRATION / INFO / ABOUT: OCT+ opens */
+               !menu_has_value() ? OCT_BREATH :        /* AUTO OFF / CALIBRATION / INFO / ABOUT: OCT+ opens */
                (menu_step(ui.menu_sel, -1) != menu_get(ui.menu_sel) ? OCT_BREATH_DN : 0u) |   /* a value: each */
                (menu_step(ui.menu_sel, 1) != menu_get(ui.menu_sel) ? OCT_BREATH : 0u);         /* way it can go */
     if (ui.confirm || act_cols())
@@ -380,7 +386,7 @@ static void ui_leds(void)
             ready = 1;
         }
         /* No pulse on entry; one 120 ms low-level key every 30 s, never PLAY/REC. */
-        if (elapsed >= 30000u && elapsed % 30000u < 120u)
+        if (!scr_dark_active() && elapsed >= 30000u && elapsed % 30000u < 120u)
             led_put(nm, 14u + ((elapsed / 30000u - 1u) % 27u), 1);
         fm1_led_dim_level(1u);
         for (c = 0; c < FM1_NCOL; c++) {
