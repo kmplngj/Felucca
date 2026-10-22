@@ -376,11 +376,14 @@ u_cc_scale() {
 }
 unit cc_scale "" u_cc_scale
 
-u_lcd_backlight_probe() {
-    $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_backlight_probe_test" tests/lcd_backlight_probe_test.c
-    run "experimental LCD backlight: actual driver, command order and delayed DMA ownership" "$OUT/lcd_backlight_probe_test"
+u_lcd_power() {
+    $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_power_test" tests/lcd_power_test.c
+    run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
+    $CC -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
+        -o "$OUT/lcd_power_test_san" tests/lcd_power_test.c
+    run "LCD power model (ASan/UBSan)" "$OUT/lcd_power_test_san"
 }
-unit lcd_backlight_probe "" u_lcd_backlight_probe
+unit lcd_power "" u_lcd_power
 
 [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 

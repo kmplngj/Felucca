@@ -1,6 +1,12 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Display and LED idle controls
 
+**Local colour-regression A/B:** the LCD driver is restored to its pre-probe command
+sequence. This candidate retains the timers and LED behavior below, but does not
+request controller backlight-off. Physical backlight control remains unresolved;
+see [the A/B guide](lcd-colour-ab-2026-10-22.md).
+
+
 This candidate implements the accepted two-stage menu under [#555](https://github.com/kmplngj/Felucca/issues/555)
 and retains the experimental LCD-controller probe under [#546](https://github.com/kmplngj/Felucca/issues/546).
 **Physical backlight-off is unverified.** A black LCD image is not proof that its

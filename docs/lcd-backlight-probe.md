@@ -1,6 +1,13 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Experimental LCD controller backlight probe — #546
 
+**2026-10-22 colour-regression A/B:** after installing the original probe, the owner
+reported wrong colours and unreadable text immediately after boot. The current
+local A/B restores the exact pre-probe LCD driver; it sends no `0x51`/`0x53`.
+The probe sequences and old test commands below are historical, available at
+[the tested PR head](https://github.com/kmplngj/Felucca/tree/df101a20b79475a4805deaaa9f1cb0765aa66b80).
+Use [the A/B guide](lcd-colour-ab-2026-10-22.md) for the current candidate and tests.
+
 This branch tests whether the FM-1's LCD controller can extinguish its backlight
 without disabling panel input. It is an **unmerged experiment, pending real FM-1
 validation**, tracked in [#546](https://github.com/kmplngj/Felucca/issues/546).
@@ -60,7 +67,7 @@ resource delta is claimed here.
 
 ## Author validation and remaining gates
 
-`tests/lcd_backlight_probe_test.c` compiles the actual LCD driver with a delayed
+The historical [`tests/lcd_backlight_probe_test.c`](https://github.com/kmplngj/Felucca/blob/df101a20b79475a4805deaaa9f1cb0765aa66b80/tests/lcd_backlight_probe_test.c) compiles the actual LCD driver with a delayed
 DMA HAL model; it needs no generated assets or engine checkout. It verifies exact
 payloads and ordering for boot, sleep, normal wake and immediate wake, pending
 scratch/pixel DMA completion, 32 repeated cycles, and absence of a PA2-off call.
