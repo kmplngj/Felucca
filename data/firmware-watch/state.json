@@ -14,8 +14,8 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 7322,
-    "known_remaining_recent": 573,
+    "known_remaining_history": 7320,
+    "known_remaining_recent": 562,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
@@ -55,12 +55,12 @@
           "total": 190
         },
         "recent": {
-          "remaining": 29,
-          "reviewed": 9,
+          "remaining": 28,
+          "reviewed": 10,
           "total": 38
         },
         "repository": "Quixotic7/ChoralRootFM1",
-        "terminal_pairs": 10
+        "terminal_pairs": 11
       },
       {
         "history": {
@@ -125,12 +125,12 @@
           "total": 179
         },
         "recent": {
-          "remaining": 5,
-          "reviewed": 5,
+          "remaining": 3,
+          "reviewed": 7,
           "total": 10
         },
         "repository": "zednaked/jangada",
-        "terminal_pairs": 15
+        "terminal_pairs": 17
       },
       {
         "history": {
@@ -316,8 +316,8 @@
       },
       {
         "history": {
-          "remaining": 44,
-          "reviewed": 1,
+          "remaining": 43,
+          "reviewed": 2,
           "total": 45
         },
         "recent": {
@@ -326,7 +326,7 @@
           "total": 0
         },
         "repository": "genkigenki/Makkuro37",
-        "terminal_pairs": 10
+        "terminal_pairs": 11
       },
       {
         "history": {
@@ -335,12 +335,12 @@
           "total": 71
         },
         "recent": {
-          "remaining": 6,
-          "reviewed": 7,
+          "remaining": 4,
+          "reviewed": 9,
           "total": 13
         },
         "repository": "genkigenki/Snoop37",
-        "terminal_pairs": 8
+        "terminal_pairs": 10
       },
       {
         "history": {
@@ -349,12 +349,12 @@
           "total": 34
         },
         "recent": {
-          "remaining": 7,
-          "reviewed": 0,
+          "remaining": 4,
+          "reviewed": 3,
           "total": 7
         },
         "repository": "genkigenki/fm1-to-smk37",
-        "terminal_pairs": 16
+        "terminal_pairs": 19
       },
       {
         "history": {
@@ -405,17 +405,17 @@
           "total": 2018
         },
         "recent": {
-          "remaining": 32,
-          "reviewed": 0,
+          "remaining": 29,
+          "reviewed": 3,
           "total": 32
         },
         "repository": "w0ts/optimist",
-        "terminal_pairs": 0
+        "terminal_pairs": 3
       },
       {
         "history": {
-          "remaining": 37,
-          "reviewed": 0,
+          "remaining": 36,
+          "reviewed": 1,
           "total": 37
         },
         "recent": {
@@ -424,11 +424,11 @@
           "total": 0
         },
         "repository": "jsmith13/fm_lab",
-        "terminal_pairs": 0
+        "terminal_pairs": 1
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 227
+    "terminal_pairs": 240
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -1181,9 +1181,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "d0079f0497d4a6a9c002eca573443560718aa009139b212b306f89bf2b6fae0f",
-  "round_robin_next_repository_index": 29,
-  "round_robin_processed_records": 232,
+  "round_robin_journal_prefix_sha256": "2b1bc953640508bde48a998a611a1784a783ffaed44bff8ff357d057a7486319",
+  "round_robin_next_repository_index": 0,
+  "round_robin_processed_records": 247,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [

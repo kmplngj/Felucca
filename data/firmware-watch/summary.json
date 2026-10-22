@@ -10,8 +10,8 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 7322,
-  "known_remaining_recent": 573,
+  "known_remaining_history": 7320,
+  "known_remaining_recent": 562,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -51,12 +51,12 @@
         "total": 190
       },
       "recent": {
-        "remaining": 29,
-        "reviewed": 9,
+        "remaining": 28,
+        "reviewed": 10,
         "total": 38
       },
       "repository": "Quixotic7/ChoralRootFM1",
-      "terminal_pairs": 10
+      "terminal_pairs": 11
     },
     {
       "history": {
@@ -121,12 +121,12 @@
         "total": 179
       },
       "recent": {
-        "remaining": 5,
-        "reviewed": 5,
+        "remaining": 3,
+        "reviewed": 7,
         "total": 10
       },
       "repository": "zednaked/jangada",
-      "terminal_pairs": 15
+      "terminal_pairs": 17
     },
     {
       "history": {
@@ -312,8 +312,8 @@
     },
     {
       "history": {
-        "remaining": 44,
-        "reviewed": 1,
+        "remaining": 43,
+        "reviewed": 2,
         "total": 45
       },
       "recent": {
@@ -322,7 +322,7 @@
         "total": 0
       },
       "repository": "genkigenki/Makkuro37",
-      "terminal_pairs": 10
+      "terminal_pairs": 11
     },
     {
       "history": {
@@ -331,12 +331,12 @@
         "total": 71
       },
       "recent": {
-        "remaining": 6,
-        "reviewed": 7,
+        "remaining": 4,
+        "reviewed": 9,
         "total": 13
       },
       "repository": "genkigenki/Snoop37",
-      "terminal_pairs": 8
+      "terminal_pairs": 10
     },
     {
       "history": {
@@ -345,12 +345,12 @@
         "total": 34
       },
       "recent": {
-        "remaining": 7,
-        "reviewed": 0,
+        "remaining": 4,
+        "reviewed": 3,
         "total": 7
       },
       "repository": "genkigenki/fm1-to-smk37",
-      "terminal_pairs": 16
+      "terminal_pairs": 19
     },
     {
       "history": {
@@ -401,17 +401,17 @@
         "total": 2018
       },
       "recent": {
-        "remaining": 32,
-        "reviewed": 0,
+        "remaining": 29,
+        "reviewed": 3,
         "total": 32
       },
       "repository": "w0ts/optimist",
-      "terminal_pairs": 0
+      "terminal_pairs": 3
     },
     {
       "history": {
-        "remaining": 37,
-        "reviewed": 0,
+        "remaining": 36,
+        "reviewed": 1,
         "total": 37
       },
       "recent": {
@@ -420,9 +420,9 @@
         "total": 0
       },
       "repository": "jsmith13/fm_lab",
-      "terminal_pairs": 0
+      "terminal_pairs": 1
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 227
+  "terminal_pairs": 240
 }
