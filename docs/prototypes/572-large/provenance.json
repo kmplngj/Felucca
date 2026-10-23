@@ -1,0 +1,67 @@
+{
+  "kind": "host-only throwaway design prototype; no target/resource/device acceptance",
+  "base": "7998565964c8f551d47e217b8de31aa9c0c75dbd",
+  "engines": "9630426f5c4a34a209ca851356fbe8ba3c4c6d19",
+  "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+  "command": [
+    "cc",
+    "-O1",
+    "-w",
+    "-Ibuild/gen",
+    "-Ifirmware/src",
+    "-Itests",
+    "tests/prototypes/large_readability.c",
+    "-lm",
+    "-o",
+    "/Users/jankampling/.codex/worktrees/felucca-large-prototype/Felucca/build/large-prototype/capture"
+  ],
+  "profile": "standard",
+  "font": "M8Stealth",
+  "canvas": [
+    240,
+    240
+  ],
+  "palettes": 10,
+  "styles": [
+    "FLAT",
+    "LINE"
+  ],
+  "modes": [
+    "NORMAL",
+    "current LARGE",
+    "A",
+    "B",
+    "C"
+  ],
+  "focus_states": 4,
+  "captures": 4000,
+  "source_sha256": {
+    "tests/prototypes/large_readability.c": "81ab6abb869647db3b02f521a33ac199e3f03fcdb58664e3c4052215846f2ccb",
+    "tests/prototypes/large_readability.py": "58138d04ba961f9065d267f23bbe083dbb1bff16cb33d06a5e8789608e3c3262",
+    "tests/prototypes/large_readability.html": "489a013b3d8e7ae03ba5467b0ec5be732ddcfa9884340fb591c4d6fa02d9bc80",
+    "tests/ui_render.c": "9d662db35d053cbfc08b7bd84f1c9e2d81bf6be6b2afd31c732db2771650fa78",
+    "tests/ui_test.c": "c6ff479eca79dea43e4a24dc0f667ca73f07d7300130368443b368e55fef59cf",
+    "firmware/src/ui_name.c": "8ae3eeb90a6841f30b3c24d8e7db403a03d490eccdff936e4bc8773bf2bc6f73",
+    "firmware/src/ui_input.c": "70664ae699f0761b84baf9654394d7df03e6c79390b473e16be4481a652ef3bd",
+    "firmware/src/ui_help.c": "f80d8b4a43e6ba32f6bd220eef72f7caf8793303eaea277766bdbfad0bdf72a0",
+    "firmware/src/ui_events.c": "9df79c68966fff8a75200ec09753589968b1a1925ff88851ecd21b2d5a552171",
+    "firmware/src/ui_slice.c": "3df4e6a2efd131eb5ae8d0e7ac38cfba085799f5be130d56c0132de03e7d22dc",
+    "firmware/src/ui_layer.c": "71eeb5b42af7a55ea2061f3b4decbd0ac631cdea3f2918e68a77af506f41854c",
+    "firmware/src/ui_graph.c": "063033268143a6f2a93a44c2e16814d6e784aa612fc90abe209d55106e2c7cb1",
+    "firmware/src/ui_menu.c": "a70ee0e63d2c217079fe9c6be306d5fde90990f5e599416b616e97fdd9788641",
+    "firmware/src/ui_fm6op.c": "671ef8931675a8ec48e7ae2ddf396f843cc55dda78fba9d68420a835808aaaf4",
+    "firmware/src/ui_tools.c": "bf4e28a1acda4b6fa8919788548a842f7c526165c0b6313e1a6a31317df8b7cd",
+    "firmware/src/ui.c": "eb0217ee0349c3adebe993832ede982f44afe9a1161cc39be3f3c8f4b777317c",
+    "firmware/src/ui_knob.c": "a6f5582a94547a82507b57d1f67fad246b1ec6f945e18db5de526c2b3c71fba7",
+    "firmware/src/ui_draw.c": "962466ffbf59e5ee6e23ecefbe762d5645e1e0a57aacb508b90cd333dc5dd7f7",
+    "build/gen/ui_keycaps.h": "c2fe9577791b16c5702b8b95ba7f1781ab7b947152f99f63f71571d42bd8cd47",
+    "build/gen/felucca_profile.h": "3b77083f8df188b59e6a6549612d6e965cc9711f2ca9d42ea663f4c329d6df23",
+    "build/gen/felucca_tables.h": "def8edbc4e301e674831668df5d6c86868157b5ed8ad594ec33ebc350362523b",
+    "build/gen/ui_fonts.h": "5a03f861d888c246e678fc739b40e9637a6b13f9da420c2e35fbb462c8278d9c",
+    "build/gen/felucca_fm6.h": "d1859b8194443ecbe099505909d6ea4db866d919100c81d738bb06d56004f791",
+    "build/gen/felucca_samples.h": "d72405f100494dce4c3bff53de584423b0ab96cf9b196a85487b13206ae032bc",
+    "build/gen/ui_icons.h": "85947fe4a0307f806613870ad117c1fe4d4c7256786843ea88d14d104c7687aa",
+    "build/gen/build_identity.h": "0f95b6f918c4431c89801e49a8167ced2a544cb845e5e41256b0064587c4dcd7",
+    "build/gen/ui_palettes.h": "e87e29243c6129e8bd238cae5b185ca0357483f6a1787f78f63ecf54ce8dad05"
+  }
+}

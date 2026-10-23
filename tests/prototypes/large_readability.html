@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- THROWAWAY #572. Host captures only; never loaded by the firmware/emulator build. -->
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Felucca · LARGE vergleichen</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-serif;--bg:#f3f0e9;--fg:#202825;--muted:#52605a;--line:#c6cec7;--accent:#145d45;--surface:#fffdf8}
+@media(prefers-color-scheme:dark){:root{--bg:#141b18;--fg:#eef2eb;--muted:#b4c1b7;--line:#43524a;--accent:#91d8b6;--surface:#202b25}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg)}main{max-width:1160px;margin:auto;padding:28px 24px 120px}h1{font-size:2rem;line-height:1.2;margin:0 0 12px;letter-spacing:-.025em}h2{font-size:1.2rem;margin:30px 0 12px}p{max-width:76ch;margin:0 0 16px}.muted,figcaption{color:var(--muted)}a{color:var(--accent);text-underline-offset:.18em}button,select{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:7px 10px;min-height:42px}button{cursor:pointer}button:disabled{opacity:.6;cursor:default}button[aria-pressed=true]{background:var(--fg);color:var(--bg)}:focus-visible{outline:3px solid var(--accent);outline-offset:3px}::selection{color:var(--bg);background:var(--fg)}.controls{display:flex;flex-wrap:wrap;gap:14px;margin:24px 0}.controls label{display:grid;gap:4px;font-size:.875rem}.comparison{display:flex;gap:24px;flex-wrap:wrap;align-items:start;margin:20px 0}figure{margin:0}.lcd{display:block;width:240px;height:240px;image-rendering:pixelated;background:#000;outline:1px solid var(--line)}.zoom .lcd{width:480px;height:480px}figcaption{margin-top:9px;font-size:.875rem}#variantTitle{font-size:1.1rem;font-weight:650;color:var(--fg)}.state{font-variant-numeric:tabular-nums;margin:20px 0;padding-block:12px;border-block:1px solid var(--line);color:var(--muted);font-size:.875rem}.tradeoff{max-width:76ch}table{border-collapse:collapse;min-width:660px;width:100%;font-size:.9rem}td,th{text-align:left;vertical-align:top;padding:12px 10px;border-bottom:1px solid var(--line)}th{font-weight:650}.tableWrap{overflow:auto}nav{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:8px;border:0;border-radius:10px;background:var(--surface);box-shadow:0 4px 18px #0002;max-width:calc(100vw - 24px);z-index:2}nav span{min-width:180px;text-align:center;font-size:.9rem}nav button{font-size:1rem;min-width:44px}.note{margin-top:30px;padding-top:20px;border-top:1px solid var(--line)}.toggle{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.scaleNote{font-size:.875rem;color:var(--muted)}@media(max-width:550px){main{padding:24px 16px 130px}.comparison{gap:20px}.zoom .lcd{max-width:calc(100vw - 32px);height:auto}nav span{min-width:140px}}
+</style>
+<main>
+<h1>LARGE: Werte lesen, Zusammenhang behalten</h1>
+<p>Drei Entwürfe für das 240 × 240-Display. Gleiche Firmware-Zustände, vorhandene M8Stealth-Pixel und bestehende Knopfbelegung. Der Vergleich zeigt den Nutzen und den Platzverlust jeder Anordnung.</p>
+<p class="muted">Host-Prototyp zu <a href="https://github.com/kmplngj/Felucca/issues/572">#572</a> · Grundlage: <a href="https://github.com/kmplngj/Felucca/pull/574">Kontrast-Polish #574</a>. Noch keine gewählte Firmware-Änderung.</p>
+<div class="controls">
+<label>Aufgabe<select aria-label="Aufgabe" id="scene"><option value="home">HOME · Zeit-/Filterwerte</option><option value="fraction">ENV · Notenbruch / Einheit</option><option value="mod">MOD · Verbindung und Betrag</option><option value="fm6">FM6 · Algorithmuskontext</option><option value="operator">FM6 · Operator / Frequenz</option><option value="detail">STEP DETAIL · vier Werte</option><option value="mixer">MIXER · stumme Spuren</option><option value="sound">USER · vollständiger Name</option><option value="name">NAME · gemischte Schreibweise</option><option value="settings">DISPLAY · Einstellungen</option></select></label>
+<label>Theme<select aria-label="Theme" id="theme"></select></label>
+<label>Stil<select aria-label="Stil" id="style"><option>FLAT</option><option>LINE</option></select></label>
+<label>Aktiver Regler<select aria-label="Aktiver Regler" id="focus"><option value="1">K1</option><option value="2">K2</option><option value="3">K3</option><option value="4">K4 / Grenzwerte</option></select></label>
+<label>Referenz<select aria-label="Referenz" id="reference"><option value="current">LARGE heute</option><option value="normal">NORMAL heute</option></select></label>
+</div>
+<div class="toggle"><button id="zoom" aria-pressed="false">2× Pixelansicht</button><span class="scaleNote">1× = 240 CSS-Pixel. Die physische Größe und LCD-Lesbarkeit müssen am FM-1 geprüft werden.</span></div>
+<div class="comparison">
+<figure><img src="images/current-GREY-FLAT_home-k1.png" id="before" class="lcd" width="240" height="240" alt="Referenz der gewählten Firmware-Ansicht"><figcaption id="referenceTitle">LARGE heute</figcaption></figure>
+<figure><img src="images/B-GREY-FLAT_home-k1.png" id="after" class="lcd" width="240" height="240" alt="Entwurf der gewählten Firmware-Ansicht"><figcaption id="variantTitle"></figcaption></figure>
+</div>
+<p id="description" class="tradeoff"></p>
+<p id="taskNote" class="tradeoff muted"></p>
+<div class="state" id="state" aria-live="polite"></div>
+<h2>Was die drei Entwürfe gegeneinander abwägen</h2>
+<div class="tableWrap"><table><thead><tr><th>Entwurf</th><th>Gewinn</th><th>Preis / offene Frage</th></tr></thead><tbody>
+<tr><td>A · Zwei Spalten</td><td>Vier breitere Felder; Zahlen, Brüche und Vorzeichen können gleichzeitig 18 px hoch sein. K1/K2 oben, K3/K4 unten.</td><td>Die räumliche Vier-Regler-Zeile wird aufgebrochen. MOD wird klein; die FM6-Topologie passt nicht mehr.</td></tr>
+<tr><td>B · Fokus + Kontext</td><td>Vier gewohnte Reglerfelder bleiben. Ein großer aktueller Wert mit lesbarer Einheit darunter; MOD-Verbindungen und kompakte FM6-Topologie bleiben verfügbar.</td><td>Nur der Fokuswert wird groß. Die Diagramme werden kleiner; FM6-Feedback und DETAIL-Lanes sind noch unvollständig. Fokusdauer und Zustand nach dem Loslassen sind noch festzulegen.</td></tr>
+<tr><td>C · Vier Lesereihen</td><td>Vier breite, nummerierte Zeilen. Labels, Vorzeichen und Einheiten lassen sich gut zuordnen.</td><td>Weniger räumliche Entsprechung zu den vier Knöpfen; übrig bleibt nur eine Kontextzeile statt des ganzen Diagramms.</td></tr>
+</tbody></table></div>
+<h2>Vorschlag für die nächste Entscheidung</h2>
+<p><strong>B weiterführen.</strong> Es erhält die direkte Zuordnung und den musikalischen Zusammenhang. A oder C sind interessant, wenn vier gleichzeitig große Werte wichtiger sind als das Diagramm. Benennung und Einstellungen brauchen unabhängig davon eigene Regeln.</p>
+<p class="muted">Der Entwurf erprobt Layouts. Er ist kein vollständiger Wertebereichstest, keine funktionierende Panel-Firmware und keine Messung von RAM, Laufzeit oder physischen Sichtbedingungen.</p>
+<div class="note"><p>Die Pfeile wechseln A/B/C; auch die Tastaturpfeile funktionieren außerhalb der Auswahlfelder. URL-Parameter halten Ansicht und Zustand fest. Alle Regler-/Seitenwechsel hier wählen gespeicherte Aufnahmen; sie verändern kein Gerät und keine Projekte.</p><p>M8Stealth: <a href="https://fontstruct.com/fontstructors/100463/trash80">Trash80</a>, CC BY-SA 3.0. <a href="provenance.json">Quellen, Font- und Asset-Hashes</a> · <a href="comparison-GREY.png">Alle Aufgaben in GREY</a> · <a href="comparison-PAPER.png">PAPER</a> · <a href="comparison-MONO.png">MONO</a> · <a href="comparison-HI-CON.png">HI-CON</a> · <a href="comparison-GREEN.png">GREEN</a></p></div>
+</main>
+<nav aria-label="Prototyp wechseln"><button id="prev" aria-label="Vorheriger Entwurf">←</button><span id="variantLabel"></span><button id="next" aria-label="Nächster Entwurf">→</button></nav>
+<script>
+const variants={A:{name:'Zwei Spalten',description:'Alle vier Parameter erhalten breitere Felder. Der Platz kommt aus dem Diagrammbereich; M8-Pixel bleiben unverzerrt.'},B:{name:'Fokus + Kontext',description:'Die vertraute Vier-Regler-Zeile bleibt sichtbar. Ein großer Fokuswert verbessert das Ablesen beim Drehen; darunter bleibt ein kompakter musikalischer Zusammenhang.'},C:{name:'Vier Lesereihen',description:'Eine Zeile je Regler: Label links, breiter Wert rechts. Der Lesefluss gewinnt Platz; das Diagramm wird auf einen knappen Kontext reduziert.'}};
+const notes={fraction:'Brüche und Einheiten stammen aus dem nativen ENV-Formatter. Die vorhandene ADSR-Kurve wird mit weniger Höhe neu gezeichnet.',mod:'B zeigt alle vier Beziehungen. A zeigt sie kleiner; C zeigt nur die ausgewählte Verbindung. Die ±100%-Grenzen sind im K4-Zustand enthalten.',fm6:'B zeigt einen aus den realen Algorithmusdaten abgeleiteten, vereinfachten Graphen. Feedback und Routenkreuzungen brauchen vor Übernahme die bestehenden Topologieprüfungen. A/C zeigen nur eine Zusammenfassung.',operator:'Gleiche FM6-Operatordaten und Zuordnung. Die kompakte Topologie ist ein Entwurf; sie ersetzt noch keinen geprüften Algorithmus-Renderer.',detail:'Die vier DETAIL-Werte werden größer; die vier historischen DETAIL-Lanes sind hier auf eine Schrittübersicht reduziert. Dieser Kontextverlust ist vor einer Übernahme abzuwägen.',mixer:'MUTE bleibt explizit. B hat Raum für vier lesbare Spurnamen, A/C nur für kleine Übersichten. Pegelanzeigen sind in diesen vereinfachten Kontexten nicht vollständig.',sound:'Hier bleibt der vorhandene USER-Browser als Kontrolle unverändert: der vollständige Name ist schon in der Liste lesbar. Ein großer Detailname und die übrigen Listen-/Footer-Rollen sind separat zu entscheiden.',name:'Gemeinsamer Zusatzentwurf für A/B/C: vollständiger Name aus exakt verdoppelten M-Pixeln, gemischte Schreibweise und unterstrichene Cursorposition. Tastenzuordnung und SAVE/CANCEL bleiben erhalten. Ein Host-Puffer dient nur der Darstellung; Zielimplementierung und Ressourcen sind offen.',settings:'Gemeinsamer Zusatzentwurf für A/B/C: fünf sichtbare Zeilen mit großem ausgewähltem Wert statt acht dichter Zeilen. Tab-Leiste und Knopfbelegung bleiben. Scrollfenster, alle acht Zeilen und Unterseiten sind noch auszuarbeiten.'};
+const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
+let variant=Object.hasOwn(variants,params.get('variant'))?params.get('variant'):'B';
+for(const name of ['GREY','GREEN','AMBER','ICE','VIOLET','ROSE','PAPER','HI-CON','NIGHT','MONO'])$('theme').add(new Option(name,name));
+for(const id of ['scene','theme','style','focus','reference']){if(params.has(id)&&[...$(id).options].some(x=>x.value===params.get(id)))$(id).value=params.get(id);$(id).addEventListener('change',render)}
+let zoom=params.get('scale')==='2';
+function render(){const scene=$('scene').value,theme=$('theme').value,style=$('style').value,focus=$('focus').value,reference=$('reference').value;
+ $('before').src=`images/${reference}-${theme}-${style}_${scene}-k${focus}.png`;$('after').src=`images/${variant}-${theme}-${style}_${scene}-k${focus}.png`;
+ $('referenceTitle').textContent=reference==='normal'?'NORMAL heute':'LARGE heute';$('variantTitle').textContent=`${variant} · ${variants[variant].name}`;$('variantLabel').textContent=`${variant} · ${variants[variant].name}`;
+ $('description').textContent=variants[variant].description;$('taskNote').textContent=notes[scene]||'HOME zeigt unter anderem kurze und lange Zeitwerte. K4 ergänzt die 10,0-s-Grenzwerte; die Aufnahmen zeigen feste Beispielzustände.';
+ document.querySelector('.comparison').classList.toggle('zoom',zoom);$('zoom').setAttribute('aria-pressed',String(zoom));$('zoom').textContent=zoom?'1× Pixelansicht':'2× Pixelansicht';
+ const values={variant,scene,theme,style,focus,reference,scale:zoom?'2':'1'};history.replaceState(null,'','?'+new URLSearchParams(values));$('state').textContent=`Zustand: ${variant} · ${scene} · ${theme} · ${style} · K${focus} · ${zoom?'2×':'1×'} · Host-Aufnahme 240×240`;
+}
+function move(direction){const keys=Object.keys(variants);variant=keys[(keys.indexOf(variant)+direction+keys.length)%keys.length];render()}
+$('prev').addEventListener('click',()=>move(-1));$('next').addEventListener('click',()=>move(1));$('zoom').addEventListener('click',()=>{zoom=!zoom;render()});
+document.addEventListener('keydown',e=>{if(e.target.closest('input,textarea,select,[contenteditable=true]'))return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();move(e.key==='ArrowRight'?1:-1)}});render();
+</script>
+</html>
