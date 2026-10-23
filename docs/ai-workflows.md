@@ -25,13 +25,17 @@ and compatibility contracts.
 
 ## Read results before opening raw evidence
 
-Use `uv run --locked --group build tests/run_tests.sh --ai-output` for the host
-suite's compact console mode. It retains complete logs and unchanged test selection
-and failure exit codes, including preflight. The final line names the report and
-unit/diagnostic counts; inspect failed, skipped, blocked or cancelled paths before
-claiming acceptance.
+Use `uv run --locked --group build tests/run_tests.sh --ai-output` for local
+AI-run host suites, including runs from skills and scheduled tasks. It retains
+complete logs and unchanged test selection and failure exit codes, including
+preflight. The final line names the report and unit/diagnostic counts; inspect
+failed, skipped, blocked or cancelled paths before claiming acceptance.
 Warning/skip detection is a text hint, not a complete inventory of test cases.
 See [the output contract](../BUILDING.md#tests) for fields and limitations.
+
+CI keeps the normal full transcript for `tools/ci.py verify-tests`; compact output
+is not that verifier's input format. The browser gate already reports a compact
+summary and uses its existing command without this flag.
 
 | Task | First read | Expand when needed |
 | --- | --- | --- |
