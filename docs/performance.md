@@ -324,7 +324,10 @@ archive the default result first, then rebuild the default afterward. LLVM 4 doc
 that `minsize` may sacrifice runtime speed, unlike `optsize`'s more limited tradeoff:
 [LLVM 4 function attributes](https://releases.llvm.org/4.0.1/docs/LangRef.html#function-attributes).
 Current compiler flags and reachability exclusions are authoritative in `tools/build.py`
-and `tools/size_fns.py`. Clock/voltage changes, a second core, or FPU/DSP rewrites are
+and `tools/size_fns.py`. The [remaining-helper experiment](selective-minsize-521.md)
+measured a 64 B option for HELP/category helpers and rejected promotion because
+of extra main-loop calls without service-latency evidence; production selection
+is unchanged. Clock/voltage changes, a second core, or FPU/DSP rewrites are
 separate hardware experiments with their own correctness, timing and reliability evidence.
 
 ## Report a result
