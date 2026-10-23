@@ -3,6 +3,9 @@
 #define UI_TEST_NO_MAIN
 #define UI_LCD_SOURCE "lcd_fault_model.h"
 #define FELUCCA_SCREEN_CAPTURE 1
+#include <stdint.h>
+static uint32_t fault_page_calls;
+#define UI_DRAW_PAGE_HOOK() fault_page_calls++
 #include "ui_test.c"
 
 static uint32_t fault_checks;
@@ -164,7 +167,7 @@ static void normalization_failures(void)
 {
     uint32_t phase;
     for (phase = 0; phase < 4u; phase++) {
-        uint32_t fail;
+        uint32_t fail, pages;
         reset_model(); lcd_model_fail_at = 1; lcd_fill(0, 0, 1, 1, 0); ui_draw();
         lcd_model_release = 1; fm1_ms += 250; ui_draw();
         need(!lcd_fault && scrn.st == SCR_WAKE, "normalization begins only after verified old completion");
@@ -173,7 +176,9 @@ static void normalization_failures(void)
         if (phase) {
             /* First command, coordinates, and final pixel row of full clear. */
             lcd_model_fail_at = lcd_model_sent + (phase == 1u ? 1u : phase == 2u ? 2u : 245u);
+            pages = fault_page_calls;
             fm1_ms += 120; ui_draw();
+            need(fault_page_calls == pages, "failed recovery clear cancels page-render computation");
         }
         fail = lcd_model_fail_at;
         need(lcd_fault && lcd_busy && lcd_model_sent == fail && scrn.st != SCR_ON,

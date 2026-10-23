@@ -1674,8 +1674,11 @@ static void ui_draw(void)
         }
     }
 #endif
-    if (scrn.recovering && scrn.st == SCR_SHOW)
+    if (scrn.recovering && scrn.st == SCR_SHOW) {
         lcd_fill(0, 0, 240, 240, T_BG);                 /* partial old frames/overlays cannot supply untouched gaps */
+        lcd_sync();                                  /* cancel page computation if even the final clear row failed */
+        if (LCD_FAILED()) { ui_display_failed(); return; }
+    }
     ui_draw_page(counting);
     if (LCD_FAILED()) {
         ui_display_failed();
@@ -1709,6 +1712,9 @@ static void ui_draw(void)
 }
 static void ui_draw_page(uint32_t counting)
 {
+#ifdef UI_DRAW_PAGE_HOOK
+    UI_DRAW_PAGE_HOOK();
+#endif
     if (ui.uboot) {
         draw_uboot();
         draw_head();
