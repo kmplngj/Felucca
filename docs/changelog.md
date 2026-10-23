@@ -92,6 +92,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **Sample Pack attribution:** the generator and its sounds carry the author's
+  explicit CC0 1.0 dedication; PHASE is credited as Felucca's own GPL engine.
+  Device credits and distributed licence notices now distinguish these scopes.
+  Sound generation and DSP are unchanged. See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
+
 - **Browser emulator readability:** keyboard hints, footer links, build version and
   small-print text meet a 4.5:1 contrast floor against the neutral page background.
 

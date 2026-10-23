@@ -420,7 +420,8 @@
       "id": "native-core",
       "requires": [],
       "licenses": [
-        "LICENSE"
+        "LICENSE",
+        "LICENSES/CC0-1.0.txt"
       ],
       "generator_inputs": [
         "tools/gen_tables.py",
