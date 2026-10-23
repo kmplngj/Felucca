@@ -120,3 +120,69 @@ edits, CPU2 runtime OFF/ON and failure fallback, standard/sparse catalogs and MA
 where selected. Record render maxima and interval late/shedding/scan/stream error
 deltas alongside listening/panel response. No automatic flash is authorized by
 this guide. See [performance](performance.md) and the PR's actionable test steps.
+
+## Standalone reproduction appendix
+
+Use a separate clean recursive checkout at the exact measured base above and a
+shell with no `FELUCCA_*` overrides. Install BUILDING.md's prerequisites, then run
+`uv run --locked --group build ./build.sh` with the reference SDK/toolchain paths.
+That fresh full build supplies the frozen generated assets and build identity.
+Save the following script as `build/issue521/reproduce.py`. It changes no tracked
+source: candidate annotations are applied only to its private generated LLVM IR.
+Run these commands sequentially, without regenerating assets between modes:
+
+```sh
+JIELI_TOOLCHAIN=/path/to/toolchain uv run --locked --group build python3 build/issue521/reproduce.py default
+JIELI_TOOLCHAIN=/path/to/toolchain uv run --locked --group build python3 build/issue521/reproduce.py no-size
+JIELI_TOOLCHAIN=/path/to/toolchain uv run --locked --group build python3 build/issue521/reproduce.py candidate
+```
+
+This exact appendix was executed sequentially in a clean checkout at the measured
+base, using the archived fresh full-baseline generated inputs: all three modes
+passed their target guards and reproduced the table. Each app was byte-identical
+to its original measured counterpart. No tracked source changed.
+
+The JSON outputs and artifacts go to separate `build/issue521/reproduce-*`
+directories. Compare app sizes and resource/stack maps with the table; compare
+`felucca.ll` for identical unoptimized input and `felucca_size.ll` for the five
+additional `minsize` headers. Inspect `preset_cat` and `ui_draw_page` in each
+`felucca.dis` for the extra calls described above. These raw control binaries are
+not installable qualification packages.
+
+```python
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""After a clean full target build at5b613a, compile one policy with unchanged assets.
+JIELI_TOOLCHAIN must be set. Run sequentially; no tracked sources are modified.
+"""
+import sys,os,json,hashlib
+from pathlib import Path
+root=Path.cwd();sys.path.insert(0,str(root/"tools"))
+import build as B
+import size_fns as S
+import build_report as R
+mode=sys.argv[1]
+if mode not in ("default","no-size","candidate"):raise SystemExit("default | no-size | candidate")
+if mode=="no-size":os.environ["FELUCCA_SIZE"]="0"
+else:os.environ.pop("FELUCCA_SIZE",None)
+B.OUT=root/"build"/"issue521"/("reproduce-"+mode);B.OUT.mkdir(parents=True,exist_ok=True)
+original=B.tc
+selected={"help_page","help_parse","help_row","cat_of_engine","preset_cat"}
+def tc(*args):
+    ir=B.OUT/"felucca_size.ll"
+    if mode=="candidate" and args[0]=="cc" and ir in args:
+        text=ir.read_text();out,hit,protected=S.annotate(text,S.size_names()|selected)
+        assert not selected&protected
+        assert selected<=hit
+        ir.write_text(out)
+    return original(*args)
+B.tc=tc
+img,hdr,syms,dis,rt=B.build_app()
+errors,notes=B.check(img,hdr,syms,dis,rt)
+assert not errors,errors
+resources,stacks=R.resources(B,(img,hdr,syms,dis,rt))
+(B.OUT/"symbols.txt").write_text(syms)
+(B.OUT/"sections.txt").write_text(hdr)
+(B.OUT/"summary.json").write_text(json.dumps({"mode":mode,"resources":resources,"stack_reservations":stacks,"checks":notes,"app_sha256":hashlib.sha256(img).hexdigest()},indent=2)+"\n")
+print(json.dumps({"mode":mode,"app_bytes":len(img),"checks":notes},indent=2))
+```
