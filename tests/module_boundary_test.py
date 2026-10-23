@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Module boundary check (#454, docs/modules.md): the modules are header boundaries inside felucca.c's one translation
-unit, enforced here at the source level (0 B, 0 ISR cycles, unlike a separate object).
+unit, enforced here at the source level (no separate object; compare integrated target output as documented).
 
 sound.c may reference, of the firmware's functions and objects, only what sound.h and sound_port.h declare. Types,
 constants and macros of core.h are its vocabulary; but a function or static object defined by any other file (a
