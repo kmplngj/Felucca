@@ -100,7 +100,8 @@ class Cli(unittest.TestCase):
 
     def dis(self, hot_gap):
         p = self.tmp / "felucca.dis"
-        p.write_text(listing({"hot": [MUL_S] + [NOP] * hot_gap + [LOAD_S], "cold": [MUL_S, LOAD_S]}))
+        p.write_text(listing({"fm1_alnk0_irq": [NOP], "fm1_timer5_irq": [NOP],
+                              "hot": [MUL_S] + [NOP] * hot_gap + [LOAD_S], "cold": [MUL_S, LOAD_S]}))
         return str(p)
 
     def test_table_json_and_exit_zero(self):
@@ -150,6 +151,52 @@ class Cli(unittest.TestCase):
         rc, out = self.run_cli(self.dis(2), "--json", str(self.tmp / "o.json"))
         self.assertEqual(rc, 0)
         self.assertIn("reachability unknown", out)
+
+    def test_unrecognized_or_empty_listing_is_not_a_clean_inventory(self):
+        path = self.tmp / "empty.dis"
+        for text in ("", "build/felucca.elf: file format ELF32-pi32v2\n", "hot:\n", "hot:\n unrecognized assembly\n"):
+            with self.subTest(text=text):
+                path.write_text(text)
+                output = self.tmp / "o.json"
+                self.assertEqual(self.run_cli(str(path), "--json", str(output))[0], 2)
+                self.assertFalse(output.exists())
+
+    def test_gate_requires_both_isr_roots_in_listing_and_ir(self):
+        base = self.tmp / "base.json"
+        self.assertEqual(self.run_cli(self.dis(2), "--json", str(base))[0], 0)
+        for root in ("fm1_alnk0_irq", "fm1_timer5_irq"):
+            with self.subTest(root=root):
+                (self.tmp / "felucca.ll").write_text(ir())
+                dis = Path(self.dis(2))
+                dis.write_text(dis.read_text().replace(root + ":", "missing_" + root + ":"))
+                self.assertEqual(self.run_cli(str(dis), "--json", str(self.tmp / "o.json"),
+                                              "--fail-on-new", str(base))[0], 2)
+                dis = self.dis(2)
+                (self.tmp / "felucca.ll").write_text(ir().replace("@" + root + "()", "@missing_" + root + "()"))
+                self.assertEqual(self.run_cli(dis, "--json", str(self.tmp / "o.json"),
+                                              "--fail-on-new", str(base))[0], 2)
+
+    def test_invalid_baseline_exits_2_without_overwriting_it(self):
+        base = self.tmp / "base.json"
+        good = {"schema": 1, "windows": [8], "functions": []}
+        invalid = [None, [], {}, dict(good, windows=None), dict(good, functions=None),
+                   dict(good, functions=[None]), dict(good, functions=[{"name": "hot", "near_mul": {"8": -1}}]),
+                   dict(good, functions=[{"name": "hot", "near_mul": {"8": True}}]),
+                   dict(good, functions=[{"name": "hot", "near_mul": {"8": 1}}] * 2)]
+        for value in invalid:
+            with self.subTest(baseline=value):
+                text = json.dumps(value)
+                base.write_text(text)
+                self.assertEqual(self.run_cli(self.dis(2), "--json", str(base), "--fail-on-new", str(base))[0], 2)
+                self.assertEqual(base.read_text(), text)
+
+    def test_valid_listing_with_no_multiply_can_pass_the_gate(self):
+        base = self.tmp / "base.json"
+        self.run_cli(self.dis(2), "--json", str(base))
+        path = self.tmp / "felucca.dis"
+        path.write_text(listing({"fm1_alnk0_irq": [NOP], "fm1_timer5_irq": [LOAD_S]}))
+        self.assertEqual(self.run_cli(str(path), "--json", str(self.tmp / "o.json"),
+                                      "--fail-on-new", str(base))[0], 0)
 
 
 if __name__ == "__main__":
