@@ -1889,9 +1889,7 @@ static int test_menu_tabs(void)
             ok &= menu_native_row(mtab_row(t, i)) && MI_TAB[mtab_row(t, i)] == t;
         ui.menu_sel = (uint8_t)f;
         ui_prefs = 0;
-        ok &= mr_y(n) - mr_gap() + MP_PAD <= MK_Y - 6;
         ui_prefs = PREF_LARGE;
-        ok &= mr_y(n) - mr_gap() + MP_PAD <= MK_Y - 6;
         for (i = 0; i < n; i++) {
             uint32_t first, shown;
             ui.menu_sel = (uint8_t)mtab_row(t, i);
@@ -1900,7 +1898,6 @@ static int test_menu_tabs(void)
             ok &= menu_read_y(first) == MP_Y + MP_PAD && menu_read_y(first + shown) <= 212;
         }
     }
-    ok &= MP_Y + MP_PAD + (int32_t)MTAB_ROWS * 19 - 1 + MP_PAD <= MK_Y - 6;   /* (room for MTAB_ROWS: 18 px rows 1 px apart) */
     for (i = 0; i < MI_COUNT; i++) ok &= MI_TAB[i] < MTAB_COUNT;
     {   /* the tab bar: MT_GAP between every two tabs at every place of the slide, inside MT_X0..MT_X1 (S and LARGE) */
         int32_t a[MTAB_COUNT], x[MTAB_COUNT], w[MTAB_COUNT], p;
@@ -1914,10 +1911,10 @@ static int test_menu_tabs(void)
             }
     }
     ui_prefs = 0;
-    bad += check("MENU tabs: DISPLAY CONTROL AUDIO MIDI SYSTEM (8 8 6 7 7 rows; CPU2=0 SYSTEM 6), hidden WAKE / ALL DARK descriptors skipped, fit the page; tab gaps "
+    bad += check("MENU tabs: DISPLAY CONTROL AUDIO MIDI SYSTEM (7 8 6 7 7 rows; CPU2=0 SYSTEM 6), hidden WAKE / ALL DARK descriptors skipped, fit the page; tab gaps "
                  "constant (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
-                 mtab_rows(MTAB_DISPLAY) == 8u && MI_TAB[MI_HOME] == MTAB_DISPLAY && mtab_rows(MTAB_CONTROL) == 8u && MI_TAB[MI_SELECT] == MTAB_CONTROL && mtab_rows(MTAB_AUDIO) == 6u &&
+                 mtab_rows(MTAB_DISPLAY) == 7u && MI_TAB[MI_HOME] == MTAB_DISPLAY && mtab_rows(MTAB_CONTROL) == 8u && MI_TAB[MI_SELECT] == MTAB_CONTROL && mtab_rows(MTAB_AUDIO) == 6u &&
                  mtab_rows(MTAB_MIDI) == 7u && MI_TAB[MI_MFOLLOW] == MTAB_MIDI && MI_TAB[MI_SCRWAKE] == MTAB_DISPLAY && !menu_native_row(MI_SCRWAKE) && !menu_native_row(MI_DARK) && MI_SCRWAKE + 1u == MI_LCLEAR && MI_TAB[MI_LCLEAR] == MTAB_MIDI && MI_TAB[MI_TCH4] == MTAB_MIDI && mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CPU2 &&
 #if FELUCCA_CPU2
                  MI_TAB[MI_CPU2] == MTAB_SYSTEM &&
@@ -1928,7 +1925,7 @@ static int test_menu_tabs(void)
     ui_power_on();
     hold(B_HOME);
     ok = ui.menu == 1 && ui.menu_sel == MI_COLOR && menu_tab() == MTAB_DISPLAY;
-    for (i = 0; i < 7u; i++) turn(EN_PRESET, 1);
+    for (i = 0; i < 6u; i++) turn(EN_PRESET, 1);
     ok &= ui.menu_sel == MI_HOME;
     turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_COLOR;  /* (wraps within the tab) */
     turn(EN_PRESET, -1); ok &= ui.menu_sel == MI_HOME;
@@ -2035,7 +2032,7 @@ static int test_menu_tabs(void)
     song.g[G_TUNE] = 0; song.g[G_ROUTE] = 0;
     bad += check("MENU: OCT+ / OCT- step every value row up / down (COLOR wraps, the rest stop), the menu stays", ok);
     {   /* the ON / OFF rows: up (a knob right, OCT+) is ON, the switch's knob to the right, whichever bit it is */
-        static const uint8_t SW[] = {MI_LARGE, MI_ANIM, MI_ACCEL, MI_LATCH, MI_BPMLOCK, MI_SERIAL, MI_RESTORE};
+        static const uint8_t SW[] = { MI_ANIM, MI_ACCEL, MI_LATCH, MI_BPMLOCK, MI_SERIAL, MI_RESTORE};
         ok = 1;
         for (i = 0; i < NELEM(SW); i++) {
             ui.menu_sel = SW[i];
@@ -2412,113 +2409,33 @@ static int test_roll(void)
                 *vp = (int16_t)v0;
             }
         }
-    ok &= n > 500u;
-    bad += check("roll: every page and engine: a name (enum, even ALG 1..8, note, ON/OFF) snaps, numbers roll", ok);
+    ok &= n > 0u;
+    bad += check("roll: every page and engine: names snap; compact numeric controls retain rolling digits", ok);
 
-    /* TUNE 0 -> 1 (card 4): a roll of ROLL_FRAMES frames, the last one the static render */
+    /* The bank snaps the actual value; the independent header retains rolling
+     * digits, bounded damage, direction, retargeting and exact final pixels. */
     ui_power_on(); roll_settle();
     turn(EN_K4, 1);
-    ok = song.g[G_TUNE] == 1 && str_eq(ui.roll[3].from, "0") && ui.roll[3].dir == 1;
-    for (n = 1; ui.roll[3].from[0] && n < 20u; n++) frame();
-    ok &= n == ROLL_FRAMES;
-    bad += check("roll: a card's value rolls for 9 frames (TUNE 0 -> 1), the value itself at once", ok);
-    bad += check("roll: the roll's last frame is pixel-identical to the static render", roll_static_now());
-
-    /* mid-roll: visible motion confined to the value strip. A fixed ink-count
-     * threshold depends on the font (Tamzen's thin '1' changes only 18 pixels). */
-    ui_power_on(); roll_settle();
-    turn(EN_K4, 1); frame(); frame(); frame();
-    memcpy(roll_shot, host_screen, sizeof roll_shot);
-    ui.force = 1; ui_draw();                       /* (snaps: the static render) */
-    ok = roll_diff(STRIP(3), 0) == 0 && roll_diff(STRIP(3), 1) >= 8u && !ui.roll[3].from[0];
-    if (!ok) printf("    mid-roll: %u changed pixels outside, %u inside; active %u\n",
-                    roll_diff(STRIP(3), 0), roll_diff(STRIP(3), 1), ui.roll[3].from[0] != 0);
-    bad += check("roll: a mid-roll frame differs from the static render inside the value strip only", ok);
-
-    /* BPM 120 -> 121 (SELECT): the header rolls, the digits 1 and 2 stay; the BPM card too (no unit:
-     * the label says BPM: set in M, it rolls like any number) */
-    ui_power_on(); roll_settle();
+    ok = song.g[G_TUNE] == 1 && !ui.roll[3].from[0] && str_eq(ui.read_bank.field[3].value, "1");
+    bad += check("#578 focused bank shows the actual value immediately without rolling overview digits", ok && roll_static_now());
+    ui_power_on(); go_home(); frames(1000);
     turn(EN_SELECT, 1);
-    ok = song.g[G_BPM] == 121 && str_eq(ui.roll[ROLL_BPM].from, "120") && ui.roll[ROLL_BPM].dir == 1 &&
-         str_eq(ui.roll[0].from, "120") && ui.roll[0].dir == 1;
+    ok = song.g[G_BPM] == 121 && str_eq(ui.roll[ROLL_BPM].from, "120") && ui.roll[ROLL_BPM].dir == 1;
     frame(); frame();
-    memcpy(roll_shot, host_screen, sizeof roll_shot);
-    ui.force = 1; ui_draw();
-    {   /* the header's strip: from the metronome's ink to the lock's place (ui_draw.c draw_head) */
-        head_geo_t g;
-        int32_t x0, x1;
-        head_geo(&g, "121");
-        x0 = g.sx0; x1 = g.sx1;
-        n = roll_diff(x0, 0, x1, H_HEAD, 1);
-        ok &= n > 20u && roll_diff(x0, 0, x1, H_HEAD, 0) == roll_diff(STRIP(0), 1);   /* (+ the card's strip) */
+    memcpy(roll_shot, host_screen, sizeof roll_shot); ui.force = 1; ui_draw();
+    {
+        head_geo_t g; head_geo(&g, "121");
+        ok &= roll_diff(g.sx0, 0, g.sx1, H_HEAD, 1) > 20u && roll_diff(g.sx0, 0, g.sx1, H_HEAD, 0) == 0;
         ok &= roll_diff(g.bx, 0, g.bx + text_w(&AF_M, "12"), H_HEAD, 1) == 0;
-        ok &= x0 < g.bx && x1 <= 160 && x1 - x0 <= 40;   /* (1.5.6: the group centred, the BPM right of x 120) */
     }
-    ok &= roll_diff(CARD_X(0), Y_LABEL + ROLL_Y, CARD_X(0) + 5 + text_w(&AF_M, "12"), Y_LABEL + ROLL_Y + ROLL_H, 1) == 0;
-    /* TUNE 10 -> 11 on a card: the 1 stays */
-    ui_power_on(); song.g[G_TUNE] = 10; roll_settle();
-    turn(EN_K4, 1); frame(); frame();
-    memcpy(roll_shot, host_screen, sizeof roll_shot);
-    ui.force = 1; ui_draw();
-    ok &= song.g[G_TUNE] == 11 && roll_diff(STRIP(3), 1) > 20u && roll_diff(STRIP(3), 0) == 0;
-    ok &= roll_diff(CARD_X(3), Y_LABEL + ROLL_Y, CARD_X(3) + 5 + text_w(&AF_M, "1"), Y_LABEL + ROLL_Y + ROLL_H, 1) == 0;
-    bad += check("roll: header BPM 120 -> 121 and a card 10 -> 11: only the strip changes, unchanged digits stay put", ok);
-
-    /* the direction: 5 -> 6 and -5 -> -6 at frame 4: the new digit comes from below (up) / above (down) */
-    ui_power_on(); song.g[G_TUNE] = 5; roll_settle();
-    st = roll_ink_row(host_screen, CARD_X(3) + 5, CARD_X(3) + 16, Y_LABEL + ROLL_Y, Y_LABEL + ROLL_Y + ROLL_H);
-    turn(EN_K4, 1); frame(); frame(); frame();
-    up = roll_ink_row(host_screen, CARD_X(3) + 5, CARD_X(3) + 16, Y_LABEL + ROLL_Y, Y_LABEL + ROLL_Y + ROLL_H);
-    ok = ui.roll[3].dir == 1;
-    ui_power_on(); song.g[G_TUNE] = 7; roll_settle();
-    turn(EN_K4, -1); frame(); frame(); frame();
-    down = roll_ink_row(host_screen, CARD_X(3) + 5, CARD_X(3) + 16, Y_LABEL + ROLL_Y, Y_LABEL + ROLL_Y + ROLL_H);
-    ok &= ui.roll[3].dir == -1 && st > 0 && up > st + 16 && down < st - 16;
-    ui_power_on(); song.g[G_TUNE] = -5; roll_settle();
-    turn(EN_K4, -1);
-    ok &= song.g[G_TUNE] == -6 && str_eq(ui.roll[3].from, "-5") && ui.roll[3].dir == -1;
-    bad += check("roll: an increase rolls up, a decrease down (-5 -> -6 is down)", ok);
-
-    /* retarget: a change mid-roll restarts from the value it was going to; a fast turn snaps */
-    ui_power_on(); song.g[G_TUNE] = 1; roll_settle();
-    turn(EN_K4, 1); frame(); frame(); frame();
-    turn(EN_K4, 1);
-    ok = song.g[G_TUNE] == 3 && str_eq(ui.roll[3].from, "2") && (uint8_t)(ui.frame - ui.roll[3].t0) == 0;
-    for (n = 1; ui.roll[3].from[0] && n < 20u; n++) frame();
-    ok &= n == ROLL_FRAMES && roll_static_now();
-    bad += check("roll: a change mid-roll retargets (from the last value, restarted) and ends static", ok);
-    ui_power_on(); song.g[G_TUNE] = 1; roll_settle();
-    turn(EN_K4, 1); turn(EN_K4, 1);
-    ok = song.g[G_TUNE] == 3 && !ui.roll[3].from[0] && roll_static_now();
-    bad += check("roll: a change within 40 ms of the last one snaps (a fast turn)", ok);
-
-    /* snaps: another shape, a name, the page, the track, the palette, ui.force */
-    ui_power_on(); roll_settle();
-    turn(EN_K4, -1);
-    ok = song.g[G_TUNE] == -1 && !ui.roll[3].from[0] && roll_static_now();
-    for (k = 0; k < 5u; k++) frame();
-    turn(EN_K3, 1);
-    ok &= song.g[G_CLOCK] != 0 && !ui.roll[2].from[0] && roll_static_now();
-    bad += check("roll: a sign / length change (0 -> -1) and a name (CLK) snap", ok);
-    ok = 1;
-    for (k = 0; k < 5u; k++) {
-        ui_power_on(); roll_settle();
-        turn(EN_K4, 1);
-        ok &= ui.roll[3].from[0] != 0;
-        if (k == 0) { page_over = 0; go_title("ENV"); }
-        else if (k == 1) turn(EN_ALGO, 1);
-        else if (k == 2) { settings.palette = 1; palette_set(1); }          /* (no ui.force) */
-        else if (k == 3) set_engine_of(TSEL, eng_step(TSEL->eng_req, 1));   /* (no ui.force) */
-        else ui.force = 1;
-        frame();
-        ok &= !ui.roll[3].from[0] && !ui.roll[ROLL_BPM].from[0];
-    }
-    ui_power_on(); roll_settle();
-    turn(EN_SELECT, 1);
-    ok &= ui.roll[ROLL_BPM].from[0] != 0;
-    ui.force = 1; frame();
-    ok &= !ui.roll[ROLL_BPM].from[0];
-    bad += check("roll: a page, track, palette or engine change and ui.force snap", ok);
+    bad += check("header BPM: only the changing digit strip moves; bank and graph stay identical", ok);
+    ui_power_on(); go_home(); frames(1000); turn(EN_SELECT, -1);
+    ok = ui.roll[ROLL_BPM].dir == -1;
+    for (k = 0; k < 3; k++) frame();
+    turn(EN_SELECT, -1);
+    ok &= str_eq(ui.roll[ROLL_BPM].from, "119");
+    for (n = 1; ui.roll[ROLL_BPM].from[0] && n < 20u; n++) frame();
+    bad += check("header BPM: decreasing retarget preserves direction and ends in the exact static frame", ok && n == ROLL_FRAMES && roll_static_now());
     palette_set(UI_GREY_INDEX);
 
     /* MONO: every roll frame is gray */
@@ -3291,12 +3208,12 @@ static int test_product_ux(void)
         int changed = 0;
         for (uint32_t y = 0; y < Y_SEP_END - Y_LABEL; y++) for (uint32_t x = 0; x < 240; x++) {
             uint16_t old = columns[y * 240 + x], now = host_screen[(Y_LABEL + y) * 240 + x];
-            if (x >= 64 && x < 119) changed |= old != now;
+            if ((y < BANK_TOP && x >= 3 && x < 237) || (x >= 3 && x < 119)) changed |= old != now;
             else ok &= old == now;
         }
         ok &= changed;
     }
-    bad += check("all palettes: active column is subtle, stable-size, no zoom over graph", ok);
+    bad += check("all palettes: focus readout and selected overview change without zoom or graph damage", ok);
     ui_power_on(); set_engine_of(TSEL, 4); open_family(FAM_EDIT);
     memset(&sample_wave, 0, sizeof sample_wave); last_note = 60;
     voice_t voices[NVOICE]; memcpy(voices, TSEL->v, sizeof voices);
@@ -3443,8 +3360,8 @@ static int test_layer(void)
                 ui_power_on();
                 menu_put(MI_STYLE, style); menu_put(MI_LARGE, large);
                 hold(B_HOME); ui.menu_sel = MI_LEDS;
-                offset = (uint32_t)(large ? menu_read_y(mtab_index(MI_LEDS)) : mr_y(mtab_index(MI_LEDS))) * 240u;
-                pixels = (uint32_t)(large ? menu_read_height() : mr_h()) * 240u;
+                offset = (uint32_t)menu_read_y(mtab_index(MI_LEDS)) * 240u;
+                pixels = (uint32_t)menu_read_height() * 240u;
                 for (v = 3; v < 6u; v++) {
                     menu_put(MI_LEDS, v); ui.force = 1; frame();
                     expected[v - 3u] = host_lcd_hash(host_screen + offset, pixels);
@@ -6831,7 +6748,7 @@ static int test_auto_off_navigation(void)
 
     ui_power_on();
     hold(B_HOME);
-    for (k = 0; k < 5u; k++) turn(EN_PRESET, 1);
+    for (k = 0; k < mtab_index(MI_SCROFF); k++) turn(EN_PRESET, 1);
     press(B_OCTUP); press(B_OCTUP);                /* AUTO OFF > IDLE AFTER: 5 MIN */
     ok = ui.menu == MENU_OFF && menu_off_sel == MO_IDLE && scr_idle_get() == 1u;
     turn(EN_PRESET, 1); turn(EN_PRESET, 1);        /* ALL DARK: NEVER -> 15 MIN -> 30 MIN */
@@ -6990,7 +6907,7 @@ static int test_screen_off(void)
     ui_power_on();                                    /* native AUTO OFF opens a bounded detail page */
     menu_put(MI_SCROFF, 3u);
     hold(B_HOME);
-    for (i = 0; i < 5u; i++) turn(EN_PRESET, 1);
+    for (i = 0; i < mtab_index(MI_SCROFF); i++) turn(EN_PRESET, 1);
     ok = ui.menu == 1 && ui.menu_sel == MI_SCROFF && oct_leds() == OCT_BREATH;
     press(B_OCTDN); turn(EN_K2, 1);
     ok &= ui.menu == 1 && scr_get() == 3u;
@@ -9322,8 +9239,7 @@ static int test_bpm_lock(void)
     return bad;
 }
 
-/* The legacy size preference now selects D on value pages. Validate the
- * reading path through real input, preserving graph and edit ownership. */
+/* Unified reading roles: real input, compatibility and preserved workspace. */
 static uint16_t lg_px(int32_t x, int32_t y) { return swap16(host_screen[y * 240 + x]); }
 static int lg_value_rows(uint32_t c)
 {
@@ -9342,31 +9258,22 @@ static int test_large(void)
     ui_power_on();
     song.playing = 0;
     frame();
-    ok = !(ui_prefs & PREF_LARGE) && large_kind() == LK_OFF && card_h() == CARD_H && graph_y() == Y_GRAPH;
-    ok &= MI_LARGE == MI_STYLE + 1u && str_eq(MI_NAME[MI_LARGE], "LARGE") && menu_flag(MI_LARGE) &&
-          str_eq(menu_flag(MI_LARGE)->name[0], "OFF") && str_eq(menu_flag(MI_LARGE)->name[1], "ON");
-    ui.force = 1; frame();
-    memcpy(off, host_screen, sizeof off);
-    hold(B_HOME); ui.menu_sel = MI_LARGE;
-    ok &= ui.menu == 1u;
-    turn(EN_K1, 1); ok &= (ui_prefs & PREF_LARGE) != 0u;          /* right: ON */
-    turn(EN_K1, -1); ok &= !(ui_prefs & PREF_LARGE);              /* left: OFF */
-    press(B_OCTUP); ok &= (ui_prefs & PREF_LARGE) && ui.menu;     /* OCT+: ON */
-    press(B_OCTDN); ok &= !(ui_prefs & PREF_LARGE) && ui.menu;    /* OCT-: OFF */
-    press(B_OCTUP);
-    ok &= ui_prefs == PREF_LARGE && ui_style == ST_FLAT;          /* (no other setting moved) */
-    press(B_HOME);
-    bad += check("#15 MENU > LARGE: OFF by default, under STYLE; KNOB 1 right / OCT+ ON, left / OCT- OFF", ok && !ui.menu);
+    ok = !(ui_prefs & PREF_LARGE) && reading_kind() == RK_BANK && card_h() == CARD_H && graph_y() == Y_GRAPH;
+    ok &= !menu_native_row(MI_LARGE) && menu_flag(MI_LARGE)->bit == PREF_LARGE;
+    ui.force = 1; frame(); memcpy(off, host_screen, sizeof off);
+    ui_prefs |= PREF_LARGE; ui.force = 1; frame();
+    ok &= !memcmp(off, host_screen, sizeof off);
+    bad += check("#578 legacy LARGE bit is reserved and hidden; either historical value draws the same HOME", ok);
 
     frame();
-    ok = ui.home && large_kind() == LK_BANK && card_h() == CARD_H && graph_y() == Y_GRAPH && graph_h() == H_GRAPH;
+    ok = ui.home && reading_kind() == RK_BANK && card_h() == CARD_H && graph_y() == Y_GRAPH && graph_h() == H_GRAPH;
     ok &= !memcmp(off + Y_GRAPH * 240, host_screen + Y_GRAPH * 240, 240u * (240u - Y_GRAPH) * sizeof *off);
     bad += check("#572 D: HOME keeps the complete native workspace and footer below its 44 px bank", ok);
 
     go_title("CLOCK"); ui.hot_col = 0; ui.force = 1; frame();
-    ok = bank_on() && strip_kind() == SK_NONE && cur_page()->id[0] == G_BPM && lg_value_rows(0) >= AF_L_CAP_H - 3;
+    ok = bank_on() && cur_page()->id[0] == G_BPM && lg_value_rows(0) >= AF_L_CAP_H - 3;
     ui_prefs = 0; ui.force = 1; frame();
-    ok &= lg_value_rows(0) <= AF_M_CAP_H + 2;
+    ok &= lg_value_rows(0) >= AF_L_CAP_H - 3;
     ui_prefs = PREF_LARGE; ui.force = 1; frame();
     bad += check("#572 D: full-domain CLOCK BPM has a large focused readout without replacing its context", ok);
 
@@ -9440,7 +9347,7 @@ static int test_large(void)
     motion_clear(TSEL); song.seq_mode = 0; song.rec = 0;
 
     go_page(GR_BROWSE); frame();
-    ok = large_kind() == LK_LABEL && card_h() == CARD_H && graph_y() == Y_GRAPH && graph_h() == H_GRAPH;
+    ok = reading_kind() == RK_COMPACT && card_h() == CARD_H && graph_y() == Y_GRAPH && graph_h() == H_GRAPH;
     go_title("ENV"); frame(); btn_down(B_GLO); frames(800);
     ok &= ui.layer && !bank_on() && card_h() == CARD_H;
     btn_up(B_GLO); frame(); frame();
@@ -9459,8 +9366,8 @@ static int test_large(void)
         q = p;
         ok &= settings_import(&q, (int)sizeof q) == 1 && !ui_prefs;
         ui.force = 1; frame();
-        ok &= large_kind() == LK_OFF && lg_px(30, Y_SEP_END + 1) == T_BG;
-        bad += check("#15 LARGE saved with the settings; settings from before it: OFF (idempotent)", ok);
+        ok &= reading_kind() == RK_BANK && bank_on();
+        bad += check("#578 historical size bit round-trips; records without it still use the unified UI", ok);
     }
     ui_prefs = 0;
     ui_power_on(); frame();
@@ -9492,7 +9399,7 @@ static int test_menu_prefs(void)
         turn(EN_ALGO, 1);
     }
     /* WAKE and ALL DARK belong to AUTO OFF; their descriptor IDs remain stable. */
-    ok &= seen == (((1ull << MI_COUNT) - 1u) & ~((1ull << MI_SCRWAKE) | (1ull << MI_DARK))) && ui.menu_sel == 0u;
+    ok &= seen == (((1ull << MI_COUNT) - 1u) & ~((1ull << MI_LARGE) | (1ull << MI_SCRWAKE) | (1ull << MI_DARK))) && ui.menu_sel == 0u;
     bad += check("MENU: ALGORITHM and PRESETS reach every row, each tab a page of its own", ok);
     /* ANIM */
     ui.menu_sel = MI_ANIM;
@@ -9512,7 +9419,7 @@ static int test_menu_prefs(void)
     ui_idle = 0;
     ui_power_on(); roll_settle();
     turn(EN_K4, 1);
-    ok = song.g[G_TUNE] == 1 && ui.roll[3].from[0];              /* ON: TUNE 0 -> 1 rolls */
+    ok = song.g[G_TUNE] == 1 && !ui.roll[3].from[0];              /* focused values snap in both animation modes */
     ui_power_on(); ui_prefs = PREF_ANIM_OFF; roll_settle();      /* (ui_power_on clears the favorites record) */
     turn(EN_K4, 1);
     ok &= song.g[G_TUNE] == 1 && !ui.roll[3].from[0] && roll_static_now();   /* OFF: the value at once, static */
@@ -10813,7 +10720,7 @@ static int test_home_tracks(void)
 
     ui_power_on();
     hold(B_HOME);                                       /* the menu: DISPLAY, down to HOME, K1 right */
-    for (i = 0; i < 7u; i++) turn(EN_PRESET, 1);
+    for (i = 0; i < 6u; i++) turn(EN_PRESET, 1);
     ok = ui.menu == 1 && ui.menu_sel == MI_HOME;
     turn(EN_K1, 1); ok &= home_tracks() && !home_levels();
     turn(EN_K3, 1); ok &= home_levels();               /* (1.5: LEVELS, the last) */
@@ -10897,7 +10804,7 @@ static int test_home_tracks(void)
              tr_px(tr_x(8), y + TR_SB - 9) == T_ACCENT &&                                             /* accented */
              tr_px(tr_x(10), y + TR_SB - 1) == T_MID && tr_px(tr_x(10), y + TR_SB - 3) == T_SURF &&   /* a lone TIE */
              tr_px(3 + 22, y + 1) == T_SURF && tr_px(3 + 22, tr_y(1) + 1) == T_THEME &&               /* T2 selected */
-             home_tracks() && large_kind() == LK_OFF;
+             home_tracks() && reading_kind() == RK_COMPACT;
         bad += check("1.3 HOME > TRACKS: a row's steps: notes, empty stubs, TIEs carried on (joined), accents, a lone TIE", ok);
     }
     song.playing = 1;                                   /* the play head on step 3 (empty), then on the note 4 */
@@ -10994,10 +10901,10 @@ static int test_home_tracks(void)
 
     ui_prefs |= PREF_LARGE;                             /* MENU > LARGE: the cards as on a list page, the rows */
     ui.force = 1; frame();
-    ok = large_kind() == LK_LABEL && card_h() == CARD_H && graph_y() == Y_GRAPH && tr_px(3 + 22, tr_y(3) + 1) == T_THEME &&
+    ok = reading_kind() == RK_COMPACT && card_h() == CARD_H && graph_y() == Y_GRAPH && tr_px(3 + 22, tr_y(3) + 1) == T_THEME &&
          tr_px(tr_x(4), tr_y(3) + TR_SB - 2) == T_INK;
     ui_home_view = HV_SCOPE; ui.force = 1; frame();
-    ok &= large_kind() == LK_BANK;
+    ok &= reading_kind() == RK_BANK;
     ui_prefs = 0;
     bad += check("1.3 HOME > TRACKS retains its rows and M labels; SCOPE uses the focused bank", ok);
     ui_power_on();

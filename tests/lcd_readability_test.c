@@ -7,7 +7,7 @@
 
 static uint16_t read_fg, read_bg;
 static unsigned read_group, read_on, read_mutes, read_examples;
-static unsigned read_count[6], read_low[6];
+static unsigned read_count[10], read_low[10];
 static void read_text(const char *s, uint32_t flags);
 #define GFX_HOOK_INK(ink, bg) (read_fg = (ink), read_bg = (bg))
 #define GFX_HOOK_TEXT(x0, y0, x1, y1, s, flags) read_text(s, flags)
@@ -54,7 +54,7 @@ static void read_stop(void) { read_on = 0; }
 int main(void)
 {
     static const char *const names[] = {"inactive card values", "mixer names/values/units",
-        "HOME track names", "piano-roll pitches", "muted drum lane names", "MOD rows and units"};
+        "HOME track names", "piano-roll pitches", "muted drum lane names", "MOD rows and units", "focus and editing states", "menu selection", "name field", "list names"};
     unsigned p, st, large, state, c, k;
     int bad = 0, legends = 1;
     for (p = 0; p < NPALETTES; p++)
@@ -76,7 +76,9 @@ int main(void)
                     }
                     go_page(GR_TRK);
                     read_start(0);
+                    ui.read_bank.mask = 0;
                     draw_column(0, "AMT", "-100", "%", T_DIM, 500, ICON_NONE);
+                    bank_draw();
                     read_stop();
                     read_start(1);
                     draw_tracks();
@@ -106,8 +108,19 @@ int main(void)
                     cv_begin(240, 124, T_SURF);
                     graph_mod(TSEL, T_THEME);
                     read_stop();
+                    go_home(); ui.force = 1;
+                    read_start(6); draw_columns(); read_stop();
+                    for (k = 0; k < MI_COUNT; k++) if (menu_native_row(k)) {
+                        ui.menu = 1; ui.menu_sel = (uint8_t)k; ui.force = 1;
+                        read_start(7); draw_menu(); read_stop();
+                    }
+                    ui.menu = 0;
+                    name_open(NK_USER_SAVE, 0); ui.force = 1;
+                    read_start(8); nm_draw_field(); read_stop(); name_close();
+                    ui.force = 1; cv_begin(240, H_GRAPH, T_SURF);
+                    read_start(9); graph_user(); read_stop();
                 }
-    for (k = 0; k < 6u; k++) {
+    for (k = 0; k < 10u; k++) {
         printf("LCD readability: %s, %u texts, %u below 4.5:1\n", names[k], read_count[k], read_low[k]);
         bad += !read_count[k] || read_low[k] != 0u;
     }

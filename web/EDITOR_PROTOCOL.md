@@ -838,8 +838,10 @@ from an experimental firmware is not a SONG or preference capability.
 Command 33 remains SONG. Older editors can ignore the additional INFO bytes.
 
 `uiCaps`: bit 0 palette, bit 1 font weight (retired: firmware since the 1.0 UI has one
-weight and no longer sets it), bit 2 MIDI monitor when compiled in, bit 3 favorites. The standard build
-advertises 9 (palette and favorites).
+weight and no longer sets it), bit 2 MIDI monitor when compiled in, bit 3 favorites, bit 4 unified native UI. The standard build
+advertises 25 (palette, favorites, unified UI). Bit 4 is informational, not a
+`UI_SET` slot: hide legacy MENU id 2 when present. Without it, retain the older
+firmware's LARGE control. Unknown capability bits must be ignored.
 
 <a id="cmd-34"></a>
 ### 34 UI_STATE
@@ -1228,6 +1230,17 @@ is told: no list of settings is fixed in the editor. INFO advertises `4E 01 coun
 (`50 01 caps`): `count` items, MENU_DESC index 0..count−1. Firmware without the tag answers neither command.
 
 <a id="cmd-72"></a>
+**Retired native size choice (#578):** MENU index/id 2 remains LARGE with its
+historical OFF/ON values, clamp behavior and settings bit (`settings_dev[30]`
+bit 5). Both values now draw the same native UI, and the native DISPLAY tab skips
+that row. Legacy `MENU_SET` still stores the requested bit through the same
+coalesced/deferred settings path; it never assigns focus or changes another ID.
+Imports/exports retain this bit and all other settings bytes. Downgrading restores
+the last saved historical size choice. Current clients use tagged `uiCaps` bit 4
+to hide this retired control; older clients can still read/write it harmlessly.
+The client display adaptation is tracked separately in
+[#582](https://github.com/kmplngj/Felucca/issues/582).
+
 ### 72 MENU_DESC
 
 Available: INFO `4E 01` (1.0.4). Request length (argument bytes): **1**.

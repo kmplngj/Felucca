@@ -2462,7 +2462,7 @@ int main(int argc, char **argv)
         if (nruled < 100u) { fprintf(stderr, "ui_render: dividers on %u STYLE screens only\n", nruled); return 1; }
         fprintf(rep, "STYLE LINE (every palette): %u lint findings\n", nfind - n0);
     }
-    {   /* MENU > LARGE (ui.c large_kind): every screen in every palette in FLAT and LINE, linted (GREY: gray, MONO:
+    {   /* MENU > LARGE (ui.c reading_kind): every screen in every palette in FLAT and LINE, linted (GREY: gray, MONO:
          * neutral); GREY MONO in FLAT as OUTDIR/ppm/LARGE_<PALETTE>_<screen>.ppm (ui_render.py: sheet_LARGE_<PALETTE>.png),
          * LINE GREY as LARGE-LINE_GREY; the tall cards' value faces counted (lg_hook) */
         static const char *const ST_N[2] = {"LARGE", "LARGE-LINE"};
@@ -2482,7 +2482,7 @@ int main(int argc, char **argv)
                     pal(p);
                     ui_style = (uint8_t)st; style_apply();
                     draw((int)s);
-                    ntall += !ui.menu && !ui.confirm && !name_on() && (large_kind() == LK_TALL || large_kind() == LK_BANK);
+                    ntall += !ui.menu && !ui.confirm && !name_on() && reading_kind() == RK_BANK;
                     lint();
                     if (!st && p == UI_GREY_INDEX) font_scene("LARGE", S_NAME[s]);
                     mono_check();

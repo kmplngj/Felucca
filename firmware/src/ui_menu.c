@@ -227,20 +227,10 @@ static void menu_head(void)
     cv_blit(0, Y_HEAD);
 }
 
-/* The page (1.0.5): the tabs across the top, the rows of the one shown below, the key hints at the bottom.
- *   header   0..24  the cog and MENU, the REC mark, HOME CLOSE, the tabs as dots at the right (the one shown a THEME
- *                   pill)
- *   tabs    29..53  a 24 px cushion per tab: its icon alone (SURF, MID); the one shown wider, with its name (ACCENT,
- *                   INK; S, LARGE M), MT_GAP between any two. With ANIM ON the cushions grow and shrink into place
- *                   (mt_follow), the gaps kept
- *   rows    59..    one SURF panel (FLAT; LINE: none, a rule under the tabs), a row a label and its value, 1 px rules
- *                   between them; the selected row THEME with INK, as the browser's. A value THEME (M) at the right,
- *                   ON / OFF as a switch, COLOR its palette's five colours, CALIBRATION and ABOUT a chevron (OCT+
- *                   opens them); the labels in M too (a list's rows). LARGE: 28 px rows (a tab of up to 5)
- *   keys   224      ALGO TAB, PRESETS ROW, OCT-/+ VALUE (any of KNOB 1..4 too; CALIBRATION, ABOUT: OCT+ OPEN). HOME
- *                   CLOSE is in the header: the four would not fit in S (cv_key_row drops words, from the last)
- * Drawn in two bands (the canvas holds 124 rows) split in a gap between two rows; while the tabs slide only their
- * strip (24..58) is drawn again */
+/* MENU: native header, animated M tab bar, five-row window and bottom key hints.
+ * The selected row has a label/value reading hierarchy; rows are fully composed
+ * before transfer within the existing 124-row canvas. INFO and ABOUT retain
+ * their own bounded content bands. */
 static const uint16_t MTAB_ICON[MTAB_COUNT] = {ICON_X_EYE, ICON_X_KNOB, ICON_X_SPEAKER, ICON_MIDI, ICON_X_COG};
 #define MT_Y 29                                        /* the tab bar */
 #define MT_H 24
@@ -259,18 +249,7 @@ static const uint16_t MTAB_ICON[MTAB_COUNT] = {ICON_X_EYE, ICON_X_KNOB, ICON_X_S
 #define MR_LX 16                                       /* its label */
 #define MR_VR 224                                      /* its value's right edge */
 #define MK_Y 224                                       /* the key hints */
-static int menu_large(void) { return (ui_prefs & PREF_LARGE) != 0u; }
 static uint32_t menu_tab(void) { return MI_TAB[ui.menu_sel % MI_COUNT]; }
-/* the shown tab's rows: 24 px (LARGE 28, a tab of up to 5 rows), 2 px apart (a tab of 6: 1 px, its panel then ends
- * 6 px above the key hints as the others do; the rule between two rows is that gap row; 1.2, a tab of 7: 21 px rows
- * 1 px apart, its panel then ends 4 px lower, LARGE too; 1.3, a tab of 8: 18 px rows 1 px apart, the same end) */
-static int32_t mr_h(void)
-{
-    uint32_t n = mtab_rows(menu_tab());
-    return n > 7u ? 18 : n > 6u ? 21 : menu_large() && n <= 5u ? 28 : 24;
-}
-static int32_t mr_gap(void) { return mtab_rows(menu_tab()) <= 5u ? 2 : 1; }
-static int32_t mr_y(uint32_t k) { return MP_Y + MP_PAD + (int32_t)k * (mr_h() + mr_gap()); }
 
 /* the tab bar's place: the tab shown at pos tab * MT_ONE; with ANIM ON it follows in halving steps, a frame each
  * (a frame missed, as when the menu opens: it snaps, as ui_graph.c pr_follow) */
@@ -284,7 +263,7 @@ static void mt_follow(void)
         mt.pos = (int16_t)(mt.pos + d / 2);
     mt.frame = ui.frame;
 }
-static const aafont_t *mt_font(void) { return menu_large() ? &AF_M : &AF_S; }
+static const aafont_t *mt_font(void) { return &AF_M; }
 /* the tabs at the place mt.pos, MT_GAP apart, centred: each one's share of the shown look (0 .. MT_ONE), x, width */
 static void mt_layout(int32_t *a, int32_t *x, int32_t *w)
 {
@@ -318,7 +297,7 @@ static void menu_tabs(void)                            /* (in screen rows: cv_oy
         cv_icon_in(x[k], MT_Y, MT_IW, MT_H, 16, MTAB_ICON[k], on ? T_INK : T_MID, bg);
         if (a[k] == MT_ONE) {                          /* (settled: its name) */
             GFX_HOOK_ALIGN(0, MT_Y, 0, MT_Y + MT_H, AL_V, "menu tab name centred up/down");
-            cv_text_on(x[k] + MT_NX, MT_Y + (menu_large() ? CAP_IN(M, MT_H) : CAP_IN(S, MT_H)), mt_font(), MTAB_NAME[k],
+            cv_text_on(x[k] + MT_NX, MT_Y + CAP_IN(M, MT_H), mt_font(), MTAB_NAME[k],
                        T_INK, T_ACCENT);
         }
     }
@@ -357,40 +336,6 @@ static void menu_off_summary(char *b)
     n = str_len(b);
     str_cpy(b + n, OFF_SHORT_N[d], 16u - n);
 }
-static void menu_off_rows(void)
-{
-    static const char *const NAME[MO_COUNT] = {"IDLE AFTER", "IDLE MODE", "ALL DARK", "WAKE", "BACK"};
-    int32_t h = menu_large() ? 28 : 24;
-    uint32_t k;
-    if (!ux.style)
-        cv_rrect(4, 32, 232, (int32_t)MO_COUNT * (h + 2) + 4, 8, T_SURF, T_BG);
-    for (k = 0; k < MO_COUNT; k++) {
-        int32_t y = 35 + (int32_t)k * (h + 2), vy = y + CAP_IN(M, h);
-        int sel = k == menu_off_sel;
-        uint16_t bg = sel ? T_THEME : T_SURF, fg = sel ? T_INK : T_TEXT;
-        uint16_t val = sel ? T_INK : T_THEME;
-        if (sel)
-            cv_rrect(MR_X, y, MR_W, h, 6, T_THEME, T_SURF);
-        else if (k && k - 1u != menu_off_sel)
-            cv_rect(MR_X + 6, y - 1, MR_W - 12, 1, ux.style ? T_RULE : T_LINE);
-        GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "auto off row name centred up/down");
-        cv_text_on(MR_LX, vy, &AF_M, NAME[k], fg, bg);
-        if (k == MO_BACK) {
-            GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "auto off row chevron centred up/down");
-            cv_icon_in(MR_VR - 12, y, 0, h, 12, ICON_X_RIGHT, sel ? T_INK : T_MID, bg);
-        } else {
-            uint32_t v = menu_off_get(k);
-            const char *name = k == MO_MODE ? OFF_MODE_N[v] : k == MO_WAKE ? menu_vname(MI_SCRWAKE, v) : OFF_TIME_N[v];
-            GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "auto off row value centred up/down");
-            cv_text_r(MR_VR, vy, &AF_M, name, val, bg);
-        }
-    }
-    if (menu_off_error)
-        cv_text(8, 185, &AF_S, "ALL DARK MUST BE LATER", T_TEXT);
-    GFX_HOOK_ALIGN(0, 0, 240, 0, AL_H, "auto off time caption centred across screen");
-    cv_text((240 - text_w(&AF_S, "TIMES SINCE INPUT")) / 2, 202, &AF_S, "TIMES SINCE INPUT", T_MID);
-}
-/* the tab's row k (menu_items.c row `row`) */
 static void menu_row_at(uint32_t k, uint32_t row, int32_t y, int32_t h)
 {
     int32_t vy = y + CAP_IN(M, h);
@@ -457,8 +402,6 @@ static void menu_row_at(uint32_t k, uint32_t row, int32_t y, int32_t h)
         }
     }
 }
-static void menu_row(uint32_t k, uint32_t row) { menu_row_at(k, row, mr_y(k), mr_h()); }
-
 #include "ui_menu_reading.c"                           /* #577: selected reading role and bounded viewport */
 /* MENU > SYSTEM > INFO (1.2, ui.menu 3): what the old GLO > SYSTEM page showed, read only: the firmware, the USB link (the
  * SYSTEM page's MIDI card: OFF no USB, WAIT no bus yet, BUS frames seen, ENUM being set up, MIDI in use) and the CPU load
@@ -484,7 +427,7 @@ static void info_rows(void)                            /* (in screen rows: cv_oy
 {
     static const char *const LBL[] = {"FIRMWARE", "COMMIT", "USB", "CPU"};
     static const char *const USB_N[5] = {"OFF", "WAIT", "BUS", "ENUM", "MIDI"};
-    int32_t h = menu_large() ? 28 : 24;
+    int32_t h = 28;
     int32_t identity_h = h * (text_w(&AF_S, FELUCCA_SPLASH_ID) > MR_VR - MR_LX ? 2 : 1);
     uint32_t k;
     char cpu[8];
@@ -536,21 +479,12 @@ static void info_rows(void)                            /* (in screen rows: cv_oy
     }
 }
 
-/* the rows' two bands meet at `split`: in the gap above a row (or below the last), each band at most 124 rows */
-static uint32_t menu_split(uint32_t n)
-{
-    int32_t s = mr_y(n) - 1;
-    uint32_t k = n;
-    while (s > H_HEAD + 124 && k > 1u)
-        s = mr_y(--k) - 1;
-    return (uint32_t)(s < 240 - 124 ? 240 - 124 : s);
-}
 static void draw_menu(void)
 {
     static const khint_t KEYS[3][3] = {{{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
                                        {{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}},
                                        {{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTUP, "CLEAR"}}};
-    uint32_t pass, k, n, split, sig;
+    uint32_t pass, sig;
     int32_t pos0 = mt.pos;
     if (ui.menu == 1)
         mt_follow();
@@ -580,20 +514,7 @@ static void draw_menu(void)
     if (ui.menu == MENU_OFF) {
         static const khint_t OFF_KEYS[2][2] = {{{KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
                                                {{KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}}};
-        if (menu_large()) {
-            menu_reading_off(OFF_KEYS[!menu_has_value()]);
-            return;
-        }
-        for (pass = 0; pass < 2u; pass++) {
-            uint32_t top_y = pass ? 132u : (uint32_t)H_HEAD;
-            cv_begin(240, pass ? 240u - 132u : 132u - H_HEAD, T_BG);
-            cv_oy = -(int32_t)top_y;
-            menu_off_rows();
-            if (pass)
-                cv_key_row(8, 232, MK_Y, OFF_KEYS[!menu_has_value()], 2, 7u, T_BG);
-            cv_oy = 0;
-            cv_blit(0, top_y);
-        }
+        menu_reading_off(OFF_KEYS[!menu_has_value()]);
         return;
     }
     if (ui.menu == 3) {                                /* INFO: identity and live state span both bands */
@@ -627,29 +548,9 @@ static void draw_menu(void)
         cv_blit(0, H_HEAD + MENU_DOC_H);
         return;
     }
-    if (menu_large()) {
-        menu_reading_list(KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_has_value()]);
-        return;
-    }
-    n = mtab_rows(menu_tab());
-    split = menu_split(n);
-    for (pass = 0; pass < 2u; pass++) {
-        int32_t top_y = pass ? (int32_t)split : H_HEAD;
-        cv_begin(240, pass ? 240u - split : split - H_HEAD, T_BG);
-        cv_oy = -top_y;                               /* drawn in screen rows */
-        if (!pass)
-            menu_tabs();
-        if (!ux.style)                                /* FLAT: the rows' panel */
-            cv_rrect(4, MP_Y, 232, mr_y(n) - mr_gap() + MP_PAD - MP_Y, 8, T_SURF, T_BG);
-        for (k = 0; k < n; k++)
-            if (mr_y(k) + mr_h() > top_y && mr_y(k) - 1 < top_y + (int32_t)cv_h)
-                menu_row(k, mtab_row(menu_tab(), k));
-        if (pass)
-            cv_key_row(8, 232, MK_Y, KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_has_value()], 3, 7u, T_BG);
-        cv_oy = 0;
-        cv_blit(0, (uint32_t)top_y);
-    }
+    menu_reading_list(KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_has_value()]);
 }
+
 static void enc_drop(void)                             /* knob turns nobody takes */
 {
     uint32_t k;

@@ -199,7 +199,7 @@ static int preferences(void)
     bad += check("INFO explicitly tags display capabilities after SONG without changing command 33",
         ED_SONG == 33 && ED_UI_STATE == 34 && ED_FAV_SET == 38 &&
         host_wire[e - 47] == CHAIN_ROWS && host_wire[e - 46] == 0x55 &&
-        host_wire[e - 45] == 1 && host_wire[e - 44] == 9 &&
+        host_wire[e - 45] == 1 && host_wire[e - 44] == 25 &&
         host_wire[e - 43] == 0x4d && host_wire[e - 42] == 1 &&
         host_wire[e - 41] == 64u && host_wire[e - 40] == 1 &&   /* (64 kept: 41 01 says 128) */
         host_wire[e - 39] == 0x42 && host_wire[e - 38] == 1 && host_wire[e - 37] == 3 &&
@@ -228,7 +228,9 @@ static int preferences(void)
     bad += check("out-of-range palette leaves the display unchanged", host_wire[5] == 1 && settings.palette == 7);
     a[0] = 1; a[1] = 1; request(ED_UI_SET, a, 2);
     bad += check("the retired font weight is not supported (rc 2), UI_STATE says 127",
-        host_wire[5] == 2 && host_wire[8] == 9 && host_wire[10] == 127);
+        host_wire[5] == 2 && host_wire[8] == 25 && host_wire[10] == 127);
+    a[0] = 4; a[1] = 1; request(ED_UI_SET, a, 2);
+    bad += check("unified UI capability is informational, not an editable UI_SET slot", host_wire[5] == 1);
     a[0] = 2; request(ED_UI_SET, a, 2);
     bad += check("unsupported preference is reported without applying it", host_wire[5] == 2);
     a[0] = ENGI_DRUM; a[1] = 0; a[2] = 64; a[3] = 1;

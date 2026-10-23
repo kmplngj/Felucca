@@ -10,7 +10,7 @@
 #define PANEL_X0 10                                  /* the graphs' inner area: x 10..230 */
 #define PANEL_W 220
 #define GOY 11                                       /* graphs drawn on a 100 px scale sit at y 11..111 */
-/* the height ADSR and LFO are drawn on: 100 px, or (MENU > LARGE's strip: draw_graph) the strip's ~ 56 */
+/* ADSR/LFO graph height in native workspace units. */
 static int32_t graph_ht = 100;
 #include "ui_fm6op.c"                                /* EDIT > OPERATOR, OP ENV, OPERATOR 2: FM6's operators (their charts below) */
 
@@ -1238,20 +1238,6 @@ static void graph_macro(const track_t *t, uint16_t c, int small)
 static int macro_page(void) { return 0; }
 #endif
 
-/* MENU > LARGE's strip under the tall cards (ui.c LK_TALL): HOME's scope, ENV's ADSR, LFO's wave,
- * MIXER's tracks drawn small; on the other pages the page's title and number (their charts need the whole panel) */
-enum { SK_NONE, SK_SCOPE, SK_ADSR, SK_LFO, SK_TRK, SK_TITLE, SK_MACRO };
-static uint32_t strip_kind(void)
-{
-    uint32_t g;
-    if (large_kind() != LK_TALL)
-        return SK_NONE;
-    if (ui.home)
-        return SK_SCOPE;
-    if (macro_page()) return SK_MACRO;
-    g = cur_page()->graph;
-    return g == GR_ADSR ? SK_ADSR : g == GR_LFO ? SK_LFO : g == GR_TRK ? SK_TRK : SK_TITLE;
-}
 /* the page's title and its number in its family ("ENV DEST 2/2", EDIT: the engine's "OSC 1/2"); the piano roll: its
  * scale ("C MIN"); ti holds 20 (the footer, the strip) */
 static void page_title(char *ti)
@@ -1280,20 +1266,6 @@ static void page_title(char *ti)
         str_cpy(ti + str_len(ti), N_SCALE[clamp(t->p[P_SCALE], 0, (int32_t)(sizeof N_SCALE / sizeof N_SCALE[0]) - 1)], 8);
     }
 }
-/* the strip's title: L centred (M when L lacks a glyph or is too wide) */
-static void graph_title(void)
-{
-    char ti[20];
-    const aafont_t *f = &AF_L;
-    int32_t y;
-    page_title(ti);
-    if (!large_face_has(ti) || text_w(f, ti) > 220)
-        f = &AF_M;
-    y = f == &AF_L ? CAP_IN(L, LG_H_GRAPH) : CAP_IN(M, LG_H_GRAPH);
-    GFX_HOOK_ALIGN(0, 0, 240, LG_H_GRAPH, AL_HV, "large strip title centred");
-    cv_text_in(0, y, 240, f, ti, T_THEME, T_SURF);
-}
-
 static uint32_t scope_prepare(uint32_t height);
 
 /* Keep the two checks in draw_graph's shared stack frame: outlining this
@@ -1306,8 +1278,6 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
     if (ui.home)
         return scope_prepare(graph_h());             /* hash the trace that graph_scope will draw */
     h ^= (uint32_t)pg->graph * 131u + TSEL->eng_req + song.sel * 7777u + ui.page * 1291u;
-    if (strip_kind() == SK_TITLE)                    /* MENU > LARGE: the page's title (its engine, its number) */
-        return h ^ 0x5A17u;
     if ((pg->graph == GR_NONE && !macro_page()) || pg->graph == GR_ARP) h ^= ui.frame / 2u;
     for (i = 0; i < P_COUNT; i++)
         h = (h ^ (uint32_t)t->p[i]) * 16777619u;
@@ -1330,7 +1300,6 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
             song_layout(&L);
             h = (h ^ (uint32_t)song_follow(&L)) * 16777619u;
             h = (h ^ (uint32_t)(song_playx(&L) + 1)) * 16777619u;
-            h ^= (ui_prefs & PREF_LARGE) ? 0x2545F491u : 0u;
         }
     }
     if (pg->graph == GR_MOD)
@@ -1388,10 +1357,10 @@ static const char *eng_abbr(uint32_t e)
 #define LIST_Y(k) (3 + 17 * (int32_t)(k))
 #define LIST_TY CAP_IN(M, 16)                           /* a row's text: its capitals rows 2 .. 12 of the row */
 #define LIST_NX 64
-static int32_t sound_list_y(uint32_t row) { return LIST_Y(row) + (ui_prefs & PREF_LARGE ? 32 : 0); }
+static int32_t sound_list_y(uint32_t row) { return LIST_Y(row) + 32; }
 static void sound_list_name(const char *name)
 {
-    if (ui_prefs & PREF_LARGE) {
+    {
         const aafont_t *f = text_w(&AF_N, name) <= 224 ? &AF_N : &AF_M;
         int32_t y = f == &AF_N ? CAP_IN(N, 32) : CAP_IN(M, 32);
         GFX_HOOK_ALIGN(8, 0, 232, 32, AL_HV, "selected list name");
@@ -1550,7 +1519,7 @@ static void graph_user(void)
             up_name(k, nm);
         else
             str_cpy(nm, "--", sizeof nm);
-        list_row(sound_list_y((uint32_t)row), k == ui.uslot, tag, T_MID, nm, used ? T_TEXT : T_DIM, 232);
+        list_row(sound_list_y((uint32_t)row), k == ui.uslot, tag, T_MID, nm, used ? T_TEXT : T_MID, 232);
     }
 }
 /* SAVE > PHRASES: the pattern list around the one picked ("03  MELODY", "U07  MY BASS") */
@@ -1699,13 +1668,13 @@ static void graph_slots(void)
     const char *selected = graph_project_name(cur);
     sound_list_name(!graph_project_used(cur) ? "EMPTY" : selected[0] ? selected : "USED");
     for (i = 0; i < 4u; i++) {
-        int32_t y = ui_prefs & PREF_LARGE ? 35 + (int32_t)i * 21 : 12 + (int32_t)i * 26;
+        int32_t y = 35 + (int32_t)i * 21;
         char b[4];
         int sel = (int32_t)i + 1 == song.g[G_SLOT], used = graph_project_used(i);
         const char *n = graph_project_name(i);
         b[0] = (char)('A' + i);
         b[1] = 0;
-        list_row(y, sel, b, T_MID, !used ? "--" : n[0] ? n : "USED", used ? T_TEXT : T_DIM, 232);
+        list_row(y, sel, b, T_MID, !used ? "--" : n[0] ? n : "USED", used ? T_TEXT : T_MID, 232);
     }
 }
 /* MIXER page: four SURF columns, one under each card: the track number on its cushion (in the accent:
@@ -1790,42 +1759,9 @@ static void trk_short_name(uint32_t c, char *b)      /* the track's sound, b hol
         str_cpy(b, e->name, 13);
 }
 
-/* MENU > LARGE: the four tracks in the strip under the tall cards (57 x LG_H_GRAPH each): the cushion (the selected
- * one the accent), REC / ARM / MUTE as on the full mixer, the sound's name, LEVEL as a gauge (THEME: the cards'),
- * the output meter under it (MID); a muted track's gauge DIM, its name readable */
-#define TSS_GY 40                                    /* the LEVEL gauge, 3 px */
-#define TSS_MY 48                                    /* the meter, 3 px */
-static void track_strip(uint32_t c, uint32_t sel, uint32_t st, uint32_t mute, uint32_t arm, uint32_t hot, uint32_t lvl,
-                        const char *b, uint32_t lit)
-{
-    int32_t gw = CARD_W - 10, m = ts.meter[c] * gw / (TS_MH - 2), fx = (int32_t)lvl * gw / 127;
-    uint16_t vc = mute ? T_DIM : T_THEME;
-    cv_begin(CARD_W, LG_H_GRAPH, T_BG);
-    cv_rrect(0, 0, CARD_W, LG_H_GRAPH, 5, T_SURF, T_BG);
-    cv_icon_on(4, 4, 16, trk_icon(c, sel), lit ? (sel ? T_TEXT : T_ACCENT) : sel ? T_ACCENT : T_MID, T_SURF);
-    if (st)
-        GFX_HOOK_ALIGN(0, 4, 0, 20, AL_V, "mixer badge on the cushion's line");
-    if (st == 1u || st == 2u)
-        cv_keycap(53 - kc_w(st == 1u ? KC_REC : KC_ARM), 5, st == 1u ? KC_REC : KC_ARM, st == 1u ? T_REC : T_ACCENT,
-                  T_INK, T_SURF);
-    else if (st)
-        cv_keycap(53 - kc_w(KC_MUTE), 5, KC_MUTE, hot == 4u ? T_ACCENT : T_KEY, T_INK, T_SURF);
-    if (mute && arm)                                 /* armed and muted: MUTE in place of the name */
-        GFX_HOOK_ALIGN(0, 22 + AF_S_CAP_Y, 0, 22 + AF_S_CAP_Y + AF_S_CAP_H, AL_V, "mixer MUTE badge on the name's line");
-    if (mute && arm)
-        cv_keycap(5, 22 + AF_S_CAP_Y + HALF_UP(AF_S_CAP_H - KC_H), KC_MUTE, hot == 4u ? T_ACCENT : T_KEY, T_INK, T_SURF);
-    else
-        cv_free_text(5, 22, &AF_S, b, sel ? T_TEXT : T_MID, T_SURF, CARD_W - 10);
-    cv_rrect(5, TSS_GY, gw, 3, 1, ux.style ? T_LINE : T_BG, T_SURF);
-    cv_rrect(5, TSS_GY, fx < 3 ? 3 : fx, 3, 1, hot == 1u ? T_ACCENT : vc, T_BG);
-    cv_rrect(5, TSS_MY, gw, 3, 1, T_RAISE, T_SURF);
-    if (m)
-        cv_rrect(5, TSS_MY, m < 3 ? 3 : m, 3, 1, T_MID, T_RAISE);
-    cv_blit((uint32_t)CARD_X(c), LG_Y_GRAPH);
-}
 static void draw_tracks(void)
 {
-    uint32_t c, sk = strip_kind() == SK_TRK;
+    uint32_t c;
     if (ui.force) {                                  /* the BG beside the columns only, they cover the rest (#181: */
         draw_gaps(graph_y(), graph_h());             /* the whole panel cleared first flashed on every sound load and
                                                       * track change); LINE: divided as the cards above */
@@ -1848,15 +1784,11 @@ static void draw_tracks(void)
             m = ts.meter[c] - 1;                     /* falls ~2 dB a frame */
         ts.meter[c] = (uint8_t)(m < 0 ? 0 : m);
         sig = str_hash(1u + sel + st * 2u + (mute && arm) * 16u + hot * 32u, b) + lvl * 7919u +
-              ts.meter[c] * 131u + (uint32_t)(pan + 128) * 104729u + (uint32_t)rv * 1299709u + mute * 3u + sk * 0x9E37u +
+              ts.meter[c] * 131u + (uint32_t)(pan + 128) * 104729u + (uint32_t)rv * 1299709u + mute * 3u +
               lit * 15485863u;                         /* (1.5.5: MIDI IN lights the cushion) */
         if (!ui.force && sig == ts.col[c])
             continue;
         ts.col[c] = sig;
-        if (sk) {
-            track_strip(c, sel, st, mute, arm, hot, lvl, b, lit);
-            continue;
-        }
         cv_begin(CARD_W, H_GRAPH, T_BG);
         cv_rrect(0, 0, CARD_W, H_GRAPH, 5, T_SURF, T_BG);
         cv_icon_on(4, 5, 16, trk_icon(c, sel), lit ? (sel ? T_TEXT : T_ACCENT) : sel ? T_ACCENT : T_MID, T_SURF);
@@ -1913,8 +1845,7 @@ static void draw_tracks(void)
 }
 /* HOME > TRACKS (1.3, Discussions #112 / #134: MENU > DISPLAY > HOME TRACKS): the four tracks as rows in the panel, one
  * under the other (29 px, 2 apart), in place of the scope; the cards above stay HOME's four (the selected track's). A row:
- * the track's cushion at the left; on its first line the engine's icon and the sound's name (MENU > LARGE: the name in M,
- * no icon), a MUTE badge at its right when muted; under it the 16 steps of the page of the track's pattern that plays
+ * the track's cushion at the left; on its first line the engine's icon and the sound's name in M, a MUTE badge at its right when muted; under it the 16 steps of the page of the track's pattern that plays
  * (stopped: the selected track's cursor page, the others' first): a note a bar (accented: taller, the accent), a TIE after
  * a note the bar carried on from the one before, DRUM hits a pad (two hits or more: two pads), an empty step or a REST a
  * stub (a TIE with nothing to carry: brighter); the step playing on a raised cell. LEN > 16: a pip per page right of the
@@ -1925,7 +1856,7 @@ static void draw_tracks(void)
 #define TR_H 29                                      /* a row; rows TR_PITCH apart from Y_GRAPH, 3 .. 237 across */
 #define TR_PITCH 31
 #define TR_W 234
-#define TR_NY(lg) ((lg) ? 2 : 4)                     /* the name line's capitals from row 4 (LARGE, M: 2) */
+#define TR_NY(lg) 2                     /* M capitals start two rows below the row top */
 #define TR_SB 26                                     /* the steps: bars standing on row 25 */
 #define TR_BW 9                                      /* a step's bar, 11 px apart, 4 more between groups of 4 */
 #define TR_PX 216                                    /* the page pips */
@@ -1944,7 +1875,7 @@ static void home_track_row(uint32_t c)
 {
     track_t *t = &trk[c];
     const step_t *s = seq_steps(t);
-    uint32_t sel = c == song.sel, mute = t->p[P_MUTE] != 0, large = (ui_prefs & PREF_LARGE) != 0u, lit = (uint32_t)midi_lit(c);
+    uint32_t sel = c == song.sel, mute = t->p[P_MUTE] != 0, large = 1u, lit = (uint32_t)midi_lit(c);
     uint32_t len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), np = (len + 15u) / 16u, pg, p0, ph, i, sig, carry = 0;
     int32_t y = Y_GRAPH + (int32_t)c * TR_PITCH, m, x, xr = 222, ch = large ? AF_M_CAP_H : AF_S_CAP_H;
     uint16_t bg = sel ? T_THEME : T_SURF, half = ux_mix(T_THEME, T_INK, 35);
@@ -2146,10 +2077,10 @@ static uint16_t sg_fill_at(const sg_fill_t *F, int32_t x)   /* the block's fill 
 {
     return x >= F->c0 && x < F->c1 ? T_THEME : x >= F->p0 && x < F->p1 ? F->pf : T_RAISE;
 }
-/* the slot's letter at x (MENU > LARGE: M), its capitals SG_PAD under the lane's top; 0: no room before x1 */
+/* the slot's M letter at x, its capitals SG_PAD under the lane's top; 0: no room before x1 */
 static int32_t sg_letter(int32_t x, int32_t x1, int32_t y, uint32_t s, uint16_t ink, uint16_t bg)
 {
-    const aafont_t *f = (ui_prefs & PREF_LARGE) ? &AF_M : &AF_S;
+    const aafont_t *f = &AF_M;
     char a[2] = {(char)('A' + s), 0};
     int32_t w = text_w(f, a);
     if (x + w + SG_PAD > x1)
@@ -2393,7 +2324,7 @@ static void draw_graph(void)
     const track_t *t = TSEL;
     uint16_t c = ACC;
     uint32_t sig, ph = NSTEP, old_ph = pr_shown;
-    int roll = !ui.home && pg->graph == GR_ROLL && strip_kind() == SK_NONE && !detail_on() && !drum_track(t);
+    int roll = !ui.home && pg->graph == GR_ROLL && !detail_on() && !drum_track(t);
     int damage;
     if (roll) ph = pr_playhead(t);
     else pr_valid = 0;
@@ -2415,22 +2346,10 @@ static void draw_graph(void)
              (ph + 1u == old_ph || old_ph + 1u == ph);  /* start/stop, wrap and skipped steps: full fallback */
     ui.graph_sig = sig;
     cv_begin(240, graph_h(), T_BG);
-    cv_rrect(3, 0, 234, graph_h(), 5, T_SURF, T_BG);   /* the panel (MENU > LARGE: the strip) */
+    cv_rrect(3, 0, 234, graph_h(), 5, T_SURF, T_BG);   /* full native panel */
     cv_bg = T_SURF;                                  /* (text drawn with cv_text lands on it) */
     cv_oy = GOY;                                     /* graphs on a 100 px scale */
-    if (strip_kind() != SK_NONE) {                   /* MENU > LARGE: the strip */
-        uint32_t k = strip_kind();
-        cv_oy = k == SK_ADSR || k == SK_LFO ? 3 : 0;
-        graph_ht = LG_H_GRAPH - 6;
-        if (k == SK_SCOPE) graph_scope(c);
-        else if (k == SK_ADSR) graph_adsr(t, c);
-        else if (k == SK_LFO) graph_lfo(t, c);
-#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
-        else if (k == SK_MACRO) graph_macro(t, c, 1);
-#endif
-        else graph_title();
-        graph_ht = 100;
-    } else if (ui.home) {
+    if (ui.home) {
         cv_oy = 0;
         graph_scope(c);
     } else {

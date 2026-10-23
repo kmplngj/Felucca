@@ -29,10 +29,13 @@ publishes tested main builds and a pinned WebApp fork; its
   scale page. The emulator panel uses the same printed legend. See
   [text roles and contrast scope](lcd-typography.md#readable-inactive-information);
   physical readability and loaded-panel checks remain pending.
-- **Focused parameter bank:** LARGE uses four fixed knob positions and a larger
+- **Unified native UI:** value pages use four fixed knob positions and a larger
   last-touched value while retaining the complete musical graph. The readout
   distinguishes ordinary values, automation, held-step locks and temporary/kept
   edits. Selection remains after turn feedback expires; no new gesture is needed.
+  Lists show the full selected name above five rows; menus enlarge the selected
+  value, and NAME uses a full mixed-case field with a caret. The global size
+  switch is retired; old stored values and editor id 2 remain reserved for rollback.
   See the [reading roles and focus rules](lcd-typography.md#focused-parameter-bank).
   Physical FM-1 readability and loaded-panel qualification remain pending.
 - **RECENT sounds:** on SAVE > PRESETS, turn KNOB 4 (LIST) past OTHER to RECENT for

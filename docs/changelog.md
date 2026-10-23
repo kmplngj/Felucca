@@ -131,16 +131,19 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Changed
 
-- **Focused parameter reading:** LARGE uses a shared four-knob parameter bank
+- **Unified native reading:** value pages use a shared four-knob parameter bank
   and a stable larger current value while keeping full native graphs. Explicit
   scope feedback covers held-step locks, motion and temporary/kept edits; focus
-  remains after turn feedback expires. Physical FM-1 readability and loaded-panel
+  remains after turn feedback expires. Names and selected menu values have larger
+  reading roles, with five visible list/menu rows. NORMAL/LARGE is consolidated;
+  the old settings bit and editor id remain reserved for compatible rollback.
+  Physical FM-1 readability and loaded-panel
   qualification remain pending. See the [reading contract](lcd-typography.md#focused-parameter-bank).
 - **LCD typography:** control hints and state badges now use native M8Stealth57
   lettering alongside the default M8 text. Numeric card and MOD units stay in a
   fixed slot, and small-value fallbacks share a consistent vertical band.
   Track digits center on their cushion, removing the old extra shift for “1”.
-  Rounded pill edges, icons, text-font comparison builds and LARGE mode remain
+  Rounded pill edges, icons and text-font comparison builds remain
   available. See [roles, fit rules and validation scope](lcd-typography.md);
   physical readability and loaded-panel qualification remain pending.
 - **Display inactivity:** AUTO OFF combines the existing screen timeout with LED-only

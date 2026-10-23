@@ -38,7 +38,7 @@ enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_H
 static int menu_valued(uint32_t row) { return (row < MI_VALUES && row != MI_LCLEAR) || row == MI_DARK; }
 /* AUTO OFF remains the legacy combined wire setting; its native row opens the detail page. WAKE and ALL DARK
  * are described in DISPLAY to clients but only appear on that native detail page, never as extra tab rows. */
-static int menu_native_row(uint32_t row) { return row != MI_SCRWAKE && row != MI_DARK; }
+static int menu_native_row(uint32_t row) { return row != MI_LARGE && row != MI_SCRWAKE && row != MI_DARK; }
 #define MI_PROJECT(row) ((row) == MI_TUNE || ((row) >= MI_MIDIIN && (row) <= MI_TCH4))   /* the project's values (song.g,
                                                                                          * song.mch), not settings */
 #define MI_TCH(row) ((row) >= MI_TCH1 && (row) <= MI_TCH4)   /* 1.5.5 (#202): T1..T4 CHANNEL, MIDI IN TRACK's */
@@ -128,7 +128,7 @@ static const char *const STYLE_N[2] = {"FLAT", "LINE"};
  * second name (STYLE LINE, USB LEVEL FIXED); a step down the other (menu_step) */
 typedef struct { uint8_t row; uint32_t bit; const char *name[2]; } menu_flag_t;
 static const menu_flag_t MENU_FLAGS[] = {
-    {MI_LARGE, PREF_LARGE, {"OFF", "ON"}},            /* #15 / Discussion #80: ON, big knob labels and values (ui.c large_kind) */
+    {MI_LARGE, PREF_LARGE, {"OFF", "ON"}},            /* legacy wire id 2 only; retained bit for downgrade, ignored by native drawing */
     {MI_ACCEL, PREF_ACCEL, {"OFF", "ON"}},            /* #52: ui_input.c accel */
     {MI_LATCH, PREF_LATCH, {"OFF", "ON"}},
     {MI_USB, PREF_USB_FIXED, {"MASTER", "FIXED"}},     /* fx.c fx_usb_fixed: FIXED, USB at the full level */

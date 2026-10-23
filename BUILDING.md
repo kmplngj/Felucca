@@ -178,7 +178,8 @@ use the generated font
 header from that build. Real FM-1 readability and redraw behavior still need
 comparison.
 M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and shared
-M ink at 2× for L, with 17 px large advances to fit three-digit card readouts.
+M ink at 2× for L/N, with 17 px focused-value advances and 18 px full-name
+advances. N shares M bitmap data and adds metadata only.
 Its WOFF2 inputs require Brotli (`fonttools[woff]`); the WOFF2
 container is decoded only during asset generation. The ten extra Felucca marks
 are explicit local bitmap adaptations. All font variants use native M8Stealth57

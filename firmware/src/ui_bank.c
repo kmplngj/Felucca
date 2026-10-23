@@ -14,7 +14,7 @@
 
 static int bank_on(void)
 {
-    return !ui.layer && (large_kind() == LK_BANK || ((ui_prefs & PREF_LARGE) && lock_held()));
+    return !ui.layer && (reading_kind() == RK_BANK || lock_held());
 }
 static const aafont_t *bank_font(unsigned f) { return f == 0u ? &AF_L : f == 1u ? &AF_M : &AF_S; }
 static int bank_cap(const aafont_t *f)

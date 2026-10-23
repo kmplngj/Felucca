@@ -54,8 +54,7 @@ static uint32_t up_gen;                      /* bumped on every user bank change
 #define PREF_ACCEL 4u                          /* MENU > KNOB ACCEL ON (#52): fast turns of wide values x2..x8 */
 #define PREF_USB_FIXED 8u                      /* MENU > USB LEVEL FIXED: USB audio at the full level, MASTER after */
 #define PREF_BPM_LOCK 16u                      /* MENU > BPM LOCK ON (#58): SELECT sets the tempo only with GLO held */
-#define PREF_LARGE 32u                         /* MENU > LARGE ON (#15, Discussion #80): big knob labels and values
-                                                * (ui_draw.c large_kind); clear in every older setting = OFF */
+#define PREF_LARGE 32u                         /* reserved historical size bit: round-trips for rollback; no layout effect */
 #define PREF_SERIAL_OFF 64u                    /* MENU > USB SERIAL OFF (#67): no serial console, the device enumerates as
                                                 * audio + MIDI only (usb.c usb_cdc_switch); clear in every older setting = ON */
 #define PREF_RESTORE_OFF 128u                  /* MENU > RESTORE LAST OFF (1.2, Discussion #130): no autosave written, none
@@ -155,11 +154,6 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 #define H_GRAPH 122
 #define Y_FOOT 202
 #define H_FOOT 38
-/* MENU > LARGE (large_kind below): on the value pages the cards are tall (28..132) and the panel a strip
- * (136..198); elsewhere (lists, rolls, layers) the layout above, its card labels in M */
-#define LG_CARD_H 104
-#define LG_Y_GRAPH 136
-#define LG_H_GRAPH 62
 
 typedef struct {
     char label[24], value[16], unit[12];
@@ -479,30 +473,22 @@ static void scr_shown(void)                            /* after the frame: the r
 static const page_t *page_over;   /* a quick layer's own four knobs (ui_layer.c), while it edits or draws them */
 static const page_t *cur_page(void) { return page_over ? page_over : &PAGES[ui.page]; }
 
-/* Legacy LARGE selection, per reading task (#572): LK_BANK keeps the 44 px
- * parameter area and the full native workspace, with one stable large focus
- * readout. Lists/graphs, HOME TRACKS and quick layers retain LK_LABEL. TOOLS
- * temporarily retains its tall action layout until the list/menu migration.
- * MENU, NAME and dialogs own their layouts. Held-step locks use the same bank
- * in ui_draw.c bank_on without changing the roll's geometry. */
-enum { LK_OFF, LK_LABEL, LK_TALL, LK_BANK };
-static uint32_t large_kind(void)
+/* Reading roles are chosen by task, independent of the reserved legacy size bit.
+ * Value pages keep one focused bank; dense graphs/lists and held layers retain
+ * four compact controls. Every surface keeps the full native workspace. */
+enum { RK_COMPACT, RK_BANK };
+static uint32_t reading_kind(void)
 {
     uint32_t g;
-    if (!(ui_prefs & PREF_LARGE))
-        return LK_OFF;
-    if (ui.layer)
-        return LK_LABEL;
-    if (ui.home)                                        /* (HOME > TRACKS: its rows need the panel, the cards as on */
-        return home_tracks() ? LK_LABEL : LK_BANK;      /* a list page; the rows' names in M: draw_home_tracks) */
+    if (ui.layer) return RK_COMPACT;
+    if (ui.home) return home_tracks() ? RK_COMPACT : RK_BANK;
     g = cur_page()->graph;
     return g == GR_BROWSE || g == GR_SLOTS || g == GR_USER || g == GR_PATS || g == GR_SONG || g == GR_ROLL ||
-           g == GR_SLICES || g == GR_EVENTS ? LK_LABEL : g == GR_TOOLS ? LK_TALL : LK_BANK;
+           g == GR_SLICES || g == GR_EVENTS || g == GR_TOOLS ? RK_COMPACT : RK_BANK;
 }
-/* the geometry of the page shown: the cards' height, the panel's top and height */
-static uint32_t card_h(void) { return large_kind() == LK_TALL ? LG_CARD_H : CARD_H; }
-static uint32_t graph_y(void) { return large_kind() == LK_TALL ? LG_Y_GRAPH : Y_GRAPH; }
-static uint32_t graph_h(void) { return large_kind() == LK_TALL ? LG_H_GRAPH : H_GRAPH; }
+static uint32_t card_h(void) { return CARD_H; }
+static uint32_t graph_y(void) { return Y_GRAPH; }
+static uint32_t graph_h(void) { return H_GRAPH; }
 static int large_face_has(const char *s)                /* every glyph of s in the sparse L face */
 {
     for (; *s; s++)
@@ -1870,8 +1856,8 @@ static void preset_step(int32_t direction)
     recent.hold = 0;
 }
 
-static uint32_t sound_list_rows(void) { return ui_prefs & PREF_LARGE ? 5u : 7u; }
-/* A large selected name leaves five display rows; otherwise seven. FAV and a category use a bounded window, not a repeating carousel.
+static uint32_t sound_list_rows(void) { return 5u; }
+/* The selected name leaves five display rows. FAV and a category use a bounded window, not a repeating carousel.
  * Return total for an empty row; a current sound not in the list shows the start. */
 static uint32_t preset_visible(uint32_t cur, uint32_t total, uint32_t row)
 {

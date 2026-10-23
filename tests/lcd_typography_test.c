@@ -73,7 +73,7 @@ int main(void)
     type_box_t v, u, first_v, first_u;
     int bad = 0, ok = 1;
     ui_power_on();
-    ui_prefs &= (uint8_t)~PREF_LARGE;
+    go_page(GR_ROLL); /* compact controls retain the stationary unit contract */
     ok &= type_card(values[0], "%", &first_v, &first_u);
     for (i = 0; i < NELEM(values); i++) {
         ok &= type_card(values[i], "%", &v, &u);
