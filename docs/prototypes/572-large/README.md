@@ -3,7 +3,8 @@
 
 Four native layout directions for [#572](https://github.com/kmplngj/Felucca/issues/572),
 based on the readable-state/SEL patch in [draft PR #574](https://github.com/kmplngj/Felucca/pull/574).
-**No layout has been selected or adopted into firmware.**
+**The owner selected D as the design basis on 2026-10-23. No prototype layout
+has been adopted into firmware.** NORMAL/LARGE consolidation remains a proposal.
 
 ![Current LARGE and four native layout alternatives](comparison.png)
 
@@ -12,7 +13,7 @@ based on the readable-state/SEL patch in [draft PR #574](https://github.com/kmpl
 Can a player read values still only 9 px high in LARGE, without losing the four
 knobs' relationship or the musical context needed to edit them?
 
-**Compare D, Parameter Bank, as the next direction.** It keeps the four knobs in
+**Selected basis: D, Parameter Bank.** It keeps the four knobs in
 their physical left-to-right order and fits one 18 px focus readout, a 9 px label
 and unit, plus a compact four-value overview inside the original 44 px controller
 area. The complete NORMAL workspace below it is preserved, including FM6 feedback
@@ -25,11 +26,66 @@ height. A/C show the cost of four simultaneously large values: smaller diagrams
 and weaker physical mapping. Their contexts, and B's simplified FM6/DETAIL/MIXER
 contexts, remain sketches rather than adoption-ready renderers.
 
-The owner must choose a direction before a broad LARGE migration. Recommended
-first implementation scope after that choice: HOME/ENV/LFO value readout and MOD
+The direction-choice gate is satisfied; implementation qualification remains open.
+Recommended first implementation scope: HOME/ENV/LFO value readout and MOD
 context. Keep FM6/operator, STEP DETAIL, MIXER, lists, naming and menus separately
 bounded until their context contracts are resolved; do not replace them globally
 with this prototype renderer.
+
+## Proposed destination: one native UI, without NORMAL/LARGE layout forks
+
+D combines a large focused reading path with the complete native workspace.
+That removes the main reason to choose between value size and graph context.
+Recommend one D-based default interface, with font size assigned by reading role
+rather than two global layouts. This is a recommendation for the owner's question,
+not authorization already given to retire the setting.
+
+Do not simply remove LARGE now. Source review at `94fa5c1` shows additional roles:
+
+- `ui.c:large_kind` changes list/graph labels as well as tall value pages.
+- `ui_menu.c:menu_large`, `mr_h` and `mt_font` change menu tabs and some row heights;
+  dense seven/eight-row tabs do not gain the same room. D's shared menu adjunct
+  remains a five-row sample, without a complete scroll/subpage implementation.
+- `ui_graph.c:home_track_row` and `sg_letter` enlarge HOME track names and SONG
+  slot letters. These are not covered by the seven D parameter-page fixtures.
+- D retains 7/9 px overview labels/values; it does not enlarge every reading role.
+  Whole-domain focus fit, glyph coverage, idle/turn/release, mixed names, all menu
+  rows, layers and hardware readability remain qualification work.
+
+After those tasks are covered, remove the user-facing layout choice if device
+comparison shows that it no longer serves a distinct reading need. Do not add
+another density/zoom setting by default. A remaining accessibility need must be
+demonstrated and scoped to the reading roles that actually need it.
+
+`PREF_LARGE` is persisted in `settings_dev[30]` bit 5, and `editor_menu.c` exposes
+LARGE as stable MENU id 2 (`web/EDITOR_PROTOCOL.md`, MENU settings). Retirement
+needs an explicit import/export/MENU_SET policy and matching client behavior;
+keep the bit and id reserved with their old identity, never reuse them for D's
+focus or reinterpret another setting. D's first implementation can leave the
+legacy option intact while the unified reading roles are qualified. No settings,
+wire contract or client code changes are part of these prototypes.
+
+## Other Elektron principles worth adapting
+
+These are opportunities, not a newly authorized feature batch. The current
+[Digitone II manual, pp. 17–19, §§5.3.3, 6.1–6.4](https://www.elektron.se/wp-content/uploads/2026/10/Digitone-2-User-Manual_ENG_OS1.12_260930.pdf)
+documents parameter-page families, navigation/confirmation, musical value jumps,
+and contextual copy/clear/paste. Its [p. 52, §10.12.6](https://www.elektron.se/wp-content/uploads/2026/10/Digitone-2-User-Manual_ENG_OS1.12_260930.pdf)
+describes temporary save/reload for reversible live experimentation. The current
+[Digitakt II manual, p. 47, §10.8.1](https://www.elektron.se/wp-content/uploads/2026/10/Digitakt-2-User-Manual_ENG_OS1.17_260930.pdf)
+distinguishes locked parameters using inverted graphics and the locked value.
+
+| Principle | Existing Felucca behavior and useful adaptation | Priority / scope |
+| --- | --- | --- |
+| Make the editing scope explicit | `ui_input.c:lock_held/lock_turn` already edits held steps; `ui_draw.c:card_mot_of` marks motion-driven values; MOMENTARY has header status. Carry those meanings into D's overview and focused readout: base value, step lock, automation and temporary editing must stay distinguishable through shape/text as well as palette color. Never display a base value while the knob edits a lock. | First D implementation: preserve existing semantics; capture state examples before adding indicators. |
+| Stable page families and visible position | Family navigation and remembered pages already exist. Keep a consistent page identity/count and separate navigation from value editing; reuse [#404](https://github.com/kmplngj/Felucca/issues/404) for contextual SELECT ownership. | Separate navigation work, not an extra D gesture. |
+| Reversible experimentation with a visible outcome | LFO-held MOMENTARY already restores on release, OCT+ keeps; SAVE-held undo and tool previews already exist. D should retain their status and restore/keep hints. This is not the same as a full temporary pattern checkpoint. | Preserve existing paths now. Evaluate a larger checkpoint later against RAM, undo ownership and restore semantics. |
+| Musical value jumps | Existing formatters show units/fractions and `ui_knob.c:knob_value` applies KNOB ACCEL. Useful future jumps could target musically meaningful stops for long ranges, while leaving fine editing available. | Optional follow-up with descriptor-specific stops and a free, conflict-checked gesture; do not copy Elektron's push-encoder or FUNC combinations onto occupied FM-1 controls. |
+| Contextual copy/reset with a clear destination | A common action vocabulary could help repeated parameter-page edits. Existing undo/tools remain owners; do not add a second clipboard or hide a destructive reset behind a new chord. | Later workflow design with explicit object/destination and undo behavior. Not needed to finish D. |
+
+Directly copying Elektron's eight-encoder layout, FUNC/YES/NO grammar or Control
+All would not follow from this reference review. The FM-1 already assigns GLO,
+LFO-held editing and quick layers; any new gesture must respect those owners.
 
 ## Compare interactively
 
@@ -177,4 +233,5 @@ batch with exact-package, CPU2 variant and combined hardware acceptance as neede
 
 README and changelog remain unchanged: these are alternatives on a throwaway
 branch, not adopted capabilities or a merged behavior change. #571's independent
-polish remains in draft PR #574; #572 stays open for the owner's layout decision.
+polish remains in draft PR #574. #572 records D as the selected design basis;
+full reading-role qualification and a NORMAL/LARGE retirement decision remain open.
