@@ -152,78 +152,74 @@ static int32_t roll_text(uint32_t k, int32_t x, int32_t y, const char *s, uint16
     return x + text_w(f, s);
 }
 
-/* the header (y 0..24), three calm slots (1.2):
- *   left    the selected track's cushion (ink 4..20), the PROJECT slot letter of its pattern ("1 A", head_slot), the REC
- *           mark attached (filled: it is armed; outlined: another). A message centred hides the letter (its room)
- *   centre  the play state (stop, play, the song's disc), the metronome and the BPM (BPM LOCK ON: a lock right of
- *           it), the group's ink centred on x 120 (head_geo). The metronome swings on the click's beats (seq.c click_beat_now): mirrored
- *           on the bar's 2nd and 4th, the accent's on its 1st; stopped, still and MID
+/* the header (y 0..24), #572 direction A: a line of type, flush left, right-aligned status
+ *   left    the selected track's number ("T1", M; a MIDI IN note into it: the accent) and the PROJECT slot letter of its
+ *           pattern ("T1 A", head_slot). Then the transport: the play state (stop, play, the song's disc), the BPM (M)
+ *           and its unit (S, MID), BPM LOCK ON: a lock, then the REC mark (filled: this track armed; outlined: another).
+ *           The group starts after the track (head_geo), so arming REC moves nothing
  *   right   the octave, or the song row while a song plays (ending at 208), and the battery (ink 216..236; its bolt
  *           says USB power: no separate USB icon)
- * A message or a layer's label replaces the centre and the octave, centred on x 120, up to
- * 166 px; while the BPM is being changed (a SELECT turn: bpm_t) or in the GLO layer the centre stays and the message
- * goes right of the BPM (over the right slot). Every element's ink centred on row 12 (H_HEAD / 2; ui_test.c
- * test_head_centres): icons by cv_icon_mid, text by its capitals' band (CAP_IN; the odd row left over above it, as
- * everywhere). HEAD_MY / HEAD_SY derive their line tops from the generated capital metrics. */
+ * A message or a layer's label replaces the transport and the octave, centred on x 120, up to 166 px; while the BPM
+ * is being changed (a SELECT turn: bpm_t) or in the GLO layer the transport stays and the message goes right of it.
+ * Every element's ink centred on row 12 (H_HEAD / 2; ui_test.c test_head_centres): icons by cv_icon_mid, text by its
+ * capitals' band (CAP_IN; the odd row left over above it, as everywhere). (1.1.5 removed the metronome's swing;
+ * #572 the still metronome itself.) */
 #define HEAD_SY CAP_IN(S, H_HEAD)
 #define HEAD_MY CAP_IN(M, H_HEAD)
-#define HEAD_TRK_X 4                                   /* the track cushion's cell */
-#define HEAD_REC_X 20                                  /* the REC mark's cell (ink 23..33), after the slot letter if any */
-#define HEAD_SLOT_X 23                                 /* the slot letter's pen (ui_draw.c head_slot) */
+#define HEAD_TRK_X 4                                   /* the track's number */
+#define HEAD_REC_X 22                                  /* the REC mark's cell under a centred message (ink 25..35) */
 #define HEAD_BAT_X 214                                 /* the battery's cell */
 #define HEAD_GRP_R 208                                 /* the octave / song row ends here */
 #define HEAD_MSG_W 166                                 /* a message centred on x 120: 37..203 (after the REC mark) */
-#define HEAD_GAP 4                                     /* ink to ink: the metronome -> the BPM -> the lock */
-#define HEAD_PLAY_GAP 6                                /* the play state -> the metronome */
-/* the header's centre (1.5.6): the play state, the metronome and the BPM (BPM LOCK ON: its lock) as one group, its
- * ink (gx0 .. gx1, past it) centred on x 120 (before: the BPM's alone, the rest hanging off to the left). The play
- * state's slot (px0 .. px1) is as wide as the wider of stop and play, so the group stays put on PLAY / STOP (the
- * narrower ink right-aligned in it, its gap to the metronome kept; a song's disc reaches a few px further left). The
- * digits are placed by as many 0s as the BPM has digits (tabular figures: the same advance), so nothing moves while
- * the tempo changes, only with a digit more or less (or BPM LOCK turned). bx: the pen of the BPM, b: its ink; the
- * metronome's ink (mx0 .. mx1, past it); the BPM's rolling strip (sx0 .. sx1: between the metronome's cell, either
- * way round, and the lock's) */
-typedef struct { int32_t bx, b[4], mx0, mx1, sx0, sx1, px0, px1, gx0, gx1; } head_geo_t;
+#define HEAD_GAP 4                                     /* ink to ink: the BPM's unit -> the lock -> the REC mark */
+#define HEAD_PLAY_GAP 5                                /* the play state -> the BPM */
+#define HEAD_UNIT_GAP 3                                /* the BPM -> "BPM" */
+static int head_slot(char *b);
+/* the transport (#572): pw the play state's slot (the wider of stop and play: the BPM stays put on PLAY / STOP; the
+ * narrower ink right-aligned in it), the BPM placed by as many 0s as it has digits (tabular: nothing moves while the
+ * tempo changes within a digit count), "BPM", BPM LOCK's lock. bx: the BPM's pen, b: its ink; ux: the unit's pen;
+ * sx0 .. sx1: the BPM's rolling strip; gx0 .. gx1: the group's ink (the REC mark after it, at gx1 + HEAD_GAP) */
+typedef struct { int32_t bx, b[4], ux, sx0, sx1, px0, px1, gx0, gx1; } head_geo_t;
+static int32_t head_left(void)                         /* the track's number and slot letter: where their ink ends */
+{
+    char sl[3];
+    int32_t x = HEAD_TRK_X + ink_w(&AF_M, "T1");
+    if (head_slot(sl))
+        x += 4 + text_w(&AF_M, sl);
+    return x;
+}
 static void head_geo(head_geo_t *g, const char *bpm)
 {
-    int32_t ib[4], lb[4], pb[4], c = 16, pw, lw = 0;
-    uint32_t sz = 16;
+    int32_t lb[4], pb[4], pw;
     char z[8] = "0000000";
     z[str_len(bpm) < 7u ? str_len(bpm) : 7u] = 0;
     text_ink(&AF_M, z, g->b);
-    icon_ink(16, ICON_TEMPO, ib);
-    if (icon_cell(&sz, ICON_TEMPO) >= 0)
-        c = (int32_t)sz;
+    int32_t cell = 16;                                 /* the icons' cells end at px1 - their ink's right + 16 */
     icon_ink(16, ICON_X_STOP, pb);                     /* the play state's slot: the wider of stop and play */
     pw = pb[2] - pb[0];
+    cell -= pb[2];
     icon_ink(16, ICON_X_PLAY, pb);
     if (pb[2] - pb[0] > pw)
         pw = pb[2] - pb[0];
-    icon_ink(16, ICON_X_LOCK, lb);
-    if (ui_prefs & PREF_BPM_LOCK)
-        lw = HEAD_GAP + lb[2] - lb[0];
-    g->gx0 = HALF_UP(240 - (pw + HEAD_PLAY_GAP + (ib[2] - ib[0]) + HEAD_GAP + (g->b[2] - g->b[0]) + lw));
+    if (16 - pb[2] > cell)
+        cell = 16 - pb[2];
+    icon_ink(16, ICON_X_SONG, pb);
+    if (16 - pb[2] > cell)
+        cell = 16 - pb[2];
+    g->gx0 = head_left() + 8;
     g->px0 = g->gx0;
     g->px1 = g->px0 + pw;
-    g->mx0 = g->px1 + HEAD_PLAY_GAP;
-    g->mx1 = g->mx0 + (ib[2] - ib[0]);
-    g->bx = g->mx1 + HEAD_GAP - g->b[0];
-    g->gx1 = g->bx + g->b[2] + lw;
-    g->sx0 = g->mx1 + (ib[0] > c - ib[2] ? ib[0] : c - ib[2]);
-    g->sx1 = g->bx + g->b[2] + HEAD_GAP - lb[0];
-}
-/* the metronome with its ink at x0 (beat: click_beat_now; the 2nd and 4th mirrored, the same ink box; the 1st the
- * accent's). Mirrored by cv_flip: the cell's alpha drawn right to left, no second glyph */
-static void head_metro(int32_t x0, int32_t beat)
-{
-    int32_t ib[4], c = 16;
-    uint32_t sz = 16;
-    icon_ink(16, ICON_TEMPO, ib);
-    if (icon_cell(&sz, ICON_TEMPO) >= 0)
-        c = (int32_t)sz;
-    cv_flip = (uint8_t)(beat > 0 && (beat & 1));
-    cv_icon_mid(x0 - (cv_flip ? c - ib[2] : ib[0]), H_HEAD / 2, 16, ICON_TEMPO, beat == 0 ? T_ACCENT : T_MID, T_BG);
-    cv_flip = 0;
+    g->bx = g->px1 + HEAD_PLAY_GAP - g->b[0];
+    g->sx0 = g->px1 + cell;                            /* (the rolling strip: clear of the play state's cell) */
+    if (g->sx0 > g->bx + g->b[0])
+        g->sx0 = g->bx + g->b[0];
+    g->sx1 = g->bx + g->b[2] + 1;
+    g->ux = g->bx + g->b[2] + HEAD_UNIT_GAP;
+    g->gx1 = g->ux + ink_w(&AF_S, "BPM");
+    if (ui_prefs & PREF_BPM_LOCK) {
+        icon_ink(16, ICON_X_LOCK, lb);
+        g->gx1 += HEAD_GAP + lb[2] - lb[0];
+    }
 }
 /* the width cv_free_hint(x, .., s, .., maxw) draws (its word, keycap and the ellipsised rest) */
 static int32_t head_hint_w(const char *s, int32_t maxw)
@@ -344,13 +340,10 @@ static void head_group(void)
 }
 static void draw_head(void)
 {
-    static int16_t metro_x = -1;                       /* the metronome's ink as drawn (-1: hidden), its beat */
-    static int8_t metro_beat;
     char b[16];
     head_geo_t g;
-    int32_t beat = -1;                                 /* the metronome stands still (its swing removed in 1.1.5) */
     uint32_t rec = (song.rec >> song.sel) & 1u ? 2u : song.rec != 0u;   /* 2 the selected track armed, 1 another */
-    char sl[3];
+    char sl[3], tn[3] = {'T', 0, 0};
     int slot = head_slot(sl);
     uint32_t sig = (uint32_t)song.playing * 3u + rec * 5u + (uint32_t)(song.octave + 8) * 11u + song.sel * 13131u +
                    (ui.msg_t ? str_hash(7u, ui.msg) : mom_head() ? 6007u + mom.st * 211u : ui.layer * 7919u + (uint32_t)layer_locked() * 3u) + (uint32_t)song.g[G_BPM] * 101u + (ui.bpm_t != 0) * 31u +
@@ -359,7 +352,6 @@ static void draw_head(void)
                    (slot ? str_hash(11u, sl) : 0u) + (uint32_t)midi_lit(song.sel) * 15485863u;   /* (1.5.5) */
     int msg = ui.msg_t || ui.layer || mom_head();
     int centre = !msg || ui.bpm_t || ui.layer == LAYER_GLO;   /* the BPM being changed: it stays, the message right */
-    int32_t rx = HEAD_REC_X;
     if (song.g[G_BPM] != ui.roll_bpm) {
         char a[8];
         fmt_int(a, ui.roll_bpm);
@@ -379,45 +371,42 @@ static void draw_head(void)
             roll_text(ROLL_BPM, g.bx - g.sx0, HEAD_MY, b, ui.bpm_t ? T_ACCENT : T_THEME);
             cv_blit((uint32_t)g.sx0, Y_HEAD);
         }
-        if (metro_x >= 0 && beat != metro_beat) {      /* a beat: the metronome's cell only (either way round) */
-            int32_t cx = g.mx0 - (g.sx0 - g.mx1);
-            metro_beat = (int8_t)beat;
-            cv_begin((uint32_t)(g.sx0 - cx), H_HEAD, T_BG);
-            head_metro(g.mx0 - cx, beat);
-            cv_blit((uint32_t)cx, Y_HEAD);
-        }
         return;
     }
     ui.head_sig = sig;
-    metro_x = -1;
     cv_begin(240, H_HEAD, T_BG);
-    cv_icon_mid(HEAD_TRK_X, H_HEAD / 2, 16, trk_icon(song.sel, 1), midi_lit(song.sel) ? T_TEXT : T_ACCENT, T_BG);   /* (1.5.5:
-                                                       * a MIDI IN note into it, #208: lit) */
-    if (slot && (centre || !msg)) {                    /* the slot letter (not under a message centred: its room) */
+    tn[1] = (char)('1' + song.sel % NTRK);
+    GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
+    cv_text(HEAD_TRK_X, HEAD_MY, &AF_M, tn, midi_lit(song.sel) ? T_ACCENT : T_TEXT);   /* (1.5.5: a MIDI IN note
+                                                       * into it, #208: lit) */
+    if (slot && centre) {                              /* the slot letter (not under a message centred: its room) */
         char l[2] = {sl[0], 0};
+        int32_t x = HEAD_TRK_X + ink_w(&AF_M, "T1") + 4;
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
-        rx = cv_text(HEAD_SLOT_X, HEAD_MY, &AF_M, l, sl[0] == '-' ? T_MID : T_THEME);
-        if (sl[1])                                     /* edited since: the mark, up by the letter's top */
-            rx = cv_text(rx, HEAD_MY, &AF_M, "*", T_MID);
-        rx += 1;                                       /* (the REC mark's cell after it, its ink 3 px on) */
+        x = cv_text(x, HEAD_MY, &AF_M, l, sl[0] == '-' ? T_MID : T_THEME);
+        if (sl[1])                                     /* edited since: the mark */
+            cv_text(x, HEAD_MY, &AF_M, "*", T_MID);
     }
-    draw_rec_mark(rx, T_BG);
     if (centre) {
-        int32_t ib[4], lx = g.bx + g.b[2];             /* lx: the right end of the BPM (and its lock) */
+        int32_t ib[4], lx = g.ux + ink_w(&AF_S, "BPM");   /* lx: the right end of the group so far */
         uint32_t id = song.playing ? (chain.running ? ICON_X_SONG : ICON_X_PLAY) : seq_counting() ? ICON_X_PLAY : ICON_X_STOP;
         icon_ink(16, id, ib);                          /* the play state: the song's disc, play (counting in: the
                                                         * accent's, about to play), stop */
         cv_icon_mid(g.px1 - ib[2], H_HEAD / 2, 16, id, /* (right-aligned in its slot) */
                     song.playing ? T_THEME : seq_counting() ? T_ACCENT : T_MID, T_BG);
-        head_metro(g.mx0, beat);
-        metro_x = (int16_t)g.mx0;
-        metro_beat = (int8_t)beat;
         if (!ui.roll[ROLL_BPM].from[0])
             GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         roll_text(ROLL_BPM, g.bx, HEAD_MY, b, ui.bpm_t ? T_ACCENT : T_THEME);
+        GFX_HOOK_ALIGN(0, 0, 0, HEAD_MY + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "header BPM unit on its baseline");
+        cv_text(g.ux, HEAD_MY + AF_M_CAP_Y + AF_M_CAP_H - AF_S_CAP_H - AF_S_CAP_Y, &AF_S, "BPM", T_MID);
         if (ui_prefs & PREF_BPM_LOCK) {                /* BPM LOCK ON (#58): the lock right of the BPM */
             icon_ink(16, ICON_X_LOCK, ib);
             cv_icon_mid(lx + HEAD_GAP - ib[0], H_HEAD / 2, 16, ICON_X_LOCK, T_MID, T_BG);
+            lx += HEAD_GAP + ib[2] - ib[0];
+        }
+        if (rec) {                                     /* the REC mark after the transport */
+            icon_ink(16, rec == 2u ? ICON_X_REC : ICON_X_REC_O, ib);
+            draw_rec_mark(lx + HEAD_GAP - ib[0], T_BG);
             lx += HEAD_GAP + ib[2] - ib[0];
         }
         if (msg) {                                     /* right of the BPM, over the right slot */
@@ -425,6 +414,7 @@ static void draw_head(void)
             head_msg(x, 236 - x);
         }
     } else {
+        draw_rec_mark(HEAD_REC_X, T_BG);
         head_msg(-1, HEAD_MSG_W);
     }
     if (!msg && (chain.running || song.octave))
@@ -472,7 +462,7 @@ static void draw_frame(void)
 {
     uint32_t ch = card_h(), gy = graph_y(), gh = graph_h();   /* fixed native workspace */
     gap_rows(H_HEAD, Y_LABEL);
-    gap_rows(Y_LABEL + ch, gy);
+    lcd_fill(0, Y_LABEL + ch, 240, gy - (Y_LABEL + ch), T_BG);   /* (#572: no rule here: the columns have theirs) */
     gap_rows(gy + gh, Y_FOOT);
     if (bank_on()) {                                  /* the bank is continuous across the former card gaps */
         lcd_fill(0, Y_LABEL, 3, ch, T_BG);

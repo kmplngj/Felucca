@@ -165,7 +165,8 @@ recorded in the linked reports, rather than every current build or device.
 - **One native look (direction A, #572):** rules instead of boxes in every palette.
   Value pages show the focused knob as a 27 px numeral where the graph leaves room, the
   four knob columns under rules whose form names the editing state (solid, dashed
-  automation, doubled lock, dotted MOMENTARY), and the accent only while a knob turns.
+  automation, doubled lock, dotted MOMENTARY), and the accent only while a knob turns. The header
+  reads `T1 ▶ 124 BPM` flush left with the REC mark after the tempo.
   Compact knob rows, MENU tabs, settings rows and the footer share the same type system.
   MENU > STYLE is retired with its value and editor id kept for rollback. New
   MENU > DISPLAY > **GRAPH** (default TURN): the turned knob's filter response or

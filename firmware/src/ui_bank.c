@@ -93,7 +93,7 @@ static void bank_status(char *s, const bank_field_t *f)
         uint64_t held = lock_held();
         unsigned step = 0;
         while (step < NSTEP && !((held >> step) & 1u)) step++;
-        str_cpy(s + 3, f->lock == 2u ? "LOCK" : "BASE", 6);
+        str_cpy(s + 3, f->lock == 2u ? "LOCK " : "BASE ", 6);
         fmt_int(s + str_len(s), (int32_t)step + 1);
         if (held & (held - 1u)) str_cpy(s + str_len(s), "+", 2);
         return;
@@ -131,7 +131,8 @@ static void bank_column(int x, int y, uint32_t c, int hot)
     int focus = c == ui.read_bank.focus;
     const aafont_t *vf = bank_font(f->small);
     unsigned form = bank_form(f, focus);
-    uint16_t rc = focus ? (hot ? T_ACCENT : f->color == T_DIM ? T_DIM : T_THEME) : form == BR_SOLID ? T_LINE : T_THEME;
+    uint16_t rc = focus ? (hot ? T_ACCENT : f->color == T_DIM ? T_DIM : T_MID) : form == BR_SOLID ? T_LINE : T_THEME;   /* (the
+                                                       * kept focus MID: the accent alone says it turns, also in GREY) */
     if (f->label[0] || f->value[0] || focus)
         bank_rule(x, y, COL_W, form, focus, rc);
     int ly = y + BANK_LBL_DY, vb = ly + AF_S_CAP_H + 2 + AF_M_CAP_H;

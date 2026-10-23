@@ -48,7 +48,9 @@ publishes tested main builds and a pinned WebApp fork; its
   large numeral, then the four knob columns under rules. The focused column's rule
   shows the state by its form: solid for a value, dashed for automation, doubled for a
   step lock, dotted for a MOMENTARY value. It uses the palette's accent only while the
-  knob turns. Compact knob rows, MENU tabs (names with an underline), settings rows and
+  knob turns (grey while it rests). The header reads `T1 ▶ 124 BPM` from the left, then
+  BPM LOCK's lock and the REC mark, so arming REC never moves the tempo; the octave and
+  battery stay right. The still metronome icon is gone. Compact knob rows, MENU tabs (names with an underline), settings rows and
   the footer (sound, engine, page) follow the same type system. MENU > STYLE is retired:
   both stored values draw this look, the row is hidden, and editor id 1 is kept for
   rollback (`uiCaps` bit 5).

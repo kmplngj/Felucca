@@ -9373,11 +9373,11 @@ static int test_large(void)
         int16_t base = TSEL->p[id], locked = 0;
         char expected[16], status[20]; const char *unit;
         draw_columns(); bank_status(status, &ui.read_bank.field[0]);
-        ok = bank_on() && strstr(status, "BASE7");
+        ok = bank_on() && strstr(status, "BASE 7");
         motion_set_lock(TSEL, 6, id, 37); draw_columns();
         ui_param_format(TSEL, id, track_desc(TSEL, id), 37, expected, &unit);
         bank_status(status, &ui.read_bank.field[0]);
-        ok &= str_eq(ui.read_bank.field[0].value, expected) && strstr(status, "LOCK7") && TSEL->p[id] == base;
+        ok &= str_eq(ui.read_bank.field[0].value, expected) && strstr(status, "LOCK 7") && TSEL->p[id] == base;
         turn(EN_K1, 1);
         ok &= motion_lock_get(TSEL, 6, id, &locked) && locked != 37 && TSEL->p[id] == base;
         bad += check("#572 D: held step distinguishes base/lock and edits its lock without changing the sound base", ok);
@@ -9657,22 +9657,21 @@ static int test_head_centres(void)
                 memset(host_screen, 0, sizeof host_screen);
                 ui.force = 1; draw_head(); ui.force = 0;
                 ok &= head_centres(HS_NAME[s], pr);
-                okp = nhel > 0 && hel[0][0] == 4;      /* the track cushion first, its ink from x 4 */
+                okp = nhel > 0 && hel[0][0] == 4;      /* the track's number first, its ink from x 4 */
                 if (s != HS_GLO_TURN) {                /* the battery last, in its cell; nothing between 208 and it */
                     okp &= head_span2(HEAD_BAT_X, 239, &a, &b) && a >= 214 && b <= 236;
                     okp &= !head_span2(HEAD_GRP_R, HEAD_BAT_X - 1, &a, &b);
                 } else {                               /* GLO, the tempo turned: the BPM, its lock, the label after */
                     head_geo_t g;
                     head_geo(&g, "124");
-                    okp &= head_span2(g.bx + g.b[2] + 20, 239, &a, &b) && a >= 142;
+                    okp &= head_span2(g.gx1 + 2, 239, &a, &b) && a >= 142;
                 }
-                if (!msg) {                            /* 1.5.6: the group's ink on x 120 (the play state .. the BPM /
-                                                        * its lock; a song's disc 4 px wider than the slot: -2.5) */
+                if (!msg) {                            /* #572: the transport from just after the track (a song's disc
+                                                        * up to 4 px left of the play state's slot), clear of the octave */
                     head_geo_t g;
                     head_geo(&g, s == HS_BPM90 ? "90" : "124");
-                    c2 = head_span2(g.gx0 - 6, g.gx1 - 1, &a, &b);
-                    okp &= s == HS_SONG ? c2 >= 234 && c2 <= 242 : c2 >= 238 && c2 <= 242;
-                    okp &= a >= 40 && b < (s == HS_OCT ? 160 : 180);   /* (clear of the REC mark, the octave) */
+                    head_span2(g.gx0 - 6, g.gx1 + 24, &a, &b);
+                    okp &= a >= g.gx0 - 4 && a <= g.gx0 + 2 && a >= 26 && b < (s == HS_OCT ? 160 : 180);
                 } else {                               /* the message centred on x 120 */
                     c2 = head_span2(40, 205, &a, &b);
                     okp &= c2 >= 234 && c2 <= 246 && a >= 40 && b <= 205;
@@ -9683,96 +9682,50 @@ static int test_head_centres(void)
             }
     ui_style = ST_FLAT; style_apply();
     bad += check("header: every element's ink centred on row 12 (+-1 px), every state, FLAT and LINE, every palette", ok);
-    bad += check("header: three slots: track at 4, BPM / message on x 120, octave to 208, battery 214..236 (GLO with "
-                 "the tempo turned: the label right of the BPM and its lock)", place);
+    bad += check("header: track at 4, the transport after it (a message on x 120), octave to 208, battery 214..236 (GLO "
+                 "with the tempo turned: the label right of the BPM and its lock)", place);
     ui_power_on();
     return bad;
 }
 
-/* the header's metronome (ui_draw.c head_metro): it swings on the beats the click is on (seq.c click_beat_now): the
- * bar's 2nd and 4th beats mirrored, the 1st the accent's, the 3rd as stopped; a beat redraws its ink only (the rest
- * of the screen untouched, the header's signature kept) */
-static int test_head_metronome(void)
-{
-    static uint16_t shot[4][H_HEAD * 240], still[H_HEAD * 240];
-    head_geo_t g;
-    int bad = 0, ok = 1, only = 1, b;
-    int32_t x, y, w;
-    ui_power_on();
-    settings.palette = 0; palette_set(0);
-    song.g[G_BPM] = 124; ui.roll_bpm = 124;
-    head_geo(&g, "124");
-    w = g.mx1 - g.mx0;
-    ui.force = 1; draw_head(); ui.force = 0;           /* stopped */
-    memcpy(still, host_screen, sizeof still);
-    song.playing = 1; clk_pos = 0;
-    for (b = 0; b < 4; b++) {
-        uint32_t sig;
-        clk_step = (uint32_t)b * 4u + (b & 1u) * 2u;   /* (inside the beat: its 1st or 3rd 1/16) */
-        ui.force = 1; draw_head(); ui.force = 0;
-        memcpy(shot[b], host_screen, sizeof shot[b]);
-        sig = ui.head_sig;
-        clk_step = (uint32_t)((b + 1) % 4) * 4u;       /* the next beat: only the metronome's ink changes */
-        draw_head();
-        only &= ui.head_sig == sig;
-        for (y = 0; y < H_HEAD; y++)
-            for (x = 0; x < 240; x++)
-                if (host_screen[y * 240 + x] != shot[b][y * 240 + x]) only &= x >= g.mx0 && x < g.mx1;
-    }
-    for (b = 0; b < 4; b++)                            /* 1.1.5: no swing: every beat as stopped */
-        for (y = 0; y < H_HEAD; y++)
-            for (x = 0; x < w; x++)
-                ok &= shot[b][y * 240 + g.mx0 + x] == still[y * 240 + g.mx0 + x];
-    bad += check("header metronome: still on every beat, as stopped", ok);
-    bad += check("header metronome: a beat changes nothing in the header", only);
-    song.playing = 0;
-    ui_power_on();
-    return bad;
-}
-
-/* 1.5.6: the header's centre group (ui_draw.c head_geo): the ink from the play state's left to the BPM's (or its
- * lock's) right centred on x 120 within +-1 px, 2- and 3-digit tempi, stopped and playing, BPM LOCK off and on; the
- * group (the play state, the metronome) stays put on PLAY and while the tempo changes within a digit count */
+/* #572: the header's transport (ui_draw.c head_geo): the play state, the BPM and its unit start just after the track,
+ * at the same x for every tempo, stopped and playing, BPM LOCK off and on; the BPM's digits stay put while the tempo
+ * changes within a digit count, and the REC mark comes after the group, never moving it */
 static int test_head_group(void)
 {
     static const int16_t T[] = {40, 60, 88, 99, 100, 120, 124, 188, 200, 240};
     int bad = 0, ok = 1, still = 1;
-    int32_t m0[2][2] = {{-1, -1}, {-1, -1}};
-    uint32_t i, pl, lk;
+    int32_t x0 = -1, bx[2] = {-1, -1};
+    uint32_t i, pl, lk, rc;
     for (lk = 0; lk < 2u; lk++)
-        for (i = 0; i < sizeof T / sizeof T[0]; i++)
-            for (pl = 0; pl < 2u; pl++) {
-                int32_t a, b, c2, j, play = -1, metro = -1;
-                head_geo_t g;
-                char s[8];
-                ui_power_on();
-                settings.palette = 0; palette_set(0);
-                if (lk) ui_prefs |= PREF_BPM_LOCK;
-                song.playing = (uint8_t)pl; clk_pos = 0; clk_step = 8u;
-                song.g[G_BPM] = T[i]; ui.roll_bpm = T[i];
-                fmt_int(s, T[i]);
-                head_geo(&g, s);
-                memset(host_screen, 0, sizeof host_screen);
-                ui.force = 1; draw_head(); ui.force = 0;
-                head_centres("group", 0);
-                c2 = head_span2(g.gx0 - 6, g.gx1 + 2, &a, &b);
-                ok &= c2 >= 238 && c2 <= 242;
-                for (j = 0; j < nhel; j++) {           /* the play state, the metronome: their ink's left */
-                    if (hel[j][0] >= a && play < 0) play = hel[j][0];
-                    else if (hel[j][0] > a && metro < 0) metro = hel[j][0];
+        for (rc = 0; rc < 2u; rc++)
+            for (i = 0; i < sizeof T / sizeof T[0]; i++)
+                for (pl = 0; pl < 2u; pl++) {
+                    int32_t a, b;
+                    head_geo_t g;
+                    char s[8];
+                    ui_power_on();
+                    settings.palette = 0; palette_set(0);
+                    if (lk) ui_prefs |= PREF_BPM_LOCK;
+                    song.playing = (uint8_t)pl; song.rec = rc ? 1u << song.sel : 0u; clk_pos = 0; clk_step = 8u;
+                    song.g[G_BPM] = T[i]; ui.roll_bpm = T[i];
+                    fmt_int(s, T[i]);
+                    head_geo(&g, s);
+                    memset(host_screen, 0, sizeof host_screen);
+                    ui.force = 1; draw_head(); ui.force = 0;
+                    head_centres("group", 0);
+                    head_span2(g.gx0 - 4, g.gx1, &a, &b);
+                    ok &= a >= g.gx0 - 1 && a <= g.gx0 + 2 && b <= g.gx1;
+                    if (x0 < 0) x0 = g.gx0;
+                    still &= g.gx0 == x0;
+                    if (bx[T[i] >= 100] < 0) bx[T[i] >= 100] = g.bx;
+                    still &= bx[T[i] >= 100] == g.bx;      /* (the same for every tempo of as many digits) */
+                    ui_prefs &= ~PREF_BPM_LOCK;
+                    song.playing = 0; song.rec = 0;
                 }
-                still &= metro == g.mx0 && play >= g.px0 && play <= g.px0 + 2;
-                if (m0[lk][T[i] >= 100] < 0) m0[lk][T[i] >= 100] = metro;
-                still &= m0[lk][T[i] >= 100] == metro; /* (the same for every tempo of as many digits) */
-                if (!lk && (T[i] == 60 || T[i] == 120 || T[i] == 200))
-                    printf("    head group %3d BPM %-7s ink x %3d..%3d centre %5.1f (play state %3d.., metronome %3d..)\n",
-                           T[i], pl ? "playing" : "stopped", a, b, c2 / 2.0, play, metro);
-                ui_prefs &= ~PREF_BPM_LOCK;
-                song.playing = 0;
-            }
-    bad += check("header: the group (play state .. BPM / lock) centred on x 120 (+-1 px): 2 and 3 digits, stopped and "
-                 "playing, BPM LOCK off and on", ok);
-    bad += check("header: the play state and the metronome stay put on PLAY / STOP and while the tempo changes", still);
+    bad += check("header: the transport (play state, BPM, unit, lock) inked from its place after the track: 2 and 3 digits, "
+                 "stopped and playing, BPM LOCK off and on, REC armed or not", ok);
+    bad += check("header: the transport starts at the same x and the BPM stays put on PLAY / STOP, REC and tempo changes", still);
     ui_power_on();
     return bad;
 }
@@ -10056,9 +10009,9 @@ static int test_head_slot(void)
     int bad = 0, ok;
     ui_power_on();
     frames(50);
-    ok = head_is(0) && !head_ink_cols(23, 32);
+    ok = head_is(0) && !head_ink_cols(23, 27);          /* (#572: between "T1" and the play state, nothing) */
     project_save(1); ui.msg_t = 0; frames(50);
-    ok &= head_is("B") && head_ink_cols(23, 32) > 4;
+    ok &= head_is("B") && head_ink_cols(23, 30) > 4;    /* (the letter after "T1") */
     bad += check("header: no letter at power-on; \"1 B\" after PROJECT SAVE to B", ok);
     trk[0].step[0].note[0] = 70; trk[0].step[0].n = 1; frames(50);
     ok = head_is("B*");
@@ -11836,7 +11789,6 @@ int main(int argc, char **argv)
     bad += test_menu_prefs();
     bad += test_style();
     bad += test_head_centres();
-    bad += test_head_metronome();
     bad += test_head_group();
     bad += test_div_order();
     bad += test_knob_accel();
