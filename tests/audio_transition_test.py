@@ -193,7 +193,7 @@ def main():
     profile = json.loads((ROOT / "build/gen/resolved-profile.json").read_text())
     novec = ["-fno-vectorize", "-fno-slp-vectorize"]
     probe = subprocess.run(cc + novec + ["-x", "c", "-c", "-o", os.devnull, "-"],
-                           input="", text=True, capture_output=True)
+                           input="", text=True, capture_output=True, check=False, timeout=180)
     if probe.returncode:
         novec = ["-fno-tree-vectorize", "-fno-tree-slp-vectorize"]
     builds = [(name, ["-" + name] + (novec if name == "Os" else []), ROOT / "build/gen", 1)
@@ -204,8 +204,10 @@ def main():
         san = ["-fsanitize=address,undefined", "-fno-sanitize=shift", "-fno-sanitize-recover=undefined"]
         probe_path = out / "sanitizer-probe"
         probe = subprocess.run(cc + san + ["-x", "c", "-o", str(probe_path), "-"],
-                               input="int main(void) { return 0; }", text=True, capture_output=True)
-        if not probe.returncode and not subprocess.run([str(probe_path)], capture_output=True).returncode:
+                               input="int main(void) { return 0; }", text=True, capture_output=True,
+                               check=False, timeout=180)
+        if not probe.returncode and not subprocess.run([str(probe_path)], capture_output=True,
+                                                       check=False, timeout=60).returncode:
             sanitizer_probe = sanitizer_capture_probe(cc, san, out)
             builds.append(("sanitize", ["-O1", "-g"] + san, ROOT / "build/gen", 1))
         else:

@@ -34,8 +34,9 @@ class SchedulerTests(unittest.TestCase):
                                "if [ \"$1\" = --plan ]; then\ncat <<'PLAN'\n" + plan +
                                "\nPLAN\nexit 0\nfi\n" + body + "\n")
 
-    def launch(self, env=None):
-        return subprocess.Popen([sys.executable, str(RUNNER), str(self.script)], cwd=self.root,
+    def launch(self, env=None, ai_output=False, preflight=False):
+        args = (["--ai-output"] if ai_output else []) + (["--preflight"] if preflight else [])
+        return subprocess.Popen([sys.executable, str(RUNNER), str(self.script), *args], cwd=self.root,
                                 env=env or self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True)
 
@@ -175,6 +176,157 @@ wait
             with self.subTest(plan=plan), self.assertRaises(ValueError):
                 test_jobs.parse_plan(plan)
 
+    def test_ai_output_reduces_transcript_without_changing_execution_or_logs(self):
+        self.fixture("noise\t\techo noise\nnotices\t\techo notices", r'''
+echo "$2" >> calls
+case "$2" in
+ noise) python3 -c 'print("ordinary passing detail " * 4000)' ;;
+ notices)
+    echo '== test descriptions mention skipped negative fixtures'
+    echo 'compiler.c:12: warning: example warning'
+    echo '== skip reference (no DaisySP)'
+    echo 'regress: CPU: 32 counts unavailable; the budget is not checked'
+    ;;
+esac
+''')
+        code, full, normal = self.finish(self.launch())
+        self.assertEqual(code, 0, full)
+        baseline = self.root / "baseline"
+        next(self.root.glob("build/host/test-run-*")).rename(baseline)
+        code, compact, summary = self.finish(self.launch(ai_output=True))
+        self.assertEqual(code, 0, compact)
+        self.assertLess(len(compact.encode()), len(full.encode()) // 20)
+        self.assertNotIn("ordinary passing detail", compact)
+        self.assertIn("warning: example warning", compact)
+        self.assertIn("skip reference (no DaisySP)", compact)
+        self.assertIn("budget is not checked", compact)
+        self.assertIn("PASSED units: passed=2 failed=0 blocked=0 cancelled=0", compact)
+        self.assertEqual(sorted((self.root / "calls").read_text().splitlines()),
+                         ["noise", "noise", "notices", "notices"])
+        logs = next(self.root.glob("build/host/test-run-*"))
+        for before, after in zip(normal["units"], summary["units"]):
+            self.assertEqual(before["status"], after["status"])
+            self.assertEqual((baseline / before["log"]).read_bytes(), (logs / after["log"]).read_bytes())
+        self.assertEqual(summary["units"][1]["diagnostics"]["warning_lines"], 1)
+        self.assertEqual(summary["units"][1]["diagnostics"]["skip_lines"], 2)
+
+    def test_ai_output_keeps_failure_identity_early_error_tail_and_blocking(self):
+        self.fixture("compile\t\techo a\nconsumer\tcompile\techo b\nindependent\t\techo c", r'''
+case "$2" in
+ compile)
+    echo 'fatal error: original compiler failure'
+    python3 -c 'print("later noise\n" * 3000)'
+    echo final-detail
+    exit 7 ;;
+ consumer) touch stale-result-consumed ;;
+ independent) echo independent-success ;;
+esac
+''')
+        code, output, summary = self.finish(self.launch(ai_output=True))
+        self.assertEqual(code, 1, output)
+        self.assertIn("compile failed exit=7", output)
+        self.assertIn("consumer blocked", output)
+        self.assertIn("fatal error: original compiler failure", output)
+        self.assertIn("final-detail", output)
+        self.assertNotIn("independent-success", output)
+        self.assertNotIn("PASSED", output)
+        self.assertLess(len(output), 2500)
+        self.assertFalse((self.root / "stale-result-consumed").exists())
+        self.assertEqual([u["status"] for u in summary["units"]], ["failed", "blocked", "passed"])
+        self.assertTrue(summary["units"][0]["excerpt_limited"])
+        log = next(self.root.glob("build/host/test-run-*/001-compile.log"))
+        self.assertEqual(log.read_text().count("later noise"), 3000)
+
+    def test_ai_output_preserves_preflight_failure_exit_code_and_raw_output(self):
+        self.script.write_text('''#!/bin/sh
+if [ "$1" = --preflight ]; then
+    echo preflight-stdout
+    echo 'error: missing prerequisite' >&2
+    exit 7
+fi
+touch must-not-plan
+''')
+        code, output, summary = self.finish(self.launch(ai_output=True, preflight=True))
+        self.assertEqual(code, 7, output)
+        self.assertIn("preflight failed exit=7", output)
+        self.assertIn("missing prerequisite", output)
+        self.assertFalse((self.root / "must-not-plan").exists())
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["units"], [])
+        self.assertEqual(next(self.root.glob("build/host/test-run-*/preflight.log")).read_text(),
+                         "preflight-stdout\nerror: missing prerequisite\n")
+
+    def test_ai_output_bounds_planning_failure_and_retains_both_streams(self):
+        self.script.write_text('''#!/bin/sh
+python3 -c 'print("invalid plan detail " * 4000)'
+echo 'error: planner failed' >&2
+exit 9
+''')
+        code, output, summary = self.finish(self.launch(ai_output=True))
+        self.assertEqual(code, 1, output)
+        self.assertIn("plan failed exit=9", output)
+        self.assertIn("planner failed", output)
+        self.assertLess(len(output), 2500)
+        self.assertEqual(summary["plan"]["returncode"], 9)
+        log = next(self.root.glob("build/host/test-run-*/plan.stdout.log"))
+        self.assertGreater(log.stat().st_size, 50000)
+
+    def test_ai_output_planning_failure_shows_reason_written_to_stdout(self):
+        self.script.write_text("#!/bin/sh\nprintf 'input\\t\\tu_input\\n'\necho 'run ./build.sh first'\nexit 1\n")
+        code, output, summary = self.finish(self.launch(ai_output=True))
+        self.assertEqual(code, 1, output)
+        self.assertIn("run ./build.sh first", output)
+        self.assertEqual(summary["units"], [])
+
+    def test_ai_output_preflight_keeps_caller_environment_and_warnings(self):
+        self.script.write_text('''#!/bin/sh
+set -e
+case "$1" in
+ --preflight)
+    test "${JOBS-unset}" = unset
+    echo 'DeprecationWarning: example preflight warning' >&2 ;;
+ --plan) printf 'worker\t\techo worker\n' ;;
+ --unit) test "$JOBS" = 1; touch worker-ran ;;
+esac
+''')
+        code, output, summary = self.finish(self.launch(ai_output=True, preflight=True))
+        self.assertEqual(code, 0, output)
+        self.assertTrue((self.root / "worker-ran").exists())
+        self.assertIn("DeprecationWarning", output)
+        self.assertEqual(summary["diagnostic_counts"], dict(warning_lines=1, skip_lines=0))
+        self.assertEqual(summary["preflight"]["status"], "passed")
+
+    def test_ai_output_cancellation_during_preflight_remains_cancelled(self):
+        self.script.write_text('''#!/bin/sh
+echo preflight-started
+touch ready
+sleep 60
+''')
+        process = self.launch(ai_output=True, preflight=True)
+        try:
+            self.wait_file("ready")
+            process.send_signal(signal.SIGTERM)
+            code, output, summary = self.finish(process)
+            self.assertEqual(code, 128 + signal.SIGTERM, output)
+            self.assertEqual(summary["status"], "cancelled")
+            self.assertEqual(summary["preflight"]["status"], "cancelled")
+            self.assertIn("preflight-started", output)
+            self.assertNotIn("PASSED", output)
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.communicate(timeout=5)
+
+    def test_ai_output_rejects_large_invalid_plan_with_successful_planner_exit(self):
+        self.script.write_text("#!/bin/sh\npython3 -c 'print(\"invalid plan \" * 4000)'\n")
+        code, output, summary = self.finish(self.launch(ai_output=True))
+        self.assertEqual(code, 1, output)
+        self.assertIn("invalid host-test plan", output)
+        self.assertLess(len(output), 2000)
+        self.assertEqual(summary["plan"]["status"], "failed")
+        self.assertEqual(summary["plan"]["returncode"], 0)
+        self.assertEqual(summary["units"], [])
+
     def test_real_worker_keeps_errexit_and_aggregates_run_failures(self):
         # Use the actual shell dispatch and run() rather than another implementation.
         source = SHELL.read_text()
@@ -260,6 +412,52 @@ unit fixture "" u_fixture
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("== skip web tests (needs build/gen", result.stdout)
 
+    def test_outer_ai_flag_preserves_successful_preflight_and_shell_worker(self):
+        (self.root / "tests").mkdir()
+        (self.root / "tools").mkdir()
+        for name in ("tools/profile.py", "tests/build_identity_test.py", "tests/profile_test.py",
+                     "tests/test_jobs_test.py"):
+            (self.root / name).write_text(
+                "from pathlib import Path\n"
+                f"print({name!r})\n"
+                f"with Path('events').open('a') as f: f.write({name!r} + '\\n')\n")
+        (self.root / "tests/test_jobs.py").write_text(RUNNER.read_text())
+        # Keep the actual entry-point/preflight dispatch and real scheduler.
+        # Replace the firmware-dependent catalog with one deterministic worker.
+        source = SHELL.read_text().split('CC="${CC:-cc}', 1)[0]
+        source += '''
+if [ "$MODE" = --plan ]; then
+    printf 'fixture\t\techo fixture\n'
+    exit 0
+fi
+test "$MODE" = --unit
+test "$SELECTED_UNIT" = fixture
+echo worker >> events
+echo deterministic-worker-output
+'''
+        (self.root / "tests/run_tests.sh").write_text(source)
+        process = subprocess.Popen(["sh", "tests/run_tests.sh"], cwd=self.root, env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        code, full, normal = self.finish(process)
+        self.assertEqual(code, 0, full)
+        baseline = self.root / "baseline"
+        next(self.root.glob("build/host/test-run-*")).rename(baseline)
+        process = subprocess.Popen(["sh", "tests/run_tests.sh", "--ai-output"], cwd=self.root,
+                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        code, compact, summary = self.finish(process)
+        self.assertEqual(code, 0, compact)
+        expected = ["tools/profile.py", "tests/build_identity_test.py", "tests/profile_test.py",
+                    "tests/test_jobs_test.py", "worker"]
+        self.assertEqual((self.root / "events").read_text().splitlines(), expected * 2)
+        self.assertEqual(summary["preflight"]["status"], "passed")
+        self.assertEqual(summary["unit_counts"], normal["unit_counts"])
+        self.assertIn("ALL HOST TESTS PASSED", full)
+        self.assertNotIn("deterministic-worker-output", compact)
+        self.assertIn("PASSED units: passed=1", compact)
+        logs = next(self.root.glob("build/host/test-run-*"))
+        self.assertEqual((baseline / normal["units"][0]["log"]).read_bytes(),
+                         (logs / summary["units"][0]["log"]).read_bytes())
+
     def test_outer_runner_resolves_script_after_changing_directory(self):
         (self.root / "tests").mkdir()
         (self.root / "tools").mkdir()
@@ -270,16 +468,28 @@ unit fixture "" u_fixture
         (self.root / "tests/test_jobs.py").write_text(
             "from pathlib import Path\nimport sys\n"
             "assert Path(sys.argv[1]).resolve() == Path(__file__).with_name('run_tests.sh').resolve()\n"
+            "Path('args').write_text(' '.join(sys.argv[2:]))\n"
             "Path('started').touch()\n")
         for cwd, path in ((self.root, "tests/run_tests.sh"),
                           (self.root.parent, self.root.name + "/tests/run_tests.sh")):
             subprocess.run(["sh", path], cwd=cwd, env=self.env, check=True, capture_output=True)
+            self.assertEqual((self.root / "args").read_text(), "")
+            subprocess.run(["sh", path, "--ai-output"], cwd=cwd, env=self.env, check=True, capture_output=True)
+            self.assertEqual((self.root / "args").read_text(), "--ai-output --preflight")
         (self.root / "started").unlink()
         (self.root / "tools/profile.py").write_text("raise SystemExit(1)\n")
         result = subprocess.run(["sh", "tests/run_tests.sh"], cwd=self.root, env=self.env,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)
         self.assertFalse((self.root / "started").exists())
+
+        # The real compact runner must also stop before planning on preflight
+        # failure, after the outer shell has changed directory.
+        (self.root / "tests/test_jobs.py").write_text(RUNNER.read_text())
+        result = subprocess.run(["sh", "tests/run_tests.sh", "--ai-output"], cwd=self.root,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("preflight failed", result.stdout)
 
 
 if __name__ == "__main__":

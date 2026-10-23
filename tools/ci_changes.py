@@ -13,7 +13,7 @@ SUITES = ("full", "python", "backup", "emulator")
 PORTABLE_TESTS = (
     "firmware_watch_test.py",
     "build_identity_test.py",
-    "bitmap_font_test.py", "build_guard_test.py", "build_product_test.py",
+    "bitmap_font_test.py", "build_guard_test.py", "build_report_test.py", "profile_contract_test.py", "build_product_test.py",
     "cpu_baseline_test.py", "diagnostics_test.py", "gen_samples_test.py", "fm1pkg_test.py", "fm1_pr_test.py", "replay_validation_test.py",
     "size_fns_test.py", "target_budget_test.py", "ui_compare_test.py",
 )

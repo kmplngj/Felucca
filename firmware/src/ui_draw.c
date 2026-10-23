@@ -4,9 +4,10 @@
  * and the frame; the panel between the cards and the footer is ui_graph.c. The layout:
  * flat SURF cards and panels on BG,
  * rounded corners, no rules (MENU > STYLE LINE: no SURF, 1 px rules between the areas instead: draw_gaps), colours from the theme tokens only (gfx.c T_*).
- * Type, by role: M (15 px) what is read: values, titles, messages, every list's rows, the
- * selected item's detail; S (12 px) what describes it: labels, units, key hints (a keycap's word), the footer, map
- * and layer cells, graph annotations, document text; L (28 px) the one big readout of a screen. Where M cannot fit
+ * Type, by role: M what is read: values, titles, messages, every list's rows, the
+ * selected item's detail; S what describes it: labels, units, key hints (a keycap's word), the footer, map
+ * and layer cells, graph annotations, document text; L the priority readout of a screen. Native M8 capital heights
+ * are 9/7/18 px for M/S/L; the line boxes retain their 19/15/35 px layout contract. Where M cannot fit
  * (a card value with its unit wider than the card, a dialog question or a header message too long) it is set in S;
  * free text (names) is ellipsised at its size. */
 static void draw_menu(void);
@@ -18,6 +19,10 @@ static void name_draw(void);
 /* --------------------------------------------------------- drawing --- */
 #define COL_W CARD_W                                  /* a card: 57 x 44 at x 3 + 59 c, y 28 */
 #define COL_H CARD_H
+#define CARD_LABEL_Y 5                                 /* shared capital bands, independent of the face's line box */
+#define CARD_LABEL_H 13
+#define CARD_VALUE_Y 18
+#define CARD_VALUE_H 17
 
 static int32_t batt_level(void)                         /* thresholds 531 / 561 / 591 on ADC ch3 */
 {
@@ -68,8 +73,8 @@ static void draw_battery(int32_t bx)
 #define ROLL_FRAMES 9u
 #define ROLL_SNAP 3u                                    /* frames (~45 ms) */
 #define ROLL_BPM 4u                                     /* ui.roll[]: the four cards, then the header BPM */
-#define ROLL_Y 18                                       /* a card's value strip: rows 18..34, its figures (21..31) in the middle, */
-#define ROLL_H 17                                       /* the label (MONO's chip: to row 17) above it, the gauge (38) below */
+#define ROLL_Y CARD_VALUE_Y                            /* animation clips to the same band as static values */
+#define ROLL_H CARD_VALUE_H                            /* label above it; gauge at row 38 below */
 static const uint8_t ROLL_EASE[17] = {0, 45, 84, 118, 147, 172, 193, 210, 223, 234, 242, 247, 251, 253, 254, 255, 255};
 
 static int roll_digit(char c) { return c >= '0' && c <= '9'; }
@@ -158,8 +163,7 @@ static int32_t roll_text(uint32_t k, int32_t x, int32_t y, const char *s, uint16
  * 166 px; while the BPM is being changed (a SELECT turn: bpm_t) or in the GLO layer the centre stays and the message
  * goes right of the BPM (over the right slot). Every element's ink centred on row 12 (H_HEAD / 2; ui_test.c
  * test_head_centres): icons by cv_icon_mid, text by its capitals' band (CAP_IN; the odd row left over above it, as
- * everywhere): M (BPM, the song row, the octave, a message: capitals rows 6..16) from y 2, S (OCT, a key hint: rows 7..15)
- * from y 4 */
+ * everywhere). HEAD_MY / HEAD_SY derive their line tops from the generated capital metrics. */
 #define HEAD_SY CAP_IN(S, H_HEAD)
 #define HEAD_MY CAP_IN(M, H_HEAD)
 #define HEAD_TRK_X 4                                   /* the track cushion's cell */
@@ -675,7 +679,8 @@ static void draw_column_tall(uint32_t c, const char *label, const char *val, con
 }
 
 /* one card = one knob: [icon] LABEL / value unit / gauge on a SURF card, redrawn only when it changed.
- * The value is M, or S when M is too wide (engine names, long ENUMs); the unit S after it. The gauge is
+ * The value is M, or S when M is too wide (engine names, long ENUMs), on the same capital centre;
+ * its S unit occupies a fixed slot at the field's right edge, with UI_VALUE_UNIT_GAP reserved before it. The gauge is
  * a 3 px rounded bar: BG track, THEME fill. The knob just turned (hot): icon, label, value and gauge in
  * the accent. ratio: 0..1000 for the gauge, -1 = no gauge. icon: ICON_* (icons.c), ICON_AUTO = by label;
  * a label too long to share the card with its icon goes without it. A parameter MOTION drives (card_mot_next):
@@ -690,7 +695,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     uint32_t kind = large_kind();                       /* MENU > LARGE: tall (draw_column_tall), or the label in M */
     uint8_t sig;
     uint16_t lc = hot ? T_ACCENT : T_MID;
-    int32_t x, lx = 5, uw, room = COL_W - 8;
+    int32_t lx = 5, uw, room = COL_W - 8;
     const aafont_t *vf = &AF_M;
     uint32_t n, kn;
     int32_t kid = kc_tag(val, &kn);
@@ -719,7 +724,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     key[n + 5] = (char)(icon == ICON_NONE ? '~' : '!' + icon % 90u);
     key[n + 6] = (char)('0' + hot + 2 * mot + 4 * (int)kind);
     key[n + 7] = 0;
-    uw = unit[0] ? text_w(&AF_S, unit) + 3 : 0;
+    uw = unit[0] ? text_w(&AF_S, unit) + UI_VALUE_UNIT_GAP : 0;
     if (text_w(vf, val) + uw > room) {
         vf = &AF_S;
         CARD_HOOK(val, unit);                           /* (host: the values set in S) */
@@ -759,9 +764,10 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     if (label[0] || val[0]) {
         if (!strip && label[0]) {
             /* MENU > LARGE on a list / graph page or a layer (LK_LABEL): the label in M where it fits the card (its
-             * capitals rows 5..15, the icon on them when it fits too), else in S as without LARGE */
+             * capital band shared with S, the icon on it when it fits too), else in S as without LARGE */
             const aafont_t *lf = kind == LK_LABEL && 5 + text_w(&AF_M, label) <= COL_W - 2 ? &AF_M : &AF_S;
-            int32_t lw = text_w(lf, label), ix = 5, ly = lf == &AF_M ? 1 : 3;
+            int32_t lw = text_w(lf, label), ix = 5;
+            int32_t ly = CARD_LABEL_Y + (lf == &AF_M ? CAP_IN(M, CARD_LABEL_H) : CAP_IN(S, CARD_LABEL_H));
             int32_t cy = ly + (lf == &AF_M ? AF_M_CAP_Y : AF_S_CAP_Y), chh = lf == &AF_M ? AF_M_CAP_H : AF_S_CAP_H;
             uint32_t ic = mot ? ICON_X_MOTION : icon;
             if (mot && ix + ICON_CELL + ICON_GAP + lw > COL_W - 2)
@@ -786,17 +792,20 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
                 cv_text_fit(lx, ly, lf, label, lc, T_SURF, COL_W - 2 - lx);
         }
         if (kid >= 0)                                   /* "[OCT+]": the keycap (accent: it would act; DIM: it would not) */
-            x = cv_keycap(5, 20, (uint32_t)kid, vc == T_ACCENT || vc == T_DIM ? vc : T_KEY, T_INK, T_SURF);
+            cv_keycap(5, 20, (uint32_t)kid, vc == T_ACCENT || vc == T_DIM ? vc : T_KEY, T_INK, T_SURF);
         else if (vf == &AF_M) {
             if (!ui.roll[c].from[0] && val[0])
                 GFX_HOOK_ALIGN(0, ROLL_Y, COL_W, ROLL_Y + ROLL_H, AL_V, "card value in its roll window");
-            x = roll_text(c, 5, ROLL_Y + CAP_IN(M, ROLL_H), val, vc);
-        } else
-            x = cv_text_fit(5, 20, vf, val, vc, T_SURF, room - uw);
+            roll_text(c, 5, ROLL_Y + CAP_IN(M, ROLL_H), val, vc);
+        } else {
+            GFX_HOOK_ALIGN(0, CARD_VALUE_Y, COL_W, CARD_VALUE_Y + CARD_VALUE_H, AL_V, "card fallback value in its value band");
+            cv_text_fit(5, CARD_VALUE_Y + CAP_IN(S, CARD_VALUE_H), vf, val, vc, T_SURF, room - uw);
+        }
         if (unit[0]) {
-            int32_t baseline = vf == &AF_M ? ROLL_Y + CAP_IN(M, ROLL_H) + AF_M.asc : 20 + AF_S.asc;
+            int32_t baseline = CARD_VALUE_Y + (vf == &AF_M ? CAP_IN(M, CARD_VALUE_H) + AF_M.asc :
+                                                                            CAP_IN(S, CARD_VALUE_H) + AF_S.asc);
             GFX_HOOK_ALIGN(0, 0, 0, baseline, AL_B, "card unit on its value's baseline");
-            cv_text_on(x + 3, baseline - AF_S.asc, &AF_S, unit, T_MID, T_SURF);
+            cv_text_r(5 + room, baseline - AF_S.asc, &AF_S, unit, T_MID, T_SURF);
         }
         if (!strip && ratio >= 0) {
             int32_t gw = COL_W - 10, fx = ratio * gw / 1000;
@@ -1572,20 +1581,100 @@ static void style_apply(void)
     }
 }
 
+#if FELUCCA_SCREEN_CAPTURE
+static uint32_t scap_input_time;
+static int scap_scene_supported(void)
+{
+    return !song.playing && !seq_counting() &&
+           (ui.menu == 1u || ui.menu == 2u || ui.menu == 4u || (!ui.menu && ui.home)) &&
+           !ui.uboot && !ui.confirm && !ui.layer && !name_on() &&
+           !fm1_in.notes && !fm1_in.buttons;
+}
+static int scap_start(uint8_t wake)
+{
+    if (!scap_begin(fm1_ms)) return 0;
+    scap_input_time = scrn.idle;
+    if (wake) {
+        /* Reject unsafe scenes before any power/input-timer side effect. No
+         * musical MIDI, synthetic panel gesture, navigation or transport edit. */
+        if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
+        else {
+            scap.wake = 1;
+            scr_touch();
+            scap_input_time = scrn.idle;
+            if (scrn.st == SCR_OFF) scrn.st = SCR_WAKE;
+            if (scrn.st != SCR_ON) scap.state = SCAP_WAKING;
+        }
+    } else if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+    return 1;
+}
+static void scap_scene_check(void)
+{
+    scap_tick(fm1_ms);
+    if (scap_live()) {
+        if (scrn.st != SCR_ON && scap.state != SCAP_WAKING) scap.state = SCAP_ASLEEP;
+        else if (scrn.idle != scap_input_time) scap.state = SCAP_CHANGED;
+        else if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
+    }
+}
+#endif
 static void ui_draw_page(uint32_t counting);
 static void ui_draw(void)
 {
     static uint8_t counting;
     style_apply();
+#if FELUCCA_SCREEN_CAPTURE
+    scap_scene_check();
+#endif
     ui.frame++;
     if (counting != (uint8_t)seq_counting()) {          /* a count-in began or ended: the page drawn again after it */
         counting = (uint8_t)seq_counting();
         ui.force = 1;
     }
-    if (!scr_frame())                                   /* MENU > SCREEN OFF: dark (or waking), nothing drawn */
+    if (!scr_frame()) {                                 /* MENU > SCREEN OFF: dark (or waking), nothing drawn */
+#if FELUCCA_SCREEN_CAPTURE
+        if (scap.state == SCAP_PENDING || scap.state == SCAP_READY) scap.state = SCAP_ASLEEP;
+#endif
         return;
+    }
+#if FELUCCA_SCREEN_CAPTURE
+    scap_tick(fm1_ms);
+    if (scap.state == SCAP_PENDING) {
+        /* Diagnostic scope: stopped static MENU pages and quiet HOME. Every band
+         * must cover the whole display and repeat the same complete draw stream;
+         * changing scopes/meters fail CHANGED rather than assembling mixed frames.
+         * Explicit wake is complete before this path; no transport changes. */
+        if (scrn.st != SCR_ON) scap.state = SCAP_ASLEEP;
+        else if (!scap_scene_supported()) scap.state = SCAP_UNSUPPORTED;
+        else {
+            ui.force = 1;                            /* bypass the normal partial-redraw caches */
+            scap_render_begin();
+        }
+    }
+#endif
     ui_draw_page(counting);
+#if FELUCCA_SCREEN_CAPTURE
+    if (scap.tapping) {
+        lcd_sync();                                  /* complete the last asynchronous source read */
+        scap_render_end();
+    }
+#endif
     scr_shown();
+#if FELUCCA_SCREEN_CAPTURE
+    /* The first captured band is a subsequent frame, after the full wake redraw
+     * and DISPON. Never publish the transitional SCR_SHOW frame as READY. */
+    if (scap.state == SCAP_WAKING && scrn.st == SCR_ON) {
+        lcd_sync();
+        scap_scene_check();
+        if (scap.state == SCAP_WAKING) {
+            /* No panel gesture woke this display. Release sleep's suppression
+             * before a keyboard ISR can consume the first post-wake press. */
+            scrn.eat = 0;
+            kb_asleep = 0;
+            scap.state = SCAP_PENDING;
+        }
+    }
+#endif
 }
 static void ui_draw_page(uint32_t counting)
 {

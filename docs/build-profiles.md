@@ -138,3 +138,89 @@ README assessment: the Build link now exposes profiles. The thirteen-engine feat
 still describes the default standard release; the profile guide explains custom omissions,
 compatibility, defaults and limitations. Contributor ownership/workflow is documented in
 [extending.md](extending.md#two-repository-profile-workflow) and [BUILDING.md](../BUILDING.md#engine-build-profiles).
+
+## Machine-readable build evidence
+
+`python3 tools/profile.py --export-contract build/profile-contract.json` exports schema
+version 1, kind `felucca-supported-profile-contract`. It calls the existing resolver for
+each explicitly supported recipe: `standard`, `reduced-lofi` and experimental opt-in
+`macro` (native engine 14/Braids). The registry preserves the retired DIGITAL slot 1,
+all current identity metadata, provider requirements, generator/asset/test/license inputs,
+fixed owners and boot defaults. `supported_profiles` contains each canonical recipe,
+resolved selection and `provider_reasons`: explicit profile roots, engine requirements
+and transitive provider requirements. `validation` describes the production resolver's
+stable-ID, default, dependency, exclusion and exact-pin constraints. It is descriptive;
+`tools/profile.py` remains the executable validation authority. `source_pins` includes the
+exact consumed MIT gitlink, and `license_sha256` binds every declared licence input.
+Canonical feature values are FM4=0, SLICE=1 and M8Stealth regardless of the caller's
+environment. `--check` compares an existing export byte for byte and rejects stale data.
+
+The export describes today's supported build contract. It supplies no arbitrary custom
+selection API, per-engine marginal cost estimates, browser builder, new engine pin or
+GPL collection integration. Those later parts of [#465](https://github.com/kmplngj/Felucca/issues/465)
+remain open. Exporting a recipe does not establish its hardware qualification.
+
+Every successful target build writes schema version 1, kind
+`felucca-post-link-resource-report`, to `build/resource-report.json` and copies the
+canonical contract beside it. `resources` records each region's origin, capacity,
+allocated span, spare bytes, enforced minimum spare and margin after that minimum.
+App bytes include load images and alignment. RAM is the existing `.data+.bss` span;
+POOL is its linker span. NOINIT uses the larger section/symbol extent, including anonymous
+tail padding. Those measurements come from the same production `check()` call used by
+the build guard. RAM and POOL retain their 4,096/8,192 B minimum spare; NOINIT retains
+100 B, or the existing 24 B diagnostic floor for `FELUCCA_CRASH_CTX=1`. App and RAMTEXT
+have zero additional spare minimum; their capacity limits remain the package guard and
+linker region. RAMTEXT includes both `.ram_text` and `.c1_text`, with separate section
+sizes. The report does not introduce another fit evaluator or weaken an existing guard.
+
+`stack_reservations` records main user/supervisor windows and their guard bands from
+linked symbols. CPU2 builds also record the worker's user array (including its guard)
+and exception array; these are already included in RAM and must not be added again.
+Reservations are not live stack watermarks. RAM and POOL share SRAM; changing their
+boundary reallocates the budget rather than increasing it.
+
+`configuration` contains exact C compiler flags, effective `FELUCCA_*` macros obtained
+by preprocessing with those flags, selective minsize state, compiler version/hash,
+linker/objdump/objcopy hashes and actual SDK file hashes. The compiler's host-specific
+`InstalledDir` line is omitted. There is no timestamp or absolute workspace path in the
+report. `build_identity` preserves clean/dirty status and revision. `input_sha256` hashes
+the entire tracked source inventory, recursive engine sources, nonignored untracked
+inputs and generated header/include/JSON inputs. This deliberately supersets the compile
+closure, so a documentation or test edit also invalidates evidence. Complete verified
+source archives use their verified source inventory instead of Git. Actual bytes, not
+HEAD alone, identify dirty builds. Source and tool/SDK file fingerprints are captured before loader/asset jobs and checked
+again after those jobs; this early inventory excludes the generated files those jobs
+are expected to replace. The full source/generated inventory and effective compiler
+configuration are then captured before the app compile/link and checked again before
+report publication. A mismatch in either phase fails the build.
+
+`artifact_sha256` requires the app, ELF, disassembly, profile sidecar, resolved profile,
+generated identity, canonical contract, loader and installable package. The verifier
+requires that complete set, checks the input/configuration inventories and hashes,
+and recomputes measurements from the actual ELF through the existing build guards.
+Missing or changed resources, stack bounds and build identity are refused as well.
+Retain the complete matching build directory and run, with the original build environment:
+
+```sh
+python3 tools/build_report.py --verify build/resource-report.json
+```
+
+The verifier needs the target tools/SDK but performs no compilation or device access.
+It uses `build.sh`'s default locations (`~/.jieli/toolchain` and
+`~/fw-AC79_AIoT_SDK`) when `JIELI_TOOLCHAIN` or `AC79_SDK` is unset or empty,
+and preserves nonempty overrides.
+Changing an artifact, generated input, source, compiler, profile/font or feature option
+requires a fresh build. An attempted build first deletes the previous success report;
+failed build checks cannot leave an older report appearing current. CI verifies and
+uploads both sidecars; releases include them under `SHA256SUMS`. A release folder alone
+is a distribution, not the complete ELF/source/toolchain verification workspace.
+
+User checks for this tooling change: export the contract twice and compare bytes; run
+`--check`; inspect the three supported recipes and unchanged boot IDs; build a chosen
+supported variant using [BUILDING](../BUILDING.md) and verify its report. Copy
+`build/resource-report.json` to `build/resource-report-copy.json`, change one resource
+value in that copied JSON, then run
+`python3 tools/build_report.py --verify build/resource-report-copy.json`: verification
+must fail while the original report and artifacts remain intact. No device installation
+is required because this work changes build metadata only; live timing,
+stack headroom and existing profile hardware qualification remain separate gates.
