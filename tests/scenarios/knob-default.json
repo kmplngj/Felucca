@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "ENV restores only HOME CUT to its declared default and consumes the page tap",
+  "sample_rate": 44100,
+  "initial": {"state": "factory", "seed": 19088743, "warmup_samples": 22050, "master": 700, "click": 0, "usb_level": 0},
+  "events": [
+    {"sample": 0, "type": "encoder", "id": "KNOB 1", "delta": -127},
+    {"sample": 4410, "type": "capture"},
+    {"sample": 8820, "type": "button", "id": "ENV", "down": true},
+    {"sample": 9702, "type": "encoder", "id": "KNOB 1", "delta": 9},
+    {"sample": 11025, "type": "button", "id": "ENV", "down": false},
+    {"sample": 15435, "type": "capture"},
+    {"sample": 17640, "type": "end"}
+  ]
+}

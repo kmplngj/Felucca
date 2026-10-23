@@ -55,8 +55,8 @@ static const struct { const char *title, *hint; } HELP_PAGE[] = {
     {"MIXER", "[K4]MUTE[ALGO]TRACK[HOME]CLOCK"},
     {"CLOCK", "[SELECT]TEMPO[GLO]HOLD: TAP"},
 };
-#define H_HOME "[PRESETS]SOUND[HOME]HOLD: MENU"
-#define H_LEVELS "[K1-4]T1-T4 LEVEL[HOME]MIXER"
+#define H_HOME "[ENV]KNOB: DEFAULT[HOME]HOLD: MENU"
+#define H_LEVELS "[K1-4]T1-T4 LEVEL[ENV]KNOB: DEFAULT"
 #define H_GRID "[KEYS]STEPS[K2]LANE[SEQ]RATCH"
 /* a layer's (LAYER_*): what its footer row (LAYERS[].foot) does not say */
 static const char *const HELP_LAYER[LAYER_N] = {

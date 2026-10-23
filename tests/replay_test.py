@@ -172,6 +172,25 @@ class NativeReplayTests(unittest.TestCase):
         self.assertEqual(captured["audio"], plain["audio"])
         self.assertEqual(captured["final_state"], plain["final_state"])
 
+    def test_env_knob_default_matches_declared_value_without_navigation(self):
+        data = json.loads((ROOT / "tests/scenarios/knob-default.json").read_text())
+        actual, manifest = self.run_scenario(data)
+        # Independent reference: a regular +90 turn from the explicit zero CUT,
+        # rather than using the new default operation to construct its own oracle.
+        reference = copy.deepcopy(data)
+        reference["events"] = [e for e in reference["events"] if e["type"] != "button"]
+        reference["events"][2]["delta"] = 90
+        expected, control = self.run_scenario(reference)
+        self.assertEqual(manifest["final_state"]["home"], 1)
+        self.assertEqual(manifest["final_state"]["buttons_mask"], 0)
+        self.assertEqual(manifest["audio"], control["audio"])
+        def cards(directory, frame, x=0):
+            pixels = (directory / f"frame-{frame:04d}.ppm").read_bytes()[15:]
+            return b"".join(pixels[(y * 240 + x) * 3:(y + 1) * 240 * 3] for y in range(28, 74))
+        self.assertEqual(cards(actual, 1), cards(expected, 1))
+        self.assertNotEqual(cards(actual, 0), cards(actual, 1))
+        self.assertEqual(cards(actual, 0, 60), cards(actual, 1, 60))
+
     def test_equal_timestamp_file_order_and_final_partial_half(self):
         data = copy.deepcopy(BASE)
         data["events"] = [

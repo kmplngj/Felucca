@@ -36,6 +36,8 @@ isolated browser context, then closes the browser and server. It tests:
 - A computer-keyboard note producing finite, nonzero PCM on both stereo channels,
   followed by a quiet release.
 - Pointer navigation to ENV and a keyboard encoder edit changing the LCD.
+- Holding ENV while turning a HOME knob restores ANALOG CUT's declared default,
+  preserves other engine values and consumes the pending ENV page tap.
 - Keyboard hints and footer text meeting 4.5:1 contrast in desktop and portrait
   layouts, including text opacity, without horizontal page overflow.
 - A playable key in the portrait layout.

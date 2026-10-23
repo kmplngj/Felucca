@@ -21,6 +21,7 @@ thanks the work below; each keeps its own licence (see [LICENSE](LICENSE), [LICE
   with the dual-core findings of [Melodee](https://github.com/keremimo/melodee) by [keremimo](https://github.com/keremimo); its audio split,
   measurements and hardening after [Jangada](https://github.com/zednaked/jangada) by [zednaked](https://github.com/zednaked) (all GPL-3.0)
 - Browser emulator: after [X0X](https://github.com/charlesvestal/fm1-x0x) by [charlesvestal](https://github.com/charlesvestal) (GPL-3.0), a Felucca fork whose browser build showed the way
+- Single-parameter default gesture: inspired by [X0X's ENV + knob change](https://github.com/charlesvestal/fm1-x0x/commit/102c47b9e9a4c5ac499b03698ed990a2599744f2) by charlesvestal (GPL-3.0-only), implemented through Felucca's native parameter policy
 - Package format and boot files: [JieLi AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK) ([Apache-2.0](LICENSES/Apache-2.0.txt); three of its files are in every package, none in this tree)
 - MIDI reliability and arithmetic hardening: [fgunited](https://github.com/fgunited)
   (nested TRS input and musical clock phase, upstream #258/#269),

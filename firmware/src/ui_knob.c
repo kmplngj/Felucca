@@ -7,7 +7,7 @@
  * a quick layer's precedence, the encoder deltas a layer consumed, step locks (lock_turn), the pages whose knobs pick
  * or act (lists, STEP, AUTOMATION, SLICES' markers, FM6's operators, MOD's slot, BROWSE ..), the hot column and the
  * messages' priority. Resolving a target (knob_*, mom_target) never writes a value, captures, picks or reads an encoder;
- * only knob_edit and mom_turn write. Main loop only; no state of its own beyond MOMENTARY's (ui.c mom).
+ * only knob_edit, knob_default and mom_turn write. Main loop only; no state of its own beyond MOMENTARY's (ui.c mom).
  *
  * The callers, as they were before this module (kept exactly; the cells marked * are deliberate differences):
  *
@@ -95,21 +95,37 @@ static int16_t knob_value(const knob_target_t *kt, uint32_t k, int32_t s)
     const param_desc_t *d = kt->d;
     return (int16_t)param_turn(d, *kt->vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
 }
-/* a permanent turn: the value, then (a track's) automation capture and the MIDI LEARN pick. A global value is
- * neither; MIXER's MUTE is set by direction and only picked */
-static void knob_edit(const knob_target_t *kt, uint32_t k, int32_t s)
+/* publish a permanent edit, then (a track's) automation capture and MIDI LEARN pick. A global value is neither;
+ * MIXER's MUTE is only picked. Both ordinary turns and declared-default edits keep this policy */
+static void knob_put(const knob_target_t *kt, int16_t value)
 {
     uint32_t id;
-    if (kt->dir)
-        *kt->vp = (int16_t)(s > 0);
-    else
-        *kt->vp = knob_value(kt, k, s);
+    *kt->vp = value;
     if (!kt->t)
         return;
     id = (uint32_t)(kt->vp - kt->t->p);
     if (!kt->dir)
         motion_capture(kt->t, id, *kt->vp);
     ml_knob(kt->t, id);                                 /* (MIDI LEARN: picked) */
+}
+/* a permanent turn: acceleration once, or MIXER's MUTE set by direction */
+static void knob_edit(const knob_target_t *kt, uint32_t k, int32_t s)
+{
+    knob_put(kt, kt->dir ? (int16_t)(s > 0) : knob_value(kt, k, s));
+}
+/* ENV + knob (#569), inspired by X0X 102c47b9's single-knob-default gesture. The caller resolves a live sound/FX
+ * target afresh (engine mode, INSERT and ENV SYNC may change its descriptor). An alias takes its current value
+ * as an editor SET does; never use a preset snapshot. 1 consumes even an already-default detent: no acceleration,
+ * temporary cache or no-op side effects */
+static int knob_default(const knob_target_t *kt)
+{
+    int16_t value;
+    if (!knob_live(kt))
+        return 0;
+    value = (int16_t)enum_orig(kt->d, param_fit(kt->d, kt->d->def));
+    if (*kt->vp != value)
+        knob_put(kt, value);
+    return 1;
 }
 
 /* MOMENTARY (ui_input.c): a page whose knobs can be momentary (mom_target's page tests; a knob or two more there
@@ -137,6 +153,13 @@ static int mom_target(uint32_t k, knob_target_t *kt)
         return kt->vp < kt->t->p + P_COUNT;
     g = (uint32_t)(kt->vp - song.g);
     return (g <= G_CDEPTH && g != G_CLOCK) || g == G_RTYPE;
+}
+/* #569 keeps global resets on FX pages. MOMENTARY historically also accepts CLOCK's BPM/SWING; their existing
+ * temporary-turn behavior stays separate from this sound-default gesture. */
+static int knob_default_target(uint32_t k, knob_target_t *kt)
+{
+    const page_t *pg = cur_page();
+    return (ui.home || pg->scope != SC_GLOBAL || pg->fam == FAM_FX) && mom_target(k, kt);
 }
 /* KNOB k turned s with LFO held: 1 = taken (a momentary value, or refused full), 0 = not a momentary value (the turn
  * goes as ever: the column picks, steps, acts). No capture, no undo, no LEARN pick; MIXER's MUTE turns as a number here

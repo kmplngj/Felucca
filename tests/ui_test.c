@@ -10587,6 +10587,332 @@ static void kp_end(void)
     ui.ml.on = 0; ui.ml.pick = 0;
     menu_put(MI_HOME, HV_SCOPE);
 }
+/* #569: real ENV press/turn/release, including the repeated already-default detent. The target and expected
+ * default are supplied independently of the gesture resolver. Other values, page, encoder timing and motion
+ * records stay unchanged; a changed value alone follows the permanent edit's capture/LEARN policy. */
+static int kd_turn(uint32_t k, int32_t s, int16_t *vp, int16_t want, uint32_t ti, uint32_t id, int cap, int pick)
+{
+    uint8_t home = ui.home, page = ui.page;
+    uint32_t enc[sizeof ui.enc_t / sizeof ui.enc_t[0]];
+    motion_store_t after;
+    int ok;
+    memcpy(enc, ui.enc_t, sizeof enc);
+    btn_down(B_ENV); frame();
+    ok = kp_turn(k, s, vp, want, ti, id, cap, pick);
+    ok &= msg_is("DEFAULT") && ui.hot_col == k && !(ui.pg_down & (1u << panel.btn[B_ENV]));
+    memcpy(&after, &motion, sizeof after);
+    ok &= kp_turn(k, -s, vp, want, ti, id, 0, 0) && !memcmp(&after, &motion, sizeof after);
+    btn_up(B_ENV); frame();
+    ok &= ui.home == home && ui.page == page && !memcmp(enc, ui.enc_t, sizeof enc) && !mom.n;
+    return ok;
+}
+static void kd_start(uint32_t view, uint32_t engine)
+{
+    kp_start(view);
+    set_engine_of(TSEL, engine);
+    frame();
+    ui_prefs |= PREF_ACCEL;                            /* reset consumes a detent, never an accelerated turn */
+}
+static int test_knob_defaults(void)
+{
+    static const uint8_t MIX_ID[] = {P_LEVEL, P_PAN, P_REV, P_MUTE};
+    static const struct { const char *page; uint8_t knob, id; } CELL[] = {
+        {"ENV", 0, P_ATK}, {"FX", 1, P_CHOR}, {"EDIT 1", 1, P_E1}, {"MOD", 1, P_M1SRC},
+        {"VOICE 2", 2, P_PAN}, {"ARP", 1, P_ARATE}, {"SCL", 3, P_TRANS}, {"LFO 2", 0, P_LSYNC},
+    };
+    int bad = 0, ok;
+    uint32_t view, k, id, i, n;
+    int16_t *vp, want, v;
+    const param_desc_t *d;
+    for (view = HV_SCOPE; view <= HV_LEVELS; view++) {
+        kd_start(view, 0u /* ANALOG */);
+        ok = 1;
+        for (k = 0; k < 4u; k++) {
+            uint32_t ti = view == HV_LEVELS ? k : song.sel;
+            id = view == HV_LEVELS ? P_LEVEL : eng_of(0u /* ANALOG */)->knob[k];
+            d = track_desc(&trk[ti], id);
+            vp = &trk[ti].p[id];
+            want = d->def;
+            *vp = want == d->min ? d->max : d->min;
+            ok &= kd_turn(k, k & 1u ? -7 : 9, vp, want, ti, id, ti == song.sel && motion_param(id), 1);
+        }
+        bad += check(view == HV_LEVELS ? "#569 ENV+knob: HOME LEVELS edits only knob k's track; selected-track capture" :
+                     view == HV_TRACKS ? "#569 ENV+knob: HOME TRACKS four declared defaults, no page/timing leak" :
+                     "#569 ENV+knob: HOME four declared defaults, both directions, repeated no-ops", ok);
+        kp_end();
+    }
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    go_title("MIXER"); frame();
+    ok = 1;
+    for (k = 0; k < 4u; k++) {
+        id = MIX_ID[k]; d = &TP[id]; vp = &TSEL->p[id];
+        *vp = d->def == d->min ? d->max : d->min;
+        ok &= kd_turn(k, k & 1u ? -11 : 5, vp, d->def, song.sel, id, k != 3u && motion_param(id), 1);
+    }
+    bad += check("#569 ENV+knob: MIXER LEVEL PAN REV MUTE defaults; MUTE picked but never captured", ok);
+    kp_end();
+
+    ok = 1;
+    for (i = 0; i < NELEM(CELL); i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        go_title(CELL[i].page); frame();
+        id = CELL[i].id; d = track_desc(TSEL, id); vp = &TSEL->p[id];
+        *vp = d->def == d->min ? d->max : d->min;
+        ok &= kd_turn(CELL[i].knob, -6, vp, d->def, song.sel, id, motion_param(id), 1);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: ordinary track/engine cells, MOD values and ordered enums", ok);
+
+    kd_start(HV_SCOPE, ENGI_PHYS);
+    go_title("EDIT 1"); frame();
+    TSEL->p[P_E0] = PM_SYMP; TSEL->p[P_E1] = 100;
+    ok = track_desc(TSEL, P_E1) == &PHYS_D_CHRD &&
+         kd_turn(1, 8, &TSEL->p[P_E1], 64, song.sel, P_E1, 1, 1);
+    TSEL->p[P_E0] = PM_MEMB; TSEL->p[P_E1] = 20;
+    ok &= track_desc(TSEL, P_E1) == &PHYS_D_HARM &&
+          kd_turn(1, -9, &TSEL->p[P_E1], 64, song.sel, P_E1, 1, 1);
+    bad += check("#569 ENV+knob: current PHYS model's descriptor is resolved on each event", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, ENGI_SAMPLE);
+    TSEL->p[P_E0] = 1;                                /* retired TRANH alias; declared SET default is PIANO */
+    ok = kd_turn(0, -9, &TSEL->p[P_E0], 0, song.sel, P_E0, 1, 1);
+    {
+        /* No shipped descriptor declares a retired alias or out-of-range default. Exercise the operation with
+         * local writable descriptors, without casting away const or changing the production engine table. */
+        param_desc_t alias = {"SET", F_ENUM, 0, SMP_NALL - 1, 1, SMP_ALL_NAMES, 0};
+        knob_target_t kt = {0, &v, &alias, 0};
+        v = 2;
+        ok &= knob_default(&kt) && v == 0;
+        alias.names = 0; alias.min = 10; alias.max = 20; alias.def = 127; v = 12;
+        ok &= knob_default(&kt) && v == 20;
+        alias.min = alias.max = 15; v = 12;
+        ok &= !knob_default(&kt) && v == 12;
+        kt.vp = 0; ok &= !knob_default(&kt);
+    }
+    bad += check("#569 ENV+knob: retired enum aliases, fitted defaults and refused fixed/empty targets", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    go_title("INSERT"); frame();
+    TSEL->p[P_ITYPE] = IT_SOFT; TSEL->p[P_IA] = 3;
+    ok = kd_turn(1, 7, &TSEL->p[P_IA], 64, song.sel, P_IA, 1, 1);
+    TSEL->p[P_ITYPE] = IT_CRUSH; TSEL->p[P_IB] = 3;
+    ok &= kd_turn(2, -8, &TSEL->p[P_IB], 96, song.sel, P_IB, 1, 1);
+    go_title("ENV"); frame();
+    TSEL->p[P_ESYNC] = 1; TSEL->p[P_ATK] = 100;
+    ok &= track_desc(TSEL, P_ATK) == &ESYNC_DESC[0] &&
+          kd_turn(0, 12, &TSEL->p[P_ATK], 10, song.sel, P_ATK, 1, 1);
+    bad += check("#569 ENV+knob: current INSERT descriptor and exact ENV-SYNC default (not a turned/rounded value)", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    ok = 1;
+    for (i = 0; i < NPAGES; i++) {
+        if (PAGES[i].fam != FAM_FX || PAGES[i].scope != SC_GLOBAL) continue;
+        ui.home = 0; ui.page = (uint8_t)i; frame();
+        for (k = 0; k < 4u; k++) {
+            id = PAGES[i].id[k];
+            if (id == 0xFFu) continue;
+            d = &GP[id]; vp = &song.g[id];
+            *vp = d->def == d->min ? d->max : d->min;
+            ok &= kd_turn(k, -5, vp, d->def, 0, 0, 0, 0);
+        }
+    }
+    bad += check("#569 ENV+knob: every global FX cell resets without capture or LEARN", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    go_title("MIXER"); frame();
+    TSEL->p[P_PAN] = 0; ui.ml.pick = 1; ui.ml.trk = 0; ui.ml.id = P_REV;
+    n = motion.count;
+    btn_down(B_ENV); frame(); turn(EN_K2, 12); btn_up(B_ENV); frame();
+    bad += check("#569 already-default gesture consumes ENV but retains an existing LEARN pick and motion",
+                 !ui.home && str_eq(cur_page()->title, "MIXER") && !TSEL->p[P_PAN] && motion.count == n &&
+                 ui.ml.pick && !ui.ml.trk && ui.ml.id == P_REV);
+    kp_end();
+
+    /* Armed capture keeps the base; an unarmed live edit updates it. Neither path deletes existing motion or
+     * locks. Later automation may still override the reset, as it does an ordinary permanent knob turn. */
+    ok = 1;
+    for (i = 0; i < 4u; i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        go_title("MIXER"); frame();
+        TSEL->p[P_PAN] = -32;
+        motion_begin(); motion_set_enabled(TSEL, 1);
+        motion_set_event(TSEL, 1, P_PAN, 50);
+        motion_set_lock(TSEL, 3, P_REV, 40);
+        motion_step(TSEL, 1, &motion, 1);
+        song.playing = (i >> 1) & 1u; song.rec = i & 1u ? 1u << song.sel : 0;
+        n = motion.count;
+        ok &= kd_turn(1, 6, &TSEL->p[P_PAN], 0, song.sel, P_PAN, i == 3u, 1);
+        ok &= motion_base_value(TSEL, P_PAN) == (i == 3u ? -32 : 0) && motion_lock_count(TSEL) == 1u &&
+              motion.count == n + (i == 3u);
+        motion_step(TSEL, 1, &motion, 1);
+        ok &= TSEL->p[P_PAN] == 50;
+        motion_restore(TSEL);
+        ok &= TSEL->p[P_PAN] == (i == 3u ? -32 : 0);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: stopped/unarmed/recording motion bases, later events and locks preserved", ok);
+    return bad;
+}
+/* A refused context keeps ENV's ordinary pending page tap. Its knob may still select, act or edit as before. */
+static int kd_refused(uint32_t k, int32_t s)
+{
+    int ok;
+    ui.msg_t = 0;
+    btn_down(B_ENV); frame();
+    turn(EN_K1 + k, s);
+    ok = (ui.pg_down & (1u << panel.btn[B_ENV])) && !msg_is("DEFAULT");
+    btn_up(B_ENV); frame();
+    return ok;
+}
+static int test_knob_default_exclusions(void)
+{
+    static const struct { const char *page; uint8_t knob; } EX[] = {
+        {"PRESETS", 3}, {"USER", 0}, {"PHRASES", 0}, {"PROJECT", 3}, {"TOOLS", 1},
+        {"STEP", 0}, {"DETAIL", 0}, {"SONG", 1}, {"AUTOMATION", 0},
+    };
+    static const uint8_t LAYER[] = {B_FX, B_GLO, B_SCL, B_EDIT, B_SEQ, B_REC};
+    int bad = 0, ok;
+    uint32_t i, k, id, n;
+    int16_t *vp, v;
+    const param_desc_t *d;
+
+    ok = 1;
+    for (i = 0; i < NELEM(EX); i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        song.playing = song.rec = 0;
+        go_title(EX[i].page); frame();
+        ok &= kd_refused(EX[i].knob, 1);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: browsers/lists/actions, STEP/DETAIL, SONG and AUTOMATION keep ordinary gestures", ok);
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    ui_prefs &= ~PREF_ACCEL;
+    go_title("CLOCK"); frame();
+    song.g[G_BPM] = 100;
+    ok = kd_refused(0, 3) && song.g[G_BPM] == 103;
+    go_title("CLOCK"); frame(); song.g[G_SWING] = 10;
+    ok &= kd_refused(1, 2) && song.g[G_SWING] == 12;
+    go_title("CLOCK"); frame(); song.g[G_CLOCK] = 0;
+    ok &= kd_refused(2, 1) && song.g[G_CLOCK] == 1;
+    go_title("MOD"); frame(); mod_ui_slot = 0;
+    ok &= kd_refused(0, 1) && mod_ui_slot == 1u;
+    bad += check("#569 ENV+knob: CLOCK tempo/swing/source and MOD slot selection are not defaults", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, ENGI_SAMPLE);
+    go_title("EDIT 2"); frame();
+    n = motion.count; ui.ml.pick = 0;
+    ok = kd_refused(1, 8) && !TSEL->p[P_E5] && motion.count == n && !ui.ml.pick;
+    go_title("CHORUS"); frame();
+    kp_take();
+    ok &= kd_refused(2, -9) && kp_only(0) && motion.count == n && !ui.ml.pick;
+    bad += check("#569 ENV+knob: fixed and empty page cells refuse without consuming ENV or adding side effects", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, ENGI_FM6);
+    ok = 1;
+    for (i = GR_FMOP; i <= GR_FMENV; i++) {
+        for (k = 0; k < 4u; k++) {
+            go_page(i); frame();
+            ok &= kd_refused(k, 1);
+        }
+    }
+    bad += check("#569 ENV+knob: all FM6 operator-page knobs retain their operator/byte edits", ok);
+    kp_end();
+#if FELUCCA_SLICE
+    kd_start(HV_SCOPE, ENGI_SLICE);
+    go_title("SLICES"); frame();
+    ok = kd_refused(0, 1);
+    go_title("SLICES"); frame();
+    ok &= kd_refused(1, -1);
+    bad += check("#569 ENV+knob: SLICES marker selection and movement retain ordinary gestures", ok);
+    kp_end();
+#endif
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    ui_prefs &= ~PREF_ACCEL;
+    id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; d = track_desc(TSEL, id);
+    *vp = 20; n = motion.count; ui.ml.pick = 0;
+    btn_down(B_ENV); frame(); btn_down(B_LFO); frame();
+    turn(EN_K1, 3);
+    ok = *vp == param_turn(d, 20, 3) && mom.n == 1u && motion.count == n && !ui.ml.pick && !msg_is("DEFAULT");
+    btn_up(B_ENV); frame(); btn_up(B_LFO); frame();
+    ok &= *vp == 20 && !mom.n;
+    bad += check("#569 ENV+LFO+knob: existing MOMENTARY takes precedence and restores its cache", ok);
+    kp_end();
+
+    ok = 1;
+    for (i = 0; i < NELEM(LAYER); i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        id = eng_of(TSEL->eng_req)->knob[3]; vp = &TSEL->p[id]; *vp = 20;
+        btn_down(B_ENV); frame(); btn_down(LAYER[i]); frames(500);
+        turn(EN_K4, 1);
+        ok &= *vp == 20 && ui.layer && !msg_is("DEFAULT");
+        btn_up(B_ENV); frame(); btn_up(LAYER[i]); frame(); frames(400);
+        kp_end();
+    }
+    bad += check("#569 ENV with FX/GLO/SEL/EDIT/SEQ/REC layers: the layer owns the detent, no sound default", ok);
+
+    /* SAVE/ARP/HOME held are also modifiers, even when they are not quick layers. Release them after ENV so
+     * their existing tap/hold behavior cannot disguise an accidental default during the knob event. */
+    ok = 1;
+    {
+        static const uint8_t OTHER[] = {B_SAVE, B_ARP, B_HOME};
+        for (i = 0; i < NELEM(OTHER); i++) {
+            kd_start(HV_SCOPE, 0u /* ANALOG */);
+            ui_prefs &= ~PREF_ACCEL;
+            id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; d = track_desc(TSEL, id); *vp = 20;
+            btn_down(B_ENV); frame(); btn_down(OTHER[i]); frame();
+            turn(EN_K1, 2);
+            ok &= *vp == param_turn(d, 20, 2) && !msg_is("DEFAULT");
+            btn_up(B_ENV); frame(); btn_up(OTHER[i]); frame();
+            kp_end();
+        }
+    }
+    bad += check("#569 ENV must be the sole editing button; SAVE, ARP and HOME combinations keep ordinary turns", ok);
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    song.playing = 0; song.rec = 1u << song.sel;
+    go_home(); frame(); go_title("STEP"); frame();
+    key_down(white(0)); frame();
+    id = lock_id(0); d = track_desc(TSEL, id); TSEL->p[id] = 20;
+    btn_down(B_ENV); frame(); turn(EN_K1, 3);
+    ok = lock_held() && motion_lock_get(TSEL, ui.cursor, id, &v) && v == param_turn(d, 20, 3) &&
+         TSEL->p[id] == 20 && !msg_is("DEFAULT");
+    key_up(white(0)); frame(); btn_up(B_ENV); frame();
+    bad += check("#569 ENV with a held STEP: parameter-lock turn wins, the base sound is not reset", ok);
+    kp_end();
+
+    ok = 1;
+    for (i = 0; i < 3u; i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        song.playing = song.rec = 0;
+        id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; *vp = 20;
+        if (!i) { hold(B_HOME); ok &= ui.menu != 0; }
+        else if (i == 1u) name_open(NK_USER_SAVE, 5);
+        else confirm_open(CF_CLEAR_SEQ, song.sel);
+        btn_down(B_ENV); frame(); turn(EN_K1, 1); btn_up(B_ENV); frame();
+        ok &= *vp == 20 && !msg_is("DEFAULT") && (!i ? ui.menu != 0 : i == 1u ? name_on() : ui.confirm != 0);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: MENU/settings, NAME and dialogs retain ownership", ok);
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    song.playing = song.rec = 0;
+    id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; *vp = 20;
+    scr_dark_put(1); fm1_ms += 300000u; frame();
+    ok = scrn.st == SCR_OFF;
+    btn_down(B_ENV); frame(); turn(EN_K1, 9); btn_up(B_ENV); frame(); frames(400);
+    ok &= *vp == 20 && ui.home && !scrn.eat && !msg_is("DEFAULT");
+    bad += check("#569 dark wake consumes ENV+knob and its release, without reset or navigation", ok);
+    kp_end();
+    return bad;
+}
 static int test_knob_policy(void)
 {
     int bad = 0, ok;
@@ -10734,6 +11060,8 @@ static int test_knob_policy(void)
         bad += check("#295 MOMENTARY: a knob that picks (MOD's slot) picks as ever", ok);
     }
     kp_end();
+    bad += test_knob_defaults();
+    bad += test_knob_default_exclusions();
     return bad;
 }
 static int test_home_tracks(void)

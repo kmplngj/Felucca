@@ -52,6 +52,24 @@ async function device(saved) {
 }
 const colours = (fb) => new Set(fb).size;
 
+// #569: real emulator panel scheduling, with read-only existing test observations.
+// HOME's ANALOG CUT descriptor declares 90; ACID's loaded preset is a different value.
+{
+  const d = await device(null);
+  d.render(500);
+  const base = d.ex.web_test_engine_param_base(), cut = base + 4;
+  d.ex.web_enc(EN.K1, -127); d.render(100);
+  const before = Array.from({ length: base + 8 }, (_, i) => d.ex.web_test_param(i));
+  d.ex.web_buttons(1 << B.ENV); d.render(60);
+  d.ex.web_enc(EN.K1, 9); d.render(60);
+  d.ex.web_enc(EN.K1, -7); d.render(60); // already default: consume without a second ordinary turn
+  d.ex.web_buttons(0); d.render(100);
+  check("ENV + HOME knob: declared CUT default, other values intact, release stays HOME",
+    before[cut] === 0 && d.ex.web_test_param(cut) === 90 &&
+    before.every((v, i) => i === cut || d.ex.web_test_param(i) === v) &&
+    (d.ex.web_lit_buttons() & (1 << B.HOME)) !== 0 && (d.ex.web_lit_buttons() & (1 << B.ENV)) === 0);
+}
+
 // ---- boot, keys, screen, LEDs
 const a = await device(null);
 a.render(200);
