@@ -46,6 +46,30 @@ remains future work. Cancelling retires the preview's undo entry without clearin
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
+## FM6 operator frequency editing
+
+On an FM6 track, tap and release **EDIT** until **OPERATOR** appears. **KNOB 1 (OP)**
+selects operator 1–6; **KNOB 2** edits its coarse frequency. In **RATIO** mode the
+range is 0.50, then 1–31. In **FIXED** mode it visits just **1, 10, 100 and 1000 HZ**,
+stopping at each end even with KNOB ACCEL enabled. **KNOB 3 (FINE)** still supplies
+0–99 hundredths of a decade in FIXED mode; the chart shows the resulting frequency.
+The card's gauge spans those four decades in both NORMAL and LARGE display modes.
+
+To switch modes, keep tapping and releasing **EDIT** through **OP ENV** to
+**OPERATOR 2**, then turn **KNOB 2 (MODE)**. A mode switch changes only MODE:
+coarse, fine and detune remain stored as they were. Imported DX7 coarse values
+0–31 remain valid; FIXED uses their low two bits. Editing a FIXED decade preserves
+the other three bits, so returning to RATIO restores that group of four ratios
+with the edited low bits. For example, imported coarse 29 means 10 HZ in FIXED;
+turning right once gives coarse 30, or 100 HZ, and switching to RATIO gives 30.
+Merely loading, viewing or toggling modes does not rewrite the coarse byte.
+
+An actual edit makes the patch **SLOT OWN**. Holding **SAVE** undoes the knob gesture;
+holding it again redoes it. Projects, user presets and DX7 export retain the whole
+coarse byte. Fine, detune and the existing EDIT 1/2 macros keep their prior behavior.
+This panel correction has host/emulator coverage; physical FM-1 knob/LCD and listening
+qualification remain pending.
+
 ## MIDI timing and arithmetic hardening
 
 TRS input is polled at 2 kHz even while audio renders. Packets and timestamps are

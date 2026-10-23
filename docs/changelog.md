@@ -92,6 +92,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **FM6 FIXED frequency:** the native operator knob now traverses four bounded
+  decades (1, 10, 100, 1000 HZ), with matching NORMAL/LARGE gauges. Imported DX7
+  coarse high bits survive edits and mode toggles; RATIO remains 0.50 and 1–31.
+  See [controls and compatibility](fork-features.md#fm6-operator-frequency-editing);
+  physical FM-1 qualification remains pending.
 - **Hosted editor settings:** applied RAM-only and deferred-save settings retain
   the device's returned value; rejected edits restore the confirmed value while
   preserving newer picker drafts. Saved edits replace earlier warnings with
