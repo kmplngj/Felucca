@@ -106,14 +106,17 @@ static void bank_draw(void)
         if (full || sig != ui.read_bank.sig[c]) {
             int x = full ? 59 * (int)c : 0, y = full ? BANK_TOP : 0;
             const aafont_t *vf = bank_font(f->small);
+            /* Alpha S has taller edge pixels than the native 7 px face. Give
+             * its two overview lines their full ink height in the same band. */
+            int compact = AF_S_CAP_H > 8;
             uint16_t bg = c == ui.read_bank.focus ? T_THEME : T_SURF;
             uint16_t ink = c == ui.read_bank.focus ? T_INK : T_MID;
             if (!full) cv_begin(COL_W, BANK_OV, T_SURF);
             cv_line(x, y, x + COL_W - 1, y, T_DIM);
-            if (c == ui.read_bank.focus) cv_rect(x + 2, y + 1, COL_W - 4, AF_S_CAP_H + 2, bg);
+            if (c == ui.read_bank.focus) cv_rect(x + 2, y + (compact ? 0 : 1), COL_W - 4, AF_S_CAP_H + (compact ? 1 : 2), bg);
             if (f->label[0]) {
                 GFX_HOOK_ALIGN(x, 0, x + COL_W, 0, AL_H, "bank overview label");
-                cv_text_in(x, y + 2 - AF_S_CAP_Y, COL_W, &AF_S, f->label, ink, bg);
+                cv_text_in(x, y + (compact ? 0 : 2) - AF_S_CAP_Y, COL_W, &AF_S, f->label, ink, bg);
             }
             if (f->value[0]) {
                 uint16_t tc = f->color == T_DIM ? T_MID : T_TEXT;
