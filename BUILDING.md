@@ -352,6 +352,33 @@ simultaneous full suites in separate worktrees: a checkout lock protects shared
 generated outputs. Generate assets before starting a suite, and leave sources,
 assets and build flags unchanged while it runs.
 
+For AI-assisted runs or a short console report, use:
+
+```sh
+uv run --locked --group build tests/run_tests.sh --ai-output
+```
+
+This runs the same preflight, plan and test units with the same failure exit codes.
+Successful units omit their transcript; failed, blocked or cancelled units print
+their status, log path and a bounded diagnostic excerpt. Warning/skip line hints
+include counts and up to three samples per log. The final line reports unit totals,
+diagnostic line counts and the summary path. These counts describe units and matching
+log lines, not individual test cases or a complete warning/skip inventory: hints use
+text patterns, and unfamiliar formats require reading the original log. A passed unit
+can contain skipped checks. The compact mode changes presentation, not coverage.
+
+The complete per-unit logs remain unchanged. Compact runs also retain `preflight.log`,
+`plan.stdout.log` and `plan.stderr.log`; planning logs are retained in normal runs too.
+Failed compact planning also creates `plan.failure.log` for an excerpt of both streams,
+so a reason written to stdout remains visible.
+`summary.json` adds `output_mode`, `unit_counts` and, in compact mode, `diagnostic_counts`
+plus per-log `diagnostics`, bounded failure `excerpt` fields and their limitation flags.
+Preflight/plan failures and cancellation remain failures even when no unit started.
+Read the summary and relevant raw logs to investigate; do not equate a short report
+with complete target or FM-1 qualification. The browser gate is already compact and
+does not use this flag. CI's existing full-transcript coverage verifier continues
+to consume normal output; a compact transcript is not its input format.
+
 Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too,
 the browser emulator's). Run it after `uv run --locked --group build ./build.sh`
 (it uses `build/` and needs `AC79_SDK` set as for the build). The suites cover flash storage,

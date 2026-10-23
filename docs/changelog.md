@@ -12,6 +12,24 @@ the [performance guide](performance.md) for measurement scope, and
 for the shared instrument's earlier history. Plans and unmerged experiments belong
 in issues and roadmaps, not among implemented changes below.
 
+## For firmware developers
+
+The links below collect implemented work that may help other FM-1 firmware
+projects and embedded-audio developers. Follow each change's source, attribution
+and [licence requirements](../LICENSING.md); host-specific code and hardware
+assumptions need adaptation. Evidence applies to the revisions and workloads
+recorded in the linked reports, rather than every current build or device.
+
+| Area | Reusable implementation and evidence | Limits and remaining hardware checks |
+| --- | --- | --- |
+| **DSP and CPU cost** | Silent-effect shortcuts in [fx.c](../firmware/src/fx.c), with [forced-off audio/state comparisons, skip assertions and negative controls](../tests/fx_rest_test.md); broader [DSP integration evidence](https://github.com/kmplngj/Felucca/pull/349). | Tested equivalence and target estimates do not establish FM-1 timing gains. Recheck tails, wake-up, transitions and loaded audio deadlines on the adopting firmware. |
+| **RAM, flash and display work** | [Aligned copies/fills](../firmware/src/libc.c) and [host checks](../tests/libc_test.c); [bitmap font generation](../tools/gen_bitmap_font.py) and [controlled font/cache comparisons](font-experiment.md), including a separate 1,032 B POOL reduction. | Savings are dated A/B results, not current totals or additive estimates. Font-only flash savings do not imply RAM or CPU savings; physical readability and loaded redraw/audio checks remain separate. |
+| **MIDI and arithmetic fixes** | [Timestamp, UART event/count, clock-phase and signed-scaling fixes](midi-dsp-reliability.md#changes-and-provenance), with focused regressions, SDK evidence and [device results](midi-dsp-device-results-2026-10-21.md). | USB pulse-count phase passed with CPU2 OFF in the recorded setup. Physical TRS and CPU2 ON clock-phase checks remain pending; UART register widths and event semantics are JieLi-specific. |
+| **Request ownership and worker reliability** | [Editor/updater SysEx race](sysex-dispatch-race.md), including causal device reproduction, [boundary-injection regression](../tests/sysex_dispatch_test.py) and resource deltas; [CPU2 idle-poll mitigation and matched device tests](cpu2-idle-polling.md). | Serialized requests remain required. Bounded USB observations do not qualify every host/load or physical TRS. CPU2 evidence is from one FM-1; broader engine/unit and reset/flash qualification remains pending, with the worker beta and default OFF. |
+| **Build and resource safeguards** | [Profile contracts and artifact-bound resource/stack reports](build-profiles.md#machine-readable-build-evidence), [report generation](../tools/build_report.py), [report regressions](../tests/build_report_test.py) and [ISR-aware size selection](../tools/size_fns.py). | Linked region sizes and reserved stacks are static evidence, not live RAM/stack watermarks or deadline measurements. Re-establish the memory map, ISR reachability and compiler behavior for another target. |
+| **Diagnostics and reproducible testing** | [Read-only USB collector](diagnostics.md), [rendered-screen capture](screen-capture.md), [interaction replay](interaction-replay.md) and [real browser UI/audio gate](cloud-testing.md), with their setup, provenance and validation scope. | Collection continuity is not a firmware pass. Host/WASM replay does not qualify FM-1 I/O or deadlines; digital screenshots do not qualify physical colours/backlight. Capture flags are development-only, and explicit capture wake awaits device validation. |
+| **CI and AI workflows** | [Selective CI, caches and exact-revision artifacts](../.github/CI.md); [AI workflow guide](ai-workflows.md) linking summary-first evidence, the firmware-watch ledger/skill, PR-testing instructions and firmware-specific AI review configuration. | Context filtering preserves full relevant diff and history coverage. AI/static review complements target and device checks. Text reduction is a context-size proxy until actual token usage and task quality are measured. |
+
 ## Fork development
 
 ### Added
@@ -181,4 +199,6 @@ in issues and roadmaps, not among implemented changes below.
 - **Development turnaround:** change-based CI selection, dependency caches,
   parallel independent host tests and reuse of automatic PR firmware artifacts
   reduce repeated validation/build work. Required checks still gate merges;
-  see [CI scope and artifacts](../.github/CI.md).
+  see [CI scope and artifacts](../.github/CI.md). The host suite's opt-in
+  [`--ai-output` mode](../BUILDING.md#tests) condenses console output while retaining
+  full logs, failure exit codes and warning/skip hints; test coverage is unchanged.
