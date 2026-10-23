@@ -218,6 +218,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify', type=Path, required=True, metavar='REPORT')
     args = parser.parse_args()
+    # Standalone verification needs the same unset/empty defaults as build.sh.
+    # Apply them only at the CLI entry point, never when the build imports us.
+    for name, default in (('JIELI_TOOLCHAIN', '.jieli/toolchain'), ('AC79_SDK', 'fw-AC79_AIoT_SDK')):
+        if not _source_os.environ.get(name):
+            _source_os.environ[name] = str(Path.home() / default)
     try:
         import build
         report = json.loads(args.verify.read_text())

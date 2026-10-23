@@ -900,6 +900,10 @@ profile/font/feature environment and toolchain/SDK:
 python3 tools/build_report.py --verify build/resource-report.json
 ```
 
+The verifier uses the same default dependency locations as `build.sh`
+(`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
+and `AC79_SDK` values override those defaults; unset or empty values use them.
+
 Verification hashes all required artifacts and input files, recomputes effective compiler
 macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.
 It needs the configured target tools and SDK but does not compile firmware. Source and

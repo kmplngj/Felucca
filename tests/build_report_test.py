@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -194,6 +196,106 @@ class ResourceReport(unittest.TestCase):
             self.assertEqual(result['effective_defines']['FELUCCA_CPU2'], '1')
             self.assertEqual(result['effective_defines']['FELUCCA_ENGINE_H'], '')
             self.assertNotIn('InstalledDir', result['compiler']['version'])
+
+    def test_cli_default_empty_and_explicit_tool_sdk_paths(self):
+        # Run the actual CLI and build helpers in an isolated source tree. Only
+        # profile/identity freshness and external target tools are fixture inputs;
+        # configuration, fingerprints, inventories and resource guards stay real.
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            root = base / 'source'
+            tools = root / 'tools'
+            tools.mkdir(parents=True)
+            for name in ('build_report.py', 'build.py', 'fm1pkg_make.py', 'lz4blk.py'):
+                shutil.copyfile(ROOT / 'tools' / name, tools / name)
+            (tools / 'profile.py').write_text(
+                "def generated(root, name):\n"
+                "    if name != 'standard': raise ValueError('fixture profile mismatch')\n"
+                "    return {}\n"
+                "def check_outputs(outputs, path): pass\n"
+                "def contract_json(root): return 'contract\\n'\n")
+            (tools / 'build_identity.py').write_text('def check(root, gen): pass\n')
+            (root / 'firmware/engines').mkdir(parents=True)
+            shutil.copyfile(ROOT / 'firmware/app.ld', root / 'firmware/app.ld')
+            (root / '.gitignore').write_text('build/\n__pycache__/\n')
+            subprocess.run(['git', 'init', '-q', str(root)], check=True, capture_output=True)
+            for name in R.artifact_paths('felucca.fwsc'):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('{}\n' if 'build-identity' in name else name)
+            evidence = self.evidence()
+            (root / 'build/felucca.bin').write_bytes(evidence[0])
+            (root / 'build/felucca.dis').write_text(evidence[3])
+            (root / 'build/profile-contract.json').write_text('contract\n')
+            home = base / 'home with spaces'
+            toolchain = home / '.jieli/toolchain'
+            sdk = home / 'fw-AC79_AIoT_SDK'
+            compiler = (f'#!{sys.executable}\nimport sys\n'
+                        "if '--version' in sys.argv: print('clang version fixture')\n"
+                        "else:\n"
+                        "    assert '-dM' in sys.argv and '-E' in sys.argv and '-c' not in sys.argv\n"
+                        "    print('#define FELUCCA_CPU2 0\\n#define FELUCCA_ID \"FM-1_900\""
+                        "\\n#define FELUCCA_SLICE 1\\n#define FELUCCA_FM4 0')\n")
+            objdump = (f'#!{sys.executable}\nimport sys\n'
+                       f'outputs = {dict(zip(("-h", "-t", "-d", "-j"), evidence[1:]))!r}\n'
+                       "sys.stdout.write(outputs['-j' if '-j' in sys.argv else sys.argv[1]])\n")
+            for name, content in (('pi32v2/bin/clang', compiler), ('common/bin/objdump', objdump),
+                                  ('pi32v2/bin/ld', 'linker fixture'), ('common/bin/objcopy', 'objcopy fixture')):
+                path = toolchain / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+                path.chmod(0o755)
+            for name in B.SDK_SHA256:
+                path = sdk / 'cpu/wl82/tools' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(('sdk fixture: ' + name).encode())
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith(('FELUCCA_', 'JIELI_'))
+                   and key not in ('AC79_SDK', 'PYTHONPATH')}
+            env.update(HOME=str(home), JIELI_DOCKER='0', FELUCCA_CPU2='0', FELUCCA_CRASH_CTX='0')
+            # A successful build records effective tool/SDK bytes, never host paths.
+            with patch.dict(os.environ, dict(env, JIELI_TOOLCHAIN=str(toolchain), AC79_SDK=str(sdk)), clear=True), \
+                    patch.object(B, 'SRC', root), patch.object(B, 'FW', root / 'firmware'), \
+                    patch.object(B, 'OUT', root / 'build'), patch.object(B, 'BUILD_IDENTITY', {}), \
+                    patch.object(B.fm1pkg_make, 'SDK', None):
+                R.write(B, evidence, 'felucca.fwsc', R.input_hashes(root), R.configuration(B))
+            custom_tc, custom_sdk = base / 'custom tools', base / 'custom sdk'
+            shutil.copytree(toolchain, custom_tc)
+            shutil.copytree(sdk, custom_sdk)
+            command = [sys.executable, str(tools / 'build_report.py'), '--verify',
+                       'build/resource-report.json']
+            for overrides in ({}, {'JIELI_TOOLCHAIN': '', 'AC79_SDK': ''},
+                              {'JIELI_TOOLCHAIN': str(custom_tc), 'AC79_SDK': str(custom_sdk)},
+                              {'JIELI_TOOLCHAIN': '../custom tools', 'AC79_SDK': '../custom sdk'},
+                              {'JIELI_TOOLCHAIN': '', 'AC79_SDK': str(custom_sdk)},
+                              {'JIELI_TOOLCHAIN': str(custom_tc), 'AC79_SDK': ''}):
+                with self.subTest(overrides=overrides):
+                    result = subprocess.run(command, cwd=root, env=dict(env, **overrides),
+                                            text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('artifacts, inputs and configuration match', result.stdout)
+            # Existing overrides with different bytes must still invalidate evidence.
+            (custom_tc / 'pi32v2/bin/clang').write_text(compiler + '# different toolchain\n')
+            (custom_sdk / 'cpu/wl82/tools/cfg_tool.bin').write_bytes(b'different SDK')
+            for overrides in ({'JIELI_TOOLCHAIN': str(custom_tc)}, {'AC79_SDK': str(custom_sdk)}):
+                result = subprocess.run(command, cwd=root, env=dict(env, **overrides),
+                                        text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('stale resource report configuration', result.stderr)
+
+    def test_import_does_not_apply_cli_path_defaults(self):
+        command = [sys.executable, '-c',
+                   "import os; before = dict(os.environ); import build_report; "
+                   "assert dict(os.environ) == before"]
+        for value in (None, '', '/explicit path'):
+            env = dict(os.environ, PYTHONPATH=str(ROOT / 'tools'))
+            for name in ('JIELI_TOOLCHAIN', 'AC79_SDK'):
+                if value is None:
+                    env.pop(name, None)
+                else:
+                    env[name] = value
+            with self.subTest(value=value):
+                subprocess.run(command, env=env, check=True, capture_output=True, text=True)
 
 
 if __name__ == '__main__':

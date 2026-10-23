@@ -206,6 +206,9 @@ python3 tools/build_report.py --verify build/resource-report.json
 ```
 
 The verifier needs the target tools/SDK but performs no compilation or device access.
+It uses `build.sh`'s default locations (`~/.jieli/toolchain` and
+`~/fw-AC79_AIoT_SDK`) when `JIELI_TOOLCHAIN` or `AC79_SDK` is unset or empty,
+and preserves nonempty overrides.
 Changing an artifact, generated input, source, compiler, profile/font or feature option
 requires a fresh build. An attempted build first deletes the previous success report;
 failed build checks cannot leave an older report appearing current. CI verifies and
