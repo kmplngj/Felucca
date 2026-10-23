@@ -114,6 +114,14 @@ int main(void)
                         ui.menu = 1; ui.menu_sel = (uint8_t)k; ui.force = 1;
                         read_start(7); draw_menu(); read_stop();
                     }
+                    for (k = 0; k < 2u; k++) {
+                        ui.menu_sel = k ? MI_LEDS : MI_COLOR;
+                        menu_choice_open();
+                        for (unsigned pick = 0; pick < menu_n(ui.menu_sel); pick++) {
+                            ui.menu_scroll = (uint16_t)pick; ui.force = 1;
+                            read_start(7); draw_menu(); read_stop();
+                        }
+                    }
                     ui.menu = 0;
                     name_open(NK_USER_SAVE, 0); ui.force = 1;
                     read_start(8); nm_draw_field(); read_stop(); name_close();

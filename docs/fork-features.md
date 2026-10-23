@@ -33,11 +33,21 @@ publishes tested main builds and a pinned WebApp fork; its
   last-touched value while retaining the complete musical graph. The readout
   distinguishes ordinary values, automation, held-step locks and temporary/kept
   edits. Selection remains after turn feedback expires; no new gesture is needed.
-  Lists show the full selected name above five rows; menus enlarge the selected
-  value, and NAME uses a full mixed-case field with a caret. The global size
+  Lists show the full selected name above five rows; settings show seven uniform
+  label/value rows with explicit ON/OFF, and NAME uses a full mixed-case field with a caret. The global size
   switch is retired; old stored values and editor id 2 remain reserved for rollback.
   See the [reading roles and focus rules](lcd-typography.md#focused-parameter-bank).
   Physical FM-1 readability and loaded-panel qualification remain pending.
+- **Settings navigation:** hold HOME to open MENU, turn ALGORITHM for categories
+  and PRESETS for rows. Any KNOB 1–4 changes the selected setting immediately;
+  ordinary rows also accept OCT−/+ for values. On COLOR and LEDS, OCT+ opens a
+  separate choice list: turn PRESETS or a knob to pick, OCT+ applies and returns,
+  OCT− returns without applying. The square/SET mark and CURRENT name identify
+  the actual setting; the highlighted row and PICK name identify the candidate.
+  Browsing candidates does not change the theme or LEDs. HOME closes any menu
+  and discards an uncommitted candidate. An editor change while the list is open
+  updates CURRENT without replacing PICK. AUTO OFF keeps its five directly
+  editable detail rows and BACK action. Saved settings and editor IDs are unchanged.
 - **RECENT sounds:** on SAVE > PRESETS, turn KNOB 4 (LIST) past OTHER to RECENT for
   the last eight loaded sounds, newest first. PRESETS browses them; loading from RECENT
   keeps the list order, and SAVE held undoes the audition. Deleted or replaced user

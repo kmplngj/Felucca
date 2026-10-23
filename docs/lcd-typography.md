@@ -21,7 +21,7 @@ raster weight. Do not add another font to establish hierarchy.
 | S | 5×7 px | 6 px | 15 / 12 px | Labels, units, hints, graph annotations, footer, document text |
 | M | 8×9 px | 9 px | 19 / 15 px | Primary values, names, titles, messages, list rows |
 | L | M ink at exact 2×, 18 px high | 17 px | 35 / 28 px | Focused values where supported and fitting |
-| N | Full M ink at exact 2×, 18 px high | 18 px | 35 / 28 px | Selected names, NAME field and menu values |
+| N | Full M ink at exact 2×, 18 px high | 18 px | 35 / 28 px | Selected names and NAME field |
 
 The 17 px L advance is intentional: three digits fit the narrow cards. It does
 not scale the bitmap horizontally. S/M/N each have 105 records; L has 41 and is
@@ -126,9 +126,16 @@ its dense timeline with M slot letters. AUTOMATION keeps seven M rows so locks,
 steps and values remain visible together. Piano-roll and drum annotations stay
 S. Quick layers retain compact controls, their full maps and existing gestures.
 
-Menus show up to five rows around the selected item. Its label is M and its value
-is N, with explicit ON/OFF words; other rows remain M. Tab labels are M. AUTO OFF
-opens the same five detail rows, validation feedback and BACK action. INFO uses
+Settings show up to seven uniform 19 px rows with 2 px gaps. Labels, values and
+units use M, with explicit ON/OFF words on every row. Focus changes the row's
+contrast, never its height or type size. The window scrolls at its lower edge;
+the selected/total indicator stays above the control hints. Tab labels are M.
+COLOR and LEDS retain direct knob editing and offer a six-row choice page through
+OCT+. The applied value has a square/SET mark and CURRENT name; the candidate has
+the selection band and PICK name. PRESETS/knobs move the bounded candidate,
+OCT+ applies, OCT− cancels and HOME closes without applying. The candidate reuses
+the inactive ABOUT scroll field, with no additional retained state or framebuffer.
+AUTO OFF opens five uniform detail rows, validation feedback and its BACK action. INFO uses
 28 px rows with bounded build-identity continuation; ABOUT keeps wrapped S text.
 NAME shows up to 12 mixed-case characters in N with an underline caret, a distinct
 cycling state and an end caret. Its keyboard map, category, length and save/cancel
@@ -153,7 +160,7 @@ the harmless legacy control. See the [wire contract](../web/EDITOR_PROTOCOL.md#m
 | --- | --- |
 | Compact controls, `ui_draw.c:draw_column` | The label uses capital band y=5, h=13 in each 57×44 card. List/graph labels use M if it fits, otherwise S, preserving that center. Values use y=18, h=17; M and dense S fallback share its center. Numeric pens start at x=5. S units end at x=54 in a reserved slot, so changing a digit count does not move the unit. The value plus 3 px gap plus unit must fit the 49 px field. |
 | Header, `head_geo`, `head_msg` | M values and S annotations center in the 24 px header. BPM uses a same-length zero string for stable tabular geometry; play/stop share a slot. Messages use M then S according to bounded room. The header's hint measurement must match the renderer. |
-| MENU/INFO, `ui_menu.c` | The selected row uses M label/N value; other rows use M, five visible at once. HOLD/TUNE/CPU units use fixed right edges and the common 3 px gap. Tabs use M. Long build identity uses the existing bounded continuation row. |
+| MENU/INFO, `ui_menu.c` | Seven uniform M label/value rows; six M rows on COLOR/LEDS choice pages. Applied/candidate states are explicit in MONO too. HOLD/TUNE units use fixed right edges and the common 3 px gap. Tabs use M. INFO retains its bounded identity continuation. |
 | MOD, `ui_graph.c:graph_mod` | M slot/source/destination/amount share each 17 px row's center. The amount starts at x=172; its S unit ends at x=228 and shares its baseline. Fit reserves the common gap, including -100%. |
 | Piano roll, drum grid and STEP DETAIL, `ui_graph.c` | Piano note labels center within their row; drum labels center within the 10 px hit band; DETAIL labels center in each lane. Their native S size preserves the graph's density. |
 | PRESETS, USER, PROJECT, SONG and automation | M rows carry primary names/values; S carries metadata and compact cells. Existing free-name ellipsis, selected-row detail, scrolling, parameter short names and HELP paths retain their meaning. |

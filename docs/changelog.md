@@ -134,8 +134,9 @@ in issues and roadmaps, not among implemented changes below.
 - **Unified native reading:** value pages use a shared four-knob parameter bank
   and a stable larger current value while keeping full native graphs. Explicit
   scope feedback covers held-step locks, motion and temporary/kept edits; focus
-  remains after turn feedback expires. Names and selected menu values have larger
-  reading roles, with five visible list/menu rows. NORMAL/LARGE is consolidated;
+  remains after turn feedback expires. Names have a larger reading role above five
+  list rows. Settings use seven uniform rows and explicit ON/OFF; COLOR/LEDS offer
+  choice pages with separate applied/candidate states and APPLY/BACK. NORMAL/LARGE is consolidated;
   the old settings bit and editor id remain reserved for compatible rollback.
   Physical FM-1 readability and loaded-panel
   qualification remain pending. See the [reading contract](lcd-typography.md#focused-parameter-bank).

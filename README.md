@@ -29,7 +29,7 @@ The default M8Stealth display uses native pixel lettering for both regular text
 and control/status badges, with stable number/unit placement
 ([LCD typography](docs/lcd-typography.md)). One native UI combines a focused
 parameter bank, full musical graphs and explicit editing-state feedback with
-larger selected menu values and names. The global NORMAL/LARGE choice is retired;
+readable names and stable settings lists with focused choice pages. The global NORMAL/LARGE choice is retired;
 physical readability and loaded-panel qualification remain pending.
 The [diagnostic capability overview](docs/diagnostics.md#diagnostic-capabilities) distinguishes
 the normal USB console and read-only host collector from opt-in assertion, crash-register,

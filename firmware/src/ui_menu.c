@@ -5,12 +5,33 @@
  * MENU_DESC / MENU_SET; 1.2: TUNE and MIDI IN, the project's). No BACK row: HOME closes it (ui_input.c). The two-valued
  * rows are bits of ui_prefs (MENU_FLAGS). PRESETS scrolls from ABOUT through all credits (OCT- back to the tabs).
  * ui.menu: 1 the tabs, 2 ABOUT (information and credits), 3 INFO (1.2: the device's state, the old SYSTEM page's USB and
- * CPU readings), 4 AUTO OFF (five editable/detail rows, explicit BACK). */
+ * CPU readings), 4 AUTO OFF (five editable/detail rows, explicit BACK),
+ * 5 COLOR/LEDS choices (candidate until APPLY, BACK discards). */
 /* ------------------------------------------------------------ menu --- */
 /* (the rows, their values and names, usb_serial_apply: menu_items.c) */
-enum { MENU_OFF = 4 };
+enum { MENU_OFF = 4, MENU_CHOICE };
 enum { MO_IDLE, MO_MODE, MO_DARK, MO_WAKE, MO_BACK, MO_COUNT };
 static uint8_t menu_off_sel, menu_off_error;
+static int menu_has_choices(void) { return ui.menu_sel == MI_COLOR || ui.menu_sel == MI_LEDS; }
+/* The candidate reuses ABOUT's otherwise idle scroll field. No setting is
+ * changed until APPLY; an editor update remains the current value on screen. */
+static uint32_t menu_choice_value(void)
+{
+    uint32_t n = menu_n(ui.menu_sel);
+    return ui.menu_scroll < n ? ui.menu_scroll : n - 1u;
+}
+static void menu_choice_open(void)
+{
+    ui.menu_scroll = (uint16_t)menu_get(ui.menu_sel);
+    ui.menu = MENU_CHOICE;
+    ui.force = 1;
+}
+static void menu_choice_back(void)
+{
+    ui.menu = 1;
+    ui.menu_scroll = 0;
+    ui.force = 1;
+}
 static int menu_has_value(void)
 {
     return ui.menu == MENU_OFF ? menu_off_sel < MO_BACK : menu_valued(ui.menu_sel) && ui.menu_sel != MI_SCROFF;
@@ -218,17 +239,18 @@ static void menu_head(void)
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_OCTDN, w, 1, T_BG);
         draw_rec_mark(x - 20, T_BG);
     } else {
-        int32_t x = 232 - (ui.menu == MENU_OFF ? 0 : (12 + (int32_t)(MTAB_COUNT - 1u) * 8) + 8) - kh_w(KC_HOME, "CLOSE");
+        int detail = ui.menu == MENU_OFF || ui.menu == MENU_CHOICE;
+        int32_t x = 232 - (detail ? 0 : (12 + (int32_t)(MTAB_COUNT - 1u) * 8) + 8) - kh_w(KC_HOME, "CLOSE");
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_HOME, "CLOSE", 1, T_BG);
         draw_rec_mark(x - 20, T_BG);
-        if (ui.menu != MENU_OFF) menu_dots();
+        if (!detail) menu_dots();
     }
     cv_blit(0, Y_HEAD);
 }
 
-/* MENU: native header, animated M tab bar, five-row window and bottom key hints.
- * The selected row has a label/value reading hierarchy; rows are fully composed
+/* MENU: native header, animated M tab bar, seven uniform rows and bottom key hints.
+ * Selection never changes row height; rows are fully composed
  * before transfer within the existing 124-row canvas. INFO and ABOUT retain
  * their own bounded content bands. */
 static const uint16_t MTAB_ICON[MTAB_COUNT] = {ICON_X_EYE, ICON_X_KNOB, ICON_X_SPEAKER, ICON_MIDI, ICON_X_COG};
@@ -313,16 +335,6 @@ static void menu_dots(void)
     }
 }
 
-/* a two-valued row whose values are ON and OFF: a switch (a 26 x 14 cushion, its knob at the right when ON) */
-static void menu_switch(int32_t xr, int32_t y, int32_t h, int on, int sel)
-{
-    int32_t x = xr - 26, ty = y + HALF_UP(h - 14);
-    uint16_t under = sel ? T_THEME : T_SURF;
-    uint16_t track = sel ? (on ? T_INK : ux_mix(T_THEME, T_INK, 35)) : on ? T_THEME : T_DIM;
-    uint16_t knob = sel ? (on ? T_THEME : T_INK) : on ? T_INK : T_TEXT;
-    cv_rrect(x, ty, 26, 14, -7, track, under);
-    cv_rrect(on ? x + 14 : x + 2, ty + 2, 10, 10, -5, knob, track);
-}
 static void menu_off_summary(char *b)
 {
     uint32_t a = scr_idle_get(), d = scr_dark_get(), n;
@@ -336,73 +348,7 @@ static void menu_off_summary(char *b)
     n = str_len(b);
     str_cpy(b + n, OFF_SHORT_N[d], 16u - n);
 }
-static void menu_row_at(uint32_t k, uint32_t row, int32_t y, int32_t h)
-{
-    int32_t vy = y + CAP_IN(M, h);
-    int sel = row == ui.menu_sel;
-    uint16_t bg = sel ? T_THEME : T_SURF, fg = sel ? T_INK : T_TEXT, val = sel ? T_INK : T_THEME;
-    const char *v;
-    if (!sel && MI_TCH(row) && song.g[G_ROUTE] != ROUTE_TRACK)
-        val = T_MID;                                   /* (1.5.5: T1..T4 CHANNEL, unused but with MIDI IN TRACK) */
-    v = menu_valued(row) ? menu_vname(row, menu_get(row)) : "";
-    if (sel)
-        cv_rrect(MR_X, y, MR_W, h, 6, T_THEME, T_SURF);
-    else if (y > 0 && k && mtab_row(menu_tab(), k - 1u) != ui.menu_sel)
-        cv_rect(MR_X + 6, y - 1, MR_W - 12, 1, ux.style ? T_RULE : T_LINE);
-    GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row name centred up/down");
-    cv_text_on(MR_LX, vy, &AF_M, MI_NAME[row], fg, bg);
-    if (row == MI_SCROFF) {
-        char b[16];
-        menu_off_summary(b);
-        cv_text_r(MR_VR - 18, vy, &AF_M, b, val, bg);
-        cv_icon_in(MR_VR - 12, y, 0, h, 12, ICON_X_RIGHT, sel ? T_INK : T_MID, bg);
-        return;
-    }
-    if (row == MI_LCLEAR) {                            /* LEARN CLEAR (1.5): how many CCs are learned, "NONE" */
-        char b[8] = "NONE";
-        if (ml_count()) {
-            fmt_int(b, (int32_t)ml_count());
-            str_cpy(b + str_len(b), " CC", 4);
-        }
-        GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row value centred up/down");
-        cv_text_r(MR_VR, vy, &AF_M, b, val, bg);
-        return;
-    }
-    if (row >= MI_VALUES) {                            /* CALIBRATION, ABOUT: OCT+ opens them */
-        GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row chevron centred up/down");
-        cv_icon_in(MR_VR - 12, y, 0, h, 12, ICON_X_RIGHT, sel ? T_INK : T_MID, bg);
-        return;
-    }
-    if (row == MI_HOLD || row == MI_TUNE) {            /* "0.4" s, "+12" ct: the value and its unit */
-        char b[8] = "0.4";
-        b[2] = (char)('0' + HOLD_MS[settings_hold % 4u] / 100u);
-        GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row value centred up/down");
-        GFX_HOOK_ALIGN(0, 0, 0, vy + AF_M.asc, AL_B, "menu row unit on its value's baseline");
-        cv_text_r(cv_text_r(MR_VR, vy + AF_M.asc - AF_S.asc, &AF_S, row == MI_TUNE ? "ct" : "s", sel ? T_INK : T_MID, bg) - UI_VALUE_UNIT_GAP,
-                  vy, &AF_M, row == MI_TUNE ? v : b, val, bg);
-        return;
-    }
-    if (menu_n(row) == 2u && (str_eq(v, "ON") || str_eq(v, "OFF")) && !MI_TEXT(row)) {
-        menu_switch(MR_VR, y, h, str_eq(v, "ON"), sel);
-        return;
-    }
-    GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row value centred up/down");
-    if (row != MI_COLOR) {
-        cv_text_r(MR_VR, vy, &AF_M, v, val, bg);
-        return;
-    }
-    {   /* COLOR: the palette's name and its five colours (BG SURF TEXT THEME ACCENT), live */
-        uint32_t c;
-        const uint16_t *tok = &T_BG;
-        int32_t x0 = MR_VR - 74, sy = y + HALF_UP(h - 12);
-        cv_text_r(x0 - 6, vy, &AF_M, v, val, bg);
-        for (c = 0; c < 5u; c++) {
-            cv_rrect(x0 + (int32_t)c * 15, sy, 12, 12, -3, T_RAISE, bg);       /* a rim for the dark ones */
-            cv_rrect(x0 + 1 + (int32_t)c * 15, sy + 1, 10, 10, -2, tok[c], T_RAISE);
-        }
-    }
-}
-#include "ui_menu_reading.c"                           /* #577: selected reading role and bounded viewport */
+#include "ui_menu_reading.c"                           /* #577: uniform settings rows and selective choice pages */
 /* MENU > SYSTEM > INFO (1.2, ui.menu 3): what the old GLO > SYSTEM page showed, read only: the firmware, the USB link (the
  * SYSTEM page's MIDI card: OFF no USB, WAIT no bus yet, BUS frames seen, ENUM being set up, MIDI in use) and the CPU load
  * of the audio (its SYSTEM card; the shown value follows every INFO_CPU_MS, not every frame). The rows as the menu's (no
@@ -481,7 +427,7 @@ static void info_rows(void)                            /* (in screen rows: cv_oy
 
 static void draw_menu(void)
 {
-    static const khint_t KEYS[3][3] = {{{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
+    static const khint_t KEYS[3][3] = {{{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_K1, "VALUE"}},
                                        {{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}},
                                        {{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTUP, "CLEAR"}}};
     uint32_t pass, sig;
@@ -498,7 +444,7 @@ static void draw_menu(void)
           2246822519u +                                   /* (1.5.5: T1..T4 CHANNEL) */
           scr_dark_get() * 67867967u + scr_mode_get() * 2147483647u +
           (ui.menu == MENU_OFF ? menu_off_sel * 48611u + menu_off_error * 374761393u : 0u) +
-          (ui.menu == 2 ? ui.menu_scroll * 48611u : 0u) + (ui.menu == 3 ? info_sig() * 2654435761u : 0u);
+          (ui.menu == 2 || ui.menu == MENU_CHOICE ? ui.menu_scroll * 48611u : 0u) + (ui.menu == 3 ? info_sig() * 2654435761u : 0u);
     if (!ui.force && sig == ui.menu_sig) {
         if (ui.menu == 1 && mt.pos != pos0) {          /* only the tabs slid: their strip */
             cv_begin(240, MP_Y - H_HEAD, T_BG);
@@ -511,6 +457,10 @@ static void draw_menu(void)
     }
     ui.menu_sig = sig;
     menu_head();
+    if (ui.menu == MENU_CHOICE) {
+        menu_reading_choices();
+        return;
+    }
     if (ui.menu == MENU_OFF) {
         static const khint_t OFF_KEYS[2][2] = {{{KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
                                                {{KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}}};
@@ -548,7 +498,7 @@ static void draw_menu(void)
         cv_blit(0, H_HEAD + MENU_DOC_H);
         return;
     }
-    menu_reading_list(KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_has_value()]);
+    menu_reading_list(KEYS[ui.menu_sel == MI_LCLEAR ? 2 : (!menu_has_value() || menu_has_choices())]);
 }
 
 static void enc_drop(void)                             /* knob turns nobody takes */
@@ -570,7 +520,8 @@ static void menu_close(void)
  * last picked in it), any of KNOB 1..4 or OCT+ / OCT- change a value (menu_items.c menu_step), OCT+ opens CALIBRATION /
  * INFO / ABOUT / AUTO OFF (OCT- nothing there); OCT- in INFO and ABOUT goes back to the tabs. AUTO OFF keeps
  * OCT-/+ for values and uses its BACK action. HOME closes every page
- * (ui_input.c) */
+ * (ui_input.c). COLOR and LEDS retain immediate knob edits; OCT+ opens a choice
+ * page instead of stepping. There PRESETS/knobs pick, OCT+ applies, OCT- cancels. */
 static void menu_move(int32_t s)                       /* PRESETS: the next / previous row of the tab */
 {
     uint32_t t = menu_tab(), n = mtab_rows(t), k = (mtab_index(ui.menu_sel) + (s > 0 ? 1u : n - 1u)) % n;
@@ -589,6 +540,20 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
 {
     int32_t s;
     uint32_t k, up = (oct >> 1) & 1u, dn = oct & 1u;
+    if (ui.menu == MENU_CHOICE) {
+        if (dn) menu_choice_back();
+        else {
+            s = panel_enc(EN_PRESET);
+            for (k = 0; k < 4u; k++) s += panel_enc(EN_K1 + k);
+            ui.menu_scroll = (uint16_t)clamp((int32_t)menu_choice_value() + s, 0, (int32_t)menu_n(ui.menu_sel) - 1);
+            if (up) {
+                menu_put(ui.menu_sel, menu_choice_value());
+                menu_choice_back();
+            }
+        }
+        enc_drop();
+        return;
+    }
     if (ui.menu == MENU_OFF) {
         if ((s = panel_enc(EN_PRESET)) != 0) {
             menu_off_sel = (uint8_t)((menu_off_sel + (s > 0 ? 1u : MO_COUNT - 1u)) % MO_COUNT);
@@ -619,11 +584,12 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
     for (s = 0, k = 0; k < 4u; k++)                    /* KNOB 1..4, any of them */
         s += panel_enc(EN_K1 + k);
     if (menu_has_value()) {
-        /* a step (OCT+ the next value, OCT- the previous); COLOR previews the palette, STYLE is drawn so from the next
-         * frame (FX LATCH: the latched effects are off while the menu is up) */
-        s += (int32_t)up - (int32_t)dn;
+        /* Direct knob edits; ordinary rows also step on OCT-/+. The long named
+         * choices use OCT+ for their staged list. FX LATCH is off while MENU is up. */
+        if (!menu_has_choices()) s += (int32_t)up - (int32_t)dn;
         if (s)
             menu_put(ui.menu_sel, menu_step(ui.menu_sel, s));
+        if (up && menu_has_choices()) menu_choice_open();
     } else if (up) {
         if (ui.menu_sel == MI_SCROFF) {
             menu_off_open();
