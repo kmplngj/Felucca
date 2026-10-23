@@ -379,3 +379,147 @@ static int ed_backup_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
     }
     return 0;
 }
+
+/* ---- #456: the raw store export, STORE_LIST (82) and STORE_GET (83); INFO 59 01 caps (bit 0) ----
+ * Every storage object as flash holds it: the payload of the copy storage.c's own reader takes (st_current: the newest
+ * intact copy, A on a tie), byte for byte, with its commit record's length, CRC and sequence. Nothing here decodes,
+ * converts, bounds or re-packs the bytes, so an object this firmware cannot load (a later format, a retired kind, a
+ * damaged copy) is exported exactly as an object it can. The ids are the commit records' types (storage.c OBJ_*, on
+ * flash, append-only), not the backup ids. Read only: no flash write, no erase, no runtime state, no transport stop
+ * (rc 3 while it runs), no snapshot to go stale (the client checks each object's bytes against the listed CRC, and a
+ * damaged one against a second LIST). Scratch: st_buf for the request only (as fvb_valid). web/EDITOR_PROTOCOL.md
+ * "Raw store export", docs/legacy-formats.md. */
+enum { ED_STORE_LIST = 82, ED_STORE_GET };
+enum { ED_RAW_EMPTY, ED_RAW_CURRENT, ED_RAW_LEGACY, ED_RAW_UNKNOWN, ED_RAW_DAMAGED };   /* STORE_LIST's state */
+#define ED_RAW_CAPS 1u                              /* INFO 59 01: bit 0 STORE_LIST / STORE_GET */
+static const uint8_t ED_RAW_IDS[11] = {OBJ_SETTINGS, OBJ_PROJECT0, OBJ_PROJECT0 + 1, OBJ_PROJECT0 + 2, OBJ_PROJECT0 + 3,
+                                       OBJ_UPRESET0, OBJ_UPRESET0 + 1, OBJ_FM6BANK, OBJ_UPFM6, OBJ_AUTOSAVE, OBJ_FM6VB};
+_Static_assert(OBJ_COUNT == 10u && OBJ_FM6VB == 32u, "a new storage type: list it in ED_RAW_IDS (and the protocol)");
+#define ED_RAW_N ((uint32_t)sizeof ED_RAW_IDS)
+/* copy c's commit record valid (the voice bank: one copy, its payload at FVB_INFO); 0 */
+static int ed_raw_head(uint32_t id, uint32_t c, st_hdr_t *h)
+{
+    uint32_t base = id == OBJ_FM6VB ? (c ? 0u : FVB_HOME) : st_sector(id, c);
+    return !base || st_read(base, h, sizeof *h) || h->magic != ST_MAGIC || h->type != id || h->slot != c ||
+           h->len > ST_PAYLOAD_MAX || h->hcrc != st_crc32(h, sizeof *h - 4u);
+}
+/* copy c's payload (h->len bytes) -> st_buf; 0 when its CRC matches the record's */
+static int ed_raw_body(uint32_t id, uint32_t c, const st_hdr_t *h)
+{
+    uint32_t base = id == OBJ_FM6VB ? FVB_HOME + FVB_INFO : st_sector(id, c) + ST_PAYLOAD_OFF;
+    return st_read(base, st_buf, h->len) || st_crc32(st_buf, h->len) != h->crc;
+}
+/* the copy to export: the newest intact one (*ok 1), as st_current; none intact, the newest with a valid commit record
+ * (*ok 0: DAMAGED, its bytes as stored); -1 = no commit record. *h its record, st_buf its payload */
+static int ed_raw_pick(uint32_t id, st_hdr_t *h, int *ok)
+{
+    st_hdr_t r[2];
+    int v0 = !ed_raw_head(id, 0, &r[0]), v1 = !ed_raw_head(id, 1, &r[1]), first, k;
+    first = v1 && (!v0 || (r[1].seq != r[0].seq && r[1].seq - r[0].seq < 0x80000000u));
+    for (k = 0; k < 2; k++) {
+        int c = k ? !first : first;
+        if ((c ? v1 : v0) && !ed_raw_body(id, (uint32_t)c, &r[c])) {
+            *h = r[c]; *ok = 1;
+            return c;
+        }
+    }
+    if (!v0 && !v1)
+        return -1;
+    *h = r[first]; *ok = 0;
+    (void)ed_raw_body(id, (uint32_t)first, h);
+    return first;
+}
+/* the schema of n intact payload bytes b of object id, from their identification only (magic, length, version, counts,
+ * a project's own hash): CURRENT what this firmware writes, LEGACY an older layout it still converts on load, UNKNOWN
+ * neither (a later format, another layout: it does not load it and keeps the bytes). Records inside a container (a
+ * user preset's version and parameter count, a retired engine on a track) are the client's to read */
+static uint32_t ed_raw_kind(uint32_t id, const uint8_t *b, uint32_t n)
+{
+    uint32_t m = 0, w = 0, s = 0, k;
+    if (!n)
+        return ED_RAW_EMPTY;                            /* (an erased slot: project_erase commits 0 bytes) */
+    if (n >= 8u) { memcpy(&m, b, 4); memcpy(&w, b + 4, 4); memcpy(&s, b + n - 4u, 4); }
+    if (id == OBJ_SETTINGS) {
+        const persist_t *p = (const persist_t *)(const void *)b;
+        if ((n == sizeof *p && m == PERSIST_MAGIC) || persist_ext_ok(p, (int)n))
+            return ED_RAW_CURRENT;
+        return (m == PERSIST_MAGIC_EXT && n > sizeof *p && n <= sizeof(persist_rec_t)) ||   /* (another extension) */
+               (m == PERSIST_MAGIC_V5 && n == sizeof *p + 32u) ||
+               (m == 0x50455233u && n == sizeof *p - sizeof p->favorites) ||                 /* PER3, PER2, PER1 */
+               (m == 0x50455232u && n == sizeof *p - sizeof p->favorites - sizeof p->bold) ||
+               (m == 0x50455231u && n == 8u + sizeof(panel_t)) ? ED_RAW_LEGACY : ED_RAW_UNKNOWN;
+    }
+    if (id == OBJ_AUTOSAVE || (id >= OBJ_PROJECT0 && id < OBJ_PROJECT0 + 4u)) {
+        static const uint32_t F[10][2] = {{PROJ_STORE_SIZE, PROJ_MAGIC}, {PROJ_STORE_V9, PROJ_MAGIC_V9},
+            {PROJ_STORE_V8, PROJ_MAGIC_V8}, {PROJ_STORE_V7, PROJ_MAGIC_V7}, {sizeof(project_v6_t), PROJ_MAGIC_V6},
+            {sizeof(project_v5_t), PROJ_MAGIC_V5}, {sizeof(project_v4_t), PROJ_MAGIC_V4},
+            {sizeof(project_v3_t), PROJ_MAGIC_V3}, {sizeof(project_v2_t), PROJ_MAGIC_V2}, {sizeof(project_v1_t), PROJ_MAGIC_V1}};
+        for (k = 0; k < 10u; k++)                       /* every format: magic, size = its length, FNV-1a last */
+            if (n == F[k][0] && m == F[k][1] && w == n && s == proj_hash(b, n - 4u)) {
+                if (k < 4u) {                         /* serialized layouts: the count must fit, as in proj_unpack */
+                    uint32_t end = n - 4u - PROJ_NAME_LEN - (k == 3u ? 0u : NTRK * FM6_PACKED);
+                    uint32_t tail = k ? sizeof(chain_v9_t) + PROJ_MOTION_V9 : sizeof(chain_config_t) + sizeof(motion_store_t);
+                    if (b[66] < 8u || b[66] > P_COUNT || 68u + NTRK * (b[66] + 2u + NSTEP * 9u) + tail > end)
+                        return ED_RAW_UNKNOWN;
+                }
+                return k || b[66] < P_COUNT ? ED_RAW_LEGACY : ED_RAW_CURRENT;
+            }
+        return ED_RAW_UNKNOWN;
+    }
+    if (id == OBJ_UPRESET0 || id == OBJ_UPRESET0 + 1u) {
+        const up_bank_t *u = (const up_bank_t *)(const void *)b;
+        return n == sizeof *u && u->magic == UP_BANK_MAGIC && u->rsize == sizeof(up_rec_t) && u->nslot == UP_PER_BANK ?
+               ED_RAW_CURRENT : ED_RAW_UNKNOWN;
+    }
+    if (id == OBJ_FM6BANK)                              /* (retired in 1.0.3: read once, into the user presets) */
+        return n == sizeof(fm6_bank_t) && fm6_bank_valid((const fm6_bank_t *)(const void *)b) ? ED_RAW_LEGACY : ED_RAW_UNKNOWN;
+    if (id == OBJ_UPFM6)
+        return n == sizeof(upf_t) && upf_valid((const upf_t *)(const void *)b) ? ED_RAW_CURRENT : ED_RAW_UNKNOWN;
+    return n == FVB_LEN && m == FVB_MAGIC && ((const fvb_info_t *)(const void *)b)->ver == 1u &&
+           ((const fvb_info_t *)(const void *)b)->n == FM6_NBANK ? ED_RAW_CURRENT : ED_RAW_UNKNOWN;
+}
+static uint32_t ed_raw_rc(void)                         /* 4 no flash, 3 the transport runs (no stop: read only), 0 */
+{
+#if FELUCCA_FLASH
+    if (flash_ok)
+        return transport_busy() ? 3u : 0u;
+#endif
+    return 4;
+}
+static int ed_raw_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
+{
+    st_hdr_t h;
+    int ok, c;
+    uint32_t i, id, rc;
+    if (cmd == ED_STORE_LIST) {
+        rc = n ? 1u : ed_raw_rc();
+        ed_b(1); ed_b(rc); ed_b(rc ? 0u : ED_RAW_N);   /* (1: this reply's layout) */
+        for (i = 0; !rc && i < ED_RAW_N; i++) {
+            uint32_t len, m = 0;
+            id = ED_RAW_IDS[i];
+            c = ed_raw_pick(id, &h, &ok);
+            len = c < 0 ? 0u : h.len;
+            if (len >= 4u)
+                memcpy(&m, st_buf, 4);
+            ed_b(id);
+            ed_b(c < 0 ? ED_RAW_EMPTY : !ok ? ED_RAW_DAMAGED : ed_raw_kind(id, st_buf, len));
+            ed_b(c < 0 ? 127u : (uint32_t)c);
+            ed_bk_u32(len); ed_bk_u32(c < 0 ? 0u : h.crc); ed_bk_u32(c < 0 ? 0u : h.seq); ed_bk_u32(m);
+            fm1_wdt_feed();
+        }
+        return 1;
+    }
+    if (cmd == ED_STORE_GET) {                          /* id, offset u32, count lo, count hi (as BACKUP_GET) */
+        uint32_t off = n == 8u ? ed_bk_r32(a + 1) : 0u, count = n == 8u ? (uint32_t)a[6] | (uint32_t)a[7] << 7 : 0u;
+        rc = n != 8u || a[5] > 15u || !count || count > 256u ? 1u : ed_raw_rc();
+        for (i = 0, id = n ? a[0] : 127u; !rc && i < ED_RAW_N && ED_RAW_IDS[i] != id; i++)
+            ;
+        if (!rc && (i == ED_RAW_N || (c = ed_raw_pick(id, &h, &ok)) < 0 || off > h.len || count > h.len - off))
+            rc = 1;
+        ed_b(id); ed_b(rc); ed_bk_u32(off); ed_b(rc ? 0u : count & 127u); ed_b(rc ? 0u : count >> 7);
+        if (!rc)
+            ed_bk_pack(st_buf + off, count);
+        return 1;
+    }
+    return 0;
+}

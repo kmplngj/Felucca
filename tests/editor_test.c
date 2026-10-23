@@ -11,7 +11,7 @@ static unsigned char host_samples[3][0x14000];
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
-#define MENU_N (32u + FELUCCA_CPU2)                  /* 1.6.1 (core.h FELUCCA_CPU2, the default): 2ND CORE, id 32 */
+#define MENU_N (33u + FELUCCA_CPU2)                  /* ALL DARK id 33; id 32 stays reserved in CPU2=0 builds */
 
 static uint32_t host_progress = 1, host_erases, host_writes;
 static uint8_t host_wire[4096];
@@ -170,8 +170,19 @@ static int preferences(void)
     int bad = 0;
     uint8_t a[4] = {0, 7, 0, 0};
     reset();
+    {   /* (the dispatch reaches the raw store export: no flash store in this build -> rc 4, nothing listed) */
+        uint8_t g[8] = {1, 0, 0, 0, 0, 0, 16, 0};
+        uint32_t m = request(ED_STORE_LIST, a, 0), ok = m == 9u && host_wire[4] == ED_STORE_LIST && host_wire[5] == 1u &&
+                     host_wire[6] == 4u && host_wire[7] == 0u;
+        request(ED_STORE_GET, g, sizeof g);
+        bad += check("STORE_LIST / STORE_GET (82, 83) are dispatched: rc 4 without the flash store",
+                     ok && host_wire[4] == ED_STORE_GET && host_wire[5] == 1u && host_wire[6] == 4u);
+    }
     uint32_t n = request(ED_INFO, a, 0);
-    bad += check("INFO #321: 58 01 caps, last (the full backup's LIST 1 and ids 20 / 21; 0 here: no flash in this build)",
+    bad += check("INFO #456: 59 01 caps, last (the raw store export, cmds 82 / 83; 0 here: no flash in this build)",
+        host_wire[n - 4] == 0x59 && host_wire[n - 3] == 1 && host_wire[n - 2] == 0);
+    n -= 3u;                                              /* (the tags before it, as before) */
+    bad += check("INFO #321: 58 01 caps, before it (the full backup's LIST 1 and ids 20 / 21; 0 here: no flash in this build)",
         host_wire[n - 4] == 0x58 && host_wire[n - 3] == 1 && host_wire[n - 2] == ED_BK_XCAPS && ED_BK_XCAPS == 0);
     n -= 3u;                                              /* (the tags before it, as before) */
     {   /* #212: the engine id space, last: 49 01 ENG_ID_MAX ENG_USER_WIRE, then a bit per id this build plays */
@@ -196,7 +207,7 @@ static int preferences(void)
         host_wire[e - 33] == 0 &&                        /* (no bank since 1.0.3) */
         host_wire[e - 32] == 0x53 && host_wire[e - 31] == 1 && host_wire[e - 30] == 3 &&
         host_wire[e - 29] == 0x50 && host_wire[e - 28] == 1 && host_wire[e - 27] == 3 &&   /* FM6 v2: no bank, preset patches */
-        host_wire[e - 26] == 0x4E && host_wire[e - 25] == 1 && host_wire[e - 24] == MENU_N &&   /* MENU settings: 33 items (1.6.1: 2ND CORE; a FELUCCA_CPU2=0 build 32) */
+        host_wire[e - 26] == 0x4E && host_wire[e - 25] == 1 && host_wire[e - 24] == MENU_N &&   /* MENU: 34 items with CPU2, 33 without */
         host_wire[e - 23] == 0x52 && host_wire[e - 22] == 1 && host_wire[e - 21] == 4 &&   /* RATCH */
         host_wire[e - 20] == 0x4C && host_wire[e - 19] == 1 && host_wire[e - 18] == 1 &&   /* 1.1 parameter locks */
         host_wire[e - 17] == 0x41 && host_wire[e - 16] == 1 && host_wire[e - 15] == 0 && host_wire[e - 14] == 1 &&   /* 1.2: 128 */
@@ -918,23 +929,23 @@ static uint32_t menu_set(uint32_t id, int32_t v)            /* -> rc; host_wire[
 #define TCH_NAMES "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,OMNI,OFF"
 static int menu_protocol(void)
 {
-    static const char *const WANT[33][2] = {
+    static const char *const WANT[34][2] = {
         {"COLOR", 0}, {"STYLE", "FLAT,LINE"}, {"LARGE", "OFF,ON"}, {"ANIM", "ON,OFF,IDLE"}, {"LEDS", "OFF,DIM LO,DIM HI,INV,INV LO,INV HI"},
         {"HOLD", "0.3 s,0.4 s,0.5 s,0.6 s"}, {"KNOB ACCEL", "OFF,ON"}, {"FX LATCH", "OFF,ON"}, {"BPM LOCK", "OFF,ON"},
         {"SPEAKER EQ", "FLAT,LOWCUT,BASS+"}, {"USB LEVEL", "MASTER,FIXED"}, {"USB SERIAL", "ON,OFF"},
         {"CLICK", "OFF,REC,ON"}, {"CLICK LEVEL", "LOW,MID,HIGH"}, {"COUNT-IN", "OFF,1 BAR,2 BARS"},   /* (1.1: appended) */
         {"RESTORE LAST", "ON,OFF"}, {"SCALE LEDS", "OFF,ON"},                                        /* (1.2) */
-        {"SCREEN OFF", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"},
+        {"AUTO OFF", "NEVER,SCREEN 5m,SCREEN 15m,SCREEN 30m,SCREEN 60m,LEDS 5m,LEDS 15m,LEDS 30m,LEDS 60m,BOTH 5m,BOTH 15m,BOTH 30m,BOTH 60m"},
         {"SCOPE", "OUT,MIX"}, {"STEP PREVIEW", "OFF,ON"}, {"CHORD ENTRY", "HOLD,ADD"},                  /* (1.2) */
         {"MIDI IN", "CH1-4,SEL,CH5-8,CH9-12,CH13-16,TRACK"}, {"TUNE", 0},   /* (1.2: the project's ROUT and TUNE; TUNE a number) */
         {"HOME", "SCOPE,TRACKS,LEVELS"},                                                       /* (1.3; 1.5: LEVELS) */
         {"HELP", "OFF,ON"},                                                                          /* (1.5) */
         {"SELECT", "BPM,PAGE,MODW,VEL"},                                                             /* (1.5.5; 1.5.6 MODW VEL) */
         {"T1 CHANNEL", TCH_NAMES}, {"T2 CHANNEL", TCH_NAMES}, {"T3 CHANNEL", TCH_NAMES}, {"T4 CHANNEL", TCH_NAMES},   /* (1.5.5) */
-        {"AUTO SELECT", "OFF,ON"}, {"SCREEN WAKE", "+MIDI,PANEL"},                                   /* (1.5.5) */
-        {"2ND CORE", "OFF,ON (BETA)"}};                                                           /* (1.6.1; OFF the default) */
-    static const int32_t DEF[33] = {-1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0};   /* (COLOR: the default palette) */
-    static const uint8_t TAB[33] = {0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 4, 2, 2, 2, 4, 1, 0, 0, 1, 1, 3, 2, 0, 4, 1, 3, 3, 3, 3, 3, 3, 4};   /* DISPLAY CONTROL AUDIO
+        {"AUTO SELECT", "OFF,ON"}, {"WAKE", "+MIDI,PANEL"},                                        /* (same id 31) */
+        {"2ND CORE", "OFF,ON (BETA)"}, {"ALL DARK", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"}};
+    static const int32_t DEF[34] = {-1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0, 0};
+    static const uint8_t TAB[34] = {0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 4, 2, 2, 2, 4, 1, 0, 0, 1, 1, 3, 2, 0, 4, 1, 3, 3, 3, 3, 3, 0, 4, 0};   /* DISPLAY CONTROL AUDIO
                                                                                                          * MIDI SYSTEM (1.2) */
     static const char *const TABN[5] = {"DISPLAY", "CONTROL", "AUDIO", "MIDI", "SYSTEM"};
     int bad = 0, ok = 1;
@@ -946,16 +957,17 @@ static int menu_protocol(void)
     reset();
     if (jf) fprintf(jf, "[");
     for (i = 0; i < MENU_N; i++) {
+        uint32_t id = !FELUCCA_CPU2 && i == 32u ? 33u : i;
         n = menu_desc(i, &it);
         joined[0] = 0;
         for (k = 0; k < it.nnames; k++) { if (k) strcat(joined, ","); strcat(joined, it.names[k]); }
-        ok &= i == 22u ? n > 10u && it.index == i && it.id == i && it.kind == 1 && it.min == -50 && it.max == 50 &&
+        ok &= id == 22u ? n > 10u && it.index == i && it.id == id && it.kind == 1 && it.min == -50 && it.max == 50 &&
                          !it.nnames && !strcmp(it.unit, "ct") && !strcmp(it.name, "TUNE")     /* (a number: cents) */
-                       : n > 10u && it.index == i && it.id == i && it.kind == 0 && it.min == 0 && !it.unit[0] &&
-                         it.max + 1 == (int32_t)it.nnames && !strcmp(it.name, WANT[i][0]) &&
-                         (WANT[i][1] ? !strcmp(joined, WANT[i][1]) : it.nnames == NPALETTES);
-        ok &= it.value == (DEF[i] < 0 ? (int32_t)settings.palette : DEF[i]) &&
-              it.tab == TAB[i] && !strcmp(it.tabname, TABN[TAB[i]]) && !it.rest;
+                       : n > 10u && it.index == i && it.id == id && it.kind == 0 && it.min == 0 && !it.unit[0] &&
+                         it.max + 1 == (int32_t)it.nnames && !strcmp(it.name, WANT[id][0]) &&
+                         (WANT[id][1] ? !strcmp(joined, WANT[id][1]) : it.nnames == NPALETTES);
+        ok &= it.value == (DEF[id] < 0 ? (int32_t)settings.palette : DEF[id]) &&
+              it.tab == TAB[id] && !strcmp(it.tabname, TABN[TAB[id]]) && !it.rest;
         if (i == 0)
             for (k = 0; k < NPALETTES; k++) ok &= !strcmp(it.names[k], UI_PALETTES[k].name);
         if (!ok) { printf("  MENU_DESC %u: %s [%s] value %d max %d tab %u %s\n", i, it.name, joined, it.value, it.max, it.tab, it.tabname); break; }
@@ -967,7 +979,7 @@ static int menu_protocol(void)
         }
     }
     if (jf) { fprintf(jf, "]\n"); fclose(jf); }
-    bad += check(FELUCCA_CPU2 ? "MENU_DESC: 33 items (... 1.5.5, then 1.6.1 2ND CORE id 32 last: OFF / ON (BETA), OFF by default), names, defaults" : "MENU_DESC (FELUCCA_CPU2=0): 32 items (1.0.4's 12 in the menu's order, then 1.1's CLICK, CLICK LEVEL, COUNT-IN, 1.2's RESTORE LAST, SCALE LEDS, SCREEN OFF, 1.2's SCOPE, STEP PREVIEW, CHORD ENTRY, MIDI IN, TUNE, 1.3's HOME, 1.5's HELP, 1.5.5's SELECT, T1..T4 CHANNEL, AUTO SELECT, SCREEN WAKE), ids 0..31, names, defaults; TUNE a number -50..50 ct", ok);
+    bad += check("MENU_DESC: stable ids/defaults, legacy AUTO OFF's 13 names, WAKE id 31 in DISPLAY, ALL DARK id 33 appended; CPU2 id 32 remains reserved", ok);
     bad += check("MENU_DESC (1.0.5): after the names (TUNE: the unit) each item's tab, index and name (DISPLAY CONTROL AUDIO MIDI SYSTEM)", ok);
     {   /* an older editor reads the names and stops: the tab is past them, nothing it reads moved */
         uint32_t m = menu_desc(4, &it), p = 14, q;
@@ -1013,7 +1025,7 @@ static int menu_protocol(void)
     ok &= menu_set(14, 2) == 3 && cin_bars == 2u;
     ok &= menu_set(15, 1) == 3 && (ui_prefs & PREF_RESTORE_OFF);
     ok &= menu_set(16, 1) == 3 && (ui_rec_prefs & 0x40u) && click_mode == CLICK_ON && cin_bars == 2u;   /* (its own bit) */
-    ok &= menu_set(17, 0) == 3 && scr_get() == 0u && menu_set(17, 9) == 3 && scr_get() == 4u &&   /* (clamped) */
+    ok &= menu_set(17, 0) == 3 && scr_get() == 0u && menu_set(17, 99) == 3 && scr_get() == 12u &&   /* (clamped) */
           menu_set(17, 2) == 3 && scr_get() == 2u && ui_scr == 1u;
     ok &= menu_set(18, 1) == 3 && ui_prefs2 == 1u && scope_mix;                                    /* (1.2: their own byte) */
     ok &= menu_set(19, 1) == 3 && ui_prefs2 == 3u && menu_set(20, 1) == 3 && ui_prefs2 == 7u;
@@ -1036,9 +1048,10 @@ static int menu_protocol(void)
     ok &= menu_set(32, 1) == 1 && ui_prefs2 == 0x3Fu;   /* (no 2ND CORE in a FELUCCA_CPU2=0 build: an unknown id, nothing set) */
 #endif
     for (i = 0; i < MENU_N; i++) {                         /* MENU_DESC reads them back */
-        static const int32_t SET[33] = {2, 1, 1, 1, 1, 3, 1, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 1, 1, 2, -13, 1, 1, 1, 9, 16, 17, 0, 1, 1, 1};
+        static const int32_t SET[34] = {2, 1, 1, 1, 1, 3, 1, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 1, 1, 2, -13, 1, 1, 1, 9, 16, 17, 0, 1, 1, 1, 0};
+        uint32_t id = !FELUCCA_CPU2 && i == 32u ? 33u : i;
         menu_desc(i, &it);
-        ok &= it.value == SET[i];
+        ok &= it.value == SET[id];
     }
     bad += check("MENU_SET: every setting applied as the menu does (palette, EQ, USB LEVEL, CLICK, COUNT-IN at once, RESTORE LAST, SCALE LEDS, SCREEN OFF, SCOPE, STEP PREVIEW, CHORD ENTRY, HOME, HELP, SELECT, T1..T4 CHANNEL, AUTO SELECT, SCREEN WAKE, 2ND CORE ON (bit 7 of ui_prefs2; none in a FELUCCA_CPU2=0 build)), read back", ok);
     ok = menu_set(3, 0) == 3 && !(ui_prefs & PREF_ANIM_OFF) && (ui_prefs & PREF_LARGE) && menu_set(10, 0) == 3 &&
@@ -1065,7 +1078,8 @@ static int menu_protocol(void)
         uint8_t hold0 = settings_hold, leds0 = settings_leds;
         memcpy(fav0, &favorites, sizeof favorites); memcpy(set0, &settings, sizeof settings);
         memcpy(dev0, settings_dev, sizeof settings_dev);
-        ok = menu_set(MENU_N, 1) == 1 && host_wire[6] == MENU_N && ed_rv(host_wire + 7) == 1;
+        uint32_t unknown = FELUCCA_CPU2 ? 34u : 32u;
+        ok = menu_set(unknown, 1) == 1 && host_wire[6] == unknown && ed_rv(host_wire + 7) == 1;
         ok &= menu_set(126, -3) == 1 && host_wire[6] == 126 && ed_rv(host_wire + 7) == -3;
         ok &= menu_set(127, 0) == 1 && host_wire[6] == 127;
         ok &= !memcmp(fav0, &favorites, sizeof favorites) && !memcmp(set0, &settings, sizeof settings) &&
@@ -1078,6 +1092,35 @@ static int menu_protocol(void)
     menu_set(7, 0);
     bad += check("MENU_SET while the MENU page is shown: the page redraws (ui.force)", ui.force && ui.menu == 1);
     ui.menu = 0;
+
+    /* Both clocks share the same inactivity origin. Refused ordering must echo the actual setting and never
+     * change another preference, reset the timer or enter the settings-save path. Test real framed requests. */
+    {
+        uint8_t dev0[32];
+        uint32_t idle0, erases0, writes0;
+        reset();
+        ok = 1;
+        for (i = 0; i < 13u; i++)
+            ok &= menu_set(17, (int32_t)i) == 3u && scr_get() == i && ed_rv(host_wire + 7) == (int32_t)i;
+        bad += check("MENU_SET id 17 retains every legacy AUTO OFF value 0..12", ok);
+        ok = menu_set(17, 2) == 3u && menu_set(33, 3) == 3u && scr_idle_get() == 2u && scr_dark_get() == 3u;
+        memcpy(dev0, settings_dev, sizeof dev0);
+        idle0 = scrn.idle; erases0 = host_erases; writes0 = host_writes;
+        fm1_ms += 321u;
+        ok &= menu_set(33, 2) == 2u && host_wire[6] == 33u && ed_rv(host_wire + 7) == 3;
+        ok &= menu_set(17, 3) == 2u && host_wire[6] == 17u && ed_rv(host_wire + 7) == 2;
+        ok &= menu_set(17, 12) == 2u && ed_rv(host_wire + 7) == 2;
+        ok &= !memcmp(dev0, settings_dev, sizeof dev0) && scrn.idle == idle0 &&
+              host_erases == erases0 && host_writes == writes0;
+        menu_desc(MENU_N - 1u, &it);
+        ok &= it.id == 33u && it.value == 3 && it.min == 0 && it.max == 4;
+        bad += check("MENU_SET conflicting timers: rc 2, actual unchanged values, no preference/timer/flash mutation", ok);
+        ok = menu_set(33, 0) == 3u && menu_set(17, 12) == 3u && menu_set(33, 4) == 2u && ed_rv(host_wire + 7) == 0;
+        ok &= menu_set(17, 0) == 3u && menu_set(33, 1) == 3u && scr_get() == 0u && scr_dark_get() == 1u;
+        ok &= menu_set(17, 1) == 2u && ed_rv(host_wire + 7) == 0;
+        ok &= menu_set(33, 99) == 3u && ed_rv(host_wire + 7) == 4 && menu_set(33, -99) == 3u && ed_rv(host_wire + 7) == 0;
+        bad += check("MENU_SET ALL DARK: NEVER independent, strict later ordering, direct darkness with idle NEVER, clamped range", ok);
+    }
 
     /* USB SERIAL: the reply first, the re-enumeration 200 ms later (usb_serial_apply, called every frame). (usb.up
      * stays 0 here: the host has no USB registers; usb.config 0 = the device off the bus, enumerated afresh) */

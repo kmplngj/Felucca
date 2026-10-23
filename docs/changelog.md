@@ -12,10 +12,33 @@ the [performance guide](performance.md) for measurement scope, and
 for the shared instrument's earlier history. Plans and unmerged experiments belong
 in issues and roadmaps, not among implemented changes below.
 
+## For firmware developers
+
+The links below collect implemented work that may help other FM-1 firmware
+projects and embedded-audio developers. Follow each change's source, attribution
+and [licence requirements](../LICENSING.md); host-specific code and hardware
+assumptions need adaptation. Evidence applies to the revisions and workloads
+recorded in the linked reports, rather than every current build or device.
+
+| Area | Reusable implementation and evidence | Limits and remaining hardware checks |
+| --- | --- | --- |
+| **DSP and CPU cost** | Silent-effect shortcuts in [fx.c](../firmware/src/fx.c), with [forced-off audio/state comparisons, skip assertions and negative controls](../tests/fx_rest_test.md); broader [DSP integration evidence](https://github.com/kmplngj/Felucca/pull/349). | Tested equivalence and target estimates do not establish FM-1 timing gains. Recheck tails, wake-up, transitions and loaded audio deadlines on the adopting firmware. |
+| **RAM, flash and display work** | [Aligned copies/fills](../firmware/src/libc.c) and [host checks](../tests/libc_test.c); [bitmap font generation](../tools/gen_bitmap_font.py) and [controlled font/cache comparisons](font-experiment.md), including a separate 1,032 B POOL reduction. | Savings are dated A/B results, not current totals or additive estimates. Font-only flash savings do not imply RAM or CPU savings; physical readability and loaded redraw/audio checks remain separate. |
+| **MIDI and arithmetic fixes** | [Timestamp, UART event/count, clock-phase and signed-scaling fixes](midi-dsp-reliability.md#changes-and-provenance), with focused regressions, SDK evidence and [device results](midi-dsp-device-results-2026-10-21.md). | USB pulse-count phase passed with CPU2 OFF in the recorded setup. Physical TRS and CPU2 ON clock-phase checks remain pending; UART register widths and event semantics are JieLi-specific. |
+| **Request ownership and worker reliability** | [Editor/updater SysEx race](sysex-dispatch-race.md), including causal device reproduction, [boundary-injection regression](../tests/sysex_dispatch_test.py) and resource deltas; [CPU2 idle-poll mitigation and matched device tests](cpu2-idle-polling.md). | Serialized requests remain required. Bounded USB observations do not qualify every host/load or physical TRS. CPU2 evidence is from one FM-1; broader engine/unit and reset/flash qualification remains pending, with the worker beta and default OFF. |
+| **Build and resource safeguards** | [Profile contracts and artifact-bound resource/stack reports](build-profiles.md#machine-readable-build-evidence), [report generation](../tools/build_report.py), [report regressions](../tests/build_report_test.py) and [ISR-aware size selection](../tools/size_fns.py). | Linked region sizes and reserved stacks are static evidence, not live RAM/stack watermarks or deadline measurements. Re-establish the memory map, ISR reachability and compiler behavior for another target. |
+| **Diagnostics and reproducible testing** | [Read-only USB collector](diagnostics.md), [rendered-screen capture](screen-capture.md), [interaction replay](interaction-replay.md) and [real browser UI/audio gate](cloud-testing.md), with their setup, provenance and validation scope. | Collection continuity is not a firmware pass. Host/WASM replay does not qualify FM-1 I/O or deadlines; digital screenshots do not qualify physical colours/backlight. Capture flags are development-only, and explicit capture wake awaits device validation. |
+| **CI and AI workflows** | [Selective CI, caches and exact-revision artifacts](../.github/CI.md); [AI workflow guide](ai-workflows.md) linking summary-first evidence, the firmware-watch ledger/skill, PR-testing instructions and firmware-specific AI review configuration. | Context filtering preserves full relevant diff and history coverage. AI/static review complements target and device checks. Text reduction is a context-size proxy until actual token usage and task quality are measured. |
+
 ## Fork development
 
 ### Added
 
+- **Build metadata contracts:** canonical supported-profile exports include stable IDs,
+  exact engine pins, dependencies, assets, licences and defaults. Successful target builds
+  emit artifact-bound resource/stack reports, with stale-evidence verification using the
+  existing build guards. This is the first stage of #465; cost prediction and a browser
+  builder remain pending. See [build evidence](build-profiles.md#machine-readable-build-evidence).
 - **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
   51 factory sounds alongside all thirteen standard engines, using stable engine
   ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.
@@ -37,11 +60,28 @@ in issues and roadmaps, not among implemented changes below.
 - **Project recovery and backup:** deferred automatic project saves that wait for
   stopped, idle operation and quiet stereo output, including effect tails and
   fixed-level USB audio; full backups now include the FM6 voice bank and SLICE records.
-  See [persistence contracts](extending.md#4-persistence-and-protocol).
+  A read-only raw store export (editor commands 82/83) downloads every stored
+  object byte for byte, including projects, presets and settings the firmware
+  cannot load, as the first step of moving legacy conversion to the web editor;
+  a reference reader is included, with browser migration still pending. See [persistence contracts](extending.md#4-persistence-and-protocol)
+  and the [stored-format inventory](legacy-formats.md).
 - **Build identification and diagnostics:** startup, ABOUT and INFO identify the
-  release, commit or PR; ABOUT includes the fork source. USB serial diagnostics,
-  retained crash reporting, opt-in crash register context and interrupt-context
-  assertions support investigation. See the [diagnostics guide](diagnostics.md).
+  release, commit or PR; ABOUT includes the fork source. USB serial health/input
+  counters and consistent main/worker crash snapshots support device investigation.
+  A read-only host collector retains raw replies, JSONL samples and a summary with
+  counter deltas and supplied build provenance. Opt-in crash-register context,
+  interrupt-misuse counters and a bounded 64-bit multiply/16-bit-load reproducer
+  support targeted debugging; normal FM-1 builds leave these probes disabled.
+  The synthetic reproducer adds a test workload, not an audio fix. See the
+  [capability overview and activation requirements](diagnostics.md#diagnostic-capabilities).
+- **Rendered-screen screenshots:** an opt-in development build exports bounded
+  RGB565 HOME/menu captures over USB SERIAL, with full device build identity and a
+  host PNG/JSON tool. Explicit `--wake` silently wakes the current stopped view,
+  waits for redraw and holds it awake for the bounded capture; default capture
+  still rejects sleep. Unsupported or changed scenes fail explicitly;
+  normal builds leave capture disabled. Digital captures do not qualify physical
+  panel colours or backlight behaviour; the new explicit wake path awaits FM-1
+  validation. See [scope and device checks](screen-capture.md).
 - **Testing and installation tools:** deterministic interaction replay, native/WASM
   partition comparisons, host stress scenarios and a Chromium UI/audio gate.
   PR installation supports isolated source worktrees, exact-revision artifacts and
@@ -52,6 +92,33 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **Browser emulator readability:** keyboard hints, footer links, build version and
+  small-print text meet a 4.5:1 contrast floor against the neutral page background.
+
+- **Hosted editor settings:** applied RAM-only and deferred-save settings retain
+  the device's returned value; rejected edits restore the confirmed value while
+  preserving newer picker drafts. Saved edits replace earlier warnings with
+  "Saved" while retaining the message history. The pinned editor discovers AUTO OFF,
+  WAKE and ALL DARK from firmware descriptors, including builds without CPU2. See
+  [WebApp PR #7](https://github.com/kmplngj/Felucca-WebApp/pull/7),
+  [feedback fix #8](https://github.com/kmplngj/Felucca-WebApp/pull/8) and
+  [site deployment and source revisions](../.github/CI.md#fork-site-deployment).
+- **Editor SysEx replies:** a request arriving between the Editor and updater's
+  main-loop checks is retained for the correct consumer instead of silently
+  discarded. The wire format and one-request-at-a-time contract are unchanged;
+  see [the ownership regression and device evidence](sysex-dispatch-race.md).
+
+- **MIDI timing and arithmetic:** TRS packets keep timely timestamps during audio
+  renders, UART counts require a receive event, and external sequencer/ARP phase
+  retains fractional progress through tempo and SONG changes. Signed DSP scaling
+  is defined and invalid tempo has a bounded default. Normal PCM and valid-tempo
+  behavior remain covered by regressions. The [device results](midi-dsp-device-results-2026-10-21.md)
+  pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
+  See [implementation evidence and test procedure](midi-dsp-reliability.md).
+
+- **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
+  immediately when their brightness is changed without leaving the row. Physical
+  brightness/readability checks remain pending; see [display controls](display-idle.md).
 - **Early rescue entry:** enable the shared key/LED power rail before reading
   OCT− at startup, allow it to settle and use the normal input scan cadence.
   Both-OCT calibration remains available; corrected entry awaits FM-1 retesting
@@ -71,11 +138,25 @@ in issues and roadmaps, not among implemented changes below.
 - **Second-core failure handling:** parallel rendering uses per-part state where
   required, and failed work falls back to serial rendering. A retained exclusion
   prevents automatic retries after a recorded worker failure until explicitly
-  retried. Real FM-1 reset and reliability checks remain pending; see
+  retried. A bounded in-RAM idle-poll pause mitigates observed BAD_JOB read faults
+  in [matched tests on one FM-1](cpu2-idle-polling.md), while preserving all guards
+  and default OFF. Broader unit/engine, TRS and reset/flash checks remain pending; see
   [second-core behavior and recovery](fork-features.md#optional-second-core).
 
 ### Changed
 
+- **LCD typography:** control hints and state badges now use native M8Stealth57
+  lettering alongside the default M8 text. Numeric card and MOD units stay in a
+  fixed slot, and small-value fallbacks share a consistent vertical band.
+  Track digits center on their cushion, removing the old extra shift for “1”.
+  Rounded pill edges, icons, text-font comparison builds and LARGE mode remain
+  available. See [roles, fit rules and validation scope](lcd-typography.md);
+  physical readability and loaded-panel qualification remain pending.
+- **Display inactivity:** AUTO OFF combines the existing screen timeout with LED-only
+  and combined darkness, retaining NEVER as default and the existing screen-only
+  values. Timed LED darkness includes a quiet rotating key-LED pulse every 30 seconds;
+  audio and input scanning continue. The LCD backlight remains on. See
+  [controls, downgrade behavior and pending FM-1 checks](display-idle.md).
 - **Python tooling setup:** locked uv dependency groups separate build/font tooling
   from MIDI installation. Build and PR handoff commands synchronize their environment
   automatically, including on macOS without manual pip setup; see
@@ -121,4 +202,6 @@ in issues and roadmaps, not among implemented changes below.
 - **Development turnaround:** change-based CI selection, dependency caches,
   parallel independent host tests and reuse of automatic PR firmware artifacts
   reduce repeated validation/build work. Required checks still gate merges;
-  see [CI scope and artifacts](../.github/CI.md).
+  see [CI scope and artifacts](../.github/CI.md). The host suite's opt-in
+  [`--ai-output` mode](../BUILDING.md#tests) condenses console output while retaining
+  full logs, failure exit codes and warning/skip hints; test coverage is unchanged.

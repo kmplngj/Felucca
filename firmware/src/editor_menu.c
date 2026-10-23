@@ -35,11 +35,12 @@ static const uint8_t ED_MENU[][2] = {
     {MI_TCH1, 26}, {MI_TCH2, 27}, {MI_TCH3, 28}, {MI_TCH4, 29},   /* 1.5.5 (#202): T1..T4 CHANNEL, the project's (song.mch)
                                                        * as MIDI IN: 1..16 OMNI OFF (values 0..17), MIDI */
     {MI_MFOLLOW, 30},                                  /* 1.5.5 (#208): AUTO SELECT OFF / ON, a setting, MIDI */
-    {MI_SCRWAKE, 31},                                  /* 1.5.5: SCREEN WAKE +MIDI / PANEL, a setting, MIDI */
+    {MI_SCRWAKE, 31},                                  /* WAKE +MIDI / PANEL: AUTO OFF detail, same preference/id */
 #if FELUCCA_CPU2
     {MI_CPU2, 32},                                     /* 1.6.1, the second core (Discussion #141): 2ND CORE OFF / ON (BETA),
-                                                        * SYSTEM, from the next power-on (a FELUCCA_CPU2=0 build: 0..31) */
+                                                        * SYSTEM, from the next power-on; omitted when CPU2=0, id reserved) */
 #endif
+    {MI_DARK, 33},                                     /* ALL DARK: append after reserved CPU2 id 32, even without CPU2 */
 };
 #define ED_MENU_N NELEM(ED_MENU)
 
@@ -84,7 +85,10 @@ static int ed_menu_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
     }
     row = ED_MENU[i][0];
     lo = row == MI_TUNE ? TUNE_MIN : 0;                /* (a number: from its min) */
-    menu_put(row, (uint32_t)(clamp(v, lo, lo + (int32_t)menu_n(row) - 1) - lo));
+    if (!menu_try_put(row, (uint32_t)(clamp(v, lo, lo + (int32_t)menu_n(row) - 1) - lo))) {
+        ed_b(2); ed_b(a[0]); ed_v((int32_t)menu_get(row) + lo);   /* incompatible timer ordering: not applied or saved */
+        return 1;
+    }
     if (row == MI_SERIAL)
         menu_serial_at = fm1_ms | 1u;                  /* (applied 200 ms after this reply: usb_serial_apply) */
     ui.force = 1;                                      /* (the MENU page, if shown, redraws) */

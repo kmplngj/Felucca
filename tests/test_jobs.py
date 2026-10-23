@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Bounded host-test units, ordered transcripts and process-group cancellation."""
+import argparse
+from collections import deque
 import fcntl
 import json
 import os
@@ -12,6 +14,60 @@ import subprocess
 import sys
 import tempfile
 import time
+
+
+def report_log(logs, unit, ai_output):
+    path = logs / unit["log"]
+    if not ai_output:
+        with path.open("rb") as stream:
+            sys.stdout.flush()
+            shutil.copyfileobj(stream, sys.stdout.buffer)
+        return
+
+    # These are diagnostic line hints, not parsed test/skip counts. The original
+    # bytes remain in the log; bounded samples only decide what to open next.
+    notices = dict(warning_lines=0, skip_lines=0, samples=[])
+    tail, errors = deque(maxlen=6), []
+    lines, notice_lines = 0, 0
+    with path.open(encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            line = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line).rstrip()
+            lines += 1
+            sample = line[:240] + ("..." if len(line) > 240 else "")
+            tail.append(sample)
+            if len(errors) < 3 and re.search(r"\b(error|failed|failure|traceback|assertionerror|fatal)\b",
+                                              line, re.IGNORECASE):
+                errors.append(sample)
+            # Test descriptions can mention skips/negative fixtures; they are
+            # not results. Explicit shell skip notes are the exception.
+            if line.startswith("== ") and not line.startswith("== skip "):
+                continue
+            warning = bool(re.search(r"\b(?:[A-Za-z]+Warning|warning)(?:\s+[A-Z0-9-]+)?:",
+                                     line, re.IGNORECASE))
+            skipped = bool(re.search(r"\b(skip|skipped|skipping|unavailable)\b|\bnot checked\b",
+                                     line, re.IGNORECASE))
+            notices["warning_lines"] += warning
+            notices["skip_lines"] += skipped
+            if warning or skipped:
+                notice_lines += 1
+                if len(notices["samples"]) < 3:
+                    notices["samples"].append(sample)
+    notices["samples_limited"] = (notice_lines > len(notices["samples"])
+                                  or any(len(s) > 240 for s in notices["samples"]))
+    unit["diagnostics"] = notices
+    if unit["status"] != "passed" or notices["warning_lines"] or notices["skip_lines"]:
+        code = f" exit={unit['returncode']}" if "returncode" in unit else ""
+        print(f"host: {unit['name']} {unit['status']}{code}; "
+              f"warning_lines={notices['warning_lines']} skip_lines={notices['skip_lines']}; log={path}")
+        for sample in notices["samples"]:
+            print(f"  notice: {sample}")
+        if unit["status"] != "passed":
+            excerpt = list(dict.fromkeys(errors + list(tail)))
+            unit["excerpt"] = excerpt
+            unit["excerpt_limited"] = lines > len(excerpt) or any(len(s) > 240 for s in excerpt)
+            print("  excerpt (full log retained):")
+            for sample in excerpt:
+                print(f"    {sample}")
 
 
 def job_count(env):
@@ -57,28 +113,31 @@ def stop(processes):
     if remaining:
         time.sleep(0.2)
     for process in remaining:
+        # Reap an exited leader before signaling again. macOS can report EPERM
+        # for a group containing only its unreaped zombie; live grandchildren
+        # remain in the group and must still receive KILL.
+        process.poll()
         kill_group(process, signal.SIGKILL)
     for process in processes:
         process.wait()
 
 
-def execute(script, output, env):
+def execute(script, output, env, ai_output=False, preflight=False):
     count = job_count(env)
-    worker_env = dict(env)
-    if count > 1:
-        # Several units can each fork regress.c workers. Bound that inner fan-out
-        # too; an explicit JOBS setting still belongs to the caller.
-        worker_env.setdefault("JOBS", "1")
     output.mkdir(parents=True, exist_ok=True)
     with (output / ".test-run.lock").open("a+") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError("another host suite is using this checkout; use a separate worktree")
-        return run_locked(script, output, worker_env, count)
+        return run_locked(script, output, env, count, ai_output, preflight)
 
 
-def run_locked(script, output, env, count):
+def run_locked(script, output, env, count, ai_output=False, preflight=False):
+    worker_env = dict(env)
+    if count > 1:
+        # Bound inner render fan-out, while preflight keeps the caller's environment.
+        worker_env.setdefault("JOBS", "1")
     logs = Path(tempfile.mkdtemp(prefix="test-run-", dir=output))
     interrupted = 0
 
@@ -90,43 +149,75 @@ def run_locked(script, output, env, count):
     active, plan = {}, []
     flushed = 0
     start = time.monotonic()
-    summary = dict(jobs=count, inner_jobs=env.get("JOBS", "default"), status="failed", units=plan)
+    summary = dict(jobs=count, inner_jobs=worker_env.get("JOBS", "default"), status="failed", units=plan,
+                   output_mode="ai" if ai_output else "full")
+    if ai_output:
+        print(f"host: running; logs={logs}", flush=True)
 
     def flush():
         nonlocal flushed
         while flushed < len(plan) and plan[flushed]["status"] not in ("pending", "running"):
-            with (logs / plan[flushed]["log"]).open("rb") as stream:
-                sys.stdout.flush()
-                shutil.copyfileobj(stream, sys.stdout.buffer)
+            report_log(logs, plan[flushed], ai_output)
             flushed += 1
         sys.stdout.flush()
 
     try:
+        if preflight:
+            unit = dict(name="preflight", log="preflight.log", status="running")
+            summary["preflight"] = unit
+            with (logs / unit["log"]).open("wb") as stream:
+                process = subprocess.Popen(["sh", str(script), "--preflight"], env=env,
+                                           stdout=stream, stderr=subprocess.STDOUT,
+                                           start_new_session=True)
+            active[process] = None
+            while process.poll() is None:
+                if interrupted:
+                    summary["status"] = "cancelled"
+                    return 128 + interrupted
+                time.sleep(0.05)
+            result = process.returncode
+            stop([process])
+            active.pop(process)
+            unit.update(status="passed" if result == 0 else "failed", returncode=result)
+            if result:
+                return result if result > 0 else 128 - result
         # The plan may probe sanitizer availability, but never executes test units.
-        process = subprocess.Popen(["sh", str(script), "--plan"], env=env,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   text=True, start_new_session=True)
+        planner = dict(name="plan", log="plan.stderr.log", stdout_log="plan.stdout.log", status="running")
+        summary["plan"] = planner
+        with (logs / planner["stdout_log"]).open("wb") as stdout_log, (logs / planner["log"]).open("wb") as stderr_log:
+            process = subprocess.Popen(["sh", str(script), "--plan"], env=worker_env,
+                                       stdout=stdout_log, stderr=stderr_log, start_new_session=True)
         active[process] = None
-        while True:
+        while process.poll() is None:
             if interrupted:
                 summary["status"] = "cancelled"
                 return 128 + interrupted
-            try:
-                stdout, stderr = process.communicate(timeout=0.1)
-                break
-            except subprocess.TimeoutExpired:
-                pass
+            time.sleep(0.05)
         active.pop(process)
+        planner.update(status="passed" if process.returncode == 0 else "failed", returncode=process.returncode)
+        stdout = (logs / planner["stdout_log"]).read_text()
+        stderr = (logs / planner["log"]).read_text()
         if process.returncode:
+            if ai_output:
+                raise ValueError(f"host-test planning failed ({process.returncode}); "
+                                 f"logs: {logs / planner['stdout_log']}, {logs / planner['log']}")
             raise ValueError(f"host-test planning failed ({process.returncode}):\n{stderr}{stdout}")
-        if stderr:
+        if stderr and not ai_output:
             print(stderr, file=sys.stderr, end="")
-        plan.extend(parse_plan(stdout))
+        try:
+            plan.extend(parse_plan(stdout))
+        except ValueError as error:
+            planner["status"] = "failed"
+            planner["error"] = "invalid host-test plan"
+            if ai_output:
+                raise ValueError(f"invalid host-test plan; log: {logs / planner['stdout_log']}") from error
+            raise
         by_name = {unit["name"]: unit for unit in plan}
         for i, unit in enumerate(plan):
             unit["log"] = f"{i + 1:03d}-{unit['name']}.log"
             (logs / unit["log"]).touch()
-        print(f"== host runner: {count} concurrent units; logs and timings: {logs}", flush=True)
+        if not ai_output:
+            print(f"== host runner: {count} concurrent units; logs and timings: {logs}", flush=True)
         while any(unit["status"] in ("pending", "running") for unit in plan):
             if interrupted:
                 summary["status"] = "cancelled"
@@ -141,7 +232,7 @@ def run_locked(script, output, env, count):
                 elif len(active) < count and all(dep["status"] == "passed" for dep in dependencies):
                     with (logs / unit["log"]).open("wb") as stream:
                         process = subprocess.Popen(["sh", str(script), "--unit", unit["name"]],
-                                                   env=env, stdout=stream, stderr=subprocess.STDOUT,
+                                                   env=worker_env, stdout=stream, stderr=subprocess.STDOUT,
                                                    start_new_session=True)
                     active[process] = unit
                     unit.update(status="running", started=time.monotonic() - start)
@@ -161,25 +252,60 @@ def run_locked(script, output, env, count):
         return 0 if success else 1
     finally:
         stop(list(active))
+        for key in ("preflight", "plan"):
+            if key in summary:
+                unit = summary[key]
+                if unit["status"] == "running":
+                    unit["status"] = "cancelled" if interrupted else "failed"
+                if ai_output and key == "plan" and unit["status"] != "passed":
+                    # A planner may print its failure reason to stdout after
+                    # partial plan rows. Keep both raw streams and excerpt both.
+                    unit["stderr_log"] = unit["log"]
+                    unit["log"] = "plan.failure.log"
+                    with (logs / unit["log"]).open("wb") as combined:
+                        for label, name in (("stdout", unit["stdout_log"]), ("stderr", unit["stderr_log"])):
+                            combined.write(f"--- planner {label} ---\n".encode())
+                            with (logs / name).open("rb") as source:
+                                shutil.copyfileobj(source, combined)
+                if ai_output or key == "preflight":
+                    report_log(logs, unit, ai_output)
         for unit in plan:
             if unit["status"] in ("pending", "running"):
                 unit["status"] = "cancelled" if interrupted else "blocked"
         flush()
         summary["seconds"] = time.monotonic() - start
         summary["signal"] = interrupted or None
+        summary["unit_counts"] = {status: sum(u["status"] == status for u in plan)
+                                  for status in ("passed", "failed", "blocked", "cancelled")}
+        if ai_output:
+            entries = plan + [summary[key] for key in ("preflight", "plan") if key in summary]
+            summary["diagnostic_counts"] = {key: sum(u["diagnostics"][key] for u in entries)
+                                            for key in ("warning_lines", "skip_lines")}
         (logs / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-        print(f"== host runner: {summary['status']}, {summary['seconds']:.1f}s; {logs}/summary.json", flush=True)
+        if ai_output:
+            counts = " ".join(f"{key}={value}" for key, value in summary["unit_counts"].items())
+            diagnostics = " ".join(f"{key}={value}" for key, value in summary["diagnostic_counts"].items())
+            print(f"host: {summary['status'].upper()} units: {counts}; {summary['seconds']:.1f}s; "
+                  f"{diagnostics}; summary={logs}/summary.json", flush=True)
+        else:
+            print(f"== host runner: {summary['status']}, {summary['seconds']:.1f}s; {logs}/summary.json", flush=True)
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("script", type=Path)
+    parser.add_argument("--ai-output", action="store_true", help="compact results; retain complete logs")
+    parser.add_argument("--preflight", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args()
     try:
-        code = execute(Path(sys.argv[1]).resolve(), Path("build/host"), os.environ)
+        code = execute(args.script.resolve(), Path("build/host"), os.environ, args.ai_output, args.preflight)
     except (ValueError, OSError) as error:
         print(f"host runner: {error}", file=sys.stderr)
         code = 1
-    print("ALL HOST TESTS PASSED" if code == 0 else "HOST TESTS FAILED", flush=True)
+    if not args.ai_output:
+        print("ALL HOST TESTS PASSED" if code == 0 else "HOST TESTS FAILED", flush=True)
     return code
 
 

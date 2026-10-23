@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 // fm1backup.js against a simulated device: 7-bit packing, CRC, manifest checks, a full capture,
 // validation before the first write, restore order (live music last) and abort on a failed chunk.
-import { BACKUP_IDS, BACKUP_CMD, bkU32, bkR32, bkPack, bkUnpack, bkCrc, bkManifest, readBackup, captureBackup, restoreBackup } from "./fm1backup.js";
+import { BACKUP_IDS, BACKUP_CMD, bkU32, bkR32, bkPack, bkUnpack, bkCrc, bkManifest, readBackup, captureBackup, restoreBackup,
+  RAW_CMD, RAW_STATES, rawManifest, captureRawStore } from "./fm1backup.js";
 
 let fails = 0;
 const ok = (c, what) => { console.log(`${what.padEnd(72)} ${c ? "ok" : "FAIL"}`); if (!c) fails++; };
@@ -102,6 +103,72 @@ ok([0, 1, 2, 6].every((id) => target.objs.get(id).every((v, i) => v === objs.fin
 }
 const failing = device([], { failChunk: 2 });
 ok(await athrows(() => restoreBackup(failing.request, file)) && failing.log.includes("abort 2") && !failing.log.includes(0), "backup: a refused chunk aborts that object and stops before the live music");
+
+{   /* #456: the raw store export (82 / 83), against a device that keeps each stored object with its commit record */
+  const TYPES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 32];
+  const store = new Map([[0, { state: 3, copy: 0, seq: 4, bytes: rnd(600, 11) }],       // a later settings record
+    [1, { state: 2, copy: 1, seq: 7, bytes: rnd(3648, 12) }],                           // FUN9
+    [2, { state: 3, copy: 0, seq: 2, bytes: rnd(3840, 13) }],                           // a later project format
+    [3, { state: 4, copy: 0, seq: 1, bytes: rnd(3388, 14), crc: 0x1234567 }],           // damaged: its record's CRC fails
+    [9, { state: 1, copy: 1, seq: 30, bytes: rnd(3840, 15) }]]);
+  const rawDevice = (opt = {}) => {
+    const d = { log: [], lists: 0 };
+    d.request = async ([cmd, a]) => {
+      d.log.push(cmd);
+      if (cmd === RAW_CMD.LIST) {
+        d.lists++;
+        if (opt.playing) return [1, 3, 0];
+        const out = [1, 0, TYPES.length];
+        for (const t of TYPES) {
+          const o = store.get(t);
+          if (!o) out.push(t, 0, 127, ...bkU32(0), ...bkU32(0), ...bkU32(0), ...bkU32(0));
+          else out.push(t, o.state, o.copy, ...bkU32(o.bytes.length), ...bkU32(o.crc ?? bkCrc(o.bytes)),
+            ...bkU32(o.seq + (opt.bumpSecondList && d.lists > 1 && t === 3 ? 1 : 0)),
+            ...bkU32((o.bytes[0] | o.bytes[1] << 8 | o.bytes[2] << 16 | o.bytes[3] << 24) ^
+              (opt.changeSecondMagic && d.lists > 1 && t === 3 ? 1 : 0)));
+        }
+        return out;
+      }
+      if (cmd === RAW_CMD.GET) {
+        const t = a[0], off = bkR32(a, 1), n = a[6] | a[7] << 7, o = store.get(t);
+        if (!o || !n || off + n > o.bytes.length) return [t, 1, ...bkU32(off), 0, 0];
+        const v = o.bytes.slice(off, off + n);
+        if (opt.changeOnGet === t && off === 0) v[0] ^= 1;
+        return [t, 0, ...bkU32(off), n & 127, n >> 7, ...bkPack(v)];
+      }
+      throw new Error(`unexpected ${cmd}`);
+    };
+    return d;
+  };
+  const d = rawDevice(), raw = await captureRawStore(d.request, "TEST");
+  const byType = (t) => raw.objects.find((o) => o.type === t);
+  const bytesOf = (o) => Uint8Array.from(atob(o.data), (c) => c.charCodeAt(0));
+  ok(raw.format === "felucca-store" && raw.objects.length === TYPES.length && byType(4).state === "empty" && byType(4).size === 0,
+    "raw store: every stored type listed, an erased one empty");
+  ok([0, 1, 2, 3, 9].every((t) => bytesOf(byType(t)).every((v, i) => v === store.get(t).bytes[i]) && byType(t).size === store.get(t).bytes.length),
+    "raw store: current, legacy, unknown and damaged objects byte for byte");
+  ok(byType(0).state === "unknown" && byType(1).state === "legacy" && byType(3).state === "damaged" && byType(9).state === "current" &&
+     byType(1).copy === 1 && byType(1).seq === 7 && byType(3).crc === 0x1234567, "raw store: state, copy, seq and the record's CRC as listed");
+  ok(d.log.every((c) => c === RAW_CMD.LIST || c === RAW_CMD.GET) && d.lists === 2, "raw store: read only (LIST, GET, a second LIST), no write");
+  ok(await athrows(() => captureRawStore(rawDevice({ changeOnGet: 2 }).request, "TEST")), "raw store: an intact object that changes fails the export");
+  ok(await athrows(() => captureRawStore(rawDevice({ bumpSecondList: true }).request, "TEST")), "raw store: a damaged object rewritten meanwhile fails the export");
+  ok(await athrows(() => captureRawStore(rawDevice({ changeSecondMagic: true }).request, "TEST")), "raw store: damaged object's changed identification fails the export");
+  ok(await athrows(() => captureRawStore(rawDevice({ playing: true }).request, "TEST")), "raw store: rc 3 (playing) is reported");
+  ok(throws(() => rawManifest([1, 0, 1, 1, 9, 0, ...bkU32(4), ...bkU32(0), ...bkU32(0), ...bkU32(0)])) &&
+     throws(() => rawManifest([1, 0, 1, 1, 0, 127, ...bkU32(4), ...bkU32(0), ...bkU32(0), ...bkU32(0)])) &&
+     throws(() => rawManifest([1, 0, 2])) && RAW_STATES.length === 5, "raw store: unknown states, an empty entry with bytes, short lists refused");
+  const entry = (t, state, copy, size, crc = 0, seq = 0, magic = 0) =>
+    [t, state, copy, ...bkU32(size), ...bkU32(crc), ...bkU32(seq), ...bkU32(magic)];
+  ok(throws(() => rawManifest([1, 0, 0])) &&
+     throws(() => rawManifest([1, 0, 2, ...entry(1, 0, 127, 0), ...entry(1, 0, 127, 0)])) &&
+     throws(() => rawManifest([1, 0, 1, ...entry(1, 1, 0, 0)])) &&
+     throws(() => rawManifest([1, 0, 1, ...entry(1, 0, 127, 0, 1)])),
+    "raw store: zero-object lists, duplicate types, nonempty zero-length entries and empty CRCs refused");
+  const erased = rawManifest([1, 0, 1, ...entry(1, 0, 1, 0, 0, 2)]);
+  ok(erased[0].copy === 1 && erased[0].seq === 2 &&
+     rawManifest([1, 0, 1, ...entry(42, 3, 0, 1)]).at(0).type === 42,
+    "raw store: erased commit sequence preserved; future storage types accepted");
+}
 
 console.log(fails ? `BACKUP WEB TESTS FAILED (${fails})` : "backup web tests passed");
 process.exit(fails ? 1 : 0);

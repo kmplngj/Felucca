@@ -465,6 +465,9 @@ jobs:
             ./build.sh 2>&1 | tee build/ci/build.log
           fi
           test -s build/felucca.dis
+          if [ -f tools/build_report.py ]; then
+            python3 tools/build_report.py --verify build/resource-report.json
+          fi
       - name: Target instruction budget and package validation
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
@@ -539,7 +542,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: f3c72544a34aa613227b210d3adc4ae8843d836d
+          ref: 9abac79667e72a6918bb824967151a57bbc60826 # WebApp #8: saved settings replace stale refusal feedback
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
@@ -556,9 +559,10 @@ jobs:
             cd "$webapp"
             node test_app.mjs
             node test_web.mjs
-            node test_ota.mjs
             FELUCCA_PROTO=app node test_web.mjs
             node test_backup.mjs
+            node test_project_import.mjs
+            FELUCCA_ROOT="$GITHUB_WORKSPACE" node test_legacy.mjs
             FELUCCA_ROOT="$GITHUB_WORKSPACE" node test_catalog.mjs
           ) 2>&1 | tee build/ci/pages-webapp-tests.log
           python3 tools/pages.py stage "$webapp" build/site
@@ -607,6 +611,8 @@ jobs:
             build/felucca.bin
             build/ci/provenance.json
             build/build-identity.json
+            build/profile-contract.json
+            build/resource-report.json
             build/gen/resolved-profile.json
             build/ci/package.sha256
             build/macro-device-pack/

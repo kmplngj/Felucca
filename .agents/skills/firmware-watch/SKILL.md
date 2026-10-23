@@ -19,7 +19,8 @@ Read [the ledger guide](../../../docs/firmware-watch.md) and current
    without overwriting either ledger. Initial ledger files also live on main for bootstrap.
 2. Acquire `lease` with `--lease-dir` set to that shared path and hold it through fetch, assessment and final
    push. Helper locks protect individual mutations, not an entire review session.
-   Do not overlap runs or steal an active lock. Read and validate the complete ledger.
+   Do not overlap runs or steal an active lock. Validate the complete ledger with
+   the helper; inspect its summary and selected records as described below.
 3. Record the freshly fetched full `origin/main` SHA as the Felucca comparison revision.
    Fetch registered sources with the helper's `sync` command. Only initialize pending
    registrations after identity, branch, immutable pin and full-DAG checks succeed.
@@ -32,6 +33,20 @@ Read [the ledger guide](../../../docs/firmware-watch.md) and current
    transferred URLs and deduplicate across all four repos; search indexing alone
    cannot prove absence. Refresh issue state before a new write. Do not execute
    unreviewed donor scripts.
+
+## Context and evidence
+
+Keep the canonical ledger in the tracked `automation/firmware-watch` state worktree
+for helper validation, commit and push. Ignored local files may hold ledger copies
+and the paginated issue/comment inventory used for context filtering.
+Use helper validation for complete journal integrity, then inspect the summary,
+bounded queue and records matching the selected repository/full SHA or issue.
+Refresh the local issue inventory before writes as required above; query that
+inventory for deduplication and interrupted-write recovery. Keep complete source
+and native diffs/callers/tests in review scope; page large diffs until fully read.
+Workers return proposed records, evidence paths/URLs and blockers rather than
+repeating raw logs or the coordinator's instructions. Context filtering never
+changes the full-DAG, pagination, evidence or publication requirements.
 
 ## Select and review
 
@@ -68,23 +83,10 @@ new coverage or replacement of an earlier decision.
 
 ## Issues and durable recovery
 
-Route findings before writing using [AGENTS repository ownership](../../../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation):
-
-- **Felucca-Engines (MIT):** portable engines/DSP/interface, exclusive content,
-  generators and engine tests whose actual source/dependency closure permits this
-  collection. An upstream MIT core does not make a GPL wrapper or asset MIT.
-- **Felucca-Engines-GPL:** GPL-derived portable engines and their exclusive
-  content/generators/tests. Preserve per-file and asset licenses; restricted data
-  still blocks copying. Do not default all engines to GPL just because the host is GPL.
-- **Felucca:** stable global IDs, profiles/registration, exact pins, voice/arena or
-  service hooks, native UI/MOD, effects/hardware, persistence, producer protocol,
-  emulator/runtime, integration/hardware qualification and mixed adoption plans.
-  Existing firmware-native code stays here until an explicitly scoped extraction.
-- **Felucca-WebApp:** editor/installer client implementation and tests. Create the
-  issue there when enabled. While Issues is disabled, use a `Felucca-WebApp:` issue
-  in Felucca with an explicit implementation repo and firmware producer dependency;
-  do not enable Issues as part of a scan. Inaccessible/disabled engine destinations
-  are blockers, not permission to dump engine tickets in Felucca.
+Before any issue write, apply [AGENTS repository ownership](../../../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation)
+to the actual source/dependency/asset licence closure, and check live repository
+access and Issues settings. That section owns collection placement, the WebApp
+fallback and blocked destinations; its requirements apply to scan findings too.
 
 Split collection, firmware-host and client findings into linked issues only where
 each represents justified new work; reuse existing owners. Collection issues define

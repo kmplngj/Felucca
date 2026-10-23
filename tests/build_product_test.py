@@ -28,7 +28,7 @@ class Resolve(unittest.TestCase):
 
     def test_release_refuses_diagnostic_builds(self):
         """FELUCCA_CRASH_CTX / FELUCCA_MUL64_REPRO (#425, #428) are development builds only"""
-        self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO"))
+        self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE"))
         for flag in B.DIAG_FLAGS:
             with patch.dict(os.environ, {flag: "1"}):
                 with self.assertRaises(SystemExit) as raised:
@@ -134,7 +134,18 @@ class NoJobs(unittest.TestCase):
             p = patch.object(B, n, new)
             p.start()
             self.addCleanup(p.stop)
-        for p in (patch("build_identity.resolve", return_value={}), patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"), patch.object(B, "GEN", gen),
+        import build_report
+        self.report_mocks = {}
+        for name in ('input_hashes', 'configuration', 'tool_fingerprints'):
+            self.report_mocks[name] = MagicMock(return_value={})
+            report_patch = patch.object(build_report, name, self.report_mocks[name])
+            report_patch.start()
+            self.addCleanup(report_patch.stop)
+        report_patch = patch.object(build_report, 'write', side_effect=lambda *args:
+                                   (out / 'resource-report.json').write_text('{}\n'))
+        report_patch.start()
+        self.addCleanup(report_patch.stop)
+        for p in (patch('profile.contract_json', return_value='{}\n'), patch("build_identity.resolve", return_value={}), patch.object(B, "OUT", out), patch.object(B, "LDR", out / "loader"), patch.object(B, "GEN", gen),
                   patch.object(B.subprocess, "run", self.m["run"]),
                   patch.object(B.fm1pkg_make, "sdk_file", lambda rel: b""),
                   patch.object(B.fm1pkg_make, "flash_image", lambda img, key: img),
@@ -203,6 +214,45 @@ class NoJobs(unittest.TestCase):
         self.assertEqual(self.packed, ["FM-1_ACME", "FM-1_900"])
         self.assertEqual((self.out / "felucca.fwsc").read_bytes(), b"pkg:FM-1_900")
 
+    def test_generation_source_or_tool_change_prevents_compile_and_report(self):
+        for changed in ('input_hashes', 'tool_fingerprints'):
+            for mock in self.report_mocks.values():
+                mock.reset_mock(return_value=True, side_effect=True)
+                mock.return_value = {}
+            self.m['build_app'].reset_mock()
+            current = {}
+            self.report_mocks[changed].side_effect = lambda *args, **kwargs: dict(current)
+            self.m['generate'].side_effect = lambda: current.update(changed='during generation')
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'asset or loader'):
+                B.main([])
+            self.m['build_app'].assert_not_called()
+            self.assertFalse((self.out / 'resource-report.json').exists())
+            self.assertEqual(self.packed, [])
+
+    def test_help_preserves_existing_report_without_starting_jobs(self):
+        report = self.out / 'resource-report.json'
+        content = b'{"validation":"existing evidence"}\n'
+        report.write_bytes(content)
+        with self.assertRaises(SystemExit) as raised:
+            B.main(['--help'])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertEqual(report.read_bytes(), content)
+        self.assertEqual(self.started(), [])
+        self.assertEqual(self.packed, [])
+
+    def test_failed_attempt_removes_previous_success_report(self):
+        report = self.out / 'resource-report.json'
+        report.write_text('{"validation":"old success"}\n')
+        self.m['check'].return_value = (['target guard failed'], [])
+        with self.assertRaisesRegex(SystemExit, 'checks failed'):
+            B.main([])
+        self.assertFalse(report.exists())
+        self.assertEqual(self.packed, [])
+        report.write_text('old success')
+        with self.assertRaises(SystemExit):
+            B.main(['--product', 'bad'])
+        self.assertFalse(report.exists())
+
     def test_default_dev_outputs(self):
         B.main([])
         self.assertEqual(self.packed, ["FM-1_900"])
@@ -212,14 +262,25 @@ class NoJobs(unittest.TestCase):
 class TargetDefine(unittest.TestCase):
     def test_felucca_id_define(self):
         for product, want in ((None, "FM-1_900"), ("FM-1_ACME", "FM-1_ACME")):
-            with self.subTest(product=product), patch.object(B, "PRODUCT", B.PRODUCT), \
-                    patch.object(B, "VERSION", None), patch.object(B, "tc_all", side_effect=Stop) as tc:
-                c = B.resolve(["--product", product] if product else [])
-                B.PRODUCT = c["product"]
-                with self.assertRaises(Stop):
-                    B.build_app()
-                cmds = tc.call_args.args
-                self.assertTrue(any(f'-DFELUCCA_ID="{want}"' in cmd for cmd in cmds))
+            with tempfile.TemporaryDirectory() as folder, self.subTest(product=product):
+                out = Path(folder) / "isolated"
+                out.mkdir()
+                shared = Path(folder) / "shared"
+                shared.mkdir()
+                sentinel = shared / "fm1_cpu1.o"
+                sentinel.write_bytes(b"another build owns this object")
+                isolated_object = out / "fm1_cpu1.o"
+                isolated_object.write_bytes(b"stale isolated object")
+                with patch.object(B, "OUT", out), patch.object(B, "PRODUCT", B.PRODUCT), \
+                        patch.object(B, "VERSION", None), patch.object(B, "tc_all", side_effect=Stop) as tc:
+                    c = B.resolve(["--product", product] if product else [])
+                    B.PRODUCT = c["product"]
+                    with self.assertRaises(Stop):
+                        B.build_app()
+                    cmds = tc.call_args.args
+                    self.assertTrue(any(f'-DFELUCCA_ID="{want}"' in cmd for cmd in cmds))
+                self.assertFalse(isolated_object.exists())
+                self.assertEqual(sentinel.read_bytes(), b"another build owns this object")
 
 
 if __name__ == "__main__":

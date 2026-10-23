@@ -194,7 +194,12 @@ Observe the following together:
   interval; a low average cannot dismiss new misses.
 - `voices_shed`: overload protection, triggered after two consecutive halves above 85%
   **including** nested TIMER5 time. A lower CPU reading accompanied by more shedding is
-  not an equivalent-workload improvement. Separate `voices_given_up` (voice-budget pressure).
+  not an equivalent-workload improvement. `voices_given_up` counts every
+  `voice_kill()` fade: budget/allocator victims, overload victims and MIDI
+  All Sound Off. It is not a count of rejected requests or admitted voices.
+  `voices_shed` is the overload subset. Their difference describes non-overload
+  kill calls only when those other sources are known; read back voices separately
+  to measure the surviving load.
 - `uac_underruns`, `uac_overruns`, `uac_missed`, `uac_stalls`, UART drops and USB stalls:
   capture their deltas while streaming and playing, not just an idle snapshot.
 - `inp`: scan cost, worst gaps, encoder losses and key latency. It clears its interval
@@ -217,6 +222,10 @@ recovery against baseline. Listen to/record the output for clicks, clipping, sil
 tails and check panel responsiveness. If hardware is unavailable, report the device columns
 as unmeasured. Stage timing instrumentation and percentiles would need additional code;
 the current console exposes averages and maxima, not p95/p99 histograms of audio cost.
+
+The [2026-10-21 FM-1 investigation](audio-deadline-investigation-2026-10-21.md)
+records a concrete PHYS request/surviving-voice envelope, capture-on/off controls and
+acquisition limits. Its short-run observations are not a universal polyphony limit.
 
 ## RAM and stack
 
