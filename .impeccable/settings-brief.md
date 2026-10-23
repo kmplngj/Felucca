@@ -27,5 +27,16 @@ Approved 2026-10-23: "A als Basis, C gezielt ergänzen". Approved comps are
 `mocks/settings-a.png` and `mocks/settings-c.png`; B is retained for comparison.
 The firmware implementation belongs to #577 / draft PR #574. Translate the
 composition into real M8 pixels; do not copy generated lettering, gradients or
-textures. Keep normal settings direct; provide staged choice pages selectively
-for COLOR/LEDS and retain the existing AUTO OFF detail page.
+textures. Keep normal settings direct and retain the existing AUTO OFF detail page.
+
+### Polish refinement — 2026-10-23
+
+After questioning mixed settings sizes and the extra COLOR step, the direction
+is narrowed to one content size: M (9 px capitals) on both parent and detail
+pages; S (7 px) only for supporting hints. No 14 px role is emitted.
+COLOR and LEDS remain immediate inline values through knobs or OCT−/+.
+Use detail pages for compound tasks such as AUTO OFF, and independent views
+such as INFO/ABOUT. The C image remains an exploratory reference rather than
+the current COLOR/LEDS behavior. Two native bitmap sets plus shared exact 2×
+M roles suffice; the original WOFF2 direct-size check confirms exact doubling
+for all 95 ASCII glyphs per source file.
