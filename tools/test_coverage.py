@@ -60,24 +60,36 @@ def atomic(path, data):
 
 def snapshot(root, env):
     root = Path(root)
-    names = subprocess.check_output(['git', '-C', str(root), 'ls-files', '--cached',
-                                     '--others', '--exclude-standard', '-z']).decode().split('\0')
-    files = {name: digest(root / name) if (root / name).is_file() else None
-             for name in sorted(set(names)) if name}
+    if (root / '.git').exists():
+        names = subprocess.check_output(['git', '-C', str(root), 'ls-files', '--cached',
+                                         '--others', '--exclude-standard', '-z']).decode().split('\0')
+        files = {name: digest(root / name) if (root / name).is_file() else None
+                 for name in sorted(set(names)) if name}
+        engine = root / 'firmware/engines'
+        pin = subprocess.check_output(['git', '-C', str(engine), 'rev-parse', 'HEAD'], text=True).strip()
+        committed = subprocess.check_output(['git', '-C', str(root), 'ls-tree', 'HEAD', 'firmware/engines'], text=True).split()
+        dirty = subprocess.check_output(['git', '-C', str(engine), 'status', '--porcelain'], text=True)
+        if dirty or len(committed) != 4 or pin != committed[2]:
+            raise ValueError('coverage requires the committed clean Engines checkout')
+        revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+        dirty = bool(subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain'], text=True))
+        source_kind = 'git'
+    else:
+        # Reuse the release source verifier, including extra-file/mode/symlink
+        # rejection. Absence of Git is never an unverified transcript fallback.
+        import source_archive
+        metadata = source_archive.verify_tree(root)
+        files = {name: entry['sha256'] for name, entry in metadata['files'].items()}
+        files[source_archive.MANIFEST] = digest(root / source_archive.MANIFEST)
+        revision, pin = metadata['firmware_revision'], metadata['engines']['revision']
+        dirty, source_kind = False, 'verified-archive'
     generated = root / 'build/gen'
     files.update({str(p.relative_to(root)): digest(p) for p in sorted(generated.glob('*')) if p.is_file()})
-    engine = root / 'firmware/engines'
-    pin = subprocess.check_output(['git', '-C', str(engine), 'rev-parse', 'HEAD'], text=True).strip()
-    committed = subprocess.check_output(['git', '-C', str(root), 'ls-tree', 'HEAD', 'firmware/engines'], text=True).split()
-    dirty = subprocess.check_output(['git', '-C', str(engine), 'status', '--porcelain'], text=True)
-    if dirty or len(committed) != 4 or pin != committed[2]:
-        raise ValueError('coverage requires the committed clean Engines checkout')
     configuration = {k: env.get(k) for k in sorted(set(CONFIG_KEYS) |
                      {k for k in env if k.startswith('FELUCCA_') and not k.startswith('FELUCCA_COVERAGE_')})}
     # run_tests.sh exports this established default before entering the scheduler.
     configuration['AC79_SDK'] = env.get('AC79_SDK') or str(Path.home() / 'fw-AC79_AIoT_SDK')
-    return dict(revision=subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip(),
-                dirty=bool(subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain'], text=True)),
+    return dict(revision=revision, dirty=dirty, source_kind=source_kind,
                 inputs=files, engines=pin,
                 configuration=configuration,
                 platform=platform.system(), architecture=platform.machine())

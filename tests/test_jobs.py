@@ -14,6 +14,10 @@ import subprocess
 import sys
 import tempfile
 import time
+if (Path(__file__).resolve().parents[1] / 'SOURCE-PINS.json').is_file():
+    # Match the verified archive build entry points before importing local modules.
+    sys.dont_write_bytecode = True
+    os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import test_coverage as coverage
 
@@ -138,7 +142,7 @@ def execute(script, output, env, ai_output=False, preflight=False):
     # Generic scheduler fixtures also copy this CLI outside a firmware checkout.
     # They have no firmware evidence contract and can never satisfy verify-tests.
     production = (script.resolve() == Path(__file__).with_name('run_tests.sh').resolve()
-                  and (script.parent.parent / '.git').exists())
+                  and any((script.parent.parent / marker).exists() for marker in ('.git', 'SOURCE-PINS.json')))
     output.mkdir(parents=True, exist_ok=True)
     logs = Path(tempfile.mkdtemp(prefix="test-run-", dir=output))
     contract_env = dict(env)

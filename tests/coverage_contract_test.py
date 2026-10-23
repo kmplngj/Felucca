@@ -181,6 +181,21 @@ class ContractTests(unittest.TestCase):
             with self.subTest(name=name, status=status), self.assertRaises(ValueError):
                 self.verify(self.semantic(name, status=status, reason=reason))
 
+    def test_optional_macro_client_parser_requires_actual_opt_in(self):
+        d = self.semantic('official-v15')
+        event = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
+        event['argv'] = ['python3', 'tests/macro_device_pack_test.py']
+        event['expected_outcomes'] = C.command_policy(event['argv'])[0]
+        event['producer']['outcomes'] = [dict(name='macro-pack', status='passed', reason=None, details={}),
+                                         dict(name='macro-webapp-parser', status='not_applicable',
+                                              reason='not-requested', details={})]
+        self.verify(d)
+        for args in (['--webapp', '/client'], ['--webapp=/client']):
+            rejected = copy.deepcopy(d)
+            next(e for e in rejected['units'][0]['events'] if e['kind'] == 'command')['argv'] += args
+            with self.subTest(args=args), self.assertRaisesRegex(ValueError, 'unapproved semantic skip'):
+                self.verify(rejected)
+
     def test_unknown_duplicate_and_unittest_skips_fail(self):
         d = self.semantic('official-v15')
         command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
@@ -257,6 +272,32 @@ class ProducerTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_verified_archive_identity_requires_real_manifest_content_and_modes(self):
+        import source_archive
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'fixture.c'
+            source.write_text('int fixture;\n')
+            source.chmod(0o644)
+            metadata = dict(schema_version=1, firmware_revision='a' * 40, source_date_epoch=1,
+                            engines=dict(path='firmware/engines', revision='b' * 40),
+                            files={'fixture.c': dict(mode=0o644, sha256=C.digest(source))})
+            (root / source_archive.MANIFEST).write_bytes(source_archive.manifest_bytes(metadata))
+            identity = C.snapshot(root, {})
+            self.assertEqual((identity['source_kind'], identity['revision'], identity['engines']),
+                             ('verified-archive', 'a' * 40, 'b' * 40))
+            extra = root / 'unmanifested.c'
+            extra.write_text('unexpected')
+            with self.assertRaisesRegex(ValueError, 'unmanifested'): C.snapshot(root, {})
+            extra.unlink()
+            source.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, 'executable mode'): C.snapshot(root, {})
+            source.chmod(0o644)
+            source.write_text('changed')
+            with self.assertRaisesRegex(ValueError, 'missing or changed'): C.snapshot(root, {})
+            (root / source_archive.MANIFEST).unlink()
+            with self.assertRaisesRegex(ValueError, 'cannot verify'): C.snapshot(root, {})
+
     def test_missing_installations_are_availability_not_applicability(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(C, 'ROOT', Path(temporary)):
             self.assertEqual(C.requirements(['assets', 'macro-assets', 'node', 'emcc', 'sanitizer'],

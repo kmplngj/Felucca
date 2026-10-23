@@ -134,6 +134,10 @@ legacy transcript verification, never structured qualification. Target-only scop
 still explicitly omits host coverage; no new fallback in the current verifier accepts
 legacy banners. Source/archive and release reproduction retain their existing
 selected-source behavior and stable provenance.
+Current verified no-Git source archives bind identity through the existing
+`SOURCE-PINS.json` full-tree verifier, retaining its extra-file/mode/symlink checks
+and external-uv-environment/no-bytecode rules. A missing Git directory never enables
+a transcript-only acceptance fallback.
 
 ## Dependencies and provenance
 
