@@ -241,6 +241,8 @@ static int8_t lg_face[4] = {-1, -1, -1, -1};     /* #251: the face tall card c g
 static char lg_val[4][16];                       /* .. and its value */
 #define LARGE_HOOK(s, why) (lg_face[c & 3u] = (int8_t)((why) == 0 ? 0 : (why) == 3 ? 2 : 1), \
                             snprintf(lg_val[c & 3u], 16, "%s", s), lg_hook(s, why))
+#define BANK_HOOK(k, s, face) (lg_face[(k) & 3u] = (int8_t)(face), snprintf(lg_val[(k) & 3u], 16, "%s", s), \
+                              lg_hook(s, (face) == 0u ? 0 : (face) == 2u ? 3 : !large_face_has(s) ? 1 : 2))
 static void cs_hook(const char *v, const char *u);
 #define CARD_HOOK(v, u) cs_hook(v, u)
 #define UI_TEST_NO_MAIN 1
@@ -1772,6 +1774,7 @@ static void lg_draw_one(uint32_t c)                  /* the four cards drawn, ca
 {
     nscr = npend = 0;
     ui.force = 1;
+    ui.hot_col = (uint8_t)c;                         /* inspect the swept knob in the large focused reading path */
     lg_face[c & 3u] = -1;
     draw_columns();
     lint();
@@ -2479,7 +2482,7 @@ int main(int argc, char **argv)
                     pal(p);
                     ui_style = (uint8_t)st; style_apply();
                     draw((int)s);
-                    ntall += !ui.menu && !ui.confirm && !name_on() && large_kind() == LK_TALL;
+                    ntall += !ui.menu && !ui.confirm && !name_on() && (large_kind() == LK_TALL || large_kind() == LK_BANK);
                     lint();
                     if (!st && p == UI_GREY_INDEX) font_scene("LARGE", S_NAME[s]);
                     mono_check();
@@ -2489,10 +2492,10 @@ int main(int argc, char **argv)
         ui_style = ST_FLAT; style_apply();
         sweep_columns();                                /* every value of every column, tall */
         large_on = 0;
-        if (ntall < 100u) { fprintf(stderr, "ui_render: LARGE drew %u screens with tall cards only\n", ntall); return 1; }
-        fprintf(rep, "MENU > LARGE (FLAT and LINE, every palette, the page / value sweep): %u lint findings; %u screens with tall"
-                " cards\n", nfind - n0, ntall);
-        fprintf(rep, "  tall card values: %llu in L, %llu in M (a glyph not in L: \"%s\"), %llu in M (L too wide), %llu in S\n",
+        if (ntall < 100u) { fprintf(stderr, "ui_render: LARGE drew %u screens with large reading roles only\n", ntall); return 1; }
+        fprintf(rep, "MENU > LARGE (FLAT and LINE, every palette, the page / value sweep): %u lint findings; %u screens with large"
+                " reading roles\n", nfind - n0, ntall);
+        fprintf(rep, "  large reading values: %llu in L, %llu in M (a glyph not in L: \"%s\"), %llu in M (L too wide), %llu in S\n",
                 (unsigned long long)lg_n[0], (unsigned long long)lg_n[1], lg_miss, (unsigned long long)lg_n[2],
                 (unsigned long long)lg_n[3]);
         fprintf(rep, "  too wide for L, e.g.:");
@@ -2500,9 +2503,9 @@ int main(int argc, char **argv)
         fprintf(rep, "\n  in S, e.g.:");
         for (s = 0; s < lg_nsmall; s++) fprintf(rep, " '%s'", lg_small[s]);
         fprintf(rep, "\n");
-        fprintf(rep, "  #251: %u knobs swept tall, %u whose values change size; %u wholly in L, %u in M, %u in S\n", lg_nspan,
+        fprintf(rep, "  #251: %u knob reading domains swept, %u whose values change size; %u wholly in L, %u in M, %u in S\n", lg_nspan,
                 lg_njump, lg_nface[0], lg_nface[1], lg_nface[2]);
-        printf("ui_render: MENU > LARGE: %u knobs swept tall, %u whose values change size (#251); %u in L, %u in M, %u in S\n",
+        printf("ui_render: MENU > LARGE: %u knob reading domains swept, %u whose values change size (#251); %u in L, %u in M, %u in S\n",
                lg_nspan, lg_njump, lg_nface[0], lg_nface[1], lg_nface[2]);
         if (lg_nspan < 100u) { fprintf(stderr, "ui_render: LARGE swept %u knobs tall only\n", lg_nspan); return 1; }
     }

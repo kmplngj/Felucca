@@ -13,6 +13,7 @@
 static void draw_menu(void);
 static int name_on(void);                              /* NAME (ui_name.c) */
 static uint64_t lock_held(void);                       /* parameter locks: the steps held on STEP (ui_input.c) */
+static int bank_on(void);
 static void name_draw(void);
 #include "ui_help.c"                                   /* 1.5: HELP's hints (draw_foot, ui_layer.c draw_layer) */
 
@@ -478,7 +479,11 @@ static void draw_frame(void)
     gap_rows(H_HEAD, Y_LABEL);
     gap_rows(Y_LABEL + ch, gy);
     gap_rows(gy + gh, Y_FOOT);
-    draw_gaps(Y_LABEL, ch);
+    if (bank_on()) {                                  /* the bank is continuous across the former card gaps */
+        lcd_fill(0, Y_LABEL, 3, ch, T_BG);
+        lcd_fill(237, Y_LABEL, 3, ch, T_BG);
+    } else
+        draw_gaps(Y_LABEL, ch);
 }
 
 #ifndef CARD_HOOK
@@ -526,6 +531,9 @@ static void span_names(const card_span_t *sp, int32_t v, char *val)
 {
     str_cpy(val, ((const char *const *)sp->p)[v], 16);
 }
+static void span_number(const card_span_t *sp, int32_t v, char *val) { (void)sp; fmt_int(val, v); }
+static void span_chance(const card_span_t *sp, int32_t v, char *val) { (void)sp; (void)ev_chance_fmt(val, v); }
+static void span_nudge(const card_span_t *sp, int32_t v, char *val) { (void)sp; ev_nudge_fmt(val, v); }
 static void span_mod_dst(const card_span_t *sp, int32_t v, char *val)   /* MOD's DST: the track's (its engine's) names */
 {
     str_cpy(val, ui_mod_dst_name((const track_t *)sp->p, v), 16);
@@ -678,6 +686,8 @@ static void draw_column_tall(uint32_t c, const char *label, const char *val, con
     cv_blit((uint32_t)CARD_X(c), Y_LABEL);
 }
 
+#include "ui_bank.c"                                   /* #572: the native bank consumes these same column outputs */
+
 /* one card = one knob: [icon] LABEL / value unit / gauge on a SURF card, redrawn only when it changed.
  * The value is M, or S when M is too wide (engine names, long ENUMs), on the same capital centre;
  * its S unit occupies a fixed slot at the field's right edge, with UI_VALUE_UNIT_GAP reserved before it. The gauge is
@@ -707,6 +717,10 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     card_mot = (uint8_t)((card_mot & ~(1u << c)) | (uint32_t)mot << c);
     if (str_eq(unit, label))
         unit = "";                                      /* "BPM 124 BPM", "USB OFF USB": the label says it */
+    if (bank_on()) {
+        bank_collect(c, label, val, unit, vc, mot, &sp);
+        return;
+    }
     if (icon == ICON_AUTO)
         icon = icon_for_label(label);
     str_cpy(key, label, 12);                            /* cache key: texts + colour + gauge */
@@ -1001,7 +1015,7 @@ static void engine_columns(void)
     draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
     draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
 }
-static void draw_columns(void)
+static void draw_column_values(void)
 {
     uint32_t c;
     char val[12];
@@ -1151,6 +1165,7 @@ static void draw_columns(void)
         card_mot_of(&TSEL->p[P_REV]);
         card_span_of(&TP[P_REV]);
         draw_column(2, "REV", val, unit, VAL(2u), RATIO(&TP[P_REV], t->p[P_REV]), ICON_AUTO);
+        card_span_by(span_names, N_ONOFF, 0, 1, 0);
         draw_column(3, "MUTE", t->p[P_MUTE] ? "ON" : "OFF", "", t->p[P_MUTE] ? T_ACCENT : VAL(3u), -1, ICON_AUTO);
         return;
     }
@@ -1219,6 +1234,8 @@ static void draw_columns(void)
             on = fop_card(c, &lb, val, &u, &r, &ic);
             if (fop_field(c) != FO_OP && fop_field(c) != FO_STG)   /* (OP, STAGE: 1..6, 1..4) */
                 card_span_by(span_fop, 0, 0, (int32_t)fm6_max(fop_byte(fop_field(c))), (int32_t)c);
+            else
+                card_span_by(span_number, 0, 1, fop_field(c) == FO_OP ? 6 : 4, 0);
             draw_column(c, lb, val, u, on ? VAL(c) : T_DIM, r, ic);
         }
         return;
@@ -1228,6 +1245,7 @@ static void draw_columns(void)
         uint32_t id = P_M1SRC + 3u * mod_ui_slot;
         int32_t s = t->p[id], d = t->p[id + 1u], a = t->p[id + 2u];
         fmt_int(val, (int32_t)mod_ui_slot + 1);
+        card_span_by(span_number, 0, 1, 4, 0);
         draw_column(0, "SLOT", val, "/4", VAL(0u), (int32_t)mod_ui_slot * 1000 / 3, mod_src_icon(MS_OFF));   /* (the mod icon) */
         card_span_by(span_names, N_MSRC, 0, MS_N - 1, 0);
         draw_column(1, "SRC", N_MSRC[clamp(s, 0, MS_N - 1)], "", s ? VAL(1u) : T_DIM, -1, mod_src_icon(s));
@@ -1250,17 +1268,20 @@ static void draw_columns(void)
             if (k == EVK_CHANCE) {                     /* (1.5.5: a condition, "1:4" "FILL", its card COND) */
                 u = ev_chance_fmt(val, v);
                 r = v > 100 ? (v - 100) * 1000 / (int32_t)NCOND : v * 10;
+                card_span_by(span_chance, 0, 0, 100 + NCOND, 0);
             } else if (k == EVK_RATCH) {
                 val[0] = 'x';
                 fmt_int(val + 1, v);
                 r = (v - 1) * 1000 / 3;
             } else if (k == EVK_NUDGE) {
                 ev_nudge_fmt(val, v);
+                card_span_by(span_nudge, 0, -8, 7, 0);
                 u = v ? "/16" : "";
                 r = (v + 8) * 1000 / 15;
                 on &= ev_nudge_plays(TSEL, st);
             } else {
                 fmt_int(val, v);
+                card_span_by(span_number, 0, 1, 127, 0);
                 u = st->flags & SF_ACCENT ? "ACC" : "";
                 r = v * 1000 / 127;
                 on &= !(st->flags & SF_ACCENT);
@@ -1288,6 +1309,8 @@ static void draw_columns(void)
             if (!on)
                 v = motion_base_value(TSEL, id);      /* not locked: the sound's own, DIM */
             ui_param_format(TSEL, id, d, v, val, &unit);
+            card_span_track(TSEL, id, d);
+            ui.read_bank.lock_next = (uint8_t)(1 + on);
             draw_column(c, ui_param_label(TSEL, id), val, unit, on ? VAL(c) : T_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
         }
         return;
@@ -1377,7 +1400,16 @@ static void draw_columns(void)
                     d->fmt == F_ENUM && d->max < 2 ? -1 : RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
     }
 }
-
+static void draw_columns(void)
+{
+    int bank = bank_on();
+    if (!bank && ui.read_bank.was) draw_gaps(Y_LABEL, CARD_H);   /* restore card gaps after releasing held steps */
+    ui.read_bank.mask = 0;
+    ui.read_bank.lock_next = 0;
+    draw_column_values();
+    if (bank) bank_draw();
+    else ui.read_bank.was = 0;
+}
 
 /* Startup uses the saved palette. One identity line: clean release version,
  * verified PR label, or compiled revision. ABOUT retains the complete identity. */

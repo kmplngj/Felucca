@@ -131,6 +131,11 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Changed
 
+- **Focused parameter reading:** LARGE uses a shared four-knob parameter bank
+  and a stable larger current value while keeping full native graphs. Explicit
+  scope feedback covers held-step locks, motion and temporary/kept edits; focus
+  remains after turn feedback expires. Physical FM-1 readability and loaded-panel
+  qualification remain pending. See the [reading contract](lcd-typography.md#focused-parameter-bank).
 - **LCD typography:** control hints and state badges now use native M8Stealth57
   lettering alongside the default M8 text. Numeric card and MOD units stay in a
   fixed slot, and small-value fallbacks share a consistent vertical band.

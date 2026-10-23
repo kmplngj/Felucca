@@ -161,6 +161,13 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 #define LG_Y_GRAPH 136
 #define LG_H_GRAPH 62
 
+typedef struct {
+    char label[24], value[16], unit[12];
+    uint32_t key;
+    uint16_t color;
+    uint8_t face, small, motion, lock, fixed;
+} bank_field_t;
+
 static struct {
     uint8_t home;
     uint8_t page;                /* index into PAGES */
@@ -212,6 +219,11 @@ static struct {
     uint32_t enc_t[NE];
     /* drawn-state cache */
     char col[4][32];
+    struct {
+        bank_field_t field[4];
+        uint32_t sig[5];
+        uint8_t mask, was, focus, lock_next;
+    } read_bank;                    /* #572: display cache, reset/snapshotted with the rest of the UI */
     uint32_t graph_sig, head_sig, foot_sig, frame;
     /* rolling digits (ui_draw.c roll_*): the four card values and the header BPM */
     struct {
@@ -467,18 +479,13 @@ static void scr_shown(void)                            /* after the frame: the r
 static const page_t *page_over;   /* a quick layer's own four knobs (ui_layer.c), while it edits or draws them */
 static const page_t *cur_page(void) { return page_over ? page_over : &PAGES[ui.page]; }
 
-/* MENU > LARGE (#15, Discussion #80: what KNOB 1..4 do, in bigger type). Per page type:
- *   LK_TALL  HOME and the value pages (EDIT ENV LFO MOD FX SLICER SCL CHORD ARP VOICE, MIXER, CLOCK,
- *            TOOLS): tall cards (a K1..K4 keycap, the icon, the label in M, the value in L,
- *            in M or S when L is too wide or lacks a glyph for any value of the knob (#251: one size per knob,
- *            ui_draw.c span_face), the unit under it, the gauge), the panel a strip: HOME's
- *            scope, ENV's ADSR, LFO's wave, MIXER's four tracks (name, state, meter) small; the
- *            page's title and number in L on the others (their charts cannot be read that small);
- *   LK_LABEL the list and graph pages (PRESETS, USER, PROJECT, PHRASES, SONG, the piano roll and the drum grid,
- *            AUTOMATION, SLICES), HOME with MENU > HOME TRACKS (1.3) and the quick layers' maps: the layout as it
- *            is, the card labels in M;
- *   LK_OFF   LARGE off; the menu (its own LARGE: ui_menu.c), the dialogs and NAME keep their own layout in every case. */
-enum { LK_OFF, LK_LABEL, LK_TALL };
+/* Legacy LARGE selection, per reading task (#572): LK_BANK keeps the 44 px
+ * parameter area and the full native workspace, with one stable large focus
+ * readout. Lists/graphs, HOME TRACKS and quick layers retain LK_LABEL. TOOLS
+ * temporarily retains its tall action layout until the list/menu migration.
+ * MENU, NAME and dialogs own their layouts. Held-step locks use the same bank
+ * in ui_draw.c bank_on without changing the roll's geometry. */
+enum { LK_OFF, LK_LABEL, LK_TALL, LK_BANK };
 static uint32_t large_kind(void)
 {
     uint32_t g;
@@ -487,10 +494,10 @@ static uint32_t large_kind(void)
     if (ui.layer)
         return LK_LABEL;
     if (ui.home)                                        /* (HOME > TRACKS: its rows need the panel, the cards as on */
-        return home_tracks() ? LK_LABEL : LK_TALL;      /* a list page; the rows' names in M: draw_home_tracks) */
+        return home_tracks() ? LK_LABEL : LK_BANK;      /* a list page; the rows' names in M: draw_home_tracks) */
     g = cur_page()->graph;
     return g == GR_BROWSE || g == GR_SLOTS || g == GR_USER || g == GR_PATS || g == GR_SONG || g == GR_ROLL ||
-           g == GR_SLICES || g == GR_EVENTS ? LK_LABEL : LK_TALL;
+           g == GR_SLICES || g == GR_EVENTS ? LK_LABEL : g == GR_TOOLS ? LK_TALL : LK_BANK;
 }
 /* the geometry of the page shown: the cards' height, the panel's top and height */
 static uint32_t card_h(void) { return large_kind() == LK_TALL ? LG_CARD_H : CARD_H; }

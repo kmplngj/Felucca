@@ -77,6 +77,40 @@ encoder. The musical SCL page/scale abbreviation and internal `B_SCL`/`KC_SCL`
 IDs are unchanged. Bracketed button prompts use `[SEL]`, which the normal
 keycap parser resolves to the established ID.
 
+## Focused parameter bank
+
+With the legacy LARGE option on, value pages use a shared bank in the original
+44 px parameter region. The four overview positions match KNOB 1–4. Turning a
+valid knob selects its larger label/value/unit path. The last physical column
+stays selected after the active-turn highlight expires; when that column is
+empty on a new page, the first present column supplies the readout. A different
+track/engine/page always resolves fresh strings and descriptors. The workspace
+below the bank keeps the normal full-height renderer, including FM6 feedback,
+MOD relationships, STEP DETAIL history and MIXER meters.
+
+The focused value uses one face over its complete declared domain: L when its
+glyphs and ink fit 106 px, otherwise M/S. The compact overview independently
+chooses a stable M/S face. Required strings are not abbreviated to create room;
+units have their own slot. In the default M8Stealth build, focus values are 18 px
+where supported, labels/units 9 px, overview labels 7 px and values 9/7 px.
+Alternative fonts retain their own capital metrics and bounded fit policy.
+
+The focused status names its editing scope: VALUE, AUTO, INACTIVE/FIXED, TEMP,
+KEPT, or LOCK/BASE with the first held step number (a + marks multiple steps).
+The readout takes the actual existing column formatter output. A step lock does
+not show the sound's base value while editing the lock. MOMENTARY restore/KEEP
+and message/layer priority remain unchanged. The selected overview label stays
+inverted; active turning additionally inverts the status line, including MONO.
+Motion-driven overview values have a line underneath them.
+
+The cache is part of the UI state. Identical frames send no extra bank blits;
+ordinary edits update the necessary overview cells and focus band. A forced
+redraw composes the complete bank before one blit, without an intermediate clear
+across the old card gaps. Releasing a held step restores the ordinary roll
+controls and their gaps. No new gesture, saved field, framebuffer or glyph cache
+is introduced. List/menu alignment and retirement of the legacy size preference
+are subsequent stages, not yet implied by these reading roles.
+
 ## Source inventory and bounded fit policy
 
 | Surface / owner | Placement and fit policy |

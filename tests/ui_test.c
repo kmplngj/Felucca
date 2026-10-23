@@ -9315,17 +9315,15 @@ static int test_bpm_lock(void)
     return bad;
 }
 
-/* #15 / Discussion #80 MENU > LARGE: OFF by default (and in every older setting); KNOB 1 right ON / left OFF, OCT+
- * toggles, nothing else moves. ON: HOME and the value pages draw tall cards (a K1..K4 pill over each knob's column,
- * the value in L) and the strip under them; the list / graph pages and the layers keep the layout (their labels in
- * M); the footer stays; a knob turned redraws its own card only; saved with the settings, older settings OFF
- * (idempotent) */
+/* The legacy size preference now selects D on value pages. Validate the
+ * reading path through real input, preserving graph and edit ownership. */
 static uint16_t lg_px(int32_t x, int32_t y) { return swap16(host_screen[y * 240 + x]); }
-static int lg_value_rows(uint32_t c)                    /* rows of card c's value band holding the value's colour */
+static int lg_value_rows(uint32_t c)
 {
     int32_t x, y, n = 0;
-    for (y = Y_LABEL + 40; y < Y_LABEL + 76; y++)
-        for (x = CARD_X(c); x < CARD_X(c) + CARD_W; x++)
+    int bank = bank_on();
+    for (y = Y_LABEL + (bank ? 0 : CARD_VALUE_Y); y < Y_LABEL + (bank ? BANK_TOP : CARD_VALUE_Y + CARD_VALUE_H); y++)
+        for (x = bank ? 84 : CARD_X(c); x < (bank ? 193 : CARD_X(c) + CARD_W); x++)
             if (lg_px(x, y) == T_THEME) { n++; break; }
     return n;
 }
@@ -9353,52 +9351,93 @@ static int test_large(void)
     press(B_HOME);
     bad += check("#15 MENU > LARGE: OFF by default, under STYLE; KNOB 1 right / OCT+ ON, left / OCT- OFF", ok && !ui.menu);
 
-    /* HOME: tall cards (rows 28..132) and the strip (136..198); the footer as it was */
     frame();
-    ok = ui.home && large_kind() == LK_TALL && card_h() == LG_CARD_H && graph_y() == LG_Y_GRAPH && strip_kind() == SK_SCOPE;
-    ok &= lg_px(30, Y_SEP_END + 1) == T_SURF && off[(Y_SEP_END + 1) * 240 + 30] == swap16(T_BG);     /* a card where the gap was */
-    ok &= lg_px(30, LG_Y_GRAPH - 2) == T_BG && off[(LG_Y_GRAPH - 2) * 240 + 30] == swap16(T_SURF);   /* a gap in the panel */
-    ok &= lg_px(30, LG_Y_GRAPH + 1) == T_SURF;
-    for (c = 0; c < 4u; c++)                                      /* each column's K pill, over its knob */
-        ok &= lg_px(CARD_X(c) + 8, Y_LABEL + LG_MY + LG_MH / 2) == T_KEY;
-    ok &= !memcmp(off + Y_FOOT * 240, host_screen + Y_FOOT * 240, 240u * H_FOOT * sizeof *off);
-    bad += check("#15 LARGE ON: HOME's cards tall (a K1..K4 pill over each column), the scope a strip, the footer kept", ok);
+    ok = ui.home && large_kind() == LK_BANK && card_h() == CARD_H && graph_y() == Y_GRAPH && graph_h() == H_GRAPH;
+    ok &= !memcmp(off + Y_GRAPH * 240, host_screen + Y_GRAPH * 240, 240u * (240u - Y_GRAPH) * sizeof *off);
+    bad += check("#572 D: HOME keeps the complete native workspace and footer below its 44 px bank", ok);
 
-    /* the value in L: CLOCK's BPM 124 stands about twice as tall as in M */
-    go_title("CLOCK"); frame();
-    ok = large_kind() == LK_TALL && strip_kind() == SK_TITLE && cur_page()->id[0] == G_BPM && lg_value_rows(0) >= AF_L_CAP_H - 3;
+    go_title("CLOCK"); ui.hot_col = 0; ui.force = 1; frame();
+    ok = bank_on() && strip_kind() == SK_NONE && cur_page()->id[0] == G_BPM && lg_value_rows(0) >= AF_L_CAP_H - 3;
     ui_prefs = 0; ui.force = 1; frame();
     ok &= lg_value_rows(0) <= AF_M_CAP_H + 2;
     ui_prefs = PREF_LARGE; ui.force = 1; frame();
-    bad += check("#15 LARGE: three-digit CLOCK BPM uses L, normal mode uses M", ok);
+    bad += check("#572 D: full-domain CLOCK BPM has a large focused readout without replacing its context", ok);
 
-    /* a knob turned: its own card redrawn, the other three not */
-    go_title("ENV"); frame(); frames(600);
+    go_title("ENV"); ui.hot_col = 0; frame(); frames(600);
     memcpy(off, host_screen, sizeof off);
     turn(EN_K2, 3);
+    ok = ui.read_bank.focus == 1u && ui.hot_t;
+    for (c = 2; c < 4u; c++)
+        for (int y = Y_LABEL + BANK_TOP; y < Y_LABEL + CARD_H; y++)
+            for (int x = CARD_X(c); x < CARD_X(c) + CARD_W; x++)
+                ok &= off[y * 240 + x] == host_screen[y * 240 + x];
+    frames(1000);
+    ok &= ui.read_bank.focus == 1u && !ui.hot_t;
     {
-        int32_t x, y, diff[4] = {0, 0, 0, 0};
-        for (y = Y_LABEL; y < Y_LABEL + LG_CARD_H; y++)
-            for (c = 0; c < 4u; c++)
-                for (x = CARD_X(c); x < CARD_X(c) + CARD_W; x++)
-                    diff[c] += off[y * 240 + x] != host_screen[y * 240 + x];
-        ok = large_kind() == LK_TALL && strip_kind() == SK_ADSR && diff[1] && !diff[0] && !diff[2] && !diff[3];
+        uint32_t sent = host_blit_calls;
+        draw_columns(); draw_columns();
+        ok &= host_blit_calls == sent;
     }
-    bad += check("#15 LARGE: ENV tall with its ADSR in the strip; KNOB 2 turned redraws card 2 only", ok);
+    bad += check("#572 D: turn switches focus; release retains it, unchanged bank emits no transfers", ok);
 
-    /* per page type: lists and rolls keep the layout, the layers too; MIXER's tracks in the strip */
+    go_title("LFO 2"); ui.hot_col = 3; ui.force = 1; frame();
+    bad += check("#572 D: an empty former focus falls back to the first present knob", ui.read_bank.focus == 0u && !ui.read_bank.field[3].label[0]);
+    turn(EN_K2, 1);
+    bad += check("#572 D: the next real turn selects its actual physical column", ui.read_bank.focus == 1u);
+
+    go_home(); ui.force = 1; frame();
+    {
+        uint32_t id = ENGINES[TSEL->eng_req]->knob[0];
+        int16_t original = TSEL->p[id];
+        char expected[16], status[20]; const char *unit;
+        btn_down(B_LFO); frame(); turn(EN_K1, 4);
+        ui_param_format(TSEL, id, track_desc(TSEL, id), TSEL->p[id], expected, &unit);
+        bank_status(status, &ui.read_bank.field[ui.read_bank.focus]);
+        ok = str_eq(ui.read_bank.field[ui.read_bank.focus].value, expected) && strstr(status, "TEMP") && TSEL->p[id] != original;
+        btn_up(B_LFO); frame();
+        bank_status(status, &ui.read_bank.field[ui.read_bank.focus]);
+        ok &= TSEL->p[id] == original && !strstr(status, "TEMP");
+        bad += check("#572 D: temporary readout follows the edited value and clears on exact restore", ok);
+        btn_down(B_LFO); frame(); turn(EN_K1, 4); press(B_OCTUP); frame();
+        bank_status(status, &ui.read_bank.field[ui.read_bank.focus]);
+        ok = strstr(status, "KEPT") && TSEL->p[id] != original;
+        btn_up(B_LFO); frame();
+        bad += check("#572 D: KEEP stays explicit while held and does not restore the committed value", ok && TSEL->p[id] != original);
+        motion_set_event(TSEL, 0, id, TSEL->p[id]); motion.on |= 1u << song.sel;
+        ui.force = 1; frame(); bank_status(status, &ui.read_bank.field[0]);
+        bad += check("#572 D: motion-driven values carry a non-color AUTO reading state", ui.read_bank.field[0].motion && strstr(status, "AUTO"));
+        motion_clear(TSEL);
+    }
+
+    go_home(); frame();
+    go_page(GR_ROLL); song.seq_mode = 1; song.rec = 1u << song.sel; song.playing = 0; ui.plk_src = 0; ui.cursor = 6; ui.entry_open = 1;
+    fm1_in.notes = 1u << 10; ui.hot_col = 0; ui.force = 1;
+    {
+        uint32_t id = lock_id(0);
+        int16_t base = TSEL->p[id], locked = 0;
+        char expected[16], status[20]; const char *unit;
+        draw_columns(); bank_status(status, &ui.read_bank.field[0]);
+        ok = bank_on() && strstr(status, "BASE7");
+        motion_set_lock(TSEL, 6, id, 37); draw_columns();
+        ui_param_format(TSEL, id, track_desc(TSEL, id), 37, expected, &unit);
+        bank_status(status, &ui.read_bank.field[0]);
+        ok &= str_eq(ui.read_bank.field[0].value, expected) && strstr(status, "LOCK7") && TSEL->p[id] == base;
+        turn(EN_K1, 1);
+        ok &= motion_lock_get(TSEL, 6, id, &locked) && locked != 37 && TSEL->p[id] == base;
+        bad += check("#572 D: held step distinguishes base/lock and edits its lock without changing the sound base", ok);
+    }
+    fm1_in.notes = 0; ui.entry_open = 0; ui.force = 0; frame();
+    memcpy(off, host_screen, sizeof off); ui.force = 1; frame();
+    ok = !bank_on() && !memcmp(off + Y_LABEL * 240, host_screen + Y_LABEL * 240, 240u * CARD_H * sizeof *off);
+    bad += check("#572 D: releasing a held step restores ordinary roll controls without stale bank pixels", ok);
+    motion_clear(TSEL); song.seq_mode = 0; song.rec = 0;
+
     go_page(GR_BROWSE); frame();
     ok = large_kind() == LK_LABEL && card_h() == CARD_H && graph_y() == Y_GRAPH && graph_h() == H_GRAPH;
-    go_page(GR_ROLL); frame();
-    ok &= large_kind() == LK_LABEL;
-    go_page(GR_TRK); frame();
-    ok &= large_kind() == LK_TALL && strip_kind() == SK_TRK && lg_px(CARD_X(0) + 8, LG_Y_GRAPH + 56) == T_SURF;
-    go_title("ENV"); frame();
-    btn_down(B_GLO); frames(800);
-    ok &= ui.layer && large_kind() == LK_LABEL && card_h() == CARD_H;
+    go_title("ENV"); frame(); btn_down(B_GLO); frames(800);
+    ok &= ui.layer && !bank_on() && card_h() == CARD_H;
     btn_up(B_GLO); frame(); frame();
-    ok &= !ui.layer && large_kind() == LK_TALL && lg_px(30, LG_Y_GRAPH - 2) == T_BG;
-    bad += check("#15 LARGE: PRESETS and the roll keep the layout (labels in M), the layers too; MIXER tall, its tracks in the strip", ok);
+    bad += check("#572 D: lists/layers retain their controls and exiting a layer restores the bank", ok && !ui.layer && bank_on());
 
     {   /* saved with the settings; settings from before it: OFF (and so again: idempotent) */
         persist_t p, q;
@@ -10951,9 +10990,9 @@ static int test_home_tracks(void)
     ok = large_kind() == LK_LABEL && card_h() == CARD_H && graph_y() == Y_GRAPH && tr_px(3 + 22, tr_y(3) + 1) == T_THEME &&
          tr_px(tr_x(4), tr_y(3) + TR_SB - 2) == T_INK;
     ui_home_view = HV_SCOPE; ui.force = 1; frame();
-    ok &= large_kind() == LK_TALL;
+    ok &= large_kind() == LK_BANK;
     ui_prefs = 0;
-    bad += check("1.3 HOME > TRACKS with LARGE: cards with M labels, the rows kept (SCOPE: the tall cards as before)", ok);
+    bad += check("1.3 HOME > TRACKS retains its rows and M labels; SCOPE uses the focused bank", ok);
     ui_power_on();
     return bad;
 }
