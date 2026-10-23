@@ -1,0 +1,12 @@
+{
+  "name": "b",
+  "source": "/Users/jankampling/.codex/generated_images/01a1650e-5d77-7df0-be70-d99d2d9f8643/exec-88b16f73-910a-478e-9cd4-55075bd78a19.png",
+  "prompt": "Edit only the fixed lower detail area in this Felucca settings concept. Remove the small repeated DIM HI text to the right of the large DIM HI and remove the thin vertical divider beside that repeated text. Fill that freed area with the same plain dark background as the detail area. Keep one large DIM HI, the small LEDS label, and KEY LED BRIGHTNESS below it. The value must appear exactly twice in the complete screen: once in the selected list row and once as the large detail value. Keep all other content, position, typography, colors, row heights, selection, category strip and footer exactly as they are. This is a flat native LCD composition concept; do not add texture, glow, shadows or new content.",
+  "composition_prompt": "Create an edge-to-edge square native LCD settings-screen concept for Felucca, a musical instrument with a 240 by 240 logical pixel display. Render the screen alone with crisp readable text, no device, browser, desk or perspective. The attached reference images contribute M8Stealth bitmap lettering, AMBER colors, dark surfaces and familiar native panel character; replace their composition. Explore a fixed overview plus detail layout. A compact MENU header with HOME CLOSE and the category strip identify DISPLAY. The middle holds five uniform single-line rows, label left and value right: COLOR \u2014 AMBER; STYLE \u2014 FLAT; ANIM \u2014 ON; LEDS \u2014 DIM HI; AUTO OFF \u2014 SCREEN 15m with submenu chevron. Highlight LEDS without changing row height. A distinct fixed lower reading area shows LEDS as a modest label, DIM HI in larger bitmap letters and the short explanation KEY LED BRIGHTNESS in small readable type. The detail area is always in that location, leaving neighboring rows stable. Keep the selected value repeated inline for comparison. Include a subtle scroll indicator for the two further DISPLAY settings SCOPE and HOME, a 4/7 position indicator and bottom hints ALGO TAB, PRESETS ROW, K1 VALUE. The user can immediately edit using the same controls. Show a finished practical instrument menu, preserving the references' pixel identity.",
+  "approved": false,
+  "references": [
+    "build/large-prototype/images/D-AMBER-FLAT_settings-k4.png",
+    "/Users/jankampling/.codex/worktrees/felucca-ui-polish/Felucca/build/ui_new/GREY/menu.png"
+  ],
+  "kind": "generated composition concept, not a native renderer or hardware capture"
+}
