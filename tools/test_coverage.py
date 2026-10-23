@@ -319,6 +319,8 @@ def verify(path, run_id, root=ROOT):
 
     d = read_json(path)
     require(d.get('schema') == SCHEMA and d.get('run_id') == run_id and bool(run_id), 'schema or run identity')
+    require(not any(key in os.environ for key in ('GOLDEN_UPDATE', 'BUDGET_UPDATE')),
+            'baseline update mode is not comparison coverage')
     require(d.get('status') == 'complete', 'run not complete')
     require(d.get('before') == d.get('after') == snapshot(root, os.environ), 'source/configuration changed or stale')
     require(d['compiler'] == host_config(), 'host compiler/configuration changed')

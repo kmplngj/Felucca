@@ -199,6 +199,13 @@ class ContractTests(unittest.TestCase):
         path.write_text('{"schema":1,"schema":1}')
         with self.assertRaisesRegex(ValueError, 'duplicate coverage key'): C.read_json(path)
 
+    def test_update_mode_presence_cannot_claim_comparison_coverage(self):
+        for key in ('GOLDEN_UPDATE', 'BUDGET_UPDATE'):
+            for value in ('', '0', '1'):
+                with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}), \
+                     self.assertRaisesRegex(ValueError, 'update mode'):
+                    self.verify()
+
 
 class ProducerTests(unittest.TestCase):
     def test_actual_target_missing_listing_and_python_completion(self):
@@ -373,11 +380,16 @@ class CompilerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(root / 'events'), FELUCCA_COVERAGE_ID='compile')
-            e, _ = C.compiler_environment(env, root / 'shims')
+            e, mapping = C.compiler_environment(env, root / 'shims')
             processes = [subprocess.Popen([e['CC'], '--version'], env=e, stdout=subprocess.DEVNULL) for _ in range(8)]
             self.assertTrue(all(p.wait() == 0 for p in processes))
             events = [json.loads(p.read_text()) for p in (root / 'events').iterdir()]
-            self.assertEqual(len(events), 8)
+            # An outer runner can itself be instrumented. Each exec layer must
+            # record once per process, while eight requested invocations remain eight.
+            selected = [event for event in events if event['executable'] == mapping['requested-cc'][0]]
+            self.assertEqual(len(selected), 8)
+            self.assertEqual(len({event['pid'] for event in selected}), 8)
+            self.assertEqual(len({(event['executable'], event['pid']) for event in events}), len(events))
             self.assertTrue(all(e['kind'] == 'probe' and e['run_id'] == 'compile' for e in events))
 
 

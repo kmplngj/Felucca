@@ -409,7 +409,9 @@ unknown evidence. Local optional skips remain available but fail strict coverage
 Only absent proprietary V15 input, an unavailable whole CPU budget (counters or
 matching baseline), C1's unqualified CPU comparison and declared applicability
 exclusions retain their existing exceptions. Available CPU budgets missing entries
-fail. See [CI policy](.github/CI.md#required-checks-and-evidence). A report's
+fail. See [CI policy](.github/CI.md#required-checks-and-evidence).
+Baseline update modes (including empty or `0` environment values) cannot claim
+comparison coverage and are rejected by strict verification. A report's
 `complete` status means its execution and inputs completed consistently; the strict
 verifier still evaluates every required capability. No report is a device result.
 
