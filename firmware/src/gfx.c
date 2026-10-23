@@ -428,27 +428,31 @@ static void cv_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
 }
 
 #if UI_FONT_BITMAP
-/* MSB-first, byte-aligned glyphs. L shares M's data; its metadata describes the doubled ink box.
- * Clip in output coordinates, then index the source bit. No framebuffer or decoded-glyph scratch. */
+/* MSB-first, byte-aligned glyphs. L, N and X share M's data; their metadata describes the scaled ink box
+ * (w and h are whole multiples of scale). Each source bit is a scale x scale block, clipped in output
+ * coordinates. No framebuffer, decoded-glyph scratch or per-pixel division. */
 static void cv_bitmap(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d,
                       uint32_t scale, uint16_t ink)
 {
-    uint32_t sh = scale - 1u, sw = w >> sh, gx, gy;
+    uint32_t sw = w / scale, sy, sx, k, j, srow = 0;
     y += cv_oy;
-    for (gy = 0; gy < h; gy++) {
-        int32_t py = y + (int32_t)gy;
-        uint32_t base = (gy >> sh) * sw;
-        uint16_t *row;
-        if (py < cv_cy0 || py >= cv_cy1)
-            continue;
-        row = cv_px + (uint32_t)py * cv_w;
-        for (gx = 0; gx < w; gx++) {
-            uint32_t bit = base + (gx >> sh);
-            int32_t px = x + (int32_t)gx;
-            if ((uint32_t)px < cv_w && (d[bit >> 3] & (0x80u >> (bit & 7u))))
-                row[px] = ink;
+    for (sy = 0; sy * scale < h; sy++, srow += sw)
+        for (k = 0; k < scale; k++) {
+            int32_t py = y + (int32_t)(sy * scale + k);
+            uint16_t *row;
+            if (py < cv_cy0 || py >= cv_cy1)
+                continue;
+            row = cv_px + (uint32_t)py * cv_w;
+            for (sx = 0; sx < sw; sx++) {
+                uint32_t bit = srow + sx;
+                int32_t px = x + (int32_t)(sx * scale);
+                if (!(d[bit >> 3] & (0x80u >> (bit & 7u))))
+                    continue;
+                for (j = 0; j < scale; j++, px++)
+                    if ((uint32_t)px < cv_w)
+                        row[px] = ink;
+            }
         }
-    }
     GFX_HOOK_PIXELS(w * h);
 }
 #endif

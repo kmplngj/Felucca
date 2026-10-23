@@ -120,9 +120,10 @@ def emit(name, ascent, glyphs, chars, height, baseline, scale, data=None, offset
     lines.append(f'static const aag_t AF_{name}_G[{len(table)}] = {{')
     lines += ['    {' + ', '.join(map(str, entry)) + '},' for entry in table]
     lines.append('};')
-    extras = chars[1:] if name == 'L' else EXTRAS
+    sparse = name in ('L', 'X')                      # numeral roles: L_CHARS only
+    extras = chars[1:] if sparse else EXTRAS
     lines.append(c_array(f'AF_{name}_EX', 'uint8_t', [CODE.get(c, c) for c in extras]))
-    last = 32 if name == 'L' else 126
+    last = 32 if sparse else 126
     source = 'M' if shared else name
     lines.append(f'static const aafont_t AF_{name} = {{{height}, {baseline}, 32, {last}, {len(extras)}, 0, '
                  f'AF_{name}_G, AF_{source}_DATA, 0, 0, AF_{name}_EX, 0, {scale}, 0}};')
@@ -159,9 +160,13 @@ def main():
     # metadata is added; every bitmap byte is shared with the existing M face.
     n, _, _, nc = emit('N', *medium, chars, 35, 28, 2, data, offsets,
                        label='M8Stealth89 full x2 (shared M)')
-    parts += [s, m, l, n]
+    # The dominant focused readout: exact 3x M ink, a 2 px gap after the 24 px
+    # ink (26 px pen), numerals and capitals only. Metadata only, like L and N.
+    x, _, _, xc = emit('X', *medium, [ord(c) for c in L_CHARS], 50, 40, 3, data, offsets,
+                       label='M8Stealth89 x3, 26px advance (shared M)', tracking=-1)
+    parts += [s, m, l, n, x]
     Path(args.out).write_text('\n\n'.join(parts) + '\n')
-    print(f'fonts total {sc + mc + lc + nc} B tables + 144 B descriptors -> {args.out}')
+    print(f'fonts total {sc + mc + lc + nc + xc} B tables + 180 B descriptors -> {args.out}')
 
 
 if __name__ == '__main__':
