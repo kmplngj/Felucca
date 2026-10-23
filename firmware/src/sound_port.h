@@ -6,7 +6,7 @@
 #pragma once
 #include <stdint.h>
 
-/* static inline in the one translation unit: the wrappers vanish into their callers (0 B); external when sound.c is its
+/* static inline in the one translation unit: the wrappers can inline into their callers; external when sound.c is its
  * own unit (-DFELUCCA_OWN_UNIT / -DSOUND_SEPARATE, docs/modules.md) */
 #if defined(FELUCCA_OWN_UNIT) || defined(SOUND_SEPARATE)
 #define SND_PORT

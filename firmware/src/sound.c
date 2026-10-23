@@ -22,7 +22,8 @@
  *
  * Module boundary (#454, docs/modules.md): sound.h is all a consumer sees of it; sound_port.h is all it sees of the rest
  * of the firmware (sound_port.c implements that from the owners' static functions and state). Both are header
- * boundaries inside felucca.c's one translation unit (static, inlined: 0 B), enforced by tests/module_boundary_test.py.
+ * boundaries inside felucca.c's one translation unit (static, eligible for inlining), enforced by
+ * tests/module_boundary_test.py.
  * It owns no state. It can still be built as its own unit (FELUCCA_OWN_UNIT, build.py SEPARATE; measured and not
  * adopted), where core.h's static objects (trk, song, ENGINE_META) would be a second copy: it must not use them.
  * tests/hostsim.c includes it, with sound_port.c; tests/sound_install_test.c also builds it apart (SOUND_SEPARATE). */

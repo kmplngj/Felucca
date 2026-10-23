@@ -116,12 +116,12 @@ unit (section 4). Converting every host build is part of each later step's cost.
 ## 4. Pilot: `sound.c` behind header boundaries
 
 **Final state (owner decision: "Header boundaries").** `sound.c` is back in `felucca.c`'s single translation unit
-(after `sound_port.c`, before `ui.c`), so the target build is as before the pilot: 0 B, 0 interrupt cycles.
+(after `sound_port.c`, before `ui.c`). The source check adds no runtime checking; the port's compiler output must
+still be compared at each integration. The original zero-byte measurement below applies to its recorded baseline.
 
 - [`sound.h`](../firmware/src/sound.h) is the documented interface and
   [`sound_port.h`](../firmware/src/sound_port.h) lists what `sound.c` needs of the rest of the firmware. In the
-  one unit both are `static` / `static inline` (`SND_API`, `SND_PORT`), so they inline into their callers and the
-  compiler sees the same code as without them.
+  one unit both are `static` / `static inline` (`SND_API`, `SND_PORT`), so the compiler can inline across the boundary.
 - [`tests/module_boundary_test.py`](../tests/module_boundary_test.py), run by `tests/run_tests.sh`, enforces the
   boundary at the source level: `sound.c` may include only `sound.h`, `sound_port.h`, `core.h`,
   `felucca_tables.h` and `stdint.h` / `string.h`, and of the firmware's functions and objects it may name only what
@@ -245,7 +245,7 @@ means re-baselining the interrupt budgets and measuring deadlines on hardware. N
 
 ## 5. Next step
 
-Final state: **header boundaries plus a source check**. Measured against `main` `b4b7a45`, the target app image, its
+Final state: **header boundaries plus a source check**. In the historical comparison against `main` `b4b7a45`, the target app image, its
 `.text`, `.data`, `.ram_text` and `.c1_text` sections and the `tests/target_budget.py` output are identical (the default
 build's 487,024 B and `FELUCCA_SIZE=0`'s 503,536 B; the only differing bytes are the commit id in the build
 identity), including `perf_block` 908 insns / cost 847, `perf_begin` 230 / 28 and `perf_pre` 37 / 26. Getting there took
@@ -261,11 +261,32 @@ and cross-unit interrupt calls) found two hazards that would otherwise have been
   modules (application services, UI, persistence, editor), add public headers and port headers inside the
   single unit, so dependencies are visible and reviewed. Break the cycles in section 3 at their owners,
   starting with persistence below the UI. `tests/module_boundary_test.py` is that checker ("no name
-  from another module except through its header"), extended one module at a time. It costs no bytes and no interrupt cycles.
+  from another module except through its header"), extended one module at a time. It adds no runtime check;
+  measure the target output after integration.
 - Separate one more module only when the layering work already produces its header, and only for
   main-loop code, measuring each step as here. Each step costs roughly the size of its port and
   can move interrupt code through data layout.
 - LTO is **not adopted**: it would change the whole audio path and needs its own qualification project.
+
+### Current-main integration (2026-10-23)
+
+Fresh comparisons against clean main `758f228878dd99e217881231c04a69f7957e2118` use the same JieLi Clang 4.0.1,
+pinned AC79 SDK, standard profile, M8Stealth and clean eight-character build identities. `SEPARATE` remains empty;
+LTO remains disabled. These replace the historical zero-byte claim for current integration:
+
+| Variant | Main app | Integrated app | Delta | RAM data+BSS (both) |
+| --- | ---: | ---: | ---: | ---: |
+| Default, selective minsize | 491,876 B | 491,892 B | +16 B | 62,152 B |
+| `FELUCCA_CPU2=0` | 488,164 B | 488,180 B | +16 B | 55,556 B |
+| `FELUCCA_SIZE=0` | 510,680 B | 510,704 B | +24 B | 62,136 B |
+
+POOL is unchanged at 336,440 B; NOINIT is 15,576 B (15,564 B with CPU2 off); RAM text including core 1 is
+3,152 B (2,924 B with CPU2 off). Linker stack reservations and the 610,134 B installable package size are unchanged.
+Complete static target-budget output is identical within each pair. In the default build the sole sized-symbol
+change is `sound_install` (300 → 316 B); its explicit stack adjustment changes from 172 to 176 B. The boundary
+changes main-loop register allocation even when wrappers inline. Static reservations and instruction estimates
+do not establish live stack watermarks, execution time or audio-deadline margin. FM-1 sound-switch, persistence,
+loaded USB/MIDI and timing qualification remains pending; current validation and routes belong in PR #491.
 
 Decided by the owner: header boundaries, not separate compilation (open question 1). Still open: whether to
 stabilize the audio path's variables against global-merge reordering (the `perf_block` layout effect above) as a

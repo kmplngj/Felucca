@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* sound_port.h, implemented inside felucca.c's translation unit (and the host builds' tests/hostsim.c), where the owners'
- * static functions and state are visible: sound.c (#298), compiled as its own translation unit (#454 pilot), reaches
- * them only through these. Each is a thin wrapper, so the owners' functions stay static and the code that calls them
- * directly (the audio interrupt among them) compiles as before; only these wrappers are external. Included where
+ * static functions and state are visible: sound.c (#298) reaches them only through these. The wrappers can inline in
+ * the single unit; they are external only in the dormant separate-compilation pilot (#454). The owners' functions stay
+ * static. Compare target output after integration (docs/modules.md). Included where
  * sound.c was (felucca.c: after its providers, before its consumers). Main loop only (docs/modules.md). */
 #include "isr_assert.h"
 #include "sound_port.h"

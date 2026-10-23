@@ -11,9 +11,10 @@
 #pragma once
 #include <stdint.h>
 
-/* Linkage of the interface: static in the one translation unit (felucca.c, the host builds), so the functions inline
- * and cost what they did before this boundary existed (0 B, 0 ISR cycles; separate compilation was measured and not
- * adopted, docs/modules.md section 4). A module built as its own unit (-DFELUCCA_OWN_UNIT, with the other units -DSOUND_SEPARATE: kept and tested) exports them */
+/* Linkage of the interface: static in the one translation unit (felucca.c, the host builds), so the compiler can
+ * inline across the boundary. Compare target output after integration (docs/modules.md); separate compilation was
+ * measured and not adopted. A module built as its own unit (-DFELUCCA_OWN_UNIT, with the other units
+ * -DSOUND_SEPARATE: kept and tested) exports them */
 #if defined(FELUCCA_OWN_UNIT) || defined(SOUND_SEPARATE)
 #define SND_API
 #else
