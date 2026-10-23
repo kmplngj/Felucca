@@ -16,6 +16,13 @@ the existing runner verifies repository identity, branch, immutable pin and comp
 history before initialization. This review creates no per-commit coverage and needs
 no new schedule or automation.
 
+The [Clipper adoption review](clipper-adoption-2026-10-19.md) registers
+`isod89/clipper-fm1` main as a pending source, pinned initially at
+`7008d31e78da5d4e5e0a1f25a994ba7b2266c702` (49 reachable commits, zero reviewed
+by the snapshot). After the registration reaches main and the state branch,
+the audit verifies identity, branch, immutable pin and complete history before
+initialization. The existing daily task reads this registry without a schedule change.
+
 The [Optimist adoption review](optimist-adoption-2026-10-19.md) registers
 `w0ts/optimist` main as a pending source, pinned initially at
 `5fc3ee51a4aa64fd22cef217c8498c9be567eb69` (2,018 reachable commits, zero reviewed
