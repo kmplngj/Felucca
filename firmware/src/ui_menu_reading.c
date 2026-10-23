@@ -38,6 +38,8 @@ static void menu_read_row(const char *label, const char *value, const char *unit
     uint16_t bg = selected ? T_THEME : T_SURF, fg = selected ? T_INK : T_TEXT;
     uint16_t val = selected ? T_INK : inactive ? T_MID : T_THEME;
     cv_rect(MR_X, 0, MR_W, MENU_READ_H, bg);
+    if (!selected)                                     /* #572: a hairline in the gap under it */
+        cv_rect(MR_X, MENU_READ_H, MR_W, 1, T_LINE);
     GFX_HOOK_ALIGN(0, 0, 0, MENU_READ_H, AL_V, "menu row name centred up/down");
     cv_text_on(MR_LX, ty, &AF_M, label, fg, bg);
     if (unit[0]) {

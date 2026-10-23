@@ -581,7 +581,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     uint32_t kind = reading_kind();                       /* task-specific bank or compact controls */
     uint8_t sig;
     uint16_t lc = hot ? T_TEXT : T_MID, tc = vc == T_DIM ? T_MID : vc;
-    int32_t lx = 0, uw, room = COL_W - 2;
+    int32_t lx = 0, uw, room = COL_W - 6;              /* (#572: 6 px clear of the next column's value) */
     const aafont_t *vf = &AF_M;
     uint32_t n, kn;
     int32_t kid = kc_tag(val, &kn);

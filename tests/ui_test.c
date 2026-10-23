@@ -1927,11 +1927,12 @@ static int test_menu_tabs(void)
     hold(B_HOME);
     ok = ui.menu == 1 && ui.menu_sel == MI_COLOR && menu_tab() == MTAB_DISPLAY;
     for (i = 0; i < 6u; i++) turn(EN_PRESET, 1);
-    ok &= ui.menu_sel == MI_HOME;
+    ok &= ui.menu_sel == MI_GRAPH;                      /* (#572: STYLE skipped, GRAPH the last) */
     turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_COLOR;  /* (wraps within the tab) */
+    turn(EN_PRESET, -1); ok &= ui.menu_sel == MI_GRAPH;
     turn(EN_PRESET, -1); ok &= ui.menu_sel == MI_HOME;
     turn(EN_PRESET, -1); turn(EN_PRESET, -1); turn(EN_PRESET, -1); ok &= ui.menu_sel == MI_LEDS;
-    bad += check("MENU: PRESETS moves within the tab and wraps there (COLOR .. HOME)", ok);
+    bad += check("MENU: PRESETS moves within the tab and wraps there (COLOR .. GRAPH)", ok);
     turn(EN_ALGO, 1); ok = ui.menu_sel == MI_HOLD && menu_tab() == MTAB_CONTROL;
     turn(EN_PRESET, 1); turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_LATCH;
     turn(EN_ALGO, 1); ok &= ui.menu_sel == MI_LOWCUT && menu_tab() == MTAB_AUDIO;
@@ -2859,7 +2860,7 @@ static int test_presets_knob(void)
     hold(B_HOME);
     i = ui.menu_sel;
     turn(EN_PRESET, 1);
-    bad += check("#94 the menu: PRESETS still moves the selection", ui.menu == 1 && ui.menu_sel == i + 1u);
+    bad += check("#94 the menu: PRESETS still moves the selection", ui.menu == 1 && ui.menu_sel == mtab_row(MTAB_DISPLAY, mtab_index(i) + 1u));
     return bad;
 }
 
@@ -3199,15 +3200,17 @@ static int test_product_ux(void)
     led_pos_init();
     ok = 1;
     for (p = 0; p < NPALETTES; p++) for (b = 0; b < 1u; b++) {
-        uint16_t graph[240 * H_GRAPH], columns[240 * (Y_SEP_END - Y_LABEL)];
+        static uint16_t graph[240 * H_GRAPH], columns[240 * CARD_H_TALL];   /* (#572: ENV's tall bank and panel) */
+        uint32_t gy, gh, ch;
         ui_power_on(); palette_set(p); settings.zoom = 1;
         open_family(FAM_ENV); frame();
-        memcpy(graph, host_screen + Y_GRAPH * 240, sizeof graph);
-        memcpy(columns, host_screen + Y_LABEL * 240, sizeof columns);
+        gy = graph_y(); gh = graph_h(); ch = card_h();
+        memcpy(graph, host_screen + gy * 240, 240u * gh * 2u);
+        memcpy(columns, host_screen + Y_LABEL * 240, 240u * ch * 2u);
         ui.hot_col = 1; ui.hot_t = 40; ui.force = 1; ui_draw();
-        ok &= !memcmp(graph, host_screen + Y_GRAPH * 240, sizeof graph);
+        ok &= !memcmp(graph, host_screen + gy * 240, 240u * gh * 2u);
         int changed = 0;
-        for (uint32_t y = 0; y < Y_SEP_END - Y_LABEL; y++) for (uint32_t x = 0; x < 240; x++) {
+        for (uint32_t y = 0; y < ch; y++) for (uint32_t x = 0; x < 240; x++) {
             uint16_t old = columns[y * 240 + x], now = host_screen[(Y_LABEL + y) * 240 + x];
             if ((y < BANK_TOP && x >= 3 && x < 237) || (x >= 3 && x < 119)) changed |= old != now;
             else ok &= old == now;
@@ -9247,9 +9250,46 @@ static int lg_value_rows(uint32_t c)
     int32_t x, y, n = 0;
     int bank = bank_on();
     for (y = Y_LABEL + (bank ? 0 : CARD_VALUE_Y); y < Y_LABEL + (bank ? BANK_TOP : CARD_VALUE_Y + CARD_VALUE_H); y++)
-        for (x = bank ? 84 : CARD_X(c); x < (bank ? 193 : CARD_X(c) + CARD_W); x++)
+        for (x = bank ? 3 : CARD_X(c); x < (bank ? 237 : CARD_X(c) + CARD_W); x++)
             if (lg_px(x, y) == T_THEME) { n++; break; }
     return n;
+}
+/* #572 MENU > DISPLAY > GRAPH: the turned knob's curve in the scope's place */
+static int test_graph_modes(void)
+{
+    int bad = 0, ok;
+    uint32_t sig;
+    ui_power_on();
+    song.playing = 0;
+    frame();
+    ok = graph_mode() == GM_TURN && !(settings_dev[10] & 6u) && menu_get(MI_GRAPH) == GM_TURN;   /* stored 0: TURN */
+    ok &= ui.home && panel_curve(TSEL) == CK_NONE;     /* at rest: the scope */
+    turn(EN_K1, 1);                                    /* a real detent of KNOB 1 (ANALOG's CUT) */
+    ok &= ui.curve_t > 0u && ui.hot_col == 0u;
+    ui.force = 1; frame();
+    ok &= ui.read_bank.focus == 0u && panel_curve(TSEL) == CK_FILTER;
+    turn(EN_K3, 1); ui.force = 1; frame();             /* ATK: the amplifier envelope */
+    ok &= ui.read_bank.focus == 2u && panel_curve(TSEL) == CK_ENV;
+    ui.curve_t = 0;
+    ok &= panel_curve(TSEL) == CK_NONE;                /* the hold over: the scope again, KNOB 3 kept in focus */
+    bad += check("#572 GRAPH TURN (the default, stored 0): the turned knob's filter / envelope curve while it turns, then the scope", ok);
+
+    menu_put(MI_GRAPH, GM_SCOPE);
+    ui.hot_col = 0; ui.curve_t = CURVE_HOLD; ui.force = 1; frame();
+    ok = ((settings_dev[10] >> 1) & 3u) == 1u && panel_curve(TSEL) == CK_NONE;
+    menu_put(MI_GRAPH, GM_STILL);
+    ui.curve_t = 0; ui.force = 1; frame();
+    ok &= ((settings_dev[10] >> 1) & 3u) == 3u && panel_curve(TSEL) == CK_FILTER;   /* (at rest too: the focus's curve) */
+    sig = graph_signature();
+    ui.frame += 2;
+    ok &= graph_signature() == sig;                    /* STILL: nothing animates, no redraw */
+    menu_put(MI_GRAPH, GM_CURVE);
+    ok &= ((settings_dev[10] >> 1) & 3u) == 2u && panel_curve(TSEL) == CK_FILTER;
+    menu_put(MI_GRAPH, GM_TURN);
+    ok &= !(settings_dev[10] & 6u);
+    bad += check("#572 GRAPH SCOPE / CURVE / STILL: stored in bits 1..2 of settings_dev[10]; STILL draws without the scope", ok);
+    ui_power_on(); frame();
+    return bad;
 }
 static int test_large(void)
 {
@@ -9259,7 +9299,7 @@ static int test_large(void)
     ui_power_on();
     song.playing = 0;
     frame();
-    ok = !(ui_prefs & PREF_LARGE) && reading_kind() == RK_BANK && card_h() == CARD_H && graph_y() == Y_GRAPH;
+    ok = !(ui_prefs & PREF_LARGE) && reading_kind() == RK_BANK && card_h() == CARD_H_TALL;
     ok &= !menu_native_row(MI_LARGE) && menu_flag(MI_LARGE)->bit == PREF_LARGE;
     ui.force = 1; frame(); memcpy(off, host_screen, sizeof off);
     ui_prefs |= PREF_LARGE; ui.force = 1; frame();
@@ -9267,9 +9307,10 @@ static int test_large(void)
     bad += check("#578 legacy LARGE bit is reserved and hidden; either historical value draws the same HOME", ok);
 
     frame();
-    ok = ui.home && reading_kind() == RK_BANK && card_h() == CARD_H && graph_y() == Y_GRAPH && graph_h() == H_GRAPH;
-    ok &= !memcmp(off + Y_GRAPH * 240, host_screen + Y_GRAPH * 240, 240u * (240u - Y_GRAPH) * sizeof *off);
-    bad += check("#572 D: HOME keeps the complete native workspace and footer below its 44 px bank", ok);
+    ok = ui.home && reading_kind() == RK_BANK && bank_tall() && card_h() == CARD_H_TALL &&
+         graph_y() == Y_LABEL + CARD_H_TALL + 4u && graph_y() + graph_h() == Y_GRAPH + H_GRAPH && graph_h() == 100u;
+    ok &= !memcmp(off + graph_y() * 240, host_screen + graph_y() * 240, 240u * (240u - graph_y()) * sizeof *off);
+    bad += check("#572 D: HOME's tall bank leaves the panel its 100 px graph scale and the footer in place", ok);
 
     go_title("CLOCK"); ui.hot_col = 0; ui.force = 1; frame();
     ok = bank_on() && cur_page()->id[0] == G_BPM && lg_value_rows(0) >= AF_L_CAP_H - 3;
@@ -9400,7 +9441,8 @@ static int test_menu_prefs(void)
         turn(EN_ALGO, 1);
     }
     /* WAKE and ALL DARK belong to AUTO OFF; their descriptor IDs remain stable. */
-    ok &= seen == (((1ull << MI_COUNT) - 1u) & ~((1ull << MI_LARGE) | (1ull << MI_SCRWAKE) | (1ull << MI_DARK))) && ui.menu_sel == 0u;
+    ok &= seen == (((1ull << MI_COUNT) - 1u) & ~((1ull << MI_STYLE) | (1ull << MI_LARGE) | (1ull << MI_SCRWAKE) |
+                                                 (1ull << MI_DARK))) && ui.menu_sel == 0u;
     bad += check("MENU: ALGORITHM and PRESETS reach every row, each tab a page of its own", ok);
     /* ANIM */
     ui.menu_sel = MI_ANIM;
@@ -9466,27 +9508,23 @@ static int test_style(void)
 {
     int bad = 0, ok;
     const uint32_t rule = 26u * 240u + 120u;           /* (the rule under the header: ui_draw.c draw_rules) */
+    static uint16_t flat[240 * 240];
     ui_power_on();
     frame();
-    ok = ui_style == ST_FLAT && ux.style == ST_FLAT && ux.surf != ux.bg;
+    ok = ui_style == ST_FLAT && ux.style == ST_LINE && ux.surf == ux.bg;   /* #572: one native style, the rules */
     ui.force = 1; frame();
-    ok &= host_screen[rule] == swap16(T_BG);
-    hold(B_HOME); ui.menu_sel = MI_STYLE;
-    ok &= ui.menu == 1u && str_eq(MI_NAME[MI_STYLE], "STYLE");
-    turn(EN_K1, 1); ok &= ui_style == ST_LINE && ux.style == ST_LINE && ux.surf == ux.bg;
-    turn(EN_K1, 1); ok &= ui_style == ST_LINE;
-    turn(EN_K1, -1); ok &= ui_style == ST_FLAT;
-    turn(EN_K1, -1); ok &= ui_style == ST_FLAT;
-    press(B_OCTUP); ok &= ui_style == ST_LINE && ui.menu == 1u;
-    press(B_OCTUP); ok &= ui_style == ST_LINE;
-    press(B_OCTDN); ok &= ui_style == ST_FLAT && ux.style == ST_FLAT && ux.surf != ux.bg && ui.menu == 1u;
-    press(B_OCTUP); ok &= ui_style == ST_LINE;
+    ok &= host_screen[rule] == swap16(T_RULE);
+    memcpy(flat, host_screen, sizeof flat);
+    ok &= !menu_native_row(MI_STYLE) && str_eq(MI_NAME[MI_STYLE], "STYLE");   /* (the DISPLAY tab skips it) */
+    menu_put(MI_STYLE, 1); ok &= ui_style == ST_LINE && menu_get(MI_STYLE) == 1u;   /* (wire id 1 still sets it) */
+    ui.force = 1; frame();
+    ok &= ux.style == ST_LINE && !memcmp(flat, host_screen, sizeof flat);   /* (either value: the same screen) */
+    menu_put(MI_STYLE, 0); ok &= ui_style == ST_FLAT;
     ok &= !(ui_prefs & 0xFFu) && settings_leds == LEDS_DIM;   /* (no other setting moved) */
-    hold(B_HOME);
-    ok &= !ui.menu && ux.style == ST_LINE && host_screen[rule] == swap16(T_RULE);
-    bad += check("MENU > STYLE: FLAT by default, KNOB 1 / OCT-+ FLAT / LINE, LINE drawn (rules, no SURF)", ok);
+    bad += check("#572 MENU > STYLE retired: every value draws the rules; saved and set by wire id 1, the row hidden", ok);
     {
         persist_t p, q;
+        ui_style = ST_LINE;
         settings_export(&p);
         ui_style = ST_FLAT; frame();
         ok = settings_import(&p, (int)sizeof p) == 1 && ui_style == ST_LINE;
@@ -9510,7 +9548,7 @@ static int test_style(void)
         p.magic = 0x50455233u;                          /* settings from before STYLE (PER3) */
         ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && ui_style == ST_FLAT;
         frame();
-        ok &= ux.style == ST_FLAT && ux.surf != ux.bg;
+        ok &= ux.style == ST_LINE && ux.surf == ux.bg;
         bad += check("  STYLE saved with the settings and read back; older settings and unknown values: FLAT, PIXEL: LINE (idempotent)", ok);
     }
     ui_power_on(); frame();
@@ -10721,7 +10759,7 @@ static int test_home_tracks(void)
 
     ui_power_on();
     hold(B_HOME);                                       /* the menu: DISPLAY, down to HOME, K1 right */
-    for (i = 0; i < 6u; i++) turn(EN_PRESET, 1);
+    for (i = 0; i < 5u; i++) turn(EN_PRESET, 1);       /* (#572: STYLE skipped) */
     ok = ui.menu == 1 && ui.menu_sel == MI_HOME;
     turn(EN_K1, 1); ok &= home_tracks() && !home_levels();
     turn(EN_K3, 1); ok &= home_levels();               /* (1.5: LEVELS, the last) */
@@ -11807,6 +11845,7 @@ int main(int argc, char **argv)
     bad += test_usb_serial();
     bad += test_bpm_lock();
     bad += test_large();
+    bad += test_graph_modes();
     bad += test_browse_no_pattern();
     bad += test_name();
     bad += test_edit_cycle();

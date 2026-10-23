@@ -47,7 +47,7 @@ static unsigned bank_big_face(const char *s)
 }
 static unsigned bank_small_face(const char *s)
 {
-    return AF_M_CAP_H + AF_S_CAP_H + 3 <= BANK_OV && ink_w(&AF_M, s) <= COL_W - 4 ? 2u : 3u;
+    return AF_M_CAP_H + AF_S_CAP_H + 3 <= BANK_OV && ink_w(&AF_M, s) <= COL_W - 6 ? 2u : 3u;   /* (6 px clear) */
 }
 static void bank_collect(uint32_t c, const char *label, const char *val, const char *unit,
                          uint16_t color, int motion, const card_span_t *sp)
