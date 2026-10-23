@@ -1476,7 +1476,7 @@ static int macro_model_protocol(void)
         ok &= up_load(5) == 0 && TSEL->eng_req == ENGI_MACRO;
         for (k = 0; k < 8u; k++) ok &= TSEL->p[P_E0 + k] == value[k];
         project_capture(&proj_scratch);
-        ok &= proj_pack(&proj_wire, &proj_scratch) && proj_import(&proj_scratch, &proj_wire, sizeof proj_wire);
+        ok &= proj_encode(&proj_wire, &proj_scratch) && proj_import(&proj_scratch, &proj_wire, sizeof proj_wire);
         host_preset(TSEL, 0, 0);
         ok &= !project_restore_runtime(&proj_scratch) && TSEL->eng_req == ENGI_MACRO;
         for (k = 0; k < 8u; k++) ok &= TSEL->p[P_E0 + k] == value[k];

@@ -2,6 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Firmware save flows against NOR flash: deferred settings, retries, and failed-save rollback. */
 #define main hostsim_main
+#include <stddef.h>
 #include "hostsim.c"
 #undef main
 
@@ -584,6 +585,167 @@ static int durability_test(void)
     return bad;
 }
 
+/* ---- #300: what a project holds, one list (project_codec.h PROJ_FIELDS / PROJ_TRK_FIELDS) ----
+ * Each member changed in a decoded project: project_restore_runtime must take it into the running music,
+ * project_capture must give it back, and autosave_sig must change with it (a member the signature misses means no
+ * autosave when only it changes). The members that are not the music's are named here with their reason; a member
+ * added to project_t fails project_codec.h's size check until it is listed, and then fails this test until all three
+ * handle it (or it is named below). */
+static project_t fl_a, fl_b, fl_c;
+enum { FL_RESTORE = 1, FL_CAPTURE = 2, FL_SIG = 4, FL_ALL = 7 };
+/* restore b, capture it: which of the three carried the change from fl_a (field bytes off..off+n of project_t) */
+static uint32_t fl_carries(uint32_t off, uint32_t n)
+{
+    uint32_t sig_a, got = 0;
+    fl_a.sum = proj_sum(&fl_a); fl_b.sum = proj_sum(&fl_b);
+    if (project_restore_runtime(&fl_a)) return 0;
+    sig_a = autosave_sig();
+    if (project_restore_runtime(&fl_b)) return 0;
+    project_capture(&fl_c);
+    if (!memcmp((const uint8_t *)&fl_c + off, (const uint8_t *)&fl_b + off, n)) got |= FL_RESTORE | FL_CAPTURE;
+    if (autosave_sig() != sig_a) got |= FL_SIG;
+    return got;
+}
+#define FL_OFF(m) (uint32_t)offsetof(project_t, m), (uint32_t)sizeof fl_a.m
+static int field_list_test(void)
+{
+    int bad = 0;
+    uint32_t i, got, want, miss = 0;
+    char what[96];
+    reset();
+    host_tracks_init();
+    project_capture(&fl_a);
+    /* the header: constants of the record, not the music (capture writes them; restore checks them) */
+#define FL_HEADER(m) && (!strcmp(#m, "magic") || !strcmp(#m, "size") || !strcmp(#m, "sum") || !strcmp(#m, "parts") || \
+                         !strcmp(#m, "phys") || !strcmp(#m, "rsv") || !strcmp(#m, "g") || !strcmp(#m, "sel") || \
+                         !strcmp(#m, "t") || !strcmp(#m, "chain") || !strcmp(#m, "motion") || !strcmp(#m, "fm6") || \
+                         !strcmp(#m, "mch") || !strcmp(#m, "name"))
+    bad += check("#300: every PROJ_FIELDS member is a header constant or checked below", 1 PROJ_FIELDS(FL_HEADER));
+#define FL_TRK(m) && (!strcmp(#m, "p") || !strcmp(#m, "engine") || !strcmp(#m, "preset") || !strcmp(#m, "step"))
+    bad += check("#300: every PROJ_TRK_FIELDS member is checked below", 1 PROJ_TRK_FIELDS(FL_TRK));
+    {   /* the header constants: capture writes today's, whatever was restored */
+        fl_b = fl_a;
+        project_restore_runtime(&fl_a);
+        project_capture(&fl_c);
+        bad += check("  header: magic, size, parts NPART, phys PROJ_PHYS, rsv 0 as capture writes them",
+                     fl_c.magic == PROJ_MAGIC && fl_c.size == sizeof fl_c && fl_c.parts == NPART && fl_c.phys == PROJ_PHYS &&
+                     !fl_c.rsv && fl_c.sum == proj_sum(&fl_c));
+    }
+    for (i = 0; i < G_COUNT; i++) {                     /* g: every global */
+        int16_t v = fl_a.g[i];
+        fl_b = fl_a;
+        fl_b.g[i] = (int16_t)(v != GP[i].max ? GP[i].max : GP[i].min);
+        if (fl_b.g[i] == v) continue;                   /* (a one-value global) */
+        got = fl_carries(FL_OFF(g[i]));
+        /* not the music's: PROJECT's own controls (the slot pick, LOAD / SAVE: never restored, never hashed); its
+         * NAME control is restored but not hashed (autosave_sig: the PROJECT page's own controls) */
+        want = i == G_SLOT || i == G_LOAD || i == G_SAVE ? 0u : i == G_NAME ? FL_RESTORE | FL_CAPTURE : FL_ALL;
+        if (got != want) {
+            snprintf(what, sizeof what, "  g[%u]: restore/capture/signature %u, want %u", i, got, want);
+            bad += check(what, 0); miss++;
+        }
+    }
+    fl_b = fl_a; fl_b.sel = (uint8_t)((fl_a.sel + 1u) % NTRK);
+    bad += check("  sel: restored and captured, not hashed (the selected track is not the music)",
+                 fl_carries(FL_OFF(sel)) == (FL_RESTORE | FL_CAPTURE));
+    for (i = 0; i < P_COUNT; i++) {                     /* t[].p: every parameter of track 2 */
+        const param_desc_t *d = param_desc_of(eng_idx(fl_a.t[1].engine), i);
+        int32_t v = fl_a.t[1].p[i], w = v != d->max ? d->max : d->min;
+        fl_b = fl_a;
+        fl_b.t[1].p[i] = (int16_t)param_fit(d, w);
+        if (fl_b.t[1].p[i] == v) continue;
+        got = fl_carries(FL_OFF(t[1].p[i]));
+        if (got != FL_ALL) {
+            snprintf(what, sizeof what, "  t[1].p[%u]: restore/capture/signature %u, want %u", i, got, (uint32_t)FL_ALL);
+            bad += check(what, 0); miss++;
+        }
+    }
+    fl_b = fl_a; fl_b.t[2].engine = (uint8_t)(fl_a.t[2].engine == ENGI_DRUM ? 0u : ENGI_DRUM);
+    for (i = 0; i < P_COUNT; i++) fl_b.t[2].p[i] = param_desc_of(fl_b.t[2].engine, i)->def;
+    bad += check("  t[].engine: restored, captured, hashed", fl_carries(FL_OFF(t[2].engine)) == FL_ALL);
+    fl_b = fl_a; fl_b.t[0].preset = (uint8_t)(fl_a.t[0].preset ? 0u : 1u);
+    bad += check("  t[].preset: restored, captured, hashed", fl_carries(FL_OFF(t[0].preset)) == FL_ALL);
+    fl_b = fl_a; fl_b.t[3].step[5].time = ST_NOTE; fl_b.t[3].step[5].n = 1; fl_b.t[3].step[5].note[0] = 61;
+    fl_b.t[3].step[5].vel = 99;
+    bad += check("  t[].step: restored, captured, hashed", fl_carries(FL_OFF(t[3].step)) == FL_ALL);
+    fl_b = fl_a; fl_b.chain.count = 2; fl_b.chain.row[1] = fl_b.chain.row[0]; fl_b.chain.row[1].repeat = 3;
+    bad += check("  chain: restored, captured, hashed", fl_carries(FL_OFF(chain)) == FL_ALL);
+    fl_b = fl_a; fl_b.motion.count = 1; fl_b.motion.event[0].place = 9; fl_b.motion.event[0].param = P_GLIDE;
+    fl_b.motion.event[0].value = 21; fl_b.motion.on = 1;
+    bad += check("  motion: restored, captured, hashed", fl_carries(FL_OFF(motion)) == FL_ALL);
+    fl_b = fl_a; memcpy(fl_b.fm6[1], FM6_FACTORY[2], FM6_PACKED);
+    bad += check("  fm6: restored, captured, hashed", fl_carries(FL_OFF(fm6[1])) == FL_ALL);
+    fl_b = fl_a; fl_b.mch[2] = 7;
+    bad += check("  mch: restored, captured, hashed", fl_carries(FL_OFF(mch)) == FL_ALL);
+    fl_b = fl_a; memset(fl_b.name, 0, sizeof fl_b.name); memcpy(fl_b.name, "FIELDS", 6);
+    bad += check("  name: restored, captured, hashed", fl_carries(FL_OFF(name)) == FL_ALL);
+    bad += check("#300: capture, autosave signature and restore agree on what a project holds (g and every p of a track)",
+                 !miss);
+    return bad;
+}
+
+/* ---- #300: project_used, project_info, project_rename and chain_prepare decode through proj_decode (bounded) ----
+ * Before #300 they took the reader's output without proj_bound. The difference shows only for stored values outside
+ * their fields or ranges (never in a record this firmware writes); pinned here, one case each (owner question in the
+ * PR): */
+static int decode_callers_test(void)
+{
+    static project_t p;
+    static project_store_t st;
+    static project_v5_t v5;
+    uint16_t len48[NTRK];
+    uint32_t den[NTRK], i;
+    uint8_t ncell[NTRK];
+    char name[PROJ_NAME_LEN + 1u];
+    int bad = 0, ok;
+    reset();
+    host_tracks_init();
+    project_capture(&p);
+    p.t[3].engine = ENGI_DRUM;
+    for (i = 0; i < P_COUNT; i++) p.t[3].p[i] = param_desc_of(ENGI_DRUM, i)->def;
+    p.t[3].p[P_E0] = 1;                                 /* a retired KIT (1, once HAND: param_fit plays it as 66) */
+    p.t[2].p[P_SQNT] = -3;                              /* QUANTIZE outside 0..1: proj_encode stores -64..127 */
+    p.sum = proj_sum(&p);
+    ok = proj_encode(&st, &p);
+    memcpy(&proj_slot[1], &st, sizeof st);
+    ok &= project_used(1) && proj_scratch.t[3].p[P_E0] == param_fit(param_desc_of(ENGI_DRUM, P_E0), 1) &&
+          proj_scratch.t[2].p[P_SQNT] == 0;
+    ok &= project_rename(1, "KITS") == 0 && project_info(1, name, len48, den, ncell) && !strcmp(name, "KITS");
+    ok &= proj_import(&p, &proj_slot[1], sizeof proj_slot[1]) && p.t[3].p[P_E0] == param_fit(param_desc_of(ENGI_DRUM, P_E0), 1) &&
+          p.t[2].p[P_SQNT] == 0;
+    bad += check("#300: project_rename stores the decoded (bounded) values: a retired KIT 1 as the kit it plays, QUANTIZE -3 as 0", ok);
+    {   /* chain_prepare: QUANTIZE of a stored -3 is OFF (before #300 ON: -3 != 0), as project_load plays it */
+        memcpy(&proj_slot[1], &st, sizeof st);          /* (the record before the rename: -3 stored) */
+        chain_config.count = 1;
+        for (i = 0; i < NTRK; i++) chain_config.row[0].slot[i] = 1;
+        chain_config.row[0].repeat = 1;
+        ok = chain_prepare() == 0 && chain.source[1].qnt[2] == 0 && chain.source[1].timing[2][0] == p.t[2].p[P_SLEN];
+        bad += check("#300: chain_prepare plays the decoded values: QUANTIZE -3 stored -> OFF (ON before)", ok);
+        transport_req = 0; chain.armed = 0; chain_defaults(&chain_config);
+    }
+    {   /* project_info: a retained FUN5 (an older, shorter record in the RAM slot) with an accent bit on a step without
+         * hits: the picture shows a note (2), not an accent (3: before #300); proj_bound clears an accent without a hit */
+        memset(&v5, 0, sizeof v5);
+        v5.magic = PROJ_MAGIC_V5; v5.size = sizeof v5; v5.parts = NPART; v5.phys = PROJ_PHYS;
+        for (i = 0; i < G_COUNT; i++) v5.g[i] = GP[i].def;
+        for (i = 0; i < NTRK; i++) {
+            uint32_t k;
+            v5.t[i].engine = (uint8_t)trk_def_engine(i);
+            for (k = 0; k < 69u; k++) v5.t[i].p[k] = param_desc_of(trk_def_engine(i), k < 61u ? k : P_E0 + k - 61u)->def;
+            v5.t[i].p[P_SLEN] = 1;
+            for (k = 0; k < NSTEP; k++) v5.t[i].step[k].time = ST_REST;
+        }
+        v5.t[0].step[0].time = ST_NOTE; v5.t[0].step[0].n = 1; v5.t[0].step[0].note[0] = 60; v5.t[0].step[0].vel = 100;
+        v5.t[0].step[0].acc = 1;                        /* (an accent bit, no hit) */
+        v5.sum = proj_hash(&v5, sizeof v5 - 4u);
+        memset(&proj_slot[2], 0, sizeof proj_slot[2]);
+        memcpy(&proj_slot[2], &v5, sizeof v5);
+        ok = project_info(2, name, len48, den, ncell) && ncell[0] == 1u && (den[0] & 3u) == 2u;
+        bad += check("#300: project_info of a retained FUN5: an accent bit without a hit shows a note (2), not an accent (3)", ok);
+    }
+    return bad;
+}
+
 int main(void)
 {
     int bad = 0, ok;
@@ -888,6 +1050,8 @@ int main(void)
     bad += durability_test();
     bad += mig_test();
     bad += autosave_test();
+    bad += field_list_test();
+    bad += decode_callers_test();
     printf("%s\n", bad ? "PERSISTENCE TEST FAILED" : "persistence test passed");
     return bad != 0;
 }

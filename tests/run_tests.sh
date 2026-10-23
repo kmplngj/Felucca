@@ -212,9 +212,10 @@
 #                   RAM project bounded, user preset patterns inside their fields, malformed requests never stop PLAY.
 # Sanitizers (ASan + UBSan, when the compiler has them; SANITIZE=0 skips): the stored-data and protocol tests again
 #                   (loader, M-UPGRADE entry, editor, projects, backup, ROBUST) and three short fuzz runs with fixed
-#                   seeds: tests/fuzz_ed.c (editor SysEx and raw USB-MIDI packets), tests/fuzz_proj.c (mutated project
-#                   stores -> import -> restore -> render), tests/fuzz_smp.c (user sample slot headers -> scan -> SAMPLE /
-#                   GRAIN / SLICE). Longer runs: build/host/asan/fuzz_ed 300000 7 (iterations, seed), the same for the others.
+#                   seeds: tests/fuzz_ed.c (editor SysEx and raw USB-MIDI packets), tests/fuzz_proj.c (the project codec
+#                   alone, without the UI: mutated stores -> classify -> decode -> encode -> decode), tests/fuzz_proj_restore.c
+#                   (mutated project stores -> decode -> restore -> render), tests/fuzz_smp.c (user sample slot headers ->
+#                   scan -> SAMPLE / GRAIN / SLICE). Longer runs: build/host/asan/fuzz_ed 300000 7 (iterations, seed), the same for the others.
 #                   UBSan leaves out the DSP's intended wraps (signed overflow, shifts) and the XIP rebase of a user zone's
 #                   offset (bounds, object-size, pointer-overflow: correct on the device's flat flash, not in C's model).
 # Change baseline entries only for reviewed, intentional differences in sound or cost;
@@ -479,6 +480,11 @@ if [ -f build/gen/felucca_tables.h ]; then
     u_project() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/project_test" tests/project_test.c -lm
         run "project formats (FUN1..FUN5 -> FUN6, the grid and song chain; DIGITAL tracks -> FM6, SAMPLE PERC -> DRUM)" "$OUT/project_test"
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/fuzz_proj" tests/fuzz_proj.c -lm
+        run "project codec without the UI (#300): classify / decode / encode fixed point, 20000 mutated stores (seed 13)" \
+            "$OUT/fuzz_proj" 20000 13
+        run "project codec boundary (#300): callers use proj_decode / proj_encode; the codec tests build without the UI" \
+            python3 tests/project_codec_boundary_test.py
     }
     unit project "" u_project
 
@@ -1219,9 +1225,15 @@ else
 
     u_asan_fuzz_proj() {
         $SCC -o "$A/fuzz_proj" tests/fuzz_proj.c -lm
-        run "ASan/UBSan fuzz: project stores -> import -> restore -> render (5000, seed 13)" "$A/fuzz_proj" 5000 13
+        run "ASan/UBSan fuzz: the project codec without the UI, stores -> classify -> decode -> encode (20000, seed 13)" \
+            "$A/fuzz_proj" 20000 13
     }
     unit asan_fuzz_proj "" u_asan_fuzz_proj
+    u_asan_fuzz_proj_restore() {
+        $SCC -o "$A/fuzz_proj_restore" tests/fuzz_proj_restore.c -lm
+        run "ASan/UBSan fuzz: project stores -> decode -> restore -> render (5000, seed 13)" "$A/fuzz_proj_restore" 5000 13
+    }
+    unit asan_fuzz_proj_restore "" u_asan_fuzz_proj_restore
 
     u_asan_fuzz_smp() {
         $SCC -o "$A/fuzz_smp" tests/fuzz_smp.c -lm

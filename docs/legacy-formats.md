@@ -38,11 +38,11 @@ them by type in this order.
 | Type | Object | Payload (current) | Reader on boot / load | Backup id (what it exports) |
 | --- | --- | --- | --- | --- |
 | 0 | settings | PER4 572 B, PER6 672..2688 B | `project.c persist_boot` -> `settings_persist.c settings_import` | 1: re-exported from RAM (`settings_export_rec`) |
-| 1..4 | project slots | FUN10 3840 B | `project.c proj_fetch` -> `proj_import` | 2..5: the RAM slot re-packed as FUN10; a slot it cannot read lists 0 B |
+| 1..4 | project slots | FUN10 3840 B | `project.c proj_fetch` -> `project_codec.c proj_decode` | 2..5: the RAM slot re-packed as FUN10; a slot it cannot read lists 0 B |
 | 5, 6 | user preset banks | `UPB1` 3080 B | `upreset.c up_boot` -> `up_bank_check` | 6, 7: the RAM mirror (a bank of another shape: empty; PHYS MODEL 4 / PERC records already migrated) |
 | 7 | retired FM6 patch bank | `FM6B` 3472 B (read only) | `up_fm6.c upf_boot` (once, while type 8 is missing) | 8: always empty |
 | 8 | user presets' FM6 patches | `UPF6` 3728 B | `up_fm6.c upf_boot` | 9: the RAM copy |
-| 9 | autosave | FUN10 3840 B | `project.c autosave_boot` -> `proj_import` | none (id 0 is the live music, re-packed) |
+| 9 | autosave | FUN10 3840 B | `project.c autosave_boot` -> `project_codec.c proj_decode` | none (id 0 is the live music, re-packed) |
 | 32 | FM6 voice bank (`0xE7000`, payload at +224) | `FM6V` 3616 B | `fm6_vbank.c fvb_boot` / `fvb_valid` | 20: from flash |
 
 Outside the commit-record store: the user sample slots (`FSMP` version 1, header 480 B + ADPCM, `eng_sample.c
@@ -59,12 +59,22 @@ updated device still hold it).
 
 ### 2.1 Projects (types 1..4; the autosave, type 9, is always FUN10)
 
-All formats: u32 magic, u32 size (= stored length), ..., u32 FNV-1a of the preceding bytes last. Entry point
-`project.c proj_import` -> `proj_import_any` (FUN7..FUN10: `proj_unpack`; FUN5/FUN6: `proj_import_old`;
-FUN1..FUN4: `proj_from_v4` .. `proj_from_v1`), then always `proj_engines_ok`, `proj_fm4`, `proj_perc`; callers add
-`proj_bound` (`proj_fetch`, `project_load`, `autosave_boot`, `ed_bk_commit`). `project_restore_runtime` runs
-`proj_drums_to_part`, `proj_phys`, `proj_fm4`, `proj_perc` again (idempotent) and handles `PROJ_DEF_SOUND` /
-`PROJ_DEF_KEEP` presets (`proj_legacy_drums`). The result is the runtime `project_t`; a save writes FUN10.
+All formats: u32 magic, u32 size (= stored length), ..., u32 FNV-1a of the preceding bytes last. Since #300 the
+codec (`project_codec.h`, `project_codec.c`) owns the record and every caller (`proj_fetch`, `project_load`,
+`autosave_boot`, `ed_bk_commit`, `project_used`, `project_info`, `project_rename`, `chain_prepare`, `persist_boot`)
+decodes through `proj_decode` in one fixed order: `proj_classify` (the raw export's classification); a CURRENT record
+through `proj_unpack_current`, anything else through the one transitional hook `project_legacy.c proj_decode_legacy`
+(FUN7..FUN10 of another count: `proj_unpack`; FUN5/FUN6: `proj_import_old`; FUN1..FUN4: `proj_from_v4` ..
+`proj_from_v1`; the `.noinit` slot holding a shorter record; the pre-1.0 header conversions `proj_drums_to_part`,
+`proj_phys`); then always `proj_engines_ok`, `proj_fm4`, `proj_perc`, `proj_bound`. `project_restore_runtime` takes
+that result (no pass of its own) and handles `PROJ_DEF_SOUND` / `PROJ_DEF_KEEP` presets (`proj_legacy_drums`, runtime:
+FUN10 records the firmware wrote after converting still hold these preset bytes). The result is the runtime
+`project_t`; a save writes FUN10 (`proj_encode`). #456 stage 2b deletes `project_legacy.c` and the hook; the
+identification table (`project_codec.c PROJ_FORMATS`) stays, so the raw export still reports these formats LEGACY.
+
+CURRENT is FUN10 with byte 66 = P_COUNT **and** today's header bytes (`parts` = NPART, `phys` >= `PROJ_PHYS`). A FUN10
+of P_COUNT parameters whose `parts` or `phys` byte still asks for the pre-1.0 conversions (never written by this
+firmware) is LEGACY since #300; it was CURRENT in the raw export before. Its decode is unchanged.
 
 | Format | Identify | Size | Path | Becomes | Fixtures | On a device? |
 | --- | --- | ---: | --- | --- | --- | --- |
@@ -77,17 +87,17 @@ FUN1..FUN4: `proj_from_v4` .. `proj_from_v1`), then always `proj_engines_ok`, `p
 | FUN7 | `FUN7`, serialized: np at byte 66 (89 before the chord keys, 91), biased byte params, 9-byte steps, chain v9, 260 B motion (64 x 4 B) | 3388 | `proj_unpack` (v7), `proj_motion_v9`, `proj_motion_ids`, `chain_from_v9` | by count; init FM6 patches; G_RTYPE ROOM if out of range; motion ids moved with P_E0 | `tests/old_pack.h`, `fun10_test.c`, `project_test.c`, `backup_test.c` | yes, before 1.0 (source comment) |
 | FUN8 | `FUN8`, FUN7 + 4 x 128 B FM6 patches at name - 512; np 91 | 3584 | `proj_unpack` (v8) | by count (DRUM lane levels 100 %); its patches | `old_pack.h`, `fun10_test.c`, `backup_test.c` | yes, 1.0.x (source comment) |
 | FUN9 | `FUN9`, FUN8 + 64 B; np 99 (DRUM lane levels) | 3648 | `proj_unpack` (v9) | by count (LFO 2 SYNC OFF, TRIG NOTE, POL BI, QUANTIZE ON, SPREAD 0), nudges 0 | `old_pack.h`, `fun10_test.c`, `backup_test.c` | yes, 1.1 (source comment) |
-| FUN10 np 103 | `FUNA` 0x46554E41, byte 66 = 103 (before SPREAD) | 3840 | `proj_unpack` (v10), `core.h params_by_count` | SPREAD 0, engine values and their motion ids up by one (then by seven) | `fun10_test.c` | only from 1.2 development builds before SPREAD (source comment) |
+| FUN10 np 103 | `FUNA` 0x46554E41, byte 66 = 103 (before SPREAD) | 3840 | `project_legacy.c proj_unpack` (v10), `core.h params_by_count` | SPREAD 0, engine values and their motion ids up by one (then by seven) | `fun10_test.c` | only from 1.2 development builds before SPREAD (source comment) |
 | FUN10 np 104 | `FUNA`, byte 66 = 104 | 3840 | as above | INSERT OFF, filter TYPE LP, ENV SYNC OFF; engine values / motion ids up by seven | `fun10_test.c`, `insert_test.c` | yes, 1.2 .. 1.4 (source comment) |
-| FUN10 np 111 | `FUNA`, byte 66 = 111 = P_COUNT | 3840 | `proj_unpack` | **current** | all project suites | current writer |
-| (retained RAM) | a `.noinit` slot holding a shorter older record inside 3840 B | n/a | `proj_import_any` (size word < 3840) | as its format; RAM only, refilled from flash otherwise | `project_test.c`, `fun10_test.c` | after a warm reset across an update |
+| FUN10 np 111 | `FUNA`, byte 66 = 111 = P_COUNT, `parts` NPART, `phys` >= 2 | 3840 | `project_codec.c proj_unpack_current` | **current** | all project suites, `fuzz_proj.c` | current writer |
+| (retained RAM) | a `.noinit` slot holding a shorter older record inside 3840 B | n/a | `proj_decode_legacy` (size word < 3840) | as its format; RAM only, refilled from flash otherwise | `project_test.c`, `fun10_test.c` | after a warm reset across an update |
 
 Conversions inside any project format (applied on every import; the stored record keeps what it holds until it is
 saved again):
 
 | Rule | Identify | Path | Becomes | Fixtures |
 | --- | --- | --- | --- | --- |
-| GM drum part | `parts` (byte 63) != NPART (FUN1..FUN6, any pre-1.0 record) | `proj_drums_to_part`; runtime `proj_legacy_drums` | track 4 DRUM kit 0, LEVEL/REV from G_DRLVL/G_DRREV, PAN MUTE LEN DIV SWING GATE SLICER kept, arp/scale defaults | `project_test.c`, `engid_test.c`, `ui_test.c` |
+| GM drum part | `parts` (byte 63) != NPART (FUN1..FUN6, any pre-1.0 record; a FUN10 holding it is LEGACY) | `proj_drums_to_part`; runtime `proj_legacy_drums` | track 4 DRUM kit 0, LEVEL/REV from G_DRLVL/G_DRREV, PAN MUTE LEN DIV SWING GATE SLICER kept, arp/scale defaults | `project_test.c`, `engid_test.c`, `ui_test.c` |
 | PHYS MODEL 2 = DUST | `phys` (byte 64) 0 and a PHYS track | `proj_phys` -> `eng_phys.c phys_legacy` | MODAL bowed values | `project_test.c`, `ui_test.c` |
 | PHYS MODEL 4 = DRUM | `phys` < 2, PHYS track with E0 = 4 | `proj_phys` -> `core.h drum_from_phys` | DRUM engine, preset 0, E values mapped (`e[7] >> 5` -> KIT, KICK from e[6]) | `project_test.c`, `motion_test.c` |
 | Old drum notes as grid | FUN1..FUN4 DRUM tracks | `proj_grid` -> `eng_drum.c step_to_grid` | lane notes -> lane hits | `project_test.c` |
@@ -171,8 +181,8 @@ raw export does not migrate PER5, normalize the PER4 prefix, or discard a future
 ### 2.5 Backup archives (web/fm1backup.js, not flash)
 
 Archives of 11 objects (before FM6), 12 (1.0 .. 1.0.2: id 8 the FM6 bank) and 13 (1.0.3+: id 9), optionally ids 20/21
-behind `LIST 1`. `BACKUP_PUT` converts on restore: projects FUN6..FUN9 -> FUN10 (`ed_bk_commit`: `proj_import`,
-`proj_bound`, `proj_pack`; FUN1..FUN5 have no accepted length: `proj_store_len`), settings via `settings_import`, id 8
+behind `LIST 1`. `BACKUP_PUT` converts on restore: projects FUN6..FUN9 -> FUN10 (`ed_bk_commit`: `proj_decode`,
+`proj_encode`; FUN1..FUN5 have no accepted length: `proj_accepts_length`), settings via `settings_import`, id 8
 via `upf_migrate`. Fixtures: `backup_test.c`, `web/test_backup.mjs`.
 
 ### 2.6 Where today's firmware can still overwrite content it cannot read
@@ -200,7 +210,7 @@ implicitly).
 
 | Type | Schema id | Length | Validation the firmware keeps | Growth budget |
 | --- | --- | ---: | --- | --- |
-| 1..4, 9 | `FUNA` + size 3840 + byte 66 = P_COUNT (111) | 3840 | storage CRC, FNV-1a, `proj_unpack` ranges, `proj_engines_ok`, chain/motion validity | **none in the object** (3840 B = `ST_PAYLOAD_MAX`); 13 spare bytes before `PROJ_MIDI_OFF` (3 track parameters). Further project data goes to PRX sidecars (types 10..14, A3, #316), tagged to the parent by value hash or uid ([flash-capacity.md 6](flash-capacity.md#6-what-the-prx-sidecar-needs)) |
+| 1..4, 9 | `FUNA` + size 3840 + byte 66 = P_COUNT (111), `parts` NPART, `phys` >= 2 (`proj_classify` CURRENT) | 3840 | storage CRC, FNV-1a, `proj_decode_current` (`proj_unpack_current` ranges, `proj_engines_ok`, chain/motion validity, `proj_bound`) | **none in the object** (3840 B = `ST_PAYLOAD_MAX`); 13 spare bytes before `PROJ_MIDI_OFF` (3 track parameters). Further project data goes to PRX sidecars (types 10..14, A3, #316), tagged to the parent by value hash or uid ([flash-capacity.md 6](flash-capacity.md#6-what-the-prx-sidecar-needs)) |
 | 0 | `PER4` (572) or `PER6` ext ver 1 (672..2688) | as stored | storage CRC, `persist_ext_ok`, the field checks of `ed_bk_commit` | SETX tail (`ver` 2, tagged chunks) inside the 2,688 B envelope: 960 B (A2, #315). Calibration (`panel_t`) to be split from preferences: never imported from another device's record |
 | 5, 6 | `UPB1`, rsize 192, 16 slots; records ver 4 / 5, np = P_COUNT | 3080 | storage CRC, bank shape, `up_valid` | 32 packed value bytes per record unused (np 111 of 144, the category at 143); deep patches go to DEEP sidecars (A4, #317) |
 | 8 | `UPF6` ver 1, 32 slots | 3728 | storage CRC, `upf_valid`, tag match | 112 B |
@@ -228,10 +238,10 @@ implementation and the fixtures that pin today's result. Capture conversion resu
 
 | Rule set | Firmware reference | Fixtures to port / compare |
 | --- | --- | --- |
-| Project FUN1..FUN9 -> FUN10 | `project.c` `proj_from_v1..v4`, `proj_import_old`, `proj_unpack`, `proj_motion_v9`, `proj_motion_ids`, `song_chain.c chain_from_v9`, `proj_bound`, `proj_pack` | `tests/project_test.c`, `tests/fun10_test.c`, `tests/old_pack.h`, `tests/backup_test.c` |
+| Project FUN1..FUN9 -> FUN10 | `project_legacy.c` `proj_from_v1..v4`, `proj_import_old`, `proj_unpack`, `proj_motion_v9`, `proj_motion_ids`, `song_chain.c chain_from_v9`; `project_codec.c` `proj_bound`, `proj_encode` | `tests/project_test.c`, `tests/fun10_test.c`, `tests/old_pack.h`, `tests/backup_test.c` |
 | Parameter count remap (projects, presets) | `core.h params_by_count` (first np-8 in order, last 8 at P_E0.., new ones at their defaults) | `fun10_test.c`, `insert_test.c`, `upreset_test.c` |
-| Retired sounds | `core.h drum_from_phys`, `drum_from_perc`, `eng_phys.c phys_legacy`, `fm4_convert.c fm4_convert` + `FM4_TO_FM6`, `project.c proj_fm4` / `proj_perc` motion drops, `ui.c fm4_apply` | `fm4_test.c`, `fm4_div0_test.c`, `project_test.c`, `upreset_test.c`, `ui_test.c` |
-| GM drum part, grid | `proj_drums_to_part`, `proj_legacy_drums`, `eng_drum.c step_to_grid`, `DRUM_PRESETS[0]` | `project_test.c` |
+| Retired sounds | `core.h drum_from_phys`, `drum_from_perc`, `eng_phys.c phys_legacy`, `fm4_convert.c fm4_convert` + `FM4_TO_FM6`, `project_codec.c proj_fm4` / `proj_perc` motion drops, `ui.c fm4_apply` | `fm4_test.c`, `fm4_div0_test.c`, `project_test.c`, `upreset_test.c`, `ui_test.c` |
+| GM drum part, grid | `project_legacy.c proj_drums_to_part`, `project.c proj_legacy_drums`, `eng_drum.c step_to_grid`, `DRUM_PRESETS[0]` | `project_test.c` |
 | Enum aliases | `params.c enum_orig`, `param_fit`, `eng_drum.c DK_PLAYS`, `SMP_SET_ORIG` | `drum_test.c`, `engid_test.c` |
 | FM6 patches | `eng_fm6.c fm6_pack` / `fm6_unpack`, `fm6_adopt`, `FM6_INIT`; `up_fm6.c upf_tag`, `upf_migrate` (a migrated record changes its tag: recompute the `UPF6` entry) | `fm6bank_test.c`, `persistence_test.c`, `backup_test.c` |
 | User preset records | `upreset.c up_valid`, `up_values`, `up_to_v4`, `up_migrate`, `up_pat_norm` | `upreset_test.c`, `robust_test.c` |

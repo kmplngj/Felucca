@@ -18,7 +18,7 @@ static int motion_recording(void)
     project_t q; project_store_t packed;
     project_capture(&q);
     bad += check("project snapshot saves base + independent events while sounding", q.t[0].p[P_REV] == 23 && q.motion.event[0].value == 110 &&
-        proj_pack(&packed, &q) && sizeof packed == 3840u);
+        proj_encode(&packed, &q) && sizeof packed == 3840u);
     seq_stop();
     bad += check("stop before another step restores the original parameter", t->p[P_REV] == 23);
     seq_start(); seq_tick(t, CTL);
@@ -78,7 +78,7 @@ static int compact_project(void)
     motion_set_event(t, 3, P_REV, 110);
     project_t before, after; project_store_t packed, corrupt;
     project_capture(&before);
-    bad += check("FUN10 fits the retained and flash extent", sizeof(proj_slot) == 4u * 3840u && proj_pack(&packed, &before));
+    bad += check("FUN10 fits the retained and flash extent", sizeof(proj_slot) == 4u * 3840u && proj_encode(&packed, &before));
     bad += check("FUN10 round trip preserves signed values/FM params/probability/motion", proj_import(&after, &packed, sizeof packed) &&
         !memcmp(&before, &after, sizeof before));
     corrupt = packed; corrupt.raw[112] ^= 1u;
@@ -106,7 +106,7 @@ static int compact_project(void)
     bad += check("real FUN6 disk image migrates with FM defaults/100% chance/no motion", proj_import(&after, &old, sizeof old) &&
         after.t[0].p[P_E0] == before.t[0].p[P_E0] && after.t[0].p[P_ED_FLT] == -50 &&
         after.t[0].p[P_FM1_LEVEL] == 127 && !after.motion.count && step_chance(&after.t[0].step[3]) == 100u);
-    bad += check("migrated FUN6 can be written as fixed-size FUN7", proj_pack(&packed, &after));
+    bad += check("migrated FUN6 can be written as fixed-size FUN7", proj_encode(&packed, &after));
     project_save(1); motion_clear(t); t->p[P_FM1_LEVEL] = 127; step_set_chance(&t->step[3], 100);
     project_load(1);
     bad += check("actual project save/load restores motion, chance and operator settings", motion_count(t) == 1u &&
@@ -163,7 +163,7 @@ static int fun7_89(void)
     bad += check("  its motion: E0 (81) -> P_E0, REV and FM OP1 ATK (61) kept",
         after.motion.count == 3u && after.motion.event[0].param == P_REV && after.motion.event[1].param == P_E0 &&
         after.motion.event[1].value == 40 && after.motion.event[2].param == P_FM1_ATK);
-    bad += check("  written again (P_COUNT parameters): the same project", proj_pack(&old, &after) && old.raw[66] == P_COUNT &&
+    bad += check("  written again (P_COUNT parameters): the same project", proj_encode(&old, &after) && old.raw[66] == P_COUNT &&
         proj_import(&before, &old, sizeof old) && !memcmp(&before, &after, sizeof before));
     pack_fun7_89(&old, &before, &m);                                /* SONG: a slot of the old firmware */
     memcpy(&proj_slot[2], &old, sizeof old);
@@ -554,13 +554,13 @@ static int lock_project(void)
     uint32_t i, ok = 1;
     motion_set_event(t, 1, P_REV, 33);                   /* no lock: as every project before 1.1 */
     project_capture(&before);
-    ok = proj_pack(&a, &before) && proj_import(&after, &a, sizeof a) && proj_pack(&b, &after) && !memcmp(&a, &b, sizeof a);
+    ok = proj_encode(&a, &before) && proj_import(&after, &a, sizeof a) && proj_encode(&b, &after) && !memcmp(&a, &b, sizeof a);
     for (i = 0; i < before.motion.count; i++)
         ok &= before.motion.event[i].param < 128u && !(before.motion.event[i].param & MOTION_LOCK);
     bad += check("a project without locks: the bytes as before (ids < 128), the same round trip", ok);
     motion_set_lock(t, 2, P_REV, 101); motion_set_lock(t, 7, P_E4, 77);
     project_capture(&before);
-    ok = proj_pack(&a, &before) && proj_import(&after, &a, sizeof a) && !memcmp(&before, &after, sizeof before);
+    ok = proj_encode(&a, &before) && proj_import(&after, &a, sizeof a) && !memcmp(&before, &after, sizeof before);
     bad += check("FUN9 round trip keeps the locks (bit 7 of the id byte), their values and steps", ok &&
         after.motion.event[1].param == (P_REV | MOTION_LOCK) && after.motion.event[2].value == 77);
     project_save(2);

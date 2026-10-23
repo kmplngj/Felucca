@@ -478,12 +478,12 @@ static int cond_store(void)
     step_set_chance(&t->step[1], 30);
     int old0;
     project_capture(&a);
-    old0 = proj_pack(&pk, &a) && old_accepts(&pk);
+    old0 = proj_encode(&pk, &a) && old_accepts(&pk);
     ok = old0;
     for (i = 0; i < NCOND; i++)
         set_cond(&a.t[0].step[i], 1u + i);
     a.sum = proj_sum(&a);
-    ok &= proj_pack(&pk, &a) && proj_import(&b, &pk, sizeof pk);
+    ok &= proj_encode(&pk, &a) && proj_import(&b, &pk, sizeof pk);
     for (i = 0; i < NCOND; i++)
         ok &= step_cond(&b.t[0].step[i]) == 1u + i;
     bad += check("FUN10: the conditions round trip (the chance byte 102..112), the size unchanged", ok && sizeof pk == 3840u);
