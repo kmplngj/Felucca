@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Build/download PR firmware and install its verified FWSC over USB-MIDI."""
 import argparse
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -15,7 +16,6 @@ import time
 import uuid
 
 import fm1_install
-import m_flasher
 
 
 DEFAULT_REPO = "kmplngj/Felucca"
@@ -161,6 +161,28 @@ def validate_selection(repository, number, revision=None):
         raise ValueError("--commit must be a full lowercase 40-character commit SHA")
 
 
+def validate_profile_name(profile):
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", profile):
+        raise ValueError("--profile must be an existing lowercase profile name")
+
+
+def validate_profile_source(repository, revision, profile):
+    """Inspect the pinned PR source, never the caller's possibly different profile."""
+    validate_profile_name(profile)
+    if profile == "standard":
+        return  # Historical standard-only revisions remain supported.
+    path = f"profiles/{profile}.json"
+    item = api(f"repos/{repository}/contents/{path}?ref={revision}")
+    if item.get("type") != "file" or item.get("path") != path or item.get("encoding") != "base64":
+        raise ValueError("Requested profile is not a regular file in the selected commit")
+    try:
+        selected = json.loads(base64.b64decode(item["content"], validate=False))
+    except (ValueError, KeyError) as error:
+        raise ValueError("Invalid profile definition in the selected commit") from error
+    if not isinstance(selected, dict) or selected.get("name") != profile:
+        raise ValueError("Profile filename/name mismatch in the selected commit")
+
+
 def resolve_pr(repository, number, revision=None):
     validate_selection(repository, number, revision)
     pull = api(f"repos/{repository}/pulls/{number}")
@@ -211,34 +233,35 @@ def automatic_run(repository, number, head, base):
     return run
 
 
-def run_title(number, revision, validation="full"):
-    return f"PR firmware #{number} @ {revision}" + (" (target)" if validation == "target" else "")
+def run_title(number, revision, validation="full", profile="standard"):
+    return (f"PR firmware #{number} @ {revision}" + (" (target)" if validation == "target" else "")
+            + (f" [profile: {profile}]" if profile != "standard" else ""))
 
 
-def matching_runs(repository, number, revision, workflow_ref, validation="full"):
+def matching_runs(repository, number, revision, workflow_ref, validation="full", profile="standard"):
     runs = pages(f"repos/{repository}/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch",
                  "workflow_runs")
     return sorted((run for run in runs
-                   if run["display_title"] == run_title(number, revision, validation)
+                   if run["display_title"] == run_title(number, revision, validation, profile)
                    and run["head_branch"] == workflow_ref), key=lambda run: run["id"], reverse=True)
 
 
-def artifact_name(run, validation="full"):
-    return f"firmware-{'target-' if validation == 'target' else ''}{run['id']}"
+def artifact_name(run, validation="full", profile="standard"):
+    return f"firmware-{'target-' if validation == 'target' else ''}{profile + '-' if profile != 'standard' else ''}{run['id']}"
 
 
-def firmware_artifact(repository, run, validation="full"):
+def firmware_artifact(repository, run, validation="full", profile="standard"):
     artifacts = pages(f"repos/{repository}/actions/runs/{run['id']}/artifacts", "artifacts")
     live = [item for item in artifacts
-            if item["name"] == artifact_name(run, validation) and not item["expired"]]
+            if item["name"] == artifact_name(run, validation, profile) and not item["expired"]]
     return live[0] if len(live) == 1 else None
 
 
-def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=False, validation="full"):
+def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=False, validation="full", profile="standard"):
     endpoint = f"repos/{repository}/actions/workflows/{WORKFLOW}/dispatches"
-    runs = matching_runs(repository, number, revision, workflow_ref, validation)
+    runs = matching_runs(repository, number, revision, workflow_ref, validation, profile)
     run = next((item for item in runs if item["status"] != "completed" or
-                (item["conclusion"] == "success" and firmware_artifact(repository, item, validation))), None)
+                (item["conclusion"] == "success" and firmware_artifact(repository, item, validation, profile))), None)
     existing = {item["id"] for item in runs}
     if run is None:
         if no_build:
@@ -252,6 +275,8 @@ def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=Fal
         # maintainer workflow refs reject unknown dispatch inputs.
         if validation == "target":
             inputs["validation"] = "target"
+        if profile != "standard":
+            inputs["profile"] = profile
         gh("api", "--method", "POST", endpoint, "--input", "-", payload={
             "ref": workflow_ref, "inputs": inputs,
         })
@@ -259,7 +284,7 @@ def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=Fal
     last_status = None
     while True:
         if run is None:
-            run = next((item for item in matching_runs(repository, number, revision, workflow_ref, validation)
+            run = next((item for item in matching_runs(repository, number, revision, workflow_ref, validation, profile)
                         if item["id"] not in existing), None)
         else:
             run = api(f"repos/{repository}/actions/runs/{run['id']}")
@@ -271,12 +296,12 @@ def ensure_run(repository, number, revision, workflow_ref, timeout, no_build=Fal
             if run["status"] == "completed":
                 if run["conclusion"] != "success":
                     raise ValueError(f"Build {run['conclusion']}; no firmware installed. {run['html_url']}")
-                if not firmware_artifact(repository, run, validation):
+                if not firmware_artifact(repository, run, validation, profile):
                     raise ValueError("Successful run has no live firmware artifact; request a fresh build")
                 return run
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise ValueError("Timed out waiting for CI; rerun with the same --commit and --validation to resume. "
+            raise ValueError("Timed out waiting for CI; rerun with the same --commit, --validation and --profile to resume. "
                              "The remote build was not canceled.")
         time.sleep(min(15, remaining))
 
@@ -288,7 +313,7 @@ def unique_file(root, pattern):
     return matches[0]
 
 
-def verify_download(root, revision, validation="full"):
+def verify_download(root, revision, validation="full", profile="standard"):
     provenance = json.loads(unique_file(root, "provenance.json").read_text())
     if provenance["revision"] != revision:
         raise ValueError("Firmware provenance does not match the requested commit")
@@ -299,6 +324,16 @@ def verify_download(root, revision, validation="full"):
     scope = validation_record.get("scope", "full")
     if scope != validation:
         raise ValueError("Firmware validation scope does not match the requested mode")
+    selection = provenance.get("profile")
+    if selection is None:
+        if profile != "standard":
+            raise ValueError("Firmware profile provenance is missing")
+    elif not isinstance(selection, dict) or selection.get("profile") != profile:
+        raise ValueError("Firmware profile does not match the requested profile")
+    if profile != "standard":
+        recorded = json.loads(unique_file(root, "resolved-profile.json").read_text())
+        if recorded != selection:
+            raise ValueError("Firmware generated profile differs from provenance")
     package = unique_file(root, "*.fwsc")
     checksum = unique_file(root, "package.sha256").read_text().strip().split()
     if (len(checksum) != 2 or not re.fullmatch(r"[0-9a-f]{64}", checksum[0])
@@ -311,13 +346,13 @@ def verify_download(root, revision, validation="full"):
     return package
 
 
-def download(repository, run, revision, output, validation="full"):
+def download(repository, run, revision, output, validation="full", profile="standard"):
     output.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix=f"run-{run['id']}-", dir=output)).resolve()
     try:
         gh("run", "download", str(run["id"]), "--repo", repository,
-           "--name", artifact_name(run, validation), "--dir", str(root))
-        package = verify_download(root, revision, validation)
+           "--name", artifact_name(run, validation, profile), "--dir", str(root))
+        package = verify_download(root, revision, validation, profile)
     except Exception:
         shutil.rmtree(root)
         raise
@@ -325,21 +360,18 @@ def download(repository, run, revision, output, validation="full"):
     return package
 
 
-def prepare_installer(installer, executable=None):
-    if installer == "native":
-        return [str(m_flasher.ensure(executable)), "midi", "firmware"]
-    if executable:
-        raise ValueError("--m-flasher requires --installer native")
+def prepare_installer(argv=()):
+    # Check the caller's interpreter before any GitHub/build work. Importing
+    # the MIDI packages here does not enumerate or open a port.
     check = subprocess.run([sys.executable, "-c", "import mido, rtmidi"], capture_output=True, text=True)
     if check.returncode:
-        raise ValueError("Python MIDI installer needs mido and python-rtmidi in this interpreter. "
-                         "Use --installer native or install them in a virtual environment before starting CI.")
-    return [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]
+        raise ValueError("Python MIDI installer " + fm1_install.midi_dependency_message(__file__, argv))
+    return [sys.executable, str(Path(__file__).resolve().with_name("fm1_install.py"))]
 
 
 def install(package, port=None, yes=False, command=None):
     command = [*(command if command is not None else
-                 [sys.executable, str(Path(__file__).with_name("fm1_install.py"))]), str(package)]
+                 [sys.executable, str(Path(__file__).resolve().with_name("fm1_install.py"))]), str(package)]
     if port:
         command.extend(["--port", port])
     if yes:
@@ -356,6 +388,8 @@ def main(argv=None):
                         help="reuse successful automatic CI for the current PR merge; never dispatch a build")
     parser.add_argument("--validation", choices=("full", "target"), default="full",
                         help="full (default), or faster target-only checks for hardware iteration")
+    parser.add_argument("--profile", default="standard",
+                        help="existing profile in the pinned PR commit; default standard")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--download-only", action="store_true", help="verify without accessing MIDI")
     mode.add_argument("--prepare-only", action="store_true",
@@ -369,22 +403,22 @@ def main(argv=None):
                         help="source worktree destination (implies --worktree); default sibling PR/SHA directory")
     parser.add_argument("--no-build", action="store_true", help="reuse a run without dispatching a build")
     parser.add_argument("--out", type=Path, help="download parent; default build/pr-PR/SHA")
-    parser.add_argument("--installer", choices=("native", "python"), default="native",
-                        help="native m-flasher MIDI OTA (default), or the Python MIDI installer")
-    parser.add_argument("--m-flasher", type=Path, metavar="PATH",
-                        help="explicit MIDI-capable executable; default installs/reuses the pinned user-local CLI")
+    # Retain the former explicit Python selection for existing commands.
+    parser.add_argument("--installer", choices=("python",), default="python",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--port", help="USB-MIDI port name passed to the installer")
     parser.add_argument("--yes", action="store_true", help="skip the installer's flash confirmation")
     parser.add_argument("--timeout", type=int, default=3600, help="maximum CI wait in seconds")
     parser.add_argument("--workflow-ref", help="maintainer workflow branch; default repository default branch")
     args = parser.parse_args(argv)
     try:
+        validate_profile_name(args.profile)
         if args.timeout <= 0:
             raise ValueError("--timeout must be positive")
-        if args.automatic and (args.validation != "full" or args.workflow_ref is not None
+        if args.automatic and (args.profile != "standard" or args.validation != "full" or args.workflow_ref is not None
                                or args.worktree or args.worktree_dir is not None
                                or args.prepare_only or args.remove_worktree or args.resolve_only):
-            raise ValueError("--automatic supports full validation and install/download-only; "
+            raise ValueError("--automatic supports the standard profile, full validation and install/download-only; "
                              "omit worktree, source-only and --workflow-ref options")
         if args.remove_worktree:
             validate_selection(args.repo, args.pr, args.commit)
@@ -393,11 +427,12 @@ def main(argv=None):
         validate_selection(args.repo, args.pr, args.commit)
         installer_command = None
         if not (args.download_only or args.prepare_only or args.resolve_only):
-            installer_command = prepare_installer(args.installer, args.m_flasher)
+            installer_command = prepare_installer(argv if argv is not None else sys.argv[1:])
         if args.automatic:
             head, base, revision, title = resolve_automatic_pr(args.repo, args.pr, args.commit)
         else:
             revision, title = resolve_pr(args.repo, args.pr, args.commit)
+        validate_profile_source(args.repo, revision, args.profile)
         if args.resolve_only:
             print(revision)
             return 0
@@ -410,7 +445,7 @@ def main(argv=None):
         if args.prepare_only:
             print("Sources prepared; no CI build, download or hardware access.")
             return 0
-        print(f"Validation: {args.validation}", flush=True)
+        print(f"Validation: {args.validation}\nProfile: {args.profile}", flush=True)
         if args.validation == "target":
             print("Target-only build: host, sanitizer, browser and reproducibility tests are omitted; "
                   "this does not replace full PR validation.", flush=True)
@@ -418,9 +453,9 @@ def main(argv=None):
             run = automatic_run(args.repo, args.pr, head, base)
         else:
             workflow_ref = args.workflow_ref or api(f"repos/{args.repo}")["default_branch"]
-            run = ensure_run(args.repo, args.pr, revision, workflow_ref, args.timeout, args.no_build, args.validation)
+            run = ensure_run(args.repo, args.pr, revision, workflow_ref, args.timeout, args.no_build, args.validation, args.profile)
         output = args.out or Path(__file__).resolve().parents[1] / "build" / f"pr-{args.pr}" / revision
-        package = download(args.repo, run, revision, output, args.validation)
+        package = download(args.repo, run, revision, output, args.validation, args.profile)
         if args.download_only:
             print("Download verified; no hardware was accessed.")
             return 0

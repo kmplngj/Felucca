@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sampleio as sio  # noqa: E402
+from fm1_install import midi_dependency_message  # noqa: E402
 
 HDR = [0x7D, 0x46, 0x4C]
 RC = {1: "size", 2: "header", 3: "data CRC", 4: "flash", 5: "zones"}
@@ -58,8 +59,9 @@ class Link:
     def __init__(self):
         try:
             import mido
+            import rtmidi  # Check the required backend before MIDI discovery.
         except ImportError:
-            sys.exit("needs mido: pip install mido python-rtmidi")
+            sys.exit(midi_dependency_message(__file__, sys.argv[1:]))
         self.mido = mido
         outs = [n for n in mido.get_output_names() if "Felucca" in n]
         ins = [n for n in mido.get_input_names() if "Felucca" in n]

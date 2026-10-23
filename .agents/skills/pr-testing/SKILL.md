@@ -24,6 +24,11 @@ the upstream wiki, hosted editor and hosted emulator may describe another revisi
 Do not invent an access path. If a route cannot be verified, state what is unknown
 and leave that check pending.
 
+For local host-suite runs performed by the agent, use
+`uv run --locked --group build tests/run_tests.sh --ai-output` and follow the
+[summary-first evidence workflow](../../../docs/ai-workflows.md#read-results-before-opening-raw-evidence).
+CI keeps normal output for `tools/ci.py verify-tests`.
+
 Choose scenarios that exercise the actual change, the original bug or intended
 behavior, and the relevant unchanged behavior. Include boundary values,
 cancel/undo, another track or engine, save/load/restart and older data only when
@@ -37,7 +42,16 @@ audible workload and any diagnostics needed even if no new panel function exists
    and build commands for that revision with a link to prerequisites. Identify
    the installable `.fwsc` package; a raw `.bin` is not a user install package.
    For hardware changes, give the install command or verified installer procedure
-   from [BUILDING](../../../BUILDING.md#install). The default hosted release or
+   from [BUILDING](../../../BUILDING.md#install). Give the uv setup and an executable
+   command from a trusted caller checkout, for example `brew install uv` on macOS,
+   then `uv run --locked --group midi tools/fm1_pr.py NUMBER` (or append `--automatic`
+   only when the existing automatic artifact is the intended revision/variant).
+   No installer-backend flag or manual pip setup is needed. The caller's locked
+   environment and installer must not come from unreviewed PR scripts. For local
+   builds use `uv run --locked --group build ./build.sh`; image-dependent tests
+   use the same `build` group. Preserve explicit build-profile/variant requirements;
+   the standard artifact does not establish testing of a different profile.
+   The default hosted release or
    browser demo does not establish testing of the PR. State required cables,
    headphones/output, MIDI source/channel, host OS/browser, samples or test data.
    If the test changes stored data, explain how to back up and use a disposable
@@ -50,6 +64,8 @@ audible workload and any diagnostics needed even if no new panel function exists
 3. **Reach the function.** Give numbered physical actions from the starting
    state. Name the button, whether to tap or hold and when to release it, repeated
    page cycling, menu tab/row selection, knob number and visible label/value.
+   Use the label printed on the physical panel: the FM-1 button for the firmware's
+   `SCL` pages is **SEL**, between FX and ENV; distinguish it from the SELECT knob.
    For example, a `SAVE > PRESETS` breadcrumb needs the SAVE taps required to
    reach PRESETS; `MENU > ABOUT` needs the hold, tab, row and open actions.
    A link to a manual supplements these actions; it does not replace them.

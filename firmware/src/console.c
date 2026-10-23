@@ -5,6 +5,9 @@
  * diagnostics. Runs in the main loop (cdc_task); usb_poll moves the bytes.
  * The baud rate is ignored. Nothing here writes memory or flash; `uboot`
  * does what the SysEx soft key does. */
+#ifndef FELUCCA_SCREEN_CAPTURE
+#define FELUCCA_SCREEN_CAPTURE 0
+#endif
 #define CON_LINE 64u
 
 static struct {
@@ -394,11 +397,154 @@ static void con_params(void)
     }
 }
 
+/* Screen replies reserve enough free CDC-ring space before parsing a command.
+ * No screenshot transfer calls the console's wait path; the host pulls <=96 bytes. */
+static int con_screen_pending(void)
+{
+    uint32_t i = 0;
+    while (i < con.len && con.line[i] == ' ') i++;
+    return con.len - i >= 6u && !memcmp(con.line + i, "screen", 6u);
+}
+static void con_screen_error(const char *code)
+{
+    con_puts("SCAP ERROR code="); con_puts(code); con_puts("\r\n");
+}
+#if FELUCCA_SCREEN_CAPTURE
+static void con_screen_uint(uint32_t n)
+{
+    char b[10];
+    uint32_t k = 0;
+    do { b[k++] = (char)('0' + n % 10u); } while ((n /= 10u) != 0u);
+    while (k) con_putc(b[--k]);
+}
+static void con_screen_idle(void)
+{
+    con_puts(" scr_state="); con_dec(scrn.st);
+    con_puts(" led_stage="); con_dec(scrn.led_off);
+    con_puts(" idle_ms="); con_screen_uint(fm1_ms - scrn.idle);
+}
+static void con_screen_state(void)
+{
+    static const char *const states[] = {"idle", "pending", "ready", "complete", "changed", "expired",
+                                         "cancelled", "coverage", "asleep", "unsupported", "waking"};
+    con_puts("SCAP STATE token="); con_screen_uint(scap.token);
+    con_puts(" state="); con_puts(states[scap.state]);
+    con_puts(" offset="); con_dec((int32_t)scap.offset);
+    con_puts(" length="); con_dec(scap.state == SCAP_READY || scap.state == SCAP_PENDING ? SCAP_BYTES : 0);
+    con_puts(" draw_hash="); con_hex(scap.draw_hash, 8);
+    con_puts(" awake="); con_dec(scrn.st == SCR_ON);
+    con_puts(" page="); con_dec(ui.page);
+    con_puts(" home="); con_dec(ui.home);
+    con_puts(" menu="); con_dec(ui.menu);
+    con_screen_idle();
+    con_puts("\r\n");
+}
+/* Capture arguments are strict decimal uint32; unlike memr, overflow is invalid. */
+static int con_screen_num(const char **p, uint32_t *v)
+{
+    const char *s = *p;
+    uint32_t n = 0, digits = 0;
+    while (*s == ' ') s++;
+    while (*s >= '0' && *s <= '9') {
+        uint32_t d = (uint32_t)(*s++ - '0');
+        if (n > (0xFFFFFFFFu - d) / 10u) return 0;
+        n = n * 10u + d; digits++;
+    }
+    if (!digits || (*s && *s != ' ')) return 0;
+    *p = s; *v = n; return 1;
+}
+#endif
+static int con_screen_end(const char *p)
+{
+    while (*p == ' ') p++;
+    return !*p;
+}
+static void con_screen(const char *p)
+{
+    if (con_word(&p, "caps") && con_screen_end(p)) {
+#if FELUCCA_SCREEN_CAPTURE
+        con_puts("SCAP CAPS version=2 enabled="); con_dec(FELUCCA_SCREEN_CAPTURE != 0);
+        con_puts(" width=240 height=240 format=RGB565BE band_bytes=3840 max_read=96 ttl_ms=120000 build=");
+#ifdef FELUCCA_BUILD_ID
+        con_puts(FELUCCA_BUILD_ID);
+#else
+        con_puts("unknown");
+#endif
+        con_puts(" commit=");
+#ifdef FELUCCA_BUILD_COMMIT
+        con_puts(FELUCCA_BUILD_COMMIT);
+#else
+        con_puts("unknown");
+#endif
+        con_puts(" dirty=");
+#ifdef FELUCCA_BUILD_DIRTY
+        con_dec(FELUCCA_BUILD_DIRTY);
+#else
+        con_puts("unknown");
+#endif
+        con_puts(" source=");
+#ifdef FELUCCA_SOURCE_REPOSITORY
+        con_puts(FELUCCA_SOURCE_REPOSITORY);
+#else
+        con_puts("unknown");
+#endif
+        con_puts(" mode=stopped-static");
+        con_screen_idle();
+        con_puts("\r\n");
+#else
+        con_puts("SCAP CAPS version=1 enabled=0\r\n");
+#endif
+        return;
+    }
+#if FELUCCA_SCREEN_CAPTURE
+    scap_scene_check();
+    if (con_word(&p, "begin")) {
+        int wake = con_word(&p, "wake");
+        if (!con_screen_end(p)) { con_screen_error("argument"); return; }
+        if (!scap_start((uint8_t)wake)) { con_screen_error("busy"); return; }
+        con_screen_state();
+    } else {
+        uint32_t token, offset, n, i;
+        int cmd = con_word(&p, "status") ? 1 : con_word(&p, "next") ? 2 :
+                  con_word(&p, "read") ? 3 : con_word(&p, "cancel") ? 4 : 0;
+        if (!cmd || !con_screen_num(&p, &token)) { con_screen_error("argument"); return; }
+        if (!token || token != scap.token) { con_screen_error("stale"); return; }
+        if (cmd == 2 || cmd == 3) {
+            if (!con_screen_num(&p, &offset)) { con_screen_error("argument"); return; }
+        }
+        if (cmd == 3 && !con_screen_num(&p, &n)) { con_screen_error("argument"); return; }
+        if (!con_screen_end(p)) { con_screen_error("argument"); return; }
+        if (cmd == 2) {
+            if (!scap_next(token, offset)) { con_screen_error("state"); return; }
+        } else if (cmd == 4) scap_cancel(token);
+        else if (cmd == 3) {
+            if (scap.state != SCAP_READY) { con_screen_error("state"); return; }
+            if (!n || n > 96u || offset < scap.offset || offset - scap.offset >= SCAP_BYTES ||
+                n > SCAP_BYTES - (offset - scap.offset)) { con_screen_error("bounds"); return; }
+            offset -= scap.offset;
+            con_puts("SCAP DATA token="); con_screen_uint(token);
+            con_puts(" offset="); con_dec((int32_t)(offset + scap.offset));
+            con_puts(" length="); con_dec((int32_t)n);
+            con_puts(" crc="); con_hex(scap_crc(scap.pixels + offset, n), 8);
+            con_puts(" data=");
+            for (i = 0; i < n; i++) con_hex(scap.pixels[offset + i], 2);
+            con_puts("\r\n");
+            return;
+        }
+        con_screen_state();
+    }
+#else
+    con_screen_error("unsupported");
+#endif
+}
+
 static void con_exec(const char *p)
 {
     FM1_ASSERT_THREAD();                                /* formatted replies: main loop only (#428) */
     if (con_word(&p, "help") || con_word(&p, "?"))
         con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+    else if (con_word(&p, "screen"))
+        con_screen(p);
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -436,9 +582,14 @@ static void cdc_task(void)                              /* main loop */
     con.dtr_seen = cdc.dtr;
     while (ci_r != ci_w) {
         char c;
+        /* Echo is also host-paced: do not wait for a slow reader before reaching
+         * the screenshot newline reservation (or while typing its prefix). */
+        if (co_w - co_r > CO_N - 8u) return;
         RING_PUBLISH();                                /* usb_poll (producer) can preempt us */
         c = (char)cdc_in[ci_r % CI_N];
         RING_PUBLISH();
+        if ((c == '\r' || c == '\n') && con_screen_pending() &&
+            co_w - co_r > CO_N - 768u) return;
         ci_r++;
         if (c == '\r' || c == '\n') {
             if (c == '\n' && con.len == 0)

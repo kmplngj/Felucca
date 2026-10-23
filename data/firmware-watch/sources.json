@@ -149,6 +149,44 @@
       "status": "pending_initialization"
     },
     {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/517",
+      "authorization": "User requested in the FM Lab adoption chat (2026-10-21): analyse features, instruments and optimizations, make GitHub issues and add the source to the firmware watcher if absent.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "cf35dc26709ede9c974654dfc2135f8c25a00082"
+      },
+      "historical_total_at_setup": 37,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/516",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "cf35dc26709ede9c974654dfc2135f8c25a00082"
+      },
+      "recent_frontiers": {
+        "main": "cf35dc26709ede9c974654dfc2135f8c25a00082"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/511",
+        "https://github.com/kmplngj/Felucca/issues/512",
+        "https://github.com/kmplngj/Felucca/issues/513",
+        "https://github.com/kmplngj/Felucca/issues/514",
+        "https://github.com/kmplngj/Felucca/issues/515",
+        "https://github.com/kmplngj/Felucca/issues/516",
+        "https://github.com/kmplngj/Felucca/issues/517",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/27"
+      ],
+      "repository": "jsmith13/fm_lab",
+      "repository_id": 1424620365,
+      "requested_at": "2026-10-21",
+      "source_name": "FM Lab (single-instrument DX7 sound-design firmware, original voices, operator waves and optional 2x quality)",
+      "status": "pending_initialization"
+    },
+    {
       "adoption_plan": "https://github.com/kmplngj/Felucca/issues/370",
       "authorization": "User requested 2026-10-21: analyse m-vave/fm1_open features, instruments, optimizations and GUI, plan adoption, create GitHub issues and add it to the watcher if useful.",
       "branches": [

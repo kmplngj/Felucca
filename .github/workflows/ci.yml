@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 name: CI
 run-name: >-
-  ${{ github.event_name == 'workflow_dispatch' && inputs.pr != '' && format('PR firmware #{0} @ {1}{2}', inputs.pr, inputs.commit, inputs.validation == 'target' && ' (target)' || '') || '' }}
+  ${{ github.event_name == 'workflow_dispatch' && inputs.pr != '' && format('PR firmware #{0} @ {1}{2}{3}', inputs.pr, inputs.commit, inputs.validation == 'target' && ' (target)' || '', inputs.profile != '' && inputs.profile != 'standard' && format(' [profile: {0}]', inputs.profile) || '') || '' }}
 
 on:
   pull_request:
@@ -9,6 +9,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      profile:
+        description: Existing profile in the exact PR commit (nonstandard requires pr/commit)
+        default: standard
+        type: string
       validation:
         description: Full validation, or target-only firmware for hardware iteration (requires pr/commit)
         default: full
@@ -28,13 +32,13 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ci-${{ inputs.pr != '' && format('pr-{0}-{1}-{2}', inputs.pr, inputs.commit, inputs.validation || 'full') || github.event.pull_request.number || github.ref }}
+  group: ci-${{ inputs.pr != '' && format('pr-{0}-{1}-{2}-{3}', inputs.pr, inputs.commit, inputs.validation || 'full', inputs.profile || 'standard') || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   revision:
     name: Resolve requested PR revision
-    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '' || inputs.validation == 'target')
+    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.commit != '' || inputs.validation == 'target' || (inputs.profile != '' && inputs.profile != 'standard'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -49,9 +53,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr }}
           PR_COMMIT: ${{ inputs.commit }}
+          PR_PROFILE: ${{ inputs.profile || 'standard' }}
         run: |
           test -n "$PR_COMMIT"
-          sha=$(python3 tools/fm1_pr.py "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --commit "$PR_COMMIT" --resolve-only)
+          sha=$(python3 tools/fm1_pr.py "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --commit "$PR_COMMIT" --profile "$PR_PROFILE" --resolve-only)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
   firmware:
     name: ${{ github.event_name == 'workflow_dispatch' && format('Manual {0}', inputs.validation || 'full') || 'firmware' }}
@@ -62,3 +67,4 @@ jobs:
       source_ref: ${{ needs.revision.outputs.sha }}
       verified_pr: ${{ needs.revision.result == 'success' && inputs.pr || '' }}
       validation: ${{ inputs.validation || 'full' }}
+      profile: ${{ inputs.profile || 'standard' }}
