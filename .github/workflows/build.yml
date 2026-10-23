@@ -542,7 +542,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: 01c66911c3d885aa24559587ea4b8848a66758b3 # WebApp #7: authoritative MENU replies and AUTO OFF settings
+          ref: 9abac79667e72a6918bb824967151a57bbc60826 # WebApp #8: saved settings replace stale refusal feedback
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
