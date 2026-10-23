@@ -316,12 +316,16 @@ static uint32_t proj_unpack_tracks(project_t *q, const uint8_t *b, uint32_t np, 
 {
     uint32_t pos = 68u, t, i;
     for (t = 0; t < NTRK; t++) {
-        int16_t values[P_COUNT], def[P_COUNT];
-        for (i = 0; i < np; i++) { if (b[pos] > 191u) return 0; values[i] = (int16_t)b[pos++] - 64; }
+        const uint8_t *v = b + pos;                     /* (the values read in place: no copy on the stack) */
+        int16_t *p = q->t[t].p;
+        for (i = 0; i < np; i++) if (v[i] > 191u) return 0;
+        pos += np;
         q->t[t].engine = b[pos++]; q->t[t].preset = b[pos++];
         if (q->t[t].engine >= ENG_ID_MAX) return 0;
-        for (i = 0; i < P_COUNT; i++) def[i] = param_desc_of(eng_idx(q->t[t].engine), i)->def;
-        params_by_count(q->t[t].p, values, np, def);
+        for (i = 0; i < P_COUNT; i++)                   /* by count, as core.h params_by_count: the first np - 8 in */
+            p[i] = i < np - 8u && i < P_E0 ? (int16_t)(v[i] - 64) :        /* order, the last 8 at P_E0, the */
+                   i >= P_E0 ? (int16_t)(v[np - 8u + i - P_E0] - 64) :    /* rest the engine's defaults */
+                   param_desc_of(eng_idx(q->t[t].engine), i)->def;
         for (i = 0; i < NSTEP; i++) {
             step_t *s = &q->t[t].step[i]; uint32_t meta, nd = 0;
             for (uint32_t j = 0; j < 4u; j++) {         /* (FUN10: bit 7 of note j is bit j of the nudge) */
