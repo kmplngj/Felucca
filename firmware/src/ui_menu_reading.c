@@ -123,7 +123,7 @@ static void menu_reading_choices(void)
     cv_blit(0, H_HEAD);
     for (uint32_t k = first; k < first + shown; k++) {
         int sel = k == pick;
-        uint16_t bg = sel ? T_THEME : T_SURF, fg = sel ? T_INK : T_TEXT;
+        uint16_t fg = sel ? T_INK : T_TEXT;
         cv_begin(240, MENU_READ_H + MENU_READ_GAP, T_BG);
         menu_read_row(menu_vname(ui.menu_sel, k), k == current ? "SET" : "", "", sel, 0, 0);
         if (k == current) cv_rect(MR_VR - text_w(&AF_M, "SET") - 12, HALF_UP(MENU_READ_H - 5), 5, 5, fg);
