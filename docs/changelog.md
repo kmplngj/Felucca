@@ -83,9 +83,11 @@ in issues and roadmaps, not among implemented changes below.
   physical FM-1 readability and loaded-panel checks remain pending.
 - **Hosted editor settings:** applied RAM-only and deferred-save settings retain
   the device's returned value; rejected edits restore the confirmed value while
-  preserving newer picker drafts. The pinned editor discovers AUTO OFF, WAKE and
-  ALL DARK from firmware descriptors, including builds without CPU2. See
-  [WebApp PR #7](https://github.com/kmplngj/Felucca-WebApp/pull/7) and
+  preserving newer picker drafts. Saved edits replace earlier warnings with
+  "Saved" while retaining the message history. The pinned editor discovers AUTO OFF,
+  WAKE and ALL DARK from firmware descriptors, including builds without CPU2. See
+  [WebApp PR #7](https://github.com/kmplngj/Felucca-WebApp/pull/7),
+  [feedback fix #8](https://github.com/kmplngj/Felucca-WebApp/pull/8) and
   [site deployment and source revisions](../.github/CI.md#fork-site-deployment).
 - **Editor SysEx replies:** a request arriving between the Editor and updater's
   main-loop checks is retained for the correct consumer instead of silently
