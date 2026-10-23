@@ -24,6 +24,11 @@ the upstream wiki, hosted editor and hosted emulator may describe another revisi
 Do not invent an access path. If a route cannot be verified, state what is unknown
 and leave that check pending.
 
+For local host-suite runs performed by the agent, use
+`uv run --locked --group build tests/run_tests.sh --ai-output` and follow the
+[summary-first evidence workflow](../../../docs/ai-workflows.md#read-results-before-opening-raw-evidence).
+CI keeps normal output for `tools/ci.py verify-tests`.
+
 Choose scenarios that exercise the actual change, the original bug or intended
 behavior, and the relevant unchanged behavior. Include boundary values,
 cancel/undo, another track or engine, save/load/restart and older data only when

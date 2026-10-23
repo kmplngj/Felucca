@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 # Host tests of the Felucca sources (no hardware). Run from the repo root after ./build.sh:
-#   tests/run_tests.sh
+#   tests/run_tests.sh [--ai-output]
 #
 # Regression suite (tests/regress.c, tests/target_budget.py; details at the top of regress.c):
 #   golden renders  every engine x preset, the GM map on DRUM, voice modes, FX sends, a 4-track mix: one hash
@@ -224,20 +224,25 @@ export AC79_SDK="${AC79_SDK:-$HOME/fw-AC79_AIoT_SDK}"
 cd "$(dirname "$0")/.."
 OUT=build/host
 mkdir -p "$OUT"
-# --plan and --unit are internal scheduler entry points. Only the outer run does
-# shared preflight; workers compile/run their selected unit with set -e active.
+# --preflight, --plan and --unit are internal scheduler entry points. Compact
+# runs capture preflight too; workers compile/run their unit with set -e active.
 MODE=${1:-run}
 SELECTED_UNIT=${2:-}
 case "$MODE" in
-    run)
+    run|--preflight)
         python3 tools/profile.py --check
         python3 tests/build_identity_test.py
         python3 tests/profile_test.py
         python3 tests/test_jobs_test.py
+        if [ "$MODE" = --preflight ]; then exit 0; fi
         exec python3 tests/test_jobs.py tests/run_tests.sh
         ;;
+    --ai-output)
+        if [ "$#" != 1 ]; then echo "usage: tests/run_tests.sh [--ai-output]" >&2; exit 2; fi
+        exec python3 tests/test_jobs.py tests/run_tests.sh --ai-output --preflight
+        ;;
     --plan|--unit) ;;
-    *) echo "usage: tests/run_tests.sh" >&2; exit 2 ;;
+    *) echo "usage: tests/run_tests.sh [--ai-output]" >&2; exit 2 ;;
 esac
 CC="${CC:-cc} -O1 -Wall -Wno-unused-function -Ibuild/gen"
 NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
