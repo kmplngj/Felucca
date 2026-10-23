@@ -55,11 +55,6 @@ static void require(int ok, const char *reason, unsigned palette, unsigned state
 }
 int main(int argc, char **argv)
 {
-#if !UI_FONT_M8STEALTH
-    (void)argc; (void)argv;
-    puts("Track badges: M8 pixel fixture skipped for alternate face; UI alignment sweeps still apply");
-    return 0;
-#else
     static const unsigned sizes[] = {12, 16, 24};
     uint32_t st, p, s, si, k, x, y;
     for (st = ST_FLAT; st <= ST_LINE; st++) for (p = 0; p <= NPALETTES; p++) {
@@ -109,5 +104,4 @@ int main(int argc, char **argv)
     }
     printf("Track badges: %u rendered cases, %u failures\n",cases,failures);
     return failures != 0;
-#endif
 }

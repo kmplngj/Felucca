@@ -576,7 +576,7 @@ if [ -f build/gen/felucca_tables.h ]; then
             run "bitmap font storage: reject narrowed glyph metrics" python3 tests/bitmap_font_test.py
             run "text: M8Stealth ASCII matches upstream bitmaps" python3 tests/m8_font_test.py build/gen/ui_fonts.h
             run "keycaps: native M8 ink, stable labels, pill masks and unchanged knob data" python3 tests/keycap_font_test.py build/gen/ui_keycaps.h
-            run "text spacing: glyph gaps against the font's own (16x supersampled), S M <= 0.25 px, L <= 0.5 px" \
+            run "text spacing: whole-pixel fixed advances and shared 1x/2x bitmap bounds" \
                 python3 tests/text_spacing_test.py build/gen/ui_fonts.h
         else
             echo "font Python checks skipped (Pillow unavailable)"

@@ -13,14 +13,18 @@ publishes tested main builds and a pinned WebApp fork; its
   idle controls and voices, and ten seconds of quiet stereo output. Long effect tails
   keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
   [autosave contract](extending.md#41-flash-map-and-deferred-save-example).
-- **UI fonts:** source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects
-  `m8stealth`, `tamzen` or `inter-tight` at build time. All builds use native
+- **UI typography:** firmware uses only M8Stealth57/89, with two native bitmap
+  grids and exact 2× reading roles. Settings content uses 9 px capitals;
+  focused instrument values/names use 18 px. Scaled roles share
+  their native bitmap data. Tamzen and Inter Tight firmware variants are retired;
+  `FELUCCA_FONT` may be unset or `m8stealth`. All builds use native
   M8Stealth57 keycap and state-badge legends, including SAVE, OCT−/+, REC and MUTE.
   Rounded pill edges and Fukiai icons remain antialiased. Numeric card/MOD units
   have a fixed right edge, and small-value fallbacks share the primary value band;
   see [LCD typography and fit rules](lcd-typography.md).
-  The [controlled font comparison](font-experiment.md) records about 39 KB less
+  The historical [controlled font comparison](font-experiment.md) records about 39 KB less
   firmware flash and 1,032 B less POOL RAM for pixel-font decode caches than Inter Tight.
+  Retiring alternate options does not itself reduce an already-M8 build.
   Physical FM-1 readability and redraw checks remain pending. [Compare real renderer captures](ui-comparison.md).
 - **LCD state readability:** muted track names and settings, mixer annotations,
   pitch labels and MOD values/units retain readable text colors while mute marks
@@ -40,13 +44,9 @@ publishes tested main builds and a pinned WebApp fork; its
   Physical FM-1 readability and loaded-panel qualification remain pending.
 - **Settings navigation:** hold HOME to open MENU, turn ALGORITHM for categories
   and PRESETS for rows. Any KNOB 1–4 changes the selected setting immediately;
-  ordinary rows also accept OCT−/+ for values. On COLOR and LEDS, OCT+ opens a
-  separate choice list: turn PRESETS or a knob to pick, OCT+ applies and returns,
-  OCT− returns without applying. The square/SET mark and CURRENT name identify
-  the actual setting; the highlighted row and PICK name identify the candidate.
-  Browsing candidates does not change the theme or LEDs. HOME closes any menu
-  and discards an uncommitted candidate. An editor change while the list is open
-  updates CURRENT without replacing PICK. AUTO OFF keeps its five directly
+  all value rows also accept OCT−/+. COLOR and LEDS follow that same rule and
+  show the result immediately. A chevron and OCT+ OPEN identify grouped details
+  or separate views; ordinary values have no chevron. AUTO OFF keeps its five directly
   editable detail rows and BACK action. Saved settings and editor IDs are unchanged.
 - **RECENT sounds:** on SAVE > PRESETS, turn KNOB 4 (LIST) past OTHER to RECENT for
   the last eight loaded sounds, newest first. PRESETS browses them; loading from RECENT

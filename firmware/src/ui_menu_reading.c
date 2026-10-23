@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Settings A + selective C (#577): stable rows for finding/comparing values,
- * separate bounded choice pages for COLOR/LEDS. Compose each strip before its
+/* Settings A + selective details (#577): stable rows for finding/comparing values,
+ * detail pages group related settings. Compose each strip before its
  * blit, within the existing canvas; never enlarge a row when focus moves. */
 #define MENU_READ_ROWS 7u
 #define MENU_READ_H 19
 #define MENU_READ_GAP 2
-#define MENU_CHOICE_ROWS 6u
 static int32_t menu_read_height(void) { return MENU_READ_H; }
 static uint32_t menu_read_first(void)
 {
@@ -72,7 +71,7 @@ static void menu_reading_list(const khint_t *keys)
         menu_read_value(row, value, &unit);
         cv_begin(240, MENU_READ_H + MENU_READ_GAP, T_BG);
         menu_read_row(MI_NAME[row], value, unit, row == ui.menu_sel,
-                      row == MI_SCROFF || row == MI_COLOR || row == MI_LEDS || row >= MI_VALUES,
+                      row == MI_SCROFF || row >= MI_VALUES,
                       MI_TCH(row) && song.g[G_ROUTE] != ROUTE_TRACK);
         menu_read_scroll(y, MENU_READ_H + MENU_READ_GAP, n, first, shown);
         cv_blit(0, (uint32_t)y); y += MENU_READ_H + MENU_READ_GAP;
@@ -82,7 +81,6 @@ static void menu_reading_list(const khint_t *keys)
         char count[16]; fmt_int(count, (int32_t)mtab_index(ui.menu_sel) + 1);
         str_cpy(count + str_len(count), "/", 2); fmt_int(count + str_len(count), (int32_t)n);
         cv_text_r(232, 212 - y - AF_S_CAP_Y, &AF_S, count, T_MID, T_BG);
-        if (menu_has_choices()) cv_key_hint(8, 210 - y, KC_K1, "VALUE", 1, T_BG);
     }
     cv_key_row(8, 232, MK_Y - y, keys, 3, 7u, T_BG);
     cv_blit(0, (uint32_t)y);
@@ -106,35 +104,5 @@ static void menu_reading_off(const khint_t *keys)
     if (menu_off_error) cv_text_on(8, 194 - y - AF_S_CAP_Y, &AF_S, "ALL DARK MUST BE LATER", T_TEXT, T_BG);
     cv_text_in(0, 210 - y - AF_S_CAP_Y, 240, &AF_S, "TIMES SINCE INPUT", T_MID, T_BG);
     cv_key_row(8, 232, MK_Y - y, keys, 2, 7u, T_BG);
-    cv_blit(0, (uint32_t)y);
-}
-static void menu_reading_choices(void)
-{
-    static const khint_t KEYS[3] = {{KC_PRESETS, "CHOICE"}, {KC_OCTDN, "BACK"}, {KC_OCTUP, "APPLY"}};
-    uint32_t pick = menu_choice_value(), current = menu_get(ui.menu_sel), n = menu_n(ui.menu_sel);
-    uint32_t first = pick < MENU_CHOICE_ROWS ? 0u : pick - MENU_CHOICE_ROWS + 1u;
-    uint32_t shown = n < MENU_CHOICE_ROWS ? n : MENU_CHOICE_ROWS;
-    int32_t y = MP_Y + MP_PAD;
-    char text[32];
-    cv_begin(240, (uint32_t)(y - H_HEAD), T_BG);
-    str_cpy(text, "DISPLAY / ", sizeof text); str_cpy(text + 10, MI_NAME[ui.menu_sel], sizeof text - 10);
-    cv_text_on(8, 32 - H_HEAD - AF_M_CAP_Y, &AF_M, text, T_TEXT, T_BG);
-    cv_text_on(8, 49 - H_HEAD - AF_S_CAP_Y, &AF_S, ui.menu_sel == MI_COLOR ? "CHOOSE A THEME" : "KEY LED MODE", T_MID, T_BG);
-    cv_blit(0, H_HEAD);
-    for (uint32_t k = first; k < first + shown; k++) {
-        int sel = k == pick;
-        uint16_t fg = sel ? T_INK : T_TEXT;
-        cv_begin(240, MENU_READ_H + MENU_READ_GAP, T_BG);
-        menu_read_row(menu_vname(ui.menu_sel, k), k == current ? "SET" : "", "", sel, 0, 0);
-        if (k == current) cv_rect(MR_VR - text_w(&AF_M, "SET") - 12, HALF_UP(MENU_READ_H - 5), 5, 5, fg);
-        menu_read_scroll(y, MENU_READ_H + MENU_READ_GAP, n, first, shown);
-        cv_blit(0, (uint32_t)y); y += MENU_READ_H + MENU_READ_GAP;
-    }
-    cv_begin(240, (uint32_t)(240 - y), T_BG);
-    str_cpy(text, "CURRENT ", sizeof text); str_cpy(text + 8, menu_vname(ui.menu_sel, current), sizeof text - 8);
-    cv_text_on(8, 208 - y - AF_S_CAP_Y, &AF_S, text, T_MID, T_BG);
-    str_cpy(text, "PICK ", sizeof text); str_cpy(text + 5, menu_vname(ui.menu_sel, pick), sizeof text - 5);
-    cv_text_r(232, 208 - y - AF_S_CAP_Y, &AF_S, text, T_TEXT, T_BG);
-    cv_key_row(8, 232, MK_Y - y, KEYS, 3, 7u, T_BG);
     cv_blit(0, (uint32_t)y);
 }

@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # LCD typography and layout
 
-The 240×240 FM-1 panel defaults to M8Stealth as one family with task-specific roles.
-The existing Tamzen and Inter Tight build alternatives remain supported; their
-generated capital metrics feed the same placement rules.
+The 240×240 FM-1 panel uses M8Stealth as one family with task-specific roles.
+Tamzen and Inter Tight firmware alternatives are retired; explicit legacy build
+selections fail rather than silently producing another font.
 The goal is predictable operation within Felucca's existing four-knob layout:
 read the value, identify its label, then use the graph or the control hints.
 Pages, navigation, palette tokens, FLAT/LINE retain their existing jobs. There is one native layout; font sizes
@@ -12,7 +12,7 @@ follow reading tasks rather than a global size preference.
 ## Metrics and roles
 
 [`tools/gen_bitmap_font.py`](../tools/gen_bitmap_font.py) generates the native
-Trash80 S/M bitmaps and the shared 2× L/N data. Glyphs are trimmed to their ink;
+Trash80 S/M bitmaps and shared 2× L/N roles. Glyphs are trimmed to their ink;
 the line box is layout space, not visible letter height. All faces have one
 raster weight. Do not add another font to establish hierarchy.
 
@@ -25,10 +25,9 @@ raster weight. Do not add another font to establish hierarchy.
 
 The 17 px L advance is intentional: three digits fit the narrow cards. It does
 not scale the bitmap horizontally. S/M/N each have 105 records; L has 41 and is
-not a general face for names. N shares every bitmap byte with M; it adds only
-glyph metadata and a descriptor, without a decode cache. Tamzen also shares its M
-bitmaps at 2×. Inter Tight aliases the N role to M to retain its bounded raster
-and existing cache budget. The ten local extra marks retain their explicit
+not a general face for names. L/N share every bitmap byte with M;
+only glyph metadata and descriptors are added, without a decode cache. The
+two native bitmap sets are the only stored text rasters. The ten local extra marks retain their explicit
 bitmap adaptations and attribution. Keycap legends use the same native S
 grid, within the existing 13 px pills; icons remain the existing icon system.
 Track digits 1–4 use the selected text face, centered against their actual
@@ -36,6 +35,16 @@ rounded cushion. The former extra left shift for “1” is removed. An odd-widt
 glyph in an even-width cushion cannot land at an integer-pixel center; the
 nearest placement keeps the shared left/up half-pixel tie rule, without scaling
 or blurring its ink.
+
+The source check compares each original WOFF2's 95 ASCII glyphs at 8→16 and
+12→24 ppem: direct monochrome rasterisation equals exact 2× native ink,
+bearings and advance. Independent upstream bitmap atlases verify the packed
+1×/2× output too. This is evidence for these font files and our renderer;
+another application's smoothing or the M8 device renderer is outside that check.
+L's deliberately tighter advance is the stated exception, not a different shape.
+Exact 2× S (14 px capitals) is technically available from the same raster, but
+no current reading task justifies emitting its metadata. Settings use consistent
+M content on parent and detail pages; S is reserved for supporting hints.
 
 [`gfx.c`](../firmware/src/gfx.c) owns the common placement rules:
 
@@ -98,7 +107,6 @@ glyphs and ink fit 106 px, otherwise M/S. The compact overview independently
 chooses a stable M/S face. Required strings are not abbreviated to create room;
 units have their own slot. In the default M8Stealth build, focus values are 18 px
 where supported, labels/units 9 px, overview labels 7 px and values 9/7 px.
-Alternative fonts retain their own capital metrics and bounded fit policy.
 
 The focused status names its editing scope: VALUE, AUTO, INACTIVE/FIXED, TEMP,
 KEPT, or LOCK/BASE with the first held step number (a + marks multiple steps).
@@ -130,11 +138,10 @@ Settings show up to seven uniform 19 px rows with 2 px gaps. Labels, values and
 units use M, with explicit ON/OFF words on every row. Focus changes the row's
 contrast, never its height or type size. The window scrolls at its lower edge;
 the selected/total indicator stays above the control hints. Tab labels are M.
-COLOR and LEDS retain direct knob editing and offer a six-row choice page through
-OCT+. The applied value has a square/SET mark and CURRENT name; the candidate has
-the selection band and PICK name. PRESETS/knobs move the bounded candidate,
-OCT+ applies, OCT− cancels and HOME closes without applying. The candidate reuses
-the inactive ABOUT scroll field, with no additional retained state or framebuffer.
+Every single-value row, including COLOR and LEDS, changes immediately through
+the existing knobs or OCT−/+. COLOR displays the result immediately; LEDS uses
+the same direct-edit rule. Neither needs a second selection/apply path.
+Chevrons and the OPEN hint identify grouped details or independent views only.
 AUTO OFF opens five uniform detail rows, validation feedback and its BACK action. INFO uses
 28 px rows with bounded build-identity continuation; ABOUT keeps wrapped S text.
 NAME shows up to 12 mixed-case characters in N with an underline caret, a distinct
@@ -160,7 +167,7 @@ the harmless legacy control. See the [wire contract](../web/EDITOR_PROTOCOL.md#m
 | --- | --- |
 | Compact controls, `ui_draw.c:draw_column` | The label uses capital band y=5, h=13 in each 57×44 card. List/graph labels use M if it fits, otherwise S, preserving that center. Values use y=18, h=17; M and dense S fallback share its center. Numeric pens start at x=5. S units end at x=54 in a reserved slot, so changing a digit count does not move the unit. The value plus 3 px gap plus unit must fit the 49 px field. |
 | Header, `head_geo`, `head_msg` | M values and S annotations center in the 24 px header. BPM uses a same-length zero string for stable tabular geometry; play/stop share a slot. Messages use M then S according to bounded room. The header's hint measurement must match the renderer. |
-| MENU/INFO, `ui_menu.c` | Seven uniform M label/value rows; six M rows on COLOR/LEDS choice pages. Applied/candidate states are explicit in MONO too. HOLD/TUNE units use fixed right edges and the common 3 px gap. Tabs use M. INFO retains its bounded identity continuation. |
+| MENU/INFO, `ui_menu.c` | Seven uniform M label/value rows; AUTO OFF detail rows use the same M content. COLOR/LEDS edit directly. HOLD/TUNE units use fixed right edges and the common 3 px gap. Tabs use M. INFO retains its bounded identity continuation. |
 | MOD, `ui_graph.c:graph_mod` | M slot/source/destination/amount share each 17 px row's center. The amount starts at x=172; its S unit ends at x=228 and shares its baseline. Fit reserves the common gap, including -100%. |
 | Piano roll, drum grid and STEP DETAIL, `ui_graph.c` | Piano note labels center within their row; drum labels center within the 10 px hit band; DETAIL labels center in each lane. Their native S size preserves the graph's density. |
 | PRESETS, USER, PROJECT, SONG and automation | M rows carry primary names/values; S carries metadata and compact cells. Existing free-name ellipsis, selected-row detail, scrolling, parameter short names and HELP paths retain their meaning. |

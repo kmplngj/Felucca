@@ -63,10 +63,6 @@ static int type_card(const char *value, const char *unit, type_box_t *v, type_bo
 }
 int main(void)
 {
-#if !UI_FONT_M8STEALTH
-    puts("LCD typography: M8-specific fit fixture skipped; alternate fonts retain the UI render/alignment sweeps");
-    return 0;
-#else
     static const char *const values[] = {"0", "9", "10", "99", "100", "-100", "0.1", "10.0"};
     uint32_t i;
     int32_t amount_value;
@@ -104,5 +100,4 @@ int main(void)
     }
     bad += check("LCD MOD: full signed amount range fits before a stationary baseline-aligned unit", ok);
     return bad != 0;
-#endif
 }

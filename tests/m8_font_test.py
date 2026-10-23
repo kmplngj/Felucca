@@ -11,8 +11,7 @@ from text_spacing_test import bitmap, glyph_at, parse
 def main():
     header = Path(sys.argv[1] if len(sys.argv) > 1 else 'build/gen/ui_fonts.h')
     if '#define UI_FONT_M8STEALTH 1' not in header.read_text():
-        print('M8Stealth source bitmap check: not this font variant')
-        return
+        raise SystemExit('Expected a current M8Stealth header; rebuild retired font artifacts')
     root = Path(__file__).resolve().parents[1] / 'assets/fonts/m8stealth'
     faces = parse(header)
     checked = 0
@@ -51,7 +50,19 @@ def main():
         m = faces['M']['g'][glyph_at(faces['M'], code)]
         n = faces['N']['g'][glyph_at(faces['N'], code)]
         assert n[0] == m[0] and n[1] == 2 * m[1], code
-    print(f'M8Stealth: {checked} glyphs match upstream ASCII bitmaps at 1x/2x; all extra marks fit; L/N share M')
+    # Verify the original outline files independently of our packed/scaled tables:
+    # direct doubled ppem must match nearest-neighbour native ink, metrics included.
+    from gen_bitmap_font import read_m8, trimmed
+    for file, ppem, cap in (('m8stealth57.woff2', 8, 7), ('m8stealth89.woff2', 12, 9)):
+        base = read_m8(root / file, ppem, cap)[1]
+        direct = read_m8(root / file, ppem * 2, cap * 2)[1]
+        for code in range(32, 127):
+            a = trimmed(base[code])
+            bits = [a[5][y * a[3] + x] for y in range(a[4]) for _ in range(2)
+                    for x in range(a[3]) for _ in range(2)]
+            assert trimmed(direct[code]) == tuple(v * 2 for v in a[:5]) + (bits,), (file, chr(code))
+    print(f'M8Stealth: {checked} glyphs match upstream ASCII at 1x/2x; extra marks fit; L/N share M; '
+          '190 direct-size ASCII rasters equal exact 2x ink and metrics')
 
 
 if __name__ == '__main__':

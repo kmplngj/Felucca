@@ -283,7 +283,7 @@ static void lg_hook(const char *s, int why)
 }
 
 /* an icon drawn: its ink, read from its cell's nibbles here (not icons.c icon_ink's table: measured, not trusted) */
-/* n alpha values of a cell from its bit stream (the canonical Huffman code AI_HC, as gen_aa_font.py huff_unpack:
+/* n alpha values of a cell from its bit stream (the canonical Huffman code AI_HC, as ui_font_data.py huff_unpack:
  * decoded here bit by bit, not by gfx.c's table) */
 static void icon_unpack(const uint8_t *d, uint8_t *out, uint32_t n)
 {
@@ -791,7 +791,6 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_MENU_SELECT, S_PROJECT_ERASE, S_CONFIRM_ERASE_PROJ, S_TOOLS_CLEAN, S_CONFIRM_CLEAN,
        S_MENU_MIDI_TRACK, S_MENU_MIDI_TCH_UNUSED, S_MENU_MIDI_AUTO, S_HOME_TRACKS_MIDI, S_MIXER_MIDI, S_EDIT_PHASE_FOLD,
        S_MENU_OFF_IDLE, S_MENU_OFF_MODE, S_MENU_OFF_DARK, S_MENU_OFF_WAKE, S_MENU_OFF_BACK, S_MENU_OFF_ERROR,
-       S_MENU_CHOICE_LEDS, S_MENU_CHOICE_LEDS_PENDING, S_MENU_CHOICE_COLOR, S_MENU_CHOICE_END,
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
        S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO,
        S_MACRO_SYNC, S_MACRO_TRIPLE, S_MACRO_QUESTION,
@@ -829,7 +828,6 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "menu_select", "project_erase", "confirm_erase_project", "tools_clean", "confirm_clean",
     "menu_midi_track", "menu_midi_channels_unused", "menu_midi_auto_select", "home_tracks_midi", "mixer_midi", "edit_phase_fold",
     "menu_auto_off_idle", "menu_auto_off_mode", "menu_auto_off_dark", "menu_auto_off_wake", "menu_auto_off_back", "menu_auto_off_error",
-    "menu_choice_leds", "menu_choice_leds_pending", "menu_choice_color", "menu_choice_end",
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
     "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto",
     "macro_sync", "macro_triple", "macro_question",
@@ -1322,15 +1320,6 @@ static void setup(int s)
             menu_off_put(MO_DARK, 1u);
             ui.msg_t = 0;                              /* persistent explanation after the short toast */
         }
-        break;
-    case S_MENU_CHOICE_LEDS: case S_MENU_CHOICE_LEDS_PENDING:
-    case S_MENU_CHOICE_COLOR: case S_MENU_CHOICE_END:
-        ui.menu_sel = s <= S_MENU_CHOICE_LEDS_PENDING ? MI_LEDS : MI_COLOR;
-        if (ui.menu_sel == MI_LEDS) menu_put(MI_LEDS, 2);
-        menu_choice_open();
-        if (s == S_MENU_CHOICE_LEDS_PENDING) ui.menu_scroll = 4;
-        if (s == S_MENU_CHOICE_COLOR) ui.menu_scroll = 2;
-        if (s == S_MENU_CHOICE_END) ui.menu_scroll = (uint16_t)(menu_n(MI_COLOR) - 1u);
         break;
     case S_MENU: ui.menu = 1; ui.menu_sel = 0; song.rec = 1; break;
     case S_MENU_SPEAKER: ui.menu = 1; ui.menu_sel = MI_LOWCUT; settings.lowcut = 2; break;
@@ -2179,19 +2168,6 @@ static void align_sweeps(void)
             }
         menu_put(MI_SCROFF, 0);
         menu_put(MI_LEDS, 2);
-        cur_name = st ? "sweep LINE: applied/candidate choices" : "sweep FLAT: applied/candidate choices";
-        for (i = 0; i < 2u; i++) {
-            uint32_t row = i ? MI_LEDS : MI_COLOR, n = menu_n(row), current;
-            ui.menu_sel = (uint8_t)row;
-            for (current = 0; current < n; current++) {
-                menu_put(row, current); menu_choice_open();
-                for (k = 0; k < n; k++) {
-                    ui.menu_scroll = (uint16_t)k; ui_prefs = k & 1u ? PREF_LARGE : 0u; ui.force = 1;
-                    draw_menu(); lint();
-                }
-            }
-        }
-        menu_put(MI_LEDS, 2); pal(UI_GREY_INDEX); ui.menu = 1;
         ui_prefs = 0; ui_rec_prefs = 0;
         cur_name = st ? "sweep LINE: menu TUNE / MIDI IN" : "sweep FLAT: menu TUNE / MIDI IN";   /* (1.2: the project's) */
         for (k = 0; k < 2u * TUNE_N; k++) {             /* every TUNE (the cents, signed), selected or not, S and M */

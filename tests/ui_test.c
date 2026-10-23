@@ -1830,8 +1830,8 @@ static int test_display_preferences(void)
     ui.force = 1; ui_draw();
     memcpy(before, host_screen, sizeof before);
     settings.palette = 5; palette_set(5);
-    turn(EN_K1, 1);
-    bad += check("COLOR knob previews the next palette (PAPER, light) without closing the menu",
+    press(B_OCTUP);
+    bad += check("COLOR OCT+ previews the next palette (PAPER, light) without closing the menu",
                  settings.palette == 6 && T_BG == UI_PALETTES[6].bg && ux.light && ui.menu == 1 && !song.octave &&
                  memcmp(before, host_screen, sizeof before) && !memcmp(sounds, trk, sizeof sounds));
     turn(EN_K1, 1);
@@ -1994,7 +1994,7 @@ static int test_menu_tabs(void)
     ok = 1;
     for (i = 0; i < MI_VALUES; i++) {
         uint32_t n = menu_n(i), v, j, want;
-        if (!menu_valued(i) || !menu_native_row(i) || i == MI_SCROFF || i == MI_COLOR || i == MI_LEDS) /* choice pages below */
+        if (!menu_valued(i) || !menu_native_row(i) || i == MI_SCROFF) /* actions and detail-only values */
             continue;
         uint8_t seen[128] = {0};                       /* (1.2: TUNE has 101 values) */
         ui.menu_sel = (uint8_t)i;
@@ -2030,7 +2030,7 @@ static int test_menu_tabs(void)
     ui_prefs = 0; settings_hold = HOLD_DEF; settings_leds = LEDS_DIM; ui_style = ST_FLAT;
     settings.lowcut = 0; fx_lowcut = 0; menu_put(MI_COLOR, UI_GREY_INDEX);
     song.g[G_TUNE] = 0; song.g[G_ROUTE] = 0;
-    bad += check("MENU: OCT+ / OCT- step inline value rows up / down; COLOR/LEDS use the choice pages", ok);
+    bad += check("MENU: OCT+ / OCT- step every value row up / down (COLOR wraps, the rest stop), the menu stays", ok);
     {   /* the ON / OFF rows: up (a knob right, OCT+) is ON, the switch's knob to the right, whichever bit it is */
         static const uint8_t SW[] = { MI_ANIM, MI_ACCEL, MI_LATCH, MI_BPMLOCK, MI_SERIAL, MI_RESTORE};
         ok = 1;
@@ -2139,77 +2139,6 @@ static int test_menu_tabs(void)
 /* 1.2: MENU > AUDIO > TUNE and MENU > MIDI > MIDI IN edit the project's G_TUNE and G_ROUTE (up to 1.1.5 GLO > GLOBAL K4
  * and GLO > SYSTEM K3): the same values, stored with the project as before (a PROJECT save / load, the autosave), never
  * in the settings record */
-static int test_menu_choices(void)
-{
-    static const uint8_t ROWS[] = {MI_COLOR, MI_LEDS};
-    uint32_t saved_leds = menu_get(MI_LEDS), saved_palette = palette_cur();
-    int bad = 0, ok = 1;
-    for (uint32_t row = 0; row < NELEM(ROWS); row++) {
-        uint32_t r = ROWS[row], n, current, picked;
-        persist_t before = {0}, after = {0};
-        ui_power_on(); hold(B_HOME); ui.menu_sel = (uint8_t)r; frame();
-        n = menu_n(r);
-        /* The fast path still walks the full setting domain through real knobs. */
-        menu_put(r, 0);
-        for (uint32_t direction = 0; direction < 2u; direction++) {
-            uint32_t seen = 1u << menu_get(r);
-            for (uint32_t i = 0; i <= n; i++) {
-                int32_t step = direction ? -1 : 1;
-                uint32_t want = menu_step(r, step);
-                turn(direction ? EN_K4 : EN_K1, step);
-                ok &= ui.menu == 1u && menu_get(r) == want;
-                seen |= 1u << menu_get(r);
-            }
-            ok &= seen == (1u << n) - 1u;
-        }
-        menu_put(r, 1); frame(); current = menu_get(r);
-        settings_export(&before);
-        press(B_OCTUP);
-        ok &= ui.menu == MENU_CHOICE && menu_choice_value() == current && oct_leds() == (1u | OCT_BREATH);
-        turn(EN_PRESET, 1); picked = menu_choice_value();
-        ok &= picked == current + 1u && menu_get(r) == current;
-        turn(EN_ALGO, 1); ok &= ui.menu_sel == r && menu_choice_value() == picked;
-        for (uint32_t i = 0; i < 4u; i++) {
-            turn(EN_K1 + i, 1); turn(EN_K1 + i, -1);
-            ok &= menu_choice_value() == picked && menu_get(r) == current;
-        }
-        settings_export(&after);
-        ok &= !memcmp(&before, &after, sizeof before);
-        press(B_OCTDN);
-        ok &= ui.menu == 1u && ui.menu_sel == r && menu_get(r) == current;
-        press(B_OCTUP); turn(EN_PRESET, 1); press(B_OCTUP);
-        ok &= ui.menu == 1u && ui.menu_sel == r && menu_get(r) == picked;
-        settings_export(&after);
-        ok &= memcmp(&before, &after, sizeof before) != 0;
-
-        press(B_OCTUP);
-        for (uint32_t i = 0; i <= n; i++) turn(EN_PRESET, 1);
-        ok &= menu_choice_value() == n - 1u && menu_get(r) == picked;
-        for (uint32_t i = 0; i <= n; i++) turn(EN_PRESET, -1);
-        ok &= menu_choice_value() == 0u && menu_get(r) == picked;
-        press(B_HOME); ok &= !ui.menu && menu_get(r) == picked;
-        hold(B_HOME); ok &= ui.menu == 1u && ui.menu_sel == r;
-        press(B_OCTUP); turn(EN_PRESET, -1); current = menu_choice_value();
-        {
-            uint32_t hash = host_lcd_hash(host_screen, 240u * 240u);
-            menu_put(r, n - 1u); frame();
-            ok &= menu_choice_value() == current && menu_get(r) == n - 1u &&
-                  hash != host_lcd_hash(host_screen, 240u * 240u);
-            host_blit_rows = 0; frame(); ok &= !host_blit_rows;
-            ui.force = 1; frame(); hash = host_lcd_hash(host_screen, 240u * 240u);
-            frame(); ok &= hash == host_lcd_hash(host_screen, 240u * 240u);
-        }
-        press(B_OCTDN); ok &= ui.menu == 1u && menu_get(r) == n - 1u;
-        press(B_OCTUP); ui.menu_scroll = UINT16_MAX; frame();
-        ok &= menu_choice_value() == n - 1u;
-        press(B_OCTUP); ok &= ui.menu == 1u && menu_get(r) == n - 1u;
-        menu_close();
-    }
-    menu_put(MI_LEDS, saved_leds); menu_put(MI_COLOR, saved_palette);
-    bad += check("Settings choices: direct knobs, bounded candidate, APPLY/BACK/HOME, editor changes and idle redraw", ok);
-    return bad;
-}
-
 static int test_menu_project_rows(void)
 {
     int bad = 0, ok;
@@ -3399,13 +3328,13 @@ static int test_layer(void)
     turn(EN_K1, -1); ok &= settings_leds == LEDS_DIM_LO;
     turn(EN_K1, -1); ok &= settings_leds == LEDS_OFF;
     turn(EN_K1, -1); ok &= settings_leds == LEDS_OFF;
-    turn(EN_K1, 1); ok &= settings_leds == LEDS_DIM_LO && ui.menu == 1u;
-    turn(EN_K1, 1); ok &= settings_leds == LEDS_DIM;
-    turn(EN_K1, 1); ok &= settings_leds == LEDS_INV;
-    turn(EN_K1, 1); ok &= settings_leds == LEDS_INV && leds_inv() == 1u && ui.menu == 1u;
-    turn(EN_K1, 1); ok &= settings_leds == LEDS_INV && leds_inv() == 2u;
-    turn(EN_K1, 1); ok &= settings_leds == LEDS_INV && leds_inv() == 2u && ui.menu == 1u;   /* (stops at the end) */
-    for (k = 0; k < 6u; k++) turn(EN_K1, -1);
+    press(B_OCTUP); ok &= settings_leds == LEDS_DIM_LO && ui.menu == 1u;
+    press(B_OCTUP); ok &= settings_leds == LEDS_DIM;
+    press(B_OCTUP); ok &= settings_leds == LEDS_INV;
+    press(B_OCTUP); ok &= settings_leds == LEDS_INV && leds_inv() == 1u && ui.menu == 1u;
+    press(B_OCTUP); ok &= settings_leds == LEDS_INV && leds_inv() == 2u;
+    press(B_OCTUP); ok &= settings_leds == LEDS_INV && leds_inv() == 2u && ui.menu == 1u;   /* (stops at the end) */
+    for (k = 0; k < 6u; k++) press(B_OCTDN);
     ok &= settings_leds == LEDS_OFF && ui.menu == 1u;
     ok &= !strcmp(LEDS_NAME[LEDS_OFF], "OFF") && !strcmp(LEDS_NAME[LEDS_DIM_LO], "DIM LO") &&
           !strcmp(LEDS_NAME[LEDS_DIM], "DIM HI") && !strcmp(LEDS_NAME[LEDS_INV], "INV");
@@ -3421,7 +3350,7 @@ static int test_layer(void)
         ok &= !memcmp(before, host_screen, sizeof before);
     }
     hold(B_HOME);
-    bad += check("menu LEDS: DIM HI by default; knobs OFF < DIM LO < DIM HI < INV < INV LO < INV HI (stops at the ends); "
+    bad += check("menu LEDS: DIM HI by default; KNOB 1 OFF < DIM LO < DIM HI < INV < INV LO < INV HI (stops at the ends), OCT+ / OCT- the same; "
                  "a change from the editor redraws the shown MENU", ok && !ui.menu);
     {   /* Compare panel edits with the three correctly drawn values, without forcing any redraw in an edit sequence. */
         static const uint8_t values[] = {4, 5, 4, 3};
@@ -3442,11 +3371,9 @@ static int test_layer(void)
                     menu_put(MI_LEDS, 3); ui.force = 1; frame();
                     for (j = 0; j < NELEM(values); j++) {
                         int32_t step = j < 2u ? 1 : -1;
-                        if (input) {
-                            press(B_OCTUP);
-                            turn(EN_K1, step);
-                            press(B_OCTUP);
-                        } else
+                        if (input)
+                            press(step > 0 ? B_OCTUP : B_OCTDN);
+                        else
                             turn(EN_K1, step);
                         ok &= menu_get(MI_LEDS) == values[j] && !ui.force &&
                               host_lcd_hash(host_screen + offset, pixels) == expected[values[j] - 3u];
@@ -5391,7 +5318,7 @@ static int test_bughunt_ui2(void)
 }
 
 #ifndef UI_TEST_NO_MAIN
-/* L is a sparse face (tools/gen_aa_font.py L_CHARS): every string drawn in it has all its glyphs */
+/* L is a sparse face (tools/ui_font_data.py L_CHARS): every string drawn in it has all its glyphs */
 static int test_large_face(void)
 {
     static const char *const FIXED[] = {"FELUCCA", "0123456789"};   /* main.c, ui_menu.c; ui_draw.c draw_uboot */
@@ -11817,7 +11744,7 @@ int main(int argc, char **argv)
     if (argc == 2 && !strcmp(argv[1], "--catalog"))
         return test_catalog_controls() + test_unknown_engine() != 0;
     if (argc == 2 && !strcmp(argv[1], "--menu"))
-        return test_menu_tabs() + test_menu_choices() + test_auto_off_navigation() + test_menu_prefs() != 0;
+        return test_menu_tabs() + test_auto_off_navigation() + test_menu_prefs() != 0;
     if (argc == 2 && !strcmp(argv[1], "--auto-off"))
         return test_auto_off() + test_all_dark() + test_auto_off_navigation() + test_screen_off() + test_screen_wake() + test_idle_leds() != 0;
     bad += test_catalog_controls();
@@ -11843,7 +11770,6 @@ int main(int argc, char **argv)
     bad += test_unknown_engine();
     bad += test_display_preferences();
     bad += test_menu_tabs();
-    bad += test_menu_choices();
     bad += test_auto_off_navigation();
     bad += test_menu_project_rows();
     bad += test_information();

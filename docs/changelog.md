@@ -135,8 +135,9 @@ in issues and roadmaps, not among implemented changes below.
   and a stable larger current value while keeping full native graphs. Explicit
   scope feedback covers held-step locks, motion and temporary/kept edits; focus
   remains after turn feedback expires. Names have a larger reading role above five
-  list rows. Settings use seven uniform rows and explicit ON/OFF; COLOR/LEDS offer
-  choice pages with separate applied/candidate states and APPLY/BACK. NORMAL/LARGE is consolidated;
+  list rows. Settings use seven uniform 9 px rows and explicit ON/OFF; single
+  values, including COLOR/LEDS, edit directly. AUTO OFF groups related values on
+  a detail page with the same typography. NORMAL/LARGE is consolidated;
   the old settings bit and editor id remain reserved for compatible rollback.
   Physical FM-1 readability and loaded-panel
   qualification remain pending. See the [reading contract](lcd-typography.md#focused-parameter-bank).
@@ -144,8 +145,10 @@ in issues and roadmaps, not among implemented changes below.
   lettering alongside the default M8 text. Numeric card and MOD units stay in a
   fixed slot, and small-value fallbacks share a consistent vertical band.
   Track digits center on their cushion, removing the old extra shift for “1”.
-  Rounded pill edges, icons and text-font comparison builds remain
-  available. See [roles, fit rules and validation scope](lcd-typography.md);
+  One M8Stealth family now supplies two native bitmap grids and exact 2× reading
+  roles. No additional 14 px role is emitted. Tamzen and Inter Tight firmware variants
+  are retired; rounded pill edges and icons retain antialiasing.
+  See [roles, fit rules and validation scope](lcd-typography.md);
   physical readability and loaded-panel qualification remain pending.
 - **Display inactivity:** AUTO OFF combines the existing screen timeout with LED-only
   and combined darkness, retaining NEVER as default and the existing screen-only
@@ -171,8 +174,8 @@ in issues and roadmaps, not among implemented changes below.
   Engines collection with an explicit API contract; standard/reduced build profiles
   and firmware engine metadata preserve stable IDs. GPL collection integration and
   broader usage modes remain planned; see the [modularity roadmap](modularity.md).
-- **Display and startup:** M8Stealth is the default font, with Tamzen and Inter Tight
-  build options. The minimal startup identity follows saved colors and can be
+- **Display and startup:** M8Stealth supplies native text. The minimal startup
+  identity follows saved colors and can be
   dismissed by a button or key without triggering its normal action.
 - **Effect controls:** shared chorus Depth and per-track chorus/delay/reverb sends
   glide during sound. These smoothing experiments are implemented; FM-1 listening

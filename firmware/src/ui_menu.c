@@ -5,33 +5,12 @@
  * MENU_DESC / MENU_SET; 1.2: TUNE and MIDI IN, the project's). No BACK row: HOME closes it (ui_input.c). The two-valued
  * rows are bits of ui_prefs (MENU_FLAGS). PRESETS scrolls from ABOUT through all credits (OCT- back to the tabs).
  * ui.menu: 1 the tabs, 2 ABOUT (information and credits), 3 INFO (1.2: the device's state, the old SYSTEM page's USB and
- * CPU readings), 4 AUTO OFF (five editable/detail rows, explicit BACK),
- * 5 COLOR/LEDS choices (candidate until APPLY, BACK discards). */
+ * CPU readings), 4 AUTO OFF (five editable/detail rows, explicit BACK). */
 /* ------------------------------------------------------------ menu --- */
 /* (the rows, their values and names, usb_serial_apply: menu_items.c) */
-enum { MENU_OFF = 4, MENU_CHOICE };
+enum { MENU_OFF = 4 };
 enum { MO_IDLE, MO_MODE, MO_DARK, MO_WAKE, MO_BACK, MO_COUNT };
 static uint8_t menu_off_sel, menu_off_error;
-static int menu_has_choices(void) { return ui.menu_sel == MI_COLOR || ui.menu_sel == MI_LEDS; }
-/* The candidate reuses ABOUT's otherwise idle scroll field. No setting is
- * changed until APPLY; an editor update remains the current value on screen. */
-static uint32_t menu_choice_value(void)
-{
-    uint32_t n = menu_n(ui.menu_sel);
-    return ui.menu_scroll < n ? ui.menu_scroll : n - 1u;
-}
-static void menu_choice_open(void)
-{
-    ui.menu_scroll = (uint16_t)menu_get(ui.menu_sel);
-    ui.menu = MENU_CHOICE;
-    ui.force = 1;
-}
-static void menu_choice_back(void)
-{
-    ui.menu = 1;
-    ui.menu_scroll = 0;
-    ui.force = 1;
-}
 static int menu_has_value(void)
 {
     return ui.menu == MENU_OFF ? menu_off_sel < MO_BACK : menu_valued(ui.menu_sel) && ui.menu_sel != MI_SCROFF;
@@ -121,26 +100,12 @@ static const menu_credit_t MENU_CREDITS[] = {
     {"https://github.com/pichenettes/eurorack", MC_URL},
     {"", MC_TEXT},
 #endif
-    /* Every build uses M8Stealth57 for keycap legends. */
+    /* Native text and keycap legends share the M8Stealth family. */
     {"M8STEALTH", MC_TITLE},
     {"Trash80 / CC BY-SA 3.0", MC_TEXT},
     {"With local extra bitmap marks", MC_TEXT},
     {"https://fontstruct.com/fontstructors/100463/trash80", MC_URL},
     {"", MC_TEXT},
-#if UI_FONT_BITMAP && !UI_FONT_M8STEALTH
-    {"TAMZEN / TAMSYN", MC_TITLE},
-    {"Suraj N. Kurapati / Scott Fial", MC_TEXT},
-    {"Free use, copy, modify, distribute", MC_TEXT},
-    {"https://github.com/sunaku/tamzen-font", MC_URL},
-    {"", MC_TEXT},
-#endif
-#if !UI_FONT_BITMAP
-    {"INTER TIGHT", MC_TITLE},
-    {"The Inter Project Authors", MC_TEXT},
-    {"SIL Open Font License 1.1", MC_TEXT},
-    {"https://github.com/rsms/inter-tight", MC_URL},
-    {"", MC_TEXT},
-#endif
     {"VSCO-2 CE + VCSL", MC_TITLE},
     {"Versilian Studios / CC0 1.0", MC_TEXT},
     {"https://github.com/sgossner/VSCO-2-CE", MC_URL},
@@ -239,7 +204,7 @@ static void menu_head(void)
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_OCTDN, w, 1, T_BG);
         draw_rec_mark(x - 20, T_BG);
     } else {
-        int detail = ui.menu == MENU_OFF || ui.menu == MENU_CHOICE;
+        int detail = ui.menu == MENU_OFF;
         int32_t x = 232 - (detail ? 0 : (12 + (int32_t)(MTAB_COUNT - 1u) * 8) + 8) - kh_w(KC_HOME, "CLOSE");
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_HOME, "CLOSE", 1, T_BG);
@@ -444,7 +409,7 @@ static void draw_menu(void)
           2246822519u +                                   /* (1.5.5: T1..T4 CHANNEL) */
           scr_dark_get() * 67867967u + scr_mode_get() * 2147483647u +
           (ui.menu == MENU_OFF ? menu_off_sel * 48611u + menu_off_error * 374761393u : 0u) +
-          (ui.menu == 2 || ui.menu == MENU_CHOICE ? ui.menu_scroll * 48611u : 0u) + (ui.menu == 3 ? info_sig() * 2654435761u : 0u);
+          (ui.menu == 2 ? ui.menu_scroll * 48611u : 0u) + (ui.menu == 3 ? info_sig() * 2654435761u : 0u);
     if (!ui.force && sig == ui.menu_sig) {
         if (ui.menu == 1 && mt.pos != pos0) {          /* only the tabs slid: their strip */
             cv_begin(240, MP_Y - H_HEAD, T_BG);
@@ -457,10 +422,6 @@ static void draw_menu(void)
     }
     ui.menu_sig = sig;
     menu_head();
-    if (ui.menu == MENU_CHOICE) {
-        menu_reading_choices();
-        return;
-    }
     if (ui.menu == MENU_OFF) {
         static const khint_t OFF_KEYS[2][2] = {{{KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
                                                {{KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}}};
@@ -498,7 +459,7 @@ static void draw_menu(void)
         cv_blit(0, H_HEAD + MENU_DOC_H);
         return;
     }
-    menu_reading_list(KEYS[ui.menu_sel == MI_LCLEAR ? 2 : (!menu_has_value() || menu_has_choices())]);
+    menu_reading_list(KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_has_value()]);
 }
 
 static void enc_drop(void)                             /* knob turns nobody takes */
@@ -540,20 +501,6 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
 {
     int32_t s;
     uint32_t k, up = (oct >> 1) & 1u, dn = oct & 1u;
-    if (ui.menu == MENU_CHOICE) {
-        if (dn) menu_choice_back();
-        else {
-            s = panel_enc(EN_PRESET);
-            for (k = 0; k < 4u; k++) s += panel_enc(EN_K1 + k);
-            ui.menu_scroll = (uint16_t)clamp((int32_t)menu_choice_value() + s, 0, (int32_t)menu_n(ui.menu_sel) - 1);
-            if (up) {
-                menu_put(ui.menu_sel, menu_choice_value());
-                menu_choice_back();
-            }
-        }
-        enc_drop();
-        return;
-    }
     if (ui.menu == MENU_OFF) {
         if ((s = panel_enc(EN_PRESET)) != 0) {
             menu_off_sel = (uint8_t)((menu_off_sel + (s > 0 ? 1u : MO_COUNT - 1u)) % MO_COUNT);
@@ -584,12 +531,10 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
     for (s = 0, k = 0; k < 4u; k++)                    /* KNOB 1..4, any of them */
         s += panel_enc(EN_K1 + k);
     if (menu_has_value()) {
-        /* Direct knob edits; ordinary rows also step on OCT-/+. The long named
-         * choices use OCT+ for their staged list. FX LATCH is off while MENU is up. */
-        if (!menu_has_choices()) s += (int32_t)up - (int32_t)dn;
+        /* One direct-edit rule for every value row. FX LATCH is off while MENU is up. */
+        s += (int32_t)up - (int32_t)dn;
         if (s)
             menu_put(ui.menu_sel, menu_step(ui.menu_sel, s));
-        if (up && menu_has_choices()) menu_choice_open();
     } else if (up) {
         if (ui.menu_sel == MI_SCROFF) {
             menu_off_open();

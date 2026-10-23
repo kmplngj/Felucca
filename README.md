@@ -24,12 +24,12 @@ compatibility limits and build identification. The
 instrument; some details may differ in this fork.
 
 This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
-pixel-font options, performance diagnostics and broader host/emulator regression coverage.
-The default M8Stealth display uses native pixel lettering for both regular text
+native pixel typography, performance diagnostics and broader host/emulator regression coverage.
+The M8Stealth display uses native pixel lettering for both regular text
 and control/status badges, with stable number/unit placement
 ([LCD typography](docs/lcd-typography.md)). One native UI combines a focused
 parameter bank, full musical graphs and explicit editing-state feedback with
-readable names and stable settings lists with focused choice pages. The global NORMAL/LARGE choice is retired;
+readable names and stable settings lists with grouped detail pages. The global NORMAL/LARGE choice is retired;
 physical readability and loaded-panel qualification remain pending.
 The [diagnostic capability overview](docs/diagnostics.md#diagnostic-capabilities) distinguishes
 the normal USB console and read-only host collector from opt-in assertion, crash-register,
