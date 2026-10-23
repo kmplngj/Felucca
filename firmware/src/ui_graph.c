@@ -9,7 +9,8 @@
  * bars rounded; a list's selected row is a THEME bar with INK text. */
 #define PANEL_X0 10                                  /* the graphs' inner area: x 10..230 */
 #define PANEL_W 220
-#define GOY 11                                       /* graphs drawn on a 100 px scale sit at y 11..111 */
+#define GOY ((int32_t)(graph_h() - 100u) / 2)       /* graphs drawn on a 100 px scale: y 11..111 of the
+                                                        * full panel, 0..100 of a tall bank's (#572) */
 /* ADSR/LFO graph height in native workspace units. */
 static int32_t graph_ht = 100;
 #include "ui_fm6op.c"                                /* EDIT > OPERATOR, OP ENV, OPERATOR 2: FM6's operators (their charts below) */
@@ -17,11 +18,10 @@ static int32_t graph_ht = 100;
 /* Matches voice.c: attack is linear, decay and release are exponential
  * (env += (target - env) * k each tick, ~99 % after the set time). Time
  * axis is the parameter value (the times themselves are exponential). */
-static void graph_adsr(const track_t *t, uint16_t c)
+static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id)   /* id: ATK DEC SUS REL */
 {
-    const page_t *pg = cur_page();
-    int32_t a = 4 + t->p[pg->id[0]] * 50 / 127, d = 6 + t->p[pg->id[1]] * 50 / 127, r = 6 + t->p[pg->id[3]] * 60 / 127;
-    int32_t top = 6 * graph_ht / 100, bot = 88 * graph_ht / 100, sus = t->p[pg->id[2]] * 1000 / 127;   /* 0..1000 */
+    int32_t a = 4 + t->p[id[0]] * 50 / 127, d = 6 + t->p[id[1]] * 50 / 127, r = 6 + t->p[id[3]] * 60 / 127;
+    int32_t top = 6 * graph_ht / 100, bot = 88 * graph_ht / 100, sus = t->p[id[2]] * 1000 / 127;   /* 0..1000 */
     int32_t x0 = 12, x1 = x0 + a, x3 = 226 - r, i, px, py;
     int32_t e = 32768;                                                  /* exp(-4.6 u), Q15 */
 #define EGY(lvl) (bot - (lvl) * (bot - top) / 1000)
@@ -49,6 +49,7 @@ static void graph_adsr(const track_t *t, uint16_t c)
     }
 #undef EGY
 }
+static void graph_adsr(const track_t *t, uint16_t c) { graph_adsr_of(t, c, cur_page()->id); }
 
 static void graph_lfo(const track_t *t, uint16_t c)
 {
@@ -65,6 +66,121 @@ static void graph_lfo(const track_t *t, uint16_t c)
             cv_line_t(PANEL_X0 + x - 1, py, PANEL_X0 + x, y, c, 2);
         py = y;
     }
+}
+
+/* ------------------------------------------- #572 GRAPH: the turned knob's curve in the scope's place --- */
+enum { CK_NONE, CK_FILTER, CK_ENV };
+static const uint8_t AMP_ENV[4] = {P_ATK, P_DEC, P_SUS, P_REL};
+/* the engine's cutoff (an F_CUTOFF parameter among P_E0..P_E7), -1 = none; its resonance the one after it, "RES.." */
+static int32_t filter_cut_id(const track_t *t)
+{
+    uint32_t i;
+    for (i = 0; i < 8u; i++)
+        if (track_desc(t, P_E0 + i)->fmt == F_CUTOFF)
+            return (int32_t)(P_E0 + i);
+    return -1;
+}
+static int32_t filter_res_id(const track_t *t, int32_t cut)
+{
+    const char *l;
+    if (cut < P_E0 || cut >= P_E7)
+        return -1;
+    l = track_desc(t, (uint32_t)cut + 1u)->label;
+    return l && l[0] == 'R' && l[1] == 'E' && l[2] == 'S' ? cut + 1 : -1;
+}
+static uint32_t curve_of(const track_t *t, int32_t id)
+{
+    int32_t cut = filter_cut_id(t);
+    if (id >= P_ATK && id <= P_REL)
+        return CK_ENV;
+    return cut >= 0 && (id == cut || id == filter_res_id(t, cut) || id == P_FTYPE) ? CK_FILTER : CK_NONE;
+}
+/* the parameter on KNOB c of this page (HOME: the engine's four; LEVELS none), -1 = none */
+static int32_t column_param(uint32_t c)
+{
+    const page_t *pg = cur_page();
+    if (c >= 4u)
+        return -1;
+    if (ui.home)
+        return home_levels() ? -1 : (int32_t)eng_of(TSEL->eng_req)->knob[c];
+    if (pg->scope != SC_ENGINE && pg->scope != SC_TRACK)
+        return -1;
+    return pg->id[c] == 0xFFu ? -1 : (int32_t)pg->id[c];
+}
+/* what the scope's place shows (MENU > DISPLAY > GRAPH): SCOPE always the scope; TURN the turned knob's curve while
+ * it turns (ui.curve_t) where it has one; CURVE and STILL the focused knob's curve, else the filter's, else the
+ * amplifier envelope. CK_NONE: the scope */
+static uint32_t panel_curve(const track_t *t)
+{
+    uint32_t m = graph_mode(), f = ui.read_bank.focus, k = curve_of(t, column_param(f));
+    if (m == GM_SCOPE)
+        return CK_NONE;
+    if (m == GM_TURN)
+        return ui.curve_t && ui.hot_col == f ? k : CK_NONE;
+    return k != CK_NONE ? k : filter_cut_id(t) >= 0 ? CK_FILTER : CK_ENV;
+}
+#define SCOPE_STRIP_H 16                             /* CURVE: the live scope's strip under the curve */
+static uint32_t curve_sig(const track_t *t, uint32_t k)
+{
+    int32_t cut = filter_cut_id(t), res = filter_res_id(t, cut);
+    uint32_t h = k * 2654435761u + (uint32_t)(ui.hot_t && ui.hot_col == ui.read_bank.focus) * 40503u;
+    h = (h ^ (uint32_t)(cut >= 0 ? t->p[cut] : 0)) * 16777619u;
+    h = (h ^ (uint32_t)(res >= 0 ? t->p[res] : 0)) * 16777619u;
+    h = (h ^ (uint32_t)t->p[P_FTYPE]) * 16777619u;
+    for (cut = 0; cut < 4; cut++)
+        h = (h ^ (uint32_t)t->p[AMP_ENV[cut]]) * 16777619u;
+    return h;
+}
+
+/* The filter's response: a 2-pole state-variable filter (eng_analog.c: k the damping, ANALOG_K; the three modes
+ * peak alike, 1/k, at the cutoff): |H|^2 = num / ((1 - s^2)^2 + k^2 s^2), s = f / fc, num 1 (LP), s^2 (BP), s^4 (HP).
+ * A log axis, 20 Hz at the left .. 20 kHz (10 octaves, FG_OCT px each), +18 dB at top .. -42 dB at bot; the
+ * cutoff a 2 px line to the baseline in `mark`. Integer only: exp2 / log2 in fixed point (display accuracy) */
+#define FG_OCT 22
+static uint64_t fg_exp2_q16(int32_t e)               /* 2^(e / 256), Q16 (e: octaves in 1/256) */
+{
+    int32_t i = e >> 8;
+    uint32_t f = (uint32_t)(e & 255) << 8, t = (f * (43024u + ((f * 22512u) >> 16))) >> 16;   /* 2^f ~ 1 + f(.66 + .34 f) */
+    uint64_t m = 65536u + t;
+    return i >= 0 ? m << i : m >> -i;
+}
+static int32_t fg_log2_q8(uint64_t x)                /* log2(x) in 1/256, x > 0 */
+{
+    int32_t n = 63;
+    uint32_t m;
+    while (!(x >> n))
+        n--;
+    m = (uint32_t)(n >= 8 ? x >> (n - 8) : x << (8 - n)) & 255u;
+    return n * 256 + (int32_t)(m + ((m * (256u - m) * 87u) >> 16));   /* log2(1 + f) ~ f + .34 f(1 - f) */
+}
+static int32_t fg_x(uint32_t hz) { return (fg_log2_q8(hz) - fg_log2_q8(20u)) * FG_OCT / 256; }
+static void graph_filter(const track_t *t, uint16_t c, uint16_t mark, int32_t top, int32_t bot)
+{
+    static const uint16_t GRID[3] = {100, 1000, 10000};
+    int32_t cut = filter_cut_id(t), res = filter_res_id(t, cut), x, py = bot, yc = bot, xc, i;
+    uint32_t ty = eng_of(t->eng_req) == &ENG_ANALOG ? (uint32_t)t->p[P_FTYPE] : 0u;
+    uint64_t k16 = (uint64_t)(res >= 0 ? 8192 - t->p[res] * 7600 / 127 : 5793) << 4, kk = (k16 * k16) >> 16;
+    if (cut < 0)
+        return;
+    xc = fg_x(CUTOFF_HZ[t->p[cut] & 127]);
+    for (i = 0; i < 3; i++)                          /* 100 Hz, 1 kHz, 10 kHz */
+        for (x = top; x <= bot; x += 3)
+            cv_rect(PANEL_X0 + fg_x(GRID[i]), x, 1, 1, T_RAISE);
+    cv_rect(PANEL_X0, bot + 2, PANEL_W, 1, T_RAISE);
+    for (x = 0; x < PANEL_W; x++) {
+        int32_t d = clamp((x - xc) * 256 / FG_OCT, -8 * 256, 6 * 256), y;
+        uint64_t s2 = fg_exp2_q16(2 * d), dd = s2 > 65536u ? s2 - 65536u : 65536u - s2;
+        uint64_t den = dd * dd + kk * s2, num = ty == 1u ? s2 << 16 : ty == 2u ? s2 * s2 : (uint64_t)1 << 32;
+        int32_t db16 = (fg_log2_q8(num) - fg_log2_q8(den)) * 12330 / 65536;   /* 1/16 dB: 10 log10 = 3.0103 log2 */
+        y = clamp(top + (18 * 16 - db16) * (bot - top) / (60 * 16), top, bot);
+        if (x)
+            cv_line_t(PANEL_X0 + x - 1, py, PANEL_X0 + x, y, c, 2);
+        if (x == xc)
+            yc = y;
+        py = y;
+    }
+    if (xc >= 0 && xc < PANEL_W)
+        cv_rect(PANEL_X0 + xc - 1, yc + 2, 2, bot + 2 - (yc + 2), mark);
 }
 
 /* step bar x of step i of a 16-step row: 4 groups, as the footer (9 px bars, 13 px apart, 4 px between groups),
@@ -1275,10 +1391,17 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
     uint32_t h = 2166136261u, i;
-    if (ui.home)
-        return scope_prepare(graph_h());             /* hash the trace that graph_scope will draw */
+    if (ui.home) {                                   /* hash the trace that graph_scope will draw; the curve's state */
+        uint32_t k = panel_curve(t);
+        if (k == CK_NONE)
+            return scope_prepare(graph_h());
+        return curve_sig(t, k) ^ (graph_mode() == GM_CURVE ? scope_prepare(SCOPE_STRIP_H) : 0u);
+    }
     h ^= (uint32_t)pg->graph * 131u + TSEL->eng_req + song.sel * 7777u + ui.page * 1291u;
-    if ((pg->graph == GR_NONE && !macro_page()) || pg->graph == GR_ARP) h ^= ui.frame / 2u;
+    if ((pg->graph == GR_NONE && !macro_page()) || pg->graph == GR_ARP) {
+        uint32_t k = panel_curve(t);                 /* (#572: the curve in the scope's place, still in STILL) */
+        h ^= (k == CK_NONE || graph_mode() == GM_CURVE ? ui.frame / 2u : 0u) + curve_sig(t, k);
+    }
     for (i = 0; i < P_COUNT; i++)
         h = (h ^ (uint32_t)t->p[i]) * 16777619u;
     h ^= (uint32_t)TSEL->preset * 7u + (uint32_t)song.g[G_SLOT] * 13u + TSEL->user * 257u + up_gen * 7919u + ui.uslot * 104729u +
@@ -1989,7 +2112,7 @@ static int16_t scope_snap[SCOPE_N] __attribute__((section(".pool")));
 static uint32_t scope_prepare(uint32_t height)
 {
     uint32_t w = scope_w, i, trig = 0, h = 2166136261u;
-    int32_t cy = (int32_t)height / 2, peak = 1500, a = height == H_GRAPH ? 46 : cy - 6;
+    int32_t cy = (int32_t)height / 2, peak = 1500, a = height == H_GRAPH ? 46 : height >= 40u ? cy - 6 : cy - 1;
     for (i = 0; i < SCOPE_N; i++) {
         scope_snap[i] = scope_buf[(w + i) & (SCOPE_N - 1u)];
         if (scope_snap[i] > peak)
@@ -2009,18 +2132,45 @@ static uint32_t scope_prepare(uint32_t height)
     }
     return h;
 }
-static void graph_scope(uint16_t c)
+/* the scope h rows tall from canvas row y0 (cv_oy 0), its trace `thick` px */
+static void graph_scope_at(int32_t y0, uint32_t h, uint16_t c, int32_t thick)
 {
-    int32_t cy = (int32_t)cv_h / 2, py = cy, x;
+    int32_t cy = (int32_t)h / 2, py = cy, x;
     if (!ui.home)                                    /* other pages' fallback scope has no trace signature */
-        (void)scope_prepare(cv_h);
-    cv_rect(PANEL_X0, cy, PANEL_W, 1, T_RAISE);
+        (void)scope_prepare(h);
+    if (thick > 1)
+        cv_rect(PANEL_X0, y0 + cy, PANEL_W, 1, T_RAISE);
     for (x = 0; x < PANEL_W; x++) {
         int32_t y = scope_snap[x];
         if (x)
-            cv_line_t(PANEL_X0 - 1 + x, py, PANEL_X0 + x, y, c, 2);
+            cv_line_t(PANEL_X0 - 1 + x, y0 + py, PANEL_X0 + x, y0 + y, c, thick);
         py = y;
     }
+}
+static void graph_scope(uint16_t c) { graph_scope_at(0, cv_h, c, 2); }
+/* #572: the scope's place (HOME's SCOPE view, a page with no graph of its own): the scope, or the knob's curve
+ * (panel_curve) on the panel's 100 px scale, CURVE with the live scope in a strip under it */
+static void panel_scope(const track_t *t, uint16_t c)
+{
+    uint32_t k = panel_curve(t);
+    int strip = k != CK_NONE && graph_mode() == GM_CURVE;
+    int32_t h = (int32_t)cv_h, bot = h - (strip ? SCOPE_STRIP_H + 10 : 12);
+    uint16_t mark = ui.hot_t && ui.hot_col == ui.read_bank.focus ? T_ACCENT : c;
+    cv_oy = 0;
+    if (k == CK_NONE) {
+        graph_scope(c);
+        return;
+    }
+    if (k == CK_FILTER) {
+        graph_filter(t, c, mark, 6, bot);
+    } else {
+        int32_t ht = graph_ht;
+        graph_ht = bot * 100 / 88;                   /* (graph_adsr_of: its baseline at 88 % of graph_ht) */
+        graph_adsr_of(t, c, AMP_ENV);
+        graph_ht = ht;
+    }
+    if (strip)
+        graph_scope_at(h - SCOPE_STRIP_H - 2, SCOPE_STRIP_H, T_MID, 1);
 }
 
 /* SONG is a playing order of the four stored project patterns. Letters match
@@ -2350,8 +2500,7 @@ static void draw_graph(void)
     cv_bg = T_SURF;                                  /* (text drawn with cv_text lands on it) */
     cv_oy = GOY;                                     /* graphs on a 100 px scale */
     if (ui.home) {
-        cv_oy = 0;
-        graph_scope(c);
+        panel_scope(t, c);
     } else {
         switch (pg->graph) {
         case GR_ADSR:
@@ -2442,7 +2591,7 @@ static void draw_graph(void)
             else if ((pg->scope == SC_ENGINE || pg->id[0] == P_FM1_LEVEL) && t->eng_req == ENGI_DIGITAL)
                 graph_fm(t, c);                      /* (OP LEVEL too: the levels on the chart) */
 #endif
-            else { cv_oy = 0; graph_scope(c); }
+            else panel_scope(t, c);
             break;
         }
     }

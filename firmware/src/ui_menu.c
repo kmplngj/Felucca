@@ -188,7 +188,6 @@ static int32_t menu_scroll_max(void)
     return h > MENU_DOC_H ? h - MENU_DOC_H : 0;
 }
 
-static void menu_dots(void);
 /* the menu's header (0..24): its icon and title, the REC mark, the way back (the tabs: HOME CLOSE before the dots) */
 static void menu_head(void)
 {
@@ -204,30 +203,22 @@ static void menu_head(void)
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_OCTDN, w, 1, T_BG);
         draw_rec_mark(x - 20, T_BG);
     } else {
-        int detail = ui.menu == MENU_OFF;
-        int32_t x = 232 - (detail ? 0 : (12 + (int32_t)(MTAB_COUNT - 1u) * 8) + 8) - kh_w(KC_HOME, "CLOSE");
+        int32_t x = 232 - kh_w(KC_HOME, "CLOSE");     /* (#572: the tab bar says the tab; no dots) */
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         cv_key_hint(x, HALF_UP(H_HEAD - KC_H), KC_HOME, "CLOSE", 1, T_BG);
         draw_rec_mark(x - 20, T_BG);
-        if (!detail) menu_dots();
     }
     cv_blit(0, Y_HEAD);
 }
 
-/* MENU: native header, animated M tab bar, seven uniform rows and bottom key hints.
+/* MENU: native header, the tab names with a sliding underline (#572), seven uniform rows and bottom key hints.
  * Selection never changes row height; rows are fully composed
  * before transfer within the existing 124-row canvas. INFO and ABOUT retain
  * their own bounded content bands. */
-static const uint16_t MTAB_ICON[MTAB_COUNT] = {ICON_X_EYE, ICON_X_KNOB, ICON_X_SPEAKER, ICON_MIDI, ICON_X_COG};
 #define MT_Y 29                                        /* the tab bar */
 #define MT_H 24
-#define MT_IW 26                                       /* a cushion with its icon alone (the icon centred in it; 1.2, five
-                                                        * tabs: 26, up to 1.1.5 32) */
-#define MT_NX 24                                       /* the name's pen in the one shown; 10 px after it */
 #define MT_X0 6
 #define MT_X1 234
-#define MT_GAP 5                                       /* between two tabs, always (the bar centred in MT_X0..MT_X1; 1.2, five
-                                                        * tabs: 5, up to 1.1.5 8) */
 #define MT_ONE 64                                      /* mt.pos per tab */
 #define MP_Y 59                                        /* the rows' panel */
 #define MP_PAD 3
@@ -250,54 +241,42 @@ static void mt_follow(void)
         mt.pos = (int16_t)(mt.pos + d / 2);
     mt.frame = ui.frame;
 }
-static const aafont_t *mt_font(void) { return &AF_M; }
-/* the tabs at the place mt.pos, MT_GAP apart, centred: each one's share of the shown look (0 .. MT_ONE), x, width */
+/* #572: the five tabs' names (S) justified across MT_X0..MT_X1, the shown one TEXT over an accent underline that
+ * slides with mt.pos (ANIM ON); the others MID. a: each one's share of the shown look (0 .. MT_ONE), x: its pen, w */
 static void mt_layout(int32_t *a, int32_t *x, int32_t *w)
 {
     uint32_t k;
-    int32_t tot = 0, cum = 0;
+    int32_t tot = 0, cum = MT_X0, gap;
     for (k = 0; k < MTAB_COUNT; k++) {
         int32_t d = mt.pos - (int32_t)k * MT_ONE;
         a[k] = MT_ONE - (d < 0 ? -d : d);
         if (a[k] < 0) a[k] = 0;
-        w[k] = MT_IW + (MT_NX - MT_IW + text_w(mt_font(), MTAB_NAME[k]) + 10) * a[k] / MT_ONE;
+        w[k] = ink_w(&AF_S, MTAB_NAME[k]);
         tot += w[k];
     }
-    cum = MT_X0 + HALF_UP(MT_X1 - MT_X0 - tot - (int32_t)(MTAB_COUNT - 1u) * MT_GAP);   /* (the bar centred) */
-    for (k = 0; k < MTAB_COUNT; k++) {                 /* the same gap between every two, sliding too */
-        x[k] = cum;
-        cum += w[k] + MT_GAP;
+    gap = (MT_X1 - MT_X0 - tot) / (int32_t)(MTAB_COUNT - 1u);
+    for (k = 0; k < MTAB_COUNT; k++) {
+        x[k] = k + 1u == MTAB_COUNT ? MT_X1 - w[k] : cum;
+        cum += w[k] + gap;
     }
 }
+#define MT_TY (MT_Y + CAP_IN(S, MT_H))                    /* the names' line top; the underline 3 px under their capitals */
 static void menu_tabs(void)                            /* (in screen rows: cv_oy set by the caller) */
 {
-    int32_t a[MTAB_COUNT], x[MTAB_COUNT], w[MTAB_COUNT];
+    int32_t a[MTAB_COUNT], x[MTAB_COUNT], w[MTAB_COUNT], i = mt.pos / MT_ONE, f = mt.pos % MT_ONE, lx, lw;
+    int32_t uy = MT_TY + AF_S_CAP_Y + AF_S_CAP_H + 3;
     uint32_t k;
     mt_layout(a, x, w);
-    if (ux.style)                                      /* LINE: a rule under the tabs */
-        cv_rule(4, MP_Y - 3, 232, 1);
+    cv_rule(4, MP_Y - 3, 232, 1);                      /* a rule under the tabs */
     for (k = 0; k < MTAB_COUNT; k++) {
         int on = k == (uint32_t)((mt.pos + MT_ONE / 2) / MT_ONE);   /* (half way, the shown look moves over) */
-        uint16_t bg = on ? T_ACCENT : T_SURF;
-        cv_rrect(x[k], MT_Y, w[k], MT_H, -8, bg, T_BG);
-        GFX_HOOK_ALIGN(x[k], MT_Y, x[k] + MT_IW, MT_Y + MT_H, AL_HV, "menu tab icon centred in its cushion");
-        cv_icon_in(x[k], MT_Y, MT_IW, MT_H, 16, MTAB_ICON[k], on ? T_INK : T_MID, bg);
-        if (a[k] == MT_ONE) {                          /* (settled: its name) */
-            GFX_HOOK_ALIGN(0, MT_Y, 0, MT_Y + MT_H, AL_V, "menu tab name centred up/down");
-            cv_text_on(x[k] + MT_NX, MT_Y + CAP_IN(M, MT_H), mt_font(), MTAB_NAME[k],
-                       T_INK, T_ACCENT);
-        }
+        GFX_HOOK_ALIGN(0, MT_Y, 0, MT_Y + MT_H, AL_V | AL_PASS, "menu tab names on one line");
+        cv_text_on(x[k], MT_TY, &AF_S, MTAB_NAME[k], on ? T_TEXT : T_MID, T_BG);
     }
-}
-/* the header's tab dots at the right, the shown tab's a THEME pill */
-static void menu_dots(void)
-{
-    uint32_t k, t = menu_tab();
-    int32_t x = 232 - (12 + (int32_t)(MTAB_COUNT - 1u) * 8);
-    for (k = 0; k < MTAB_COUNT; k++) {
-        cv_rrect(x, H_HEAD / 2 - 2, k == t ? 12 : 4, 4, -2, k == t ? T_THEME : T_DIM, T_BG);
-        x += (k == t ? 12 : 4) + 4;
-    }
+    if (i + 1 >= (int32_t)MTAB_COUNT) { i = (int32_t)MTAB_COUNT - 1; f = 0; }
+    lx = x[i] + (f ? (x[i + 1] - x[i]) * f / MT_ONE : 0);
+    lw = w[i] + (f ? (w[i + 1] - w[i]) * f / MT_ONE : 0);
+    cv_rect(lx, uy, lw, 2, T_ACCENT);
 }
 
 static void menu_off_summary(char *b)

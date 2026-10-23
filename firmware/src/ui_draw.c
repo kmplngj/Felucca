@@ -464,12 +464,7 @@ static void draw_gaps(uint32_t y, uint32_t h)
     lcd_fill(0, y, (uint32_t)CARD_X(0), h, T_BG);
     for (i = 0; i < 4u; i++) {                          /* right of each column */
         uint32_t x = (uint32_t)(CARD_X(i) + CARD_W), w = i < 3u ? (uint32_t)CARD_X(i + 1u) - x : 240u - x;
-        if (ux.style && i < 3u) {
-            lcd_rule(x, y, 1, h);
-            lcd_fill(x + 1u, y, w - 1u, h, T_BG);
-        } else {
-            lcd_fill(x, y, w, h, T_BG);
-        }
+        lcd_fill(x, y, w, h, T_BG);                    /* (#572: the columns stand apart by their own rules) */
     }
 }
 /* full redraw: the strips (header, cards, panel, footer) cover the rest; only the BG between them is filled */
@@ -585,8 +580,8 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     int hot = c == ui.hot_col && ui.hot_t, named = fmt_named, mot = card_mot_next && label[0], strip, snap;
     uint32_t kind = reading_kind();                       /* task-specific bank or compact controls */
     uint8_t sig;
-    uint16_t lc = hot ? T_ACCENT : T_MID, tc = vc == T_DIM ? T_MID : vc;
-    int32_t lx = 5, uw, room = COL_W - 8;
+    uint16_t lc = hot ? T_TEXT : T_MID, tc = vc == T_DIM ? T_MID : vc;
+    int32_t lx = 0, uw, room = COL_W - 2;
     const aafont_t *vf = &AF_M;
     uint32_t n, kn;
     int32_t kid = kc_tag(val, &kn);
@@ -648,58 +643,40 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
             ui.roll[c].from[0] = 0;
         str_cpy(ui.col[c], key, sizeof ui.col[c]);
         cv_begin(COL_W, COL_H, T_BG);
-        cv_rrect(0, 0, COL_W, COL_H, 4, T_SURF, T_BG);
+        if (label[0] || val[0])                         /* #572: the knob's rule (ui_bank.c): heavy and the accent while
+                                                         * it turns, dashed where MOTION drives it */
+            bank_rule(0, 1, COL_W, mot ? BR_DASH : BR_SOLID, hot, hot ? T_ACCENT : mot ? T_THEME : T_LINE);
     }
     if (label[0] || val[0]) {
-        if (!strip && label[0]) {
-            /* Compact controls: M labels where they fit, otherwise S on the same capital band. */
-            const aafont_t *lf = kind == RK_COMPACT && 5 + text_w(&AF_M, label) <= COL_W - 2 ? &AF_M : &AF_S;
-            int32_t lw = text_w(lf, label), ix = 5;
-            int32_t ly = CARD_LABEL_Y + (lf == &AF_M ? CAP_IN(M, CARD_LABEL_H) : CAP_IN(S, CARD_LABEL_H));
-            int32_t cy = ly + (lf == &AF_M ? AF_M_CAP_Y : AF_S_CAP_Y), chh = lf == &AF_M ? AF_M_CAP_H : AF_S_CAP_H;
-            uint32_t ic = mot ? ICON_X_MOTION : icon;
-            if (mot && ix + ICON_CELL + ICON_GAP + lw > COL_W - 2)
-                ix = COL_W - 2 - lw - ICON_GAP - ICON_CELL;   /* a long label: MOTION's icon moves left */
-            if (FELUCCA_ICONS && ic != ICON_NONE && ix >= 1 && ix + ICON_CELL + ICON_GAP + lw <= COL_W - 2) {
-                GFX_HOOK_ALIGN(ix, cy, ix, cy + chh, AL_V, "card icon on its label's line");
-                lx = ix + cv_icon_in(ix, cy, 0, chh, ICON_CELL, ic,   /* its ink on the label's line */
-                                     mot ? (hot ? T_ACCENT : T_THEME) : lc, T_SURF) + ICON_GAP;
-            }
-            else if (mot)                               /* the label from x 19 (5 + 12 + 2) */
-                lc = hot ? T_ACCENT : T_THEME;          /* no room for MOTION's icon: the label says it */
+        if (!strip && label[0]) {                       /* #572: S labels flush left under the rule, no icons */
+            int32_t b[4], ly = CARD_LABEL_Y + CAP_IN(S, CARD_LABEL_H), cy = ly + AF_S_CAP_Y;
             if (hot && T_ACCENT == T_MID) {             /* MONO: no colour tells the hot knob: its label inverted, */
-                int32_t b[4], w;                        /* the chip 2 px round its ink (M: 3 above, 2 below) */
-                text_ink(lf, label, b);
+                int32_t w;                              /* the chip 2 px round its ink */
+                text_ink(&AF_S, label, b);
                 w = b[2] - b[0] + 4;
                 if (w > COL_W + 1 - lx - b[0]) w = COL_W + 1 - lx - b[0];
-                cv_rrect(lx + b[0] - 2, cy - 3, w, chh + (lf == &AF_M ? 5 : 6), 3, T_ACCENT, T_SURF);
-                GFX_HOOK_ALIGN(lx + b[0] - 2, cy - 3, lx + b[0] - 2 + w, cy + chh + (lf == &AF_M ? 2 : 3), AL_HV,
-                               "card label chip (MONO hot)");
-                cv_text_fit(lx, ly, lf, label, T_INK, T_ACCENT, COL_W - 2 - lx);
+                cv_rect(lx + b[0], cy - 2, w, AF_S_CAP_H + 4, T_ACCENT);
+                GFX_HOOK_ALIGN(lx + b[0], cy - 2, lx + b[0] + w, cy + AF_S_CAP_H + 2, AL_HV, "card label chip (MONO hot)");
+                cv_text_fit(lx + 2, ly, &AF_S, label, T_INK, T_ACCENT, COL_W - 4 - lx);
             } else
-                cv_text_fit(lx, ly, lf, label, lc, T_SURF, COL_W - 2 - lx);
+                cv_text_fit(lx, ly, &AF_S, label, lc, T_SURF, COL_W - 2 - lx);
         }
         if (kid >= 0)                                   /* "[OCT+]": the keycap (accent: it would act; DIM: it would not) */
-            cv_keycap(5, 20, (uint32_t)kid, vc == T_ACCENT || vc == T_DIM ? vc : T_KEY, T_INK, T_SURF);
+            cv_keycap(0, 20, (uint32_t)kid, vc == T_ACCENT || vc == T_DIM ? vc : T_KEY, T_INK, T_SURF);
         else if (vf == &AF_M) {
             if (!ui.roll[c].from[0] && val[0])
                 GFX_HOOK_ALIGN(0, ROLL_Y, COL_W, ROLL_Y + ROLL_H, AL_V, "card value in its roll window");
-            roll_text(c, 5, ROLL_Y + CAP_IN(M, ROLL_H), val, tc);
+            roll_text(c, 0, ROLL_Y + CAP_IN(M, ROLL_H), val, tc);
         } else {
             GFX_HOOK_ALIGN(0, CARD_VALUE_Y, COL_W, CARD_VALUE_Y + CARD_VALUE_H, AL_V, "card fallback value in its value band");
-            cv_text_fit(5, CARD_VALUE_Y + CAP_IN(S, CARD_VALUE_H), vf, val, tc, T_SURF, room - uw);
+            cv_text_fit(0, CARD_VALUE_Y + CAP_IN(S, CARD_VALUE_H), vf, val, tc, T_SURF, room - uw);
         }
         if (unit[0]) {
             int32_t baseline = CARD_VALUE_Y + (vf == &AF_M ? CAP_IN(M, CARD_VALUE_H) + AF_M.asc :
                                                                             CAP_IN(S, CARD_VALUE_H) + AF_S.asc);
             GFX_HOOK_ALIGN(0, 0, 0, baseline, AL_B, "card unit on its value's baseline");
-            cv_text_r(5 + room, baseline - AF_S.asc, &AF_S, unit, T_MID, T_SURF);
-        }
-        if (!strip && ratio >= 0) {
-            int32_t gw = COL_W - 10, fx = ratio * gw / 1000;
-            cv_rrect(5, 38, gw, 3, 1, ux.style ? T_LINE : T_BG, T_SURF);   /* (LINE: no card to cut it from) */
-            cv_rrect(5, 38, fx < 3 ? 3 : fx, 3, 1, hot ? T_ACCENT : vc == T_DIM ? T_DIM : T_THEME, T_BG);
-        }
+            cv_text_r(room, baseline - AF_S.asc, &AF_S, unit, T_MID, T_SURF);
+        }                                               /* (#572: no gauge; the bank's columns have none either) */
     }
     cv_oy = 0;
     cv_blit((uint32_t)CARD_X(c), Y_LABEL + (strip ? ROLL_Y : 0));
@@ -749,6 +726,7 @@ static void sound_name(const track_t *t, char *b)
         str_cpy(b, e->presets[t->preset % e->npresets].name, 16);
 }
 
+#define FOOT_M_Y 16                                    /* the footer's names: M line top (capitals 22..30) */
 static void draw_foot(void)
 {
     char s[48], pn[16], ti[20], ln[24];
@@ -846,31 +824,36 @@ static void draw_foot(void)
                 cv_rect(sx, 14, 9, 2, T_TEXT);          /* the step sounding */
         }
     }
-    {   /* row 2: engine icon + name, sound, page title at the right with its icon before it (MIXER, PHRASES, SONG,
-         * AUTOMATION); icons: their ink on the names' capitals */
-        uint32_t pi = ui.home ? ICON_NONE : page_icon(pg), ei = FELUCCA_ICONS ? engine_icon(t->eng_req) : ICON_NONE;
-        int32_t r = 232, tx, ex, need = text_w(&AF_S, pn), ew = text_w(&AF_S, ename);
-        ex = 8 + (FELUCCA_ICONS ? 12 + 5 : 0) + (ew < 80 ? ew : 80);   /* (where the engine's name ends) */
-        tx = r - text_w(&AF_S, ti) - (pi != ICON_NONE ? 16 : 0);
-        if (!ui.home && pg->graph == GR_EVENTS && tx - 12 - (ex + 10) < need) {
-            str_cpy(ti + 4, ti + 10, sizeof ti - 4);    /* #93: "AUTOMATION 6/6" -> "AUTO 6/6" where the sound's name */
-            tx = r - text_w(&AF_S, ti) - (pi != ICON_NONE ? 16 : 0);   /* would be cut */
+    {   /* row 2 (#572): the sound's name (M) and its engine (S) at the left; the page's title (M) and its place in the
+         * family (S, "1/2") at the right. The sound's name gives way (ellipsised) where the title needs the room */
+        char *ix = 0;
+        int32_t r = 232, y = FOOT_M_Y, tx, ew = text_w(&AF_S, ename), x;
+        uint32_t i;
+        for (i = str_len(ti); i-- > 0;)                /* "ENV 1/2": the place after the last space */
+            if (ti[i] == ' ') {
+                if (ti[i + 1] >= '0' && ti[i + 1] <= '9' && str_len(ti + i + 1) > 2u && ti[i + 2] == '/')
+                    ix = ti + i + 1;
+                break;
+            }
+        tx = r;
+        if (ix) {
+            tx = r - text_w(&AF_S, ix);
+            GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+            cv_text_on(tx, y + AF_M_CAP_Y + AF_M_CAP_H - AF_S_CAP_H - AF_S_CAP_Y, &AF_S, ix, T_MID, T_BG);
+            ix[-1] = 0;
+            tx -= 4;
         }
-        x = 8;
-        if (FELUCCA_ICONS) {
-            if (ei != ICON_NONE)
-                GFX_HOOK_ALIGN(0, 19 + AF_S_CAP_Y, 0, 19 + AF_S_CAP_Y + AF_S_CAP_H, AL_V,
-                               "footer icons on the names' line");
-            x += cv_icon_in(x, 19 + AF_S_CAP_Y, 0, AF_S_CAP_H, 12, ei, T_MID, T_BG) + 5;
+        if (!ui.home && pg->graph == GR_EVENTS && text_w(&AF_M, ti) > 60)
+            str_cpy(ti, "AUTO", sizeof ti);            /* #93: "AUTOMATION" -> "AUTO" where the sound's name would be cut */
+        tx -= text_w(&AF_M, ti);
+        GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+        cv_text_on(tx, y, &AF_M, ti, T_TEXT, T_BG);
+        GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+        x = cv_free_text(8, y, &AF_M, pn[0] ? pn : ename, T_TEXT, T_BG, tx - 12 - 8 - (pn[0] ? ew + 6 : 0));
+        if (pn[0] && x + 6 + ew <= tx - 10) {
+            GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+            cv_text_on(x + 6, y + AF_M_CAP_Y + AF_M_CAP_H - AF_S_CAP_H - AF_S_CAP_Y, &AF_S, ename, T_MID, T_BG);
         }
-        x = cv_text_fit(x, 19, &AF_S, ename, T_THEME, T_BG, 80);
-        cv_free_text(x + 10, 19, &AF_S, pn, T_TEXT, T_BG, tx - 12 - (x + 10));
-        if (pi != ICON_NONE) {
-            GFX_HOOK_ALIGN(0, 19 + AF_S_CAP_Y, 0, 19 + AF_S_CAP_Y + AF_S_CAP_H, AL_V,
-                           "footer icons on the names' line");
-            cv_icon_in(tx, 19 + AF_S_CAP_Y, 0, AF_S_CAP_H, 12, pi, T_MID, T_BG);
-        }
-        cv_text_r(r, 19, &AF_S, ti, T_MID, T_BG);
     }
     cv_blit(0, Y_FOOT);
 }
@@ -1480,8 +1463,9 @@ static void style_apply(void)
 {
     if (ui_style > ST_LINE)                             /* 2, the retired PIXEL: LINE; unknown: FLAT */
         ui_style = ui_style == 2u ? ST_LINE : ST_FLAT;
-    if (ux.style != ui_style) {
-        ux.style = ui_style;
+    if (ux.style != ST_LINE) {                          /* #572: one native style, rules on BG; the saved value is kept
+                                                         * for the wire (id 1) and older firmware */
+        ux.style = ST_LINE;
         palette_apply();
         ui.force = 1;
     }
@@ -1623,6 +1607,8 @@ static void ui_draw_page(uint32_t counting)
         }
         if (ui.hot_t)
             ui.hot_t--;
+        if (ui.curve_t)
+            ui.curve_t--;
         if (ui.bpm_t)
             ui.bpm_t--;
         ui.force = 0;
@@ -1655,5 +1641,7 @@ static void ui_draw_page(uint32_t counting)
         ui.bpm_t--;
     if (ui.hot_t)
         ui.hot_t--;
+    if (ui.curve_t)
+        ui.curve_t--;
     ui.force = 0;
 }

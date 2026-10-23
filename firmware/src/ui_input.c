@@ -1808,11 +1808,13 @@ static void ui_input(void)
             lock_turn(k, s, held);
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
             continue;
         }
         if (mom_down() && mom_turn(k, s)) {             /* MOMENTARY: LFO held (no automation, no undo) */
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
             continue;
         }
         if (ui.home || pg->scope == SC_STEP || pg->scope == SC_TRK || page_desc(pg, k, &hv) ||
@@ -1821,6 +1823,7 @@ static void ui_input(void)
                                                                                                           * column) */
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
         }
         if (ui.home) {                                  /* (LEVELS: track k's, as MIXER; ui_knob.c knob_home) */
             knob_target_t kt;

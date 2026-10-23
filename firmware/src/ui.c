@@ -110,6 +110,17 @@ static uint32_t sel_mode(void) { return ((ui_prefs2 >> 4) & 1u) | ((ui_prefs2 >>
 static uint32_t leds_inv(void) { return settings_leds == LEDS_INV && ui_leds_inv - 1u < 2u ? ui_leds_inv : 0u; }
 enum { HV_SCOPE, HV_TRACKS, HV_LEVELS, HV_COUNT };
 static int home_tracks(void) { return ui_home_view == HV_TRACKS || ui_home_view == HV_LEVELS; }
+/* #572: MENU > DISPLAY > GRAPH (menu_items.c GRAPH_N), bits 1..2 of ANIM IDLE's byte (ui_idle, settings_dev[10]: bit 0
+ * IDLE; every older firmware reads bit 0 only and keeps the byte as saved). Stored 0, every older setting, is TURN, the
+ * default: the codes 0 TURN, 1 SCOPE, 2 CURVE, 3 STILL swap the first two of the menu's order (GRAPH_CODE: its own
+ * inverse) */
+enum { GM_SCOPE, GM_TURN, GM_CURVE, GM_STILL, GM_COUNT };
+#define GRAPH_CODE(v) ((v) < 2u ? (v) ^ 1u : (v))
+static uint32_t graph_mode(void) { return GRAPH_CODE((settings_dev[10] >> 1) & 3u); }
+static void graph_mode_put(uint32_t v)
+{
+    settings_dev[10] = (uint8_t)((settings_dev[10] & ~6u) | GRAPH_CODE(v & 3u) << 1);
+}
 static int home_levels(void) { return ui_home_view == HV_LEVELS; }
 enum { RP_CLICK, RP_LEVEL, RP_COUNTIN };
 static uint32_t rp_get(uint32_t f)                     /* a field as the MENU steps it: 0..2 */
@@ -142,13 +153,16 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 #define VAL(c) ((c) == ui.hot_col && ui.hot_t ? T_ACCENT : T_THEME)   /* the knob just turned: accent */
 #define RATIO(d, v) ((d)->max > (d)->min ? ((int32_t)(v) - (d)->min) * 1000 / ((d)->max - (d)->min) : -1)
 /* layout: header 0..24, four cards 28..72 (57 px at x 3 + 59 c),
- * the panel 76..198 (a SURF area; the graphs live in it), footer 202..240; BG between them */
+ * the panel 76..198 (a SURF area; the graphs live in it), footer 202..240; BG between them. #572: a value page whose
+ * panel draws on the 100 px graph scale gives its bank the X numeral's room: bank 28..94, panel 98..198 (bank_tall) */
 #define Y_HEAD 0
 #define H_HEAD 24
 #define Y_LABEL 28                    /* the cards */
 #define Y_SEP_END 72
 #define CARD_W 57
 #define CARD_H 44
+#define CARD_H_TALL 66              /* (#572: the bank with its X numeral) */
+#define CURVE_HOLD 80u              /* #572 GRAPH TURN: frames (~1.2 s) the curve outlasts the last detent */
 #define CARD_X(c) (3 + 59 * (int32_t)(c))
 #define Y_GRAPH 76                    /* the panel */
 #define H_GRAPH 122
@@ -176,6 +190,7 @@ static struct {
     uint64_t plk_rm, plk_acc;    /* .. the grid's step keys pressed on a hit (bit = step): it goes when the key is let
                                   * go, unless the key was held for a lock (its accent: plk_acc) */
     uint8_t hot_col, hot_t;      /* column whose knob was just turned (drawn white) */
+    uint8_t curve_t;             /* #572 GRAPH TURN: frames the turned knob's curve stays in the scope's place */
     uint8_t menu;                /* 0 off, 1 list, 2 about + credits, 3 info, 4 AUTO OFF detail (HOME held) */
     uint8_t menu_sel;            /* MENU: the row (menu_items.c MI_*; its tab MI_TAB), kept while the device runs */
     uint8_t menu_row[5];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
@@ -266,7 +281,8 @@ enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PA
  * (ui.force), then DISPON (lcd_power(2)) */
 #define ui_scr (settings_dev[27])
 /* MENU > ANIM IDLE (1.2, Discussion #135; menu_items.c, ui_input.c idle_leds): bit 0, the LEDs' idle animation, in a
- * byte no engine uses, kept with the settings; 0 in every older setting = off. The other bits: 0 (room for a delay) */
+ * byte no engine uses, kept with the settings; 0 in every older setting = off. Bits 1..2: GRAPH (#572, graph_mode); bits
+ * 3..7: 0 (room for a delay) */
 #define ui_idle (settings_dev[10])
 #define SCR_DEF 0u                                     /* NEVER (1.1.5.1; 1.1.5: 30 MIN) */
 static const uint8_t SCR_CODE[5] = {0, 2, 1, 4, 7};    /* the stored byte of NEVER 5 15 30 60 MIN (1.1.5: 3 2 1 0 7) */
@@ -486,9 +502,25 @@ static uint32_t reading_kind(void)
     return g == GR_BROWSE || g == GR_SLOTS || g == GR_USER || g == GR_PATS || g == GR_SONG || g == GR_ROLL ||
            g == GR_SLICES || g == GR_EVENTS || g == GR_TOOLS ? RK_COMPACT : RK_BANK;
 }
-static uint32_t card_h(void) { return CARD_H; }
-static uint32_t graph_y(void) { return Y_GRAPH; }
-static uint32_t graph_h(void) { return H_GRAPH; }
+static int macro_page(void);
+/* #572: the panel draws on the 100 px graph scale (GOY) and needs no margin above it: the scope, ADSR, LFO, SCALE, FX,
+ * SLICER, INSERT and the engine diagrams. The lists, the roll, MIXER, CHORD, MOD, MACRO's page and FM6's charts (their
+ * captions in the margin above the chart) use the panel's full height */
+static int panel_scaled(void)
+{
+    uint32_t g;
+    if (ui.home)
+        return !home_tracks();
+    g = cur_page()->graph;
+    if (g == GR_NONE)
+        return !macro_page() && !(cur_page()->scope == SC_ENGINE && eng_is(TSEL->eng_req, ENGI_FM6));
+    return g == GR_ADSR || g == GR_LFO || g == GR_SCALE || g == GR_FX || g == GR_SLCR || g == GR_INS || g == GR_ARP ||
+           g == GR_STEPS;
+}
+static int bank_tall(void) { return !ui.layer && reading_kind() == RK_BANK && panel_scaled(); }
+static uint32_t card_h(void) { return bank_tall() ? CARD_H_TALL : CARD_H; }
+static uint32_t graph_y(void) { return Y_LABEL + card_h() + 4u; }
+static uint32_t graph_h(void) { return Y_FOOT - 4u - graph_y(); }
 static int large_face_has(const char *s)                /* every glyph of s in the sparse L face */
 {
     for (; *s; s++)
