@@ -9,6 +9,16 @@ Keep selective adoption. The requested [v2.8 release](https://github.com/Wulgare
 
 v2.8 mainly improves storage representation, RAM and LCD transfers. It adds no new synthesis engine/bank in the v2.7→v2.8 interval. Source currently has SAMPLE/GRAIN/NOISE selectable again despite the older 2.1 changelog; SLICE remains retired and DRUM ID10 is still DRUM-X. Our standard catalog and saved identities stay intact.
 
+### Integration reconciliation — 2026-10-23
+
+The original source review below remains pinned to its intake revisions. The
+combined handoff reconciles documentation and registration with Felucca main
+`f8ed365d845af789ce7237e3bd531f6d0c67fff9`, where Araminta is already registered once
+and the historical target remains unchanged. This does not refresh canonical scan
+progress or rerun the donor audit. [Clipper](clipper-adoption-2026-10-19.md) and
+[FM1 Open V14](fm1-open-adoption-2026-10-21.md) share the same preservation and
+independent-measurement gates; none of these plans changes default behavior.
+
 ### Updated work order
 
 | Priority | Work | Existing/new owner and gate |
@@ -45,12 +55,12 @@ Donor reports -2,688 B RAM/-768 B POOL/+1,184 B app for packed steps, then spend
 
 ### Watcher and completion
 
-**Already registered on both main and automation/firmware-watch:** Wulgaren/Araminta, repository ID 1414058478, branch main, frozen historical target `7304acfe34cbf43825d33c15ef13bef0aab5c85d` (39 at setup). Current canonical source-specific state has one historical terminal review, zero recent reviewed and observed/pinned tip `b16f1b2ed424172fe238779e9101328d8e732d8a`. Keep those existing targets and journal records. The next normal serialized sync discovers v2.8's new main tip and schedules the missing graph; this release snapshot credits no individual commits. No duplicate source registration, scheduler or cadence change is needed.
+**At the original intake, already registered on both main and automation/firmware-watch:** Wulgaren/Araminta, repository ID 1414058478, branch main, frozen historical target `7304acfe34cbf43825d33c15ef13bef0aab5c85d` (39 at setup). At the original 2026-10-21 intake, canonical source-specific state had one historical terminal review, zero recent reviewed and observed/pinned tip `b16f1b2ed424172fe238779e9101328d8e732d8a`. Keep those existing targets and journal records. Normal serialized sync discovers later main tips and schedules missing graph work; this release snapshot credits no individual commits. No duplicate source registration, scheduler or cadence change is needed.
 
 A documentation PR publishes the full review and links it from docs/firmware-watch.md. README assessment: existing collection/review/measurement and experimental-engine descriptions remain accurate; no running capability changed. Changelog: no entry for planned/unmerged work. Every retained implementation still needs current source/pin/compiler/profile provenance, focused/full native tests, app/all-region/stack evidence and real FM-1 listening/timing/USB/MIDI acceptance.
 
 ### Review method
 
-Read the release notes, four v2.8 implementation changes and their native consumers, current routing/engine/generator sources, current project codecs and focused donor fixtures without executing donor code. Read the earlier adoption/instrument owners, open/closed issues and PR inventories across all four implementation repositories, and relevant comments. Main comparison `63f49060e3e625e3bf5bacdb726798ff8f58c363`, MIT Engines pin `9630426f5c4a34a209ca851356fbe8ba3c4c6d19`; current collection mains are MIT `7cf364f6c2ce0130be4fe8bf436ffe62077cb175` and GPL `1406b3ac7008bad2a87a2f41e44da93eb621bc40`. Do not confuse current collection main with the firmware's consumed pin.
+Read the release notes, four v2.8 implementation changes and their native consumers, current routing/engine/generator sources, current project codecs and focused donor fixtures without executing donor code. Read the earlier adoption/instrument owners, open/closed issues and PR inventories across all four implementation repositories, and relevant comments. Main comparison `63f49060e3e625e3bf5bacdb726798ff8f58c363`, MIT Engines pin `9630426f5c4a34a209ca851356fbe8ba3c4c6d19`; collection mains at intake were MIT `7cf364f6c2ce0130be4fe8bf436ffe62077cb175` and GPL `1406b3ac7008bad2a87a2f41e44da93eb621bc40`. Do not confuse current collection main with the firmware's consumed pin.
 
 The donor clone is non-shallow and `git fsck --full --no-dangling` passes. Tag v2.8 and donor main resolve to the full immutable pin above; v2.7 is `9563565a5317b8e7fc1c5f1ad6d91b20f35fa73b`. The release object is not marked immutable, so source evidence uses the resolved commit. No donor scripts, builds, tests or binaries were run. This source review does not establish numerical speed/size savings or device qualification.

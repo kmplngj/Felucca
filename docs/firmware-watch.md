@@ -227,6 +227,19 @@ release publication and unrelated writes remain outside this maintenance task.
 Keep a single active runner for the published state branch. Disable an existing
 runner before enabling a replacement so both cannot process the same queues.
 
+## Combined adoption-planning handoff
+
+The [FM1 Open V14](fm1-open-adoption-2026-10-21.md),
+[Clipper](clipper-adoption-2026-10-19.md) and
+[Araminta v2.8](araminta-v2.8-review-2026-10-21.md) reviews share one documentation
+and registration handoff, reconciled against Felucca main
+`f8ed365d845af789ce7237e3bd531f6d0c67fff9` on 2026-10-23. Their original immutable
+source pins, dated comparison evidence and existing issue owners are retained.
+Clipper and FM1 Open add two pending registrations; Araminta stays registered once.
+All existing registrations, including FM Lab, remain intact. No runtime state,
+journal, frontier, schedule or review credit changes. This does not re-audit donor
+history or establish implemented features, available profiles or native gains.
+
 ## Release-specific adoption reviews
 
 The [Araminta v2.8 review](araminta-v2.8-review-2026-10-21.md) refreshes

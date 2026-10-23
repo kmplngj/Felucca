@@ -28,6 +28,16 @@ This is a pinned source snapshot review, not a commit-by-commit historical audit
 roadmap #370, instrument selection #368, feedback specialization #366 and SAMPLE
 interior-span #367 remain their owners. Historical intake text stays dated.
 
+## Integration reconciliation — 2026-10-23
+
+The original snapshot evidence and pinned native links below remain dated to the
+intake. Reconciliation with Felucca main `f8ed365d845af789ce7237e3bd531f6d0c67fff9`
+confirms that FM6 still computes frequency/AM work per operator and the native
+canvas remains 240×124 RGB565. No new donor audit or device measurement is claimed.
+This handoff also retains the [Clipper](clipper-adoption-2026-10-19.md) and
+[Araminta v2.8](araminta-v2.8-review-2026-10-21.md) plans. All are experimental
+selection/measurement work; they do not enable engines or change defaults.
+
 ## Delivery plan
 
 | Order | Deliverable | Owner and decision gate |
@@ -170,10 +180,12 @@ Register `m-vave/fm1_open` main as **pending initialization**, repository identi
 historical commits and zero reviews. Preserve every existing pending source and
 the canonical state/journal. This PR only changes registration and documentation.
 
-After merge, the existing daily 09:00 Europe/Berlin task merges main into its
+After merge, the existing watcher workflow merges main into its
 isolated `automation/firmware-watch` worktree. Its normal sync then verifies
 identity, branch, pin and complete DAG, freezes queues and initializes the source.
-No second automation or schedule change is needed. Registration pending review
+The requested schedule remains daily 09:00 Europe/Berlin; this reconciliation
+does not verify the external scheduler. No second automation or schedule change
+is needed. Registration pending review
 is not active coverage; snapshot research never advances historical frontiers.
 
 Completion of the proposed work requires measured retain/reject results, a selected

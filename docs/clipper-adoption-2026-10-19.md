@@ -16,9 +16,9 @@ This is source research and planning, not implemented firmware or measured gains
 | Clipper main | `7008d31e78da5d4e5e0a1f25a994ba7b2266c702` |
 | Felucca main | `a3bedd48578110d279e2af903efd0f5e8aca0661` |
 | MIT Engines, firmware pin | `9630426f5c4a34a209ca851356fbe8ba3c4c6d19` |
-| MIT Engines, current main | `53ad1f5c9afb593f29305d79779bfd30aacc14cd` |
-| GPL Engines main | `cb2a3b372ee3f813f621aad737506837a18bbd3c` |
-| WebApp main | `74e961439a76dd9da777264d068122e1d0fc2460` |
+| MIT Engines, main at intake | `53ad1f5c9afb593f29305d79779bfd30aacc14cd` |
+| GPL Engines main at intake | `cb2a3b372ee3f813f621aad737506837a18bbd3c` |
+| WebApp main at intake | `74e961439a76dd9da777264d068122e1d0fc2460` |
 
 The complete non-shallow Clipper main DAG has **49 reachable commits** and passed
 Git connectivity checking. This snapshot grants **zero per-commit assessments**.
@@ -32,12 +32,23 @@ the donor explicitly leaves new features, target resource use and substantial
 FM-1 qualification pending. No donor scripts, tests or binaries were executed for
 this review; no firmware build, flash or device benchmark was performed.
 
+## Integration reconciliation — 2026-10-23
+
+This dated source review is retained with its original donor/native pins and
+intake evidence. The combined planning handoff reconciles it with Felucca main
+`f8ed365d845af789ce7237e3bd531f6d0c67fff9`; it does not repeat the donor audit or
+credit any commit assessments. Main now includes [#479 via PR #509](https://github.com/kmplngj/Felucca/pull/509)
+and the first profile-contract/build-report stage of #465. Reuse those results;
+remaining instrument/profile experiments still need their own acceptance gates.
+The other plans in this handoff are [FM1 Open V14](fm1-open-adoption-2026-10-21.md)
+and [Araminta v2.8](araminta-v2.8-review-2026-10-21.md).
+
 ## First implementation batches
 
 | Order | Work and owner | Exit gate |
 | --- | --- | --- |
 | 1 | [#478](https://github.com/kmplngj/Felucca/issues/478): optional synth-only profile with unused factory-sample consumers/assets pruned | Trace actual native dependencies; target symbols and linked bytes prove removal; standard content and restore remain intact |
-| Parallel | [#479](https://github.com/kmplngj/Felucca/issues/479): missing cross-feature audio-transition checks | Detect deliberately injected steps without rejecting normal attacks; reuse current focused smoothing tests |
+| Existing validation | [#479](https://github.com/kmplngj/Felucca/issues/479), delivered by [PR #509](https://github.com/kmplngj/Felucca/pull/509): cross-feature audio-transition checks | Reuse `tests/audio_transition_test.py` and extend only for a concrete new transition; existing checks include injected discontinuity controls |
 | Separate A/B | Existing [#17](https://github.com/kmplngj/Felucca/issues/17): half-rate delay | Deliberate bandwidth tradeoff, native impulse/spectral/tail evidence and real memory/timing result |
 | Separate A/B | Existing [#234](https://github.com/kmplngj/Felucca/issues/234): exact ANALOG waveform dispatch outside the sample loop | Preserve native equations/state and inspect actual target loop dispatch before deciding |
 | 2 | [GPL Engines #24](https://github.com/kmplngj/Felucca-Engines-GPL/issues/24): portable VPS pilot, then TERRAIN | Source/license closure, eight-control contract, standalone sound/state/extreme tests and measured cost |
@@ -87,8 +98,10 @@ belongs in Felucca-WebApp after its firmware producer contract is chosen.
 | Deep editor pages and patch storage | [#317](https://github.com/kmplngj/Felucca/issues/317) DEEP, [#316](https://github.com/kmplngj/Felucca/issues/316) PRX, [#318](https://github.com/kmplngj/Felucca/issues/318) FVL, then focused WebApp delivery |
 
 Clipper complements the Optimist builder/profile plan: the existing resolver and
-future budget export [#465](https://github.com/kmplngj/Felucca/issues/465) can expose
-qualified instruments. The first builder does not need these new engines first.
+initial [profile contracts/build reports](build-profiles.md#machine-readable-build-evidence)
+already implement the first stage of [#465](https://github.com/kmplngj/Felucca/issues/465).
+Further budget estimation/builder work can expose qualified instruments. The first
+builder does not need these new engines first.
 Instrument mode likewise does not require shipping Clipper's entire catalog.
 
 ## Resource findings and limits
@@ -148,16 +161,19 @@ shedding, nested scan and USB/UART errors remain separate, pending evidence.
 ## Watch registration
 
 Register `isod89/clipper-fm1` main, repository ID **1424928986**, with the immutable
-main pin above and 49 historical commits, all unreviewed. The PR adds one pending
-registration while preserving previous registrations, pins and the append-only
+main pin above and 49 historical commits, all unreviewed. The combined handoff
+adds Clipper alongside FM1 Open as two pending
+registrations while preserving previous registrations, pins and the append-only
 journal. It does not edit canonical runtime state or fabricate commit coverage.
 
 After the registration reaches main, the existing watcher merges main into
 `automation/firmware-watch`, verifies identity/branch/pin/full DAG and current tip,
 then initializes the source and queues complete history. Until that succeeds,
-registration is pending rather than active/completed monitoring. The existing enabled
-daily **09:00 Europe/Berlin** task already consumes this registry; no automation or
-cadence change is required. Notifications remain limited to actionable findings,
+registration is pending rather than active/completed monitoring. The registry is
+consumed by the existing watcher workflow; its requested
+schedule is **09:00 Europe/Berlin**. This reconciliation does not verify the external
+scheduler or require an automation/cadence change. Notifications remain limited to
+actionable findings,
 meaningful blockers, completed historical coverage or required input.
 
 ## Source entry points
