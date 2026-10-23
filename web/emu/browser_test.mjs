@@ -27,6 +27,35 @@ async function check(name, action) {
   const observed = await action();
   report.checks.push({ name, status: "pass", ms: Date.now() - start, ...(observed && { observed }) });
 }
+// Wrapper text sits on the page's flat background. Read actual rendered colors
+// and ancestor opacity so a faded footer cannot pass on its CSS token alone.
+async function wrapperContrast() {
+  const rows = await page.locator(".keys, footer").evaluateAll((roots) => {
+    const rgba = (value) => value.match(/[\d.]+/g).map(Number);
+    const background = rgba(getComputedStyle(document.body).backgroundColor);
+    const luminance = (rgb) => rgb.slice(0, 3).map((c) => {
+      const s = c / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+    const elements = new Set();
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) if (walker.currentNode.textContent.trim()) elements.add(walker.currentNode.parentElement);
+    }
+    return [...elements].filter((el) => el.getClientRects().length).map((el) => {
+      const ink = rgba(getComputedStyle(el).color);
+      let alpha = ink[3] ?? 1;
+      for (let parent = el; parent; parent = parent.parentElement) alpha *= Number(getComputedStyle(parent).opacity);
+      const rendered = ink.slice(0, 3).map((c, i) => c * alpha + background[i] * (1 - alpha));
+      const a = luminance(rendered), b = luminance(background);
+      return { text: el.textContent.trim().slice(0, 80), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+    });
+  });
+  assert(rows.length > 20, "wrapper text was not rendered");
+  for (const row of rows) assert(row.ratio >= 4.5, `${row.text}: rendered contrast ${row.ratio.toFixed(2)}:1 < 4.5:1`);
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "horizontal page overflow");
+  return { text_elements: rows.length, minimum_ratio: Math.min(...rows.map((row) => row.ratio)) };
+}
 async function screen(name) {
   const pixels = await page.locator("#screen").evaluate((canvas) => {
     // Read a copy so observation does not change the page canvas's rendering mode.
@@ -129,6 +158,7 @@ try {
     assert.equal(await page.evaluate(() => __feluccaTest.context.sampleRate), 44100);
     return screen("home");
   });
+  await check("desktop wrapper text contrast", wrapperContrast);
   await check("keyboard note produces stereo PCM", async () => {
     await page.keyboard.down("z");
     const observed = await freshAudio(true);
@@ -156,6 +186,7 @@ try {
   await check("portrait layout remains playable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 600);
+    await check("portrait wrapper text contrast", wrapperContrast);
     const key = page.getByRole("button", { name: "F3", exact: true });
     await key.scrollIntoViewIfNeeded();
     const box = await key.boundingBox();

@@ -92,6 +92,9 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **Browser emulator readability:** keyboard hints, footer links, build version and
+  small-print text meet a 4.5:1 contrast floor against the neutral page background.
+
 - **Hosted editor settings:** applied RAM-only and deferred-save settings retain
   the device's returned value; rejected edits restore the confirmed value while
   preserving newer picker drafts. Saved edits replace earlier warnings with
