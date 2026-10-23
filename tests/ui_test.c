@@ -11474,7 +11474,7 @@ static int test_catalog_controls(void)
     uint8_t patch[FP_SIZE + 1u];
     for (e = 10; e <= 12u; e += 2u) {
         ui_power_on();
-        TSEL->eng_req = e;
+        TSEL->eng_req = (uint8_t)e;
         ok = 1;
         for (i = 0; i < NPAGES; i++) {
             if (PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7)
