@@ -16,6 +16,11 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Added
 
+- **Build metadata contracts:** canonical supported-profile exports include stable IDs,
+  exact engine pins, dependencies, assets, licences and defaults. Successful target builds
+  emit artifact-bound resource/stack reports, with stale-evidence verification using the
+  existing build guards. This is the first stage of #465; cost prediction and a browser
+  builder remain pending. See [build evidence](build-profiles.md#machine-readable-build-evidence).
 - **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
   51 factory sounds alongside all thirteen standard engines, using stable engine
   ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.

@@ -308,12 +308,13 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
     def test_actual_tool_entrypoints_reject_cached_repository_helpers_before_import(self):
         # Exercise the real tools: checking the tree after a helper import is too late.
         tooling = Path(__file__).resolve().parents[1] / "tools"
-        for name in ("build.py", "profile.py", "ci.py", "fm1pkg_make.py", "lz4blk.py", "fm1_install.py"):
+        for name in ("build.py", "build_report.py", "profile.py", "ci.py", "fm1pkg_make.py", "lz4blk.py", "fm1_install.py"):
             self.write(self.repo, "tools/" + name, (tooling / name).read_bytes())
         self.commit(self.repo)
         root = self.unpack()
         commands = (("build.py", ["--help"], "fm1pkg_make"),
                     ("profile.py", ["--help"], "source_archive"),
+                    ("build_report.py", ["--help"], "build"),
                     ("ci.py", ["version", "1.6"], "build"))
         for script, arguments, module in commands:
             marker = self.base / (script + "-executed")
@@ -332,14 +333,14 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
 
     def test_actual_entrypoints_do_not_import_unlisted_stdlib_shadow_modules(self):
         tooling = Path(__file__).resolve().parents[1] / "tools"
-        for name in ("build.py", "profile.py", "ci.py", "fm1pkg_make.py", "lz4blk.py", "fm1_install.py"):
+        for name in ("build.py", "build_report.py", "profile.py", "ci.py", "fm1pkg_make.py", "lz4blk.py", "fm1_install.py"):
             self.write(self.repo, "tools/" + name, (tooling / name).read_bytes())
         self.commit(self.repo)
         root = self.unpack()
         marker = self.base / "stdlib-shadow-executed"
         self.write(root, "tools/json.py", f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n")
         for script, args in (("build.py", ["--help"]), ("profile.py", ["--help"]), ("ci.py", ["version", "1.6"]),
-                             ("source_archive.py", ["verify", "."])):
+                             ("build_report.py", ["--help"]), ("source_archive.py", ["verify", "."])):
             result = subprocess.run([sys.executable, str(root / "tools" / script), *args],
                                     cwd=root, text=True, capture_output=True)
             with self.subTest(script=script):

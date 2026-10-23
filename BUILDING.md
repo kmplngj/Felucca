@@ -878,3 +878,42 @@ listing's SHA256; preserve both files for later budget comparisons. Development
 Complete verified source archives can resolve/build without a Git checkout. The bundled
 `tools/source_archive.py` verifies `SOURCE-PINS.json` before either the resolver or build
 uses archive inputs. Ordinary GitHub source ZIPs still lack the pinned dependency.
+
+### Profile contract and exact resource reports
+
+Export the versioned firmware-owned registry/validation contract without building firmware:
+
+```sh
+python3 tools/profile.py --export-contract build/profile-contract.json
+python3 tools/profile.py --export-contract build/profile-contract.json --check
+```
+
+This exports canonical `standard`, `reduced-lofi` and opt-in `macro` recipes,
+including reserved stable IDs, the exact MIT engine pin, dependency inclusion reasons,
+assets, licence hashes and boot defaults. Developer environment overrides do not alter
+these canonical recipes. It does not enable arbitrary selections or the planned GPL
+collection. The [profile guide](docs/build-profiles.md#machine-readable-build-evidence)
+describes the version 1 contracts and their limits.
+
+Every successful target build also writes `build/resource-report.json`, bound to the
+actual source/generated inputs, effective configuration and output artifacts. It records
+app, RAM, POOL, RAMTEXT and NOINIT used/spare bytes, enforced minimum spare and remaining
+margin, plus static stack reservations. Existing build/linker guards remain authoritative.
+The report is removed at the start of the next attempted build, including failed attempts.
+To recheck matching artifacts and sources, retain the build directory and use the same
+profile/font/feature environment and toolchain/SDK:
+
+```sh
+python3 tools/build_report.py --verify build/resource-report.json
+```
+
+The verifier uses the same default dependency locations as `build.sh`
+(`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
+and `AC79_SDK` values override those defaults; unset or empty values use them.
+
+Verification hashes all required artifacts and input files, recomputes effective compiler
+macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.
+It needs the configured target tools and SDK but does not compile firmware. Source and
+artifact hashes bind actual working bytes; a recorded dirty checkout is not identified
+by its commit alone. Releases and CI artifacts include both JSON sidecars; local release
+`SHA256SUMS` covers them. These reports do not measure live stack use or FM-1 deadlines.

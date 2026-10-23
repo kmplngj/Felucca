@@ -65,6 +65,8 @@ import lz4blk  # noqa: E402
 
 APP_XIP = 0x02000120                # app.bin offset 0 in the XIP map; the SPL jumps here
 APP_SLOT = fm1pkg_make.APP_SLOT
+RAM_SPARE_MIN = 4096
+POOL_SPARE_MIN = 8192
 NOINIT_SPARE_MIN = 100              # B of app.ld's NOINIT region left unallocated (capacity plan rule A7, docs/flash-capacity.md)
 # FELUCCA_CRASH_CTX=1 (hal/fm1_irq.h, #428): a diagnostic build whose crash record also keeps r0..r15, usp, ssp and
 # their key (19 words). Only that build may take these bytes out of the floor; release and standard builds keep 100 B
@@ -358,7 +360,7 @@ def ld_regions():
     return regs
 
 
-def build_app():
+def app_flags():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
@@ -373,6 +375,11 @@ def build_app():
     flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
+    return flags
+
+
+def build_app():
+    flags = app_flags()
     # felucca.c goes to LLVM IR without the optimizer, the main-loop functions (UI, stores, editor) are
     # marked minsize (tools/size_fns.py), then the IR is compiled at -Os. FELUCCA_SIZE=0: -Os everywhere
     size = os.environ.get("FELUCCA_SIZE") != "0"
@@ -486,7 +493,7 @@ def ram_text_empty(hdr, syms):
     return all(evidence) if evidence else None
 
 
-def check(img, hdr, syms, dis, rt):
+def check(img, hdr, syms, dis, rt, *, resources=None):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
     if not m or int(m.group(1), 16) != APP_XIP:
@@ -578,9 +585,9 @@ def check(img, hdr, syms, dis, rt):
                  f"NOINIT {noinit} B of {noinit_len} ({noinit_len - noinit} B spare)")
     if region["RAM"][0] + ram_len != region["POOL"][0]:
         errors.append("app.ld: POOL does not start where RAM ends")
-    if ram_len - bss < 4096:                      # keep >= 4 KiB of .bss spare (state the audio side touches)
+    if ram_len - bss < RAM_SPARE_MIN:                      # keep >= 4 KiB of .bss spare (state the audio side touches)
         errors.append(f"RAM headroom {ram_len - bss} B < 4096 B")
-    if pool_len - pool < 8192:                    # keep >= 8 KiB of the pool spare
+    if pool_len - pool < POOL_SPARE_MIN:                    # keep >= 8 KiB of the pool spare
         errors.append(f"pool headroom {pool_len - pool} B < 8192 B")
     floor = NOINIT_SPARE_MIN - (CRASH_CTX_NOINIT if os.environ.get("FELUCCA_CRASH_CTX") == "1" else 0)
     if noinit_len - noinit < floor:               # NOINIT gets no new users (A7): keep >= 100 B unallocated
@@ -588,6 +595,15 @@ def check(img, hdr, syms, dis, rt):
     elif floor != NOINIT_SPARE_MIN:
         notes.append(f"NOINIT floor {floor} B: FELUCCA_CRASH_CTX=1 diagnostic build ({CRASH_CTX_NOINIT} B register "
                      f"context; release/standard builds keep {NOINIT_SPARE_MIN} B)")
+    if resources is not None:
+        for name, used, origin, capacity, minimum, authority in (
+                ('app', len(img), APP_XIP, APP_SLOT, 0, 'tools/build.py APP_SLOT'),
+                ('RAM', bss, ram_org, ram_len, RAM_SPARE_MIN, 'tools/build.py check'),
+                ('POOL', pool, pool_org, pool_len, POOL_SPARE_MIN, 'tools/build.py check'),
+                ('NOINIT', noinit, noinit_org, noinit_len, floor, 'tools/build.py check')):
+            resources[name] = dict(origin=origin, capacity_bytes=capacity, used_bytes=used,
+                                   spare_bytes=capacity-used, enforced_spare_min_bytes=minimum,
+                                   margin_bytes=capacity-used-minimum, authority=authority)
     return errors, notes
 
 
@@ -638,7 +654,13 @@ def mmio_check():
 
 def main(argv=None):
     global PRODUCT, VERSION, BUILD_IDENTITY
-    c = resolve(sys.argv[1:] if argv is None else argv)     # validated before any job starts
+    try:
+        c = resolve(sys.argv[1:] if argv is None else argv)  # validated before any job starts
+    except SystemExit as error:
+        if error.code:  # --help is read-only; invalid build arguments invalidate old evidence.
+            (OUT / 'resource-report.json').unlink(missing_ok=True)
+        raise
+    (OUT / 'resource-report.json').unlink(missing_ok=True)
     PRODUCT, VERSION, name = c["product"], c["version"], c["name"]
     if _source_verifier is not None:
         _source_verifier["verify_tree"](SRC)
@@ -657,10 +679,18 @@ def main(argv=None):
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
             print(f"warning: SDK {rel} differs from AC79NN_SDK_V1.2.1; the package will not match the reference")
     OUT.mkdir(parents=True, exist_ok=True)
+    import build_report
+    report_sources = build_report.input_hashes(SRC, include_generated=False)
+    report_tools = build_report.tool_fingerprints(sys.modules[__name__])
     with ThreadPoolExecutor(2) as ex:
         gen, ldr = ex.submit(generate), ex.submit(build_loader)
         gen.result()
         ota = ldr.result()
+    from profile import contract_json
+    (OUT / 'profile-contract.json').write_text(contract_json(SRC))
+    report_inputs = build_report.input_hashes(SRC)
+    report_config = build_report.configuration(sys.modules[__name__])
+    build_report.check_initial_inputs(sys.modules[__name__], report_sources, report_tools)
     img, hdr, syms, dis, rt = build_app()
     errors, notes = check(img, hdr, syms, dis, rt)
     hal_err = mmio_check()
@@ -683,6 +713,8 @@ def main(argv=None):
         if recorded.get("build_identity") != BUILD_IDENTITY:
             raise SystemExit("CI provenance differs from the compiled build identity")
     shutil.copy(GEN / "build-identity.json", OUT / "build-identity.json")
+    build_report.write(sys.modules[__name__], (img, hdr, syms, dis, rt), name,
+                       report_inputs, report_config)
     print(f"app      {OUT / 'felucca.bin'}  {len(img)} B")
     print(f"loader   {LDR / 'ota.bin'}  {len(ota)} B")
     print(f"package  {OUT / name}  {len(pkg)} B, identity {PRODUCT}" + (" (--product)" if c["explicit"] else ""))
@@ -692,6 +724,8 @@ def main(argv=None):
         (rel / "LICENSES").mkdir(parents=True)
         shutil.copy(GEN / "resolved-profile.json", rel / "resolved-profile.json")
         shutil.copy(GEN / "build-identity.json", rel / "build-identity.json")
+        shutil.copy(OUT / 'resource-report.json', rel / 'resource-report.json')
+        shutil.copy(OUT / 'profile-contract.json', rel / 'profile-contract.json')
         app = c["app"]
         (rel / name).write_bytes(pkg)
         (rel / app).write_bytes(img)
@@ -708,6 +742,9 @@ def main(argv=None):
         if c["explicit"]:           # the inputs the file names' version does not show
             (rel / "BUILD-INPUTS.txt").write_text(f"release {c['release']}\nversion {VERSION}\nproduct {PRODUCT}\n")
             print(f"inputs   release {c['release']}, version {VERSION}, identity {PRODUCT}")
+        (rel / 'SHA256SUMS').write_text(''.join(
+            f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(rel)}\n'
+            for path in sorted(rel.rglob('*')) if path.is_file() and path.name != 'SHA256SUMS'))
         print(f"release  {rel}/")
     return 0
 
