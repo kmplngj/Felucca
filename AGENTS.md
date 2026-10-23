@@ -204,8 +204,8 @@ For UI changes, inspect the generated `build/ui_new/` images and the actual pane
 for USB/MIDI changes, exercise the affected host configuration and hardware path.
 
 `--ai-output` keeps full logs while printing compact results; see
-[the output contract](BUILDING.md#tests). Inspect warning/skip hints and failed or
-blocked logs. Omit the flag for the complete console transcript.
+[the output contract](BUILDING.md#tests). Inspect warning/skip hints and failed,
+blocked or cancelled logs. Omit the flag for the complete console transcript.
 
 For browser UI/audio changes, use the [cloud browser gate](docs/cloud-testing.md)
 after a fresh emulator build: `npm test --prefix web/emu`. Read its one-line result

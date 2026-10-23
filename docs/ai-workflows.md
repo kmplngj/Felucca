@@ -28,13 +28,14 @@ and compatibility contracts.
 Use `uv run --locked --group build tests/run_tests.sh --ai-output` for the host
 suite's compact console mode. It retains complete logs and unchanged test selection
 and failure exit codes, including preflight. The final line names the report and
-unit/diagnostic counts; inspect failed or skipped paths before claiming acceptance.
+unit/diagnostic counts; inspect failed, skipped, blocked or cancelled paths before
+claiming acceptance.
 Warning/skip detection is a text hint, not a complete inventory of test cases.
 See [the output contract](../BUILDING.md#tests) for fields and limitations.
 
 | Task | First read | Expand when needed |
 | --- | --- | --- |
-| Host suite | Run status and `build/host/test-run-*/summary.json` ([format](../BUILDING.md#tests)) | Logs for failed or blocked units; affected prerequisite output |
+| Host suite | Run status and `build/host/test-run-*/summary.json` ([format](../BUILDING.md#tests)) | Logs for failed, blocked or cancelled units; affected prerequisite output |
 | Browser UI/audio | One-line result and `build/browser/run-*/summary.json` ([gate](cloud-testing.md#keep-agent-context-small)) | The failed check's log, screenshot or WAV; media is retained only on failure by default |
 | Target resources | `build/resource-report.json` ([contract and verification](build-profiles.md#machine-readable-build-evidence)) | Matching map/disassembly, source inputs and guard failures |
 | Device collection | `summary.json` ([interpretation](diagnostics.md#interpreting-a-report)) | Relevant `samples.jsonl` windows and `console.raw` replies, including invalid intervals |

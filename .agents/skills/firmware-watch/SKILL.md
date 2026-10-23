@@ -36,7 +36,9 @@ Read [the ledger guide](../../../docs/firmware-watch.md) and current
 
 ## Context and evidence
 
-Keep the full ledger and paginated issue/comment inventory in ignored local files.
+Keep the canonical ledger in the tracked `automation/firmware-watch` state worktree
+for helper validation, commit and push. Ignored local files may hold ledger copies
+and the paginated issue/comment inventory used for context filtering.
 Use helper validation for complete journal integrity, then inspect the summary,
 bounded queue and records matching the selected repository/full SHA or issue.
 Refresh the local issue inventory before writes as required above; query that
