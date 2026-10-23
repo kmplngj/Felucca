@@ -30,8 +30,8 @@ static void fields(void)
 }
 static const aafont_t *value_face(const char *s, int width)
 {
-    /* All named roles stay M; numeric roles have room for their fixture boundary
-     * strings in A/C/focus. Full-domain production qualification remains open. */
+    /* Use the existing L glyphs where this fixture value fits. Named values can
+     * grow too; full-domain face stability remains a production decision. */
     return large_face_has(s) && ink_w(&AF_L, s) <= width ? &AF_L : &AF_M;
 }
 static void at(int x, int y, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
