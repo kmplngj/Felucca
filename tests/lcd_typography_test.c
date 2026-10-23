@@ -17,7 +17,7 @@ static void type_text(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const char
 #define GFX_HOOK_ITEM(x0, y0, x1, y1) ((void)0)
 #define GFX_HOOK_ICON(x, y, size, id) ((void)0)
 #define GFX_HOOK_PEN(y, f) (type_cap1 = (y) + (f)->asc, \
-                          type_cap0 = type_cap1 - ((f) == &AF_M ? AF_M_CAP_H : (f) == &AF_L ? AF_L_CAP_H : AF_S_CAP_H))
+                          type_cap0 = type_cap1 - ((f) == &AF_M ? AF_M_CAP_H : (f) == &AF_N ? AF_N_CAP_H : (f) == &AF_L ? AF_L_CAP_H : AF_S_CAP_H))
 #define UI_TEST_NO_MAIN 1
 #include "ui_test.c"
 

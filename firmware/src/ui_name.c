@@ -342,6 +342,31 @@ static void nm_draw_field(void)
 {
     char b[24];
     uint32_t i, empty = nm.len == 0u;
+    if (ui_prefs & PREF_LARGE) {
+        const char *text = empty ? nm.ph : nm.s;
+        int32_t y = AF_S_CAP_H + 8 - AF_N_CAP_Y, x;
+        char prefix[NM_LEN + 1u];
+        cv_begin(240, CARD_H, T_BG);
+        nm_title(b);
+        cv_text_on(9, 1 - AF_S_CAP_Y, &AF_S, b, T_MID, T_BG);
+        fmt_int(b, nm.len); str_cpy(b + str_len(b), "/12", 4);
+        cv_text_r(231, 1 - AF_S_CAP_Y, &AF_S, b, nm.len >= NM_LEN ? T_ACCENT : T_MID, T_BG);
+        if (nm.kind <= NK_USER_RENAME)
+            cv_text_r(231 - text_w(&AF_S, b) - 10, 1 - AF_S_CAP_Y, &AF_S, CAT_NAME[nm.cat % CAT_N], T_THEME, T_BG);
+        cv_text_on(8, y, &AF_N, text, empty ? T_MID : T_TEXT, T_BG);
+        for (i = 0; i < nm.cur && i < NM_LEN; i++) prefix[i] = nm.s[i];
+        prefix[i] = 0;
+        x = 8 + text_w(&AF_N, prefix);
+        if (nm.cur >= NM_LEN)
+            cv_rect(x, AF_S_CAP_H + 8, 2, AF_N_CAP_H, T_ACCENT);
+        else {
+            char ch[2] = {nm.cur < nm.len ? nm.s[nm.cur] : ' ', 0};
+            cv_rect(x, AF_S_CAP_H + 10 + AF_N_CAP_H, text_w(&AF_N, ch) - 2, nm.key ? 3 : 2,
+                    nm.key ? T_THEME : T_ACCENT);
+        }
+        cv_blit(0, Y_LABEL);
+        return;
+    }
     cv_begin(240, CARD_H, T_BG);
     cv_rrect(3, 0, 234, CARD_H, 4, T_SURF, T_BG);
     nm_title(b);

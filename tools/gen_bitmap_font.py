@@ -194,9 +194,13 @@ def main():
     l, _, _, lc = emit('L', *medium, [ord(c) for c in L_CHARS], 35, 28, 2, data, offsets,
                        label='M8Stealth89 x2, 17px advance (shared M)' if m8 else None,
                        tracking=-1 if m8 else 0)
-    parts += [s, m, l]
+    # Full mixed-case reading role, exact 2x M shapes and advance. Only glyph
+    # metadata is added; every bitmap byte is shared with the existing M face.
+    n, _, _, nc = emit('N', *medium, chars, 35, 28, 2, data, offsets,
+                       label='M8Stealth89 full x2 (shared M)' if m8 else None)
+    parts += [s, m, l, n]
     Path(args.out).write_text('\n\n'.join(parts) + '\n')
-    print(f'fonts total {sc + mc + lc} B tables + 108 B descriptors -> {args.out}')
+    print(f'fonts total {sc + mc + lc + nc} B tables + 144 B descriptors -> {args.out}')
 
 
 if __name__ == '__main__':

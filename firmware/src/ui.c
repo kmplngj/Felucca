@@ -1870,16 +1870,17 @@ static void preset_step(int32_t direction)
     recent.hold = 0;
 }
 
-/* Seven display rows. FAV and a category use a bounded window, not a repeating carousel.
+static uint32_t sound_list_rows(void) { return ui_prefs & PREF_LARGE ? 5u : 7u; }
+/* A large selected name leaves five display rows; otherwise seven. FAV and a category use a bounded window, not a repeating carousel.
  * Return total for an empty row; a current sound not in the list shows the start. */
 static uint32_t preset_visible(uint32_t cur, uint32_t total, uint32_t row)
 {
-    uint32_t first, last;
-    if (!total || row >= 7u) return total;
+    uint32_t first, last, rows = sound_list_rows(), middle = rows / 2u;
+    if (!total || row >= rows) return total;
     if (!list_mode())
-        return (cur + total * 4u + row - 3u) % total;
-    first = cur < total && cur > 3u ? cur - 3u : 0u;
-    last = total > 7u ? total - 7u : 0u;
+        return (cur + total * 4u + row - middle) % total;
+    first = cur < total && cur > middle ? cur - middle : 0u;
+    last = total > rows ? total - rows : 0u;
     if (first > last) first = last;
     return first + row < total ? first + row : total;
 }

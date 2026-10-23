@@ -17,7 +17,7 @@ def main():
     faces = parse(header)
     checked = 0
     for name, source, width, height in (('S', '5_7.bmp', 5, 7), ('M', '8_9.bmp', 8, 9),
-                                        ('L', '8_9.bmp', 8, 9)):
+                                        ('L', '8_9.bmp', 8, 9), ('N', '8_9.bmp', 8, 9)):
         f = faces[name]
         scale = f['scale']
         cap_y = f['g'][glyph_at(f, ord('H'))][3]
@@ -46,7 +46,12 @@ def main():
                 g = f['g'][index]
                 assert any(bitmap(f, g)) and 0 <= g[3] <= g[3] + g[5] <= f['h']
     assert faces['L']['data'] == faces['M']['data']
-    print(f'M8Stealth: {checked} glyphs match upstream ASCII bitmaps at 1x/2x; all extra marks fit; L shares M')
+    assert faces['N']['data'] == faces['M']['data']
+    for code in range(32, 127):
+        m = faces['M']['g'][glyph_at(faces['M'], code)]
+        n = faces['N']['g'][glyph_at(faces['N'], code)]
+        assert n[0] == m[0] and n[1] == 2 * m[1], code
+    print(f'M8Stealth: {checked} glyphs match upstream ASCII bitmaps at 1x/2x; all extra marks fit; L/N share M')
 
 
 if __name__ == '__main__':

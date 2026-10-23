@@ -1388,6 +1388,16 @@ static const char *eng_abbr(uint32_t e)
 #define LIST_Y(k) (3 + 17 * (int32_t)(k))
 #define LIST_TY CAP_IN(M, 16)                           /* a row's text: its capitals rows 2 .. 12 of the row */
 #define LIST_NX 64
+static int32_t sound_list_y(uint32_t row) { return LIST_Y(row) + (ui_prefs & PREF_LARGE ? 32 : 0); }
+static void sound_list_name(const char *name)
+{
+    if (ui_prefs & PREF_LARGE) {
+        const aafont_t *f = text_w(&AF_N, name) <= 224 ? &AF_N : &AF_M;
+        int32_t y = f == &AF_N ? CAP_IN(N, 32) : CAP_IN(M, 32);
+        GFX_HOOK_ALIGN(8, 0, 232, 32, AL_HV, "selected list name");
+        cv_text_in(8, y, 224, f, name, T_TEXT, T_SURF);
+    }
+}
 static void list_row(int32_t y, int sel, const char *tag, uint16_t tc, const char *name, uint16_t nc, int32_t x1)
 {
     uint16_t bg = sel ? T_THEME : T_SURF;
@@ -1462,10 +1472,17 @@ static void graph_browse(void)
         panel_note(b, "[K4] ANOTHER LIST", "TAG YOURS WHEN SAVING");
         return;
     }
-    for (row = -3; row <= 3; row++) {
-        int32_t y = LIST_Y(row + 3), x1 = 212;
+    if (cur < total) {
+        char selected[13];
+        e = preset_at(cur, &k);
+        if (e == ENG_USER) up_name(k, selected);
+        else str_cpy(selected, ENGINES[e]->presets[k].name, sizeof selected);
+        sound_list_name(selected);
+    }
+    for (row = 0; row < (int32_t)sound_list_rows(); row++) {
+        int32_t y = sound_list_y((uint32_t)row), x1 = 212;
         char tag[6], nm[13], pt[4], pn[13];
-        uint32_t index = preset_visible(cur, total, (uint32_t)(row + 3));
+        uint32_t index = preset_visible(cur, total, (uint32_t)row);
         int sel = index == cur;
         int32_t hint = sel ? preset_pat_hint() : -1;    /* the suggested pattern */
         if (index >= total) continue;
@@ -1519,8 +1536,12 @@ static void engine_sound_row(int32_t y)
 /* user preset slots around the selected one: "U07  NAME" / EMPTY */
 static void graph_user(void)
 {
-    int32_t row, first = clamp((int32_t)ui.uslot - 3, 0, UP_SLOTS - 7);
-    for (row = 0; row < 7; row++) {
+    uint32_t rows = sound_list_rows();
+    int32_t row, first = clamp((int32_t)ui.uslot - (int32_t)rows / 2, 0, UP_SLOTS - (int32_t)rows);
+    char selected[13];
+    if (up_used(ui.uslot)) up_name(ui.uslot, selected); else str_cpy(selected, "EMPTY", sizeof selected);
+    sound_list_name(selected);
+    for (row = 0; row < (int32_t)rows; row++) {
         uint32_t k = (uint32_t)(first + row);
         char tag[4], nm[13];
         int used = up_used(k);
@@ -1529,19 +1550,22 @@ static void graph_user(void)
             up_name(k, nm);
         else
             str_cpy(nm, "--", sizeof nm);
-        list_row(LIST_Y(row), k == ui.uslot, tag, T_MID, nm, used ? T_TEXT : T_DIM, 232);
+        list_row(sound_list_y((uint32_t)row), k == ui.uslot, tag, T_MID, nm, used ? T_TEXT : T_DIM, 232);
     }
 }
 /* SAVE > PHRASES: the pattern list around the one picked ("03  MELODY", "U07  MY BASS") */
 static void graph_pats(void)
 {
-    uint32_t n = pat_count(), cur = pat_pick();
-    int32_t row, first = clamp((int32_t)cur - 3, 0, (int32_t)n > 7 ? (int32_t)n - 7 : 0);
-    for (row = 0; row < 7 && (uint32_t)(first + row) < n; row++) {
+    uint32_t n = pat_count(), cur = pat_pick(), rows = sound_list_rows();
+    int32_t row, first = clamp((int32_t)cur - (int32_t)rows / 2, 0, (int32_t)n > (int32_t)rows ? (int32_t)n - (int32_t)rows : 0);
+    char tag[4], selected[13];
+    if (n) pat_label(cur, tag, selected); else str_cpy(selected, "NO PATTERNS", sizeof selected);
+    sound_list_name(selected);
+    for (row = 0; row < (int32_t)rows && (uint32_t)(first + row) < n; row++) {
         uint32_t k = (uint32_t)(first + row);
         char tag[4], nm[13];
         pat_label(k, tag, nm);
-        list_row(LIST_Y(row), k == cur, tag, T_MID, nm, T_TEXT, 232);
+        list_row(sound_list_y((uint32_t)row), k == cur, tag, T_MID, nm, T_TEXT, 232);
     }
 }
 /* the AUTOMATION rows' columns (M): the kind at 14 (LOCK AUTO STEP PLAY, to x 54), the step / PLAY's ON at EV_SX, the
@@ -1671,8 +1695,11 @@ static void graph_events(void)
 static void graph_slots(void)
 {
     uint32_t i;
+    uint32_t cur = (uint32_t)song.g[G_SLOT] - 1u;
+    const char *selected = graph_project_name(cur);
+    sound_list_name(!graph_project_used(cur) ? "EMPTY" : selected[0] ? selected : "USED");
     for (i = 0; i < 4u; i++) {
-        int32_t y = 12 + (int32_t)i * 26;
+        int32_t y = ui_prefs & PREF_LARGE ? 35 + (int32_t)i * 21 : 12 + (int32_t)i * 26;
         char b[4];
         int sel = (int32_t)i + 1 == song.g[G_SLOT], used = graph_project_used(i);
         const char *n = graph_project_name(i);

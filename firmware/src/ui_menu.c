@@ -391,9 +391,9 @@ static void menu_off_rows(void)
     cv_text((240 - text_w(&AF_S, "TIMES SINCE INPUT")) / 2, 202, &AF_S, "TIMES SINCE INPUT", T_MID);
 }
 /* the tab's row k (menu_items.c row `row`) */
-static void menu_row(uint32_t k, uint32_t row)
+static void menu_row_at(uint32_t k, uint32_t row, int32_t y, int32_t h)
 {
-    int32_t y = mr_y(k), h = mr_h(), vy = y + CAP_IN(M, h);   /* the label and its value: M (a list's rows) */
+    int32_t vy = y + CAP_IN(M, h);
     int sel = row == ui.menu_sel;
     uint16_t bg = sel ? T_THEME : T_SURF, fg = sel ? T_INK : T_TEXT, val = sel ? T_INK : T_THEME;
     const char *v;
@@ -402,7 +402,7 @@ static void menu_row(uint32_t k, uint32_t row)
     v = menu_valued(row) ? menu_vname(row, menu_get(row)) : "";
     if (sel)
         cv_rrect(MR_X, y, MR_W, h, 6, T_THEME, T_SURF);
-    else if (k && mtab_row(menu_tab(), k - 1u) != ui.menu_sel)
+    else if (y > 0 && k && mtab_row(menu_tab(), k - 1u) != ui.menu_sel)
         cv_rect(MR_X + 6, y - 1, MR_W - 12, 1, ux.style ? T_RULE : T_LINE);
     GFX_HOOK_ALIGN(0, y, 0, y + h, AL_V, "menu row name centred up/down");
     cv_text_on(MR_LX, vy, &AF_M, MI_NAME[row], fg, bg);
@@ -457,6 +457,9 @@ static void menu_row(uint32_t k, uint32_t row)
         }
     }
 }
+static void menu_row(uint32_t k, uint32_t row) { menu_row_at(k, row, mr_y(k), mr_h()); }
+
+#include "ui_menu_reading.c"                           /* #577: selected reading role and bounded viewport */
 /* MENU > SYSTEM > INFO (1.2, ui.menu 3): what the old GLO > SYSTEM page showed, read only: the firmware, the USB link (the
  * SYSTEM page's MIDI card: OFF no USB, WAIT no bus yet, BUS frames seen, ENUM being set up, MIDI in use) and the CPU load
  * of the audio (its SYSTEM card; the shown value follows every INFO_CPU_MS, not every frame). The rows as the menu's (no
@@ -577,6 +580,10 @@ static void draw_menu(void)
     if (ui.menu == MENU_OFF) {
         static const khint_t OFF_KEYS[2][2] = {{{KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
                                                {{KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}}};
+        if (menu_large()) {
+            menu_reading_off(OFF_KEYS[!menu_has_value()]);
+            return;
+        }
         for (pass = 0; pass < 2u; pass++) {
             uint32_t top_y = pass ? 132u : (uint32_t)H_HEAD;
             cv_begin(240, pass ? 240u - 132u : 132u - H_HEAD, T_BG);
@@ -618,6 +625,10 @@ static void draw_menu(void)
         cv_begin(240, 240 - (H_HEAD + MENU_DOC_H), T_BG);
         cv_key_hint(8, 4, KC_PRESETS, "SCROLL", 1, T_BG);
         cv_blit(0, H_HEAD + MENU_DOC_H);
+        return;
+    }
+    if (menu_large()) {
+        menu_reading_list(KEYS[ui.menu_sel == MI_LCLEAR ? 2 : !menu_has_value()]);
         return;
     }
     n = mtab_rows(menu_tab());

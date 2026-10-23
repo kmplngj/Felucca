@@ -255,6 +255,9 @@ def main():
         print(f"face {f[0]}: {c['font']} {c['px']}px h{c['h']} base{c['asc']}  {c['glyphs']} glyphs x {c['phases']}  "
               f"data {c['data']} B + table {c['glyph_table']} B + kern {c['kern']} B ({c['pairs']} pairs) "
               f"= {c['total']} B   digit adv {c['adv_digit']:.2f}px")
+    # The alpha-font alternative retains its full mixed-case M face for this
+    # role; do not add another raster set or Huffman cache for enlarged names.
+    out += ["#define AF_N AF_M", "#define AF_N_CAP_Y AF_M_CAP_Y", "#define AF_N_CAP_H AF_M_CAP_H"]
     out.append(f"#define UI_FONT_HUFFMAN_BOOKS {huffman_books}\n")
     Path(a.out).write_text("\n".join(out))
     print(f"fonts total {total} B  -> {a.out}")

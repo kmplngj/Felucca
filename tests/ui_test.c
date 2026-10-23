@@ -1892,6 +1892,13 @@ static int test_menu_tabs(void)
         ok &= mr_y(n) - mr_gap() + MP_PAD <= MK_Y - 6;
         ui_prefs = PREF_LARGE;
         ok &= mr_y(n) - mr_gap() + MP_PAD <= MK_Y - 6;
+        for (i = 0; i < n; i++) {
+            uint32_t first, shown;
+            ui.menu_sel = (uint8_t)mtab_row(t, i);
+            first = menu_read_first(); shown = n < MENU_READ_ROWS ? n : MENU_READ_ROWS;
+            ok &= first <= i && i < first + shown;
+            ok &= menu_read_y(first) == MP_Y + MP_PAD && menu_read_y(first + shown) <= 212;
+        }
     }
     ok &= MP_Y + MP_PAD + (int32_t)MTAB_ROWS * 19 - 1 + MP_PAD <= MK_Y - 6;   /* (room for MTAB_ROWS: 18 px rows 1 px apart) */
     for (i = 0; i < MI_COUNT; i++) ok &= MI_TAB[i] < MTAB_COUNT;
@@ -3436,8 +3443,8 @@ static int test_layer(void)
                 ui_power_on();
                 menu_put(MI_STYLE, style); menu_put(MI_LARGE, large);
                 hold(B_HOME); ui.menu_sel = MI_LEDS;
-                offset = (uint32_t)mr_y(MI_LEDS - mtab_first(MTAB_DISPLAY)) * 240u;
-                pixels = (uint32_t)mr_h() * 240u;
+                offset = (uint32_t)(large ? menu_read_y(mtab_index(MI_LEDS)) : mr_y(mtab_index(MI_LEDS))) * 240u;
+                pixels = (uint32_t)(large ? menu_read_height() : mr_h()) * 240u;
                 for (v = 3; v < 6u; v++) {
                     menu_put(MI_LEDS, v); ui.force = 1; frame();
                     expected[v - 3u] = host_lcd_hash(host_screen + offset, pixels);
