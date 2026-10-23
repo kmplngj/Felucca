@@ -21,6 +21,10 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
        ED_MOTION = 64, ED_BACKUP_LIST, ED_BACKUP_GET, ED_BACKUP_PUT };                              /* v6: song chain */
 
 static uint8_t ed_out[664] __attribute__((section(".pool")));   /* (MOTION op 8: 128 records and their kinds, 653 bytes) */
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+_Static_assert(14u + 2u * (8u + 1u) + MAC_NSHAPE * (12u + 1u) + 1u <= sizeof ed_out,
+               "MACRO model descriptor fits the complete editor reply");
+#endif
 static uint32_t ed_n;
 
 static void ed_begin(uint32_t cmd)
@@ -436,11 +440,12 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     if (!ed_args_ok(cmd, a, na))
         return;
     if ((cmd >= ED_SMP_BEGIN && cmd <= ED_SMP_INFO) || (cmd >= ED_BACKUP_LIST && cmd <= ED_BACKUP_PUT) ||
-        (cmd >= ED_FM6B_BEGIN && cmd <= ED_FM6B_END))
+        (cmd >= ED_FM6B_BEGIN && cmd <= ED_FM6B_END) || cmd == ED_STORE_LIST || cmd == ED_STORE_GET)
         autosave_hold();                                /* (a transfer: no autosave meanwhile, project.c) */
     ed_begin(cmd);
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_backup_handle(cmd, a, na)) { ed_send(); return; }
+    if (ed_raw_handle(cmd, a, na)) { ed_send(); return; }   /* #456: the raw store export (editor_backup.c) */
     if (ed_fm6_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_menu_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_learn_handle(cmd, a, na)) { ed_send(); return; }
@@ -502,6 +507,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         }
         ed_b(0x58); ed_b(1); ed_b(ED_BK_XCAPS);   /* #321: bit 0 BACKUP_LIST 1 (the 13 objects + the next), bit 1 backup id 20 (the
                                                    * FM6 voice bank), bit 2 id 21 (the SLICE records); editor_backup.c */
+        ed_b(0x59); ed_b(1); ed_b(FELUCCA_FLASH ? ED_RAW_CAPS : 0u);   /* #456: bit 0 STORE_LIST / STORE_GET (82, 83), the stored
+                                                                       * objects as flash holds them; editor_backup.c */
         break;
     case ED_GET:
     case ED_SET:
@@ -551,9 +558,15 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_v(d->def);
         ed_str(d->label, 8);
         ed_str(d->unit, 8);
-        if (d->fmt == F_ENUM && d->names)                  /* up to 24 (the matrix DST has 20) */
-            for (i = 0; i <= (uint32_t)(d->max - d->min) && i < 24u; i++)
-                ed_str(d->names[i], 8);
+        if (d->fmt == F_ENUM && d->names) {
+            uint32_t count = 24u, width = 8u;
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+            if (d == &ENG_MACRO.edit[0]) { count = MAC_NSHAPE; width = 12u; }
+#endif
+            /* 48 * (12 + 1) plus the fixed fields fits the bounded 664-byte reply. */
+            for (i = 0; i <= (uint32_t)(d->max - d->min) && i < count; i++)
+                ed_str(d->names[i], width);
+        }
         break;
     case ED_STEP_GET:
     case ED_STEP_SET: {
@@ -918,19 +931,23 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     ed_send();
 }
 
-/* main loop: editor frames first; anything else stays for ota_service() */
-static void ed_service(void)
+/* Main loop: return 1 only for an observed, still-owned non-editor frame.
+ * After an empty check the ISR may publish an editor request, so the caller must
+ * not independently poll OTA then: it would consume that request as not its own. */
+static int ed_service(void)
 {
     const uint8_t *p;
     uint32_t n;
     ed_sync();                                             /* v2 pushes (while watched) */
-    if (!ota_frame_get(&p, &n) || n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
-        return;
+    if (!ota_frame_get(&p, &n))
+        return 0;
+    if (n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
+        return 1;                                         /* sx_ready holds this frame for OTA */
     ed_w.last_ms = fm1_ms;                                 /* any request keeps WATCH alive */
     if (p[3] >= ED_SMP_BEGIN) {                            /* large frames: handled in place, then freed */
         ed_handle(p, n);
         ota_frame_done();
-        return;
+        return 0;
     }
     {
         static uint8_t f[64];
@@ -940,4 +957,5 @@ static void ed_service(void)
         ota_frame_done();                                  /* free the frame buffer before replying */
         ed_handle(f, k);
     }
+    return 0;
 }

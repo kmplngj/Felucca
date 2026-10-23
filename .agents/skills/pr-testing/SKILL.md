@@ -24,6 +24,11 @@ the upstream wiki, hosted editor and hosted emulator may describe another revisi
 Do not invent an access path. If a route cannot be verified, state what is unknown
 and leave that check pending.
 
+For local host-suite runs performed by the agent, use
+`uv run --locked --group build tests/run_tests.sh --ai-output` and follow the
+[summary-first evidence workflow](../../../docs/ai-workflows.md#read-results-before-opening-raw-evidence).
+CI keeps normal output for `tools/ci.py verify-tests`.
+
 Choose scenarios that exercise the actual change, the original bug or intended
 behavior, and the relevant unchanged behavior. Include boundary values,
 cancel/undo, another track or engine, save/load/restart and older data only when
@@ -59,6 +64,8 @@ audible workload and any diagnostics needed even if no new panel function exists
 3. **Reach the function.** Give numbered physical actions from the starting
    state. Name the button, whether to tap or hold and when to release it, repeated
    page cycling, menu tab/row selection, knob number and visible label/value.
+   Use the label printed on the physical panel: the FM-1 button for the firmware's
+   `SCL` pages is **SEL**, between FX and ENV; distinguish it from the SELECT knob.
    For example, a `SAVE > PRESETS` breadcrumb needs the SAVE taps required to
    reach PRESETS; `MENU > ABOUT` needs the hold, tab, row and open actions.
    A link to a manual supplements these actions; it does not replace them.

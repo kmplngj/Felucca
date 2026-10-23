@@ -787,7 +787,13 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_DETAIL, S_DETAIL_PLAYING, S_DETAIL_REST, S_DETAIL_DRUM, S_ROLL_MARKS, S_DRUM_MARKS, S_HELP_DETAIL,
        S_DETAIL_COND, S_DETAIL_FILL, S_AUTO_COND, S_GLO_FILL, S_SEQ_EUCLID, S_SEQ_EUCLID_DRUM, S_SEQ_EUCLID_64,
        S_MENU_SELECT, S_PROJECT_ERASE, S_CONFIRM_ERASE_PROJ, S_TOOLS_CLEAN, S_CONFIRM_CLEAN,
-       S_MENU_MIDI_TRACK, S_MENU_MIDI_TCH_UNUSED, S_MENU_MIDI_AUTO, S_HOME_TRACKS_MIDI, S_MIXER_MIDI, S_EDIT_PHASE_FOLD, S_COUNT };
+       S_MENU_MIDI_TRACK, S_MENU_MIDI_TCH_UNUSED, S_MENU_MIDI_AUTO, S_HOME_TRACKS_MIDI, S_MIXER_MIDI, S_EDIT_PHASE_FOLD,
+       S_MENU_OFF_IDLE, S_MENU_OFF_MODE, S_MENU_OFF_DARK, S_MENU_OFF_WAKE, S_MENU_OFF_BACK, S_MENU_OFF_ERROR,
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+       S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO,
+       S_MACRO_SYNC, S_MACRO_TRIPLE, S_MACRO_QUESTION,
+#endif
+       S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "phrases", "project", "tools", "song_empty", "song", "step", "auto_steps", "auto_add_chance", "automation", "drum",
     "drum_hand", "drum_cym", "mixer", "mixer_from_home", "mixer_pan", "env", "env_dest", "lfo", "mod", "fx", "slicer", "dly", "scl", "chord", "chord_wide", "chord_off", "chord_kit", "arp",
@@ -818,7 +824,13 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "detail_cond", "detail_fill", "auto_cond", "layer_glo_fill", "layer_seq_euclid", "layer_seq_euclid_drum",
     "layer_seq_euclid_64",
     "menu_select", "project_erase", "confirm_erase_project", "tools_clean", "confirm_clean",
-    "menu_midi_track", "menu_midi_channels_unused", "menu_midi_auto_select", "home_tracks_midi", "mixer_midi", "edit_phase_fold"};
+    "menu_midi_track", "menu_midi_channels_unused", "menu_midi_auto_select", "home_tracks_midi", "mixer_midi", "edit_phase_fold",
+    "menu_auto_off_idle", "menu_auto_off_mode", "menu_auto_off_dark", "menu_auto_off_wake", "menu_auto_off_back", "menu_auto_off_error",
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto",
+    "macro_sync", "macro_triple", "macro_question",
+#endif
+};
 
 /* the STEP page's piano roll (ui_graph.c graph_roll) on track 1, stopped unless said: an empty pattern; ACID in
  * A minor; POLY chords (Am7 F C G, tied); a line with ties, slides and accents in C major; LEN 32 on its second
@@ -1240,6 +1252,27 @@ static void setup(int s)
     case S_EDIT_GRAIN: eng(8); go_title("EDIT 2"); break;
     case S_EDIT_PHYS: eng(9); go_title("EDIT 1"); break;
     case S_EDIT_PHASE_FOLD: eng(2); TSEL->p[P_E7] = 80; go_title("EDIT 2"); ui.hot_col = 3; ui.hot_t = 30; break;   /* 1.5.5 FOLD (#104) */
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+    case S_MACRO_WAVE: case S_MACRO_FOLD: case S_MACRO_FBFM:
+        eng(ENGI_MACRO); apply_preset_to(TSEL, 2u * (uint32_t)(s - S_MACRO_WAVE));
+        song.playing = 0; go_title("EDIT 1"); break;
+    case S_MACRO_HOME:
+        eng(ENGI_MACRO); apply_preset_to(TSEL, 4); song.playing = 0; go_home(); break;
+    case S_MACRO_TONE:
+        eng(ENGI_MACRO); song.playing = 0; go_title("EDIT 2"); break;
+    case S_MACRO_MOD:
+        eng(ENGI_MACRO); TSEL->p[P_M1SRC] = MS_LFO; TSEL->p[P_M1DST] = MD_E1 + 2;
+        TSEL->p[P_M1AMT] = 48; song.playing = 0; mod_ui_slot = 0; go_page(GR_MOD); break;
+    case S_MACRO_AUTO:
+        eng(ENGI_MACRO); apply_preset_to(TSEL, 4); song.playing = 0;
+        motion_set_event(TSEL, 1, P_E2, 0); motion_set_lock(TSEL, 2, P_E2, 127);
+        go_page(GR_EVENTS); (void)auto_pick(EVC(EVK_REC, 0)); break;
+    case S_MACRO_SYNC: case S_MACRO_TRIPLE: case S_MACRO_QUESTION:
+        eng(ENGI_MACRO);
+        TSEL->p[P_E0] = (int16_t)(s == S_MACRO_SYNC ? 9 : s == S_MACRO_TRIPLE ? 14 : 47);
+        TSEL->p[P_E1] = 127; TSEL->p[P_E2] = 127;
+        song.playing = 0; go_title("EDIT 1"); break;
+#endif
     case S_ALG1: case S_ALG2: case S_ALG3: case S_ALG4: case S_ALG5: case S_ALG6: case S_ALG7: case S_ALG8:
         eng(1); TSEL->p[P_E0] = (int16_t)(s - S_ALG1);      /* the 8 DIGITAL charts; FB on the odd ones, IDX high .. 0 */
         TSEL->p[P_E6] = (s - S_ALG1) & 1 ? 40 : 0; TSEL->p[P_E4] = (int16_t)((S_ALG8 - s) * 18);
@@ -1276,6 +1309,16 @@ static void setup(int s)
     case S_CONFIRM_PAT: ui.confirm = CF_LOAD_PAT; ui.confirm_trk = 0; ui.ppick = 4; break;
     case S_CONFIRM_MOTION: ui.confirm = CF_CLEAR_MOTION; ui.confirm_trk = 3; break;
     case S_CONFIRM_ERASE: song.playing = 0; up_store(6, "A VERY LONG SOUND NAME"); ui.confirm = CF_ERASE_USER; ui.confirm_trk = 6; break;
+    case S_MENU_OFF_IDLE: case S_MENU_OFF_MODE: case S_MENU_OFF_DARK:
+    case S_MENU_OFF_WAKE: case S_MENU_OFF_BACK: case S_MENU_OFF_ERROR:
+        ui_scr = (uint8_t)(SCR_CODE[1] | 1u << 3 | 3u << 5);
+        menu_off_open();
+        menu_off_sel = s == S_MENU_OFF_ERROR ? MO_DARK : (uint8_t)(s - S_MENU_OFF_IDLE);
+        if (s == S_MENU_OFF_ERROR) {
+            menu_off_put(MO_DARK, 1u);
+            ui.msg_t = 0;                              /* persistent explanation after the short toast */
+        }
+        break;
     case S_MENU: ui.menu = 1; ui.menu_sel = 0; song.rec = 1; break;
     case S_MENU_SPEAKER: ui.menu = 1; ui.menu_sel = MI_LOWCUT; settings.lowcut = 2; break;
     case S_ABOUT: ui.menu = 2; ui.menu_scroll = 0; break;
@@ -2016,6 +2059,48 @@ static void roll_cost(void)
  * track cushions 1..4 at 12 16 24 px; every icon in a card's icon slot; the dialogs of every kind; every menu row with
  * each of its values; NAME's every key, letter and cycle in ABC and 123, the field holding every character; the
  * piano roll's C labels C-1 .. C9; the drum lanes of every kit; the mixer's LEVEL, PAN and REV over their ranges */
+/* Every valid pair of absolute timers, native mode/selection and wake policy,
+ * independently drawn and linted in every palette/style/size. This is separate
+ * from alignment sweeps, whose piled-up draws intentionally skip layout lint. */
+static void auto_off_sweep(void)
+{
+    uint32_t p, st, idle, dark, mode, sel, large, wake, err, scenes = 0, before = nfind;
+    char name[96];
+    for (p = 0; p < NPALETTES; p++)
+        for (st = ST_FLAT; st <= ST_LINE; st++) {
+            state(); pal(p);
+            ui_style = (uint8_t)st; style_apply();
+            for (idle = 0; idle < 5u; idle++)
+                for (dark = 0; dark < 5u; dark++) {
+                    if (idle && dark && dark <= idle) continue;
+                    for (mode = 0; mode < 3u; mode++)
+                        for (large = 0; large < 2u; large++) {
+                            ui_scr = (uint8_t)(SCR_CODE[idle] | mode << 3 | dark << 5);
+                            ui_prefs = large ? PREF_LARGE : 0u;
+                            for (wake = 0; wake < 2u; wake++) {
+                                menu_put(MI_SCRWAKE, wake);
+                                for (sel = 0; sel < MO_COUNT; sel++)
+                                    for (err = 0; err < 2u; err++) {
+                                        snprintf(name, sizeof name, "AUTO OFF p%u st%u i%u d%u m%u l%u w%u s%u e%u",
+                                                 p, st, idle, dark, mode, large, wake, sel, err);
+                                        cur_name = name;
+                                        ui.menu = MENU_OFF; ui.menu_sel = MI_SCROFF;
+                                        menu_off_sel = (uint8_t)sel; menu_off_error = (uint8_t)err;
+                                        draw(-1); lint(); mono_check(); scenes++;
+                                    }
+                            }
+                            ui.menu = 1; menu_off_error = 0;
+                            for (sel = 0; sel < 2u; sel++) {
+                                cur_name = "AUTO OFF root summary";
+                                ui.menu_sel = sel ? MI_SCROFF : MI_COLOR;
+                                draw(-1); lint(); mono_check(); scenes++;
+                            }
+                        }
+                }
+        }
+    fprintf(rep, "AUTO OFF detail/summary: %u independent scenes, %u lint findings\n", scenes, nfind - before);
+}
+
 static void align_sweeps(void)
 {
     uint32_t st, i, k, nf = nfind;
@@ -2061,12 +2146,25 @@ static void align_sweeps(void)
         cur_name = st ? "sweep LINE: menu rows" : "sweep FLAT: menu rows";
         ui.menu = 1;
         for (i = 0; i < MI_COUNT; i++)
+            if (menu_native_row(i))
             for (k = 0; k < 4u; k++) {
                 ui.menu_sel = (uint8_t)i; ui_prefs = k & 1u ? 0xFFu : 0u; settings_hold = (uint8_t)k; settings.lowcut = (uint8_t)(k % 3u);
                 ui_rec_prefs = (uint8_t)((k % 3u) | (k % 3u) << 2 | ((k + 1u) % 3u) << 4);   /* (CLICK, LEVEL, COUNT-IN: each value) */
                 settings_leds = (uint8_t)(k % LEDS_COUNT); ui.force = 1;   /* (every LEDS name) */
                 draw_menu();
             }
+        cur_name = st ? "sweep LINE: AUTO OFF / INV levels" : "sweep FLAT: AUTO OFF / INV levels";
+        for (i = 0; i < 2u; i++)
+            for (k = 0; k < 4u * menu_n(i ? MI_LEDS : MI_SCROFF); k++) {
+                uint32_t row = i ? MI_LEDS : MI_SCROFF;
+                menu_put(row, k / 4u);
+                ui.menu_sel = (uint8_t)(k & 2u ? row : MI_COLOR);
+                ui_prefs = k & 1u ? PREF_LARGE : 0u;
+                ui.force = 1;
+                draw_menu();
+            }
+        menu_put(MI_SCROFF, 0);
+        menu_put(MI_LEDS, 2);
         ui_prefs = 0; ui_rec_prefs = 0;
         cur_name = st ? "sweep LINE: menu TUNE / MIDI IN" : "sweep FLAT: menu TUNE / MIDI IN";   /* (1.2: the project's) */
         for (k = 0; k < 2u * TUNE_N; k++) {             /* every TUNE (the cents, signed), selected or not, S and M */
@@ -2450,7 +2548,11 @@ int main(int argc, char **argv)
     al_off = 1;                                     /* (the alignment check is not timed) */
     /* draw cost: a full redraw of a screen (all strips), and HOME frame by frame (the scope, every other frame) */
     {
-        static const int COST[] = {S_HOME, S_PRESETS, S_STEP, S_ROLL_CHORDS, S_DRUM, S_MIXER, S_MENU, S_ABOUT_CREDITS, S_CONFIRM_PROJ};
+        static const int COST[] = {S_HOME, S_PRESETS, S_STEP, S_ROLL_CHORDS, S_DRUM, S_MIXER, S_MENU, S_ABOUT_CREDITS, S_CONFIRM_PROJ,
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+                                   S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_QUESTION,
+#endif
+        };
         enum { N = 200 };
         uint32_t i, k;
         fprintf(rep, "\ndraw cost on the host (cc -O1; only the ratios mean anything on the device):\n");
@@ -2477,8 +2579,12 @@ int main(int argc, char **argv)
                     (double)(clock() - c0) / CLOCKS_PER_SEC / (N * 4) * 1e6, (unsigned long long)(n_text / (N * 4)));
         }
         {   /* the STEP page's piano roll: its panel alone redrawn, and a frame that changes nothing (the signature only) */
-            static const int G[] = {S_ROLL_CHORDS, S_ROLL_PLAYING, S_DRUM};
-            for (k = 0; k < 3u; k++) {
+            static const int G[] = {S_ROLL_CHORDS, S_ROLL_PLAYING, S_DRUM,
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+                                   S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_QUESTION,
+#endif
+            };
+            for (k = 0; k < NELEM(G); k++) {
                 clock_t c0;
                 double tg, ti;
                 setup(G[k]); pal(1); draw(G[k]);
@@ -2511,7 +2617,11 @@ int main(int argc, char **argv)
         }
         roll_cost();
         {   /* MENU > LARGE: the same full redraws, tall cards and the strip */
-            static const int LC[] = {S_HOME, S_EDIT_ANALOG, S_ENV, S_LFO, S_MIXER, S_FX, S_CLOCK};
+            static const int LC[] = {S_HOME, S_EDIT_ANALOG, S_ENV, S_LFO, S_MIXER, S_FX, S_CLOCK,
+#if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
+                                   S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_QUESTION,
+#endif
+        };
             fprintf(rep, "  MENU > LARGE:\n");
             large_on = 1;
             for (k = 0; k < sizeof LC / sizeof LC[0]; k++) {
@@ -2546,6 +2656,7 @@ int main(int argc, char **argv)
     }
     al_off = 0;
     al_keycaps();
+    auto_off_sweep();
     align_sweeps();
     al_table();
     if (al_rep) fclose(al_rep);

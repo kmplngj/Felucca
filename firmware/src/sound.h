@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Sound install (#298): the public interface of sound.c, the first module compiled as its own translation unit
- * (#454 pilot, docs/modules.md). Include after core.h (track_t, engine_t, preset_t, P_COUNT); core.h has no include
+/* Sound install (#298): the public interface of sound.c, the first header-bounded module in the single translation
+ * unit (#454, docs/modules.md; separate compilation remains a dormant pilot). Include after core.h
+ * (track_t, engine_t, preset_t, P_COUNT); core.h has no include
  * guard and defines state, so this header does not include it.
  *
  * What a consumer (ui.c, upreset.c, project.c, hostsim.c) may use is declared here; everything else of sound.c is

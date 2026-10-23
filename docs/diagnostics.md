@@ -1,6 +1,30 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Collecting device diagnostics
 
+## Diagnostic capabilities
+
+Choose the capability for the question being investigated. Console commands require
+a build with USB CDC enabled and MENU > SYSTEM > USB SERIAL ON. Read
+[build options](../BUILDING.md#build-product-identity-forks) before selecting a diagnostic
+variant; enabling a flag locally does not identify the firmware already on a device.
+
+| Capability | Access | Availability and scope |
+| --- | --- | --- |
+| Build identity | Startup, ABOUT, INFO | Normal firmware identifies the version, commit or PR and fork source; see [build identity](../BUILDING.md#build-revision-and-pr-identity). |
+| Health, input and retained crashes | USB SERIAL `status`, `dbg`, `inp`, `crash`; `tools/fm1_diagnostics.py` | Normal CDC builds. The read-only collector retains raw replies, JSONL and summary counter deltas; [collection and interpretation](#collect-diagnostics) are described below. Input latency requires confirmed `FM1_INPUT_LAT` instrumentation; render load is not whole-chip CPU use. |
+| Interrupt misuse | `status` keys `isr_misuse`, `isr_misuse_pc` | Opt-in `FELUCCA_ISR_ASSERT=1` on the FM-1, default `0`. Counts guarded main-loop calls made in interrupt context; [target and host behavior differ](#interrupt-context-assertion-felucca_isr_assert). |
+| Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
+| Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
+| Rendered-screen screenshots | USB SERIAL `screen` commands; `tools/fm1_screenshot.py` | Development-only `FELUCCA_SCREEN_CAPTURE=1`, default `0`. Stopped static HOME/menu pixels become a verified PNG/JSON. Default capture requires an awake display; explicit `--wake` silently wakes, awaits redraw and holds awake for the bounded session. See [capture setup, bounded memory and failure modes](screen-capture.md); physical LCD colours/backlight are outside its scope. |
+
+The three development-only flags above are refused with `--release`. The four-command
+collector does not run a reproducer, enable instrumentation or capture screenshots;
+it only reads fields supplied by the installed build. Record the exact build, flags,
+workload and hardware observations with each result. See the linked guides for resource
+costs and distinguish host/emulator coverage from real FM-1 observations.
+
+## Collect diagnostics
+
 For early boot failure, see [USB rescue and compatible loaders](usb-rescue.md).
 Rescue is MIDI-only and has no CDC diagnostics console; this guide applies after
 normal application startup.
@@ -159,8 +183,12 @@ or changes while it is copied, the reply is `no crash record`; a later request c
 `cpu_pct` is the smoothed render/deadline ratio with nested TIMER5 scan time subtracted.
 It excludes the main loop and is not whole-chip CPU utilization. `audio_max_us` and
 `dbg.max_us` are cumulative maxima which can persist across reboot; they are not maxima
-for the measured interval. Compare audio lateness, overload `voices_shed`, voice-budget
+for the measured interval. Compare audio lateness, overload `voices_shed`,
 `voices_given_up`, USB audio errors, USB stalls and UART drops together.
+`voices_given_up` counts all `voice_kill()` calls, including overload, allocator
+victims and MIDI All Sound Off. It does not measure rejected or admitted requests;
+`voices_shed` is its overload subset. A clean sustain after shedding is a smaller
+workload, so retain actual surviving-voice observations when available.
 
 `inp` resets scan gaps/histograms, encoder statistics and key latency on read. Its
 `timer_irqs` and `nested` fields are cumulative and receive separate deltas. Later input

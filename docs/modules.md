@@ -48,7 +48,7 @@ SysEx frames. It can also declare a port that the higher layer implements, as `s
 | Synthesis | `engines.c` [`dsp.c`, `eng_*.c`, `fm6_core.c`, `drum_voice.c`, `phys_*.c`, `fm4_convert.c`], `params.c`, `mod.c`, `voice.c`, `slicer.c`, `fx.c` [`perform.c`, `click.c`] | Engine table/IDs/arena, parameter descriptors (`TP`), modulation, voices, inserts, mixer, buses, FX layer. Audio-interrupt code |
 | I/O transport | `usb.c`, `midi_uart.c` | USB descriptors, MIDI/CDC/UAC endpoints, SysEx framing, TRS MIDI parser and queues |
 | Sequencing | `song_chain.c`, `seq.c` [`chord.c`, `motion.c`, `midi_control.c`, `midi_clock.c`] | Steps, clock, chain, live input, automation, MIDI routing; `panic_req` |
-| Application services: sound | `sound.c` (own unit; `sound.h`, `sound_port.c`) | Sound install (#298): the publication of engine, preset and values into a track |
+| Application services: sound | `sound.c` (header boundary in the single unit; `sound.h`, `sound_port.c`) | Sound install (#298): the publication of engine, preset and values into a track |
 | Audio entry | `audio.c` | The I2S interrupt handler and block scheduling |
 | UI | `panel.c`, `ui.c` [`favorites.c`, `category.c`, `ui_slice.c`, `ui_events.c`, `midi_learn.c`], `menu_items.c`, `icons.c`, `ui_graph.c` [`ui_fm6op.c`], `ui_draw.c` [`ui_help.c`], `ui_menu.c`, `ui_knob.c`, `ui_input.c` [`ui_name.c`], `ui_layer.c` [`ui_tools.c`] | The `ui` state, pages, layers, knob policy (#295) and drawing |
 | Storage | `storage_hw.c`, `storage.c` (`FELUCCA_FLASH`) | Flash driver, sectors and records |
@@ -80,7 +80,7 @@ module's object.
 `felucca_fm6.h` and `ENGINE_META` in `core.h` are `static const`. Including one in two units is free only
 while the second unit references nothing from it. Otherwise the second unit gets its own copy
 of the table in flash. Such data needs one owning unit and an accessor. The pilot's `sound_port_preset_alias`
-and `sound_port_fm6_factory` are accessors of this kind.
+and `sound_port_fm6_unpack` are accessors of this kind.
 
 **Back edges (cycles).** These are forward declarations of functions that a later file defines. All
 of them become header dependencies, and the ones that point down the table become cycles to break:
@@ -131,7 +131,9 @@ unit (section 4). Converting every host build is part of each later step's cost.
 - The mechanism for building a module as its own unit stays, dormant and tested: `build.py` `SEPARATE` is empty
   (`("sound",)` turns it on and makes `felucca.c` skip `sound.c` through `SOUND_SEPARATE`); `FELUCCA_OWN_UNIT`
   (the `core.h` state guards), `separate_check`, `size_fns.py --module` and the ISR-reachability check cost
-  nothing in the default build. `tests/run_tests.sh` still compiles `sound.c` as its own object (no data or bss) and
+  nothing in the default build. The no-minsize build also checks IR with the same main-unit configuration as its
+  object, including `SOUND_SEPARATE` when the dormant pilot is enabled. `tests/run_tests.sh` still compiles
+  `sound.c` as its own object (no data or bss) and
   runs `tests/sound_install_test.c` against it.
 - The next module follows the same pattern: a public header, a port header for its needs, an entry in the boundary
   test.

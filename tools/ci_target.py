@@ -94,11 +94,21 @@ def package(ci, scope):
         built = json.loads((output / "build-identity.json").read_text())
         if built != identity:
             raise ValueError("Package build identity differs from provenance")
+    profile_name = os.environ.get("FELUCCA_PROFILE", "standard")
+    if profile_name != "standard" and (ci.build.SRC / "profiles/catalog.json").is_file():
+        import profile
+        expected = json.loads(profile.generated(ci.build.SRC, profile_name)["resolved-profile.json"])
+        built_profile = json.loads((output / "gen/resolved-profile.json").read_text())
+        target_profile = json.loads((output / "felucca.dis.profile.json").read_text())["resolved_profile"]
+        if data.get("profile") != expected or built_profile != expected or target_profile != expected:
+            raise ValueError("Package profile differs from provenance or selected sources")
+    elif profile_name != "standard":
+        raise ValueError("Selected sources do not support the requested profile")
     # fwsc is the installable app + loader, never the raw firmware binary.
-    path = output / "felucca.fwsc"
+    path = output / ("felucca.fwsc" if profile_name == "standard" else f"felucca-{profile_name}.fwsc")
     ci.fm1_install.load_package(path, False)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    (output / "ci/package.sha256").write_text(f"{digest}  build/felucca.fwsc\n")
+    (output / "ci/package.sha256").write_text(f"{digest}  build/{path.name}\n")
     if scope == "target":
         data["validation"] = {
             "scope": "target",

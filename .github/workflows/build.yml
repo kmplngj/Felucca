@@ -4,6 +4,10 @@ name: Firmware validation
 on:
   workflow_call:
     inputs:
+      profile:
+        description: Engine profile; nonstandard requires a verified manual PR revision
+        default: standard
+        type: string
       validation:
         description: full, or target-only for a verified manual PR revision
         default: full
@@ -26,6 +30,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  FELUCCA_PROFILE: ${{ inputs.profile }}
 
 defaults:
   run:
@@ -54,12 +61,15 @@ jobs:
           scope = os.environ['VALIDATION']
           if scope not in ('full', 'target'):
               raise SystemExit('Unknown validation scope')
-          if scope == 'target' and (
+          profile = os.environ.get('FELUCCA_PROFILE', 'standard')
+          if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', profile):
+              raise SystemExit('Invalid engine profile name')
+          if (scope == 'target' or profile != 'standard') and (
               os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or os.environ['VERSION'] or
               not re.fullmatch(r'[0-9a-f]{40}', os.environ['SOURCE_REF']) or
               not re.fullmatch(r'[1-9][0-9]*', os.environ['VERIFIED_PR'])
           ):
-              raise SystemExit('Target-only scope requires a verified manual PR revision and no release version')
+              raise SystemExit('Target-only scope or nonstandard profile requires a verified manual PR revision and no release version')
           PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,6 +77,20 @@ jobs:
           persist-credentials: false
           submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
+      - name: Validate profile in selected sources
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path.cwd()
+          if (root / 'profiles/catalog.json').is_file():
+              import sys
+              sys.path.insert(0, str(root / 'tools'))
+              import profile
+              profile.validate_selection(root, os.environ['FELUCCA_PROFILE'])
+          elif os.environ['FELUCCA_PROFILE'] != 'standard':
+              raise SystemExit('Selected sources do not support engine profiles')
+          PY
       - name: Select validation from complete change range
         id: changes
         env:
@@ -441,6 +465,9 @@ jobs:
             ./build.sh 2>&1 | tee build/ci/build.log
           fi
           test -s build/felucca.dis
+          if [ -f tools/build_report.py ]; then
+            python3 tools/build_report.py --verify build/resource-report.json
+          fi
       - name: Target instruction budget and package validation
         if: needs.workflow-checks.outputs.full == 'true'
         run: |
@@ -460,6 +487,14 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/emu/package-lock.json') }}
+      - name: Prepare MACRO device acceptance projects and MIDI
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.profile == 'macro'
+        run: |
+          if [ -f tools/macro_device_pack.py ]; then
+            python3 tools/macro_device_pack.py --out build/macro-device-pack
+          else
+            echo 'Selected revision predates the optional MACRO device pack; firmware validation continues.'
+          fi
       - name: Browser UI and AudioWorklet smoke test
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
@@ -477,6 +512,7 @@ jobs:
             if [ -n "$VERSION" ]; then ./build.sh --release "$VERSION"; else ./build.sh; fi
           ) 2>&1 | tee build/ci/reproduce.log
           package=felucca.fwsc
+          if [ "$FELUCCA_PROFILE" != standard ]; then package="felucca-$FELUCCA_PROFILE.fwsc"; fi
           if [ -n "$VERSION" ]; then package="felucca-$VERSION.fwsc"; fi
           cmp "build/$package" "$RUNNER_TEMP/reproduce/build/$package"
           sha256sum "build/$package" | tee build/ci/package.sha256
@@ -506,7 +542,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: f3c72544a34aa613227b210d3adc4ae8843d836d
+          ref: 9abac79667e72a6918bb824967151a57bbc60826 # WebApp #8: saved settings replace stale refusal feedback
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
@@ -523,9 +559,10 @@ jobs:
             cd "$webapp"
             node test_app.mjs
             node test_web.mjs
-            node test_ota.mjs
             FELUCCA_PROTO=app node test_web.mjs
             node test_backup.mjs
+            node test_project_import.mjs
+            FELUCCA_ROOT="$GITHUB_WORKSPACE" node test_legacy.mjs
             FELUCCA_ROOT="$GITHUB_WORKSPACE" node test_catalog.mjs
           ) 2>&1 | tee build/ci/pages-webapp-tests.log
           python3 tools/pages.py stage "$webapp" build/site
@@ -566,7 +603,7 @@ jobs:
         if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ github.run_id }}
+          name: firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ inputs.profile != 'standard' && format('{0}-', inputs.profile) || '' }}${{ github.run_id }}
           retention-days: 30
           if-no-files-found: error
           path: |
@@ -574,7 +611,11 @@ jobs:
             build/felucca.bin
             build/ci/provenance.json
             build/build-identity.json
+            build/profile-contract.json
+            build/resource-report.json
+            build/gen/resolved-profile.json
             build/ci/package.sha256
+            build/macro-device-pack/
             LICENSE
             LICENSING.md
             LICENSES/
@@ -598,6 +639,7 @@ jobs:
           {
             echo '### Felucca firmware validation'
             echo "Result: ${{ job.status }}. Diagnostics retain available outputs for 14 days."
+            echo "Engine profile: $FELUCCA_PROFILE."
             echo "Validation scope: ${VALIDATION:-full}. Firmware build selected: ${{ needs.workflow-checks.outputs.full }}."
             if [ "$VALIDATION" = target ]; then
               echo 'TARGET ONLY: build/resource/loader guards, static target budgets and package integrity. Host, sanitizer, browser/emulator and reproducibility tests were omitted; full PR validation is still required.'

@@ -40,7 +40,7 @@ static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #include "../firmware/src/midi_uart.c"                /* TRS MIDI IN: its parser (um_byte) feeds midi_in_q */
 #include "../firmware/src/song_chain.c"
 #include "../firmware/src/seq.c"
-#include "../firmware/src/sound_port.c"         /* what sound.c needs of this unit (#454: the target builds sound.c apart) */
+#include "../firmware/src/sound_port.c"         /* sound.c's header boundary inside this unit (#454) */
 #ifndef SOUND_SEPARATE                                  /* (tests/sound_install_test.c: also linked as its own unit) */
 #include "../firmware/src/sound.c"              /* the production sound install (#298): host_preset below */
 #endif

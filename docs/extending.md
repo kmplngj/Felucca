@@ -574,6 +574,10 @@ any separate opt-in FPU/ABI/IRQ/device experiment.
   cover them). Add round-trip, default and malformed-input tests together with the change.
   State downgrade limits explicitly: for example firmware that does not know a newer project
   count refuses it (`np > P_COUNT`; see the `project.c` header).
+  Historical conversion is moving to the web editor (#456/#457): [legacy-formats.md](legacy-formats.md) inventories
+  every stored format and conversion and proposes the supported schema. Do not add another permanent firmware
+  converter for a new layout; keep the raw store export (`STORE_LIST` / `STORE_GET`, `editor_backup.c`) listing
+  every storage type, so content a build cannot load stays downloadable.
 - **Retired values.** Retired engines, enum values and parameter ids stay reserved and keep a
   migration (`core.h` `drum_from_phys`, `drum_from_perc`; `params.c enum_orig`, `param_fit`).
 - **Editor protocol.** SysEx commands, parameter ids and `INFO` are specified in

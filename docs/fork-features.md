@@ -14,7 +14,11 @@ publishes tested main builds and a pinned WebApp fork; its
   keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
   [autosave contract](extending.md#41-flash-map-and-deferred-save-example).
 - **UI fonts:** source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects
-  `m8stealth`, `tamzen` or `inter-tight` at build time; keycaps retain Inter Tight.
+  `m8stealth`, `tamzen` or `inter-tight` at build time. All builds use native
+  M8Stealth57 keycap and state-badge legends, including SAVE, OCT−/+, REC and MUTE.
+  Rounded pill edges and Fukiai icons remain antialiased. Numeric card/MOD units
+  have a fixed right edge, and small-value fallbacks share the primary value band;
+  see [LCD typography and fit rules](lcd-typography.md).
   The [controlled font comparison](font-experiment.md) records about 39 KB less
   firmware flash and 1,032 B less POOL RAM for pixel-font decode caches than Inter Tight.
   Physical FM-1 readability and redraw checks remain pending. [Compare real renderer captures](ui-comparison.md).
@@ -42,6 +46,24 @@ remains future work. Cancelling retires the preview's undo entry without clearin
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
+## MIDI timing and arithmetic hardening
+
+TRS input is polled at 2 kHz even while audio renders. Packets and timestamps are
+published by TIMER5; sequencers and synth state remain owned by the audio consumer.
+Only receive/overtime events consume UART DMA counts. USB MIDI remains deferred.
+External USB/TRS clock uses fixed musical units with separate fractional carries
+for each sequencer and arpeggiator, including tempo changes and SONG sections.
+An extreme live ARP rate reduction can create a temporary backlog: at most eight
+notes are generated per control block and remaining phase is retained for later
+blocks. Stop freezes that backlog; a new key tapped while stopped still sounds
+once and its gate ends in real time. Internal-clock timing and stored IDs are unchanged.
+
+Invalid internal tempo uses the declared 120 BPM default locally; valid 40–240 BPM
+and a measured external beat retain their timing. This guard does not establish
+the cause of the previously reported intermittent zero tempo. Signed DC/low-cut,
+FM6 and PHYS scaling is defined without changing the normal vectors/PCM.
+See [evidence and combined device procedure](midi-dsp-reliability.md).
+
 ## Effect control smoothing
 
 Shared chorus Depth changes glide while the bus sounds: tap and release **FX**
@@ -67,8 +89,10 @@ Real FM-1 listening and timing qualification remain pending for these experiment
 
 The upstream 1.6.1 second-core worker is integrated, with its device preference off
 by default. Set **MENU > SYSTEM > 2ND CORE > ON (BETA)** and restart to enable it;
-unreliable units fall back to one core. Device reliability remains unverified in
-this fork. The separate fork experiment is retired; see the
+unreliable units fall back to one core. A bounded in-RAM idle-poll pause mitigates
+the observed BAD_JOB failure in the [documented one-unit comparisons](cpu2-idle-polling.md).
+Broader unit, engine/profile, TRS and reset/flash qualification remains pending.
+The separate fork experiment is retired; see the
 [modularity plan](modularity.md#combining-our-plan-with-felucca-161--2026-10-14).
 
 ### Retained exclusion after a failed worker (#410)
@@ -80,7 +104,7 @@ the reason in it **before** the worker is held or the chip resets:
 
 | Reason (console `cpu2_excl`) | Meaning |
 | --- | --- |
-| 1 `BAD JOB` | the worker refused a job whose check word did not match |
+| 1 `BAD JOB` | the worker observed an unexpected job number, invalid function or mismatched payload check |
 | 2 `TIMEOUT` | it did not finish a block within 4 ms (it stalled or faulted) |
 | 3 `FAULT` | core 0 itself faulted while the worker answered |
 | 4 `HANG` | the watchdog reset the chip while the worker answered (found at the next boot) |
@@ -181,3 +205,19 @@ engine-switch, dense ratchet/modulation, throw and MIDI-parser workloads, plus r
 emulator panel/save timelines. It retains exact PCM, WAVs, LCD captures and health
 results without an FM-1, with a separate [FM-1 capture procedure](stress-device.md)
 and result template for pending physical observations.
+
+## Display and LED idle controls
+
+**MENU > DISPLAY > AUTO OFF** opens IDLE AFTER / IDLE MODE / ALL DARK / WAKE /
+BACK. The first stage keeps SCREEN, LEDS or BOTH with a rotating 30-second key-LED
+heartbeat; the independent ALL DARK threshold suppresses every LED and blanks
+the LCD image. Both timers count from the same last interaction and default
+to NEVER. Existing LEDS / INV brightness remains separate. MIDI descriptors retain
+id 17 and append id 33 for ALL DARK; WAKE keeps id 31.
+See the [controls, compatibility and combined FM-1 procedure](display-idle.md).
+The safe LCD driver sends no controller brightness commands. Its physical
+backlight stays powered with PA2/scanning enabled; ALL DARK does not provide
+complete physical darkness. The owner reports immediate colour/text recovery
+with the [LCD rollback A/B](lcd-colour-ab-2026-10-22.md); timed transitions and
+repeated wake/audio checks remain pending. Independent backlight-off is unresolved,
+and no power-saving claim is made.

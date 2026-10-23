@@ -149,8 +149,8 @@ static int32_t lc_l1, lc_l2, lc_r1, lc_r2, dc_l, dc_r, dce_l, dce_r;
  * to +-31 at the output after silence.) */
 static inline int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
 {
-    int32_t e = (x << 6) - *dc + *err, d = e >> 12;
-    *err = e - (d << 12);
+    int32_t e = x * 64 - *dc + *err, d = e >> 12;
+    *err = e - d * 4096;
     *dc += d;
     return x - ((*dc + 32) >> 6);
 }
@@ -159,7 +159,7 @@ static int32_t lce[4];
 static inline int32_t lowcut1(int32_t x, int32_t *lc, int32_t *err, uint32_t sh)   /* x minus its one-pole low-pass */
 {
     int32_t e = x - *lc + *err, d = e >> sh;
-    *err = e - (d << sh);
+    *err = e - d * (int32_t)(1u << sh);
     *lc += d;
     return x - *lc;
 }
@@ -224,7 +224,15 @@ static const uint8_t DIV_DEN[6] = {1, 2, 4, 8, 3, 6};    /* original IDs stay fi
 static uint32_t midi_beat_samples;                    /* zero until an external clock has a measured tempo */
 static uint32_t beat_samples(void)
 {
-    return song.g[G_CLOCK] && midi_beat_samples ? midi_beat_samples : (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM];
+    int32_t bpm;
+    if (song.g[G_CLOCK] && midi_beat_samples)
+        return midi_beat_samples;
+    /* Defensive fallback for invalid or not-yet-initialized globals. Read
+     * once; use the declared default without publishing a tempo repair. */
+    bpm = song.g[G_BPM];
+    if (bpm < GP[G_BPM].min || bpm > GP[G_BPM].max)
+        bpm = GP[G_BPM].def;
+    return (uint32_t)FS * 60u / (uint32_t)bpm;
 }
 static uint32_t div_samples(uint32_t div)
 {
@@ -1073,7 +1081,12 @@ static uint16_t part_cost[NTRK];                        /* the last block's, per
 static const uint16_t ENG_VCOST[NENGINES] = {163, FELUCCA_FM4 ? 181 : 0, 162, 67, 70, 174, 144, 143, 189, 309, 113, 134,
                                              181,
 #if FELUCCA_SLICE
-                                             129
+                                             [13] = 129,
+#endif
+#if FELUCCA_PROFILE_ENGINE_14
+                                             /* Bank maximum 759.8 minus idle 316.3, rounded up.
+                                              * Host steering estimate, not measured FM-1 cycles. */
+                                             [ENGI_MACRO] = 450
 #endif
 };
 #endif
@@ -1085,7 +1098,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
     int32_t *b = SM(b);
     uint32_t i;
 #if FELUCCA_CPU2
-    uint32_t nr;
+    uint32_t nr, vcost;
 #endif
     if (!n)
         return;
@@ -1093,7 +1106,17 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
     T_SPREAD(t) = t->p[P_SPRD] > 0 && (trk_vmode(t) == V_POLY || trk_vmode(t) == V_UNISON);   /* (SPREAD, mix_spread) */
 #if FELUCCA_CPU2
     nr = track_render(t, b, n);
-    part_cost[(uint32_t)(t - trk) % NTRK] = (uint16_t)(nr * ENG_VCOST[t->engine % NENGINES] + (nr || t->tail ? 60u : 0u));
+    vcost = ENG_VCOST[t->engine % NENGINES];
+#if FELUCCA_PROFILE_ENGINE_14
+    if (eng_is(t->engine, ENGI_MACRO)) {
+        /* Legacy maxima 237.1/204.6/133.8 net host instructions per voice;
+         * the bank uses one full oscillator per part. See docs/macro-engine.md. */
+        static const uint16_t legacy_cost[] = {238, 205, 134};
+        uint32_t shape = (uint32_t)t->p[P_E0] % MAC_NSHAPE;
+        if (shape < 3u) vcost = legacy_cost[shape];
+    }
+#endif
+    part_cost[(uint32_t)(t - trk) % NTRK] = (uint16_t)(nr * vcost + (nr || t->tail ? 60u : 0u));
     if (nr)
 #else
     if (track_render(t, b, n))

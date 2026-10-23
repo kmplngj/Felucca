@@ -181,7 +181,10 @@ M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and sh
 M ink at 2× for L, with 17 px large advances to fit three-digit card readouts.
 Its WOFF2 inputs require Brotli (`fonttools[woff]`); the WOFF2
 container is decoded only during asset generation. The ten extra Felucca marks
-are explicit local bitmap adaptations. All font variants retain Inter Tight keycaps.
+are explicit local bitmap adaptations. All font variants use native M8Stealth57
+keycap and badge legends; only their rounded pill edges retain antialiasing.
+The [LCD typography guide](docs/lcd-typography.md) describes the text roles,
+fixed unit positions and fit rules. The font selector still controls regular text.
 Measurements and validation are recorded in [the font experiment](docs/font-experiment.md).
 
 `uv run --locked --group build ./build.sh --release 1.0` makes a release build:
@@ -281,6 +284,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_ISR_ASSERT` | 0 | development build: count main-loop-only functions called in an interrupt ([diagnostics](docs/diagnostics.md#interrupt-context-assertion-felucca_isr_assert)) |
 | `FELUCCA_CRASH_CTX` | 0 | diagnostic build: the crash record keeps r0..r15, usp and ssp (+76 B NOINIT, below the 100 B floor; [diagnostics](docs/diagnostics.md#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro)); refused with `--release` |
 | `FELUCCA_MUL64_REPRO` | 0 | diagnostic build: the #425 synthetic reproducer runs in the main loop's idle time ([audit, phase 2](docs/mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak)); refused with `--release` |
+| `FELUCCA_SCREEN_CAPTURE` | 0 | diagnostic build: bounded static HOME/menu RGB565 capture over USB SERIAL, exported as PNG/JSON by the [host tool](docs/screen-capture.md); explicit `--wake` silently wakes and holds the view during capture; refused with `--release` |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/src/usb.c`.
@@ -348,6 +352,33 @@ simultaneous full suites in separate worktrees: a checkout lock protects shared
 generated outputs. Generate assets before starting a suite, and leave sources,
 assets and build flags unchanged while it runs.
 
+For AI-assisted runs or a short console report, use:
+
+```sh
+uv run --locked --group build tests/run_tests.sh --ai-output
+```
+
+This runs the same preflight, plan and test units with the same failure exit codes.
+Successful units omit their transcript; failed, blocked or cancelled units print
+their status, log path and a bounded diagnostic excerpt. Warning/skip line hints
+include counts and up to three samples per log. The final line reports unit totals,
+diagnostic line counts and the summary path. These counts describe units and matching
+log lines, not individual test cases or a complete warning/skip inventory: hints use
+text patterns, and unfamiliar formats require reading the original log. A passed unit
+can contain skipped checks. The compact mode changes presentation, not coverage.
+
+The complete per-unit logs remain unchanged. Compact runs also retain `preflight.log`,
+`plan.stdout.log` and `plan.stderr.log`; planning logs are retained in normal runs too.
+Failed compact planning also creates `plan.failure.log` for an excerpt of both streams,
+so a reason written to stdout remains visible.
+`summary.json` adds `output_mode`, `unit_counts` and, in compact mode, `diagnostic_counts`
+plus per-log `diagnostics`, bounded failure `excerpt` fields and their limitation flags.
+Preflight/plan failures and cancellation remain failures even when no unit started.
+Read the summary and relevant raw logs to investigate; do not equate a short report
+with complete target or FM-1 qualification. The browser gate is already compact and
+does not use this flag. CI's existing full-transcript coverage verifier continues
+to consume normal output; a compact transcript is not its input format.
+
 Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too,
 the browser emulator's). Run it after `uv run --locked --group build ./build.sh`
 (it uses `build/` and needs `AC79_SDK` set as for the build). The suites cover flash storage,
@@ -383,6 +414,73 @@ the guide also explains testing another compatible checked-out FX revision.
 The [autosave audio regression](tests/autosave_audio_test.md) exercises real stereo FX/master
 output and automatic saves against mocked NOR, including long tails and quiet residuals.
 
+The native cross-feature audio transition check (#479) runs separately with:
+
+```sh
+python3 tests/audio_transition_test.py
+```
+
+It needs fresh generated assets from the selected build, a host C compiler and
+POSIX threads, with no FM-1. The full runner includes it. Sixteen deterministic
+scenarios cover real factory sound installation during held notes and release
+tails, engine changes with a queued note, low-note voice stealing, performance
+mute and return, DIST, INSERT type/bypass, sends, chorus depth, rapid edits,
+four-part stereo HALL/delay/chorus with held and released parts, silence,
+near-zero levels, a high saw attack, and a loud-left/quiet-right mix. Tails and
+shared effects keep running throughout; this short capture does not establish
+that long tails eventually drain.
+
+Each capture renders 49,152 stereo frames (about 1.115 s), with edits starting at
+frame 16,384. Per-channel maximum first and second differences in the next 2,048
+frames are bounded against the same channel's waveform before and after the
+edit. The report records the exact reference windows, peaks, derivatives and
+limits. Smooth fixtures use 3x first and 6x second differences with floors of
+6/12 Q15 counts; these are fixture regression bounds, not audibility thresholds.
+The two engine-switch fixtures additionally compare with a separately rendered
+native FM6 attack, since the note queued during the fade intentionally starts
+the new sound. This reference does not replace or clear their old release tails.
+DIST's existing abrupt transfer-function change also allows 3x/6x the measured
+reference amplitude. The high saw attack uses twice the steady saw derivatives,
+and an injected full-range impulse must still fail. Noisy/sharp waveforms can hide
+smaller clicks inside their normal derivatives; the test asserts neither
+universal click detection nor hardware sound quality.
+
+Every configuration runs twice from a fresh process. Full stereo PCM and a
+per-block hash of selected voice/control state must repeat exactly. Builds cover
+`-O2`, `-Os` without vectorization, ASan/UBSan when available (the established
+fixed-point shift exclusion, with undefined behavior made fatal), compile-time
+CPU2 off, and an isolated generated `reduced-lofi` selection. No case relies on
+LOFI or is skipped for that catalog.
+An actual signed-overflow probe in the capture harness must exit nonzero and
+retain its `.stderr` diagnostic and partial `.pcm` under the output directory.
+The CPU2 build compares runtime OFF with a real worker thread rendering parts
+1–3 while part 4 stays on the main thread; counters require the edited parts to
+be assigned to the worker during the transition. A refusal fixture takes worker
+jobs before the edit, then refuses submission so the real serial fallback runs.
+Both policies must match complete OFF PCM and the selected state hash.
+This covers submission refusal, not a worker stopped halfway through rendering,
+HAL recovery, data races or physical inter-core timing.
+
+Captures group native 32-frame mixer calls either singly or into 128-frame DMA
+halves, as `audio.c` does; both groups must produce identical PCM and selected
+state. They retain the FM-1's 32-frame controls and fade timing. Calling the mixer
+directly with shorter blocks is outside this native fixture; variable browser
+requests remain covered by the existing emulator partition suite.
+
+Mandatory negative controls inject gain steps and one-sample impulses into
+rendered PCM and require the same evaluator to reject them, including silence,
+near-zero levels, the high saw attack, and the quiet right channel independently
+of the loud left.
+For an observable failing command, run
+`python3 tests/audio_transition_test.py --inject impulse` or `--inject gain-step`:
+both must exit nonzero and retain a short stereo WAV and JSON counters/metrics.
+Normal runs save `build/host/audio-transitions/summary.json`; failed cases save
+WAV/JSON pairs named by build, scenario, partition and CPU2 route. Use `--out DIR`
+for independent outputs, `--optimization O2` for a focused iteration, or
+`SANITIZE=0` to explicitly skip sanitizers. Existing focused FX/send/INSERT and
+golden/budget regressions remain separate. FM-1 listening, deadlines, USB/MIDI
+and physical control interaction remain pending qualification.
+
 The regression suite (`tests/regress.c`) renders every engine and preset and compares a
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
 cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). It runs a second time built as
@@ -397,6 +495,17 @@ The two host CPU baselines apply to macOS arm64; on Linux the counter is `perf_e
 (user-space instructions, needs `perf_event_paranoid` <= 2) and the baselines are
 `tests/cpu_baseline_<os>_<arch>_<compiler>_<version>_<build-id>[_os].txt`, skipped with a reason
 when absent or when any counter is unavailable. See [docs/performance.md](docs/performance.md).
+
+### MIDI and arithmetic reliability
+
+After a fresh target build, `python3 tests/run_midi_dsp_focused.py` runs optimized
+and fatal ASan/UBSan fixtures without general DSP sanitizer exclusions. It covers
+nested TRS scheduling, UART events/register widths, signed arithmetic, all stored
+tempo values and the real stress-event publisher. Run the long-run clock fixture
+with `cc -O1 -w -Ibuild/gen -Ifirmware/src tests/midi_drift_test.c -lm -o build/host/midi_drift_test`
+then `build/host/midi_drift_test`. These checks also run in the full suite.
+Their host timing tolerance and hardware boundaries are documented in the
+[reliability guide](docs/midi-dsp-reliability.md).
 
 ### Host stress matrix
 
@@ -447,6 +556,9 @@ differing PCM/state word appear in the output; fixture code is in
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
+For static native HOME/menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
+and standard-library host CLI are described in [screen capture](docs/screen-capture.md).
+Normal builds leave it disabled; release packaging rejects the diagnostic flag.
 
 ## Test a pull request on hardware
 
@@ -484,6 +596,26 @@ uv run --locked --group midi tools/fm1_pr.py 123 --automatic
 # Faster firmware for hardware iteration, with isolated PR sources:
 uv run --locked --group midi tools/fm1_pr.py 123 --validation target --worktree-dir ../Felucca-pr123
 ```
+
+Use `--profile NAME` to opt into an engine profile defined in that exact PR
+commit; the default remains `standard`, including automatic PR/main/release CI.
+For example, to download a MACRO test package without accessing hardware:
+
+```sh
+uv run --locked tools/fm1_pr.py 123 --commit FULL_40_CHARACTER_SHA --profile macro \
+  --workflow-ref feat/macro27-current-main --download-only
+```
+
+The workflow branch must support the `profile` input. Nonstandard profiles require
+an exact verified manual PR revision and cannot create releases. The helper checks
+the pinned profile definition, keeps profile run/artifact identities separate, and
+verifies the downloaded profile against provenance before installation. Resume with
+the same commit, profile, validation mode and workflow branch. `--automatic` supports
+only `standard`; omit `--download-only` when ready to use the normal installer.
+For MACRO device checks, the full macro-profile artifact also contains the
+[project/song and MIDI test pack](docs/macro-hardware-test.md#prepare-the-project-and-song-pack).
+It prepares four importable project files and a deterministic MIDI workload;
+importing them and recording physical results remain separate user actions.
 
 `--validation target` uses the same target build and flags as full validation:
 it checks the pinned SDK/toolchain, source and Engines identity, app/loader and
@@ -773,3 +905,42 @@ listing's SHA256; preserve both files for later budget comparisons. Development
 Complete verified source archives can resolve/build without a Git checkout. The bundled
 `tools/source_archive.py` verifies `SOURCE-PINS.json` before either the resolver or build
 uses archive inputs. Ordinary GitHub source ZIPs still lack the pinned dependency.
+
+### Profile contract and exact resource reports
+
+Export the versioned firmware-owned registry/validation contract without building firmware:
+
+```sh
+python3 tools/profile.py --export-contract build/profile-contract.json
+python3 tools/profile.py --export-contract build/profile-contract.json --check
+```
+
+This exports canonical `standard`, `reduced-lofi` and opt-in `macro` recipes,
+including reserved stable IDs, the exact MIT engine pin, dependency inclusion reasons,
+assets, licence hashes and boot defaults. Developer environment overrides do not alter
+these canonical recipes. It does not enable arbitrary selections or the planned GPL
+collection. The [profile guide](docs/build-profiles.md#machine-readable-build-evidence)
+describes the version 1 contracts and their limits.
+
+Every successful target build also writes `build/resource-report.json`, bound to the
+actual source/generated inputs, effective configuration and output artifacts. It records
+app, RAM, POOL, RAMTEXT and NOINIT used/spare bytes, enforced minimum spare and remaining
+margin, plus static stack reservations. Existing build/linker guards remain authoritative.
+The report is removed at the start of the next attempted build, including failed attempts.
+To recheck matching artifacts and sources, retain the build directory and use the same
+profile/font/feature environment and toolchain/SDK:
+
+```sh
+python3 tools/build_report.py --verify build/resource-report.json
+```
+
+The verifier uses the same default dependency locations as `build.sh`
+(`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
+and `AC79_SDK` values override those defaults; unset or empty values use them.
+
+Verification hashes all required artifacts and input files, recomputes effective compiler
+macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.
+It needs the configured target tools and SDK but does not compile firmware. Source and
+artifact hashes bind actual working bytes; a recorded dirty checkout is not identified
+by its commit alone. Releases and CI artifacts include both JSON sidecars; local release
+`SHA256SUMS` covers them. These reports do not measure live stack use or FM-1 deadlines.

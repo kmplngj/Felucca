@@ -22,6 +22,9 @@
 #ifndef FELUCCA_UNION_OMIT
 #define FELUCCA_UNION_OMIT FELUCCA_ENG_OMIT
 #endif
+#ifndef FELUCCA_UNION_EXTRA_OMIT
+#define FELUCCA_UNION_EXTRA_OMIT 255u
+#endif
 
 static uint64_t uh;
 static void ublock(void)
@@ -74,7 +77,7 @@ static void union_engines(void)
     uint32_t e;
     for (e = 0; e < NENGINES; e++)
         /* Filter before indexing accompaniment: full and sparse controls need the same order/count. */
-        if ((int)e != FELUCCA_UNION_OMIT && eng_ok(e) &&
+        if ((int)e != FELUCCA_UNION_OMIT && e != FELUCCA_UNION_EXTRA_OMIT && eng_ok(e) &&
             (eng_of(e)->mem || (FELUCCA_UNION_CONTROL_MASK >> e & 1ull)))
             UE[UNE++] = e;
 }

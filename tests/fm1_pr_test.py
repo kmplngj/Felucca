@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """PR firmware orchestration, corruption guards and installer handoff; no hardware."""
 import contextlib
+import base64
 import hashlib
 import io
 import json
@@ -238,8 +239,53 @@ class Selection(unittest.TestCase):
             self.assertEqual(P.ensure_run(REPO, 333, SHA, "main", 30, False, "target"), target)
         self.assertEqual(gh.call_args.kwargs["payload"]["inputs"]["validation"], "target")
         for call in matching.call_args_list:
-            self.assertEqual(call.args[-1], "target")
-        self.assertEqual(artifact.call_args.args[-1], "target")
+            self.assertEqual(call.args[-2:], ("target", "standard"))
+        self.assertEqual(artifact.call_args.args[-2:], ("target", "standard"))
+
+
+class Profiles(unittest.TestCase):
+    def test_profile_names_are_literal_and_checked_before_network_or_installer(self):
+        for name in ("../macro", "Macro", "macro/standard", "--macro", "macro\n", "macro--test", ""):
+            with patch.object(P, "api") as api, patch.object(P, "prepare_installer") as install:
+                self.assertEqual(P.main(["333", "--profile=" + name]), 2)
+            api.assert_not_called()
+            install.assert_not_called()
+        with patch.object(P, "api") as api:
+            P.validate_profile_source(REPO, SHA, "standard")
+        api.assert_not_called()
+
+    def test_opt_in_profile_is_read_from_pinned_source_and_filename_must_match(self):
+        item = {"type": "file", "path": "profiles/macro.json", "encoding": "base64",
+                "content": base64.b64encode(b'{"name":"macro"}').decode()}
+        with patch.object(P, "api", return_value=item) as api:
+            P.validate_profile_source(REPO, SHA, "macro")
+        api.assert_called_once_with(f"repos/{REPO}/contents/profiles/macro.json?ref={SHA}")
+        for changes in ({"type": "symlink"}, {"path": "profiles/standard.json"},
+                        {"content": base64.b64encode(b'{"name":"standard"}').decode()},
+                        {"content": "not JSON"}):
+            with patch.object(P, "api", return_value=item | changes), self.assertRaises(ValueError):
+                P.validate_profile_source(REPO, SHA, "macro")
+
+    def test_profile_run_selection_artifact_and_dispatch_are_separate(self):
+        standard = run()
+        macro = run(number=43) | {"display_title": P.run_title(333, SHA, "full", "macro")}
+        with patch.object(P, "pages", return_value=[standard, macro]):
+            self.assertEqual(P.matching_runs(REPO, 333, SHA, "main", "full", "macro"), [macro])
+            self.assertEqual(P.matching_runs(REPO, 333, SHA, "main"), [standard])
+        self.assertEqual(P.artifact_name(macro, "full", "macro"), "firmware-macro-43")
+        self.assertEqual(P.artifact_name(macro, "target", "macro"), "firmware-target-macro-43")
+        with patch.object(P, "matching_runs", side_effect=[[], [macro]]) as matching, \
+                patch.object(P, "firmware_artifact", return_value={"name": "firmware-macro-43"}), \
+                patch.object(P, "gh") as gh:
+            self.assertEqual(P.ensure_run(REPO, 333, SHA, "main", 30, False, "full", "macro"), macro)
+        self.assertEqual(gh.call_args.kwargs["payload"]["inputs"],
+                         {"pr": "333", "commit": SHA, "profile": "macro"})
+        self.assertTrue(all(call.args[-1] == "macro" for call in matching.call_args_list))
+
+    def test_automatic_profile_request_is_rejected_before_api(self):
+        with patch.object(P, "api") as api:
+            self.assertEqual(P.main(["333", "--automatic", "--profile", "macro"]), 2)
+        api.assert_not_called()
 
 
 class Automatic(unittest.TestCase):
@@ -541,7 +587,7 @@ class Worktrees(unittest.TestCase):
                 patch.object(P, "install", return_value=0) as install:
             self.assertEqual(P.main(["333", "--worktree"]), 0)
         prepare.assert_called_once_with(REPO, "333", self.revision, None)
-        build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False, "full")
+        build.assert_called_once_with(REPO, "333", self.revision, "main", 3600, False, "full", "standard")
         self.assertEqual(download.call_args.args[2], self.revision)
         install.assert_called_once_with(package, None, False, command=PYTHON_INSTALLER)
 
@@ -631,10 +677,40 @@ class Download(unittest.TestCase):
                 patch.object(P, "download", return_value=self.root / "felucca.fwsc") as download, \
                 patch.object(P, "install") as install, contextlib.redirect_stdout(output):
             self.assertEqual(P.main(["333", "--validation", "target", "--download-only"]), 0)
-        build.assert_called_once_with(REPO, "333", SHA, "main", 3600, False, "target")
-        self.assertEqual(download.call_args.args[-1], "target")
+        build.assert_called_once_with(REPO, "333", SHA, "main", 3600, False, "target", "standard")
+        self.assertEqual(download.call_args.args[-2:], ("target", "standard"))
         install.assert_not_called()
         self.assertIn("does not replace full PR validation", output.getvalue())
+
+    def test_profile_download_requires_matching_provenance_and_generated_selection(self):
+        record = self.root / "provenance.json"
+        with self.assertRaisesRegex(ValueError, "profile provenance"):
+            P.verify_download(self.root, SHA, profile="macro")
+        selection = {"profile": "macro", "selection_sha256": "f" * 64}
+        record.write_text(json.dumps({"revision": SHA, "profile": selection}))
+        with self.assertRaisesRegex(ValueError, "requested profile"):
+            P.verify_download(self.root, SHA)
+        with self.assertRaisesRegex(ValueError, "resolved-profile"):
+            P.verify_download(self.root, SHA, profile="macro")
+        generated = self.root / "resolved-profile.json"
+        generated.write_text(json.dumps(selection | {"profile": "standard"}))
+        with self.assertRaisesRegex(ValueError, "differs from provenance"):
+            P.verify_download(self.root, SHA, profile="macro")
+        generated.write_text(json.dumps(selection))
+        self.assertEqual(P.verify_download(self.root, SHA, profile="macro"), self.root / "felucca.fwsc")
+
+    def test_profile_cli_propagates_and_rejects_wrong_package_before_install(self):
+        with patch.object(P, "prepare_installer", return_value=["flasher"]), \
+                patch.object(P, "resolve_pr", return_value=(SHA, TITLE)), \
+                patch.object(P, "validate_profile_source") as source, \
+                patch.object(P, "ensure_run", return_value=run()) as build, \
+                patch.object(P, "download", side_effect=ValueError("Firmware profile mismatch")) as download, \
+                patch.object(P, "install") as install:
+            self.assertEqual(P.main(["333", "--profile", "macro", "--workflow-ref", "candidate"]), 2)
+        source.assert_called_once_with(REPO, SHA, "macro")
+        build.assert_called_once_with(REPO, "333", SHA, "candidate", 3600, False, "full", "macro")
+        self.assertEqual(download.call_args.args[-1], "macro")
+        install.assert_not_called()
 
     def test_corruption_wrong_manifest_and_duplicate_packages(self):
         package = self.root / "felucca.fwsc"

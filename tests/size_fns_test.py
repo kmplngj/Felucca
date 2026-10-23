@@ -2,14 +2,17 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Portable fixtures for selective minsize's ISR exclusion and final annotation."""
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import size_fns as S
+import build as B
 
 
 def function(name, body="ret void", attrs="#0"):
@@ -190,6 +193,24 @@ class Reachability(unittest.TestCase):
     def test_build_runs_the_check_when_size_is_off(self):
         text = (ROOT / "tools/build.py").read_text()
         self.assertRegex(text, r'if not size:\n\s+subprocess\.run\(\[sys\.executable, SRC / "tools" / "size_fns\.py", "--check"')
+
+    def test_no_size_analysis_uses_the_compiled_main_unit_configuration(self):
+        # A boundary check of amalgamated IR cannot detect a call crossing the real object boundary.
+        class StopCompile(Exception):
+            pass
+
+        for separate in ((), ("sound",)):
+            with self.subTest(separate=separate), tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp, \
+                 patch.dict(os.environ, {"FELUCCA_SIZE": "0"}), patch.object(B, "OUT", Path(tmp)), \
+                 patch.object(B, "SEPARATE", separate), patch.object(B, "tc_all", side_effect=StopCompile) as compile_:
+                with self.assertRaises(StopCompile):
+                    B.build_app()
+                commands = compile_.call_args.args
+                obj = next(c for c in commands if c[-1] == Path(tmp) / "felucca.o")
+                ir = next(c for c in commands if c[-1] == Path(tmp) / "felucca.ll")
+                self.assertEqual([f for f in ir if str(f).startswith("-D")],
+                                 [f for f in obj if str(f).startswith("-D")])
+                self.assertEqual("-DSOUND_SEPARATE=1" in ir, bool(separate))
 
     def test_cli_failure_does_not_write_output(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
