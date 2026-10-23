@@ -93,6 +93,12 @@ This README summarizes the overall direction and meaningful milestones. The
 and optimizations. Detailed controls and evidence belong in focused guides, issues,
 PRs and release notes.
 
+For reusable optimizations, fixes, diagnostics, testing and AI workflows, start with
+[For firmware developers](docs/changelog.md#for-firmware-developers). Each area links
+implementation and evidence, including the limits of host/target results and pending
+hardware checks. The [AI workflow guide](docs/ai-workflows.md) explains keeping task
+context small while retaining the required evidence and validation.
+
 ## Try, install or build
 
 - **Fork builds:** download this fork's [Releases](https://github.com/kmplngj/Felucca/releases)
