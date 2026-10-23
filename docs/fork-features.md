@@ -14,8 +14,9 @@ publishes tested main builds and a pinned WebApp fork; its
   keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
   [autosave contract](extending.md#41-flash-map-and-deferred-save-example).
 - **UI typography:** firmware uses only M8Stealth57/89, with two native bitmap
-  grids and exact 2× reading roles. Settings content uses 9 px capitals;
-  focused instrument values/names use 18 px. Scaled roles share
+  grids and exact 2× and 3× reading roles. Settings content uses 9 px capitals;
+  focused instrument values use 27 px where the page's graph leaves room, otherwise
+  18 px, as do full names. Scaled roles share
   their native bitmap data. Tamzen and Inter Tight firmware variants are retired;
   `FELUCCA_FONT` may be unset or `m8stealth`. All builds use native
   M8Stealth57 keycap and state-badge legends, including SAVE, OCT−/+, REC and MUTE.
@@ -42,6 +43,23 @@ publishes tested main builds and a pinned WebApp fork; its
   switch is retired; old stored values and editor id 2 remain reserved for rollback.
   See the [reading roles and focus rules](lcd-typography.md#focused-parameter-bank).
   Physical FM-1 readability and loaded-panel qualification remain pending.
+- **One native look (#572, direction A):** rules instead of boxes in every palette.
+  Value pages show the focused knob's label and state on one line, its value as a
+  large numeral, then the four knob columns under rules. The focused column's rule
+  shows the state by its form: solid for a value, dashed for automation, doubled for a
+  step lock, dotted for a MOMENTARY value. It uses the palette's accent only while the
+  knob turns. Compact knob rows, MENU tabs (names with an underline), settings rows and
+  the footer (sound, engine, page) follow the same type system. MENU > STYLE is retired:
+  both stored values draw this look, the row is hidden, and editor id 1 is kept for
+  rollback (`uiCaps` bit 5).
+- **MENU > DISPLAY > GRAPH (#572):** where the live waveform is shown (HOME with
+  HOME SCOPE, and engine pages without a graph of their own), choose what the panel
+  shows. **TURN** (default): the turned knob's filter response or amplifier
+  envelope while it turns and about a second after, then the waveform again.
+  **SCOPE**: always the waveform. **CURVE**: the focused knob's curve (otherwise the
+  filter's, otherwise the envelope) with a small live waveform under it. **STILL**:
+  that curve without animation. The filter curve follows the engine's cutoff,
+  resonance and ANALOG's LP/BP/HP type. Editor id 34; older firmware ignores it.
 - **Settings navigation:** hold HOME to open MENU, turn ALGORITHM for categories
   and PRESETS for rows. Any KNOB 1–4 changes the selected setting immediately;
   all value rows also accept OCT−/+. COLOR and LEDS follow that same rule and

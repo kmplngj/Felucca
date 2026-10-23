@@ -141,6 +141,16 @@ in issues and roadmaps, not among implemented changes below.
   the old settings bit and editor id remain reserved for compatible rollback.
   Physical FM-1 readability and loaded-panel
   qualification remain pending. See the [reading contract](lcd-typography.md#focused-parameter-bank).
+- **One native look (direction A, #572):** rules instead of boxes in every palette.
+  Value pages show the focused knob as a 27 px numeral where the graph leaves room, the
+  four knob columns under rules whose form names the editing state (solid, dashed
+  automation, doubled lock, dotted MOMENTARY), and the accent only while a knob turns.
+  Compact knob rows, MENU tabs, settings rows and the footer share the same type system.
+  MENU > STYLE is retired with its value and editor id kept for rollback. New
+  MENU > DISPLAY > **GRAPH** (default TURN): the turned knob's filter response or
+  envelope replaces the live waveform while it turns, then the waveform returns; SCOPE,
+  CURVE and STILL keep the waveform, add a small one, or stop animating. Physical FM-1
+  readability and redraw checks remain pending. See the [feature guide](fork-features.md).
 - **LCD typography:** control hints and state badges now use native M8Stealth57
   lettering alongside the default M8 text. Numeric card and MOD units stay in a
   fixed slot, and small-value fallbacks share a consistent vertical band.

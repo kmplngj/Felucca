@@ -12,7 +12,7 @@ follow reading tasks rather than a global size preference.
 ## Metrics and roles
 
 [`tools/gen_bitmap_font.py`](../tools/gen_bitmap_font.py) generates the native
-Trash80 S/M bitmaps and shared 2× L/N roles. Glyphs are trimmed to their ink;
+Trash80 S/M bitmaps and shared 2× L/N and 3× X roles. Glyphs are trimmed to their ink;
 the line box is layout space, not visible letter height. All faces have one
 raster weight. Do not add another font to establish hierarchy.
 
@@ -22,10 +22,11 @@ raster weight. Do not add another font to establish hierarchy.
 | M | 8×9 px | 9 px | 19 / 15 px | Primary values, names, titles, messages, list rows |
 | L | M ink at exact 2×, 18 px high | 17 px | 35 / 28 px | Focused values where supported and fitting |
 | N | Full M ink at exact 2×, 18 px high | 18 px | 35 / 28 px | Selected names and NAME field |
+| X | M ink at exact 3×, 27 px high | 26 px | 50 / 40 px | Focused value on tall bank pages (#572) |
 
 The 17 px L advance is intentional: three digits fit the narrow cards. It does
 not scale the bitmap horizontally. S/M/N each have 105 records; L has 41 and is
-not a general face for names. L/N share every bitmap byte with M;
+not a general face for names; X has the same 41 records. L/N/X share every bitmap byte with M;
 only glyph metadata and descriptors are added, without a decode cache. The
 two native bitmap sets are the only stored text rasters. The ten local extra marks retain their explicit
 bitmap adaptations and attribution. Keycap legends use the same native S
@@ -93,28 +94,37 @@ keycap parser resolves to the established ID.
 
 ## Focused parameter bank
 
-Value pages use a shared bank in the original
-44 px parameter region. The four overview positions match KNOB 1–4. Turning a
-valid knob selects its larger label/value/unit path. The last physical column
-stays selected after the active-turn highlight expires; when that column is
-empty on a new page, the first present column supplies the readout. A different
-track/engine/page always resolves fresh strings and descriptors. The workspace
-below the bank keeps the normal full-height renderer, including FM6 feedback,
-MOD relationships, STEP DETAIL history and MIXER meters.
+Value pages use a shared bank. Where the page's panel draws on the 100 px graph
+scale (the scope, ADSR, LFO, SCALE, FX, SLICER, INSERT and the engine diagrams),
+the bank is 66 px tall and the panel 100 px; other value pages (MIXER, CHORD, MOD,
+MACRO, FM6's charts) keep the 44 px band and their full-height panel. The four
+overview positions match KNOB 1–4. Turning a valid knob selects its
+label/value/unit path. The last physical column stays selected after the
+active-turn highlight expires; when that column is empty on a new page, the first
+present column supplies the readout. A different track/engine/page always
+resolves fresh strings and descriptors.
 
-The focused value uses one face over its complete declared domain: L when its
-glyphs and ink fit 106 px, otherwise M/S. The compact overview independently
-chooses a stable M/S face. Required strings are not abbreviated to create room;
-units have their own slot. In the default M8Stealth build, focus values are 18 px
-where supported, labels/units 9 px, overview labels 7 px and values 9/7 px.
+Direction A (#572) draws no boxes. The tall bank sets the focused label (M) and
+status (S) on one line and the value flush left below it; the 44 px band puts the
+label and status right of the value. Each overview column has a rule above its S
+label and M value. The focused column's rule is three rows thick and its form
+names the state: solid for a value, dashed for automation, doubled for a step
+lock, dotted for MOMENTARY's temporary value. Its colour is the accent only while
+the knob turns, otherwise the theme colour (DIM for an inactive one). MONO, where
+accent and theme are the same, also inverts the status while the knob turns.
+
+The focused value uses one face over its complete declared domain: X when its
+glyphs and ink fit 195 px on a tall bank, else L within the band's room (195 or
+150 px), otherwise M/S. The overview independently chooses M when the value
+clears its column by 6 px, else S. Required strings are not abbreviated to create
+room; units have their own slot.
 
 The focused status names its editing scope: VALUE, AUTO, INACTIVE/FIXED, TEMP,
 KEPT, or LOCK/BASE with the first held step number (a + marks multiple steps).
 The readout takes the actual existing column formatter output. A step lock does
 not show the sound's base value while editing the lock. MOMENTARY restore/KEEP
-and message/layer priority remain unchanged. The selected overview label stays
-inverted; active turning additionally inverts the status line, including MONO.
-Motion-driven overview values have a line underneath them.
+and message/layer priority remain unchanged. The focused overview label is set in
+the text colour, the others in MID.
 
 The cache is part of the UI state. Identical frames send no extra bank blits;
 ordinary edits update the necessary overview cells and focus band. A forced
