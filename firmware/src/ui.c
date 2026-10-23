@@ -273,6 +273,7 @@ static struct {
     uint8_t eat;                 /* the wake gesture: panel input swallowed (ui_input) */
     uint8_t led_off;             /* SCR_LED_* latches: stay dark across a complete millisecond-clock wrap */
     uint8_t setting;             /* last applied AUTO OFF byte, including a backup/settings import */
+    uint8_t recovering;          /* failed power command may have completed late; normalize wake without eating input */
     uint32_t idle;               /* fm1_ms of the last panel input (or blocker) */
     uint32_t t;                  /* fm1_ms of the last panel command (SLPIN, SLPOUT) */
     uint32_t eat_t;              /* fm1_ms of the last swallowed knob detent */
@@ -372,7 +373,10 @@ static void scr_wake_now(void)                         /* main.c: the crash scre
 {
     if (scrn.st != SCR_ON)
         lcd_wake_now();
+    if (LCD_FAILED())
+        return;
     scrn.st = SCR_ON;
+    scrn.recovering = 0;
     scr_touch();
 }
 static uint8_t mf_seen;          /* 1.5.5 (#208): the MIDI IN notes of this pass (seq.c midi_seen, taken at every pass's
@@ -385,12 +389,18 @@ static int scr_input(uint32_t pressed, uint32_t notes)
     scr_sync();
     if (pressed | notes | held | panel_moved)
         scr_touch();
+    if (LCD_FAILED() && scrn.st == SCR_OFF && (pressed | notes | held | panel_moved))
+        scr_wake();
     panel_moved = 0;
     if (mf_seen && !(ui_prefs2 & (PREF_WAKE_PANEL >> 16))) {     /* +MIDI: a note-on since the last pass keeps it on,
                                                                  * wakes it; nothing swallowed (the note has played) */
         scr_touch();
         if (scrn.st == SCR_OFF)
             scrn.st = SCR_WAKE;
+    }
+    if (LCD_FAILED() || scrn.recovering) {
+        scrn.eat = kb_asleep = 0;                       /* a failed display cannot hold musical input asleep */
+        return 0;
     }
     if (scrn.st == SCR_ON && !scrn.eat)
         return 0;
@@ -423,6 +433,8 @@ static int scr_frame(void)
         if (!scr_dark_active() && (scr_mode_get() == 1u || !scr_expired()))
             return 1;
         lcd_power(0);
+        if (LCD_FAILED())
+            return 0;
         scrn.st = SCR_OFF;
         scrn.t = fm1_ms;
         scrn.eat = 1;
@@ -431,6 +443,8 @@ static int scr_frame(void)
     case SCR_WAKE:
         if (fm1_ms - scrn.t >= 120u) {
             lcd_power(1);
+            if (LCD_FAILED())
+                return 0;
             scrn.st = SCR_SLPOUT;
             scrn.t = fm1_ms;
         }
@@ -455,7 +469,10 @@ static void scr_shown(void)                            /* after the frame: the r
     if (scrn.st != SCR_SHOW)
         return;
     lcd_power(2);
+    if (LCD_FAILED())
+        return;
     scrn.st = SCR_ON;
+    scrn.recovering = 0;
 #if FELUCCA_SCREEN_CAPTURE
     /* Explicit capture already touched once at BEGIN. Keep input invalidation
      * separate from the asynchronous wake redraw's completion. */

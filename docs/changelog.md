@@ -92,6 +92,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **LCD failure containment:** a missing completion stops further display work
+  while retaining DMA source ownership. Verified late completion permits a bounded
+  wake/full-redraw retry of the latest UI state; failed initialization stays stopped
+  until reboot. Screenshots cannot report a completed image after transport failure.
+  Physical DMA, recovery and loaded FM-1 service qualification remain pending;
+  see [the contract and limits](lcd-fault-containment.md).
+
 - **Browser emulator readability:** keyboard hints, footer links, build version and
   small-print text meet a 4.5:1 contrast floor against the neutral page background.
 

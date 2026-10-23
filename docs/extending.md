@@ -488,7 +488,12 @@ use the selected build font. The 240×240 display has no full framebuffer: `CV_M
 callers still must provide bounded, nonzero dimensions and in-screen blit extents.
 [lcd.c](../firmware/src/lcd.c) `lcd_data`/`lcd_blit` start asynchronous DMA from **RAM**.
 The source stays valid and unmodified until `lcd_sync`; `cv_begin` synchronises before
-reusing `cv_px`. A stack buffer that expires during DMA or a flash pointer is invalid.
+reusing `cv_px`. A timeout does not grant ownership: the native driver latches failure,
+blocks source writes/submissions and observes late completion with bounded backoff.
+Canvas writers must honor `LCD_FAILED()` after synchronization. Normal recovery
+normalizes panel power and forces the complete latest image; incomplete init stays
+failed until reboot. See [LCD failure containment](lcd-fault-containment.md).
+A stack buffer that expires during DMA or a flash pointer is invalid.
 
 [main.c](../firmware/src/main.c) services `ui_input`, `ui_leds`, `ui_draw`,
 `master_poll`, `ed_service`, `ota_service`, settings/autosave and watchdog in the main
