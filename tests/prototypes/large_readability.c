@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* THROWAWAY HOST PROTOTYPE #572. No firmware changes or target resource claim.
- * Three layouts, same real fixtures/formatters/fonts. The browser only selects
+ * Four layouts, same real fixtures/formatters/fonts. The browser only selects
  * captured variant/state; it never talks to a device or changes a project. */
 #define IDENTITY_UI_RENDER 1
 #include "../ui_render.c"
@@ -186,6 +186,30 @@ static void focus_block(void)
     at(201, 23, &AF_M, p->unit, T_MID, T_SURF);
     cv_blit(3, 76);
 }
+/* D: spatial knob overview + focused value in the existing 44 px bank. This
+ * leaves the real NORMAL workspace untouched, including FM6 feedback/routes,
+ * DETAIL history and mixer meters. Elektron-inspired hierarchy, FM-1 mapping. */
+static void parameter_bank(void)
+{
+    const proto_field_t *p = &prototype_fields[focus];
+    char label[40]; snprintf(label, sizeof label, "K%u %s", focus + 1u, p->label);
+    lcd_fill(0, 28, 240, 44, T_BG);
+    cv_begin(234, 44, T_SURF);
+    at(6, 8, &AF_M, label, T_TEXT, T_SURF);
+    const aafont_t *f = value_face(p->value, 106);
+    right(190, f == &AF_L ? 1 : 9, f, p->value, T_ACCENT, T_SURF);
+    at(201, 10, &AF_M, p->unit, T_TEXT, T_SURF);
+    cv_line(3, 21, 230, 21, T_DIM);
+    for (unsigned c = 0; c < 4; c++) {
+        const proto_field_t *q = &prototype_fields[c];
+        uint16_t bg = c == focus ? T_THEME : T_SURF;
+        uint16_t ink = c == focus ? T_INK : T_MID;
+        if (c == focus) cv_rect(3 + 59 * c, 23, 52, 9, bg);
+        at(29 + 59 * c - ink_w(&AF_S, q->label) / 2, 24, &AF_S, q->label, ink, bg);
+        at(29 + 59 * c - ink_w(&AF_M, q->value) / 2, 34, &AF_M, q->value, T_TEXT, T_SURF);
+    }
+    cv_blit(3, 28);
+}
 /* Exact 2x enlargement of existing M pixels, host-only scratch. This tests a
  * mixed-case reading role without inventing another font or shipping a cache. */
 static void twice_m(int x, int y, const char *s, uint16_t fg, uint16_t bg)
@@ -241,7 +265,7 @@ int main(int argc, char **argv)
     snprintf(file, sizeof file, "%s/report.txt", out); rep = fopen(file, "w");
     for (unsigned topic = 0; topic < sizeof cases / sizeof cases[0]; topic++)
         for (unsigned p = 0; p < NPALETTES; p++) for (unsigned st = 0; st < 2; st++)
-            for (unsigned v = 0; v < 5; v++) for (unsigned state = 0; state < 4; state++) {
+            for (unsigned v = 0; v < 6; v++) for (unsigned state = 0; state < 4; state++) {
                 unsigned s = cases[topic]; focus = state;
                 large_on = v == 0; setup(s); pal(p); ui_style = st; style_apply();
                 ui.hot_col = focus; ui.hot_t = 30;
@@ -250,13 +274,14 @@ int main(int argc, char **argv)
                 if (topic == 7) { up_store(3, "MiXeD Bass12"); ui.uslot = 3; }
                 if (topic == 8) { str_cpy(nm.s, "MiXeD Bass12", sizeof nm.s); nm.len = 12; nm.cur = 8; }
                 draw(s);
-                if (v > 0 && v < 4) {
+                if ((v > 0 && v < 4) || v == 5) {
                     fields();
                     ui_prefs |= PREF_LARGE;
                     if (topic == 8) name_proposal();
                     else if (topic == 9) settings_proposal();
                     else if (topic != 7) {
-                        if (v != 2) {
+                        if (v == 5) parameter_bank();
+                        else if (v != 2) {
                             lcd_fill(0, 28, 240, 170, T_BG);
                             for (unsigned c = 0; c < 4; c++) value_block(c, v);
                             context(topic, v == 1 ? 148 : 160, v == 1 ? 50 : 38);
@@ -266,13 +291,13 @@ int main(int argc, char **argv)
                         }
                     }
                 }
-                snprintf(tag, sizeof tag, "%s-%s-%s", v == 0 ? "current" : v == 4 ? "normal" : v == 1 ? "A" : v == 2 ? "B" : "C", UI_PALETTES[p].name, st ? "LINE" : "FLAT");
+                snprintf(tag, sizeof tag, "%s-%s-%s", v == 0 ? "current" : v == 4 ? "normal" : v == 1 ? "A" : v == 2 ? "B" : v == 3 ? "C" : "D", UI_PALETTES[p].name, st ? "LINE" : "FLAT");
                 snprintf(name, sizeof name, "%s-k%u", topics[topic], state + 1);
                 cur_name = name;
                 lint(); mono_check();
                 write_ppm(out, tag, name);
             }
-    fprintf(rep, "native captures=%u lint=%u alignment=%u\n", 10u * NPALETTES * 2u * 5u * 4u, nfind, al_fail);
+    fprintf(rep, "native captures=%u lint=%u alignment=%u\n", 10u * NPALETTES * 2u * 6u * 4u, nfind, al_fail);
     fclose(rep); fclose(scene_manifest);
     return nfind || al_fail ? 1 : 0; /* Existing pixel bounds remain the floor. */
 }

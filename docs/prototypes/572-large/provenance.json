@@ -1,6 +1,6 @@
 {
   "kind": "host-only throwaway design prototype; no target/resource/device acceptance",
-  "base": "839cbcf9c39c3d953ae7db85a80da08668c80ac0",
+  "base": "1c8d4ec2b742fe11bba299a1d40c588b42343548",
   "engines": "9630426f5c4a34a209ca851356fbe8ba3c4c6d19",
   "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
   "command": [
@@ -31,14 +31,26 @@
     "current LARGE",
     "A",
     "B",
-    "C"
+    "C",
+    "D"
   ],
   "focus_states": 4,
-  "captures": 4000,
+  "captures": 4800,
+  "D_workspace": {
+    "compared": 560,
+    "outside_bank_changed_pixels": 0,
+    "bank_xywh": [
+      0,
+      28,
+      240,
+      44
+    ],
+    "reference": "NORMAL"
+  },
   "source_sha256": {
-    "tests/prototypes/large_readability.c": "48692f52fe587f0e0b3142d54b349482fe8c26b60f351cf53fab790996769741",
-    "tests/prototypes/large_readability.py": "58138d04ba961f9065d267f23bbe083dbb1bff16cb33d06a5e8789608e3c3262",
-    "tests/prototypes/large_readability.html": "489a013b3d8e7ae03ba5467b0ec5be732ddcfa9884340fb591c4d6fa02d9bc80",
+    "tests/prototypes/large_readability.c": "1efb5704642ba378f713f95f4eb9ad425cad683114a62db287048a948f4e29c3",
+    "tests/prototypes/large_readability.py": "eb5b2592114e09208e1df62e9784ed8ec1b682b8f729b8e83fbba3cd8a9052dc",
+    "tests/prototypes/large_readability.html": "9107c0a210ab8854f03794fb61f21c608926dd1e30387ae4856cc1135cca1fd1",
     "tests/ui_render.c": "9d662db35d053cbfc08b7bd84f1c9e2d81bf6be6b2afd31c732db2771650fa78",
     "tests/ui_test.c": "c6ff479eca79dea43e4a24dc0f667ca73f07d7300130368443b368e55fef59cf",
     "firmware/src/ui_name.c": "8ae3eeb90a6841f30b3c24d8e7db403a03d490eccdff936e4bc8773bf2bc6f73",
@@ -61,7 +73,7 @@
     "build/gen/felucca_fm6.h": "d1859b8194443ecbe099505909d6ea4db866d919100c81d738bb06d56004f791",
     "build/gen/felucca_samples.h": "d72405f100494dce4c3bff53de584423b0ab96cf9b196a85487b13206ae032bc",
     "build/gen/ui_icons.h": "85947fe4a0307f806613870ad117c1fe4d4c7256786843ea88d14d104c7687aa",
-    "build/gen/build_identity.h": "1a133cf77422c6b2751e1af43f2688ce423ff7237eb72eaaef800f5467f10578",
+    "build/gen/build_identity.h": "12ea975112fa932c93e173577f2da6e76a27f9d8d20bc90bed47bbccfa976be8",
     "build/gen/ui_palettes.h": "e87e29243c6129e8bd238cae5b185ca0357483f6a1787f78f63ecf54ce8dad05"
   }
 }
