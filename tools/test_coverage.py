@@ -398,7 +398,9 @@ def verify(path, run_id, root=ROOT):
                 if python_required:
                     require(event['python'] and event['python'].get('schema') == SCHEMA, name + ': child completion absent')
                     for result in event['python']['unittest']:
-                        require(result['successful'] and not result['skipped'], name + ': unittest skipped/failed')
+                        require(type(result['tests']) is int and result['tests'] > 0 and
+                                result['successful'] is True and isinstance(result['skipped'], list) and
+                                not result['skipped'], name + ': unittest empty/skipped/failed')
                 if outcomes:
                     producer = event['producer']
                     require(producer and producer.get('schema') == SCHEMA and producer.get('outcomes'),

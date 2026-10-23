@@ -406,6 +406,8 @@ Keep sources, generated assets, compiler/configuration and outputs unchanged unt
 verification finishes. CI rejects required skips, missing child completion,
 failed/blocked/cancelled units, altered/empty outputs, changed logs and stale or
 unknown evidence. Local optional skips remain available but fail strict coverage.
+Recorded unittest runs must execute at least one test; an empty successful suite
+does not establish coverage.
 Only absent proprietary V15 input, an unavailable whole CPU budget (counters or
 matching baseline), C1's unqualified CPU comparison and declared applicability
 exclusions retain their existing exceptions. Available CPU budgets missing entries

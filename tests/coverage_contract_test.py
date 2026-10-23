@@ -204,7 +204,15 @@ class ContractTests(unittest.TestCase):
         d = self.semantic('official-v15')
         command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
         command['python']['unittest'] = [dict(successful=True, tests=1, skipped=[dict(test='required', reason='anything')])]
-        with self.assertRaisesRegex(ValueError, 'unittest skipped'): self.verify(d)
+        with self.assertRaisesRegex(ValueError, 'unittest empty/skipped'): self.verify(d)
+
+    def test_recorded_empty_or_malformed_unittest_run_is_not_coverage(self):
+        for count in (0, -1, True, '1'):
+            d = self.semantic('official-v15')
+            command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
+            command['python']['unittest'] = [dict(successful=True, tests=count, skipped=[])]
+            with self.subTest(count=count), self.assertRaisesRegex(ValueError, 'unittest empty'):
+                self.verify(d)
 
     def test_compiler_identity_and_duplicate_json_are_rejected(self):
         with self.assertRaisesRegex(ValueError, 'compiler executable'): self.verify(compiler_hashes={})
@@ -247,6 +255,12 @@ class ProducerTests(unittest.TestCase):
                            env=env, capture_output=True, check=True)
             event = json.loads(next((root / 'events').glob('*.json')).read_text())
             self.assertEqual(event['python']['unittest'][0]['skipped'][0]['reason'], 'missing required dependency')
+            source.write_text('import unittest\nunittest.TextTestRunner().run(unittest.TestSuite())\n')
+            for p in (root / 'events').iterdir(): p.unlink()
+            subprocess.run([sys.executable, str(ROOT / 'tools/test_coverage.py'), 'command', sys.executable, str(source)],
+                           env=env, capture_output=True, check=True)
+            event = json.loads(next((root / 'events').glob('*.json')).read_text())
+            self.assertEqual(event['python']['unittest'], [dict(tests=0, successful=True, skipped=[])])
 
     def test_real_install_absence_and_present_foreign_file_are_distinct(self):
         # Load the actual simulation definitions, without its full test sequence.
