@@ -74,6 +74,13 @@ in issues and roadmaps, not among implemented changes below.
 
 ### Fixed
 
+- **LCD state readability:** muted track names/settings, mixer annotations,
+  piano-roll pitch labels and MOD text/units retain readable contrast across
+  built-in palettes. Mute marks and inactive graphics keep their distinct state.
+  Control hints, calibration prompts and the emulator panel use the printed SEL
+  button name, distinct from the SELECT encoder and musical SCL page. See
+  [roles and validation scope](lcd-typography.md#readable-inactive-information);
+  physical FM-1 readability and loaded-panel checks remain pending.
 - **Hosted editor settings:** applied RAM-only and deferred-save settings retain
   the device's returned value; rejected edits restore the confirmed value while
   preserving newer picker drafts. The pinned editor discovers AUTO OFF, WAKE and

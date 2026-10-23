@@ -35,7 +35,8 @@ isolated browser context, then closes the browser and server. It tests:
 - Switch on, running AudioContext at 44.1 kHz and a nonblank LCD.
 - A computer-keyboard note producing finite, nonzero PCM on both stereo channels,
   followed by a quiet release.
-- Pointer navigation to ENV and a keyboard encoder edit changing the LCD.
+- Physical SEL/SELECT legends, pointer navigation through SEL to ENV, and a
+  keyboard encoder edit changing the LCD.
 - A playable key in the portrait layout.
 - Panel save reaching localStorage, saved sectors reaching the restarted worklet,
   and loading USER slot 1 restoring the edited attack's exact envelope graph.

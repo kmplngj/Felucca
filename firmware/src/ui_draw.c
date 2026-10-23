@@ -606,7 +606,7 @@ static uint32_t span_face(uint32_t c, const card_span_t *sp, const char *label)
 static void draw_column_tall(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc, int32_t ratio,
                              uint32_t icon, int hot, int mot, int32_t kid, const card_span_t *sp)
 {
-    uint16_t lc = hot ? T_ACCENT : mot ? T_THEME : T_MID;
+    uint16_t lc = hot ? T_ACCENT : mot ? T_THEME : T_MID, tc = vc == T_DIM ? T_MID : vc;
     const aafont_t *lf = &AF_M, *vf = &AF_L;
     int32_t ly = LG_LY, vy, lw = 0, mw;
     char k[3] = {'K', (char)('1' + c), 0};
@@ -660,10 +660,10 @@ static void draw_column_tall(uint32_t c, const char *label, const char *val, con
         vy = vf == &AF_L ? LG_VB - AF_L_CAP_Y : vf == &AF_M ? LG_VB + HALF_UP(AF_L_CAP_H - AF_M_CAP_H) - AF_M_CAP_Y
                                                           : LG_VB + HALF_UP(AF_L_CAP_H - AF_S_CAP_H) - AF_S_CAP_Y;
         if (vf == &AF_S && ink_w(vf, val) > COL_W - 4) {   /* (a value always fits: the lint reports one cut) */
-            cv_text_fit(2, vy, vf, val, vc, T_SURF, COL_W - 4);
+            cv_text_fit(2, vy, vf, val, tc, T_SURF, COL_W - 4);
         } else {
             GFX_HOOK_ALIGN(0, LG_VB, COL_W, LG_VB + AF_L_CAP_H, AL_HV, "large card value centred");
-            cv_text_in(0, vy, COL_W, vf, val, vc, T_SURF);
+            cv_text_in(0, vy, COL_W, vf, val, tc, T_SURF);
         }
     }
     if (unit[0]) {
@@ -686,7 +686,8 @@ static void draw_column_tall(uint32_t c, const char *label, const char *val, con
  * a label too long to share the card with its icon goes without it. A parameter MOTION drives (card_mot_next):
  * the motion icon in place of its own, in the theme colour; a long label moves it left, up to the card's edge;
  * a label with no room for it at all (or FELUCCA_ICONS=0): the label in the theme colour.
- * vc: the value's colour (T_THEME, T_DIM inactive, T_ACCENT the knob just turned) */
+ * vc: the value's state (T_THEME, T_DIM inactive, T_ACCENT the knob just turned).
+ * Inactive values still need reading: their text is MID; their gauge/keycap keeps DIM. */
 static void draw_column(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc,
                         int32_t ratio, uint32_t icon)
 {
@@ -694,7 +695,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     int hot = c == ui.hot_col && ui.hot_t, named = fmt_named, mot = card_mot_next && label[0], strip, snap;
     uint32_t kind = large_kind();                       /* MENU > LARGE: tall (draw_column_tall), or the label in M */
     uint8_t sig;
-    uint16_t lc = hot ? T_ACCENT : T_MID;
+    uint16_t lc = hot ? T_ACCENT : T_MID, tc = vc == T_DIM ? T_MID : vc;
     int32_t lx = 5, uw, room = COL_W - 8;
     const aafont_t *vf = &AF_M;
     uint32_t n, kn;
@@ -796,10 +797,10 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
         else if (vf == &AF_M) {
             if (!ui.roll[c].from[0] && val[0])
                 GFX_HOOK_ALIGN(0, ROLL_Y, COL_W, ROLL_Y + ROLL_H, AL_V, "card value in its roll window");
-            roll_text(c, 5, ROLL_Y + CAP_IN(M, ROLL_H), val, vc);
+            roll_text(c, 5, ROLL_Y + CAP_IN(M, ROLL_H), val, tc);
         } else {
             GFX_HOOK_ALIGN(0, CARD_VALUE_Y, COL_W, CARD_VALUE_Y + CARD_VALUE_H, AL_V, "card fallback value in its value band");
-            cv_text_fit(5, CARD_VALUE_Y + CAP_IN(S, CARD_VALUE_H), vf, val, vc, T_SURF, room - uw);
+            cv_text_fit(5, CARD_VALUE_Y + CAP_IN(S, CARD_VALUE_H), vf, val, tc, T_SURF, room - uw);
         }
         if (unit[0]) {
             int32_t baseline = CARD_VALUE_Y + (vf == &AF_M ? CAP_IN(M, CARD_VALUE_H) + AF_M.asc :

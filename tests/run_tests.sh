@@ -610,6 +610,8 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "UI, a FELUCCA_CPU2=0 build: MENU > SYSTEM without 2ND CORE, the rest as the default build" "$OUT/ui_test_c1"
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/lcd_typography_test" tests/lcd_typography_test.c -lm
         run "LCD typography: stationary units, native capital bands and signed MOD range" "$OUT/lcd_typography_test"
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/lcd_readability_test" tests/lcd_readability_test.c -lm
+        run "LCD readability: real text/background contrast, muted state marks and physical SEL legends" "$OUT/lcd_readability_test"
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/track_badge_test" tests/track_badge_test.c -lm
         run "Track badges: actual 1..4 ink centered in every cushion size and theme state" "$OUT/track_badge_test"
     }

@@ -50,6 +50,33 @@ secondary information, `T_ACCENT` for the active knob, and existing selected
 and disabled tokens. MONO's inverted hot-label chip continues to show state
 when its accent and label colors coincide.
 
+### Readable inactive information
+
+Muting a track changes its sound, not whether its saved settings can be read.
+Inactive card values use `T_MID` while their gauge and unavailable action-keycap
+fills retain `T_DIM`. Mixer/HOME track names, mixer values and PAN/REV/dB
+annotations, piano-roll pitch labels and MOD settings/units also use readable
+text roles. Selected drum-lane names and mute icons use `T_TEXT` on `T_RAISE`;
+other lane names use `T_MID`. MOD's inactive arrows, muted meters/notes, empty
+steps and genuinely unavailable graphics retain their existing state treatment.
+
+[`tests/lcd_readability_test.c`](../tests/lcd_readability_test.c) captures actual
+text ink/background pairs from these draw paths in every built-in palette,
+FLAT/LINE and NORMAL/LARGE, including selected/unselected and muted states.
+Affected text must reach 4.5:1 by RGB565 relative luminance. Unavailable action
+keycap fills and empty/disabled graphics are intentional exceptions, not a
+reason to dim existing names or values. CUSTOM retains the user's stored
+colors; these built-in contrast checks do not guarantee arbitrary custom pairs.
+Calculated contrast does not establish physical LCD readability.
+
+### Physical control names
+
+Control legends and calibration prompts use the printed **SEL** button name,
+including HELP and the browser emulator panel. **SELECT** remains the separate
+encoder. The musical SCL page/scale abbreviation and internal `B_SCL`/`KC_SCL`
+IDs are unchanged. Bracketed button prompts use `[SEL]`, which the normal
+keycap parser resolves to the established ID.
+
 ## Source inventory and bounded fit policy
 
 | Surface / owner | Placement and fit policy |

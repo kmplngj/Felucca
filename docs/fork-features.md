@@ -22,6 +22,13 @@ publishes tested main builds and a pinned WebApp fork; its
   The [controlled font comparison](font-experiment.md) records about 39 KB less
   firmware flash and 1,032 B less POOL RAM for pixel-font decode caches than Inter Tight.
   Physical FM-1 readability and redraw checks remain pending. [Compare real renderer captures](ui-comparison.md).
+- **LCD state readability:** muted track names and settings, mixer annotations,
+  pitch labels and MOD values/units retain readable text colors while mute marks
+  and dim graphics distinguish their state. Button legends use the physical
+  **SEL** name; **SELECT** is the separate encoder and **SCL** still names the
+  scale page. The emulator panel uses the same printed legend. See
+  [text roles and contrast scope](lcd-typography.md#readable-inactive-information);
+  physical readability and loaded-panel checks remain pending.
 - **RECENT sounds:** on SAVE > PRESETS, turn KNOB 4 (LIST) past OTHER to RECENT for
   the last eight loaded sounds, newest first. PRESETS browses them; loading from RECENT
   keeps the list order, and SAVE held undoes the audition. Deleted or replaced user
@@ -33,7 +40,7 @@ publishes tested main builds and a pinned WebApp fork; its
   quick-layer labels take priority.
 - **Previous page:** on a family's page, hold OCT− and tap its family button to go
   back one page, wrapping from first to last. It consumes the octave modifier and
-  preserves sounding notes' pitch. Press OCT− first for FX, GLO, SCL, EDIT and SEQ;
+  preserves sounding notes' pitch. Press OCT− first for FX, GLO, SEL, EDIT and SEQ;
   their quick layers use OCT− pressed afterward for UNDO. Other-family buttons,
   dialogs and MIDI LEARN retain their normal behavior.
 
