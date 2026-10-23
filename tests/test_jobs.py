@@ -14,6 +14,8 @@ import subprocess
 import sys
 import tempfile
 import time
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+import test_coverage as coverage
 
 
 def report_log(logs, unit, ai_output):
@@ -87,13 +89,23 @@ def parse_plan(text):
         if len(fields) < 3:
             raise ValueError(f"invalid host-test plan row: {line!r}")
         name, dependencies, *command = fields
+        needs, capabilities = [], []
+        if command[-1].startswith('@coverage='):
+            metadata = json.loads(command.pop().split('=', 1)[1])
+            needs, capabilities = metadata['needs'], metadata['capabilities']
+            if (set(metadata) != {'needs', 'capabilities'} or
+                any(not isinstance(values, list) or len(values) != len(set(values)) or
+                    any(not isinstance(v, str) or not re.fullmatch(r'[a-zA-Z0-9_-]+', v) for v in values)
+                    for values in (needs, capabilities))):
+                raise ValueError('invalid coverage metadata')
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", name) or name in names:
             raise ValueError(f"invalid or duplicate unit: {name!r}")
         dependencies = dependencies.split()
         if not set(dependencies) <= names:
             raise ValueError(f"{name}: dependencies must name earlier units")
         names.add(name)
-        plan.append(dict(name=name, dependencies=dependencies, command=command, status="pending"))
+        plan.append(dict(name=name, dependencies=dependencies, command=command, status="pending",
+                         needs=needs, capabilities=capabilities))
     if not plan:
         raise ValueError("empty host-test plan")
     return plan
@@ -123,22 +135,30 @@ def stop(processes):
 
 
 def execute(script, output, env, ai_output=False, preflight=False):
-    count = job_count(env)
+    # Generic scheduler fixtures also copy this CLI outside a firmware checkout.
+    # They have no firmware evidence contract and can never satisfy verify-tests.
+    production = (script.resolve() == Path(__file__).with_name('run_tests.sh').resolve()
+                  and (script.parent.parent / '.git').exists())
     output.mkdir(parents=True, exist_ok=True)
+    logs = Path(tempfile.mkdtemp(prefix="test-run-", dir=output))
+    contract_env = dict(env)
+    contract_env.setdefault('FELUCCA_COVERAGE_REPORT', str((logs / 'coverage.json').resolve()))
+    contract = coverage.Coverage(script.parent.parent, contract_env) if production else None
+    count = job_count(env)
     with (output / ".test-run.lock").open("a+") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError("another host suite is using this checkout; use a separate worktree")
-        return run_locked(script, output, env, count, ai_output, preflight)
+        return run_locked(script, output, env, count, ai_output, preflight, contract, logs)
 
 
-def run_locked(script, output, env, count, ai_output=False, preflight=False):
-    worker_env = dict(env)
+def run_locked(script, output, env, count, ai_output=False, preflight=False, contract=None, logs=None):
+    worker_env = dict(contract.worker_env if contract else env)
     if count > 1:
         # Bound inner render fan-out, while preflight keeps the caller's environment.
         worker_env.setdefault("JOBS", "1")
-    logs = Path(tempfile.mkdtemp(prefix="test-run-", dir=output))
+    logs = logs or Path(tempfile.mkdtemp(prefix="test-run-", dir=output))
     interrupted = 0
 
     def on_signal(number, _frame):
@@ -179,6 +199,9 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False):
             stop([process])
             active.pop(process)
             unit.update(status="passed" if result == 0 else "failed", returncode=result)
+            if not ai_output:
+                report_log(logs, unit, False)
+                unit['printed'] = True
             if result:
                 return result if result > 0 else 128 - result
         # The plan may probe sanitizer availability, but never executes test units.
@@ -213,9 +236,23 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False):
                 raise ValueError(f"invalid host-test plan; log: {logs / planner['stdout_log']}") from error
             raise
         by_name = {unit["name"]: unit for unit in plan}
+        availability = {}
         for i, unit in enumerate(plan):
             unit["log"] = f"{i + 1:03d}-{unit['name']}.log"
             (logs / unit["log"]).touch()
+            if contract:
+                if unit['name'] == 'tsan' and not env.get('TSAN'):
+                    unit.update(status='not_applicable', reason='not-requested')
+                elif unit['name'] in ('macro', 'asan_macro') and 14 not in contract.engine_ids:
+                    unit.update(status='not_applicable', reason='profile-excluded')
+                else:
+                    key = tuple(unit['needs'])
+                    if key not in availability:
+                        availability[key] = coverage.requirements(unit['needs'], worker_env)
+                    missing = availability[key]
+                    if missing:
+                        unit.update(status='skipped', reason=missing)
+                        (logs / unit['log']).write_text('== skip ' + unit['name'] + ': ' + ', '.join(missing) + '\n')
         if not ai_output:
             print(f"== host runner: {count} concurrent units; logs and timings: {logs}", flush=True)
         while any(unit["status"] in ("pending", "running") for unit in plan):
@@ -229,10 +266,16 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False):
                 if any(dep["status"] in ("failed", "blocked") for dep in dependencies):
                     unit["status"] = "blocked"
                     (logs / unit["log"]).write_text(f"== host unit {unit['name']}: prerequisite failed\n")
+                elif any(dep['status'] in ('skipped', 'not_applicable') for dep in dependencies):
+                    unit.update(status='skipped', reason=['prerequisite-unavailable'])
+                    (logs / unit['log']).write_text(f"== skip {unit['name']}: prerequisite unavailable\n")
                 elif len(active) < count and all(dep["status"] == "passed" for dep in dependencies):
+                    unit_env = dict(worker_env)
+                    if contract:
+                        unit_env['FELUCCA_COVERAGE_UNIT'] = str((logs / (unit['name'] + '.coverage')).resolve())
                     with (logs / unit["log"]).open("wb") as stream:
                         process = subprocess.Popen(["sh", str(script), "--unit", unit["name"]],
-                                                   env=worker_env, stdout=stream, stderr=subprocess.STDOUT,
+                                                   env=unit_env, stdout=stream, stderr=subprocess.STDOUT,
                                                    start_new_session=True)
                     active[process] = unit
                     unit.update(status="running", started=time.monotonic() - start)
@@ -247,7 +290,7 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False):
             flush()
             if active:
                 time.sleep(0.05)
-        success = all(unit["status"] == "passed" for unit in plan)
+        success = all(unit["status"] in ("passed", "skipped", "not_applicable") for unit in plan)
         summary["status"] = "passed" if success else "failed"
         return 0 if success else 1
     finally:
@@ -267,7 +310,7 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False):
                             combined.write(f"--- planner {label} ---\n".encode())
                             with (logs / name).open("rb") as source:
                                 shutil.copyfileobj(source, combined)
-                if ai_output or key == "preflight":
+                if ai_output or (key == "preflight" and not unit.get('printed')):
                     report_log(logs, unit, ai_output)
         for unit in plan:
             if unit["status"] in ("pending", "running"):
@@ -276,11 +319,12 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False):
         summary["seconds"] = time.monotonic() - start
         summary["signal"] = interrupted or None
         summary["unit_counts"] = {status: sum(u["status"] == status for u in plan)
-                                  for status in ("passed", "failed", "blocked", "cancelled")}
+                                  for status in ("passed", "failed", "blocked", "cancelled", "skipped", "not_applicable")}
         if ai_output:
             entries = plan + [summary[key] for key in ("preflight", "plan") if key in summary]
             summary["diagnostic_counts"] = {key: sum(u["diagnostics"][key] for u in entries)
                                             for key in ("warning_lines", "skip_lines")}
+        changed = contract is not None and not contract.finish(summary, logs)
         (logs / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         if ai_output:
             counts = " ".join(f"{key}={value}" for key, value in summary["unit_counts"].items())
@@ -291,6 +335,8 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False):
             print(f"== host runner: {summary['status']}, {summary['seconds']:.1f}s; {logs}/summary.json", flush=True)
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
+        if changed:
+            raise ValueError('coverage inputs/configuration changed during the run')
 
 
 def main():

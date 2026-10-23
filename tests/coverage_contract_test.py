@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Causal contract fixtures plus real compiler/producer subprocess boundaries."""
+import copy
+import contextlib
+import hashlib
+import json
+import io
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+import test_coverage as C
+
+
+class ContractTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.logs = self.root / 'logs'
+        self.logs.mkdir()
+        (self.root / 'tests').mkdir()
+        metadata = dict(needs=[], capabilities=['case'])
+        self.plan = 'unit_a\t\techo test\t@coverage=' + json.dumps(metadata) + '\n'
+        (self.root / 'tests/run_tests.sh').write_text("#!/bin/sh\ncat <<'PLAN'\n" + self.plan + 'PLAN\n')
+        (self.logs / 'plan.stdout.log').write_text(self.plan)
+        (self.logs / 'unit.log').write_text('actual fixture output\n')
+        self.source = dict(revision='a' * 40, configuration={}, inputs={'fixture': 'source'})
+        self.events = self.logs / 'events'
+        env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(self.events), FELUCCA_COVERAGE_ID='fresh')
+        for args in (['command', 'sh', '-c', 'true'], ['outcome', 'case', 'passed']):
+            subprocess.run([sys.executable, str(ROOT / 'tools/test_coverage.py'), *args], env=env, check=True)
+        events = [json.loads(p.read_text()) for p in self.events.glob('*.json')]
+        self.data = dict(schema=1, run_id='fresh', status='complete', before=self.source, after=self.source,
+                         compiler={'fixture': True}, compiler_hashes={sys.executable: C.digest(sys.executable)},
+                         baselines=['fixture-o2', 'fixture-os'], engine_ids=[0],
+                         logs_root=str(self.logs), plan_sha256=C.digest(self.logs / 'plan.stdout.log'), outputs={},
+                         summary=dict(status='passed', signal=None, preflight=dict(status='passed', returncode=0),
+                                      plan=dict(status='passed', returncode=0), units=[dict(name='unit_a', dependencies=[],
+                                      command=['echo test'], status='passed', returncode=0, **metadata)]),
+                         units=[dict(name='unit_a', log='unit.log', log_sha256=C.digest(self.logs / 'unit.log'), events=events)])
+        self.data['summary']['units'][0]['log'] = 'unit.log'
+        for name in ('build/felucca.dis', 'build/emu/felucca.wasm', 'build/host/asan/fuzz_ed',
+                     'build/host/phys_ref', 'build/host/regress', 'build/host/regress_os'):
+            p = self.root / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b'bounded nonempty fixture')
+            self.data['outputs'][name] = dict(bytes=p.stat().st_size, sha256=C.digest(p))
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def verify(self, data=None, **changes):
+        data = copy.deepcopy(self.data if data is None else data)
+        data.update(changes)
+        path = self.root / 'coverage.json'
+        C.atomic(path, data)
+        with patch.object(C, 'snapshot', return_value=self.source), \
+             patch.object(C, 'host_config', return_value={'fixture': True}), \
+             patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']), \
+             patch.object(C, 'selected_engines', return_value=[0]):
+            return C.verify(path, 'fresh', self.root)
+
+    def test_complete_fixture_requires_real_child_and_capability_completion(self):
+        self.verify()
+        for changed in ('no_events', 'no_capability', 'fake_skip', 'changed_declaration'):
+            d = copy.deepcopy(self.data)
+            if changed == 'no_events': d['units'][0]['events'] = []
+            elif changed == 'no_capability':
+                d['units'][0]['events'] = [e for e in d['units'][0]['events'] if e['kind'] != 'outcome']
+            elif changed == 'fake_skip':
+                d['units'][0]['events'][-1] = dict(schema=1, run_id='fresh', kind='outcome', name='case',
+                                                 status='skipped', reason='SKIP: required unavailable')
+            else: d['summary']['units'][0]['capabilities'] = []
+            with self.subTest(changed=changed), self.assertRaises(ValueError): self.verify(d)
+
+    def test_missing_unit_stale_identity_configuration_and_preflight_fail(self):
+        for key, value in (('run_id', 'old'), ('schema', 999), ('status', 'incomplete'), ('after', {})):
+            with self.subTest(key=key), self.assertRaises(ValueError): self.verify(**{key: value})
+        for status in ('failed', 'blocked', 'cancelled', 'skipped', 'not_applicable'):
+            d = copy.deepcopy(self.data)
+            d['summary']['units'][0]['status'] = status
+            with self.subTest(status=status), self.assertRaises(ValueError): self.verify(d)
+        for stage in ('preflight', 'plan'):
+            d = copy.deepcopy(self.data)
+            d['summary'][stage]['status'] = 'failed'
+            with self.subTest(stage=stage), self.assertRaises(ValueError): self.verify(d)
+        d = copy.deepcopy(self.data)
+        d['summary']['units'] = []
+        d['units'] = []
+        with self.assertRaises(ValueError): self.verify(d)
+
+    def test_empty_stale_outputs_and_changed_logs_fail(self):
+        (self.logs / 'unit.log').write_text('replaced\n')
+        with self.assertRaisesRegex(ValueError, 'log changed'): self.verify()
+        (self.logs / 'unit.log').write_text('actual fixture output\n')
+        (self.root / 'build/host/regress').write_bytes(b'')
+        with self.assertRaisesRegex(ValueError, 'empty, stale'): self.verify()
+
+    def test_required_producer_and_python_completion_cannot_be_omitted(self):
+        for argv in (['build/host/regress', 'tests/golden.txt', '-'], ['python3', 'tests/target_budget.py']):
+            d = copy.deepcopy(self.data)
+            command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
+            command['argv'] = argv
+            outcomes, python, _ = C.command_policy(argv)
+            command.update(required_producer=bool(outcomes), required_python=python, expected_outcomes=outcomes)
+            with self.subTest(argv=argv), self.assertRaisesRegex(ValueError, 'completion absent'): self.verify(d)
+            command.update(required_producer=False, required_python=False, expected_outcomes=[])
+            with self.assertRaisesRegex(ValueError, 'contract changed'): self.verify(d)
+
+    def semantic(self, name, details=None, status='passed', reason=None, binary='regress'):
+        d = copy.deepcopy(self.data)
+        command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
+        command.update(argv=['build/host/' + binary, 'tests/golden.txt', '-'] if name == 'regression' else
+                       ['python3', 'tests/install_test.py'], required_producer=True,
+                       required_python=name != 'regression', python=dict(schema=1, unittest=[]))
+        outcomes, _, _ = C.command_policy(command['argv'])
+        command['expected_outcomes'] = outcomes
+        command['producer'] = dict(schema=1, outcomes=[dict(name=n, status='passed', reason=None, details={}) for n in outcomes])
+        row = next(r for r in command['producer']['outcomes'] if r['name'] == name)
+        row.update(details=details or {}, status=status, reason=reason)
+        if name == 'regression': command['argv'][2] = details['baseline']
+        return d
+
+    def test_whole_cpu_policy_positives_and_neighbouring_negatives(self):
+        cpu = dict(total=8, available=8, missing_entries=0, baseline='tests/budget', cpu_status='passed', cpu_reason='')
+        self.verify(self.semantic('regression', cpu))
+        for status, reason, available, baseline, binary in (
+                ('skipped', 'counter-unavailable', 7, 'tests/budget', 'regress'),
+                ('skipped', 'baseline-unavailable', 8, '-', 'regress_os'),
+                ('not_applicable', 'c1-host-unqualified', 8, '-', 'regress_c1')):
+            c = dict(cpu, cpu_status=status, cpu_reason=reason, available=available, baseline=baseline)
+            self.verify(self.semantic('regression', c, binary=binary))
+            for change in ({'cpu_reason': 'unexpected'}, {'missing_entries': 1}, {'available': 9}):
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    self.verify(self.semantic('regression', dict(c, **change), binary=binary))
+        with self.assertRaises(ValueError):
+            self.verify(self.semantic('regression', dict(cpu, cpu_status='skipped', cpu_reason='counter-unavailable')))
+
+    def test_source_resolved_applicability_not_missing_installation(self):
+        for name, reason, engines, configuration in (
+                ('tsan', 'not-requested', [0], {'TSAN': ''}),
+                ('macro', 'profile-excluded', [0], {'TSAN': ''}),
+                ('asan_macro', 'profile-excluded', [0], {'TSAN': ''})):
+            d = copy.deepcopy(self.data)
+            d['summary']['units'][0].update(name=name, status='not_applicable', reason=reason, returncode=None)
+            d['units'][0].update(name=name, events=[])
+            plan = self.plan.replace('unit_a', name)
+            (self.root / 'tests/run_tests.sh').write_text("#!/bin/sh\ncat <<'PLAN'\n" + plan + 'PLAN\n')
+            (self.logs / 'plan.stdout.log').write_text(plan)
+            d['plan_sha256'] = C.digest(self.logs / 'plan.stdout.log')
+            with patch.dict(os.environ, configuration), patch.object(C, 'selected_engines', return_value=engines):
+                self.verify(d)
+            if name == 'tsan':
+                with patch.dict(os.environ, {'TSAN': '1'}), self.assertRaisesRegex(ValueError, 'applicability'):
+                    self.verify(d)
+            else:
+                # The same missing generated assets cannot exclude a selected engine.
+                d['engine_ids'] = [0, 14]
+                path = self.root / 'selected.json'
+                C.atomic(path, d)
+                with patch.object(C, 'snapshot', return_value=self.source), \
+                     patch.object(C, 'host_config', return_value={'fixture': True}), \
+                     patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']), \
+                     patch.object(C, 'selected_engines', return_value=[0, 14]), \
+                     self.assertRaisesRegex(ValueError, 'applicability'):
+                    C.verify(path, 'fresh', self.root)
+
+    def test_only_absent_v15_fixture_is_allowed(self):
+        self.verify(self.semantic('official-v15', status='skipped', reason='proprietary-fixture-absent'))
+        for name, status, reason in (('official-v15', 'skipped', 'foreign-file'),
+                                     ('official-v15', 'failed', None), ('built-package-parity', 'skipped', 'package-missing'),
+                                     ('js-synthetic', 'skipped', 'node-unavailable')):
+            with self.subTest(name=name, status=status), self.assertRaises(ValueError):
+                self.verify(self.semantic(name, status=status, reason=reason))
+
+    def test_unknown_duplicate_and_unittest_skips_fail(self):
+        d = self.semantic('official-v15')
+        command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
+        command['producer']['outcomes'].append(copy.deepcopy(command['producer']['outcomes'][0]))
+        with self.assertRaisesRegex(ValueError, 'duplicate'): self.verify(d)
+        d = self.semantic('official-v15')
+        command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
+        command['python']['unittest'] = [dict(successful=True, tests=1, skipped=[dict(test='required', reason='anything')])]
+        with self.assertRaisesRegex(ValueError, 'unittest skipped'): self.verify(d)
+
+    def test_compiler_identity_and_duplicate_json_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'compiler executable'): self.verify(compiler_hashes={})
+        with self.assertRaisesRegex(ValueError, 'compiler executable'):
+            self.verify(compiler_hashes={sys.executable: 'wrong'})
+        path = self.root / 'duplicate.json'
+        path.write_text('{"schema":1,"schema":1}')
+        with self.assertRaisesRegex(ValueError, 'duplicate coverage key'): C.read_json(path)
+
+
+class ProducerTests(unittest.TestCase):
+    def test_actual_target_missing_listing_and_python_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(root / 'events'), FELUCCA_COVERAGE_ID='producer')
+            r = subprocess.run([sys.executable, str(ROOT / 'tools/test_coverage.py'), 'command',
+                                sys.executable, 'tests/target_budget.py', str(root / 'missing.dis')],
+                               env=env, cwd=ROOT, capture_output=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            event = json.loads(next((root / 'events').glob('*.json')).read_text())
+            self.assertEqual(event['producer']['outcomes'][0]['reason'], 'disassembly-missing')
+            self.assertEqual(event['python'], dict(schema=1, unittest=[]))
+
+    def test_actual_unittest_adapter_records_top_level_skips_not_nested_fixture_skips(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'test.py'
+            source.write_text('import unittest\nclass T(unittest.TestCase):\n'
+                              ' @unittest.skip("missing required dependency")\n def test_required(self): pass\n'
+                              'unittest.main()\n')
+            env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(root / 'events'), FELUCCA_COVERAGE_ID='producer')
+            subprocess.run([sys.executable, str(ROOT / 'tools/test_coverage.py'), 'command', sys.executable, str(source)],
+                           env=env, capture_output=True, check=True)
+            event = json.loads(next((root / 'events').glob('*.json')).read_text())
+            self.assertEqual(event['python']['unittest'][0]['skipped'][0]['reason'], 'missing required dependency')
+
+    def test_real_install_absence_and_present_foreign_file_are_distinct(self):
+        # Load the actual simulation definitions, without its full test sequence.
+        # No proprietary file or device is used; a foreign existing file must raise.
+        source = (ROOT / 'tests/install_test.py').read_text().split('\nwire()\n')[0]
+        namespace = dict(__file__=str(ROOT / 'tests/install_test.py'), __name__='coverage_install_fixture')
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FELUCCA_COVERAGE_CHILD', None)
+            exec(compile(source, namespace['__file__'], 'exec'), namespace)
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                namespace['ROOT'] = Path(temporary)
+                with contextlib.redirect_stdout(io.StringIO()): namespace['official']()
+                self.assertEqual(namespace['coverage'].rows[-1]['reason'], 'proprietary-fixture-absent')
+                namespace['coverage'].rows.clear()
+                (Path(temporary) / 'FM-1_v15.fwsc').write_bytes(b'foreign file')
+                with self.assertRaises(namespace['I'].InstallError), contextlib.redirect_stdout(io.StringIO()):
+                    namespace['official']()
+                self.assertEqual(namespace['coverage'].rows, [])
+        finally:
+            import shutil
+            shutil.rmtree(namespace['TMP'], ignore_errors=True)
+
+
+class LifecycleTests(unittest.TestCase):
+    def test_missing_installations_are_availability_not_applicability(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(C, 'ROOT', Path(temporary)):
+            self.assertEqual(C.requirements(['assets', 'macro-assets', 'node', 'emcc', 'sanitizer'],
+                                            dict(PATH='', SANITIZE='0')),
+                             ['generated-assets-missing', 'macro-assets-missing', 'node-unavailable',
+                              'emcc-unavailable', 'sanitizer-disabled'])
+            with self.assertRaisesRegex(ValueError, 'unknown coverage prerequisite'):
+                C.requirements(['invented'], {})
+
+    def test_fresh_identity_invalidation_and_changed_input_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / 'report.json'
+            path.write_text('malformed previous success')
+            env = dict(os.environ, FELUCCA_COVERAGE_REPORT=str(path), FELUCCA_COVERAGE_ID='unique')
+            source = dict(revision='a' * 40)
+            with patch.object(C, 'snapshot', side_effect=[source, dict(revision='b' * 40)]), \
+                 patch.object(C, 'selected_engines', return_value=[0]), \
+                 patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']):
+                contract = C.Coverage(root, env)
+                self.assertEqual(json.loads(path.read_text())['status'], 'incomplete')
+                logs = root / 'logs'
+                logs.mkdir()
+                summary = dict(status='passed', units=[])
+                self.assertFalse(contract.finish(summary, logs))
+                self.assertEqual(summary['status'], 'failed')
+                self.assertEqual(json.loads(path.read_text())['status'], 'incomplete')
+                with self.assertRaisesRegex(ValueError, 'must be fresh'):
+                    C.Coverage(root, env)
+                self.assertEqual(json.loads(path.read_text())['status'], 'incomplete')
+
+    def test_real_shell_scheduler_contract_normal_compact_serial_parallel(self):
+        sys.path.insert(0, str(ROOT / 'tests'))
+        import test_jobs as J
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / '.git').touch()
+            (root / 'tests').mkdir()
+            script = root / 'tests/run_tests.sh'
+            helper = shlex.quote(str(ROOT / 'tools/test_coverage.py'))
+            metadata = json.dumps(dict(needs=[], capabilities=['case']))
+            plan = ''.join(f'{name}\t{dependency}\techo\t{name}\t@coverage={metadata}\n'
+                           for name, dependency in (('a', ''), ('b', ''), ('c', 'a b')))
+            script.write_text("#!/bin/sh\ncase \"$1\" in\n--preflight) echo preflight;;\n--plan) cat <<'PLAN'\n" +
+                              plan + 'PLAN\n;;\n--unit)\n' +
+                              f'python3 {helper} command sh -c "echo actual-$2" || exit $?\n' +
+                              f'python3 {helper} outcome case passed\n;;\nesac\n')
+            source = dict(revision='a' * 40, inputs={'fixture': C.digest(script)}, configuration={})
+            semantic = []
+            for jobs in (1, 2):
+                for compact in (False, True):
+                    env = dict(os.environ, TEST_JOBS=str(jobs), FELUCCA_COVERAGE_REPORT=str(root / 'coverage.json'),
+                               FELUCCA_COVERAGE_ID=f'run-{jobs}-{compact}')
+                    # This intentionally small source/engine fixture still runs the real
+                    # shell, scheduler, private shims, child adapter and report writer.
+                    with patch.object(J, '__file__', str(root / 'tests/test_jobs.py')), \
+                         patch.object(C, 'snapshot', return_value=source), \
+                         patch.object(C, 'selected_engines', return_value=[0]), \
+                         patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']):
+                        # Redirect fd1 too: report_log copies raw bytes to stdout.buffer.
+                        with tempfile.TemporaryFile() as output:
+                            old = os.dup(1)
+                            try:
+                                sys.stdout.flush()
+                                os.dup2(output.fileno(), 1)
+                                self.assertEqual(J.execute(script, root / 'host', env, compact, True), 0)
+                            finally:
+                                sys.stdout.flush()
+                                os.dup2(old, 1)
+                                os.close(old)
+                    report = json.loads((root / 'coverage.json').read_text())
+                    self.assertEqual(report['status'], 'complete')
+                    self.assertEqual(report['summary']['preflight']['status'], 'passed')
+                    semantic.append([(u['name'], [(e['kind'], e.get('name'), e.get('returncode')) for e in
+                                                sorted(u['events'], key=lambda e: e['kind'])]) for u in report['units']])
+            self.assertTrue(all(s == semantic[0] for s in semantic))
+
+
+class CompilerTests(unittest.TestCase):
+    def test_multiword_wrapper_space_arguments_real_identity_exit_and_signal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wrapper = root / 'compiler wrapper'
+            compiler = subprocess.check_output(['which', 'cc'], text=True).strip()
+            wrapper.write_text('#!/bin/sh\nexec "$@"\n')
+            wrapper.chmod(0o755)
+            define = '-DMESSAGE="a b"'
+            env = dict(os.environ, CC=shlex.join([str(wrapper), 'cc', define]),
+                       FELUCCA_COVERAGE_UNIT=str(root / 'events'), FELUCCA_COVERAGE_ID='compile')
+            e, mapping = C.compiler_environment(env, root / 'shims')
+            source, output = root / 'source with spaces.c', root / 'output with spaces'
+            source.write_text('#include <string.h>\nint main(void){return strcmp(MESSAGE,"a b") ? 4 : 7;}\n')
+            r = subprocess.run([e['CC'], str(source), '-o', str(output)], env=e)
+            self.assertEqual(r.returncode, 0)
+            self.assertEqual(subprocess.run([str(output)]).returncode, 7)
+            self.assertEqual(mapping['requested-cc'], [str(wrapper), 'cc', define])
+            events = [json.loads(p.read_text()) for p in (root / 'events').glob('*.json')]
+            self.assertTrue(any(e['argv'] == [str(wrapper), 'cc', define, str(source), '-o', str(output)] for e in events))
+            self.assertTrue(any(e['executable'] == compiler for e in events))
+            source.write_text('not valid C\n')
+            direct = subprocess.run([str(wrapper), compiler, str(source), '-o', str(output)], capture_output=True)
+            shim = subprocess.run([e['CC'], str(source), '-o', str(output)], env=e, capture_output=True)
+            self.assertEqual(shim.returncode, direct.returncode)
+            wrapper.write_text('#!/bin/sh\nkill -TERM $$\n')
+            self.assertEqual(subprocess.run([e['CC']], env=e).returncode, -15)
+
+    def test_metadata_failure_cannot_run_unrecorded_compiler(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            events = root / 'not-a-directory'
+            events.write_text('do not replace')
+            env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(events), FELUCCA_COVERAGE_ID='compile')
+            e, _ = C.compiler_environment(env, root / 'shims')
+            output = root / 'compiled.o'
+            result = subprocess.run([e['CC'], '-x', 'c', '-c', '-o', str(output), '-'], env=e,
+                                    input='int x;', text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(output.exists())
+
+    def test_concurrent_compiler_records_are_complete_and_isolated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(root / 'events'), FELUCCA_COVERAGE_ID='compile')
+            e, _ = C.compiler_environment(env, root / 'shims')
+            processes = [subprocess.Popen([e['CC'], '--version'], env=e, stdout=subprocess.DEVNULL) for _ in range(8)]
+            self.assertTrue(all(p.wait() == 0 for p in processes))
+            events = [json.loads(p.read_text()) for p in (root / 'events').iterdir()]
+            self.assertEqual(len(events), 8)
+            self.assertTrue(all(e['kind'] == 'probe' and e['run_id'] == 'compile' for e in events))
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -362,6 +362,8 @@ unit fixture "" u_fixture
         # Planning needs package presence and HALF_FRAMES, not actual firmware.
         (self.root / "tests").mkdir()
         (self.root / "tests/run_tests.sh").write_text(SHELL.read_text())
+        (self.root / 'tools').mkdir()
+        (self.root / 'tools/test_coverage.py').write_text((SHELL.parent.parent / 'tools/test_coverage.py').read_text())
         (self.root / "firmware/src").mkdir(parents=True)
         (self.root / "firmware/src/core.h").write_text("#define HALF_FRAMES 128\n")
         (self.root / "firmware/src/felucca.c").write_text('#define FELUCCA_VERSION "fixture"\n')
@@ -385,7 +387,9 @@ unit fixture "" u_fixture
         self.assertEqual(plan["stress_replay"]["dependencies"], ["replay"])
         self.assertEqual({f"catalog_{i}" for i in (10, 11, 12, 13)} & plan.keys(),
                          {f"catalog_{i}" for i in (10, 11, 12, 13)})
-        self.assertTrue(all(not unit["name"].startswith("asan_") for unit in plan.values()))
+        self.assertIn('asan_fuzz_ed', plan)
+        self.assertIn('sanitizer', plan['asan_fuzz_ed']['needs'])
+        expected = result.stdout
 
         # A compiler without sanitizer support must select and execute the same
         # explicit skip unit; workers do not repeat the availability probe.
@@ -393,11 +397,7 @@ unit fixture "" u_fixture
         result = subprocess.run(["sh", "tests/run_tests.sh", "--plan"], cwd=self.root,
                                 env=env, capture_output=True, text=True, check=True)
         plan = {unit["name"]: unit for unit in test_jobs.parse_plan(result.stdout)}
-        self.assertIn("sanitizer_unavailable", plan)
-        result = subprocess.run(["sh", "tests/run_tests.sh", "--unit", "sanitizer_unavailable"],
-                                cwd=self.root, env=env, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("the compiler has no ASan / UBSan", result.stdout)
+        self.assertEqual(result.stdout, expected)
 
         # Missing generated tables still permit a valid partial plan. In
         # particular, web cannot depend on absent editor/descriptor units.
@@ -405,12 +405,8 @@ unit fixture "" u_fixture
         result = subprocess.run(["sh", "tests/run_tests.sh", "--plan"], cwd=self.root,
                                 env=env, capture_output=True, text=True, check=True)
         plan = {unit["name"]: unit for unit in test_jobs.parse_plan(result.stdout)}
-        self.assertNotIn("web", plan)
-        self.assertIn("web_no_assets", plan)
-        result = subprocess.run(["sh", "tests/run_tests.sh", "--unit", "web_no_assets"],
-                                cwd=self.root, env=env, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("== skip web tests (needs build/gen", result.stdout)
+        self.assertEqual(result.stdout, expected)
+        self.assertEqual(plan['web']['needs'], ['assets', 'node'])
 
     def test_outer_ai_flag_preserves_successful_preflight_and_shell_worker(self):
         (self.root / "tests").mkdir()
@@ -422,9 +418,10 @@ unit fixture "" u_fixture
                 f"print({name!r})\n"
                 f"with Path('events').open('a') as f: f.write({name!r} + '\\n')\n")
         (self.root / "tests/test_jobs.py").write_text(RUNNER.read_text())
+        (self.root / 'tools/test_coverage.py').write_text((SHELL.parent.parent / 'tools/test_coverage.py').read_text())
         # Keep the actual entry-point/preflight dispatch and real scheduler.
         # Replace the firmware-dependent catalog with one deterministic worker.
-        source = SHELL.read_text().split('CC="${CC:-cc}', 1)[0]
+        source = SHELL.read_text().split('eval "$(python3 tools/test_coverage.py host-config', 1)[0]
         source += '''
 if [ "$MODE" = --plan ]; then
     printf 'fixture\t\techo fixture\n'
@@ -466,14 +463,15 @@ echo deterministic-worker-output
                      "tests/test_jobs_test.py"):
             (self.root / name).touch()
         (self.root / "tests/test_jobs.py").write_text(
-            "from pathlib import Path\nimport sys\n"
+            "from pathlib import Path\nimport sys,subprocess\n"
             "assert Path(sys.argv[1]).resolve() == Path(__file__).with_name('run_tests.sh').resolve()\n"
             "Path('args').write_text(' '.join(sys.argv[2:]))\n"
+            "if '--preflight' in sys.argv: subprocess.run(['sh',sys.argv[1],'--preflight'],check=True)\n"
             "Path('started').touch()\n")
         for cwd, path in ((self.root, "tests/run_tests.sh"),
                           (self.root.parent, self.root.name + "/tests/run_tests.sh")):
             subprocess.run(["sh", path], cwd=cwd, env=self.env, check=True, capture_output=True)
-            self.assertEqual((self.root / "args").read_text(), "")
+            self.assertEqual((self.root / "args").read_text(), "--preflight")
             subprocess.run(["sh", path, "--ai-output"], cwd=cwd, env=self.env, check=True, capture_output=True)
             self.assertEqual((self.root / "args").read_text(), "--ai-output --preflight")
         (self.root / "started").unlink()
@@ -485,6 +483,7 @@ echo deterministic-worker-output
 
         # The real compact runner must also stop before planning on preflight
         # failure, after the outer shell has changed directory.
+        (self.root / 'tools/test_coverage.py').write_text((SHELL.parent.parent / 'tools/test_coverage.py').read_text())
         (self.root / "tests/test_jobs.py").write_text(RUNNER.read_text())
         result = subprocess.run(["sh", "tests/run_tests.sh", "--ai-output"], cwd=self.root,
                                 env=self.env, capture_output=True, text=True)

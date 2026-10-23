@@ -46,6 +46,7 @@
 #endif
 
 /* ------------------------------------------------------------- limits --- */
+#include "coverage_report.h"
 #define LIM_NEAR 30000            /* |sample| at or above: "near full scale" (the limiter holds ~18000) */
 #define LIM_DC 400                /* |mean| of the sounding part, 16-bit units (1.2 %; the master blocks DC) */
 #define LIM_PEAK_MIN 250          /* quieter than this (-42 dBFS): something is missing */
@@ -1034,6 +1035,8 @@ static job_t *add(uint32_t kind, const char *name)
 
 int main(int argc, char **argv)
 {
+    unsigned coverage_missing = 0;
+    if (coverage_begin()) return 2;
     const char *gpath = argc > 1 ? argv[1] : "tests/golden.txt";
     const char *cpath = argc > 2 ? argv[2] : "tests/cpu_baseline.txt";
     int gupd = getenv("GOLDEN_UPDATE") != 0, cupd = getenv("BUDGET_UPDATE") != 0, verbose = getenv("VERBOSE") != 0;
@@ -1295,9 +1298,10 @@ int main(int argc, char **argv)
         continue;                                   /* (a thread as core 1: its handing over costs the host, not the
                                                      * firmware; the plain build checks the budget) */
 #endif
-        if (!want)
+        if (!want) {
             printf("regress: CPU %s: %.0f instructions / sample, no baseline (BUDGET_UPDATE=1 adds it)\n", j->name, ipc);
-        else if (ipc > b * (1 + CPU_TOL) && ipc > b + CPU_SLACK) {
+            coverage_missing++;
+        } else if (ipc > b * (1 + CPU_TOL) && ipc > b + CPU_SLACK) {
             printf("regress: CPU OVER BUDGET  %s: %.0f instructions / sample%s, baseline %.0f (+%.0f %%, limit +%.0f %%)\n",
                    j->name, ipc, own ? " over the idle mix" : "", b, (ipc / b - 1) * 100, CPU_TOL * 100);
             c_fail++;
@@ -1357,5 +1361,11 @@ int main(int argc, char **argv)
     if (!gupd && (g_changed || g_gone))
         printf("regress: the sound changed. If that is intended: GOLDEN_UPDATE=1 sh tests/run_tests.sh, "
                "then review and commit tests/golden.txt\n");
-    return (!gupd && (g_changed || g_gone)) || h_fail || k_fail || (!cupd && c_fail) || crash;
+    {
+        int failed = (!gupd && (g_changed || g_gone)) || h_fail || k_fail || (!cupd && c_fail) || crash;
+        const char *why = "";
+        for (i = c0; i < c1 && !*why; i++) why = J[i].r.msg;
+        if (coverage_result(failed, c1 - c0, nz, coverage_missing, cpath, why)) return 2;
+        return failed;
+    }
 }

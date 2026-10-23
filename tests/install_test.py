@@ -31,6 +31,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 import fm1_install as I  # noqa: E402
 import fm1pkg_make as M  # noqa: E402
 import build as B  # noqa: E402
+from test_coverage import Producer
+coverage = Producer()
 
 I.DELAY.update(open=0, start=0.01, reply=0, loader=0.01, reboot=0.01, retry=0.02, poll=0.05, hs=0.1,
                idle_check=0.4, idle_write=0.4, wait_loader=2, wait_reboot=2)
@@ -556,6 +558,7 @@ def js_synthetic():
     """the synthetic packages through web/fm1pkg.js: same identity, logical image, entries; same CRC refusals"""
     if not shutil.which("node"):
         print("preflight vs fm1pkg.js: skipped (needs node)")
+        coverage.outcome('js-synthetic', 'skipped', 'node-unavailable')
         return
     js = ("import { Package, logicalImage, productOf } from %r; import { readFileSync } from 'node:fs';"
           "const out = []; for (const f of process.argv.slice(1)) { const p = readFileSync(f);"
@@ -581,6 +584,7 @@ def js_synthetic():
        "synthetic package: identity, logical image, UFW entries == fm1pkg.js")
     ok(all(isinstance(x["entries"], str) and I.ufw_damage(bytes.fromhex(x["image"])) for x in res[1:]),
        "header / list / flash.bin CRC damage: fm1pkg.js refuses it too")
+    coverage.outcome('js-synthetic', 'failed' if failed else 'passed')
 
 
 def against_js():
@@ -588,12 +592,14 @@ def against_js():
     clean = ROOT / "build" / ("felucca" + ("-" + profile if profile != "standard" else "") + ".fwsc")
     if not clean.exists():
         print("built package preflight / fm1pkg.js parity: skipped (needs build/felucca.fwsc)")
+        coverage.outcome('built-package-parity', 'skipped', 'package-missing')
         return
     raw = clean.read_bytes()
     ok(I.load_package(clean, False) == (I.product_of(raw), I.logical_image(raw)),
        f"preflight accepts the actual build ({clean.name}) without changing its image or identity")
     if not shutil.which("node"):
         print("logical image vs fm1pkg.js: skipped (needs node)")
+        coverage.outcome('built-package-parity', 'skipped', 'node-unavailable')
         return
     js = ("import { logicalImage, productOf } from %r; import { readFileSync } from 'node:fs';"
           "const p = readFileSync(process.argv[1]); process.stderr.write(productOf(p));"
@@ -602,6 +608,8 @@ def against_js():
     ok(I.logical_image(raw) == r.stdout and I.product_of(raw) == r.stderr.decode(),
        f"logical_image / product_of == fm1pkg.js ({clean.name}, {I.product_of(raw)})")
     ok(I.LOADER_MARK in raw, f"{clean.name} carries the Felucca loader marker")
+    coverage.outcome('built-package-parity', 'failed' if failed else 'passed', package=str(clean),
+                     sha256=hashlib.sha256(raw).hexdigest())
 
 
 def stock_policy():
@@ -639,6 +647,7 @@ def official():
         v15 = ROOT / "build/recovery-inputs/FM-1_v15.fwsc"
     if not v15.exists():
         print("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)")
+        coverage.outcome('official-v15', 'skipped', 'proprietary-fixture-absent')
         return
     raw = v15.read_bytes()
     dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015",
@@ -675,6 +684,7 @@ def official():
     dev = FakeFM1(I.logical_image(bytes(bad)), identity="FM-1_900", name="Felucca")
     rc, out, err = cli([pkgfile("v15mod.fwsc", bytes(bad)), "--yes"], dev)
     ok(rc == 2 and dev.opened == 0 and dev.sent == [], "a modified V15 is still refused (no MIDI)")
+    coverage.outcome('official-v15', 'failed' if failed else 'passed', sha256=hashlib.sha256(raw).hexdigest())
 
 
 wire()

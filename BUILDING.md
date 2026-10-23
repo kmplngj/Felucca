@@ -376,8 +376,42 @@ plus per-log `diagnostics`, bounded failure `excerpt` fields and their limitatio
 Preflight/plan failures and cancellation remain failures even when no unit started.
 Read the summary and relevant raw logs to investigate; do not equate a short report
 with complete target or FM-1 qualification. The browser gate is already compact and
-does not use this flag. CI's existing full-transcript coverage verifier continues
-to consume normal output; a compact transcript is not its input format.
+does not use this flag. Warning/skip hints remain presentation only; neither a
+success banner nor a unit's zero exit establishes complete required coverage.
+
+Every full runner invocation also writes versioned `coverage.json` beside its
+summary, with the same contract in normal/compact and serial/parallel modes.
+It records the source revision and input hashes before/after the run, clean exact
+Engines pin, selected profile, relevant environment, actual compiler identities
+and observed argv, child completion and semantic capability results. Private
+per-run compiler passthroughs preserve multiword `CC`/`CXX`, argument boundaries,
+exit codes and signals; their paths/logs are diagnostic, never release inputs.
+Missing assets/tools stay in the expected plan with an explicit unavailable
+outcome. Opt-in TSAN not requested and source-resolved MACRO exclusions are
+`not_applicable`; they are not passed tests.
+
+For strict verification, choose an explicit destination and a fresh identity
+before launching the runner, then use the same environment for the verifier:
+
+```sh
+mkdir -p build/ci
+export FELUCCA_COVERAGE_REPORT="$PWD/build/ci/coverage.json"
+export FELUCCA_COVERAGE_ID="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+uv run --locked --group build tests/run_tests.sh --ai-output > build/ci/tests.log 2>&1
+uv run --locked --group build python tools/ci.py verify-tests build/ci/tests.log
+```
+
+The destination is invalidated at startup; reusing its invocation ID is an error.
+Keep sources, generated assets, compiler/configuration and outputs unchanged until
+verification finishes. CI rejects required skips, missing child completion,
+failed/blocked/cancelled units, altered/empty outputs, changed logs and stale or
+unknown evidence. Local optional skips remain available but fail strict coverage.
+Only absent proprietary V15 input, an unavailable whole CPU budget (counters or
+matching baseline), C1's unqualified CPU comparison and declared applicability
+exclusions retain their existing exceptions. Available CPU budgets missing entries
+fail. See [CI policy](.github/CI.md#required-checks-and-evidence). A report's
+`complete` status means its execution and inputs completed consistently; the strict
+verifier still evaluates every required capability. No report is a device result.
 
 Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too,
 the browser emulator's). Run it after `uv run --locked --group build ./build.sh`

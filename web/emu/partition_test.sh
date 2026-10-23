@@ -28,6 +28,12 @@ if command -v emcc >/dev/null 2>&1; then
         -Ibuild/gen -Ifirmware/src --no-entry -sSTANDALONE_WASM -sSTACK_SIZE=1048576 \
         -sINITIAL_MEMORY=33554432 -sFILESYSTEM=0 -o build/host/emu_partition.wasm web/emu/partition_test.c
     node web/emu/partition_test.mjs build/host/emu_partition_native build/host/emu_partition.wasm
+    if [ -n "${FELUCCA_COVERAGE_CHILD:-}" ]; then
+        python3 tools/test_coverage.py partition-result passed
+    fi
 else
     node web/emu/partition_test.mjs build/host/emu_partition_native
+    if [ -n "${FELUCCA_COVERAGE_CHILD:-}" ]; then
+        python3 tools/test_coverage.py partition-result skipped
+    fi
 fi

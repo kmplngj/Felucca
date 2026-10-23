@@ -230,6 +230,9 @@ MODE=${1:-run}
 SELECTED_UNIT=${2:-}
 case "$MODE" in
     run|--preflight)
+        if [ "$MODE" = run ]; then
+            exec python3 tests/test_jobs.py tests/run_tests.sh --preflight
+        fi
         python3 tools/profile.py --check
         python3 tests/build_identity_test.py
         python3 tests/profile_test.py
@@ -244,11 +247,22 @@ case "$MODE" in
     --plan|--unit) ;;
     *) echo "usage: tests/run_tests.sh [--ai-output]" >&2; exit 2 ;;
 esac
-CC="${CC:-cc} -O1 -Wall -Wno-unused-function -Ibuild/gen"
-NOVEC="-fno-vectorize -fno-slp-vectorize"         # clang's spelling; GCC (cc on Linux) knows only its own
-echo 'int x;' | $CC $NOVEC -x c -c -o /dev/null - 2>/dev/null || NOVEC="-fno-tree-vectorize -fno-tree-slp-vectorize"
+eval "$(python3 tools/test_coverage.py host-config --shell "$MODE")"
 fail=0
-run() { echo "== $1"; shift; "$@" || fail=1; }
+run() {
+    echo "== $1"; shift
+    checked "$@" || fail=1
+}
+checked() {
+    if [ -n "${FELUCCA_COVERAGE_UNIT:-}" ]; then
+        python3 tools/test_coverage.py command "$@"
+    else
+        "$@"
+    fi
+}
+outcome() { if [ -n "${FELUCCA_COVERAGE_UNIT:-}" ]; then python3 tools/test_coverage.py outcome "$@"; fi; }
+UNIT_NEEDS=
+UNIT_CAPABILITIES=
 
 # Each row is name, prerequisites, and function/arguments, separated by tabs.
 # The scheduler re-enters this script to execute a unit in its own process group.
@@ -259,7 +273,14 @@ unit() {
     if [ "$MODE" = --plan ]; then
         printf '%s\t%s' "$unit_name" "$prerequisites"
         printf '\t%s' "$@"
-        printf '\n'
+        printf '\t@coverage='
+        printf '{"needs":['
+        separator=
+        for token in $UNIT_NEEDS; do printf '%s"%s"' "$separator" "$token"; separator=,; done
+        printf '],"capabilities":['
+        separator=
+        for token in $UNIT_CAPABILITIES; do printf '%s"%s"' "$separator" "$token"; separator=,; done
+        printf ']}\n'
     elif [ "$SELECTED_UNIT" = "$unit_name" ]; then
         "$@"
         exit "$fail"
@@ -287,6 +308,7 @@ if [ -f build/gen/felucca_profile.h ] && grep -q '^#define FELUCCA_PROFILE_ENGIN
 fi
 
 u_portable() {
+    run "structured host coverage: verifier, producer and compiler causal fixtures" python3 tests/coverage_contract_test.py
     run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
     run "64-bit multiply / 16-bit load inventory: parser, window and baseline fixtures (#425)" python3 tests/mul64_hload_check_test.py
     run "supported profile contract (portable fixtures)" python3 tests/profile_contract_test.py
@@ -368,11 +390,15 @@ u_midi_partition() {
     if [ -f build/gen/felucca_tables.h ]; then
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/partition_test" tests/partition_test.c -lm
         run "MIDI partition invariance: USB / TRS / mixed schedule, large vs irregular partitions, negative self-checks" "$OUT/partition_test"
+        outcome native-partitions passed
     else
         echo "== skip MIDI partition invariance (run ./build.sh once)"
+        outcome native-partitions skipped generated-assets-missing
     fi
 }
+UNIT_CAPABILITIES=native-partitions
 unit midi_partition "" u_midi_partition
+UNIT_CAPABILITIES=
 
 u_cc_scale() {
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/cc_scale_test" tests/cc_scale_test.c -lm
@@ -416,7 +442,8 @@ u_loader() {
 }
 unit loader "" u_loader
 
-if [ -f build/gen/felucca_tables.h ]; then
+UNIT_NEEDS=assets
+if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_profiles() {
         run "profiles: isolated host selection, metadata and stored-sound round trips" python3 tests/profile_integration_test.py
     }
@@ -585,9 +612,13 @@ if [ -f build/gen/felucca_tables.h ]; then
                 python3 tests/text_spacing_test.py build/gen/ui_fonts.h
         else
             echo "font Python checks skipped (Pillow unavailable)"
+            outcome fonts skipped pillow-unavailable
         fi
+        if python3 -c "import PIL" 2>/dev/null; then outcome fonts passed; fi
     }
+    UNIT_CAPABILITIES=fonts
     unit text "" u_text
+    UNIT_CAPABILITIES=
 
     u_settings() {
         $CC -O1 -w -Ibuild/gen -o "$OUT/settings_test" tests/settings_test.c
@@ -641,13 +672,17 @@ if [ -f build/gen/felucca_tables.h ]; then
         if python3 -c "import PIL" 2>/dev/null; then
             run "UI renders: real renderer, layout lint, alignment, PNGs and comparison manifest" \
                 python3 tests/ui_render.py build/ui_new build/ui_slot --renderer "$OUT/ui_render" --cc "$CC"
+            outcome png passed
         else
             $CC -O1 -w "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render" tests/ui_render.c -lm
             run "UI renders: layout lint and alignment (Pillow unavailable; PNG/manifest/comparison skipped)" \
                 "$OUT/ui_render" build/ui_new build/ui_slot
+            outcome png skipped pillow-unavailable
         fi
     }
+    UNIT_CAPABILITIES=png
     unit ui_render "" u_ui_render
+    UNIT_CAPABILITIES=
 
     u_screen_capture_ui() {
         $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/screen_capture_ui_test" tests/screen_capture_ui_test.c -lm
@@ -658,7 +693,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     unit screen_capture_ui "screen_capture" u_screen_capture_ui
 
     # These generators use their own directories, independent of ui_new/ui_fm4.
-    if python3 -c "import PIL" 2>/dev/null; then
+    if [ "$MODE" = --plan ] || python3 -c "import PIL" 2>/dev/null; then
+        UNIT_NEEDS="assets pillow"
         u_identity_ui() {
             run "Build identity UI: bounded metadata in all fonts and palettes" python3 tests/build_identity_ui_test.py
         }
@@ -671,6 +707,7 @@ if [ -f build/gen/felucca_tables.h ]; then
             run "UI comparison: exact pixels, scene matching, settings and strict gate fixtures" python3 tests/ui_compare_test.py
         }
         unit ui_compare "" u_ui_compare
+        UNIT_NEEDS=assets
     fi
 
     u_ui_fm4() {
@@ -684,13 +721,17 @@ if [ -f build/gen/felucca_tables.h ]; then
         if python3 -c "import PIL" 2>/dev/null; then
             run "UI renders with FELUCCA_FM4=1: DIGITAL screens, lint, PNGs and comparison manifest" \
                 python3 tests/ui_render.py build/ui_fm4 build/ui_fm4_slot --renderer "$OUT/ui_render_fm4" --fm4 --cc "$fm4_cc"
+            outcome png-fm4 passed
         else
             $fm4_cc -O1 -w -DFELUCCA_FM4=1 "-DFELUCCA_VERSION=\"$FV\"" -Ibuild/gen -Ifirmware/src -Itests -o "$OUT/ui_render_fm4" tests/ui_render.c -lm
             run "UI renders with FELUCCA_FM4=1: DIGITAL screens and lint (PNG/manifest skipped)" \
                 "$OUT/ui_render_fm4" build/ui_fm4 build/ui_fm4_slot
+            outcome png-fm4 skipped pillow-unavailable
         fi
     }
+    UNIT_CAPABILITIES=png-fm4
     unit ui_fm4 "ui_render" u_ui_fm4
+    UNIT_CAPABILITIES=
 
     u_audio() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/audio_test" tests/audio_test.c -lm
@@ -1009,10 +1050,10 @@ if [ -f build/gen/felucca_tables.h ]; then
     u_descriptors() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/descdump" tests/descdump.c -lm
         echo "== parameter and engine tables as JSON (for the editor mock test)"
-        "$OUT/descdump" > "$OUT/desc.json" || fail=1
+        checked "$OUT/descdump" > "$OUT/desc.json" || fail=1
         # Frozen editor snapshot: strict common-contract comparison, independent
         # of optional catalog extensions checked against the complete dump.
-        "$OUT/descdump" --legacy-web-mock > "$OUT/desc-legacy-web.json" || fail=1
+        checked "$OUT/descdump" --legacy-web-mock > "$OUT/desc-legacy-web.json" || fail=1
     }
     unit descriptors "" u_descriptors
 
@@ -1032,11 +1073,15 @@ if [ -f build/gen/felucca_tables.h ]; then
                 "$D/PhysicalModeling/KarplusString.cpp" "$D/Filters/svf.cpp" "$D/Utility/dcblock.cpp" \
                 "$D/Dynamics/crossfade.cpp" "$OUT/phys_fixed.o"
             run "PHYS: the fixed-point models against DaisySP's float originals (mode frequencies, decays, Svf)" "$OUT/phys_ref"
+            outcome reference passed
         else
             echo "== skip PHYS reference test (no DaisySP: set DAISYSP to a checkout)"
+            outcome reference skipped daisysp-unavailable
         fi
     }
+    UNIT_CAPABILITIES=reference
     unit phys_ref "" u_phys_ref
+    UNIT_CAPABILITIES=
 
     u_tom_tail() {
         $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/tom_tail_test" tests/tom_tail_test.c -lm
@@ -1104,16 +1149,21 @@ if [ -f build/gen/felucca_tables.h ]; then
             $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/sample_test" tests/sample_test.c -lm
             run "SAMPLE: PIANO (5 zones as 1.1.5: splits, pitch, length, GRAIN), SLICE's PIANO, a PIANO HD slot" "$OUT/sample_test" \
                 build/piano_hd/PIANO_HD build/sample_demo
+            outcome sample-piano passed
         else
             echo "== skip SAMPLE's PIANO (no CC0 library: assets/samples-cc0, tools/fetch_cc0.py)"
+            outcome sample-piano skipped cc0-assets-missing
         fi
     }
+    UNIT_CAPABILITIES=sample-piano
     unit sample "" u_sample
+    UNIT_CAPABILITIES=
 
 else
     note hostsim_unavailable "== skip hostsim (run ./build.sh once)"
 fi
 
+UNIT_NEEDS=
 # ASan + UBSan: the stored-data and protocol paths, and short fuzz runs (fixed seeds: the same inputs every run)
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize=signed-integer-overflow,shift,bounds,object-size,pointer-overflow"
 SAN="$SAN -fno-sanitize-recover=undefined -w"
@@ -1121,13 +1171,14 @@ san_ok() {
     printf 'int main(void){return 0;}\n' > "$OUT/san_probe.c" &&
         ${CC%% *} $SAN -o "$OUT/san_probe" "$OUT/san_probe.c" 2>/dev/null && "$OUT/san_probe"
 }
-if [ "${SANITIZE:-1}" = 0 ]; then
+if [ "$MODE" != --plan ] && [ "${SANITIZE:-1}" = 0 ]; then
     note sanitizer_disabled "== skip the sanitizer runs (SANITIZE=0)"
-elif [ ! -f build/gen/felucca_tables.h ]; then
+elif [ "$MODE" != --plan ] && [ ! -f build/gen/felucca_tables.h ]; then
     note sanitizer_no_assets "== skip the sanitizer runs (run ./build.sh once)"
-elif [ "$SELECTED_UNIT" = sanitizer_unavailable ] || { [ "$MODE" = --plan ] && ! san_ok; }; then
+elif [ "$SELECTED_UNIT" = sanitizer_unavailable ]; then
     note sanitizer_unavailable "== skip the sanitizer runs (the compiler has no ASan / UBSan)"
 else
+    UNIT_NEEDS="assets sanitizer"
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
@@ -1231,7 +1282,9 @@ else
 
 fi
 
-if [ -f build/gen/felucca_braids.h ]; then
+UNIT_NEEDS=
+if [ "$MODE" = --plan ] || [ -f build/gen/felucca_braids.h ]; then
+    UNIT_NEEDS="assets macro-assets"
     u_macro() {
         $CC -O2 -w -Ifirmware/src -o "$OUT/macro_test" tests/macro_test.c -lm
         run "MACRO legacy: controls, independent parts, retriggers and release" "$OUT/macro_test"
@@ -1245,7 +1298,8 @@ if [ -f build/gen/felucca_braids.h ]; then
         run "Braids: pinned original C++ versus generated C output" python3 tests/braids_reference.py
     }
     unit macro "" u_macro
-    if [ "${SANITIZE:-1}" != 0 ] && san_ok; then
+    if [ "$MODE" = --plan ] || { [ "${SANITIZE:-1}" != 0 ] && san_ok; }; then
+        UNIT_NEEDS="assets macro-assets sanitizer"
         u_asan_macro() {
             for src in macro_core_test braids_test macro_switch_test macro_keyboard_test; do
                 if [ "$src" = macro_switch_test ] || [ "$src" = macro_keyboard_test ]; then
@@ -1264,6 +1318,7 @@ if [ -f build/gen/felucca_braids.h ]; then
     fi
 fi
 
+UNIT_NEEDS=
 u_target_budget() {
     run "regression: target cost of the render loops (pi32v2 disassembly)" python3 tests/target_budget.py \
         build/felucca.dis tests/target_budget.txt
@@ -1280,11 +1335,12 @@ u_diagnostics() {
 }
 unit diagnostics "" u_diagnostics
 
-if ! command -v node >/dev/null 2>&1; then
+if [ "$MODE" != --plan ] && ! command -v node >/dev/null 2>&1; then
     note web_unavailable "== skip web tests (no node)"
-elif [ ! -f build/gen/felucca_tables.h ]; then
+elif [ "$MODE" != --plan ] && [ ! -f build/gen/felucca_tables.h ]; then
     note web_no_assets "== skip web tests (needs build/gen: run ./build.sh once)"
 else
+    UNIT_NEEDS="assets node"
     u_web() {
         run "web pages: editor protocol + samples, package builder, update protocol" \
             env FELUCCA_DESC="$OUT/desc.json" FELUCCA_MOCK_DESC="$OUT/desc-legacy-web.json" FELUCCA_FWSC="$FWSC" node web/test_web.mjs
@@ -1293,6 +1349,7 @@ else
     unit web "editor descriptors" u_web
 fi
 
+UNIT_NEEDS=
 u_emulator_partitions() {
     if command -v node >/dev/null 2>&1 && [ -f build/gen/felucca_tables.h ]; then
         run "emulator partitions: exact PCM/state/publication, native and optional WebAssembly, negative fixtures" \
@@ -1301,6 +1358,7 @@ u_emulator_partitions() {
         echo "== skip emulator partitions (needs node and build/gen)"
     fi
 }
+UNIT_NEEDS="assets node emcc"
 unit emulator_partitions "" u_emulator_partitions
 
 u_emulator() {
@@ -1318,6 +1376,7 @@ u_emulator() {
     fi
 }
 unit emulator "" u_emulator
+UNIT_NEEDS=
 
 if [ "$MODE" = --unit ]; then
     echo "unknown host test unit: $SELECTED_UNIT" >&2
