@@ -28,10 +28,10 @@ def run():
         ('pr-head', dict(version_source='override', pr_label='PR #9999999 head'), 'PR #9999999 head'),
         ('boundary', dict(dirty=True, build='ffffffff-dirty', pr_label='PR #9999999 merge'), 'PR #9999999 merge'),
     ]
-    for font in ('m8stealth', 'tamzen', 'inter-tight'):
+    for font in ('m8stealth',):
         directory = out / font
         directory.mkdir(parents=True, exist_ok=True)
-        generator = 'gen_aa_font.py' if font == 'inter-tight' else 'gen_bitmap_font.py'
+        generator = 'gen_bitmap_font.py'
         subprocess.run([sys.executable, str(ROOT / 'tools' / generator),
                         str(directory / 'ui_fonts.h'), '--preset', font], check=True)
         for name, overrides, expected in cases:
@@ -47,7 +47,7 @@ def run():
             subprocess.run([str(exe), str(case)], cwd=ROOT, check=True)
             for path in (case / 'ppm').glob('*.ppm'):
                 Image.open(path).save(path.with_suffix('.png'))
-    print(f'settings identity: {len(cases)} contexts x 3 fonts x 10 palettes x 2 styles x 2 sizes passed')
+    print(f'settings identity: {len(cases)} contexts x 1 font x 10 palettes x 2 styles x 2 sizes passed')
 
 
 if __name__ == '__main__':

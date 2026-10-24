@@ -11,7 +11,7 @@ static unsigned char host_samples[3][0x14000];
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
-#define MENU_N (33u + FELUCCA_CPU2)                  /* ALL DARK id 33; id 32 stays reserved in CPU2=0 builds */
+#define MENU_N (34u + FELUCCA_CPU2)                  /* ALL DARK id 33, GRAPH 34 (#572); id 32 stays reserved in CPU2=0 builds */
 
 static uint32_t host_progress = 1, host_erases, host_writes;
 static uint8_t host_wire[4096];
@@ -199,7 +199,7 @@ static int preferences(void)
     bad += check("INFO explicitly tags display capabilities after SONG without changing command 33",
         ED_SONG == 33 && ED_UI_STATE == 34 && ED_FAV_SET == 38 &&
         host_wire[e - 47] == CHAIN_ROWS && host_wire[e - 46] == 0x55 &&
-        host_wire[e - 45] == 1 && host_wire[e - 44] == 9 &&
+        host_wire[e - 45] == 1 && host_wire[e - 44] == 57 &&   /* (#572: + bit 5, one native style) */
         host_wire[e - 43] == 0x4d && host_wire[e - 42] == 1 &&
         host_wire[e - 41] == 64u && host_wire[e - 40] == 1 &&   /* (64 kept: 41 01 says 128) */
         host_wire[e - 39] == 0x42 && host_wire[e - 38] == 1 && host_wire[e - 37] == 3 &&
@@ -228,7 +228,9 @@ static int preferences(void)
     bad += check("out-of-range palette leaves the display unchanged", host_wire[5] == 1 && settings.palette == 7);
     a[0] = 1; a[1] = 1; request(ED_UI_SET, a, 2);
     bad += check("the retired font weight is not supported (rc 2), UI_STATE says 127",
-        host_wire[5] == 2 && host_wire[8] == 9 && host_wire[10] == 127);
+        host_wire[5] == 2 && host_wire[8] == 57 && host_wire[10] == 127);
+    a[0] = 4; a[1] = 1; request(ED_UI_SET, a, 2);
+    bad += check("unified UI capability is informational, not an editable UI_SET slot", host_wire[5] == 1);
     a[0] = 2; request(ED_UI_SET, a, 2);
     bad += check("unsupported preference is reported without applying it", host_wire[5] == 2);
     a[0] = ENGI_DRUM; a[1] = 0; a[2] = 64; a[3] = 1;
@@ -929,7 +931,7 @@ static uint32_t menu_set(uint32_t id, int32_t v)            /* -> rc; host_wire[
 #define TCH_NAMES "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,OMNI,OFF"
 static int menu_protocol(void)
 {
-    static const char *const WANT[34][2] = {
+    static const char *const WANT[35][2] = {
         {"COLOR", 0}, {"STYLE", "FLAT,LINE"}, {"LARGE", "OFF,ON"}, {"ANIM", "ON,OFF,IDLE"}, {"LEDS", "OFF,DIM LO,DIM HI,INV,INV LO,INV HI"},
         {"HOLD", "0.3 s,0.4 s,0.5 s,0.6 s"}, {"KNOB ACCEL", "OFF,ON"}, {"FX LATCH", "OFF,ON"}, {"BPM LOCK", "OFF,ON"},
         {"SPEAKER EQ", "FLAT,LOWCUT,BASS+"}, {"USB LEVEL", "MASTER,FIXED"}, {"USB SERIAL", "ON,OFF"},
@@ -943,9 +945,11 @@ static int menu_protocol(void)
         {"SELECT", "BPM,PAGE,MODW,VEL"},                                                             /* (1.5.5; 1.5.6 MODW VEL) */
         {"T1 CHANNEL", TCH_NAMES}, {"T2 CHANNEL", TCH_NAMES}, {"T3 CHANNEL", TCH_NAMES}, {"T4 CHANNEL", TCH_NAMES},   /* (1.5.5) */
         {"AUTO SELECT", "OFF,ON"}, {"WAKE", "+MIDI,PANEL"},                                        /* (same id 31) */
-        {"2ND CORE", "OFF,ON (BETA)"}, {"ALL DARK", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"}};
-    static const int32_t DEF[34] = {-1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0, 0};
-    static const uint8_t TAB[34] = {0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 4, 2, 2, 2, 4, 1, 0, 0, 1, 1, 3, 2, 0, 4, 1, 3, 3, 3, 3, 3, 0, 4, 0};   /* DISPLAY CONTROL AUDIO
+        {"2ND CORE", "OFF,ON (BETA)"}, {"ALL DARK", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"},
+        {"GRAPH", "SCOPE,TURN,CURVE,STILL"}};                                                  /* (#572) */
+    static const int32_t DEF[35] = {-1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0, 0,
+                                    1};                                                  /* (GRAPH: TURN) */
+    static const uint8_t TAB[35] = {0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 4, 2, 2, 2, 4, 1, 0, 0, 1, 1, 3, 2, 0, 4, 1, 3, 3, 3, 3, 3, 0, 4, 0, 0};   /* DISPLAY CONTROL AUDIO
                                                                                                          * MIDI SYSTEM (1.2) */
     static const char *const TABN[5] = {"DISPLAY", "CONTROL", "AUDIO", "MIDI", "SYSTEM"};
     int bad = 0, ok = 1;
@@ -957,7 +961,7 @@ static int menu_protocol(void)
     reset();
     if (jf) fprintf(jf, "[");
     for (i = 0; i < MENU_N; i++) {
-        uint32_t id = !FELUCCA_CPU2 && i == 32u ? 33u : i;
+        uint32_t id = !FELUCCA_CPU2 && i >= 32u ? i + 1u : i;   /* (CPU2=0: id 32 reserved) */
         n = menu_desc(i, &it);
         joined[0] = 0;
         for (k = 0; k < it.nnames; k++) { if (k) strcat(joined, ","); strcat(joined, it.names[k]); }
@@ -1042,14 +1046,20 @@ static int menu_protocol(void)
           ui_prefs2 == 31u;                             /* (its own byte: SELECT's bit 4 untouched) */
     ok &= menu_set(31, 1) == 3 && ui_prefs2 == 63u && (ui_rec_prefs & 0x80u) && ui_scr == 1u;   /* (1.5.5: SCREEN WAKE
                                                          * PANEL, bit 5 of ui_prefs2; SCREEN OFF's byte untouched) */
+    {   /* #572: GRAPH STILL, bits 1..2 of ANIM IDLE's byte (stored 3), its bit 0 kept */
+        uint8_t idle = settings_dev[10];
+        ok &= menu_set(34, 3) == 3 && graph_mode() == GM_STILL && ((settings_dev[10] >> 1) & 3u) == 3u &&
+              (settings_dev[10] & ~6u) == (idle & ~6u);
+    }
 #if FELUCCA_CPU2
     ok &= menu_set(32, 1) == 3 && ui_prefs2 == 0xBFu;   /* (2ND CORE ON (BETA), bit 7 of ui_prefs2) */
 #else
     ok &= menu_set(32, 1) == 1 && ui_prefs2 == 0x3Fu;   /* (no 2ND CORE in a FELUCCA_CPU2=0 build: an unknown id, nothing set) */
 #endif
     for (i = 0; i < MENU_N; i++) {                         /* MENU_DESC reads them back */
-        static const int32_t SET[34] = {2, 1, 1, 1, 1, 3, 1, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 1, 1, 2, -13, 1, 1, 1, 9, 16, 17, 0, 1, 1, 1, 0};
-        uint32_t id = !FELUCCA_CPU2 && i == 32u ? 33u : i;
+        static const int32_t SET[35] = {2, 1, 1, 1, 1, 3, 1, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 1, 1, 2, -13, 1, 1, 1, 9, 16, 17, 0, 1, 1, 1, 0,
+                                        3};
+        uint32_t id = !FELUCCA_CPU2 && i >= 32u ? i + 1u : i;   /* (CPU2=0: id 32 reserved) */
         menu_desc(i, &it);
         ok &= it.value == SET[id];
     }
@@ -1078,7 +1088,7 @@ static int menu_protocol(void)
         uint8_t hold0 = settings_hold, leds0 = settings_leds;
         memcpy(fav0, &favorites, sizeof favorites); memcpy(set0, &settings, sizeof settings);
         memcpy(dev0, settings_dev, sizeof settings_dev);
-        uint32_t unknown = FELUCCA_CPU2 ? 34u : 32u;
+        uint32_t unknown = FELUCCA_CPU2 ? 35u : 32u;          /* (#572: 34 GRAPH) */
         ok = menu_set(unknown, 1) == 1 && host_wire[6] == unknown && ed_rv(host_wire + 7) == 1;
         ok &= menu_set(126, -3) == 1 && host_wire[6] == 126 && ed_rv(host_wire + 7) == -3;
         ok &= menu_set(127, 0) == 1 && host_wire[6] == 127;
@@ -1112,7 +1122,7 @@ static int menu_protocol(void)
         ok &= menu_set(17, 12) == 2u && ed_rv(host_wire + 7) == 2;
         ok &= !memcmp(dev0, settings_dev, sizeof dev0) && scrn.idle == idle0 &&
               host_erases == erases0 && host_writes == writes0;
-        menu_desc(MENU_N - 1u, &it);
+        menu_desc(MENU_N - 2u, &it);                     /* (ALL DARK; GRAPH, #572, after it) */
         ok &= it.id == 33u && it.value == 3 && it.min == 0 && it.max == 4;
         bad += check("MENU_SET conflicting timers: rc 2, actual unchanged values, no preference/timer/flash mutation", ok);
         ok = menu_set(33, 0) == 3u && menu_set(17, 12) == 3u && menu_set(33, 4) == 2u && ed_rv(host_wire + 7) == 0;

@@ -151,41 +151,24 @@ uv run --locked --group build ./build.sh
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
-Choose the firmware UI font with `FELUCCA_FONT`. The choice is compiled into the
-firmware:
+Native firmware uses M8Stealth only. `FELUCCA_FONT` may be unset or explicitly
+`m8stealth`; retired `tamzen` and `inter-tight` values fail before generation.
+After updating from an older font build, rebuild assets and firmware before
+running host tests or the browser emulator.
 
-| Value | UI font |
-| --- | --- |
-| `inter-tight` | Inter Tight |
-| `tamzen` | Tamzen regular 6×12 / 8×16 pixel faces |
-| `m8stealth` | Trash80 M8Stealth57 / M8Stealth89 pixel faces, the default |
-
-```sh
-FELUCCA_FONT=inter-tight uv run --locked --group build ./build.sh
-FELUCCA_FONT=tamzen uv run --locked --group build ./build.sh
-FELUCCA_FONT=m8stealth uv run --locked --group build ./build.sh
-```
-
-Plain `uv run --locked --group build ./build.sh` selects M8Stealth when
-`FELUCCA_FONT` is unset. The pixel fonts
-save about 39 KB of firmware flash and use 1,032 B less POOL RAM for Huffman
-decode caches than Inter Tight; other RAM regions are unchanged. Tamzen stores
-6×12 and 8×16 pixel faces as 1-bit glyphs; large readouts share the 8×16 data at 2×.
-The line boxes and baselines keep the existing layout metrics, while the visible
-capital heights change. Rebuild after choosing a variant, then run
-`uv run --locked --group build tests/run_tests.sh`; host tests and the browser emulator
-use the generated font
-header from that build. Real FM-1 readability and redraw behavior still need
-comparison.
-M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and shared
-M ink at 2× for L, with 17 px large advances to fit three-digit card readouts.
-Its WOFF2 inputs require Brotli (`fonttools[woff]`); the WOFF2
-container is decoded only during asset generation. The ten extra Felucca marks
-are explicit local bitmap adaptations. All font variants use native M8Stealth57
-keycap and badge legends; only their rounded pill edges retain antialiasing.
-The [LCD typography guide](docs/lcd-typography.md) describes the text roles,
-fixed unit positions and fit rules. The font selector still controls regular text.
-Measurements and validation are recorded in [the font experiment](docs/font-experiment.md).
+Trash80's native 5×7 and 8×9 faces have 6/9 px advances. L/N share M at exact 2× (18 px capitals),
+with 17 px focused-value and 18 px full-name advances. Scaled roles add only
+glyph metadata and descriptors, without another bitmap set or decode cache.
+The WOFF2 inputs require Brotli (`fonttools[woff]`); decoding happens only during
+asset generation. Ten extra Felucca marks are explicit local bitmap adaptations.
+Keycap/badge legends use native M8Stealth57; their rounded pill edges and icons
+retain antialiasing. The [LCD typography guide](docs/lcd-typography.md) describes
+roles, fit and the independent source-raster checks. A doubled S would be exact
+14 px ink too, but no current task requires another role, so it is not emitted.
+Real FM-1 readability and
+redraw behavior remain pending. The dated [font experiment](docs/font-experiment.md)
+retains the historical comparisons; removing alternate build options does not
+itself save bytes in a build that already selected M8Stealth.
 
 `uv run --locked --group build ./build.sh --release 1.0` makes a release build:
 the package identity becomes `FM-1_910`
@@ -921,8 +904,9 @@ browser builds consume those same includes. `python3 tools/profile.py --check` r
 stale files, a different profile/feature selection, source hashes or engine pin; host and
 emulator entry points run it before compiling. Use the same `FELUCCA_PROFILE` and
 `FELUCCA_SLICE`/`FELUCCA_FM4` environment for those entry points as for the target build.
-When `FELUCCA_FONT` is unset, freshness checks retain the font recorded by the target
-build; an explicit font override must match. Do not override `FELUCCA_PROFILE_ENGINE_*`
+Freshness checks accept only the supported M8Stealth font; rebuild older alternate
+font artifacts. An explicit `FELUCCA_FONT=m8stealth` override must match.
+Do not override `FELUCCA_PROFILE_ENGINE_*`
 compiler macros; they are generated.
 Existing host-only DIGITAL, test14 and omit fixtures remain supported.
 

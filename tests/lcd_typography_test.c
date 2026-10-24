@@ -17,7 +17,7 @@ static void type_text(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const char
 #define GFX_HOOK_ITEM(x0, y0, x1, y1) ((void)0)
 #define GFX_HOOK_ICON(x, y, size, id) ((void)0)
 #define GFX_HOOK_PEN(y, f) (type_cap1 = (y) + (f)->asc, \
-                          type_cap0 = type_cap1 - ((f) == &AF_M ? AF_M_CAP_H : (f) == &AF_L ? AF_L_CAP_H : AF_S_CAP_H))
+                          type_cap0 = type_cap1 - ((f) == &AF_M ? AF_M_CAP_H : (f) == &AF_N ? AF_N_CAP_H : (f) == &AF_L ? AF_L_CAP_H : AF_S_CAP_H))
 #define UI_TEST_NO_MAIN 1
 #include "ui_test.c"
 
@@ -63,17 +63,13 @@ static int type_card(const char *value, const char *unit, type_box_t *v, type_bo
 }
 int main(void)
 {
-#if !UI_FONT_M8STEALTH
-    puts("LCD typography: M8-specific fit fixture skipped; alternate fonts retain the UI render/alignment sweeps");
-    return 0;
-#else
     static const char *const values[] = {"0", "9", "10", "99", "100", "-100", "0.1", "10.0"};
     uint32_t i;
     int32_t amount_value;
     type_box_t v, u, first_v, first_u;
     int bad = 0, ok = 1;
     ui_power_on();
-    ui_prefs &= (uint8_t)~PREF_LARGE;
+    go_page(GR_ROLL); /* compact controls retain the stationary unit contract */
     ok &= type_card(values[0], "%", &first_v, &first_u);
     for (i = 0; i < NELEM(values); i++) {
         ok &= type_card(values[i], "%", &v, &u);
@@ -104,5 +100,4 @@ int main(void)
     }
     bad += check("LCD MOD: full signed amount range fits before a stationary baseline-aligned unit", ok);
     return bad != 0;
-#endif
 }
