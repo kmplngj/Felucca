@@ -154,7 +154,7 @@ static int drift_continue(uint32_t source)
     for(uint32_t i=1;i<=24u;i++) drift_packet(source,0xF8,240u+i*125u/6u);
     bad+=check("Stop freezes musical positions and fractional carries while clocks continue",
                !song.playing && t->seq_idx==si && t->seq_pos==sp && t->arp_idx==ai && t->arp_pos==ap &&
-               midi_seq_grid[0].remainder==sr && midi_arp_grid[0].remainder==ar && !t->arp_note);
+               midi_seq_grid[0].remainder==sr && midi_arp_grid[0].remainder==ar && !t->arp_note && !t->arp_mask);
     drift_packet(source,0xFB,750u);
     drift_packet(source,0xF8,750u);
     bad+=check("Continue anchors its first pulse without resetting or advancing paused phase",
@@ -190,7 +190,7 @@ static int drift_bounded_catchup(void)
     seq_stop();
     for(uint32_t i=0;i<4u;i++) arp_step(t,0,CTL);
     bad+=check("Stop freezes an outstanding bounded ARP catch-up backlog",
-               t->arp_idx==paused_idx && t->arp_pos==paused_pos && !t->arp_note);
+               t->arp_idx==paused_idx && t->arp_pos==paused_pos && !t->arp_note && !t->arp_mask);
     song.playing=1;
     for(uint32_t i=0;i<64u && t->arp_idx<idx;i++) arp_step(t,0,0);
     bad+=check("bounded ARP catch-up retains every elapsed step and the exact sample remainder",

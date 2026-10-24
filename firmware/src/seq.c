@@ -262,6 +262,7 @@ static __attribute__((noinline)) uint32_t midi_seq_preview(const track_t *t, uin
 static void arp_forget(track_t *t)               /* (its notes ended otherwise: trk_all_off) */
 {
     t->arp_note = t->arp_ch[0] = t->arp_ch[1] = t->arp_ch[2] = 0;
+    t->arp_mask = 0;
 }
 
 /* CHORD's notes. Not inlined: they run once an arp step, and kept out of the audio ISR's loop over the tracks
@@ -270,11 +271,12 @@ static __attribute__((noinline)) void arp_chord_off(track_t *t, int rec)   /* th
 {
     uint32_t i;
     for (i = 0; i < 3u; i++)
-        if (t->arp_ch[i]) {
+        if (t->arp_mask & (2u << i)) {
             if (rec)
                 rec_release(t, t->arp_ch[i]);
             trk_note_off(t, t->arp_ch[i]);
             t->arp_ch[i] = 0;
+            t->arp_mask &= (uint8_t)~(2u << i);
         }
 }
 
@@ -287,10 +289,11 @@ static __attribute__((noinline)) void arp_chord(track_t *t, const uint32_t *list
         nt = (uint32_t)clamp((int32_t)list[i] + 12 * (int32_t)o, 0, 127);
         if (nt == 127u && top++)
             continue;                               /* (notes clamped onto the top one: once) */
-        if (!t->arp_note)
+        if (i == 0u)
             t->arp_note = (uint8_t)nt;
         else
             t->arp_ch[i - 1u] = (uint8_t)nt;
+        t->arp_mask |= (uint8_t)(1u << i);
         if (rec_on(t))
             rec_note(t, nt, 100);
         trk_note_on(t, nt, 100);
@@ -299,20 +302,23 @@ static __attribute__((noinline)) void arp_chord(track_t *t, const uint32_t *list
 
 static void arp_silence(track_t *t)              /* the sounding arp note(s) end */
 {
-    if (t->arp_ch[0] | t->arp_ch[1] | t->arp_ch[2])
+    if (t->arp_mask & 14u)
         arp_chord_off(t, 0);
-    trk_note_off(t, t->arp_note);
-    t->arp_note = 0;
+    if (t->arp_mask & 1u)
+        trk_note_off(t, t->arp_note);
+    t->arp_note = t->arp_mask = 0;
 }
 
 static void arp_off(track_t *t)                  /* the sounding arp note(s) end (a recorded one too) */
 {
-    if (t->arp_ch[0] | t->arp_ch[1] | t->arp_ch[2])
+    if (t->arp_mask & 14u)
         arp_chord_off(t, rec_on(t));
-    trk_note_off(t, t->arp_note);
-    if (rec_on(t))
-        rec_release(t, t->arp_note);
-    t->arp_note = 0;
+    if (t->arp_mask & 1u) {
+        trk_note_off(t, t->arp_note);
+        if (rec_on(t))
+            rec_release(t, t->arp_note);
+    }
+    t->arp_note = t->arp_mask = 0;
 }
 
 /* the place in the note list (len notes) the step arp_idx plays (not inlined, as arp_chord); UP+8 adds its note */
@@ -431,13 +437,13 @@ static __attribute__((noinline)) void arp_fire(track_t *t, uint32_t period)
 {
     uint32_t cnt, list[64], len, j;
     if (!(len = arp_list(t, list, &cnt))) {        /* (every key silent now: QNT WHITE's black keys) */
-        if (t->arp_note)
+        if (t->arp_mask)
             arp_off(t);
         return;
     }
     t->arp_idx++;
     j = t->p[P_AMODE] == AM_CHORD ? 0u : arp_pick(t, list, len);
-    if (t->arp_note)
+    if (t->arp_mask)
         arp_off(t);
     if ((uint32_t)(rng() & 127u) <= (uint32_t)t->p[P_APROB]) {
         t->arp_off = period * (uint32_t)t->p[P_AGATE] / 128u;
@@ -446,6 +452,7 @@ static __attribute__((noinline)) void arp_fire(track_t *t, uint32_t period)
             return;
         }
         t->arp_note = (uint8_t)list[j];
+        t->arp_mask = 1u;
         if (rec_on(t))
             rec_note(t, t->arp_note, 100);           /* recording: what the arp plays */
         trk_note_on(t, t->arp_note, 100);
@@ -463,7 +470,7 @@ static __attribute__((noinline)) void arp_external_due(track_t *t, uint32_t peri
         arp_fire(t, period);
         duration = period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw);
     }
-    if (t->arp_note) {
+    if (t->arp_mask) {
         if (t->arp_off <= t->arp_pos) arp_off(t);
         else t->arp_off -= t->arp_pos;
     }
@@ -473,14 +480,14 @@ static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
 {
     uint32_t period;
     int32_t sw;
-    if (t->arp_note) {
+    if (t->arp_mask) {
         if (t->arp_off <= gate_n)
             arp_off(t);
         else
             t->arp_off -= gate_n;
     }
     if (!t->p[P_AMODE] || !t->nheld) {
-        if (!t->nheld && t->arp_note)
+        if (!t->nheld && t->arp_mask)
             arp_off(t);
         return;
     }
@@ -916,7 +923,7 @@ static void seq_stop(void)
     memset(cin_n, 0, sizeof cin_n);
     if (song.g[G_CLOCK])                           /* external clock: the arp stops with the transport, */
         for (i = 0; i < NPART; i++)                /* its sounding note too (HOLD keeps the latched chord) */
-            if (trk[i].arp_note)
+            if (trk[i].arp_mask)
                 arp_off(&trk[i]);
     for (i = 0; i < NTRK; i++) {
         seq_release(&trk[i]);
@@ -1423,7 +1430,7 @@ static void events_block(uint32_t n)
             t->nheld = 0;
             if (!t->p[P_AMODE])
                 t->arp_phys = 0;
-            if (t->arp_note)
+            if (t->arp_mask)
                 arp_silence(t);
         }
         t->armp = t->p[P_AMODE];

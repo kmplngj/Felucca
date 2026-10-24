@@ -329,7 +329,7 @@ static void arp_follow_test(void)
     t->p[P_AHOLD] = 0;                             /* HOLD off: the latched chord goes, nothing left sounding */
     events_block(CTL);
     arp_run(t, 2);
-    assert(t->nheld == 0 && t->arp_note == 0 && gated(t) == 0);
+    assert(t->nheld == 0 && t->arp_note == 0 && !t->arp_mask && gated(t) == 0);
 
     /* QNT OFF, no HOLD: the keys held follow TRN too; their release ends them, whatever TRN is now */
     arp_reset(t);
@@ -347,7 +347,7 @@ static void arp_follow_test(void)
     fm1_in.notes = 0;
     keyboard_block();
     arp_run(t, 2);
-    assert(t->nheld == 0 && t->arp_note == 0 && gated(t) == 0);
+    assert(t->nheld == 0 && t->arp_note == 0 && !t->arp_mask && gated(t) == 0);
 
     /* MIDI IN into the arp: its notes are not the keyboard's, TRN never moved them (nor does it now) */
     arp_reset(t);
@@ -399,7 +399,7 @@ static void arp_follow_test(void)
     keyboard_block();
     t->p[P_QUANT] = QN_WHITE;
     arp_run(t, 4);
-    assert(t->nheld == 1 && t->arp_note == 0 && gated(t) == 0);
+    assert(t->nheld == 1 && t->arp_note == 0 && !t->arp_mask && gated(t) == 0);
     t->p[P_QUANT] = QN_OFF;
     arp_run(t, 1);
     assert(arp_seen[0] == 61);

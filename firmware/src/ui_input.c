@@ -219,15 +219,26 @@ static uint32_t midi_leds(const track_t *t)
 static uint32_t play_leds(void)
 {
     const track_t *t = TSEL;
-    uint8_t s[4 + NLANE + 4];
+    uint8_t s[4 + NLANE + 4], arp[4], mask;
     uint32_t n = t->seq_n < 4u + NLANE ? t->seq_n : 4u + NLANE, i, k, note, used = 0, m = 0, hit;
+#if defined(FM1_IRQ_TARGET)
+    uint32_t f = fm1_icfg();
+    fm1_irq_off();
+#endif
+    /* The ISR alone writes release slots. Copy validity and four pitches together;
+     * a new zero pitch must not be combined with the previous step's validity. */
+    mask = t->arp_mask;
+    arp[0] = t->arp_note;
+    for (i = 0; i < 3u; i++)
+        arp[i + 1u] = t->arp_ch[i];
+#if defined(FM1_IRQ_TARGET)
+    fm1_icfg_set(f);
+#endif
     for (i = 0; i < n; i++)
         s[i] = t->seq_notes[i];
-    if (t->arp_note)
-        s[n++] = t->arp_note;
-    for (i = 0; i < 3u; i++)                            /* (the ARP's CHORD) */
-        if (t->arp_ch[i])
-            s[n++] = t->arp_ch[i];
+    for (i = 0; i < 4u; i++)                            /* (the ARP's CHORD, including note0) */
+        if (mask & (1u << i))
+            s[n++] = arp[i];
     for (k = 0; n && k < 27u; k++) {
         note = kb_map(t, k);
         for (i = 0, hit = 0; i < n; i++)

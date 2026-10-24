@@ -92,6 +92,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **ARP note zero:** existing modes track MIDI pitch 0 explicitly for gate,
+  chord and latch cleanup, with matching panel note identities. Stored formats,
+  mode IDs and voice/source ownership are unchanged. See the
+  [runtime contract and pending FM-1 checks](arp-note-zero.md).
+
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
   built-in palettes. Mute marks and inactive graphics keep their distinct state.
