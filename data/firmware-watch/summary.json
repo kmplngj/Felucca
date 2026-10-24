@@ -10,30 +10,30 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 7320,
-  "known_remaining_recent": 562,
+  "known_remaining_history": 7366,
+  "known_remaining_recent": 573,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
   "repositories": [
     {
       "history": {
-        "remaining": 29,
-        "reviewed": 9,
+        "remaining": 28,
+        "reviewed": 10,
         "total": 38
       },
       "recent": {
-        "remaining": 1,
+        "remaining": 0,
         "reviewed": 0,
-        "total": 1
+        "total": 0
       },
       "repository": "hugelton/Felucca",
-      "terminal_pairs": 16
+      "terminal_pairs": 18
     },
     {
       "history": {
-        "remaining": 288,
-        "reviewed": 8,
+        "remaining": 287,
+        "reviewed": 9,
         "total": 296
       },
       "recent": {
@@ -42,7 +42,7 @@
         "total": 38
       },
       "repository": "keremimo/melodee",
-      "terminal_pairs": 23
+      "terminal_pairs": 24
     },
     {
       "history": {
@@ -51,12 +51,12 @@
         "total": 190
       },
       "recent": {
-        "remaining": 28,
-        "reviewed": 10,
+        "remaining": 26,
+        "reviewed": 12,
         "total": 38
       },
       "repository": "Quixotic7/ChoralRootFM1",
-      "terminal_pairs": 11
+      "terminal_pairs": 13
     },
     {
       "history": {
@@ -74,31 +74,31 @@
     },
     {
       "history": {
-        "remaining": 5,
-        "reviewed": 2,
+        "remaining": 4,
+        "reviewed": 3,
         "total": 7
       },
       "recent": {
-        "remaining": 0,
-        "reviewed": 0,
-        "total": 0
+        "remaining": 1,
+        "reviewed": 1,
+        "total": 2
       },
       "repository": "zvenson/dinghy",
-      "terminal_pairs": 3
+      "terminal_pairs": 5
     },
     {
       "history": {
-        "remaining": 154,
-        "reviewed": 9,
+        "remaining": 153,
+        "reviewed": 10,
         "total": 163
       },
       "recent": {
-        "remaining": 26,
-        "reviewed": 8,
+        "remaining": 24,
+        "reviewed": 10,
         "total": 34
       },
       "repository": "charlesvestal/fm1-x0x",
-      "terminal_pairs": 17
+      "terminal_pairs": 20
     },
     {
       "history": {
@@ -121,12 +121,12 @@
         "total": 179
       },
       "recent": {
-        "remaining": 3,
-        "reviewed": 7,
+        "remaining": 1,
+        "reviewed": 9,
         "total": 10
       },
       "repository": "zednaked/jangada",
-      "terminal_pairs": 17
+      "terminal_pairs": 19
     },
     {
       "history": {
@@ -149,12 +149,12 @@
         "total": 3230
       },
       "recent": {
-        "remaining": 4,
-        "reviewed": 0,
+        "remaining": 2,
+        "reviewed": 2,
         "total": 4
       },
       "repository": "charlesvestal/schwung",
-      "terminal_pairs": 4
+      "terminal_pairs": 6
     },
     {
       "history": {
@@ -200,8 +200,8 @@
     },
     {
       "history": {
-        "remaining": 22,
-        "reviewed": 7,
+        "remaining": 21,
+        "reviewed": 8,
         "total": 29
       },
       "recent": {
@@ -210,7 +210,7 @@
         "total": 0
       },
       "repository": "charlesvestal/schwung-bouba-kiki",
-      "terminal_pairs": 7
+      "terminal_pairs": 8
     },
     {
       "history": {
@@ -228,8 +228,8 @@
     },
     {
       "history": {
-        "remaining": 13,
-        "reviewed": 7,
+        "remaining": 12,
+        "reviewed": 8,
         "total": 20
       },
       "recent": {
@@ -238,12 +238,12 @@
         "total": 0
       },
       "repository": "charlesvestal/schwung-ducker",
-      "terminal_pairs": 7
+      "terminal_pairs": 8
     },
     {
       "history": {
-        "remaining": 4,
-        "reviewed": 7,
+        "remaining": 3,
+        "reviewed": 8,
         "total": 11
       },
       "recent": {
@@ -252,7 +252,7 @@
         "total": 0
       },
       "repository": "charlesvestal/schwung-gate",
-      "terminal_pairs": 7
+      "terminal_pairs": 8
     },
     {
       "history": {
@@ -270,8 +270,8 @@
     },
     {
       "history": {
-        "remaining": 20,
-        "reviewed": 4,
+        "remaining": 19,
+        "reviewed": 5,
         "total": 24
       },
       "recent": {
@@ -280,12 +280,12 @@
         "total": 0
       },
       "repository": "handcraftedcc/schwung-eucalypso",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
-        "remaining": 401,
-        "reviewed": 4,
+        "remaining": 400,
+        "reviewed": 5,
         "total": 405
       },
       "recent": {
@@ -294,12 +294,12 @@
         "total": 110
       },
       "repository": "DeadActive/hortator",
-      "terminal_pairs": 5
+      "terminal_pairs": 6
     },
     {
       "history": {
-        "remaining": 35,
-        "reviewed": 4,
+        "remaining": 34,
+        "reviewed": 5,
         "total": 39
       },
       "recent": {
@@ -308,12 +308,12 @@
         "total": 278
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 9
+      "terminal_pairs": 10
     },
     {
       "history": {
-        "remaining": 43,
-        "reviewed": 2,
+        "remaining": 42,
+        "reviewed": 3,
         "total": 45
       },
       "recent": {
@@ -322,7 +322,7 @@
         "total": 0
       },
       "repository": "genkigenki/Makkuro37",
-      "terminal_pairs": 11
+      "terminal_pairs": 12
     },
     {
       "history": {
@@ -373,12 +373,12 @@
         "total": 42
       },
       "recent": {
-        "remaining": 0,
-        "reviewed": 0,
-        "total": 0
+        "remaining": 8,
+        "reviewed": 1,
+        "total": 9
       },
       "repository": "hugelton/felucca-bsp",
-      "terminal_pairs": 1
+      "terminal_pairs": 2
     },
     {
       "history": {
@@ -387,12 +387,12 @@
         "total": 135
       },
       "recent": {
-        "remaining": 13,
-        "reviewed": 3,
+        "remaining": 12,
+        "reviewed": 4,
         "total": 16
       },
       "repository": "charlesvestal/fm1-base",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
@@ -401,12 +401,12 @@
         "total": 2018
       },
       "recent": {
-        "remaining": 29,
-        "reviewed": 3,
+        "remaining": 28,
+        "reviewed": 4,
         "total": 32
       },
       "repository": "w0ts/optimist",
-      "terminal_pairs": 3
+      "terminal_pairs": 4
     },
     {
       "history": {
@@ -421,8 +421,36 @@
       },
       "repository": "jsmith13/fm_lab",
       "terminal_pairs": 1
+    },
+    {
+      "history": {
+        "remaining": 8,
+        "reviewed": 0,
+        "total": 8
+      },
+      "recent": {
+        "remaining": 0,
+        "reviewed": 0,
+        "total": 0
+      },
+      "repository": "m-vave/fm1_open",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 49,
+        "reviewed": 0,
+        "total": 49
+      },
+      "recent": {
+        "remaining": 13,
+        "reviewed": 0,
+        "total": 13
+      },
+      "repository": "isod89/clipper-fm1",
+      "terminal_pairs": 0
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 240
+  "terminal_pairs": 264
 }

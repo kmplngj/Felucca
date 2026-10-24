@@ -14,30 +14,30 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 7320,
-    "known_remaining_recent": 562,
+    "known_remaining_history": 7366,
+    "known_remaining_recent": 573,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
     "repositories": [
       {
         "history": {
-          "remaining": 29,
-          "reviewed": 9,
+          "remaining": 28,
+          "reviewed": 10,
           "total": 38
         },
         "recent": {
-          "remaining": 1,
+          "remaining": 0,
           "reviewed": 0,
-          "total": 1
+          "total": 0
         },
         "repository": "hugelton/Felucca",
-        "terminal_pairs": 16
+        "terminal_pairs": 18
       },
       {
         "history": {
-          "remaining": 288,
-          "reviewed": 8,
+          "remaining": 287,
+          "reviewed": 9,
           "total": 296
         },
         "recent": {
@@ -46,7 +46,7 @@
           "total": 38
         },
         "repository": "keremimo/melodee",
-        "terminal_pairs": 23
+        "terminal_pairs": 24
       },
       {
         "history": {
@@ -55,12 +55,12 @@
           "total": 190
         },
         "recent": {
-          "remaining": 28,
-          "reviewed": 10,
+          "remaining": 26,
+          "reviewed": 12,
           "total": 38
         },
         "repository": "Quixotic7/ChoralRootFM1",
-        "terminal_pairs": 11
+        "terminal_pairs": 13
       },
       {
         "history": {
@@ -78,31 +78,31 @@
       },
       {
         "history": {
-          "remaining": 5,
-          "reviewed": 2,
+          "remaining": 4,
+          "reviewed": 3,
           "total": 7
         },
         "recent": {
-          "remaining": 0,
-          "reviewed": 0,
-          "total": 0
+          "remaining": 1,
+          "reviewed": 1,
+          "total": 2
         },
         "repository": "zvenson/dinghy",
-        "terminal_pairs": 3
+        "terminal_pairs": 5
       },
       {
         "history": {
-          "remaining": 154,
-          "reviewed": 9,
+          "remaining": 153,
+          "reviewed": 10,
           "total": 163
         },
         "recent": {
-          "remaining": 26,
-          "reviewed": 8,
+          "remaining": 24,
+          "reviewed": 10,
           "total": 34
         },
         "repository": "charlesvestal/fm1-x0x",
-        "terminal_pairs": 17
+        "terminal_pairs": 20
       },
       {
         "history": {
@@ -125,12 +125,12 @@
           "total": 179
         },
         "recent": {
-          "remaining": 3,
-          "reviewed": 7,
+          "remaining": 1,
+          "reviewed": 9,
           "total": 10
         },
         "repository": "zednaked/jangada",
-        "terminal_pairs": 17
+        "terminal_pairs": 19
       },
       {
         "history": {
@@ -153,12 +153,12 @@
           "total": 3230
         },
         "recent": {
-          "remaining": 4,
-          "reviewed": 0,
+          "remaining": 2,
+          "reviewed": 2,
           "total": 4
         },
         "repository": "charlesvestal/schwung",
-        "terminal_pairs": 4
+        "terminal_pairs": 6
       },
       {
         "history": {
@@ -204,8 +204,8 @@
       },
       {
         "history": {
-          "remaining": 22,
-          "reviewed": 7,
+          "remaining": 21,
+          "reviewed": 8,
           "total": 29
         },
         "recent": {
@@ -214,7 +214,7 @@
           "total": 0
         },
         "repository": "charlesvestal/schwung-bouba-kiki",
-        "terminal_pairs": 7
+        "terminal_pairs": 8
       },
       {
         "history": {
@@ -232,8 +232,8 @@
       },
       {
         "history": {
-          "remaining": 13,
-          "reviewed": 7,
+          "remaining": 12,
+          "reviewed": 8,
           "total": 20
         },
         "recent": {
@@ -242,12 +242,12 @@
           "total": 0
         },
         "repository": "charlesvestal/schwung-ducker",
-        "terminal_pairs": 7
+        "terminal_pairs": 8
       },
       {
         "history": {
-          "remaining": 4,
-          "reviewed": 7,
+          "remaining": 3,
+          "reviewed": 8,
           "total": 11
         },
         "recent": {
@@ -256,7 +256,7 @@
           "total": 0
         },
         "repository": "charlesvestal/schwung-gate",
-        "terminal_pairs": 7
+        "terminal_pairs": 8
       },
       {
         "history": {
@@ -274,8 +274,8 @@
       },
       {
         "history": {
-          "remaining": 20,
-          "reviewed": 4,
+          "remaining": 19,
+          "reviewed": 5,
           "total": 24
         },
         "recent": {
@@ -284,12 +284,12 @@
           "total": 0
         },
         "repository": "handcraftedcc/schwung-eucalypso",
-        "terminal_pairs": 4
+        "terminal_pairs": 5
       },
       {
         "history": {
-          "remaining": 401,
-          "reviewed": 4,
+          "remaining": 400,
+          "reviewed": 5,
           "total": 405
         },
         "recent": {
@@ -298,12 +298,12 @@
           "total": 110
         },
         "repository": "DeadActive/hortator",
-        "terminal_pairs": 5
+        "terminal_pairs": 6
       },
       {
         "history": {
-          "remaining": 35,
-          "reviewed": 4,
+          "remaining": 34,
+          "reviewed": 5,
           "total": 39
         },
         "recent": {
@@ -312,12 +312,12 @@
           "total": 278
         },
         "repository": "Wulgaren/Araminta",
-        "terminal_pairs": 9
+        "terminal_pairs": 10
       },
       {
         "history": {
-          "remaining": 43,
-          "reviewed": 2,
+          "remaining": 42,
+          "reviewed": 3,
           "total": 45
         },
         "recent": {
@@ -326,7 +326,7 @@
           "total": 0
         },
         "repository": "genkigenki/Makkuro37",
-        "terminal_pairs": 11
+        "terminal_pairs": 12
       },
       {
         "history": {
@@ -377,12 +377,12 @@
           "total": 42
         },
         "recent": {
-          "remaining": 0,
-          "reviewed": 0,
-          "total": 0
+          "remaining": 8,
+          "reviewed": 1,
+          "total": 9
         },
         "repository": "hugelton/felucca-bsp",
-        "terminal_pairs": 1
+        "terminal_pairs": 2
       },
       {
         "history": {
@@ -391,12 +391,12 @@
           "total": 135
         },
         "recent": {
-          "remaining": 13,
-          "reviewed": 3,
+          "remaining": 12,
+          "reviewed": 4,
           "total": 16
         },
         "repository": "charlesvestal/fm1-base",
-        "terminal_pairs": 4
+        "terminal_pairs": 5
       },
       {
         "history": {
@@ -405,12 +405,12 @@
           "total": 2018
         },
         "recent": {
-          "remaining": 29,
-          "reviewed": 3,
+          "remaining": 28,
+          "reviewed": 4,
           "total": 32
         },
         "repository": "w0ts/optimist",
-        "terminal_pairs": 3
+        "terminal_pairs": 4
       },
       {
         "history": {
@@ -425,10 +425,38 @@
         },
         "repository": "jsmith13/fm_lab",
         "terminal_pairs": 1
+      },
+      {
+        "history": {
+          "remaining": 8,
+          "reviewed": 0,
+          "total": 8
+        },
+        "recent": {
+          "remaining": 0,
+          "reviewed": 0,
+          "total": 0
+        },
+        "repository": "m-vave/fm1_open",
+        "terminal_pairs": 0
+      },
+      {
+        "history": {
+          "remaining": 49,
+          "reviewed": 0,
+          "total": 49
+        },
+        "recent": {
+          "remaining": 13,
+          "reviewed": 0,
+          "total": 13
+        },
+        "repository": "isod89/clipper-fm1",
+        "terminal_pairs": 0
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 240
+    "terminal_pairs": 264
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -645,7 +673,7 @@
         "main": "63f88ec18b71c6ed4371d03d6f04dd93f4193ad3"
       },
       "recent_frontiers": {
-        "main": "5738617968a22b5d4c0d3470cfcc95559052f446"
+        "main": "63f88ec18b71c6ed4371d03d6f04dd93f4193ad3"
       },
       "recent_reviewed": 0,
       "repository": "hugelton/Felucca"
@@ -690,7 +718,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "8fad1a15ff59d5c3ed0bfe2d7a9ae90962cf4d5e",
       "observed_tips": {
-        "main": "ec9e53721cc576816a5750220391f2d0217c01cb"
+        "main": "d89364253b79a5c6002c0d90c5f16b3c3c16ea9d"
       },
       "pinned_recent_targets": {
         "main": "4ec1ac829fd2bdf2c571ea215fb3d62477d01220"
@@ -706,10 +734,10 @@
       "identity_verified": true,
       "last_reviewed_sha": "d44df7db09b98ccad2f1233b8f83f5f09c04829e",
       "observed_tips": {
-        "main": "d44df7db09b98ccad2f1233b8f83f5f09c04829e"
+        "main": "22acb9165ebc8baa712af3aff8c507e230c1e028"
       },
       "pinned_recent_targets": {
-        "main": "d44df7db09b98ccad2f1233b8f83f5f09c04829e"
+        "main": "22acb9165ebc8baa712af3aff8c507e230c1e028"
       },
       "recent_frontiers": {
         "main": "d44df7db09b98ccad2f1233b8f83f5f09c04829e"
@@ -755,7 +783,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "98cf1d860a525b53b0393b51a66774fc649f62da",
       "observed_tips": {
-        "ghoulbox": "f23fbc593f8af29dfa01174278f08ee79155ed27",
+        "ghoulbox": "9f2b9a22e456d7fe9552b40f7a1d0c13200913bb",
         "research/flash-savings": "7d92eaa3f5added7cbdca1cdf9d27cb4a760e917"
       },
       "pinned_recent_targets": {
@@ -790,7 +818,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "6cce818e31b84851967fafcd949902729cc55e5c",
       "observed_tips": {
-        "main": "dc8d025526eecdd89d0bdf0cc3669c22cbde1b71"
+        "main": "6bde54ef967c33e67eb7735f525b9bef2d4c5346"
       },
       "pinned_recent_targets": {
         "main": "1c1474544c2dc3fd24e486e4819a3c4b1eaa583c"
@@ -806,7 +834,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "16a8687177f872f8cd0d39433f128644e8435725",
       "observed_tips": {
-        "main": "9dca92b56759c423a972e4b88089e7006320e317"
+        "main": "e14dc63e1691cd6c172f57d1e82ede30d94607fe"
       },
       "pinned_recent_targets": {
         "main": "9dca92b56759c423a972e4b88089e7006320e317"
@@ -966,7 +994,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "9d1287241c62124337bbbd6daa569d1da393dbfd",
       "observed_tips": {
-        "main": "05d97a51a06888da56de205336f7f6a832af728c"
+        "main": "2d7a0b19f5c3fd5d23bec6d4e91f6038d46d1a70"
       },
       "pinned_recent_targets": {
         "main": "05d97a51a06888da56de205336f7f6a832af728c"
@@ -982,7 +1010,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "9d1287241c62124337bbbd6daa569d1da393dbfd",
       "observed_tips": {
-        "main": "7c4becc743ea708f35a4265e8ecfdafb40833f8d"
+        "main": "e1d49121e38e2f49de4aef7fadc445693ff6f92c"
       },
       "pinned_recent_targets": {
         "main": "7c4becc743ea708f35a4265e8ecfdafb40833f8d"
@@ -1062,7 +1090,7 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "fce31b55b0220a11f3e99df2e2f1faf7a0137894"
+        "main": "654a89e2426672e3216fdfbc0ad4edbfd0691449"
       },
       "pinned_recent_targets": {
         "main": "fce31b55b0220a11f3e99df2e2f1faf7a0137894"
@@ -1078,10 +1106,10 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+        "main": "b413cd888424249d417d5549b594e8492d399d3e"
       },
       "pinned_recent_targets": {
-        "main": "33cac693903e753e8783baeed05c19cadfb04812"
+        "main": "b413cd888424249d417d5549b594e8492d399d3e"
       },
       "recent_frontiers": {
         "main": "33cac693903e753e8783baeed05c19cadfb04812"
@@ -1094,7 +1122,7 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "93bee3fe9def08127dd5dff638df5bd57cebcc80"
+        "main": "3c70f3c7d619222e88aa1d1d7cb360d426b33102"
       },
       "pinned_recent_targets": {
         "main": "93bee3fe9def08127dd5dff638df5bd57cebcc80"
@@ -1110,7 +1138,7 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "8c392850ef67f244d07008a2168ff9d1d221a18f"
+        "main": "7968c4849bcc08d01d8beef0bedf83568cd84cb3"
       },
       "pinned_recent_targets": {
         "main": "8c392850ef67f244d07008a2168ff9d1d221a18f"
@@ -1136,6 +1164,38 @@
       },
       "recent_reviewed": 0,
       "repository": "jsmith13/fm_lab"
+    },
+    {
+      "historical_reviewed": 0,
+      "identity_verified": true,
+      "last_reviewed_sha": null,
+      "observed_tips": {
+        "main": "4c7496daac04a95ff10d1afdcc8f9ead2dbabc41"
+      },
+      "pinned_recent_targets": {
+        "main": "4c7496daac04a95ff10d1afdcc8f9ead2dbabc41"
+      },
+      "recent_frontiers": {
+        "main": "4c7496daac04a95ff10d1afdcc8f9ead2dbabc41"
+      },
+      "recent_reviewed": 0,
+      "repository": "m-vave/fm1_open"
+    },
+    {
+      "historical_reviewed": 0,
+      "identity_verified": true,
+      "last_reviewed_sha": null,
+      "observed_tips": {
+        "main": "e69067211c4690f34e494b5b896e4585163dcc2b"
+      },
+      "pinned_recent_targets": {
+        "main": "e69067211c4690f34e494b5b896e4585163dcc2b"
+      },
+      "recent_frontiers": {
+        "main": "7008d31e78da5d4e5e0a1f25a994ba7b2266c702"
+      },
+      "recent_reviewed": 0,
+      "repository": "isod89/clipper-fm1"
     }
   ],
   "review_evidence_corrections": [
@@ -1181,9 +1241,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "2b1bc953640508bde48a998a611a1784a783ffaed44bff8ff357d057a7486319",
-  "round_robin_next_repository_index": 0,
-  "round_robin_processed_records": 247,
+  "round_robin_journal_prefix_sha256": "24413f250714b6af1a7f2442e3534e836e3b8bd63c112d593b4f42131ac8dbe9",
+  "round_robin_next_repository_index": 23,
+  "round_robin_processed_records": 271,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [
