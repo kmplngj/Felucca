@@ -32,6 +32,13 @@ static void menu_read_value(uint32_t row, char *text, const char **unit)
     str_cpy(text, menu_vname(row, menu_get(row)), 32);
     if (row == MI_TUNE) *unit = "ct";
 }
+/* #572: a value's one-line explanation under the rows (S, MID), where a value's name alone does not say what it does */
+static const char *menu_row_hint(uint32_t row)
+{
+    static const char *const GRAPH_HINT[GM_COUNT] = {"LIVE WAVEFORM ALWAYS", "CURVE WHILE TURNING, THEN SCOPE",
+                                                     "CURVE AND A SMALL SCOPE", "CURVE ONLY, NOTHING MOVES"};
+    return row == MI_GRAPH ? GRAPH_HINT[graph_mode() % GM_COUNT] : 0;
+}
 static void menu_read_row(const char *label, const char *value, const char *unit, int selected, int detail, int inactive)
 {
     int32_t ty = CAP_IN(M, MENU_READ_H), right = MR_VR - (detail ? 16 : 0);
@@ -79,6 +86,8 @@ static void menu_reading_list(const khint_t *keys)
         cv_blit(0, (uint32_t)y); y += MENU_READ_H + MENU_READ_GAP;
     }
     cv_begin(240, (uint32_t)(240 - y), T_BG);
+    if (menu_row_hint(ui.menu_sel))                    /* #572: what the selected value does, left of the count */
+        cv_free_text(MR_X, 212 - y - AF_S_CAP_Y, &AF_S, menu_row_hint(ui.menu_sel), T_MID, T_BG, 232 - 30 - MR_X);
     {
         char count[16]; fmt_int(count, (int32_t)mtab_index(ui.menu_sel) + 1);
         str_cpy(count + str_len(count), "/", 2); fmt_int(count + str_len(count), (int32_t)n);

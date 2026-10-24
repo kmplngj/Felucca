@@ -188,6 +188,31 @@ try {
     assert.notEqual(edited.sha256, env.sha256, "encoder did not change the LCD");
     return edited;
   });
+  await check("GRAPH TURN: a turned knob's curve replaces the scope, then the scope returns", async () => {
+    // #572: HOME's panel (tall bank: rows 98..198) in silence is the flat scope; KNOB 1 (ANALOG's CUT) shows the
+    // filter curve while it turns and about 1.2 s after; then the same flat scope again.
+    const panel = () => page.locator("#screen").evaluate((canvas) => {
+      const context = new OffscreenCanvas(240, 240).getContext("2d", { willReadFrequently: true });
+      context.drawImage(canvas, 0, 0);
+      return Array.from(context.getImageData(0, 100, 240, 96).data).join(",");
+    });
+    await tap("HOME");
+    await page.waitForTimeout(400);
+    const rest = await panel();
+    const draws = await page.evaluate(() => __feluccaTest.draws);
+    for (let i = 0; i < 4; i++) await page.getByRole("slider", { name: "KNOB 1", exact: true }).press("ArrowUp");
+    await waitFor((n) => __feluccaTest.draws > n, draws);
+    await page.waitForTimeout(150);
+    const turning = await panel();
+    assert.notEqual(turning, rest, "turning KNOB 1 did not replace the scope with its curve");
+    await screen("graph-turn");
+    await page.waitForTimeout(2000);
+    assert.equal(await panel(), rest, "the scope did not return after the curve's hold");
+    await tap("ENV");                                 // (back on ENV, as the following checks expect)
+    await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
+    await page.waitForTimeout(200);
+    return { curve_shown: true, scope_returned: true };
+  });
   await check("portrait layout remains playable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 600);

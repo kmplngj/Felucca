@@ -163,7 +163,8 @@ static void bank_readout(const bank_field_t *f, int hot, const char *status)
 {
     const aafont_t *vf = bank_font(f->face), *lf = &AF_M, *uf = &AF_M;
     int tall = bank_tall(), nb = BANK_NUM_B, x, sw = ink_w(&AF_S, status);
-    int mono = hot && T_ACCENT == T_THEME;             /* MONO: no colour tells the turning knob: its state inverted */
+    int mono = hot;                                    /* the turning knob's state inverted: a cue beside the accent's
+                                                       * colour, which matches MID's luminance in most palettes */
     uint16_t tc = f->color == T_DIM ? T_MID : hot ? T_ACCENT : T_THEME;
     if (ink_w(lf, f->label) > (tall ? BANK_W - 12 - sw : BANK_LABEL_W)) lf = &AF_S;
     if (ink_w(uf, f->unit) > 34) uf = &AF_S;
@@ -175,8 +176,9 @@ static void bank_readout(const bank_field_t *f, int hot, const char *status)
         bank_text(BANK_W - 3 - ink_w(lf, f->label), 2 + AF_M_CAP_H - bank_cap(lf), lf, f->label, T_TEXT, T_SURF);
     }
     {
-        int sy = (tall ? 1 + AF_M_CAP_H : nb) - AF_S_CAP_H, sx = BANK_W - 3 - sw;
-        if (mono) cv_rect(sx - 2, sy - 2, sw + 4, AF_S_CAP_H + 4, T_THEME);
+        int sy = (tall ? 1 + AF_M_CAP_H : nb - 1) - AF_S_CAP_H, sx = BANK_W - 3 - sw;   /* (the chip inside the
+                                                       * readout's band: a partial redraw covers all of it) */
+        if (mono) cv_rect(sx - 2, sy - 1, sw + 4, AF_S_CAP_H + 2, T_THEME);
         GFX_HOOK_ALIGN(0, 0, 0, sy + AF_S_CAP_H, AL_B, "bank state baseline");
         bank_text(sx, sy, &AF_S, status, mono ? T_INK : T_MID, mono ? T_THEME : T_SURF);
     }

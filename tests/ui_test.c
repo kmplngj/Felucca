@@ -10467,7 +10467,7 @@ static int test_help(void)
         else ok &= help_fits(help_page());
         ui.home = h; ui.page = pg;
     }
-    ok &= help_fits(H_HOME) && help_fits(H_LEVELS) && help_fits(H_GRID);
+    ok &= help_fits(H_HOME) && help_fits(H_HOME_CURVE) && help_fits(H_LEVELS) && help_fits(H_GRID);
     for (l = LAYER_FX; l < LAYER_N; l++)
         ok &= help_fits(HELP_LAYER[l]);
     bad += check("1.5 HELP: a hint for every page, HOME, LEVELS, the grid and every layer; each fits its row, no word dropped", ok);
@@ -10481,7 +10481,7 @@ static int test_help(void)
     press(B_SAVE);
     ok &= ui.help_t > 0u && cur_page()->graph == GR_USER && str_eq(help_page(), "[K1]SLOT[OCT+]SAVE[SAVE]PRESETS");
     press(B_HOME);
-    ok &= ui.home && ui.help_t > 0u && str_eq(help_page(), H_HOME);
+    ok &= ui.home && ui.help_t > 0u && str_eq(help_page(), H_HOME_CURVE);   /* (#572: GRAPH TURN, the default) */
     menu_put(MI_HOME, HV_LEVELS);
     ok &= str_eq(help_page(), H_LEVELS);
     menu_put(MI_HOME, HV_SCOPE);

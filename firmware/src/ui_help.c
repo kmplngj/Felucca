@@ -56,6 +56,7 @@ static const struct { const char *title, *hint; } HELP_PAGE[] = {
     {"CLOCK", "[SELECT]TEMPO[GLO]HOLD: TAP"},
 };
 #define H_HOME "[PRESETS]SOUND[HOME]HOLD: MENU"
+#define H_HOME_CURVE "[K1-4]CURVE[PRESETS]SOUND[HOME]MENU"   /* (#572: GRAPH draws the turned knob's curve) */
 #define H_LEVELS "[K1-4]T1-T4 LEVEL[HOME]MIXER"
 #define H_GRID "[KEYS]STEPS[K2]LANE[SEQ]RATCH"
 /* a layer's (LAYER_*): what its footer row (LAYERS[].foot) does not say */
@@ -81,7 +82,7 @@ static const char *help_page(void)
             (ui.home ? "[K1]TIMBRE[K2]COLOR[EDIT]OSC" : "[K2]TIMBRE[K3]COLOR[EDIT]TONE");
 #endif
     if (ui.home)
-        return home_levels() ? H_LEVELS : H_HOME;
+        return home_levels() ? H_LEVELS : graph_mode() == GM_SCOPE ? H_HOME : H_HOME_CURVE;
     if (grid_on() && !detail_on())
         return H_GRID;
     t = cur_page()->title;

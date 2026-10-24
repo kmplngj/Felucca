@@ -134,5 +134,29 @@ int main(void)
     }
     { uint32_t n; legends &= kc_tag("[SEL]", &n) == KC_SCL && n == 5u; }
     bad += check("physical SEL and SELECT legends remain distinct and scale HELP parses every control", legends);
+    {   /* #572: meaningful graphics (WCAG 1.4.11, 3:1) in every built-in palette: the knob's range fill on BG and
+         * against its track, the accent (turning rule, curve dot), the curve and resting dot (THEME). DIM marks
+         * an inactive knob (exempt; its state is also a word). The accent's own luminance is not relied on:
+         * a turning knob also inverts its state (ui_bank.c bank_readout) */
+        int gfx = 1;
+        for (p = 0; p < NPALETTES; p++) {
+            double bg, r[4];
+            uint16_t pair[4][2];
+            unsigned i;
+            palette_set(p);
+            bg = read_luma(T_BG);
+            pair[0][0] = T_MID; pair[0][1] = T_BG; pair[1][0] = T_MID; pair[1][1] = T_LINE;
+            pair[2][0] = T_ACCENT; pair[2][1] = T_BG; pair[3][0] = T_THEME; pair[3][1] = T_BG;
+            (void)bg;
+            for (i = 0; i < 4u; i++) {
+                double a = read_luma(pair[i][0]), b = read_luma(pair[i][1]);
+                r[i] = (fmax(a, b) + 0.05) / (fmin(a, b) + 0.05);
+                gfx &= r[i] + 1e-9 >= 3.0;
+            }
+            printf("LCD graphics %-7s fill/BG %5.2f fill/track %5.2f accent/BG %5.2f curve/BG %5.2f\n", UI_PALETTES[p].name,
+                   r[0], r[1], r[2], r[3]);
+        }
+        bad += check("graphics: knob range fill, its track, the accent and curves meet 3:1 in every built-in palette", gfx);
+    }
     return bad != 0;
 }
