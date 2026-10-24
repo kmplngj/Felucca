@@ -3208,7 +3208,11 @@ static int test_product_ux(void)
         memcpy(graph, host_screen + gy * 240, 240u * gh * 2u);
         memcpy(columns, host_screen + Y_LABEL * 240, 240u * ch * 2u);
         ui.hot_col = 1; ui.hot_t = 40; ui.force = 1; ui_draw();
-        ok &= !memcmp(graph, host_screen + gy * 240, 240u * gh * 2u);
+        {   /* #572: the focused stage's dot moves (two 4 x 4 dots at most), nothing else in the panel */
+            uint32_t k, nd = 0;
+            for (k = 0; k < 240u * gh; k++) nd += graph[k] != host_screen[gy * 240u + k];
+            ok &= nd > 0u && nd <= 32u;
+        }
         int changed = 0;
         for (uint32_t y = 0; y < ch; y++) for (uint32_t x = 0; x < 240; x++) {
             uint16_t old = columns[y * 240 + x], now = host_screen[(Y_LABEL + y) * 240 + x];
@@ -3217,7 +3221,7 @@ static int test_product_ux(void)
         }
         ok &= changed;
     }
-    bad += check("all palettes: focus readout and selected overview change without zoom or graph damage", ok);
+    bad += check("all palettes: focus readout and selected overview change; the panel only moves its focus dot", ok);
     ui_power_on(); set_engine_of(TSEL, 4); open_family(FAM_EDIT);
     memset(&sample_wave, 0, sizeof sample_wave); last_note = 60;
     voice_t voices[NVOICE]; memcpy(voices, TSEL->v, sizeof voices);

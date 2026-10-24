@@ -50,7 +50,7 @@ static unsigned bank_small_face(const char *s)
     return AF_M_CAP_H + AF_S_CAP_H + 3 <= BANK_OV && ink_w(&AF_M, s) <= COL_W - 6 ? 2u : 3u;   /* (6 px clear) */
 }
 static void bank_collect(uint32_t c, const char *label, const char *val, const char *unit,
-                         uint16_t color, int motion, const card_span_t *sp)
+                         uint16_t color, int motion, int32_t ratio, const card_span_t *sp)
 {
     bank_field_t *f = &ui.read_bank.field[c];
     uint32_t key = str_hash(str_hash((uint32_t)(uintptr_t)sp->fn * 31u + (uint32_t)(uintptr_t)sp->p * 7u +
@@ -79,6 +79,7 @@ static void bank_collect(uint32_t c, const char *label, const char *val, const c
     str_cpy(f->value, val, sizeof f->value);
     str_cpy(f->unit, unit, sizeof f->unit);
     f->color = color; f->motion = (uint8_t)motion; f->lock = ui.read_bank.lock_next;
+    f->ratio = (int16_t)(ratio < 0 ? -1 : ratio > 1000 ? 1000 : ratio);
     f->fixed = sp->fn && sp->lo == sp->hi;
     ui.read_bank.lock_next = 0;
     if (label[0] || val[0]) ui.read_bank.mask |= (uint8_t)(1u << c);
@@ -106,6 +107,7 @@ static void bank_status(char *s, const bank_field_t *f)
 static uint32_t bank_field_sig(const bank_field_t *f)
 {
     return str_hash(str_hash(str_hash(ux.gen + f->color * 31u + f->motion * 65537u + f->lock * 131071u +
+                                    (uint32_t)(f->ratio + 1) * 2654435761u +
                                     f->face * 7u + f->small * 13u + f->fixed * 524287u, f->label), f->value), f->unit);
 }
 /* a column's rule w px from x on row y: heavy 3 rows (y - 1 .. y + 1; doubled: y - 1 and y + 1) */
@@ -118,6 +120,17 @@ static void bank_rule(int x, int y, int w, unsigned form, int heavy, uint16_t c)
         for (i = 0; i < w; i += on + off)
             cv_rect(x + i, y + r, i + on > w ? w - i : on, 1, c);
     }
+}
+/* #572: the rule is the knob: a LINE track the column wide, filled from the left to the knob's place in its range
+ * (ratio 0..1000; -1, a value with no range: full) in c, in the state's form. A filled part never shorter than 3 px,
+ * so a knob at its minimum still shows where it is */
+static void bank_gauge(int x, int y, int w, unsigned form, int heavy, uint16_t c, int32_t ratio)
+{
+    int fw = ratio < 0 ? w : (int)(ratio * w / 1000);
+    if (fw < 3) fw = 3;
+    if (fw < w)
+        bank_rule(x + fw, y, w - fw, BR_SOLID, heavy && form != BR_DOUBLE, T_LINE);
+    bank_rule(x, y, fw, form, heavy, c);
 }
 static unsigned bank_form(const bank_field_t *f, int focus)
 {
@@ -133,10 +146,10 @@ static void bank_column(int x, int y, uint32_t c, int hot)
     int focus = c == ui.read_bank.focus;
     const aafont_t *vf = bank_font(f->small);
     unsigned form = bank_form(f, focus);
-    uint16_t rc = focus ? (hot ? T_ACCENT : f->color == T_DIM ? T_DIM : T_MID) : form == BR_SOLID ? T_LINE : T_THEME;   /* (the
+    uint16_t rc = focus ? (hot ? T_ACCENT : f->color == T_DIM ? T_DIM : T_MID) : form == BR_SOLID ? T_MID : T_THEME;   /* (the
                                                        * kept focus MID: the accent alone says it turns, also in GREY) */
     if (f->label[0] || f->value[0] || focus)
-        bank_rule(x, y, COL_W, form, focus, rc);
+        bank_gauge(x, y, COL_W, form, focus, rc, f->ratio);
     int ly = y + BANK_LBL_DY, vb = ly + AF_S_CAP_H + 2 + AF_M_CAP_H;
     if (f->label[0])
         bank_text(x, ly, &AF_S, f->label, focus ? T_TEXT : T_MID, T_SURF);

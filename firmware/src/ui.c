@@ -174,6 +174,7 @@ typedef struct {
     uint32_t key;
     uint16_t color;
     uint8_t face, small, motion, lock, fixed;
+    int16_t ratio;               /* #572: the knob's place in its range, 0..1000; -1 none (the rule full) */
 } bank_field_t;
 
 static struct {

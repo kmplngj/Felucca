@@ -583,7 +583,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     if (str_eq(unit, label))
         unit = "";                                      /* "BPM 124 BPM", "USB OFF USB": the label says it */
     if (bank_on()) {
-        bank_collect(c, label, val, unit, vc, mot, &sp);
+        bank_collect(c, label, val, unit, vc, mot, ratio, &sp);
         return;
     }
     if (icon == ICON_AUTO)
@@ -599,7 +599,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     key[n + 1] = (char)('A' + ((vc >> 4) & 15u));
     key[n + 2] = (char)('A' + ((vc >> 8) & 15u));
     key[n + 3] = (char)('A' + (vc >> 12));
-    key[n + 4] = (char)(' ' + (ratio < 0 ? 0 : 1 + ratio * (COL_W - 10) / 1000));   /* the gauge's own pixel (as
+    key[n + 4] = (char)(' ' + (ratio < 0 ? 0 : 1 + ratio * COL_W / 1000));   /* the gauge's own pixel (as
                                                         * drawn: gw; ratio / 20 missed a pixel inside a step, #63 soak) */
     key[n + 5] = (char)(icon == ICON_NONE ? '~' : '!' + icon % 90u);
     key[n + 6] = (char)('0' + hot + 2 * mot + 4 * (int)kind);
@@ -635,7 +635,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
         cv_begin(COL_W, COL_H, T_BG);
         if (label[0] || val[0])                         /* #572: the knob's rule (ui_bank.c): heavy and the accent while
                                                          * it turns, dashed where MOTION drives it */
-            bank_rule(0, 1, COL_W, mot ? BR_DASH : BR_SOLID, hot, hot ? T_ACCENT : mot ? T_THEME : T_LINE);
+            bank_gauge(0, 1, COL_W, mot ? BR_DASH : BR_SOLID, hot, hot ? T_ACCENT : mot ? T_THEME : T_MID, ratio);
     }
     if (label[0] || val[0]) {
         if (!strip && label[0]) {                       /* #572: S labels flush left under the rule, no icons */

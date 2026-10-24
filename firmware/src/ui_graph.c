@@ -18,7 +18,18 @@ static int32_t graph_ht = 100;
 /* Matches voice.c: attack is linear, decay and release are exponential
  * (env += (target - env) * k each tick, ~99 % after the set time). Time
  * axis is the parameter value (the times themselves are exponential). */
-static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id)   /* id: ATK DEC SUS REL */
+/* #572: the focused value's point on its curve: a 4 x 4 dot over the 2 px trace (mark: the accent while the knob
+ * turns, else the curve's colour) */
+static void curve_dot(int32_t x, int32_t y, uint16_t mark) { cv_rect(x - 1, y - 1, 4, 4, mark); }
+/* a quiet guide: a dotted RAISE line x from y0 to y1 */
+static void curve_guide(int32_t x, int32_t y0, int32_t y1)
+{
+    for (; y0 <= y1; y0 += 3)
+        cv_rect(x, y0, 1, 1, T_RAISE);
+}
+/* id: ATK DEC SUS REL; fi: the one in focus (0..3; else none), its point dotted in mark; labels: A D S R under the
+ * baseline (room for S capitals: graph_ht's 12 % under the curve) */
+static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint32_t fi, uint16_t mark, int labels)
 {
     int32_t a = 4 + t->p[id[0]] * 50 / 127, d = 6 + t->p[id[1]] * 50 / 127, r = 6 + t->p[id[3]] * 60 / 127;
     int32_t top = 6 * graph_ht / 100, bot = 88 * graph_ht / 100, sus = t->p[id[2]] * 1000 / 127;   /* 0..1000 */
@@ -37,6 +48,22 @@ static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id)   /* 
         px = x1 + i;
         py = EGY(lvl);
     }
+    {   /* #572: the stages' boundaries (quiet guides) and their letters, the plateau's middle */
+        int32_t xd = x1 + d, gy = bot + 4;
+        curve_guide(x1, top, bot);
+        curve_guide(xd, top, bot);
+        curve_guide(x3, top, bot);
+        if (labels) {
+            cv_text(x0, gy - AF_S_CAP_Y, &AF_S, "A", T_MID);
+            if (xd - 3 > x0 + 9) cv_text(xd - 3 - text_w(&AF_S, "D") / 2 > x0 + 9 ? xd - 3 - text_w(&AF_S, "D") / 2 : x0 + 9,
+                                         gy - AF_S_CAP_Y, &AF_S, "D", T_MID);
+            cv_text((xd + x3) / 2 - 2, gy - AF_S_CAP_Y, &AF_S, "S", T_MID);
+            cv_text(x3 + r / 2 - 2, gy - AF_S_CAP_Y, &AF_S, "R", T_MID);
+        }
+        if (fi == 0u) curve_dot(x1, top, mark);
+        else if (fi == 1u) curve_dot(px, py, mark);
+        else if (fi == 2u) curve_dot((xd + x3) / 2, EGY(sus), mark);
+    }
     cv_line_t(px, py, x3, EGY(sus), c, 2);                               /* sustain */
     px = x3;
     py = EGY(sus);
@@ -47,9 +74,14 @@ static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id)   /* 
         px = x3 + i;
         py = EGY(sus * e >> 15);
     }
+    if (fi == 3u)
+        curve_dot(px, py, mark);
 #undef EGY
 }
-static void graph_adsr(const track_t *t, uint16_t c) { graph_adsr_of(t, c, cur_page()->id); }
+static void graph_adsr(const track_t *t, uint16_t c)
+{
+    graph_adsr_of(t, c, cur_page()->id, ui.read_bank.focus, ui.hot_t && ui.hot_col == ui.read_bank.focus ? T_ACCENT : c, 1);
+}
 
 static void graph_lfo(const track_t *t, uint16_t c)
 {
@@ -179,8 +211,10 @@ static void graph_filter(const track_t *t, uint16_t c, uint16_t mark, int32_t to
             yc = y;
         py = y;
     }
-    if (xc >= 0 && xc < PANEL_W)
-        cv_rect(PANEL_X0 + xc - 1, yc + 2, 2, bot + 2 - (yc + 2), mark);
+    if (xc >= 0 && xc < PANEL_W) {                   /* the cutoff: a quiet guide down, its dot on the response */
+        curve_guide(PANEL_X0 + xc, yc + 4, bot + 1);
+        curve_dot(PANEL_X0 + xc, yc, mark);
+    }
 }
 
 /* step bar x of step i of a 16-step row: 4 groups, as the footer (9 px bars, 13 px apart, 4 px between groups),
@@ -1425,6 +1459,8 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
             h = (h ^ (uint32_t)(song_playx(&L) + 1)) * 16777619u;
         }
     }
+    if (pg->graph == GR_ADSR)                        /* (#572: the focused stage's dot, the accent while it turns) */
+        h ^= (ui.read_bank.focus + 1u) * 2246822519u + (uint32_t)(ui.hot_t && ui.hot_col == ui.read_bank.focus) * 3266489917u;
     if (pg->graph == GR_MOD)
         h ^= (mod_ui_slot + 1u) * 40503u;
     if (pg->graph == GR_SLCR && t->p[P_SLCR])        /* the SLICER's step playing */
@@ -2166,7 +2202,8 @@ static void panel_scope(const track_t *t, uint16_t c)
     } else {
         int32_t ht = graph_ht;
         graph_ht = bot * 100 / 88;                   /* (graph_adsr_of: its baseline at 88 % of graph_ht) */
-        graph_adsr_of(t, c, AMP_ENV);
+        int32_t id = column_param(ui.read_bank.focus);
+        graph_adsr_of(t, c, AMP_ENV, id >= P_ATK && id <= P_REL ? (uint32_t)(id - P_ATK) : 4u, mark, !strip);
         graph_ht = ht;
     }
     if (strip)
