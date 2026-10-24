@@ -8,9 +8,9 @@ from **all** unchanged cells of every size before deduplication. No decoder,
 renderer, icon identity, input font, typography, phase count or protocol changes.
 
 Focused export and independent C pixel checks pass. The candidate remains an
-experiment pending linked before/after evidence, the full applicable suite,
-screen/emulator comparison and FM-1 qualification. The 208 B below is a measured
-generated-payload reduction, not a claimed linked saving or device speed gain.
+experiment with a measured 208 B net app reduction in both matched target variants;
+the full applicable suite, screen/emulator comparison and FM-1 qualification
+remain pending. No device speed gain is claimed.
 No alternative codec or font representation was trialed.
 
 ## Baseline and chosen class
@@ -51,10 +51,26 @@ minsize pass, once with compiled CPU2 support and once with `FELUCCA_CPU2=0`:
 
 Artifact-bound resource reports and profile/disassembly evidence are under
 `build/issue96/baseline-standard/` and `build/issue96/baseline-cpu2-off/` in the
-experiment checkout. Candidate linked totals and deltas are **pending**; compare
-those matching variants before retaining the candidate. Historical totals in
-other documents are not this baseline. Follow [performance.md](performance.md)
-and [build evidence](build-profiles.md#machine-readable-build-evidence).
+experiment checkout. Fresh clean candidate `da4b09b94f97016249f4aa07b59f728866394306`
+builds pass both target instruction budgets and artifact-bound resource verification.
+The compiler/tool/SDK hashes, flags, effective feature settings and stack reservations
+match their baseline; only revision/splash identity and the source-derived profile
+digest differ. Both variants have **208 B less linked app**, with RAM, POOL,
+RAMTEXT and NOINIT unchanged. Historical totals are not this baseline.
+
+| Candidate | App / spare | RAM / spare | POOL / spare | RAMTEXT / spare | NOINIT / spare |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Default CPU2 support | 491,668 / 89,896 B | 62,152 / 11,576 B | 336,440 / 32,200 B | 3,152 / 21,424 B | 15,576 / 120 B |
+| `FELUCCA_CPU2=0` | 487,956 / 93,608 B | 55,556 / 18,172 B | 336,440 / 32,200 B | 2,924 / 21,652 B | 15,564 / 132 B |
+
+The standard target contains all 7,551 B of baseline named icon arrays and
+7,343 B in the candidate; exact symbol sizes establish their linked cost before
+inter-object padding. The 500 B `cv_alpha_hc` code is byte-identical within each
+variant, and the shared 516 B target Huffman cache is unchanged. Source and
+codebook/metadata checks retain existing shared decoder/ramp costs.
+`target-comparison.json` and `linked-symbol-comparison.json` retain the full
+region margins and symbol proof. Follow [performance.md](performance.md) and
+[build evidence](build-profiles.md#machine-readable-build-evidence).
 
 ## Representation and consumer audit
 
@@ -162,8 +178,8 @@ in `build/issue96/host-cost.json`.
 Median differences range from -1.76% to +1.90%, with overlapping baseline and
 candidate sample ranges. This short host comparison establishes no meaningful
 speed improvement or pi32v2 draw-cost claim. Runtime cache/data structures are
-unchanged by source inspection; candidate linked section and device timing
-results are still required separately.
+unchanged by source inspection and the matched linked reports above; device
+timing remains required separately.
 
 ## Reproduction and remaining acceptance
 
@@ -187,10 +203,10 @@ was hidden or treated as a new visual qualification.
 
 | #96 acceptance area | Current evidence | Still required |
 | --- | --- | --- |
-| Measured class and complete cost | Exact cell/stream/metadata inventory, clean target baseline variants | Candidate linked app/section deltas and margins; retain only if net beneficial |
+| Measured class and complete cost | Exact inventory, clean matched target variants: app -208 B each; static regions/stacks unchanged, budgets/resource verification pass | Final CI identity and remaining behavior/device acceptance |
 | Identical decoded alpha and metrics | All exported icon cells, IDs, ink boxes and book checked; normal/strict C pixel and boundary checks | Full UI screens, palettes including user CUSTOM, styles, LARGE, clipping/scrolling/rolling digits and supported free text; font data remains unchanged |
 | Determinism and provenance | Two exports match; exact baseline/candidate header hashes, unchanged input assets and notices | Final revision/toolchain/profile/asset evidence attached to retained candidate |
-| Runtime/resource cost | No added runtime state/decoder; bounded cold/hot/clipped host samples | Candidate linked RAM/POOL/RAMTEXT/NOINIT evidence and actual device display/load cost |
+| Runtime/resource cost | No added runtime state/decoder; linked regions unchanged, bounded cold/hot/clipped host samples | Actual device display/load cost |
 | Host/browser/audio | Focused Python and real C checks, strict ASan/UBSan, causal negative controls | Full applicable host suite, audio/engine-switch goldens and fresh browser/emulator gate |
 | FM-1 | No device access, flash or observations | Readability/panel activity under dense audio; USB audio 44.1/48 kHz and USB/TRS MIDI, lateness/shedding/scan/stream counters, supported CPU2 variants |
 
@@ -199,11 +215,10 @@ is authorized by this experiment record.
 
 README assessment: no change is needed; the existing purpose, display capability
 and measurement/validation overview already cover this internal representation
-experiment. Changelog assessment: no entry yet, because candidate retention and
-linked benefit are unresolved. If retained as a noteworthy optimization, group
-it under the existing “Memory and display work” outcome, linking this report and
-stating the measured linked reduction and pending FM-1 qualification; do not
-publish the 208 B payload figure as a whole-app saving.
+experiment. Changelog assessment: no entry for this small internal representation adjustment;
+the existing “Memory and display work” overview remains accurate. Detailed
+208 B net target evidence belongs here, with qualification still pending; this
+is not a new user-facing capability or a development milestone.
 
 The Fukiai font and generated icon data retain the existing MIT notices; firmware,
 generator and test changes retain GPL-3.0-only. No artwork, font data or licences
