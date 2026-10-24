@@ -549,7 +549,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: 781a37b3d97ebc188791c23588f4913efd5959b0 # WebApp #10/#12/#11: CI, relocated font input and package credits
+          ref: a881cb73ae66730f6c2a6bff14a2f170e09d7690 # WebApp #15: deterministic WATCH test fixture (merged)
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
