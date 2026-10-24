@@ -8,6 +8,14 @@ validation and hardware requirements as other development work.
 
 ## Load context when it is needed
 
+For individual issues, PR follow-up or an explicitly requested autonomous backlog,
+use the [issue-delivery skill](../.agents/skills/issue-delivery/SKILL.md). It covers
+current-code reassessment, bounded packages, worker model/effort selection, CI and
+review follow-up, and the merge/hardware gates. Codex discovers it in `.agents/skills`;
+Claude loads the same file through `CLAUDE.md` importing the task pointers in
+`AGENTS.md`. Keep the workflow in that shared location. Automatic selection applies
+to the current request; it does not start a backlog run just by opening the repo.
+
 [AGENTS.md](../AGENTS.md) holds the task routes and firmware invariants. Read the
 guide for the affected subsystem, then the actual implementation and callers.
 Load the [batch procedure](development-batches.md) when combining issues and the
