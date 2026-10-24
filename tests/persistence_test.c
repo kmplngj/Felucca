@@ -83,6 +83,7 @@ static void reset(void)
     chain_defaults(&chain_config);
     memset(proj_slot, 0, sizeof proj_slot);
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&persist_saved, 0, sizeof persist_saved);
     memset(&settings, 0, sizeof settings);
     memset(&ui, 0, sizeof ui);
@@ -142,6 +143,7 @@ static void mig_setup(void)
 static void mig_boot(void)                               /* a power-on: RAM lost, the stores from flash */
 {
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&upf, 0, sizeof upf);
     up_boot();
 }
@@ -587,7 +589,7 @@ static int durability_test(void)
 int main(void)
 {
     int bad = 0, ok;
-    uint32_t before;
+    uint32_t before, cached_used;
     persist_t p;
     project_store_t old, got;
     project_v5_t v5;
@@ -838,34 +840,38 @@ int main(void)
     memcpy(r.name, "First", 6);
     erase_error = 1;
     bank = up_bank[1];
+    cached_used = up_count();
     ok = up_put(17, &r) == 2;
     erase_error = 0;
-    bad += check("failed first preset save restores empty bank", ok && !memcmp(&up_bank[1], &bank, sizeof bank));
-    bad += check("preset initial save", up_put(3, &r) == 0 && up_used(3));
+    bad += check("failed first preset save restores empty bank and warm browsing", ok &&
+                  !memcmp(&up_bank[1], &bank, sizeof bank) && up_count() == cached_used && !up_browse_used(17));
+    bad += check("preset initial save", up_put(3, &r) == 0 && up_used(3) && up_browse_used(3));
     bank = up_bank[0];
     before = up_gen;
+    cached_used = up_count();
     r.p[0] = 77;
     fail_after = 1;
     ok = up_put(3, &r) == 2;
     fail_after = -1;
     bad += check("failed preset save rolls back bank and generation", ok && up_gen == before &&
-                  !memcmp(&up_bank[0], &bank, sizeof bank));
+                  !memcmp(&up_bank[0], &bank, sizeof bank) && up_count() == cached_used && up_browse_used(3));
     favorite_set(ENG_USER, 3, 1);
     fail_after = 1;
     ok = up_put(3, 0) == 2;
     fail_after = -1;
     bad += check("failed preset erasure retains both the sound and its favorite", ok && up_used(3) &&
-                  favorite_has(ENG_USER, 3) && !memcmp(&up_bank[0], &bank, sizeof bank));
+                  favorite_has(ENG_USER, 3) && !memcmp(&up_bank[0], &bank, sizeof bank) && up_count() == cached_used);
     memset(&up_bank[0], 0, sizeof up_bank[0]);
     up_boot();
-    bad += check("failed preset save keeps old flash", !memcmp(&up_bank[0], &bank, sizeof bank));
+    bad += check("failed preset save keeps old flash", !memcmp(&up_bank[0], &bank, sizeof bank) && up_count() == cached_used);
     trk[0].user = 4;
     erase_error = 1;
     ok = up_put(3, 0) == 2;
     erase_error = 0;
     bad += check("failed preset erase keeps record and loaded label", ok && trk[0].user == 4u && up_gen == before &&
                   !memcmp(&up_bank[0], &bank, sizeof bank));
-    bad += check("successful preset erase clears loaded label", up_put(3, 0) == 0 && !up_used(3) && !trk[0].user);
+    bad += check("successful preset erase clears loaded label and browsing", up_put(3, 0) == 0 && !up_used(3) &&
+                  !trk[0].user && !up_browse_used(3) && up_count() + 1u == cached_used);
     before = erases;
     transport_req = 1;
     bad += check("pending PLAY: preset save blocked", up_put(3, &r) == 2 && erases == before && !up_used(3));

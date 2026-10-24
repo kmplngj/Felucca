@@ -98,6 +98,7 @@ static void reset(void)
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml);
     memset(settings_dev, 0, sizeof settings_dev); memset(&settings, 0, sizeof settings); settings_init();
     memset(proj_slot, 0, sizeof proj_slot); memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&um, 0, sizeof um); memset(usr_nz, 0, sizeof usr_nz);
     memset(eng_mem, 0, sizeof eng_mem); memset(eng_mem_owner, 0, sizeof eng_mem_owner);
     memset(fm6_eff, 0, sizeof fm6_eff); memset(fm6_lfo, 0, sizeof fm6_lfo);

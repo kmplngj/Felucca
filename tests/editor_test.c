@@ -79,6 +79,7 @@ static void reset(void)
     memset(&ed_w, 0, sizeof ed_w); memset(&ui, 0, sizeof ui);
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev); memset(&settings, 0, sizeof settings); settings_init();
     memset(proj_slot, 0, sizeof proj_slot); memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&um, 0, sizeof um); memset(usr_nz, 0, sizeof usr_nz);
     host_progress = 1; host_erases = host_writes = host_wire_n = 0;
     transport_req = panic_req = 0; sx_ready = sx_collect = sx_busy = 0;
@@ -725,6 +726,14 @@ static int user_preset_roundtrip(void)
         bad += check("UP_PUT with a category (after the kind's 16 bytes; past the last: rc 1), UP_GET and UP_LIST give it", ok);
         k = k0;
     }
+    ok = up_count() == 1u;
+    up_rec(3)->packed[up_rec(3)->np - 1u] = 192u;    /* deliberately stale display; wire replies remain authoritative */
+    a[0] = 3;
+    request(ED_UP_GET, a, 1);
+    ok &= up_browse_used(3) && !host_wire[6];
+    a[1] = 1;
+    request(ED_UP_LIST, a, 2);
+    bad += check("UP_GET/UP_LIST reject a poisoned record despite a warm positive display cache", ok && !host_wire[8]);
     return bad;
 }
 
