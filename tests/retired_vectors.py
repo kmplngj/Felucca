@@ -18,6 +18,33 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "retired_vectors.json"
 SECTIONS = ("projects", "presets", "favourites", "load")
 
 
+def project_tracks(raw):
+    """Serialized track identities: 68-byte header, np values, identity, 64 nine-byte steps."""
+    np = raw[66]
+    stride = np + 2 + 64 * 9
+    return [(raw[68 + track * stride + np], raw[69 + track * stride + np]) for track in range(4)]
+
+
+def project_motion(raw, fmt, current_np):
+    """Read only the stored event fields; no engine or retirement conversion is applied."""
+    np = raw[66]
+    modern = fmt == "FUN10"
+    pos = 68 + 4 * (np + 2 + 64 * 9) + (84 if modern else 36)
+    count = raw[pos]
+    if count > (128 if modern else 64):
+        raise ValueError("motion count exceeds the serialized format")
+    width = 3 if modern else 4
+    events = []
+    for i in range(count):
+        event = raw[pos + 4 + i * width:pos + 4 + (i + 1) * width]
+        param = event[1] & 127
+        if np < current_np and param >= np - 8:
+            param += current_np - np
+        events.append({"track": event[0] >> 6, "step": event[0] & 63, "param": param,
+                       "lock": event[1] >> 7, "value": int.from_bytes(event[2:], "little", signed=True)})
+    return events
+
+
 def validate_projects(data):
     """Check wire identity independently of the C generator's format selection."""
     formats = {"FUN7": (0x46554E37, 3388), "FUN8": (0x46554E38, 3584), "FUN10": (0x46554E41, 3840)}
@@ -37,6 +64,18 @@ def validate_projects(data):
         if (len(out) != 3840 or int.from_bytes(out[:4], "little") != 0x46554E41
                 or int.from_bytes(out[4:8], "little") != 3840):
             raise ValueError(f"{name}: output is not a complete FUN10 record")
+        if len(case["tracks"]) != 4:
+            raise ValueError(f"{name}: track identity count is not four")
+        for track, (before, after) in enumerate(zip(project_tracks(raw), project_tracks(out))):
+            metadata = case["tracks"][track]
+            if (metadata["engine_in"], metadata["preset_in"]) != before:
+                raise ValueError(f"{name}: track {track} input identity differs from serialized input")
+            if (metadata["engine_out"], metadata["preset_out"]) != after:
+                raise ValueError(f"{name}: track {track} output identity differs from serialized output")
+        before = project_motion(raw, fmt, out[66])
+        after = project_motion(out, "FUN10", out[66])
+        if case["motion_dropped"] != [event for event in before if event not in after]:
+            raise ValueError(f"{name}: motion_dropped differs from serialized input/output events")
 
 
 def generate(binary):

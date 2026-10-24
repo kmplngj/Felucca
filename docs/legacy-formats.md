@@ -247,7 +247,10 @@ conversion changes the file: review the diff, then `python3 tests/retired_vector
 (the binary is built by that unit; `cc -O1 -w -Ibuild/gen -Ifirmware/src -o build/host/retired_vectors tests/retired_vectors.c -lm`).
 Bytes are lower-case hex, int16 values little-endian. The vectors do not change what loads; they record it.
 The Python checker independently verifies each input's format magic, declared/actual byte length and parameter count,
-and that outputs are complete FUN10 records. FUN8 is 3,584 bytes and carries FM6 patches; FUN7 is 3,388 bytes without
+and that outputs are complete FUN10 records. It reads engine/preset identities directly from input/output track bytes
+and checks dropped motion against their serialized event lists, remapping older parameter IDs by the stored count.
+Input identities describe the original bytes, before any PHYS migration; PHYS conversion retains its motion events.
+FUN8 is 3,584 bytes and carries FM6 patches; FUN7 is 3,388 bytes without
 patches. Both have representative DIGITAL, PHYS and SAMPLE PERC cases.
 
 | Section | Store and firmware path run | Input | Output | Dropped / moved |

@@ -193,7 +193,7 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
 {
     static project_store_t in10, out10;
     static uint8_t old[PROJ_STORE_V9];
-    project_t q, pre, post;
+    project_t q, post;
     const uint8_t *in;
     uint32_t inlen, t, i, nd = 0;
     /* Each historical format for one case of each retired sound; the rest in FUN10 only (file size). */
@@ -214,8 +214,6 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
             rv_die("old_pack of the input", c->name);
         in = old;
     }
-    if (!proj_import_any(&pre, in, (int)inlen))       /* read, nothing converted yet */
-        rv_die("proj_import_any", c->name);
     if (!proj_import(&post, in, (int)inlen))          /* the load path: + proj_fm4, proj_perc */
         rv_die("proj_import", c->name);
     proj_bound(&post);                                /* (proj_fetch, project_load, autosave_boot, ed_bk_commit) */
@@ -227,12 +225,14 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
     printf("     \"tracks\": [");
     for (t = 0; t < NTRK; t++)
         printf("%s{\"engine_in\": %u, \"preset_in\": %u, \"engine_out\": %u, \"preset_out\": %u}", t ? ", " : "",
-               (unsigned)pre.t[t].engine, (unsigned)pre.t[t].preset, (unsigned)post.t[t].engine,
+               (unsigned)q.t[t].engine, (unsigned)q.t[t].preset, (unsigned)post.t[t].engine,
                (unsigned)post.t[t].preset);
     printf("],\n     \"motion_dropped\": [");
-    for (i = 0; i < pre.motion.count && i < MOTION_MAX; i++)
-        if (!rv_ev_has(&post.motion, &pre.motion.event[i])) {
-            const motion_event_t *e = &pre.motion.event[i];
+    /* q is the input before any migration; proj_import_any already changes PHYS identities.
+     * Its motion uses current IDs, as the legacy serializer/reader map them by stored count. */
+    for (i = 0; i < q.motion.count && i < MOTION_MAX; i++)
+        if (!rv_ev_has(&post.motion, &q.motion.event[i])) {
+            const motion_event_t *e = &q.motion.event[i];
             printf("%s{\"track\": %u, \"step\": %u, \"param\": %u, \"lock\": %u, \"value\": %d}", nd++ ? ", " : "",
                    (unsigned)(e->place >> 6), (unsigned)(e->place & 63u), (unsigned)MOTION_ID(e),
                    (unsigned)((e->param & MOTION_LOCK) != 0), (int)e->value);
