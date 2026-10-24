@@ -12,6 +12,7 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | --- | --- | --- |
 | Build identity | Startup, ABOUT, INFO | Normal firmware identifies the version, commit or PR and fork source; see [build identity](../BUILDING.md#build-revision-and-pr-identity). |
 | Health, input and retained crashes | USB SERIAL `status`, `dbg`, `inp`, `crash`; `tools/fm1_diagnostics.py` | Normal CDC builds. The read-only collector retains raw replies, JSONL and summary counter deltas; [collection and interpretation](#collect-diagnostics) are described below. Input latency requires confirmed `FM1_INPUT_LAT` instrumentation; render load is not whole-chip CPU use. |
+| Boot clock registers | USB SERIAL `status` keys `boot_clock_*`; the same read-only collector | Normal CDC builds, captured once before normal initialization. Seven raw words help compare boot paths; they neither measure MHz nor correct clocks. See [boot clock evidence](#boot-clock-evidence). |
 | Interrupt misuse | `status` keys `isr_misuse`, `isr_misuse_pc` | Opt-in `FELUCCA_ISR_ASSERT=1` on the FM-1, default `0`. Counts guarded main-loop calls made in interrupt context; [target and host behavior differ](#interrupt-context-assertion-felucca_isr_assert). |
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
@@ -22,6 +23,48 @@ collector does not run a reproducer, enable instrumentation or capture screensho
 it only reads fields supplied by the installed build. Record the exact build, flags,
 workload and hardware observations with each result. See the linked guides for resource
 costs and distinguish host/emulator coverage from real FM-1 observations.
+
+## Boot clock evidence
+
+With `FELUCCA_CDC=1` (the normal default), startup reads these seven 32-bit
+registers, in order, after the existing CPU1 hold when compiled in and before TIMER4/reset/peripheral
+initialization. Their values survive BSS/data initialization through a temporary
+startup-stack snapshot and are copied into ordinary RAM. Nothing is added to
+NOINIT or persistent storage. The status handler reads the saved words, never the
+live clock registers; polling does not add clock-register accesses.
+
+| Status key | Register address |
+| --- | --- |
+| `boot_clock_10014` | `0x10014`, including the low-eight-bit system-clock selector and the other original bits |
+| `boot_clock_1000c` | `0x1000C` |
+| `boot_clock_10008` | `0x10008` |
+| `boot_clock_119a8` | `0x119A8` |
+| `boot_clock_119ac` | `0x119AC` |
+| `boot_clock_119a0` | `0x119A0` |
+| `boot_clock_119a4` | `0x119A4` |
+
+These hexadecimal words are observations, not counters. The collector preserves
+them in each status snapshot in JSONL and the summary's start/end snapshots; it
+does not subtract them, classify the bootloader, infer MHz or label a clock safe.
+Older firmware may omit all seven. A partial group or malformed/out-of-range word
+invalidates that reply; absence is unavailable evidence, never seven zero values.
+CDC-disabled builds omit capture and storage. MIDI-only rescue has no CDC console;
+returning to normal startup captures a new boot, not the earlier rescue state.
+
+The added workload is seven sequential volatile reads once at boot, one ordinary
+RAM record, a temporary startup-stack record and seven formatted lines per status
+reply. There is no audio/TIMER5 work, PLL/clock write, delay or corrective path.
+Use matched polling/no-polling runs when assessing the extra reply traffic. Exact
+linked region/frame costs belong to the candidate's target resource report.
+
+For a device comparison, follow the idle setup below on an already installed,
+identified candidate and collect one run per available bootloader/reset path.
+Record known bootloader identity, cold versus warm start, firmware/package hash
+and all seven words. Do not switch bootloaders or interrupt updates merely to
+collect another row. Host fake-register/parser tests establish ordering and format
+only; real M-VAVE V15/V16, m-bootloader, warm-reset and OTA-return observations
+remain pending. [#618](https://github.com/kmplngj/Felucca/issues/618) owns the later
+retain/defer decision; no clock correction is enabled by this diagnostic.
 
 ## Collect diagnostics
 

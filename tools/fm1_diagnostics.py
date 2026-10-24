@@ -17,6 +17,8 @@ import time
 
 COMMANDS = ("status", "dbg", "inp", "crash")
 MAX_RESPONSE = 65536
+CLOCK_FIELDS = tuple("boot_clock_" + address for address in
+                     ("10014", "1000c", "10008", "119a8", "119ac", "119a0", "119a4"))
 PROMPT = re.compile(rb"(?:^|\n)> $")
 COUNTERS = {
     "status": ("audio_late", "voices_shed", "voices_given_up", "usb_resets", "usb_sof",
@@ -35,6 +37,8 @@ SEMANTICS = {
     "inp": "Reset on read except timer_irqs/nested; first window discarded; later windows checked against interval.",
     "latency": "Requires explicit confirmation of FM1_INPUT_LAT and observed key samples; otherwise UNMEASURED.",
     "snapshots": "Commands and fields are read sequentially, not an atomic device snapshot.",
+    "boot_clock": "Optional seven raw clock words captured once at this boot, before normal initialization; "
+                  "not live clock readings or measured MHz. Absent on older/CDC-disabled firmware.",
 }
 
 
@@ -168,6 +172,10 @@ def parse_response(command, raw):
         numeric.add("boots")
     numeric |= {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
                 "crash": {"uptime_ms"}}[command]
+    if command == "status":
+        numeric.update(CLOCK_FIELDS)
+        if set(CLOCK_FIELDS) & fields.keys():
+            issues += ["missing " + key for key in CLOCK_FIELDS if key not in fields]
     for key in numeric & fields.keys():
         value = fields[key]
         if not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
