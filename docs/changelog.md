@@ -92,6 +92,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **Firmware CI coverage:** required host work and nested checks now use a
+  source/configuration-bound structured report instead of success banners and
+  recognized skip wording. Missing dependencies, child completion or stale evidence
+  fail strict verification; documented CPU/V15 and profile exceptions stay explicit.
+  See the [runner contract](../BUILDING.md#tests). Firmware/device behavior is unchanged.
+
 - **Browser emulator readability:** keyboard hints, footer links, build version and
   small-print text meet a 4.5:1 contrast floor against the neutral page background.
 

@@ -16,6 +16,9 @@ import hashlib
 from pathlib import Path
 import re
 import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from test_coverage import Producer
+coverage = Producer()
 
 FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_legacy", "digital_render_custom", "phase_render", "phase_render_f", "lofi_render", "sample_render", "formant_render",
          "trio_render", "trio_pass", "wheel_render", "wheel_block",
@@ -153,6 +156,7 @@ def artifact_functions(path):
 def main():
     if not os.path.exists(dis):
         print(f"target: skip ({dis} missing: run ./build.sh)")
+        coverage.outcome('target-budget', 'skipped', 'disassembly-missing')
         return 0
     try:
         active, excluded = artifact_functions(dis)
@@ -211,6 +215,10 @@ def main():
                 state = f"note: {(r['cost'] / b - 1) * 100:.0f} % (BUDGET_UPDATE=1 to keep it)"
         print(f"target: {n:15s} {r['insns']:5d} instructions, {r['loop']:4d} in loops, {r['div']} divides, "
               f"{r['call']:2d} calls there: cost {r['cost']:5d} (budget {b if b is not None else '-'}) {state}")
+    unbudgeted = [n for n in res if n not in base and n not in OPTIONAL and not (n in ONE_CORE and 'mix_part' not in res)]
+    coverage.outcome('target-budget', 'failed' if fail or unbudgeted else 'passed',
+                     checked=len(res), excluded=sorted(excluded), missing_functions=missing,
+                     missing_budgets=unbudgeted, disassembly_sha256=hashlib.sha256(Path(dis).read_bytes()).hexdigest())
     return 1 if fail else 0
 
 
