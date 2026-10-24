@@ -10,9 +10,11 @@
  *     then write the UPDATA_PARM record (flash 0xE4F00 + RAM 0x01C7FD88) and
  *     reset. The SPL runs the loader, which installs the package.
  * Nothing is committed before the host's "success"; a failure after the
- * staging began erases the staging area, and Felucca carries on. A package
- * whose flash.bin is not exactly this board's size (OTA_FL_LEN: another
- * board's package) is refused in step 1, before anything is erased.
+ * staging began erases the staging area, and Felucca carries on. Felucca's
+ * own loader takes a flash.bin of exactly this board's size (OTA_FL_LEN:
+ * else another board's package); M-VAVE's loader, which also writes the boot
+ * area, only one of the reviewed official images in OTA_STOCK (#619). Both
+ * are refused in step 2, before anything is erased.
  *
  * Portable core: the firmware (felucca.c) and the Mac test (ota_test.c)
  * supply these hooks:
@@ -29,10 +31,19 @@
 #define OTA_RES (OTA_AREA + OTA_AREA_LEN - 0x100u)  /* 0xE4F00 = 4K boundary - 256: SPL scan */
 #define OTA_FL_LEN 0x93000u                      /* flash.bin = [0, the PRCT end): the head and this board's app area,
                                                   * the size the update loader writes (ldr_core.c LDR_APP_HI) */
-#define OTA_LDR_HCRC 0xEBAAu                     /* official update loader (usb_hid_ota.bin) */
+#define OTA_LDR_HCRC 0xEBAAu                     /* official update loader (usb_hid_ota.bin), the same in V15 and V16 */
 #define OTA_LDR_DCRC 0x5881u
 #define OTA_LDR_LEN 0x4DE1u
+#define OTA_HEAD_LEN 0x4000u                     /* the boot area: flash header, JLFS entries, SPL, isd_config */
 #define OTA_FRAME_MAX 640u                       /* 512-B response = 605 wire bytes */
+
+/* M-VAVE's official flash images, which its loader writes whole, boot area included (#619): only these reviewed
+ * ones, by flash.bin's size and UFW data CRC16 and the CRC16 of its boot area, for a chip with their key. The hosts
+ * pin the whole .fwsc by SHA-256 (tools/fm1_install.py STOCK_SHA256); this is the device's own guard. */
+static const struct { uint32_t fl_len; uint16_t fl_crc, head_crc, key; } OTA_STOCK[] = {
+    {0x93000u, 0x9B24u, 0x3FEEu, 0x980Fu},       /* V15 (FM-1_015) */
+    {0xA9000u, 0x79C4u, 0x22B0u, 0x980Fu},       /* V16 (FM-1_016): its bigger app area, a new SPL and isd_config */
+};
 
 static int ota_wire_send(const uint8_t *p, uint32_t n);
 static int ota_frame_get(const uint8_t **p, uint32_t *n);
@@ -211,6 +222,38 @@ static int ota_memeq(const uint8_t *a, const uint8_t *b, uint32_t n)
     return 1;
 }
 
+/* chip key from the device's flash head: JLFS top entries (ENC 0xFFFF) -> isd_config.ini blob; 0 ok, -1 read,
+ * -2 entry CRC, -3 no isd_config.ini, -4 blob CRC (the update loader's check too: ldr_core.c) */
+static int ota_chip_key(uint32_t *key)
+{
+    uint8_t e[32], blob[34];
+    uint32_t off, i, sum, k;
+    for (off = 32; off < 0x400u; off += 32u) {
+        if (ota_fread(off, e, 32))
+            return -1;
+        ota_jl_enc(e, 32);
+        if (ota_crc16(e + 2, 30, 0) != ota_rd16(e))
+            return -2;
+        if (!ota_memeq(e + 16, (const uint8_t *)"isd_config.ini", 15)) {
+            if (ota_rd16(e + 14))
+                return -3;                               /* last entry, not found */
+            continue;
+        }
+        if (ota_fread(ota_rd32(e + 4), blob, 34) || ota_crc16(blob, 32, 0) != ota_rd16(blob + 32))
+            return -4;
+        for (i = 0, sum = 0; i < 16u; i++)
+            sum += blob[i];
+        sum &= 0xFFu;
+        sum = sum >= 0xE0u ? 0xAAu : sum <= 0x10u ? 0x55u : sum;
+        for (i = 0, k = 0; i < 16u; i++)
+            if ((uint32_t)(blob[16 + i] ^ blob[15 - i]) < sum)
+                k |= 1u << i;
+        *key = k;
+        return 0;
+    }
+    return -3;
+}
+
 /* JLFS head "LOADER.BIN" in front of the staged loader (vm_update_defrag), written last */
 static int ota_stage_head(uint32_t len)
 {
@@ -259,12 +302,13 @@ static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *o
     return 0;
 }
 
-/* ota_stage's failures from step 4's first erase on (-8 .. -13; the steps before: -1 .. -7 and -15, nothing written) */
+/* ota_stage's failures from step 4's first erase on (-8 .. -13; the steps before: -1 .. -7, -15 and -16, nothing
+ * written) */
 #define OTA_STAGED_RC(rc) ((rc) <= -8 && (rc) >= -13)
 static int ota_stage(void)                       /* steps 1..6; 0 = host said success */
 {
-    static uint8_t hdr[0x400] __attribute__((section(".pool"))), b[512] __attribute__((section(".pool"))), mine[512] __attribute__((section(".pool")));
-    uint32_t i, n, ota_off, ota_len, fl_off, fl_len, c, len, own, official;
+    static uint8_t hdr[0x400] __attribute__((section(".pool"))), b[512] __attribute__((section(".pool")));
+    uint32_t i, n, ota_off, ota_len, fl_off, fl_len, fl_crc, c, len, own, official, key;
     int rc;
     /* 1. UFW header + entry list */
     ota_show(1, 0);
@@ -272,8 +316,9 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
         return rc;
     if (!fl_off || !ota_off)
         return -3;
-    if (fl_len != OTA_FL_LEN)
-        return -15;                                         /* another board's package: nothing staged, nothing erased */
+    for (i = 0, fl_crc = 0; i < ota_rd16(hdr + 8); i++)    /* flash.bin's data CRC16: ota_ufw left the entries */
+        if (ota_rd16(hdr + 0x40 + i * 0x50u) == 0)          /* decoded, and takes the last one, as here */
+            fl_crc = ota_rd16(hdr + 0x40 + i * 0x50u + 4u);
     /* 2. which loader: the official one (known CRCs; it rewrites the whole flash.bin
      *    including the head) or Felucca's own (app area only, checks the chip key) */
     if (ota_read(ota_off, b, 512))
@@ -288,14 +333,27 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
         own = ota_memeq(b + i, (const uint8_t *)"FELUCCA-LOADER-1", 16) && ota_rd32(b + 0x20 + 4) <= 0x14000u;
     if (!official && !own)
         return -7;
-    if (official) {                    /* the official loader writes the head: it must equal ours */
+    if (!official) {
+        if (fl_len != OTA_FL_LEN)
+            return -15;                                     /* another board's package: nothing staged, nothing erased */
+    } else {
+        /* the official loader writes the boot area too: a reviewed official image only, whichever boot area the
+         * device has now (V15's, V16's, m-bootloader's: the image's replaces it), and for this chip's key */
         ota_show(2, 0);
-        for (i = 0; i < 0x4000u; i += 512u) {
-            if (ota_read(fl_off + i, b, 512) || ota_fread(i, mine, 512))
+        for (i = 0; i < sizeof OTA_STOCK / sizeof OTA_STOCK[0]; i++)
+            if (fl_len == OTA_STOCK[i].fl_len && fl_crc == OTA_STOCK[i].fl_crc)
+                break;
+        if (i == sizeof OTA_STOCK / sizeof OTA_STOCK[0])
+            return -5;
+        for (n = 0, c = 0; n < OTA_HEAD_LEN; n += 512u) {
+            if (ota_read(fl_off + n, b, 512))
                 return -4;
-            if (!ota_memeq(b, mine, 512))
-                return -5;
+            c = ota_crc16(b, 512, c);
         }
+        if (c != OTA_STOCK[i].head_crc)
+            return -5;
+        if (ota_chip_key(&key) || key != OTA_STOCK[i].key)
+            return -16;                                     /* this chip's key is not the image's (or unreadable) */
     }
     /* 4. stage the package's loader: erase, body, verify, head last */
     ota_show(3, 0);

@@ -62,37 +62,6 @@ static void ldr_sfc(uint8_t *p, uint32_t n, uint32_t base_off, uint32_t key)
     }
 }
 
-/* chip key from the device's flash head: JLFS top entries (ENC 0xFFFF) -> isd_config.ini blob */
-static int ldr_chip_key(uint32_t *key)
-{
-    uint8_t e[32], blob[34];
-    uint32_t off, i, sum, k;
-    for (off = 32; off < 0x400u; off += 32u) {
-        if (ldr_fread(off, e, 32))
-            return -1;
-        ota_jl_enc(e, 32);
-        if (ota_crc16(e + 2, 30, 0) != ota_rd16(e))
-            return -2;
-        if (!ota_memeq(e + 16, (const uint8_t *)"isd_config.ini", 15)) {
-            if (ota_rd16(e + 14))
-                return -3;                               /* last entry, not found */
-            continue;
-        }
-        if (ldr_fread(ota_rd32(e + 4), blob, 34) || ota_crc16(blob, 32, 0) != ota_rd16(blob + 32))
-            return -4;
-        for (i = 0, sum = 0; i < 16u; i++)
-            sum += blob[i];
-        sum &= 0xFFu;
-        sum = sum >= 0xE0u ? 0xAAu : sum <= 0x10u ? 0x55u : sum;
-        for (i = 0, k = 0; i < 16u; i++)
-            if ((uint32_t)(blob[16 + i] ^ blob[15 - i]) < sum)
-                k |= 1u << i;
-        *key = k;
-        return 0;
-    }
-    return -3;
-}
-
 /* 2b. flash.bin [0, fl_size) from the host, before any erase: its CRC16 must be the UFW entry's (want); sc gets
  * the CRC16 of each app sector as it came in */
 static int ldr_check(uint32_t fl_off, uint32_t fl_size, uint32_t want, uint16_t *sc, uint8_t *b)
@@ -128,7 +97,7 @@ static int ldr_session(void)
         if (ota_rd16(hdr + 0x40 + i * 0x50u) == 0)
             want = ota_rd16(hdr + 0x40 + i * 0x50u + 4u);   /* flash.bin's data CRC16 */
     /* 2. the package's app area must decrypt with this chip's key */
-    if ((rc = ldr_chip_key(&key)) != 0)
+    if ((rc = ota_chip_key(&key)) != 0)               /* (ota.c: the device's isd_config.ini) */
         return -40 + rc;
     if (ota_read(fl_off + LDR_APP_LO, sec, 32))
         return -5;
