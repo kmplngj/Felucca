@@ -10324,6 +10324,102 @@ static int test_fm6_ops(void)
     return bad;
 }
 
+/* #533: drive the production panel path with every legal imported DX7 coarse byte.
+ * The stored byte stays five-bit; only FIXED's low two bits form the editable decade. */
+static int test_fm6_fixed(void)
+{
+    static const char *const HZ[] = {"1", "10", "100", "1000"};
+    uint8_t v[FP_SIZE + 1u], imported[FP_SIZE + 1u], packed[FM6_PACKED], exported[FM6_PACKED];
+    uint32_t o, c, a, large, d, b, at, tr, gen;
+    int bad = 0, edit = 1, view = 1, ratio_mode = 1, kept = 1;
+    ui_power_on(); song.sel = 1; tr = song.sel;
+    for (o = 0; o < 6u; o++)
+        for (c = 0; c < 32u; c++)
+            for (a = 0; a < 2u; a++) {
+                b = (5u - o) * FP_OP;
+                fm6_unpack(FM6_INIT, v);
+                v[b + FP_MODE] = 1; v[b + FP_FC] = (uint8_t)c;
+                v[b + FP_FF] = 37; v[b + FP_DET] = 11;
+                fm6_pack(v, packed); fm6_unpack(packed, imported);
+                fm6_set_patch(tr, imported); fm6_adopt(tr);
+                go_title("OPERATOR"); fop_pick(o + 1u);
+                ui_prefs = a ? PREF_ACCEL : 0;
+                for (large = 0; large < 2u; large++) {
+                    const char *label, *unit;
+                    char val[12], freq[12], expected[12];
+                    int32_t r;
+                    uint32_t icon;
+                    ui_prefs = (uint8_t)((a ? PREF_ACCEL : 0) | (large ? PREF_LARGE : 0));
+                    draw_columns();
+                    fop_card(1, &label, val, &unit, &r, &icon);
+                    view &= str_eq(label, "FIXED") && str_eq(val, HZ[c & 3u]) && str_eq(unit, "HZ") &&
+                            r == (int32_t)((c & 3u) * 1000u / 3u);
+                    fop_freq(fop_bytes(tr), freq);
+                    v[b + FP_FC] = (uint8_t)(c & 3u);
+                    fop_freq(v + b, expected);
+                    view &= str_eq(freq, expected) && fm6_osc_base(fop_bytes(tr), 60, 0) == fm6_osc_base(v + b, 60, 0);
+                }
+                view &= !memcmp(imported, fm6_patch[tr], FP_SIZE);
+                fm6_pack(fm6_patch[tr], exported);
+                kept &= !memcmp(packed, exported, FM6_PACKED);
+                go_title("OPERATOR 2"); turn(EN_K2, -1);
+                ratio_mode &= fm6_patch[tr][b + FP_FC] == c && fm6_patch[tr][b + FP_MODE] == 0;
+                turn(EN_K2, 1);
+                kept &= !memcmp(imported, fm6_patch[tr], FP_SIZE);
+                go_title("OPERATOR");
+                /* Fast repeated detents and batched overshoot both stop at the same endpoints. */
+                for (d = 0; d < 6u; d++) {
+                    uint32_t want = (c & 3u) + d + 1u;
+                    turn(EN_K2, 1); host_ticks -= 200000u;
+                    edit &= fm6_patch[tr][b + FP_FC] == ((c & ~3u) | (want > 3u ? 3u : want));
+                }
+                gen = fm6_pgen[tr];
+                turn(EN_K2, 200);
+                edit &= fm6_patch[tr][b + FP_FC] == (c | 3u) && fm6_pgen[tr] == gen;
+                for (d = 0; d < 6u; d++) {
+                    turn(EN_K2, -1); host_ticks -= 200000u;
+                    edit &= fm6_patch[tr][b + FP_FC] == ((c & ~3u) | (d < 3u ? 2u - d : 0u));
+                }
+                gen = fm6_pgen[tr];
+                turn(EN_K2, -200);
+                edit &= fm6_pgen[tr] == gen;
+                memcpy(v, imported, FP_SIZE); v[b + FP_FC] = (uint8_t)(c & ~3u);
+                edit &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+                /* RATIO retains 0 = x0.50 and all integer ratios through 31. */
+                go_title("OPERATOR 2"); turn(EN_K2, -1);
+                go_title("OPERATOR"); turn(EN_K2, 200);
+                ratio_mode &= fm6_patch[tr][b + FP_FC] == 31u;
+                turn(EN_K2, -200);
+                ratio_mode &= fm6_patch[tr][b + FP_FC] == 0u;
+            }
+    bad += check("FM6 FIXED: all 6 operators x 32 DX7 coarse bytes x ACCEL OFF/ON, four bounded decades both ways; other bytes stay", edit);
+    bad += check("FM6 FIXED: NORMAL/LARGE card, gauge and chart agree with DSP low bits; viewing preserves imported bytes", view);
+    bad += check("FM6 FIXED: mode toggles and DX7 export preserve high coarse bits; RATIO remains 0..31", kept && ratio_mode);
+    /* A fresh real edit owns the patch, and SAVE undo/redo and stored containers keep its high bits. */
+    ui_power_on(); song.sel = 1; tr = song.sel;
+    fm6_unpack(FM6_INIT, v);
+    v[5u * FP_OP + FP_MODE] = 1; v[5u * FP_OP + FP_FC] = 29;
+    fm6_set_patch(tr, v); fm6_adopt(tr);
+    memcpy(imported, fm6_patch[tr], FP_SIZE);
+    go_title("OPERATOR"); fop_pick(1);
+    turn(EN_K2, 1);
+    kept = patch_diff(imported, fm6_patch[tr], &at) == 1 && at == 5u * FP_OP + FP_FC && fm6_patch[tr][at] == 30 && slot_own();
+    memcpy(v, fm6_patch[tr], FP_SIZE);
+    hold(B_SAVE); kept &= !memcmp(imported, fm6_patch[tr], FP_SIZE) && slot_own();
+    hold(B_SAVE); kept &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+    stop_transport(); project_save(2);
+    a = (uint32_t)up_store(9, "FIXED"); kept &= a == 0u || a == 3u;
+    TSEL->p[P_E7] = 0; fm6_poll(); project_load(2);
+    kept &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+    TSEL->p[P_E7] = 1; fm6_poll(); up_load(9);
+    kept &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+    fm6_pack(fm6_patch[tr], packed); fm6_unpack(packed, imported);
+    kept &= !memcmp(v, imported, FP_SIZE);
+    bad += check("FM6 FIXED: high bits survive a one-byte edit, SLOT OWN, undo/redo, project, user preset and DX7 round trips", kept);
+    ui_power_on();
+    return bad;
+}
+
 /* 1.3 (Discussions #112, #134): MENU > DISPLAY > HOME SCOPE / TRACKS (ui.c ui_home_view, settings byte [15][26]) and
  * HOME > TRACKS (ui_graph.c draw_home_tracks): the setting (its default, names, tab, byte, the other settings' bytes
  * untouched, an unknown value as SCOPE, the menu's knob, the settings record); the rows read from the screen: a note's
@@ -12146,6 +12242,8 @@ int main(int argc, char **argv)
     int bad = 0;
     if (argc == 2 && !strcmp(argv[1], "--catalog"))
         return test_catalog_controls() + test_unknown_engine() != 0;
+    if (argc == 2 && !strcmp(argv[1], "--fm6-fixed"))
+        return test_fm6_fixed() != 0;
     if (argc == 2 && !strcmp(argv[1], "--menu"))
         return test_menu_tabs() + test_auto_off_navigation() + test_menu_prefs() != 0;
     if (argc == 2 && !strcmp(argv[1], "--auto-off"))
@@ -12240,6 +12338,7 @@ int main(int argc, char **argv)
     bad += test_momentary_status();
     bad += test_fm6_charts();
     bad += test_fm6_ops();
+    bad += test_fm6_fixed();
     bad += test_home_tracks();
     bad += test_knob_policy();
     bad += test_scope_redraw();

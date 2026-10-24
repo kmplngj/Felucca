@@ -1217,7 +1217,7 @@ static void draw_columns(void)
             }
             on = fop_card(c, &lb, val, &u, &r, &ic);
             if (fop_field(c) != FO_OP && fop_field(c) != FO_STG)   /* (OP, STAGE: 1..6, 1..4) */
-                card_span_by(span_fop, 0, 0, (int32_t)fm6_max(fop_byte(fop_field(c))), (int32_t)c);
+                card_span_by(span_fop, 0, 0, (int32_t)fop_max(fop_field(c)), (int32_t)c);
             draw_column(c, lb, val, u, on ? VAL(c) : T_DIM, r, ic);
         }
         return;

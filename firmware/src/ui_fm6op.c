@@ -43,6 +43,9 @@ static uint32_t fop_byte(uint32_t f)
 {
     return (5u - fop_op % 6u) * FP_OP + FO_OFF[f] + (f == FO_RATE || f == FO_ELVL ? fop_stg & 3u : 0u);
 }
+/* FIXED exposes the four audible decades, not the raw DX7 coarse byte's eight cycles. */
+static int fop_fixed(uint32_t f) { return f == FO_CRS && fop_bytes(song.sel)[FP_MODE]; }
+static uint32_t fop_max(uint32_t f) { return fop_fixed(f) ? 3u : fm6_max(fop_byte(f)); }
 
 /* byte b of the selected track's patch = v: the track's own patch now (SLOT OWN), one undo per knob gesture */
 static void fop_write(uint32_t b, uint32_t v)
@@ -66,7 +69,7 @@ static void fop_write(uint32_t b, uint32_t v)
 static void fop_knob(uint32_t slot, int32_t steps)
 {
     uint32_t f = fop_field(slot), b;
-    int32_t max;
+    int32_t max, v;
     if (!fop_ok() || !steps)
         return;
     if (f == FO_OP) {
@@ -78,8 +81,15 @@ static void fop_knob(uint32_t slot, int32_t steps)
         return;
     }
     b = fop_byte(f);
-    max = (int32_t)fm6_max(b);
-    fop_write(b, (uint32_t)clamp((int32_t)fm6_patch[song.sel % NTRK][b] + accel(EN_K1 + slot, steps, max), 0, max));
+    max = (int32_t)fop_max(f);
+    v = fm6_patch[song.sel % NTRK][b];
+    if (fop_fixed(f)) {
+        /* Keep imported high bits for a later RATIO toggle and DX7 export. MODE itself changes no other byte. */
+        v = (v & ~3) | clamp((v & 3) + accel(EN_K1 + slot, steps, max), 0, max);
+    } else {
+        v = clamp(v + accel(EN_K1 + slot, steps, max), 0, max);
+    }
+    fop_write(b, (uint32_t)v);
 }
 
 /* "w.ff" (frac: digits places) */
@@ -146,7 +156,7 @@ static int fop_card_at(uint32_t slot, int32_t vo, const char **label, char *val,
         return 1;
     }
     v = vo >= 0 ? (uint32_t)vo : fm6_patch[song.sel % NTRK][fop_byte(f)];
-    *ratio = (int32_t)(v * 1000u / fm6_max(fop_byte(f)));
+    *ratio = (int32_t)((fop_fixed(f) ? v & 3u : v) * 1000u / fop_max(f));
     fmt_int(val, (int32_t)v);
     switch (f) {
     case FO_CRS:
