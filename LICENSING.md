@@ -83,9 +83,8 @@ release/site packaging includes every `LICENSES/*.txt` notice with the package.
 
 | What | Licence | Where |
 | --- | --- | --- |
-| Inter Tight font by The Inter Project Authors: optional UI text (`FELUCCA_FONT=inter-tight`), rasterised into the firmware at build time (`tools/gen_aa_font.py`), also used by the source documentation panel-diagram generator; the generated tables are not offered as a font, and the font declares no Reserved Font Name | SIL OFL 1.1 | `assets/fonts/InterTight[wght].ttf`, `LICENSES/OFL-InterTight.txt` (also `assets/fonts/OFL.txt`) |
-| Tamzen font by Suraj N. Kurapati, based on Tamsyn by Scott Fial: optional experimental UI text (`FELUCCA_FONT=tamzen`), packed at build time by `tools/gen_bitmap_font.py` | Free use, copy, modification and distribution under the authors' font licence | `assets/fonts/tamzen/`, `LICENSES/Tamzen.txt` |
-| M8Stealth57 / M8Stealth89 by Trash80, with embedded ancestry credits including Matthias Tellen: default UI text (`FELUCCA_FONT=m8stealth`) and all builds' keycap/badge legend ink, rasterised and packed at build time; ten additional bitmap marks are local adaptations | CC BY-SA 3.0; font data and adaptations retain these terms | `assets/fonts/m8stealth/README.md`, `LICENSES/CC-BY-SA-3.0-M8Stealth.txt` |
+| Inter Tight font by The Inter Project Authors: documentation panel-diagram outlines only, outside the firmware asset closure; the font declares no Reserved Font Name | SIL OFL 1.1 | `docs/manual/fonts/InterTight[wght].ttf`, `docs/manual/fonts/OFL.txt`, `LICENSES/OFL-InterTight.txt` |
+| M8Stealth57 / M8Stealth89 by Trash80, with embedded ancestry credits including Matthias Tellen: native UI text and keycap/badge legend ink, rasterised and packed at build time; ten additional bitmap marks are local adaptations | CC BY-SA 3.0; font data and adaptations retain these terms | `assets/fonts/m8stealth/README.md`, `LICENSES/CC-BY-SA-3.0-M8Stealth.txt` |
 | Instrument samples (Versilian Studios VSCO-2 Community Edition, VCSL): the SAMPLE sets, also the SLICE engine's PIANO (the PIANO set's middle C) | CC0 1.0 | `assets/samples-cc0/`, provenance in `ATTRIBUTION.txt` there |
 | DaisySP by Electrosmith, Corp and Emilie Gillet (<https://github.com/electro-smith/DaisySP>): the PHYS engine's modal and string models and the resonator, ported to fixed point | MIT | `firmware/src/phys_dsp.c`, `LICENSES/MIT-DaisySP.txt` |
 | Rings by Emilie Gillet (<https://github.com/pichenettes/eurorack>): the PHYS engine's sympathetic strings, ported to fixed point | MIT | `firmware/src/phys_symp.c`, `LICENSES/MIT-Rings.txt` |
@@ -96,6 +95,9 @@ release/site packaging includes every `LICENSES/*.txt` notice with the package.
 | The second core: its start, mailbox and guards from X0X by charlesvestal (<https://github.com/charlesvestal/fm1-x0x>, with the dual-core findings of Melodee by keremimo, <https://github.com/keremimo/melodee>); its audio split, measurements and hardening after Jangada by zednaked (<https://github.com/zednaked/jangada>); each credited in its files | GPL-3.0 | `firmware/hal/fm1_cpu1.{h,S}`, `firmware/src/fx.c`, `tests/c1_host.h`, `tests/dualcore_test.c` |
 | DotGothic16 font by The DotGothic16 Project Authors (<https://github.com/fontworks-fonts/DotGothic16>): the browser emulator's knob labels, served with its page (cut to printable ASCII; the font declares no Reserved Font Name) | SIL OFL 1.1 | `web/emu/fonts/DotGothic16-subset.woff`, `LICENSES/OFL-DotGothic16.txt` (also `web/emu/fonts/OFL.txt`) |
 | JieLi AC79 SDK by JieLi Technology: three of its files go into every `.fwsc` package (below); none are in this tree | Apache-2.0 | `LICENSES/Apache-2.0.txt` |
+
+Tamzen/Tamsyn is no longer a build input. Its notice remains in
+`LICENSES/Tamzen.txt` for historical distributions and the dated font comparison.
 
 On the device, hold HOME, select SYSTEM with ALGORITHM and ABOUT with PRESETS, then tap
 OCT+ to open the information screen; turning PRESETS scrolls on into

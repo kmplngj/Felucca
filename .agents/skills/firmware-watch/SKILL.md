@@ -83,7 +83,7 @@ new coverage or replacement of an earlier decision.
 
 ## Issues and durable recovery
 
-Before any issue write, apply [AGENTS repository ownership](../../../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation)
+Before any issue write, apply [repository ownership](../../../docs/repository-ownership.md)
 to the actual source/dependency/asset licence closure, and check live repository
 access and Issues settings. That section owns collection placement, the WebApp
 fallback and blocked destinations; its requirements apply to scan findings too.

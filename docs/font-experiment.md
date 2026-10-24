@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Pixel font experiment
 
+This is historical comparison evidence. Native firmware now uses M8Stealth only;
+Tamzen and Inter Tight build variants are retired. See the current
+[LCD typography guide](lcd-typography.md) for supported roles and scaling.
+
 ## Main-only integration — 2026-10-12
 
 The font-only commits from PR #151 were extracted onto unchanged main

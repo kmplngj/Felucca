@@ -85,8 +85,25 @@ diagnostics join the existing 14-day artifacts. No model/API calls are needed.
 | Delivery | Package byte equality from a second clean checkout; firmware and source archive equality for release builds; identical package from unpacked complete source without Git; no tracked changes or baseline updates |
 | Release | Required files, attribution and every license, SHA-256 coverage of every bundle/asset file, firmware/source archive checksums and source pin/content verification |
 
-`tools/ci.py verify-tests` rejects skipped local optional suites, absent test
-outputs and missing target-budget entries even if the runner prints success.
+`tools/ci.py verify-tests` requires the schema-versioned report and fresh invocation
+ID selected before the full runner starts (`FELUCCA_COVERAGE_REPORT` and
+`FELUCCA_COVERAGE_ID`). It verifies the source-derived expected plan, prerequisites
+and applicability independently of installed dependencies. Missing sanitizer,
+Pillow, DaisySP, sample assets, Node or Wasm coverage cannot disappear from that
+plan or be satisfied by a successful process printing a skip. Required nested
+producers and Python unittest completion/skips are structured outcomes, including
+the Chorus/Send/audio-transition sanitizer variants. Normal/compact output and
+serial/parallel scheduling use the same contract; regex diagnostic hints have no
+acceptance authority. The verifier rejects absent/failed/blocked/cancelled work,
+unapproved or unknown skips, stale identities, changed inputs/configuration,
+missing child completion and altered/empty required outputs or adjacent logs.
+
+The diagnostic report binds before/after tracked and untracked source content,
+generated inputs, revision/dirty state, exact clean Engines pin, profile/config,
+resolved compilers and observed effective argv. O2 and Os/no-vectorization regression
+compiles and actual selected baseline arguments are checked explicitly. Invocation
+IDs, compiler shim paths and timings stay out of reproducible release provenance.
+See [runner instructions](../BUILDING.md#tests) for strict local reproduction.
 Linux uses `perf_event_open` to count user-space instructions of each regression
 worker's calling thread. Both host CPU budgets are checked when every count and
 the matching platform/compiler baseline are available. A denied or unavailable
@@ -102,12 +119,25 @@ This infrastructure change does not change firmware, flags or test baselines.
 The only permitted fixture skip is the official V15 restore comparison: that
 requires the vendor firmware, which is deliberately not redistributed here.
 
-For the FX rest regression tracked in [#153](https://github.com/kmplngj/Felucca/issues/153),
-the summary retains actual FX rest diagnostics and reports pending coverage when
-the full test log has no completed success, failure or dependency-skip outcome.
-`FX rest: SKIP` reports pending coverage while [#41](https://github.com/kmplngj/Felucca/pull/41)'s
-silent-bus paths are unavailable. It does not establish FX equivalence. Once those
-paths land, require the regression rather than accepting its dependency skip.
+Disabled opt-in TSAN is explicitly not requested; MACRO-specific units are excluded
+only when the resolved source/profile omits engine 14. Available CPU comparisons
+must contain every required budget entry; C1_HOST retains its explicitly unqualified
+CPU comparison while its sound/state checks run.
+The MACRO pack's separately opt-in `--webapp PATH` parser check is also explicitly
+not requested when that actual argument is absent; native pack/serializer/MIDI
+checks remain required. Supplying it requires successful real client parsing.
+
+Current sources require the FX rest regression with `--require-rest`. Historical
+exact-source builds run their own selected runner/verifier and retain that source's
+FX dependency policy. The Actions summary labels sources predating this contract as
+legacy transcript verification, never structured qualification. Target-only scope
+still explicitly omits host coverage; no new fallback in the current verifier accepts
+legacy banners. Source/archive and release reproduction retain their existing
+selected-source behavior and stable provenance.
+Current verified no-Git source archives bind identity through the existing
+`SOURCE-PINS.json` full-tree verifier, retaining its extra-file/mode/symlink checks
+and external-uv-environment/no-bytecode rules. A missing Git directory never enables
+a transcript-only acceptance fallback.
 
 ## Dependencies and provenance
 
@@ -172,7 +202,9 @@ golden, sanitizer and coverage check still runs. `TEST_JOBS=1` uses the same uni
 plan serially for debugging and comparisons; see [host runner controls](../BUILDING.md#tests).
 Each unique `build/host/test-run-*/summary.json` records unit timings, dependencies
 and results. Its adjacent unit logs are retained in diagnostics even on failure,
-and the merged test log remains ordered for `tools/ci.py verify-tests`. An
+and the merged test log remains ordered. `coverage.json` binds its plan and unit
+logs and required output hashes; per-unit coverage directories retain observed
+compiler and child diagnostics. An
 unsuccessful dependency unit, failing compile/test or interrupted runner cannot
 produce the success banner. Optional local skips remain explicit and CI still
 rejects them through its coverage verifier. The runner's process groups are terminated on

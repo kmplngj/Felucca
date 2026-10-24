@@ -16,6 +16,13 @@ the existing runner verifies repository identity, branch, immutable pin and comp
 history before initialization. This review creates no per-commit coverage and needs
 no new schedule or automation.
 
+The [Clipper adoption review](clipper-adoption-2026-10-19.md) registers
+`isod89/clipper-fm1` main as a pending source, pinned initially at
+`7008d31e78da5d4e5e0a1f25a994ba7b2266c702` (49 reachable commits, zero reviewed
+by the snapshot). After the registration reaches main and the state branch,
+the audit verifies identity, branch, immutable pin and complete history before
+initialization. The existing daily task reads this registry without a schedule change.
+
 The [Optimist adoption review](optimist-adoption-2026-10-19.md) registers
 `w0ts/optimist` main as a pending source, pinned initially at
 `5fc3ee51a4aa64fd22cef217c8498c9be567eb69` (2,018 reachable commits, zero reviewed
@@ -23,6 +30,14 @@ by the snapshot). After this registration reaches main and the state branch, the
 next audit verifies identity, branch, immutable pin and complete history before
 initializing it. Pending registration is not active or completed review coverage.
 The existing daily task reads this registry; its schedule does not need changing.
+
+The [FM1 Open V14 review](fm1-open-adoption-2026-10-21.md) additionally registers
+`m-vave/fm1_open` main as pending, repository ID `1416743005`, pinned at
+`4c7496daac04a95ff10d1afdcc8f9ead2dbabc41` (eight reachable commits, zero
+credited assessments). The same post-merge identity/pin/full-history checks apply.
+Its mixed-license instrument selection stays in
+[#368](https://github.com/kmplngj/Felucca/issues/368); the refreshed adoption
+plan is [#370](https://github.com/kmplngj/Felucca/issues/370).
 
 Routine scan state lives on the repository's
 [`automation/firmware-watch` branch](https://github.com/kmplngj/Felucca/tree/automation/firmware-watch/data/firmware-watch).
@@ -60,7 +75,7 @@ record even if it predates later successful source initialization.
 
 ## Issue destinations and implementation boundaries
 
-Follow the [AGENTS ownership table](../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation)
+Follow the [repository ownership table](repository-ownership.md)
 for both issue placement and subsequent implementation. Portable MIT-compatible
 engine code/content/generators/tests go to `kmplngj/Felucca-Engines`; GPL-derived
 portable ports go to `kmplngj/Felucca-Engines-GPL`. Felucca owns firmware IDs,
@@ -211,3 +226,24 @@ release publication and unrelated writes remain outside this maintenance task.
 
 Keep a single active runner for the published state branch. Disable an existing
 runner before enabling a replacement so both cannot process the same queues.
+
+## Combined adoption-planning handoff
+
+The [FM1 Open V14](fm1-open-adoption-2026-10-21.md),
+[Clipper](clipper-adoption-2026-10-19.md) and
+[Araminta v2.8](araminta-v2.8-review-2026-10-21.md) reviews share one documentation
+and registration handoff, reconciled against Felucca main
+`f8ed365d845af789ce7237e3bd531f6d0c67fff9` on 2026-10-23. Their original immutable
+source pins, dated comparison evidence and existing issue owners are retained.
+Clipper and FM1 Open add two pending registrations; Araminta stays registered once.
+All existing registrations, including FM Lab, remain intact. No runtime state,
+journal, frontier, schedule or review credit changes. This does not re-audit donor
+history or establish implemented features, available profiles or native gains.
+
+## Release-specific adoption reviews
+
+The [Araminta v2.8 review](araminta-v2.8-review-2026-10-21.md) refreshes
+the existing adoption and experimental instrument issues against the immutable
+release commit. Araminta main is already registered; normal source synchronization
+discovers the new tip. The release snapshot does not reset historical targets,
+advance commit-review coverage or create another runner.

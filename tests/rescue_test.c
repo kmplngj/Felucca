@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define __attribute__(x)   /* (the sources' .pool sections: no Mach-O section names, as in ota_test.c) */
 #include "../firmware/src/boot_policy.h"
 #define FELUCCA_OTA 1
 #define FELUCCA_ID "FM-1_900"
