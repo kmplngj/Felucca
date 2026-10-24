@@ -15,7 +15,7 @@
     ],
     "complete_inventory": false,
     "known_remaining_history": 7366,
-    "known_remaining_recent": 573,
+    "known_remaining_recent": 570,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
@@ -69,12 +69,12 @@
           "total": 13
         },
         "recent": {
-          "remaining": 2,
-          "reviewed": 1,
+          "remaining": 1,
+          "reviewed": 2,
           "total": 3
         },
         "repository": "isod89/sloop-fm1",
-        "terminal_pairs": 6
+        "terminal_pairs": 7
       },
       {
         "history": {
@@ -307,12 +307,12 @@
           "total": 39
         },
         "recent": {
-          "remaining": 278,
-          "reviewed": 0,
+          "remaining": 277,
+          "reviewed": 1,
           "total": 278
         },
         "repository": "Wulgaren/Araminta",
-        "terminal_pairs": 10
+        "terminal_pairs": 11
       },
       {
         "history": {
@@ -447,16 +447,16 @@
           "total": 49
         },
         "recent": {
-          "remaining": 13,
-          "reviewed": 0,
+          "remaining": 12,
+          "reviewed": 1,
           "total": 13
         },
         "repository": "isod89/clipper-fm1",
-        "terminal_pairs": 0
+        "terminal_pairs": 1
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 264
+    "terminal_pairs": 267
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -1241,9 +1241,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "24413f250714b6af1a7f2442e3534e836e3b8bd63c112d593b4f42131ac8dbe9",
-  "round_robin_next_repository_index": 23,
-  "round_robin_processed_records": 271,
+  "round_robin_journal_prefix_sha256": "d1d168314ce050abccba1a15a2be1889ab35770fc8de7ecea92f61046f28c886",
+  "round_robin_next_repository_index": 4,
+  "round_robin_processed_records": 274,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [

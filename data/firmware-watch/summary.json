@@ -11,7 +11,7 @@
   ],
   "complete_inventory": false,
   "known_remaining_history": 7366,
-  "known_remaining_recent": 573,
+  "known_remaining_recent": 570,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -65,12 +65,12 @@
         "total": 13
       },
       "recent": {
-        "remaining": 2,
-        "reviewed": 1,
+        "remaining": 1,
+        "reviewed": 2,
         "total": 3
       },
       "repository": "isod89/sloop-fm1",
-      "terminal_pairs": 6
+      "terminal_pairs": 7
     },
     {
       "history": {
@@ -303,12 +303,12 @@
         "total": 39
       },
       "recent": {
-        "remaining": 278,
-        "reviewed": 0,
+        "remaining": 277,
+        "reviewed": 1,
         "total": 278
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 10
+      "terminal_pairs": 11
     },
     {
       "history": {
@@ -443,14 +443,14 @@
         "total": 49
       },
       "recent": {
-        "remaining": 13,
-        "reviewed": 0,
+        "remaining": 12,
+        "reviewed": 1,
         "total": 13
       },
       "repository": "isod89/clipper-fm1",
-      "terminal_pairs": 0
+      "terminal_pairs": 1
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 264
+  "terminal_pairs": 267
 }
