@@ -23,7 +23,9 @@ Keep one compact working table rather than re-inventorizing on every step:
 Use states such as queued, investigating, implementing, review/CI pending, hardware
 pending, decision blocked, ready, merged, already done and superseded. Keep issue,
 PR and exact head identities with the evidence; an assessed item is not necessarily
-resolved. State changes need a reason, not just a timestamp.
+resolved. State changes need a reason, not just a timestamp. An item is assessed
+only after its relevance and evidence, dependencies, next step, required validation
+or explicit blockers, and state are recorded. `investigating` alone is insufficient.
 
 Keep local recovery notes under ignored `build/issue-delivery/` when useful. Record
 the selected scope, inventory limits, active packages/branches, validation/review
@@ -52,8 +54,9 @@ Finish started packages before opening more when practical. Use bounded waits fo
 CI/reviews and continue useful independent work; missing external results remain
 pending. Give concise updates on findings, completed packages and changed blockers.
 
-When no selected actionable work remains, report what merged, what is ready for
-review, which issues were already done/superseded and the precise hardware, access,
-review or decision blockers. Preserve the next action for each unresolved item.
+Stop only when every selected item is assessed and either no actionable work remains
+or every remaining item has an explicit blocker. Report what merged, what is ready
+for review, which issues were already done/superseded and the precise hardware,
+access, review or decision blockers. Preserve the next action for each unresolved item.
 An exhausted actionable queue is a stopping condition, not evidence that all issues
 are solved. Never close blocked work to make the inventory appear complete.

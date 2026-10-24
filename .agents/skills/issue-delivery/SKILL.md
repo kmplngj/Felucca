@@ -192,6 +192,6 @@ scope, provide the same evidence in the local completion report.
 Report merged work, reviewable PRs, hardware/decision blockers, completed or
 superseded issues and the next useful package. Ask a concrete question with a
 recommendation and consequences only when a decision is necessary; continue
-independent authorized work while waiting. Stop an autonomous run when the selected
-queue is exhausted or every remaining item has an explicit blocker, and preserve
+independent authorized work while waiting. Stop an autonomous run only after every
+selected item has a recorded assessment and no unblocked action remains; preserve
 enough state for a later run. Favor verified outcomes over closure counts.
