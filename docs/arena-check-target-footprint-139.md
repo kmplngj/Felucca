@@ -32,7 +32,11 @@ no allocator, ownership transition, clearing size, engine ID or persistent data 
 The appendix constructs the full control diff from the pinned source.
 
 Each control reuses its baseline's generated inputs and release identity and
-asserts identical actual compiler flags. Both compile at the same relative
+checks actual build configuration (flags, effective defines, selective pass,
+product/version and compiler/toolchain/SDK fingerprints). The only allowed difference
+is the control's intentional removal of the unused `FELUCCA_ARENA_CHECK=0` default
+definition; its absence is asserted, not replaced in the recorded configuration.
+Both compile at the same relative
 `build/` path inside the compiler mount. This matters: an earlier control used
 `build/control-standard/`, adding 34 bytes of file-name strings to ELF metadata
 while leaving its app image unchanged. The final comparison uses no path
@@ -102,12 +106,16 @@ Save the four Python appendices below under their indicated `build/issue139/`
 filenames. They use only Python's standard library and the pinned repository's
 build modules. Keep this checkout tracked-clean. Configure `AC79_SDK` and
 `JIELI_TOOLCHAIN` as appropriate for your installation; do not copy machine-specific
-paths from another checkout. Run sequentially from the checkout root:
+paths from another checkout. The commands below clear inherited CPU2/size settings
+and select each profile explicitly. Other `FELUCCA_*` overrides must be unset.
+Capture checks verify the variant and require the current configuration to match
+the captured build. Run sequentially from
+the checkout root:
 
 ```sh
 python3 build/issue139/prepare-control.py
-uv run --locked --group build ./build.sh --release 1.6.1
-python3 build/issue139/capture-baseline.py standard
+env -u FELUCCA_CPU2 -u FELUCCA_SIZE FELUCCA_PROFILE=standard uv run --locked --group build ./build.sh --release 1.6.1
+env -u FELUCCA_CPU2 -u FELUCCA_SIZE FELUCCA_PROFILE=standard python3 build/issue139/capture-baseline.py standard
 ```
 
 For each archived baseline, copy its generated inputs into the control and run
@@ -124,7 +132,7 @@ shutil.rmtree(dest / 'gen', ignore_errors=True)
 shutil.copytree(p / sys.argv[1] / 'baseline/gen', dest / 'gen')
 shutil.copy2(p / 'capture-control.py', dest / 'capture-control.py')
 PYGEN
-(cd build/issue139/control-source && python3 build/capture-control.py "../$variant/baseline" "$variant")
+(cd build/issue139/control-source && env -u FELUCCA_CPU2 -u FELUCCA_SIZE python3 build/capture-control.py "../$variant/baseline" "$variant")
 python3 build/issue139/compare.py "$variant"
 ```
 
@@ -132,29 +140,38 @@ Then build/archive the second baseline and repeat that control block with
 `variant=cpu2off`:
 
 ```sh
-FELUCCA_CPU2=0 uv run --locked --group build ./build.sh --release 1.6.1
-FELUCCA_CPU2=0 python3 build/issue139/capture-baseline.py cpu2off
+env -u FELUCCA_SIZE FELUCCA_PROFILE=standard FELUCCA_CPU2=0 uv run --locked --group build ./build.sh --release 1.6.1
+env -u FELUCCA_SIZE FELUCCA_PROFILE=standard FELUCCA_CPU2=0 python3 build/issue139/capture-baseline.py cpu2off
 ```
 
 Finally build/archive MACRO and repeat the control block with `variant=macro`:
 
 ```sh
-FELUCCA_PROFILE=macro uv run --locked --group build ./build.sh --release 1.6.1 --product FM-1_900
-FELUCCA_PROFILE=macro python3 build/issue139/capture-baseline.py macro
+env -u FELUCCA_CPU2 -u FELUCCA_SIZE FELUCCA_PROFILE=macro uv run --locked --group build ./build.sh --release 1.6.1 --product FM-1_900
+env -u FELUCCA_CPU2 -u FELUCCA_SIZE FELUCCA_PROFILE=macro python3 build/issue139/capture-baseline.py macro
 ```
 
 The host font generator emitted the existing Pillow warning that Raqm was unavailable
 and used basic layout in each baseline; the matching control reused those exact
 generated fonts. There were no compiler warnings or build-check failures.
 
-Every capture/relink/control/compare step above was executed for these three
-variants. `compare.py` prints literal equality and writes a per-variant
+The original capture/relink/control/compare steps were executed for these three
+variants. The later configuration checks were verified by preprocessing the exact
+pinned baseline/control inputs, without rebuilding. The historical control summary
+copied the baseline configuration; corrected metadata-only copies now record the
+actual control configuration, which omits only the removed checker default. All
+18 literal artifact pairs, generated inputs, resources and stack reservations were
+rechecked with the stricter comparison. No target size/result above changed. `compare.py` prints literal equality and writes a per-variant
 `comparison.json`; a byte difference or resource/stack change fails. Archived
 controls can be rechecked without recompiling using
 `python3 build/issue139/compare.py standard build/issue139/standard/control`
 (and the corresponding other two labels). The documented source/control scripts
 are included here, so reproduction does not depend on the author's ignored logs.
 Retain the generated control diff and all baseline/control artifacts for review.
+Preparation and fresh captures refuse existing destination directories, including
+empty ones or symlinks; choose a fresh ignored `build/issue139` location in a new
+checkout for another build run. Archive-only rechecks read existing pairs and
+rewrite only their `comparison.json`; they do not rebuild or alter input artifacts.
 Do not install or flash control outputs: they reuse the baseline identity solely
 for a matched build comparison.
 
@@ -167,9 +184,12 @@ for a matched build comparison.
 # SPDX-License-Identifier: GPL-3.0-only
 import subprocess,tarfile,io,json
 from pathlib import Path
-root=Path.cwd();out=root/"build/issue139";control=out/"control-source";control.mkdir(parents=True,exist_ok=True)
+root=Path.cwd();out=root/"build/issue139";control=out/"control-source"
+assert not (root/"build").is_symlink() and not out.is_symlink(),"use a confined ignored build directory"
 assert subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()=="5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e"
 assert not subprocess.check_output(["git","status","--porcelain"])
+assert not control.exists() and not control.is_symlink(),"control-source already exists; use a fresh checkout"
+control.mkdir(parents=True)
 for source,dest in((root,control),(root/"firmware/engines",control/"firmware/engines")):
  dest.mkdir(parents=True,exist_ok=True)
  blob=subprocess.check_output(["git","archive","--format=tar","HEAD"],cwd=source)
@@ -203,11 +223,26 @@ print("prepared8exactcontrolfiles; no tracked source changes")
 # SPDX-License-Identifier: GPL-3.0-only
 import sys,json,shutil,hashlib,subprocess
 from pathlib import Path
-sys.path.insert(0,"tools");import build as B
-label=sys.argv[1];out=B.SRC/"build/issue139"/label/"baseline";out.mkdir(parents=True,exist_ok=True)
+sys.path.insert(0,"tools");import build as B;import build_report as R
+label=sys.argv[1]
+profile,cpu2,product={"standard":("standard",True,"FM-1_916"),"cpu2off":("standard",False,"FM-1_916"),"macro":("macro",True,"FM-1_900")}[label]
+out=B.SRC/"build/issue139"/label/"baseline"
+assert not any(p.is_symlink() for p in (B.OUT,B.SRC/"build/issue139",out.parent)),"use confined build directories"
 r=json.loads((B.OUT/"resource-report.json").read_text())
 assert r["build_identity"]["revision"]=="5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e"
 assert not r["build_identity"]["dirty"]
+cfg=r["configuration"];defines=cfg["effective_defines"]
+assert cfg["cpu2"] is cpu2 and cfg["selective_minsize"] is True,"CPU2/size variant mismatch"
+assert B.CPU2 is cpu2 and B.os.environ.get("FELUCCA_SIZE")!="0","inherited CPU2/size override"
+assert cfg["product"]==product and cfg["version_override"]=="v1.6.1","release identity mismatch"
+assert defines["FELUCCA_PROFILE_NAME"]==json.dumps(profile) and defines["FELUCCA_CPU2"]==str(int(cpu2)),"effective variant mismatch"
+expected_flags=["-target","pi32v2",*B.CFLAGS,"-Ifirmware/hal","-Ifirmware/src","-Ibuild/gen"]
+if not cpu2:expected_flags.append("-DFELUCCA_CPU2=0")
+expected_flags += [f'-DFELUCCA_ID="{product}"','-DFELUCCA_VERSION="v1.6.1"']
+assert cfg["compile_flags"]==expected_flags,"unexpected compiler overrides"
+B.PRODUCT=product;B.VERSION="v1.6.1"
+assert R.configuration(B)==cfg,"current environment/toolchain differs from captured build"
+out.mkdir(parents=True)  # refuse reuse, including empty directories and symlinks
 for name in ("felucca.bin","felucca.elf","felucca.dis","felucca.dis.profile.json","felucca.ll","felucca_size.ll","resource-report.json","build-identity.json"):
  shutil.copy2(B.OUT/name,out/name)
 shutil.copytree(B.GEN,out/"gen",dirs_exist_ok=True)
@@ -236,7 +271,10 @@ if not any(x.startswith("-DFELUCCA_CPU2=")for x in cfg["compile_flags"]):os.envi
 sys.path.insert(0,"tools");import build as B;import build_report as R
 B.OUT=B.SRC/"build";B.OUT.mkdir(parents=True,exist_ok=True)
 B.PRODUCT=cfg["product"];B.VERSION=cfg["version_override"]
-assert ["-target","pi32v2",*B.app_flags()]==cfg["compile_flags"]
+actual_cfg=R.configuration(B)
+expected_cfg=json.loads(json.dumps(cfg))
+assert expected_cfg["effective_defines"].pop("FELUCCA_ARENA_CHECK")=="0","baseline checker must be disabled"
+assert actual_cfg==expected_cfg,"control differs beyond the removed checker default"
 img,hdr,syms,dis,rt=B.build_app();errors,notes=B.check(img,hdr,syms,dis,rt);assert not errors,errors
 resources,stacks=R.resources(B,(img,hdr,syms,dis,rt))
 assert not any(x in syms for x in("eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch"))
@@ -244,7 +282,7 @@ objects=[B.OUT/x for x in("crt0.o","fm1_vec.o","fm1_isr.o")]+([B.OUT/"fm1_cpu1.o
 B.tc("pi32v2/bin/ld","-T",B.FW/"app.ld",*objects,"-Map",B.OUT/"link.map","-o",B.OUT/"map.elf")
 assert(B.OUT/"map.elf").read_bytes()==(B.OUT/"felucca.elf").read_bytes()
 (B.OUT/"sections.txt").write_text(hdr);(B.OUT/"symbols.txt").write_text(syms)
-(B.OUT/"summary.json").write_text(json.dumps({"configuration":cfg,"resources":resources,"stack_reservations":stacks,"checks":notes},indent=2)+"\n")
+(B.OUT/"summary.json").write_text(json.dumps({"configuration":actual_cfg,"resources":resources,"stack_reservations":stacks,"checks":notes},indent=2)+"\n")
 print(label,len(img),"control built; hooks absent; release flags identical")
 ```
 
@@ -255,7 +293,8 @@ print(label,len(img),"control built; hooks absent; release flags identical")
 # SPDX-License-Identifier: GPL-3.0-only
 import sys,json,hashlib,shutil
 from pathlib import Path
-p=Path("build/issue139");label=sys.argv[1];a=p/label/"baseline";b=Path(sys.argv[2]) if len(sys.argv)>2 else p/"control-source/build";archive=p/label/"control";archive.mkdir(parents=True,exist_ok=True)
+p=Path("build/issue139");label=sys.argv[1];a=p/label/"baseline";b=Path(sys.argv[2]) if len(sys.argv)>2 else p/"control-source/build";archive=p/label/"control"
+assert not any(d.is_symlink() for d in (p.parent,p,p/label,archive)),"use confined archive directories"
 def hashes(directory):
  return {str(f.relative_to(directory)):hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(directory.rglob("*")) if f.is_file()}
 assert hashes(a/"gen")==hashes(b/"gen"),"generated inputs"
@@ -264,13 +303,22 @@ for n in("felucca.bin","felucca.elf","felucca.dis","sections.txt","symbols.txt",
  x=(a/n).read_bytes();y=(b/n).read_bytes();assert x==y,n
  out[n]={"identical":True,"bytes":len(x),"sha256":hashlib.sha256(x).hexdigest()}
 r=json.loads((a/"resource-report.json").read_text());c=json.loads((b/"summary.json").read_text())
+expected_cfg=json.loads(json.dumps(r["configuration"]))
+assert expected_cfg["effective_defines"].pop("FELUCCA_ARENA_CHECK")=="0","baseline checker must be disabled"
+assert expected_cfg==c["configuration"],"configuration differs beyond the removed checker default"
 assert r["resources"]==c["resources"]
 assert r["stack_reservations"]==c["stack_reservations"]
+hook_names={"eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch"}
+def symbols(directory):
+ return {line.split()[-1] for line in (directory/"symbols.txt").read_text().splitlines() if line.split()}
+hooks_absent=all(not hook_names & symbols(directory) for directory in (a,b))
+assert hooks_absent,"checker hook symbols present"
 if b.resolve()!=archive.resolve():
+ archive.mkdir(parents=True)  # refuse an existing archive instead of overlaying it
  for n in("felucca.bin","felucca.elf","felucca.dis","felucca.dis.profile.json","felucca.ll","felucca_size.ll","sections.txt","symbols.txt","link.map","map.elf","summary.json"):
   shutil.copy2(b/n,archive/n)
  shutil.copytree(b/"gen",archive/"gen",dirs_exist_ok=True)
-out.update(resources=r["resources"],stack_reservations=r["stack_reservations"],configuration=r["configuration"],hooks_absent=True)
+out.update(resources=r["resources"],stack_reservations=r["stack_reservations"],configuration=r["configuration"],control_configuration=c["configuration"],hooks_absent=hooks_absent)
 (p/label/"comparison.json").write_text(json.dumps(out,indent=2)+"\n")
 print(label,"literal app/ELF/disassembly/map/section/symbol/resource/stack equality")
 ```
