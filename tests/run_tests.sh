@@ -263,6 +263,7 @@ checked() {
 outcome() { if [ -n "${FELUCCA_COVERAGE_UNIT:-}" ]; then python3 tools/test_coverage.py outcome "$@"; fi; }
 UNIT_NEEDS=
 UNIT_CAPABILITIES=
+UNIT_PRODUCERS=
 
 # Each row is name, prerequisites, and function/arguments, separated by tabs.
 # The scheduler re-enters this script to execute a unit in its own process group.
@@ -280,6 +281,9 @@ unit() {
         printf '],"capabilities":['
         separator=
         for token in $UNIT_CAPABILITIES; do printf '%s"%s"' "$separator" "$token"; separator=,; done
+        printf '],"producers":['
+        separator=
+        for token in $UNIT_PRODUCERS; do printf '%s"%s"' "$separator" "$token"; separator=,; done
         printf ']}\n'
     elif [ "$SELECTED_UNIT" = "$unit_name" ]; then
         "$@"
@@ -926,23 +930,31 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
         run "FX rest: parser rejects incomplete mutation coverage" python3 tests/fx_rest_parser_test.py
         run "FX rest: burst/silence audio and state equivalence (-O2/-Os)" python3 tests/fx_rest_test.py --require-rest
     }
+    UNIT_PRODUCERS=tests/fx_rest_test.py
     unit fx_rest "" u_fx_rest
+    UNIT_PRODUCERS=
 
     u_audio_transitions() {
         run "Native audio transitions: stereo waveform metrics, injected defects, CPU2 and reduced catalog" \
             python3 tests/audio_transition_test.py --out "$OUT/audio-transitions"
     }
+    UNIT_PRODUCERS=tests/audio_transition_test.py
     unit audio_transitions "" u_audio_transitions
+    UNIT_PRODUCERS=
 
     u_chorus() {
         run "Chorus depth: continuity, exact PCM, short blocks and restart" python3 tests/chorus_depth_test.py
     }
+    UNIT_PRODUCERS=tests/chorus_depth_test.py
     unit chorus "" u_chorus
+    UNIT_PRODUCERS=
 
     u_sends() {
         run "Shared sends: exact steady PCM, all transitions/short blocks, MOD, loads and worker fallback" python3 tests/send_gain_test.py
     }
+    UNIT_PRODUCERS=tests/send_gain_test.py
     unit sends "" u_sends
+    UNIT_PRODUCERS=
 
     u_regression() {
         # Probe the actual CC (including wrappers), never the executable's alias.
@@ -970,7 +982,9 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
         run "second core: the golden renders with a thread taking every split of the parts in turn" \
             "$OUT/regress_c1" "$GOLDEN" -
     }
+    UNIT_PRODUCERS="regress regress_os regress_cpu2_0 regress_c1 tests/regress_counter_test.py"
     unit regression "" u_regression
+    UNIT_PRODUCERS=
 
     u_dualcore() {
         $CC -O2 -w -Ibuild/gen -Ifirmware/src -pthread -o "$OUT/dualcore_test" tests/dualcore_test.c -lm
@@ -1297,7 +1311,9 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_braids.h ]; then
         run "MACRO device projects, song sections and MIDI workload" python3 tests/macro_device_pack_test.py
         run "Braids: pinned original C++ versus generated C output" python3 tests/braids_reference.py
     }
+    UNIT_PRODUCERS=tests/macro_device_pack_test.py
     unit macro "" u_macro
+    UNIT_PRODUCERS=
     if [ "$MODE" = --plan ] || { [ "${SANITIZE:-1}" != 0 ] && san_ok; }; then
         UNIT_NEEDS="assets macro-assets sanitizer"
         u_asan_macro() {
@@ -1323,12 +1339,16 @@ u_target_budget() {
     run "regression: target cost of the render loops (pi32v2 disassembly)" python3 tests/target_budget.py \
         build/felucca.dis tests/target_budget.txt
 }
+UNIT_PRODUCERS=tests/target_budget.py
 unit target_budget "" u_target_budget
+UNIT_PRODUCERS=
 
 u_install() {
     run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
 }
+UNIT_PRODUCERS=tests/install_test.py
 unit install "" u_install
+UNIT_PRODUCERS=
 
 u_diagnostics() {
     run "CDC diagnostics: real console/parser contract, fixtures, bounded transport and interval evidence" python3 tests/diagnostics_test.py
@@ -1359,7 +1379,9 @@ u_emulator_partitions() {
     fi
 }
 UNIT_NEEDS="assets node emcc"
+UNIT_PRODUCERS=web/emu/partition_test.sh
 unit emulator_partitions "" u_emulator_partitions
+UNIT_PRODUCERS=
 
 u_emulator() {
     if ! command -v emcc >/dev/null 2>&1; then

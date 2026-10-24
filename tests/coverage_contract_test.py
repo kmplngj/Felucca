@@ -115,6 +115,31 @@ class ContractTests(unittest.TestCase):
             command.update(required_producer=False, required_python=False, expected_outcomes=[])
             with self.assertRaisesRegex(ValueError, 'contract changed'): self.verify(d)
 
+    def test_entire_required_producer_event_cannot_be_removed(self):
+        d = copy.deepcopy(self.data)
+        producer = 'tests/target_budget.py'
+        metadata = dict(needs=[], capabilities=['case'], producers=[producer])
+        plan = 'unit_a\t\techo test\t@coverage=' + json.dumps(metadata) + '\n'
+        (self.root / 'tests/run_tests.sh').write_text("#!/bin/sh\ncat <<'PLAN'\n" + plan + 'PLAN\n')
+        (self.logs / 'plan.stdout.log').write_text(plan)
+        d['plan_sha256'] = C.digest(self.logs / 'plan.stdout.log')
+        d['summary']['units'][0]['producers'] = [producer]
+        command = dict(schema=1, run_id='fresh', kind='command',
+                       argv=['python3', producer], returncode=0, required_producer=True,
+                       required_python=True, expected_outcomes=['target-budget'],
+                       python=dict(schema=1, unittest=[]),
+                       producer=dict(schema=1, outcomes=[dict(name='target-budget', status='passed',
+                                                            reason=None, details={})]))
+        d['units'][0]['events'].append(command)
+        self.verify(d)
+        d['units'][0]['events'].append(copy.deepcopy(command))
+        with self.assertRaisesRegex(ValueError, 'required child producer absent or duplicated'):
+            self.verify(d)
+        d['units'][0]['events'].pop()
+        d['units'][0]['events'].remove(command)
+        with self.assertRaisesRegex(ValueError, 'required child producer absent'):
+            self.verify(d)
+
     def semantic(self, name, details=None, status='passed', reason=None, binary='regress'):
         d = copy.deepcopy(self.data)
         command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')

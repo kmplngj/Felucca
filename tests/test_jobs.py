@@ -93,14 +93,18 @@ def parse_plan(text):
         if len(fields) < 3:
             raise ValueError(f"invalid host-test plan row: {line!r}")
         name, dependencies, *command = fields
-        needs, capabilities = [], []
+        needs, capabilities, producers = [], [], []
         if command[-1].startswith('@coverage='):
             metadata = json.loads(command.pop().split('=', 1)[1])
             needs, capabilities = metadata['needs'], metadata['capabilities']
-            if (set(metadata) != {'needs', 'capabilities'} or
+            producers = metadata.get('producers', [])
+            if (set(metadata) not in ({'needs', 'capabilities'}, {'needs', 'capabilities', 'producers'}) or
                 any(not isinstance(values, list) or len(values) != len(set(values)) or
                     any(not isinstance(v, str) or not re.fullmatch(r'[a-zA-Z0-9_-]+', v) for v in values)
-                    for values in (needs, capabilities))):
+                    for values in (needs, capabilities)) or
+                not isinstance(producers, list) or len(producers) != len(set(producers)) or
+                any(not isinstance(p, str) or p not in coverage.PRODUCERS and p not in
+                    ('regress', 'regress_os', 'regress_cpu2_0', 'regress_c1') for p in producers)):
                 raise ValueError('invalid coverage metadata')
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", name) or name in names:
             raise ValueError(f"invalid or duplicate unit: {name!r}")
@@ -109,7 +113,7 @@ def parse_plan(text):
             raise ValueError(f"{name}: dependencies must name earlier units")
         names.add(name)
         plan.append(dict(name=name, dependencies=dependencies, command=command, status="pending",
-                         needs=needs, capabilities=capabilities))
+                         needs=needs, capabilities=capabilities, producers=producers))
     if not plan:
         raise ValueError("empty host-test plan")
     return plan

@@ -389,6 +389,12 @@ unit fixture "" u_fixture
                          {f"catalog_{i}" for i in (10, 11, 12, 13)})
         self.assertIn('asan_fuzz_ed', plan)
         self.assertIn('sanitizer', plan['asan_fuzz_ed']['needs'])
+        self.assertEqual(plan['regression']['producers'],
+                         ['regress', 'regress_os', 'regress_cpu2_0', 'regress_c1',
+                          'tests/regress_counter_test.py'])
+        declared = [p for unit in plan.values() for p in unit['producers']]
+        for producer in test_jobs.coverage.PRODUCERS:
+            self.assertEqual(declared.count(producer), 1, producer)
         expected = result.stdout
 
         # A compiler without sanitizer support must select and execute the same

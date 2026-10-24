@@ -358,7 +358,8 @@ def verify(path, run_id, root=ROOT):
         fields = line.split('\t')
         metadata = json.loads(fields.pop().split('=', 1)[1])
         require(unit['dependencies'] == fields[1].split() and unit['command'] == fields[2:] and
-                unit['needs'] == metadata['needs'] and unit['capabilities'] == metadata['capabilities'],
+                unit['needs'] == metadata['needs'] and unit['capabilities'] == metadata['capabilities'] and
+                unit.get('producers', []) == metadata.get('producers', []),
                 unit['name'] + ': declared plan metadata changed')
     required_outputs = {'build/felucca.dis', 'build/emu/felucca.wasm', 'build/host/asan/fuzz_ed',
                         'build/host/phys_ref', 'build/host/regress', 'build/host/regress_os'}
@@ -384,6 +385,13 @@ def verify(path, run_id, root=ROOT):
                 name + ': no bound execution evidence')
         require(any(e['kind'] == 'command' or (name == 'hostsim' and e['kind'] == 'compiler') for e in events),
                 name + ': no actual command')
+        # Obligations come from the source plan, never from whichever events
+        # happen to remain in the report. A sibling command cannot cover a lost child.
+        for producer in unit.get('producers', []):
+            matches = [e for e in events if e['kind'] == 'command' and
+                       (producer in e['argv'] if producer in PRODUCERS else
+                        bool(e['argv']) and Path(e['argv'][0]).name == producer)]
+            require(len(matches) == 1, name + ': required child producer absent or duplicated: ' + producer)
         for event in events:
             require(event['kind'] in ('command', 'compiler', 'probe', 'outcome'), name + ': unknown event')
             if event['kind'] in ('compiler', 'probe'):
