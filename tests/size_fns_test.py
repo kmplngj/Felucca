@@ -174,6 +174,63 @@ class Annotation(unittest.TestCase):
                 S.annotate(bad, {"ui"})
 
 
+class ColdBoundaries(unittest.TestCase):
+    def test_os_caller_retains_only_eligible_boundary(self):
+        ir = module(extra=function("os", "call void @cold()\n  call void @other()") +
+                    function("cold", "call void @leaf()") + function("leaf") + function("other"))
+        out, hit, protected = S.annotate(ir, {"cold", "leaf"})
+        self.assertEqual(hit, {"cold", "leaf"})
+        self.assertIn("@cold() minsize noinline #0", out)
+        self.assertIn("@leaf() minsize #0", out)
+        self.assertNotIn("@leaf() minsize noinline", out)
+        self.assertIn("@other() #0", out)
+        self.assertEqual(out, S.annotate(out, {"cold", "leaf"})[0])
+
+    def test_existing_group_attributes_and_existing_minsize_caller(self):
+        ir = module(extra=function("os", "call void @cold()") + function("cold", attrs="#1") +
+                    function("sized", "call void @leaf()", attrs="minsize #0") + function("leaf"))
+        ir += "attributes #1 = { nounwind minsize noinline }\n"
+        out = S.annotate(ir, {"cold", "leaf"})[0]
+        self.assertIn("@cold() #1", out)
+        self.assertIn("@leaf() minsize #0", out)
+        self.assertNotIn("@leaf() minsize noinline", out)
+        self.assertEqual(out, S.annotate(out, {"cold", "leaf"})[0])
+
+    def test_protected_table_and_flash_dependency_not_marked(self):
+        ir = module("call void %callback()", extra=
+                    "@table = constant void ()* @hot\n" + function("hot", "call void @hot_leaf()") +
+                    function("hot_leaf") + function("os", "call void @hot()\n  call void @flash_leaf()") +
+                    function("flash", "call void @flash_leaf()", attrs='section ".ram_text" #0') +
+                    function("flash_leaf"))
+        out, hit, protected = S.annotate(ir, {"hot", "hot_leaf", "flash_leaf"},
+                                        indirect={S.ISR_ROOTS[0]: (1, ("table",))})
+        self.assertEqual(hit, {"flash_leaf"})
+        self.assertIn("hot_leaf", protected)
+        self.assertNotIn("noinline", out)
+        self.assertIn("@flash_leaf() minsize #0", out)
+
+    def test_alwaysinline_and_direct_existing_noinline_preserved(self):
+        ir = module(extra=function("os", "call void @inline()\n  call void @cold()") +
+                    function("inline", attrs="alwaysinline #0") + function("cold", attrs="noinline #0"))
+        out = S.annotate(ir, {"inline", "cold"})[0]
+        self.assertIn("@inline() minsize alwaysinline #0", out)
+        self.assertIn("@cold() minsize noinline #0", out)
+        self.assertEqual(out, S.annotate(out, {"inline", "cold"})[0])
+
+    def test_quoted_callee_and_noneligible_caller_with_group_minsize(self):
+        ir = module(extra=function("os", 'call void @"cold.name"()') + function('"cold.name"') +
+                    function("sized", "call void @leaf()", attrs="#1") + function("leaf"))
+        ir += "attributes #1 = { minsize nounwind }\n"
+        out = S.annotate(ir, {"cold.name", "leaf"})[0]
+        self.assertIn('@"cold.name"() minsize noinline #0', out)
+        self.assertIn("@leaf() minsize #0", out)
+
+    def test_unknown_flash_dispatch_fails_closed(self):
+        ir = module(extra=function("flash", "call void %unknown()", attrs='section ".ram_text" #0'))
+        with self.assertRaisesRegex(ValueError, "reviewed target/count contract"):
+            S.annotate(ir, {"flash"})
+
+
 if __name__ == "__main__":
     (ROOT / "build").mkdir(exist_ok=True)
     unittest.main()

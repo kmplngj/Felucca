@@ -172,17 +172,39 @@ def annotate(ir, candidates, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
     protected = isr_reach(ir, roots, indirect)
     names, hit = candidates - protected, set()
     groups = dict(re.findall(r"^attributes (#\d+) = (.*)$", ir, re.M))
+    headers = {m[2].strip('"'): m for m in IR_DEF.finditer(ir)}
+
+    def attributes(m):
+        return m[3] + " " + " ".join(groups.get(g, "") for g in re.findall(r"#\d+", m[3]))
+
+    # Flash-busy helpers must retain their reviewed RAM-only inlining policy.
+    # Follow their complete references with the same fail-closed graph used above.
+    flash_roots = tuple(name for name, m in headers.items()
+                        if re.search(r'\bsection\s+"\.ram_text[^"\n]*"', attributes(m)))
+    flash = isr_reach(ir, flash_roots, {}) if flash_roots else set()
+    minsize = names | {name for name, m in headers.items()
+                       if re.search(r"\bminsize\b", attributes(m))}
+    boundary = set()
+    for m in IR_BODY.finditer(ir):
+        if m[1].strip('"') not in minsize:
+            boundary |= references(m[2]) & names
+    boundary -= protected | flash
+    boundary = {name for name in boundary if name in headers and
+                not re.search(r"\balwaysinline\b", attributes(headers[name]))}
 
     def mark(m):
         name = m[2].strip('"')
-        attributes = m[3] + " " + " ".join(groups.get(g, "") for g in re.findall(r"#\d+", m[3]))
-        already = bool(re.search(r"\bminsize\b", attributes))
+        attrs = attributes(m)
+        already = bool(re.search(r"\bminsize\b", attrs))
         if name in protected and already:
             raise ValueError(f"{name}: ISR-reachable definition already has minsize")
         if name not in names:
             return m[0]
         hit.add(name)
-        return m[0] if already else m[1] + " minsize" + m[3]
+        added = [] if already else ["minsize"]
+        if name in boundary and not re.search(r"\bnoinline\b", attrs):
+            added.append("noinline")
+        return m[1] + (" " + " ".join(added) if added else "") + m[3]
     return IR_DEF.sub(mark, ir), hit, protected
 
 
