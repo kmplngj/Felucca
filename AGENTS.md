@@ -18,6 +18,7 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 | Collect diagnostics from a connected FM-1 | [docs/diagnostics.md](docs/diagnostics.md), [docs/performance.md](docs/performance.md) |
 | Add or change diagnostic commands, fields, build flags or host tools | [Diagnostic capabilities](docs/diagnostics.md#diagnostic-capabilities), [BUILDING.md](BUILDING.md), and the affected usage/protocol guide |
 | Change DSP, interrupt scheduling, buffers, compiler options, or resource use | [docs/performance.md](docs/performance.md) |
+| Change the native screen's look, layout or UI copy | [DESIGN.md](DESIGN.md), [PRODUCT.md](PRODUCT.md), [docs/lcd-typography.md](docs/lcd-typography.md) |
 | Change MIDI, saved parameters, backup, or editor messages | [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md), the affected serializers and their tests |
 | Contribute or package third-party code/data | [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSING.md](LICENSING.md) |
 | Add an engine, effect or platform/persistence hook | [docs/extending.md](docs/extending.md) |

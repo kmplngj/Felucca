@@ -324,12 +324,10 @@ static uint32_t name_leds(void)
 
 /* ----------------------------------------------------------- drawing --- */
 /* The header stays. The card band is the name field: a SURF card, "SAVE U07" / "NAME PROJECT A" and the length,
- * then 12 cells (M): the cursor an ACCENT box, the letter being cycled a THEME cell (INK), a space a DIM dot, an
- * empty name its placeholder in DIM. The panel: the cycling key's letters (the one typed THEME, the next ACCENT)
+ * then one full mixed-case name (N), a caret underline and readable placeholder. The panel: the cycling key's letters (the one typed THEME, the next ACCENT)
  * or a hint, and ABC / 123; the white keys as two rows of 8 pills (the left octave, then the right one; the
  * cycling key THEME); the black keys' functions as five KEY cells under their names. The footer: OCT+ / OCT-,
  * then the knobs and the keys */
-#define NM_CX(i) (12 + 18 * (int32_t)(i))              /* cell i: 18 x 22 at y 18 of the card */
 static void nm_title(char *b)
 {
     str_cpy(b, nm.kind == NK_USER_SAVE || nm.kind == NK_PROJ_SAVE ? "SAVE " : "NAME ", 8);
@@ -342,41 +340,32 @@ static void nm_draw_field(void)
 {
     char b[24];
     uint32_t i, empty = nm.len == 0u;
-    cv_begin(240, CARD_H, T_BG);
-    cv_rrect(3, 0, 234, CARD_H, 4, T_SURF, T_BG);
-    nm_title(b);
-    cv_text_on(9, 2, &AF_S, b, T_MID, T_SURF);
-    fmt_int(b, nm.len);
-    str_cpy(b + str_len(b), "/12", 4);
-    cv_text_r(231, 2, &AF_S, b, nm.len >= NM_LEN ? T_ACCENT : T_DIM, T_SURF);
-    if (nm.kind <= NK_USER_RENAME)                     /* USER: the category KNOB 3 sets, left of the count */
-        cv_text_r(231 - text_w(&AF_S, b) - 10, 2, &AF_S, CAT_NAME[nm.cat % CAT_N], T_THEME, T_SURF);
-    for (i = 0; i < NM_LEN; i++) {
-        int32_t x = NM_CX(i);
-        char c[2] = {empty ? nm.ph[i] : i < nm.len ? nm.s[i] : 0, 0};
-        uint16_t bg = T_SURF, fg = empty ? T_DIM : T_TEXT;
-        if (i == nm.cur && nm.key) {                   /* the letter being cycled */
-            cv_rrect(x, 18, 18, 22, 3, T_THEME, T_SURF);
-            bg = T_THEME;
-            fg = T_INK;
-        } else if (i == nm.cur) {                      /* the cursor: a box */
-            cv_rrect(x, 18, 18, 22, 4, T_ACCENT, T_SURF);
-            cv_rrect(x + 2, 20, 14, 18, 2, T_SURF, T_ACCENT);
+    {
+        const char *text = empty ? nm.ph : nm.s;
+        int32_t y = AF_S_CAP_H + 8 - AF_N_CAP_Y, x;
+        char prefix[NM_LEN + 1u];
+        cv_begin(240, CARD_H, T_BG);
+        nm_title(b);
+        cv_text_on(9, 1 - AF_S_CAP_Y, &AF_S, b, T_MID, T_BG);
+        fmt_int(b, nm.len); str_cpy(b + str_len(b), "/12", 4);
+        cv_text_r(231, 1 - AF_S_CAP_Y, &AF_S, b, nm.len >= NM_LEN ? T_ACCENT : T_MID, T_BG);
+        if (nm.kind <= NK_USER_RENAME)
+            cv_text_r(231 - text_w(&AF_S, b) - 10, 1 - AF_S_CAP_Y, &AF_S, CAT_NAME[nm.cat % CAT_N], T_THEME, T_BG);
+        cv_text_on(8, y, &AF_N, text, empty ? T_MID : T_TEXT, T_BG);
+        for (i = 0; i < nm.cur && i < NM_LEN; i++) prefix[i] = nm.s[i];
+        prefix[i] = 0;
+        x = 8 + text_w(&AF_N, prefix);
+        if (nm.cur >= NM_LEN)
+            cv_rect(x, AF_S_CAP_H + 8, 2, AF_N_CAP_H, T_ACCENT);
+        else {
+            char ch[2] = {nm.cur < nm.len ? nm.s[nm.cur] : ' ', 0};
+            cv_rect(x, AF_S_CAP_H + 10 + AF_N_CAP_H, text_w(&AF_N, ch) - 2, nm.key ? 3 : 2,
+                    nm.key ? T_THEME : T_ACCENT);
         }
-        if (!c[0] || (c[0] == ' ' && i >= nm.len)) {
-            if (i != nm.cur)
-                cv_rrect(x + 4, 37, 10, 2, 1, T_RAISE, T_SURF);   /* an empty cell */
-        } else if (c[0] == ' ') {
-            cv_rect(x + 8, 28, 2, 2, bg == T_THEME ? T_INK : T_DIM);   /* a space */
-        } else {
-            GFX_HOOK_ALIGN(x, 18, x + 18, 40, AL_HV, "name field letter in its cell");
-            cv_text_in(x, 18 + CAP_IN(M, 22), 18, &AF_M, c, fg, bg);   /* its ink across, the capitals' band up and down */
-        }
+        cv_blit(0, Y_LABEL);
     }
-    if (nm.cur >= NM_LEN)                              /* full, the cursor past the end: a bar */
-        cv_rrect(NM_CX(NM_LEN) + 1, 18, 3, 22, 1, T_ACCENT, T_SURF);
-    cv_blit(0, Y_LABEL);
 }
+
 static void nm_draw_panel(void)
 {
     static const char *const FN[5] = {"F#", "G#", "A#", "C#", "D#"};

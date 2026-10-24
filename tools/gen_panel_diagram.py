@@ -34,7 +34,7 @@ from fontTools.varLib import instancer
 
 logging.getLogger("fontTools").setLevel(logging.ERROR)   # fukiai.ttf: a harmless post-table note
 ROOT = Path(__file__).resolve().parents[1]
-FONT = ROOT / "assets/fonts/InterTight[wght].ttf"
+FONT = ROOT / "docs/manual/fonts/InterTight[wght].ttf"  # documentation only; never a firmware asset
 ICONS = ROOT / "web/fukiai.ttf"
 
 W = 1200

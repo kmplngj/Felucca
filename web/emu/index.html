@@ -187,12 +187,13 @@ function build(name) {
     knobs.push({ g, ind, x, y, name: n, role: n === "MASTER" ? "master" : EN[n] });
   });
   const button = ([x, y, w, h], n, sub) => {
+    const printed = n === "SCL" ? "SEL" : n;             // the physical legend; the input bit keeps its internal name
     const g = el("g", {});
     el("rect", { x, y, width: w, height: h, rx: 8, fill: "var(--part)", stroke: "var(--edge)", "stroke-width": 1.5, class: "face btn" }, g);
     const ink = n === "REC" ? "#ff453a" : undefined;
-    if (sub) { label(g, x + w / 2, y + h / 2 - 2, n, 10.8, SANS, ink); label(g, x + w / 2, y + h / 2 + 11, sub, 9.9); }
-    else label(g, x + w / 2, y + h / 2 + 4.5, n, 12.6, SANS, ink);
-    buttons.push({ g, bit: B[n], name: sub ? `${n} / ${sub}` : n });
+    if (sub) { label(g, x + w / 2, y + h / 2 - 2, printed, 10.8, SANS, ink); label(g, x + w / 2, y + h / 2 + 11, sub, 9.9); }
+    else label(g, x + w / 2, y + h / 2 + 4.5, printed, 12.6, SANS, ink);
+    buttons.push({ g, bit: B[n], name: sub ? `${printed} / ${sub}` : printed });
   };
   button(L.oct[0], "OCT-");
   button(L.oct[1], "OCT+");
