@@ -42,6 +42,9 @@
 #                   screen in FLAT and LINE and every palette, over every value it can show; 1 px off or more fails
 #                   (build/ui_new/align.txt). MENU > LARGE: every screen again (FLAT, LINE, every palette) and the page / value
 #                   sweep with the tall cards, the same lint and alignment; sheet_LARGE_GREY.png, sheet_LARGE_MONO.png.
+# RETIRED SOUNDS (tests/retired_vectors.c + .py, #299): the firmware's own conversions of DIGITAL, PHYS MODEL 2 / 4 and SAMPLE
+#                   PERC (project FUN10 / FUN8 / FUN7, UPB1 record, PER4 / PER6 favourites, fm4_apply) regenerated as JSON and compared
+#                   with tests/fixtures/retired_vectors.json (the WebApp's reference, docs/legacy-formats.md section 4).
 # UI (tests/ui_test.c): the UI sources against stub display / buttons / knobs: sound loads keep the steps and
 #                   the track's ARP / SCL / SLICER, the SAVE > PHRASES loader and its REPLACE? dialog, the
 #                   one-step undo of both (SAVE held), REC on TRACKS / SEQ / ARP, STEP and ARP while recording,
@@ -663,6 +666,15 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
             "$OUT/sound_install_test"
     }
     unit sound_install "" u_sound_install
+
+    u_retired_vectors() {
+        run "Retired vector wire identities: independent magic/size/count checks and negative controls" \
+            python3 tests/retired_vectors_test.py
+        $CC -w -o "$OUT/retired_vectors" tests/retired_vectors.c -lm
+        run "Retired-sound reference vectors (#299): DIGITAL, PHYS MODEL 2 / 4, SAMPLE PERC per store (project, user preset record, favourites, fm4_apply), regenerated and compared" \
+            python3 tests/retired_vectors.py --check "$OUT/retired_vectors"
+    }
+    unit retired_vectors "" u_retired_vectors
 
     u_drumfuzz() {
         $CC -DPREEMPT -g -fwrapv -fsanitize=address,undefined -fno-sanitize=shift -fno-sanitize-recover=all -w \
