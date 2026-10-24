@@ -278,6 +278,7 @@ static void ui_power_on(void)
     memset(pat_from, 0, sizeof pat_from);                /* (the header's slot letter: none) */
     memset(proj_slot, 0, sizeof proj_slot);
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture boot replaces the RAM banks directly */
     for (i = 0; i < G_COUNT; i++)
         song.g[i] = GP[i].def;
     undo_depth++;
@@ -632,6 +633,7 @@ static int test_sound_loads(void)
             up_set_value(&r, k, t->p[k]);
         up_migrate(&r);
         *up_rec(7) = r;
+        up_browse_invalidate();                    /* imported record fixture */
         set_engine_of(t, 0);
         memcpy(keep, t->p, sizeof keep);
         song.sel = (uint8_t)(t - trk);
@@ -640,6 +642,7 @@ static int test_sound_loads(void)
                      t->p[P_LEVEL] == keep[P_LEVEL]);
         bad += check("  its GM hits play as drums", gm_hits_play(t));
         memset(up_rec(7), 0, sizeof r);
+        up_browse_invalidate();
     }
     set_engine_of(t, 0);
     apply_preset_to(t, SMP_SET_PERC);             /* (engine 0: an ANALOG preset 4, not PERC) */
@@ -1524,6 +1527,7 @@ static int test_recent(void)
     ui_power_on();
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&recent, 0, sizeof recent);
     song.playing = 0;
     go_page(GR_BROWSE);
@@ -1665,6 +1669,7 @@ static int test_categories(void)
     ui_power_on();
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     for (e = 0; e < NENGINES; e++) {
         const char *c = PRESET_CAT[e];
         if (!eng_ok(e) || e == ENGI_DIGITAL) continue;    /* (DIGITAL: FELUCCA_FM4 builds only, its sounds no category) */
@@ -1790,6 +1795,7 @@ static int test_categories(void)
         str_cpy(r->name, "OLD KIT", 12);
         for (i = 0; i < 72u; i++) r->p[i] = (int16_t)(i % 100u);
         up_bank[0].magic = UP_BANK_MAGIC; up_bank[0].rsize = sizeof(up_rec_t); up_bank[0].nslot = UP_PER_BANK;
+        up_browse_invalidate();                    /* legacy record constructed directly */
         c0 = up_cat(9);
         up_values(r, v0);
         ok = up_rename_cat(9, "OLD KIT", CAT_FX) != 1;
@@ -1800,6 +1806,7 @@ static int test_categories(void)
         bad += check("  a version 1 PHYS record keeps its version (MODEL 2 = DUST): no category",
                      (up_set_cat(r, CAT_PAD), r->ver == 1u && up_cat(9) == cat_of_engine(ENGI_PHYS)));
         memset(r, 0, sizeof *r);
+        up_browse_invalidate();
     }
     /* PROJECT: KNOB 3 a random name */
     go_page(GR_SLOTS);
@@ -1814,6 +1821,7 @@ static int test_categories(void)
                  ok && !k && !str_eq(s1, nm.s) && nm.len <= 12u && strchr(nm.s, ' '));
     name_close();
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
     return bad;
 }
@@ -11576,6 +11584,91 @@ static int test_scope_redraw(void)
 }
 
 /* PROJECT display shares the graph's four-slot cache; actions must still inspect the actual slot. */
+static int test_user_validity_cache(void)
+{
+    int bad = 0, ok = 1;
+    uint32_t k, gen;
+    up_rec_t r;
+    track_t before;
+    ui_power_on();
+    bad += check("user validity: first empty browse and out-of-range slots", !up_count() &&
+                 !up_browse_used(UP_SLOTS) && !up_browse_used(UINT32_MAX));
+    up_store(0, "FIRST");
+    up_store(31, "LAST");
+    bad += check("user validity: RAM saves publish both mask endpoints in slot order",
+                 up_count() == 2u && up_nth(0) == 0u && up_nth(1) == 31u && up_rank(31) == 1u);
+    up_rename_cat(31, "RENAMED", CAT_PAD);
+    char name[13];
+    up_name(31, name);
+    bad += check("user validity: rename/category are immediately visible with unchanged membership",
+                 up_count() == 2u && str_eq(name, "RENAMED") && up_cat(31) == CAT_PAD);
+    up_put(0, 0);
+    bad += check("user validity: erase removes the first slot without hiding the last",
+                 up_count() == 1u && up_nth(0) == 31u && !up_rank(31));
+
+    /* Compress a complete generation cycle: cache tag 0, then a committed write wraps back to 0. */
+    up_gen = 0;
+    up_browse_invalidate();
+    ok = up_count() == 1u;
+    up_gen = UINT32_MAX;
+    up_store(0, "WRAP");
+    bad += check("user validity: explicit commit invalidation survives generation wrap",
+                 ok && !up_gen && up_count() == 2u);
+
+    r = *up_rec(0);
+    gen = up_gen;
+    memset(&up_bank[0], 0, sizeof up_bank[0]);
+    up_bank[0].magic = UP_BANK_MAGIC; up_bank[0].rsize = sizeof r; up_bank[0].nslot = UP_PER_BANK;
+    up_bank[0].r[15] = r;
+    up_bank_check(0, sizeof up_bank[0]);             /* actual boot/backup replacement seam, no generation bump */
+    bad += check("user validity: same-generation bank replacement republishes membership",
+                 up_gen == gen && up_count() == 2u && up_nth(0) == 15u && up_nth(1) == 31u);
+
+    for (uint32_t version = UP_VER; version <= UP_VER_GRID; version++) {
+        for (k = 0; k < UP_SLOTS / UP_PER_BANK; k++) {
+            up_bank[k].magic = UP_BANK_MAGIC;
+            up_bank[k].rsize = sizeof r;
+            up_bank[k].nslot = UP_PER_BANK;
+        }
+        for (k = 0; k < UP_SLOTS; k++) {
+            *up_rec(k) = r;
+            up_rec(k)->ver = (uint8_t)version;
+            up_rec(k)->packed[r.np - 1u] = k & 1u ? 192u : 191u;
+        }
+        up_bank_check(0, sizeof up_bank[0]);
+        up_bank_check(1, sizeof up_bank[1]);
+        ok = up_count() == UP_SLOTS / 2u;
+        for (k = 0; k < UP_SLOTS; k++)
+            ok &= up_browse_used(k) == up_used(k) && up_browse_used(k) == !(k & 1u);
+        bad += check(version == UP_VER ? "user validity: packed v4 last-byte validation" :
+                     "user validity: packed v5 last-byte validation", ok);
+    }
+
+    /* Deliberately bypass lifecycle notification: a stale positive display is never load permission. */
+    ui_power_on();
+    up_store(31, "POISON");
+    ok = up_count() == 1u;
+    up_rec(31)->packed[up_rec(31)->np - 1u] = 192u;
+    before = *TSEL;
+    bad += check("user validity: stale display cannot authorize a poisoned load or rename",
+                 ok && up_browse_used(31) && !up_used(31) && up_load(31) == 1 &&
+                 !memcmp(&before, TSEL, sizeof before) && up_rename_cat(31, "UNSAFE", CAT_PAD) == 1);
+
+    ui_power_on();
+    for (k = 0; k < UP_SLOTS; k++) up_put(k, &r);
+    ok = up_count() == UP_SLOTS;
+    for (k = 0; k < UP_SLOTS; k += 2u) up_put(k, 0);
+    ok &= up_count() == UP_SLOTS / 2u;
+    for (k = 0; k < UP_SLOTS / 2u; k++) ok &= up_nth(k) == 2u * k + 1u;
+    bad += check("user validity: full bank and alternating erases retain slot order", ok);
+    gen = up_gen;
+    memset(up_bank, 0, sizeof up_bank);             /* a second boot in the no-flash harness */
+    up_boot();
+    bad += check("user validity: no-flash boot clears a warm display without a generation change",
+                 up_gen == gen && !up_count());
+    return bad;
+}
+
 static int test_project_readiness_cache(void)
 {
     int bad = 0, ok;
@@ -11760,6 +11853,8 @@ int main(int argc, char **argv)
     int bad = 0;
     if (argc == 2 && !strcmp(argv[1], "--catalog"))
         return test_catalog_controls() + test_unknown_engine() != 0;
+    if (argc == 2 && !strcmp(argv[1], "--user-validity"))
+        return test_user_validity_cache() != 0;
     if (argc == 2 && !strcmp(argv[1], "--menu"))
         return test_menu_tabs() + test_auto_off_navigation() + test_menu_prefs() != 0;
     if (argc == 2 && !strcmp(argv[1], "--auto-off"))
@@ -11777,6 +11872,7 @@ int main(int argc, char **argv)
     bad += test_midi();
     bad += test_save();
     bad += test_actions();
+    bad += test_user_validity_cache();
     bad += test_project_readiness_cache();
     bad += test_tracks();
     bad += test_grid();

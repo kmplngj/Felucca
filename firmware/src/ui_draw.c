@@ -699,7 +699,7 @@ static uint32_t foot_rename(void)
         return k == EVK_TOP || k == EVK_QNT || k == EVK_ADD ? 1u : 2u;
     }
     if (g == GR_USER)
-        return 1u + (uint32_t)up_used(ui.uslot);
+        return 1u + (uint32_t)up_browse_used(ui.uslot);
     if (g == GR_SLOTS)
         return 1u + (uint32_t)graph_project_used((uint32_t)song.g[G_SLOT] - 1u);
     return 0;
@@ -1039,7 +1039,7 @@ static void draw_column_values(void)
         return;
     }
     if (cur_page()->graph == GR_USER) {                  /* SLOT, then three GO buttons */
-        int used = up_used(ui.uslot);
+        int used = up_browse_used(ui.uslot);
         up_slot_label(val, ui.uslot);
         draw_column(0, "SLOT", val, "", VAL(0u), (int32_t)ui.uslot * 1000 / (int32_t)(UP_SLOTS - 1u), ICON_AUTO);
         draw_act_column(1, "LOAD", used ? T_THEME : T_DIM, ICON_AUTO);

@@ -1679,12 +1679,12 @@ static void graph_user(void)
     uint32_t rows = sound_list_rows();
     int32_t row, first = clamp((int32_t)ui.uslot - (int32_t)rows / 2, 0, UP_SLOTS - (int32_t)rows);
     char selected[13];
-    if (up_used(ui.uslot)) up_name(ui.uslot, selected); else str_cpy(selected, "EMPTY", sizeof selected);
+    if (up_browse_used(ui.uslot)) up_name(ui.uslot, selected); else str_cpy(selected, "EMPTY", sizeof selected);
     sound_list_name(selected);
     for (row = 0; row < (int32_t)rows; row++) {
         uint32_t k = (uint32_t)(first + row);
         char tag[4], nm[13];
-        int used = up_used(k);
+        int used = up_browse_used(k);
         up_slot_label(tag, k);
         if (used)
             up_name(k, nm);
