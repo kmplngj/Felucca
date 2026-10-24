@@ -223,6 +223,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- **Pixel-font metadata:** storing S/M/N's constant advance once per face saves
+  576 app bytes in controlled standard, CPU2-off and MACRO builds, with unchanged
+  static RAM and exact reference pixels. L/X point spacing and generic alpha
+  formats are preserved. Additional local frames and loaded FM-1 latency await
+  qualification; see the [metadata experiment](constant-advance-font-metadata.md).
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See
