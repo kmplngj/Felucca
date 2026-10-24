@@ -142,7 +142,9 @@ base, using the archived fresh full-baseline generated inputs: all three modes
 passed their target guards and reproduced the table. Each app was byte-identical
 to its original measured counterpart. No tracked source changed.
 
-The JSON outputs and artifacts go to separate `build/issue521/reproduce-*`
+Validation gates use explicit failures, including under `python3 -O` or
+`PYTHONOPTIMIZE`. The JSON outputs and artifacts go to separate
+`build/issue521/reproduce-*`
 directories. Compare app sizes and resource/stack maps with the table; compare
 `felucca.ll` for identical unoptimized input and `felucca_size.ll` for the five
 additional `minsize` headers. Inspect `preset_cat` and `ui_draw_page` in each
@@ -157,6 +159,9 @@ JIELI_TOOLCHAIN must be set. Run sequentially; no tracked sources are modified.
 """
 import sys,os,json,hashlib
 from pathlib import Path
+def require(condition, message="validation failed"):
+ if not condition:
+  raise RuntimeError(message)
 root=Path.cwd();sys.path.insert(0,str(root/"tools"))
 import build as B
 import size_fns as S
@@ -172,14 +177,14 @@ def tc(*args):
     ir=B.OUT/"felucca_size.ll"
     if mode=="candidate" and args[0]=="cc" and ir in args:
         text=ir.read_text();out,hit,protected=S.annotate(text,S.size_names()|selected)
-        assert not selected&protected
-        assert selected<=hit
+        require(not selected&protected, "candidate annotates protected functions")
+        require(selected<=hit, "candidate annotations were not applied")
         ir.write_text(out)
     return original(*args)
 B.tc=tc
 img,hdr,syms,dis,rt=B.build_app()
 errors,notes=B.check(img,hdr,syms,dis,rt)
-assert not errors,errors
+require(not errors, errors)
 resources,stacks=R.resources(B,(img,hdr,syms,dis,rt))
 (B.OUT/"symbols.txt").write_text(syms)
 (B.OUT/"sections.txt").write_text(hdr)

@@ -177,6 +177,9 @@ for a matched build comparison.
 
 ## Reproduction scripts
 
+Validation gates raise explicit errors and remain active with `python3 -O` or
+`PYTHONOPTIMIZE`; a failed gate cannot write a new successful comparison.
+
 ### `build/issue139/prepare-control.py`
 
 ```python
@@ -184,11 +187,14 @@ for a matched build comparison.
 # SPDX-License-Identifier: GPL-3.0-only
 import subprocess,tarfile,io,json
 from pathlib import Path
+def require(condition, message="validation failed"):
+ if not condition:
+  raise RuntimeError(message)
 root=Path.cwd();out=root/"build/issue139";control=out/"control-source"
-assert not (root/"build").is_symlink() and not out.is_symlink(),"use a confined ignored build directory"
-assert subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()=="5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e"
-assert not subprocess.check_output(["git","status","--porcelain"])
-assert not control.exists() and not control.is_symlink(),"control-source already exists; use a fresh checkout"
+require(not (root/"build").is_symlink() and not out.is_symlink(), "use a confined ignored build directory")
+require(subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()=="5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e", "wrong baseline revision")
+require(not subprocess.check_output(["git","status","--porcelain"]), "baseline checkout is dirty")
+require(not control.exists() and not control.is_symlink(), "control-source already exists; use a fresh checkout")
 control.mkdir(parents=True)
 for source,dest in((root,control),(root/"firmware/engines",control/"firmware/engines")):
  dest.mkdir(parents=True,exist_ok=True)
@@ -196,7 +202,7 @@ for source,dest in((root,control),(root/"firmware/engines",control/"firmware/eng
  with tarfile.open(fileobj=io.BytesIO(blob))as archive:archive.extractall(dest,filter="data")
 changed=[]
 def replace(file,old,new):
- p=control/file;s=p.read_text();assert old in s,(file,old);p.write_text(s.replace(old,new));changed.append(file)
+ p=control/file;s=p.read_text();require(old in s, (file,old));p.write_text(s.replace(old,new));changed.append(file)
 replace("firmware/src/core.h",'#ifndef FELUCCA_ARENA_CHECK\n#define FELUCCA_ARENA_CHECK 0    /* 1: host tests check engine-arena owners (engines.c ENG_MEM_OF); never on the target */\n#endif\n',"")
 p=control/"firmware/src/engines.c";s=p.read_text();start=s.index("/* Host/test-only owner check");end=s.index("/* Engine-local control code",start)
 p.write_text(s[:start]+"#define ENGI_GRAIN 8u\n#define ENGI_SLICE 13u\n\n"+s[end:]);changed.append("firmware/src/engines.c")
@@ -212,7 +218,7 @@ for file,old,new in(
 with(out/"control-source.diff").open("w")as f:
  for file in changed:
   r=subprocess.run(["diff","-u","--label","a/"+file,"--label","b/"+file,str(root/file),str(control/file)],stdout=f)
-  assert r.returncode==1
+  require(r.returncode==1, "control file did not differ as expected")
 print("prepared8exactcontrolfiles; no tracked source changes")
 ```
 
@@ -223,36 +229,39 @@ print("prepared8exactcontrolfiles; no tracked source changes")
 # SPDX-License-Identifier: GPL-3.0-only
 import sys,json,shutil,hashlib,subprocess
 from pathlib import Path
+def require(condition, message="validation failed"):
+ if not condition:
+  raise RuntimeError(message)
 sys.path.insert(0,"tools");import build as B;import build_report as R
 label=sys.argv[1]
 profile,cpu2,product={"standard":("standard",True,"FM-1_916"),"cpu2off":("standard",False,"FM-1_916"),"macro":("macro",True,"FM-1_900")}[label]
 out=B.SRC/"build/issue139"/label/"baseline"
-assert not any(p.is_symlink() for p in (B.OUT,B.SRC/"build/issue139",out.parent)),"use confined build directories"
+require(not any(p.is_symlink() for p in (B.OUT,B.SRC/"build/issue139",out.parent)), "use confined build directories")
 r=json.loads((B.OUT/"resource-report.json").read_text())
-assert r["build_identity"]["revision"]=="5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e"
-assert not r["build_identity"]["dirty"]
+require(r["build_identity"]["revision"]=="5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e", "wrong captured baseline revision")
+require(not r["build_identity"]["dirty"], "captured baseline is dirty")
 cfg=r["configuration"];defines=cfg["effective_defines"]
-assert cfg["cpu2"] is cpu2 and cfg["selective_minsize"] is True,"CPU2/size variant mismatch"
-assert B.CPU2 is cpu2 and B.os.environ.get("FELUCCA_SIZE")!="0","inherited CPU2/size override"
-assert cfg["product"]==product and cfg["version_override"]=="v1.6.1","release identity mismatch"
-assert defines["FELUCCA_PROFILE_NAME"]==json.dumps(profile) and defines["FELUCCA_CPU2"]==str(int(cpu2)),"effective variant mismatch"
+require(cfg["cpu2"] is cpu2 and cfg["selective_minsize"] is True, "CPU2/size variant mismatch")
+require(B.CPU2 is cpu2 and B.os.environ.get("FELUCCA_SIZE")!="0", "inherited CPU2/size override")
+require(cfg["product"]==product and cfg["version_override"]=="v1.6.1", "release identity mismatch")
+require(defines["FELUCCA_PROFILE_NAME"]==json.dumps(profile) and defines["FELUCCA_CPU2"]==str(int(cpu2)), "effective variant mismatch")
 expected_flags=["-target","pi32v2",*B.CFLAGS,"-Ifirmware/hal","-Ifirmware/src","-Ibuild/gen"]
 if not cpu2:expected_flags.append("-DFELUCCA_CPU2=0")
 expected_flags += [f'-DFELUCCA_ID="{product}"','-DFELUCCA_VERSION="v1.6.1"']
-assert cfg["compile_flags"]==expected_flags,"unexpected compiler overrides"
+require(cfg["compile_flags"]==expected_flags, "unexpected compiler overrides")
 B.PRODUCT=product;B.VERSION="v1.6.1"
-assert R.configuration(B)==cfg,"current environment/toolchain differs from captured build"
+require(R.configuration(B)==cfg, "current environment/toolchain differs from captured build")
 out.mkdir(parents=True)  # refuse reuse, including empty directories and symlinks
 for name in ("felucca.bin","felucca.elf","felucca.dis","felucca.dis.profile.json","felucca.ll","felucca_size.ll","resource-report.json","build-identity.json"):
  shutil.copy2(B.OUT/name,out/name)
 shutil.copytree(B.GEN,out/"gen",dirs_exist_ok=True)
 objects=[B.OUT/x for x in ("crt0.o","fm1_vec.o","fm1_isr.o")]+([B.OUT/"fm1_cpu1.o"]if B.CPU2 else[])+[B.OUT/"felucca.o"]
 B.tc("pi32v2/bin/ld","-T",B.FW/"app.ld",*objects,"-Map",B.OUT/"link.map","-o",B.OUT/"map.elf")
-assert(B.OUT/"map.elf").read_bytes()==(out/"felucca.elf").read_bytes()
+require((B.OUT/"map.elf").read_bytes()==(out/"felucca.elf").read_bytes(), '(B.OUT/"map.elf").read_bytes()==(out/"felucca.elf").read_bytes()')
 shutil.copy2(B.OUT/"map.elf",out/"map.elf");shutil.copy2(B.OUT/"link.map",out/"link.map")
 for name,args in (("sections.txt",("-h",)),("symbols.txt",("-t",))):
  (out/name).write_text(B.tc("common/bin/objdump",*args,B.OUT/"felucca.elf"))
-assert not any(x in(out/"symbols.txt").read_text()for x in("eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch"))
+require(not any(x in(out/"symbols.txt").read_text()for x in("eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch")), 'not any(x in(out/"symbols.txt").read_text()for x in("eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch"))')
 print(label,len((out/"felucca.bin").read_bytes()),"baseline archived; real linker map reproduces exactELF")
 ```
 
@@ -263,6 +272,9 @@ print(label,len((out/"felucca.bin").read_bytes()),"baseline archived; real linke
 # SPDX-License-Identifier: GPL-3.0-only
 import sys,json,os,hashlib
 from pathlib import Path
+def require(condition, message="validation failed"):
+ if not condition:
+  raise RuntimeError(message)
 baseline=Path(sys.argv[1]).resolve();label=sys.argv[2]
 r=json.loads((baseline/"resource-report.json").read_text());cfg=r["configuration"]
 os.environ["FELUCCA_CPU2"]="1"if cfg["cpu2"]else"0"
@@ -273,14 +285,14 @@ B.OUT=B.SRC/"build";B.OUT.mkdir(parents=True,exist_ok=True)
 B.PRODUCT=cfg["product"];B.VERSION=cfg["version_override"]
 actual_cfg=R.configuration(B)
 expected_cfg=json.loads(json.dumps(cfg))
-assert expected_cfg["effective_defines"].pop("FELUCCA_ARENA_CHECK")=="0","baseline checker must be disabled"
-assert actual_cfg==expected_cfg,"control differs beyond the removed checker default"
-img,hdr,syms,dis,rt=B.build_app();errors,notes=B.check(img,hdr,syms,dis,rt);assert not errors,errors
+require(expected_cfg["effective_defines"].pop("FELUCCA_ARENA_CHECK")=="0", "baseline checker must be disabled")
+require(actual_cfg==expected_cfg, "control differs beyond the removed checker default")
+img,hdr,syms,dis,rt=B.build_app();errors,notes=B.check(img,hdr,syms,dis,rt);require(not errors, errors)
 resources,stacks=R.resources(B,(img,hdr,syms,dis,rt))
-assert not any(x in syms for x in("eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch"))
+require(not any(x in syms for x in("eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch")), 'not any(x in syms for x in("eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch"))')
 objects=[B.OUT/x for x in("crt0.o","fm1_vec.o","fm1_isr.o")]+([B.OUT/"fm1_cpu1.o"]if B.CPU2 else[])+[B.OUT/"felucca.o"]
 B.tc("pi32v2/bin/ld","-T",B.FW/"app.ld",*objects,"-Map",B.OUT/"link.map","-o",B.OUT/"map.elf")
-assert(B.OUT/"map.elf").read_bytes()==(B.OUT/"felucca.elf").read_bytes()
+require((B.OUT/"map.elf").read_bytes()==(B.OUT/"felucca.elf").read_bytes(), '(B.OUT/"map.elf").read_bytes()==(B.OUT/"felucca.elf").read_bytes()')
 (B.OUT/"sections.txt").write_text(hdr);(B.OUT/"symbols.txt").write_text(syms)
 (B.OUT/"summary.json").write_text(json.dumps({"configuration":actual_cfg,"resources":resources,"stack_reservations":stacks,"checks":notes},indent=2)+"\n")
 print(label,len(img),"control built; hooks absent; release flags identical")
@@ -293,26 +305,29 @@ print(label,len(img),"control built; hooks absent; release flags identical")
 # SPDX-License-Identifier: GPL-3.0-only
 import sys,json,hashlib,shutil
 from pathlib import Path
+def require(condition, message="validation failed"):
+ if not condition:
+  raise RuntimeError(message)
 p=Path("build/issue139");label=sys.argv[1];a=p/label/"baseline";b=Path(sys.argv[2]) if len(sys.argv)>2 else p/"control-source/build";archive=p/label/"control"
-assert not any(d.is_symlink() for d in (p.parent,p,p/label,archive)),"use confined archive directories"
+require(not any(d.is_symlink() for d in (p.parent,p,p/label,archive)), "use confined archive directories")
 def hashes(directory):
  return {str(f.relative_to(directory)):hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(directory.rglob("*")) if f.is_file()}
-assert hashes(a/"gen")==hashes(b/"gen"),"generated inputs"
+require(hashes(a/"gen")==hashes(b/"gen"), "generated inputs")
 out={}
 for n in("felucca.bin","felucca.elf","felucca.dis","sections.txt","symbols.txt","link.map"):
- x=(a/n).read_bytes();y=(b/n).read_bytes();assert x==y,n
+ x=(a/n).read_bytes();y=(b/n).read_bytes();require(x==y, n)
  out[n]={"identical":True,"bytes":len(x),"sha256":hashlib.sha256(x).hexdigest()}
 r=json.loads((a/"resource-report.json").read_text());c=json.loads((b/"summary.json").read_text())
 expected_cfg=json.loads(json.dumps(r["configuration"]))
-assert expected_cfg["effective_defines"].pop("FELUCCA_ARENA_CHECK")=="0","baseline checker must be disabled"
-assert expected_cfg==c["configuration"],"configuration differs beyond the removed checker default"
-assert r["resources"]==c["resources"]
-assert r["stack_reservations"]==c["stack_reservations"]
+require(expected_cfg["effective_defines"].pop("FELUCCA_ARENA_CHECK")=="0", "baseline checker must be disabled")
+require(expected_cfg==c["configuration"], "configuration differs beyond the removed checker default")
+require(r["resources"]==c["resources"], "resource mismatch")
+require(r["stack_reservations"]==c["stack_reservations"], "stack reservation mismatch")
 hook_names={"eng_mem_of","eng_arena_trap","eng_arena_fail","eng_arena_scratch"}
 def symbols(directory):
  return {line.split()[-1] for line in (directory/"symbols.txt").read_text().splitlines() if line.split()}
 hooks_absent=all(not hook_names & symbols(directory) for directory in (a,b))
-assert hooks_absent,"checker hook symbols present"
+require(hooks_absent, "checker hook symbols present")
 if b.resolve()!=archive.resolve():
  archive.mkdir(parents=True)  # refuse an existing archive instead of overlaying it
  for n in("felucca.bin","felucca.elf","felucca.dis","felucca.dis.profile.json","felucca.ll","felucca_size.ll","sections.txt","symbols.txt","link.map","map.elf","summary.json"):
