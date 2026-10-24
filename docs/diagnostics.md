@@ -48,7 +48,9 @@ them in each status snapshot in JSONL and the summary's start/end snapshots; it
 does not subtract them, classify the bootloader, infer MHz or label a clock safe.
 Older firmware may omit all seven. A partial group or malformed/out-of-range word
 invalidates that reply; absence is unavailable evidence, never seven zero values.
-CDC-disabled builds omit capture and storage. MIDI-only rescue has no CDC console;
+CDC-disabled builds omit capture and storage. Early MMIO capture is target-only;
+native replay and browser emulation do not read these hardware addresses.
+MIDI-only rescue has no CDC console;
 returning to normal startup captures a new boot, not the earlier rescue state.
 
 The added workload is seven sequential volatile reads once at boot, the POOL
