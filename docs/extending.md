@@ -763,7 +763,7 @@ Platform / persistence:
 - [ ] ISR reachability checked if size lists or callbacks changed.
 - [ ] Old-format import, round trip, malformed input and downgrade behaviour tested;
       `web/EDITOR_PROTOCOL.md` updated.
-- [ ] `README.md` reviewed for user-facing changes (AGENTS.md "User-facing documentation").
+- [ ] `README.md` reviewed for user-facing changes ([documentation policy](documentation-policy.md)).
 - [ ] `./build.sh` clean (no new warnings) and `tests/run_tests.sh` green; skipped checks and
       real-device validation stated (AGENTS.md "Completion evidence").
 
