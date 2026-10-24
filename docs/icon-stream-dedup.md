@@ -8,17 +8,17 @@ from **all** unchanged cells of every size before deduplication. No decoder,
 renderer, icon identity, input font, typography, phase count or protocol changes.
 
 Focused export and independent C pixel checks pass on the refreshed candidate.
-Matched candidate target/resource measurements, the full applicable suite,
-browser/emulator gate and FM-1 qualification remain pending on this base.
-The controlled current-base screen/header comparison passes as detailed below.
-The previous 208 B linked reduction belongs to the historical a7-based experiment,
-not the current native UI. No device speed gain is claimed.
+Matched current-base target/resource checks and the controlled screen/header
+comparison pass: both target variants retain 208 B less linked app with unchanged
+static RAM regions. The full applicable suite, browser/emulator gate and FM-1
+qualification remain pending on this base. No device speed gain is claimed.
 No alternative codec or font representation was trialed.
 
 ## Current native UI integration
 
-The normal, uncommitted merge of `3fce9f9` into candidate
-`70b8794f15a404008670cd7c7dd64a57cc165c1c` completed without conflicts. It retains
+The normal merge of `3fce9f9` into the previous candidate `70b8794`
+completed without conflicts and was signed as
+`e1e7d4c969cc66334b5da897a60af1c37c33392a`. It retains
 main's native UI, assets, font retirement and readability tests. The focused
 Python test now imports the relocated Huffman helpers from
 [ui_font_data.py](../tools/ui_font_data.py); the generator retains that module's
@@ -26,9 +26,9 @@ import and attribution. The helper implementations, icon rasterization, Fukiai
 font, icon-name input and production icon consumers are unchanged from the prior
 base. No source or generated output was taken from a donor.
 
-Only the four UI headers needed by the focused C harness were regenerated.
-Their provenance records HEAD `70b8794f-dirty` and MERGE_HEAD `3fce9f9`; this is
-an uncommitted candidate, not a clean target-build identity. Evidence is under
+The initial focused check regenerated only its four required UI headers.
+That check records HEAD `70b8794f-dirty` and MERGE_HEAD `3fce9f9`; its initial
+provenance is distinct from the subsequent clean target builds below. Evidence is under
 `build/issue96/main3fce-focused/`, with `asset-provenance.json`,
 `candidate-inventory.json` and `focused-results.json`.
 
@@ -74,9 +74,30 @@ Fresh clean target baselines are also complete under the coordinator's control:
 | Default CPU2 support, runtime default OFF | 496,316 B | 62,392 B | 336,440 B | 3,152 B | 15,576 B |
 | `FELUCCA_CPU2=0` | 492,768 B | 55,764 B | 336,440 B | 2,924 B | 15,564 B |
 
-These are baseline totals only. Current candidate linked sizes, deltas, spare
-margins, budgets and artifact-bound resource verification remain pending; the
-exported 208 B payload opportunity must not be substituted for a linked result.
+Fresh clean candidate `e1e7d4c969cc66334b5da897a60af1c37c33392a` passes target
+instruction budgets, package validation and artifact-bound resource verification
+in both matched variants:
+
+| Current candidate | App | App delta | RAM | POOL | RAMTEXT | NOINIT |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Default CPU2 support | 496,108 B | -208 B | 62,392 B | 336,440 B | 3,152 B | 15,576 B |
+| `FELUCCA_CPU2=0` | 492,560 B | -208 B | 55,764 B | 336,440 B | 2,924 B | 15,564 B |
+
+`build/issue96/main3fce-targets/comparison.json` records every region and stack
+reservation, compiler/tool/SDK hashes, flags and effective defines. They match
+within each pair except the explicitly recorded build/splash revision and
+source-derived profile digest. The initial standard candidate explicitly set
+CPU2 to 1; that successful artifact is retained separately, and the standard
+candidate was rebuilt with the baseline's exact default invocation. Both produce
+identical app bytes. The table uses the latter matched invocation.
+
+Fresh ELF symbol bytes confirm 7,551 to 7,343 B of linked named icon arrays;
+`cv_alpha_hc` is byte-identical within each variant and its 516 B Huffman cache
+is unchanged. RAM, POOL, RAMTEXT, NOINIT and all stack reservations are unchanged.
+The builds retain the same pre-existing `ui_draw.c` unused-variable `x` warning
+as both clean baselines; no new target compiler warning was introduced. Existing
+font-table diagnostics and Pillow's missing-Raqm fallback are retained in logs.
+These are target/static and same-host pixel results, not FM-1 timings.
 
 Native text is now M8Stealth only, with S/M bitmaps and shared integer-scaled
 L/N/X roles. [DESIGN.md](../DESIGN.md), [PRODUCT.md](../PRODUCT.md) and
@@ -282,10 +303,10 @@ was hidden or treated as a new visual qualification.
 
 | #96 acceptance area | Current evidence | Still required |
 | --- | --- | --- |
-| Measured class and complete cost | Current exported inventory above; historical matched variants measured -208 B app | Matched current-base candidate target builds, symbol/resource verification, budgets and final CI identity |
+| Measured class and complete cost | Current matched clean target variants, symbols/resources and budgets pass: -208 B app each | Final committed build/CI identity and qualification |
 | Identical decoded alpha and metrics | Current four Python tests and normal/strict C pixel and boundary checks pass; controlled current-base A/B preserves all 3,084 screen and six rolling images | User CUSTOM, historical stored style/size values and supported free text beyond the captured matrix; FM-1 legibility |
 | Determinism and provenance | Current two exports match; current header/input hashes recorded, unchanged Fukiai inputs and notices | Final committed revision/toolchain/profile/asset evidence attached to retained candidate |
-| Runtime/resource cost | No added runtime state or decoder code; prior host timing samples remain historical | Current matched linked regions/cost checks and actual device display/load cost |
+| Runtime/resource cost | No added runtime state or decoder code; prior host timing samples remain historical | Actual device display/load cost; no speed claim |
 | Host/browser/audio | Current focused Python/real C and strict ASan/UBSan pass; prior causal controls remain historical | Full applicable host suite, audio/engine-switch goldens and fresh browser/emulator gate |
 | FM-1 | No device access, flash or observations | Readability/panel activity under dense audio; USB audio 44.1/48 kHz and USB/TRS MIDI, lateness/shedding/scan/stream counters, supported CPU2 variants |
 
