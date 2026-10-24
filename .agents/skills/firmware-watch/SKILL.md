@@ -13,16 +13,17 @@ Read [the ledger guide](../../../docs/firmware-watch.md) and current
 
 1. In the original clone, resolve one shared absolute lease directory under its Git
    common directory (see the guide); retain that path before creating a worktree.
-   Fetch `origin/main` and `origin/automation/firmware-watch`. Use isolated worktrees:
+   Acquire `lease` with `--lease-dir` set to that shared path before fetch, inventory
+   or reconciliation and hold it through final push. Helper locks protect individual
+   mutations, not an entire review session. Do not overlap runs or steal an active lock.
+2. Fetch `origin/main` and `origin/automation/firmware-watch`. Use isolated worktrees:
    current main supplies code/instructions and the state branch supplies only the
-   canonical ledger. Do not merge main's whole tree into the state branch. Reconcile
-   the registry using the guide's guarded procedure, then validate the candidate;
-   stop on rejected reconciliation without overwriting either ledger. Initial ledger
-   files on main remain a bootstrap snapshot, never current scan evidence.
-2. Acquire `lease` with `--lease-dir` set to that shared path and hold it through fetch, assessment and final
-   push. Helper locks protect individual mutations, not an entire review session.
-   Do not overlap runs or steal an active lock. Validate the complete ledger with
-   the helper; inspect its summary and selected records as described below.
+   canonical ledger. Keep the user's checkout untouched. Do not merge main's whole
+   tree into the state branch. Reconcile the registry using the guide's guarded
+   procedure, then validate the candidate; stop on rejected reconciliation without
+   overwriting either ledger. Validate the complete canonical ledger with the helper
+   and inspect its summary and selected records. Main's initial ledger files are a
+   bootstrap snapshot, never current scan evidence.
 3. Record the freshly fetched full `origin/main` SHA as the Felucca comparison revision.
    Fetch registered sources with the helper's `sync` command. Only initialize pending
    registrations after identity, branch, immutable pin and full-DAG checks succeed.

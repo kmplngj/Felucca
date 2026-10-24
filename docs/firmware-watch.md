@@ -114,21 +114,35 @@ Use Python 3.10+, Git and an authenticated `gh` CLI for source synchronization.
 Validation, summaries and queries need no GitHub credentials or device access.
 No third-party Python package is required.
 
+Set absolute paths for the freshly fetched code checkout, isolated state ledger,
+ignored cache and shared lease directory. Use the current-main helper for real
+runs as well as fixture copies; never run the state tree's potentially old helper
+or write to main's bootstrap ledger.
+
 ```sh
-python3 tools/firmware_watch.py validate
-python3 tools/firmware_watch.py summary
-python3 tools/firmware_watch.py sync
-python3 tools/firmware_watch.py queue --limit 50 > build/firmware-watch-batch.json
-python3 tools/firmware_watch.py record --input build/firmware-watch-assessment.json
-python3 tools/firmware_watch.py checkpoint
-python3 tests/firmware_watch_test.py
+watch_code_dir=/absolute/path/to/current-main
+watch_data_dir=/absolute/path/to/state/data/firmware-watch
+watch_cache_dir=/absolute/path/to/state/build/firmware-watch
+watch_lease_dir=/absolute/path/to/original-clone/.git/firmware-watch
+firmware_watch() {
+  python3 "$watch_code_dir/tools/firmware_watch.py" \
+    --data-dir "$watch_data_dir" --cache-dir "$watch_cache_dir" \
+    --lease-dir "$watch_lease_dir" "$@"
+}
+firmware_watch validate
+firmware_watch summary
+firmware_watch sync
+firmware_watch queue --limit 50 > "$watch_cache_dir/batch.json"
+firmware_watch record --input "$watch_cache_dir/assessment.json"
+firmware_watch checkpoint
+python3 "$watch_code_dir/tests/firmware_watch_test.py"
 ```
 
 The assessment file holds a structured proposed review from the skill's process;
 the helper does not generate a reasoned review from commit messages. Source bare
 caches and temporary analysis live under ignored `build/firmware-watch/`. To select
-one configured source, use `sync --repository owner/name`. Global `--data-dir` and
-`--cache-dir` options go before the command when working with fixture copies.
+one configured source, use `sync --repository owner/name`. Global `--data-dir`, `--cache-dir` and `--lease-dir` options go before the command;
+absolute paths keep current code and the canonical ledger separate.
 Unknown repositories and unregistered branches are not implicitly added to scope.
 
 ```sh
@@ -195,11 +209,11 @@ multi-command session (replace the example ID for each run):
 ```sh
 # Resolve this in the original clone before creating an isolated worktree.
 watch_lease_dir="$(git rev-parse --path-format=absolute --git-common-dir)/firmware-watch"
-python3 tools/firmware_watch.py --lease-dir "$watch_lease_dir" \
-  lease acquire --owner run-2026-10-18-example
+python3 tools/firmware_watch.py --data-dir build/firmware-watch-lease-data \
+  --lease-dir "$watch_lease_dir" lease acquire --owner run-2026-10-18-example
+# Create isolated worktrees and define firmware_watch as above after acquisition.
 # Inventory, sync, review, checkpoint and verified Git publication happen here.
-python3 tools/firmware_watch.py --lease-dir "$watch_lease_dir" \
-  lease release --owner run-2026-10-18-example
+firmware_watch lease release --owner run-2026-10-18-example
 ```
 
 The shared lease cannot be released with another owner ID. A worktree-relative
