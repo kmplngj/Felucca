@@ -10,8 +10,12 @@ renderer, icon identity, input font, typography, phase count or protocol changes
 Focused export and independent C pixel checks pass on the refreshed candidate.
 Matched current-base target/resource checks and the controlled screen/header
 comparison pass: both target variants retain 208 B less linked app with unchanged
-static RAM regions. The full applicable suite, browser/emulator gate and FM-1
-qualification remain pending on this base. No device speed gain is claimed.
+static RAM regions. At signed `7736398b34bebbdd810fb8fd0d5feeaf00fb2bd7`, the full
+macOS suite completed with 125 passed, four failed, one blocked and three explicit
+not-applicable units; all four failure types reproduce on the clean `3fce9f9`
+baseline. The fresh browser gate passed all ten checks, and native/Wasm emulator,
+replay and partition checks passed. Hosted CI and FM-1 qualification remain
+separate pending gates. No device speed gain is claimed.
 No alternative codec or font representation was trialed.
 
 ## Current native UI integration
@@ -107,6 +111,44 @@ STYLE and LARGE are retired native choices, not extra menu routes to test.
 Their reserved stored/wire values remain unchanged. Current screen acceptance
 must use the unified native layout and preserve its graph, focus and rolling
 behavior, without restoring old font or layout alternatives.
+
+## Completed current integration checks
+
+The final `7736398` standard target build is clean and retains app 496,108 B,
+RAM 62,392 B, POOL 336,440 B, RAMTEXT 3,152 B and NOINIT 15,576 B. The preceding
+matched two-variant comparison at `e1e7d4c9` is recorded above; the only subsequent
+source change was this report's measurement update, not firmware behavior.
+
+The full macOS invocation used the documented build dependency group, Node 22,
+configured DaisySP, resolved macOS TMPDIR and Homebrew's library lookup path.
+`build/host/test-run-s4ghyjhs/summary.json` records **125 passed, four failed,
+one blocked, three explicit N/A, zero skipped/cancelled**. The original run
+remains failed. `loader` and the firmware engine-contract fixture reject target
+ELF section attributes under Mach-O; failed `loader` blocks `asan_loader`.
+SPRING costs 119 versus ROOM 90 instructions/sample (30% limit). ANALOG has
+three O2 CPU budget overruns in standard and CPU2-off, while Os has none.
+
+All four failures were freshly reproduced by the corresponding units at clean
+`3fce9f9`; their logs are retained in the unchanged baseline checkout under
+`build/issue96-main3fce/failing-unit-baselines/`. The three ANALOG O2 counts
+match each corresponding baseline run. All 98 audio goldens remain exact with
+no health/voice/routing failure or crash. Portable Python, icon export/normal and
+strict sanitizer checks, UI/readability/FM4, replay, configured DaisySP,
+native/Wasm emulator and partition checks pass. No golden or budget was changed.
+
+`build/browser/run-WeOU1o/summary.json` records **10/10 passed**, no errors,
+clean exact `7736398`, Playwright 1.64.1 and Chromium 156.0.8078.4. It binds the
+served Wasm/page/worklet hashes and checks actual stereo audio, release,
+GRAPH TURN, responsive/contrast behavior and storage/reload. A separate direct
+IAB check opened HOME then ENV and dragged KNOB 1: ATK changed 1.0 to 1.2 ms,
+with clean native readout/curve. Its screenshot is retained. These are host and
+browser observations, not physical FM-1 acceptance.
+
+Current-head Codex completed without findings. The actual full CodeRabbit review
+of `7736398` completed with one minor report-status correction, addressed here.
+[Hosted CI40092901749](https://github.com/kmplngj/Felucca/actions/runs/40092901749)
+is still running at the time of this record; no hosted acceptance is inferred.
+Physical LCD/panel, USB/TRS, listening and timing checks remain pending.
 
 ## Historical baseline and chosen class
 
@@ -307,7 +349,7 @@ was hidden or treated as a new visual qualification.
 | Identical decoded alpha and metrics | Current four Python tests and normal/strict C pixel and boundary checks pass; controlled current-base A/B preserves all 3,084 screen and six rolling images | User CUSTOM, historical stored style/size values and supported free text beyond the captured matrix; FM-1 legibility |
 | Determinism and provenance | Current two exports match; current header/input hashes recorded, unchanged Fukiai inputs and notices | Final committed revision/toolchain/profile/asset evidence attached to retained candidate |
 | Runtime/resource cost | No added runtime state or decoder code; prior host timing samples remain historical | Actual device display/load cost; no speed claim |
-| Host/browser/audio | Current focused Python/real C and strict ASan/UBSan pass; prior causal controls remain historical | Full applicable host suite, audio/engine-switch goldens and fresh browser/emulator gate |
+| Host/browser/audio | Current macOS suite completed 125 pass/4 fail/1 blocked; all 98 goldens exact, browser10 and native/Wasm checks pass; failures reproduce on clean baseline | Hosted CI acceptance and physical qualification |
 | FM-1 | No device access, flash or observations | Readability/panel activity under dense audio; USB audio 44.1/48 kHz and USB/TRS MIDI, lateness/shedding/scan/stream counters, supported CPU2 variants |
 
 Unperformed checks remain pending. No installation, merge, release or publication
