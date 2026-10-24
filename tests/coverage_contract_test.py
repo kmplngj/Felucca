@@ -311,6 +311,22 @@ class ProducerTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_nested_lifecycle_fixtures_do_not_pollute_outer_invocation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            events = root / 'outer-events'
+            env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(events), FELUCCA_COVERAGE_ID='outer')
+            env, _ = C.compiler_environment(env, root / 'outer-shims')
+            result = subprocess.run([sys.executable, str(ROOT / 'tools/test_coverage.py'),
+                                     'command', sys.executable, 'tests/coverage_contract_test.py',
+                                     'LifecycleTests.test_fresh_identity_invalidation_and_changed_input_failure',
+                                     'LifecycleTests.test_real_shell_scheduler_contract_normal_compact_serial_parallel',
+                                     '-q'], cwd=ROOT, env=env, text=True, capture_output=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = [C.read_json(p) for p in events.glob('*.json')]
+            self.assertTrue(any(e['kind'] == 'command' for e in rows))
+            self.assertEqual({e['run_id'] for e in rows}, {'outer'})
+
     def test_verified_archive_identity_requires_real_manifest_content_and_modes(self):
         import source_archive
         with tempfile.TemporaryDirectory() as temporary:
@@ -352,6 +368,7 @@ class LifecycleTests(unittest.TestCase):
             path = root / 'report.json'
             path.write_text('malformed previous success')
             env = dict(os.environ, FELUCCA_COVERAGE_REPORT=str(path), FELUCCA_COVERAGE_ID='unique')
+            env.pop('FELUCCA_COVERAGE_UNIT', None)  # fixture probes cannot publish into the enclosing unit
             source = dict(revision='a' * 40)
             with patch.object(C, 'snapshot', side_effect=[source, dict(revision='b' * 40)]), \
                  patch.object(C, 'selected_engines', return_value=[0]), \
@@ -390,6 +407,7 @@ class LifecycleTests(unittest.TestCase):
                 for compact in (False, True):
                     env = dict(os.environ, TEST_JOBS=str(jobs), FELUCCA_COVERAGE_REPORT=str(root / 'coverage.json'),
                                FELUCCA_COVERAGE_ID=f'run-{jobs}-{compact}')
+                    env.pop('FELUCCA_COVERAGE_UNIT', None)
                     # This intentionally small source/engine fixture still runs the real
                     # shell, scheduler, private shims, child adapter and report writer.
                     with patch.object(J, '__file__', str(root / 'tests/test_jobs.py')), \
