@@ -37,6 +37,13 @@ same ownership/backoff policy; no later draw or visibility claim is published.
 Recovery latency therefore includes up to the next 250 ms observation, both
 120 ms waits, frame scheduling and transfer time; it is not a measured device bound.
 
+Native bank and menu signatures may advance before a later canvas acquisition or
+pixel transfer fails. The failed-frame return keeps `ui.force` set; recovery
+bypasses those partial-redraw caches and composes the complete latest image.
+The bank, native menu rows and shared 1×/2×/3× bitmap primitives use the same
+owned canvas. Neither a valid cache signature nor a partially transmitted image
+permits that canvas to be reused before verified completion.
+
 An initialization failure is different: a partial controller setup is not fixed
 by redrawing pixels. It stays display-faulted until reboot, even if the old
 transfer later completes. Init never resets an owned transfer. Boot, rescue,
@@ -76,7 +83,16 @@ command/coordinate/payload/final-DMA failure, persistent ownership, bounded
 observations, wrap, repeated recovery failure, late sleep/wake, full-clear failure,
 latest menu/page/name/dialog/theme/mixer pixels, direct mixer knob writes after
 failed canvas acquisition, active panel edits, capture and partial
-initialization. [`lcd_wait_test.py`](../tests/lcd_wait_test.py) compiles the actual
+initialization. Native menu and tall/short bank cases allow their caches to
+advance, then edit the value through real panel input while blocked. They cover
+failed acquisition and a pixel DMA that consumes a prefix before stalling; late
+completion consumes the remainder without releasing ownership early. The
+recovered full image must equal an independent forced redraw of the latest
+state. Historical STYLE/LARGE bits are still exercised, with explicit equality
+to the single native layout rather than alternate appearance expectations.
+Deliberate owned-source writes and suppressed recovery repaint fail the model's
+ownership and complete-image checks respectively.
+[`lcd_wait_test.py`](../tests/lcd_wait_test.py) compiles the actual
 HAL completion/wait functions with substituted registers to check poll and
 acknowledgment behavior. Existing power and independent screenshot-wire models
 retain their healthy-path and deliberate ownership-negative checks.

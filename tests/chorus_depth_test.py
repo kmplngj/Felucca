@@ -7,6 +7,10 @@ from pathlib import Path
 import shlex
 import subprocess
 from fx_rest_test import ROOT, replace_once
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from test_coverage import Producer
+coverage = Producer()
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--fx-source', type=Path, default=ROOT / 'firmware/src/fx.c')
@@ -38,13 +42,17 @@ if os.environ.get('SANITIZE', '1') != '0':
                            input='int main(void) { return 0; }', text=True, capture_output=True)
     if probe.returncode or subprocess.run([str(out / 'sanitizer_probe')], capture_output=True).returncode:
         print('chorus depth: sanitizer SKIP (compiler/runtime unavailable)', flush=True)
+        coverage.outcome('chorus-sanitizer', 'skipped', 'sanitizer-unavailable')
     else:
         builds.append(('sanitize', ['-O1', '-g'] + sanitizers))
 else:
     print('chorus depth: sanitizer SKIP (SANITIZE=0)', flush=True)
+    coverage.outcome('chorus-sanitizer', 'skipped', 'sanitizer-disabled')
 for name, flags in builds:
     binary = out / name
     subprocess.run(cc + flags + (['-DCHORUS_DEPTH_TEST_SMOOTH=1'] if not args.legacy and 'cho_depth' in source else []) + ['-w', '-I' + str(ROOT / 'build/gen'),
                    '-I' + str(ROOT / 'firmware/src'), f'-DFX_TEST_HOSTSIM="{out / "hostsim.c"}"',
                    str(ROOT / 'tests/chorus_depth_test.c'), '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary), str(out), 'legacy' if args.legacy else 'smooth'], check=True)
+    if name == 'sanitize': coverage.outcome('chorus-sanitizer')
+coverage.outcome('chorus-native', builds=[name for name, _ in builds])

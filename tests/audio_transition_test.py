@@ -179,6 +179,9 @@ def sanitizer_capture_probe(cc, flags, out):
 
 
 def main():
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from test_coverage import Producer
+    coverage = Producer()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "build/host/audio-transitions")
     parser.add_argument("--optimization", choices=("O2", "Os"), action="append",
@@ -307,6 +310,9 @@ def main():
     if errors:
         print("\n".join(errors), file=sys.stderr)
         raise ValueError(f"{len(errors)} failed captures; WAV/counters: {out}")
+    coverage.outcome('transitions-sanitizer', 'skipped' if skips else 'passed',
+                     ('sanitizer-disabled' if os.environ.get('SANITIZE') == '0' else 'sanitizer-unavailable') if skips else None)
+    coverage.outcome('audio-transitions', captures=len(rows), mutations=mutations)
     print(f"audio transitions: PASS {len(rows)} captures repeated exactly; {mutations} injected defects rejected; {out / 'summary.json'}")
 
 

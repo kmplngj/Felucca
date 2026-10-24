@@ -4,12 +4,15 @@
 #define UI_LCD_SOURCE "lcd_fault_model.h"
 #define FELUCCA_SCREEN_CAPTURE 1
 #include <stdint.h>
-static uint32_t fault_page_calls;
-#define UI_DRAW_PAGE_HOOK() fault_page_calls++
+static uint32_t fault_page_calls, fault_drop_force;
+#define UI_DRAW_PAGE_HOOK() do { \
+    fault_page_calls++; \
+    if (fault_drop_force && scrn.recovering && scrn.st == SCR_SHOW) ui.force = 0; \
+} while (0)
 #include "ui_test.c"
 
 static uint32_t fault_checks;
-static uint16_t expected[240u * 240u], held_canvas[CV_MAX];
+static uint16_t expected[240u * 240u], native_expected[240u * 240u], held_canvas[CV_MAX];
 static void need(int ok, const char *why)
 {
     fault_checks++;
@@ -24,6 +27,7 @@ static void reset_model(void)
     lcd_faults = lcd_recoveries = lcd_retry_t = 0;
     lcd_model_sent = lcd_model_waits = lcd_model_polls = lcd_model_fail_at = lcd_model_fail_cmd = 0;
     lcd_model_init_n = lcd_model_baud = 0;
+    lcd_model_partial = lcd_model_consumed = 0;
     memset(&scap, 0, sizeof scap);
     fm1_ms = 1000u; ui_power_on();
     ui_prefs = PREF_ANIM_OFF; ui_prefs2 = 0; ui_style = 0; ui_scr = 0;
@@ -41,6 +45,8 @@ static void poison_writers(void)
     cv_alpha(0, 0, 240, 124, NULL, ramp);
 #if UI_FONT_BITMAP
     cv_bitmap(0, 0, 240, 124, NULL, 1, 0x1234);
+    cv_bitmap(0, 0, 240, 124, NULL, 2, 0x1234);
+    cv_bitmap(0, 0, 240, 123, NULL, 3, 0x1234);
 #endif
     cv_alpha_hc(0, 0, 240, 124, NULL, NULL, ramp);
     cv_blit_rect(0, 0, 1, 1, 20, 20);
@@ -93,7 +99,7 @@ static void mixer_canvas_failure(void)
 {
     uint32_t sent;
     reset_model(); go_page(GR_TRK); ui.force = 1;
-    need(strip_kind() != SK_TRK, "mixer test exercises direct knob canvas path");
+    need(reading_kind() == RK_BANK && !bank_tall(), "native mixer exercises direct knob canvas path");
     cv_begin(240, 124, T_BG);
     lcd_model_fail_at = lcd_model_sent + 6u; cv_blit(0, 20);
     need(!lcd_fault && lcd_busy && lcd_model_pending, "mixer starts before failed ownership acquisition");
@@ -124,10 +130,62 @@ static void latest_scene(uint32_t palette, uint32_t style, uint32_t large, uint3
     fm1_ms += 120; ui_draw(); fm1_ms += 120; ui_draw(); lcd_sync();
     need(!lcd_fault && !lcd_busy && scrn.st == SCR_ON, "latest scene recovered");
     memcpy(expected, host_screen, sizeof expected);
+    /* STYLE/LARGE are retained data, not native layout choices. Keep all four
+     * compatibility inputs and independently compare their complete images. */
+    if (!style && !large) memcpy(native_expected, expected, sizeof expected);
+    else need(!memcmp(native_expected, expected, sizeof expected), "retired STYLE/LARGE bits keep the unified native image");
     memset(host_screen, 0xA5, sizeof host_screen); lcd_fill(0, 0, 240, 240, T_BG); ui.force = 1; ui_draw(); lcd_sync();
     if (memcmp(expected, host_screen, sizeof expected))
         fprintf(stderr, "scene palette=%u style=%u large=%u scene=%u\n", palette, style, large, scene);
     need(!memcmp(expected, host_screen, sizeof expected), "recovery is pixel-identical to latest forced full redraw");
+}
+static void cached_scene_failure(uint32_t scene, uint32_t partial)
+{
+    uint32_t sig[5], sent;
+    int32_t before, id = scene == 1u ? P_ATK : P_LEVEL;
+    reset_model();
+    if (!scene) { ui.menu = 1; ui.menu_sel = MI_LEDS; }
+    else go_page(scene == 1u ? GR_ADSR : GR_TRK);
+    ui_draw(); lcd_sync();
+    if (scene) {
+        need(bank_on() && ui.read_bank.was && bank_tall() == (scene == 1u), "cached scene uses tall or short native bank");
+        memcpy(sig, ui.read_bank.sig, sizeof sig);
+        TSEL->p[id]++;
+    } else {
+        sig[0] = ui.menu_sig;
+        menu_put(MI_LEDS, menu_step(MI_LEDS, 1));
+    }
+    if (!partial) {
+        /* The next cv_begin must acquire a canvas still borrowed by DMA. */
+        cv_begin(240, 124, T_BG);
+        lcd_model_fail_at = lcd_model_sent + 6u; cv_blit(0, 20);
+        need(!lcd_fault && lcd_busy, "cache test begins with asynchronous canvas ownership");
+    } else {
+        lcd_model_fail_at = lcd_model_sent + 6u;
+        lcd_model_partial = 128u;
+    }
+    sent = lcd_model_fail_at;
+    if (scene) draw_columns(); else draw_menu();
+    lcd_sync();
+    need(lcd_fault && lcd_busy && lcd_model_pending && lcd_model_sent == sent, "cached renderer stops submissions at failed acquisition or payload");
+    if (partial)
+        need(lcd_model_consumed == 128u && lcd_model_consumed < lcd_model_n, "partial pixel DMA consumes a prefix without releasing the canvas");
+    if (scene)
+        need(ui.read_bank.was && memcmp(sig, ui.read_bank.sig, sizeof sig), "bank cache advanced despite incomplete image");
+    else need(sig[0] != ui.menu_sig, "menu signature advanced despite incomplete image");
+    poison_writers();
+    before = scene ? TSEL->p[id] : (int32_t)menu_get(MI_LEDS);
+    turn(scene ? EN_K1 : EN_K4, 1);
+    need((scene ? TSEL->p[id] : (int32_t)menu_get(MI_LEDS)) != before, "latest cached value still changes through real panel input while blocked");
+    need(ui.force && lcd_model_sent == sent, "failed frame keeps full repaint pending after cache publication");
+    lcd_model_owned(); ui.hot_t = ui.curve_t = 0;
+    lcd_model_release = 1; fm1_ms += LCD_RETRY_MS; ui_draw();
+    fm1_ms += 120; ui_draw(); fm1_ms += 120; ui_draw(); lcd_sync();
+    need(!lcd_fault && !lcd_busy && scrn.st == SCR_ON, "cached scene recovers only after verified release and wake");
+    memcpy(expected, host_screen, sizeof expected);
+    memset(host_screen, 0xA5, sizeof host_screen);
+    lcd_fill(0, 0, 240, 240, T_BG); ui.force = 1; ui_draw(); lcd_sync();
+    need(!memcmp(expected, host_screen, sizeof expected), "cached recovery matches the complete latest forced redraw");
 }
 static void power_and_capture(void)
 {
@@ -200,7 +258,7 @@ static void normalization_failures(void)
              "normalization/full-clear failure relatches before later redraw or visibility");
         poison_writers(); need(lcd_model_sent == fail, "failed normalization still owns its source");
         /* Change latest state during the second backoff and both timed waits. */
-        ui.menu = 1; ui.menu_sel = MI_STYLE; ui_style = 1; palette_set(8); settings.palette = 8;
+        ui.menu = 1; ui.menu_sel = MI_GRAPH; ui_style = 1; palette_set(8); settings.palette = 8;
         fm1_ms += 1; ui_draw(); lcd_model_release = 1; fm1_ms += 250; ui_draw();
         need(!scr_input(0, 0), "second recovery wait keeps input live");
         fm1_ms += 120; ui_draw(); ui.menu_sel = MI_COLOR;
@@ -231,10 +289,14 @@ int main(int argc, char **argv)
     if (argc == 2 && !strcmp(argv[1], "--dma-negative")) {
         reset_model(); cv_begin(2, 2, 0x1234); cv_blit(0, 0); cv_px[0] ^= 1u; lcd_model_owned(); return 0;
     }
+    if (argc == 2 && !strcmp(argv[1], "--cache-negative")) {
+        fault_drop_force = 1; cached_scene_failure(1, 1); return 0;
+    }
     if (argc != 1) return 2;
     failures_at_each_transfer(); final_canvas_and_retry(); mixer_canvas_failure();
-    for (p = 0; p < NPALETTES; p++) for (s = 0; s < 2u; s++) for (large = 0; large < 2u; large++)
-        for (scene = 0; scene < 6u; scene++) latest_scene(p, s, large, scene);
+    for (p = 0; p < NPALETTES; p++) for (scene = 0; scene < 6u; scene++)
+        for (s = 0; s < 2u; s++) for (large = 0; large < 2u; large++) latest_scene(p, s, large, scene);
+    for (scene = 0; scene < 3u; scene++) for (p = 0; p < 2u; p++) cached_scene_failure(scene, p);
     power_and_capture(); final_capture_and_sleep(); normalization_failures(); boot_failure();
     printf("PASS LCD containment: actual driver/canvas/UI, source ownership, bounded retries, late completion, latest pixels, power/capture/boot (%u checks)\n", fault_checks);
     return 0;

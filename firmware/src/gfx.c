@@ -3,12 +3,11 @@
 /* Small-canvas renderer (no full framebuffer). Draw text/lines into
  * an off-screen strip, then blit it in one DMA transfer. Pixels are stored
  * byte-swapped (the panel takes RGB565 big-endian).
- * Text and icons are bitmaps made at build time (tools/gen_aa_font.py: Inter Tight;
- * tools/gen_aa_icons.py: Fukiai). A glyph is trimmed to its ink box, advances are in 1/16 px, and
- * each glyph is rasterised at 1 << psh horizontal phases (S M 4, L 2: drawn at a pen of +0, +1/4 .. px);
- * cv_text takes the phase that puts it within a phase step of its true place. Blending uses a 16-entry
- * ramp per (ink, background) pair, cached. The optional pixel fonts use packed 1-bit glyphs,
- * with L sharing M at 2x. Colours come from the theme tokens. */
+ * M8Stealth text uses two packed 1-bit bitmap sets (tools/gen_bitmap_font.py).
+ * L/N share M ink at exact 2x. Placement stays on whole
+ * pixels; advances are stored in 1/16 px. Icons retain their antialiased data
+ * (tools/gen_aa_icons.py: Fukiai) and cached 16-entry ink/background ramps.
+ * Colours come from the theme tokens. */
 typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
 typedef struct {
     uint8_t h, asc, first, last, nex;   /* line height, baseline; ASCII range; extras */
@@ -24,7 +23,7 @@ typedef struct {
 } aafont_t;
 typedef struct { const char *name; uint16_t bg, surf, text, theme, accent; } ui_pal_t;
 typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
-#include "ui_fonts.h"                   /* default M8Stealth; FELUCCA_FONT selects Tamzen or Inter Tight */
+#include "ui_fonts.h"                   /* M8Stealth native grids and shared integer-scaled roles */
 #include "ui_palettes.h"
 #include "ui_keycaps.h"                 /* KC_*: the keycaps / badges (tools/gen_aa_keycaps.py), KNOB_* arcs */
 #define ELLIPSIS '\x85'                 /* the ellipsis glyph of AF_S and AF_M */
@@ -105,7 +104,7 @@ static struct {
  * Selections, accents, keys and gauges keep their fills in every style */
 #define ST_FLAT 0u
 #define ST_LINE 1u
-#define T_RULE ux.dim            /* LINE: the dividers (DIM: visible on NIGHT, GREY, MONO and PAPER, quieter than labels) */
+#define T_RULE ux.line           /* the dividers (#572: hairlines, LINE's 18 %: quieter than every text; MONO's one grey) */
 #define T_BG ux.bg               /* background */
 #define T_SURF ux.surf           /* dialogs, menu rows, mixer strips */
 #define T_TEXT ux.text           /* primary text */
@@ -448,34 +447,38 @@ static void cv_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
 }
 
 #if UI_FONT_BITMAP
-/* MSB-first, byte-aligned glyphs. L shares M's data; its metadata describes the doubled ink box.
- * Clip in output coordinates, then index the source bit. No framebuffer or decoded-glyph scratch. */
+/* MSB-first, byte-aligned glyphs. L, N and X share M's data; their metadata describes the scaled ink box
+ * (w and h are whole multiples of scale). Each source bit is a scale x scale block, clipped in output
+ * coordinates. No framebuffer, decoded-glyph scratch or per-pixel division. */
 static void cv_bitmap(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d,
                       uint32_t scale, uint16_t ink)
 {
-    uint32_t sh = scale - 1u, sw = w >> sh, gx, gy;
+    uint32_t sw = w / scale, sy, sx, k, j, srow = 0;
     if (LCD_FAILED())
         return;
     y += cv_oy;
-    for (gy = 0; gy < h; gy++) {
-        int32_t py = y + (int32_t)gy;
-        uint32_t base = (gy >> sh) * sw;
-        uint16_t *row;
-        if (py < cv_cy0 || py >= cv_cy1)
-            continue;
-        row = cv_px + (uint32_t)py * cv_w;
-        for (gx = 0; gx < w; gx++) {
-            uint32_t bit = base + (gx >> sh);
-            int32_t px = x + (int32_t)gx;
-            if ((uint32_t)px < cv_w && (d[bit >> 3] & (0x80u >> (bit & 7u))))
-                row[px] = ink;
+    for (sy = 0; sy * scale < h; sy++, srow += sw)
+        for (k = 0; k < scale; k++) {
+            int32_t py = y + (int32_t)(sy * scale + k);
+            uint16_t *row;
+            if (py < cv_cy0 || py >= cv_cy1)
+                continue;
+            row = cv_px + (uint32_t)py * cv_w;
+            for (sx = 0; sx < sw; sx++) {
+                uint32_t bit = srow + sx;
+                int32_t px = x + (int32_t)(sx * scale);
+                if (!(d[bit >> 3] & (0x80u >> (bit & 7u))))
+                    continue;
+                for (j = 0; j < scale; j++, px++)
+                    if ((uint32_t)px < cv_w)
+                        row[px] = ink;
+            }
         }
-    }
     GFX_HOOK_PIXELS(w * h);
 }
 #endif
 
-/* the same from a glyph's Huffman-coded bit stream (tools/gen_aa_font.py huff_pack): canonical codes, MSB
+/* the same from a glyph's Huffman-coded bit stream (tools/ui_font_data.py huff_pack): canonical codes, MSB
  * first; hc = the number of codes of each length 1..15, then the symbols in code order, each a value and
  * its repeat count ((count - 1) << 4 | value: runs of zeros and 15s). Codes of up to 8 bits come from a
  * 256-entry table made once per font in RAM (symbol | length << 8; 0 = a longer code: bit by bit). The

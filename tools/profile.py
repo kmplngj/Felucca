@@ -192,8 +192,8 @@ def generated(root, name, font_variant=None, *, feature_flags=None):
     pins = source_pins(root)
     pins['engines_upstream_revision'] = catalog['engines_upstream_revision']
     font_variant = font_variant if font_variant is not None else os.environ.get('FELUCCA_FONT', 'm8stealth')
-    if font_variant not in {'m8stealth', 'tamzen', 'inter-tight'}:
-        raise ValueError('FELUCCA_FONT must be inter-tight, tamzen or m8stealth')
+    if font_variant != 'm8stealth':
+        raise ValueError('FELUCCA_FONT supports m8stealth only; Tamzen and Inter Tight firmware fonts are retired')
     resolved = dict(schema_version=1, profile=name, asset_variant=font_variant, standard_base=catalog['standard_base'],
                     source_pins=pins, engine_ids=sorted(selected), portable_engine_ids=[e['id'] for e in engines if e['owner']=='portable-mit'],
                     firmware_native_engine_ids=[e['id'] for e in engines if e['owner']=='firmware'],
@@ -286,7 +286,7 @@ def contract(root):
                 'provider_required_engines_must_be_selected': True,
                 'engine_checkout_must_match_exact_gitlink': True,
                 'developer_boolean_flags': {'FELUCCA_FM4': ['0', '1'], 'FELUCCA_SLICE': ['0', '1']},
-                'font_variants': ['inter-tight', 'm8stealth', 'tamzen']},
+                'font_variants': ['m8stealth']},
             'supported_profiles': recipes,
             'canonical_features': {'FELUCCA_FM4': '0', 'FELUCCA_SLICE': '1',
                                    'FELUCCA_FONT': 'm8stealth'},

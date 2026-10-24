@@ -7,6 +7,7 @@ static volatile uint8_t lcd_busy;  /* actual driver's tentative definition; chec
 static uint32_t lcd_model_pending, lcd_model_selected, lcd_model_stuck, lcd_model_release;
 static uint32_t lcd_model_cmd, lcd_model_x0, lcd_model_x1, lcd_model_y0, lcd_model_y1, lcd_model_x, lcd_model_y;
 static uint32_t lcd_model_n, lcd_model_init_n, lcd_model_baud;
+static uint32_t lcd_model_partial, lcd_model_consumed;
 static const uint8_t *lcd_model_src;
 static uint8_t lcd_model_copy[240u * 124u * 2u];
 static void lcd_model_need(int ok, const char *why)
@@ -41,15 +42,31 @@ static void fm1_lcd_send_cmd(uint8_t c)
     lcd_model_submit(1); lcd_model_cmd = c;
     if (lcd_model_fail_cmd == c) lcd_model_stuck = 1;
 }
+static void lcd_model_pixels(uint32_t end)
+{
+    lcd_model_need(!(end & 1u) && end <= lcd_model_n, "bounded RGB565 prefix");
+    while (lcd_model_consumed < end) {
+        uint16_t pixel;
+        lcd_model_need(lcd_model_x <= lcd_model_x1 && lcd_model_y <= lcd_model_y1, "pixel inside window");
+        memcpy(&pixel, lcd_model_src + lcd_model_consumed, sizeof pixel);
+        host_put(lcd_model_y * 240u + lcd_model_x, pixel);
+        if (++lcd_model_x > lcd_model_x1) { lcd_model_x = lcd_model_x0; lcd_model_y++; }
+        lcd_model_consumed += 2u;
+    }
+}
 static void fm1_lcd_send_data(const void *p, uint32_t n)
 {
     lcd_model_submit(2);
     lcd_model_need(n && n <= sizeof lcd_model_copy, "bounded nonzero RAM payload");
     lcd_model_src = p; lcd_model_n = n; memcpy(lcd_model_copy, p, n);
+    lcd_model_consumed = 0;
+    /* DMA may read a prefix before stalling. The whole borrowed range remains
+     * owned until explicit completion, which consumes only the remainder. */
+    if (lcd_model_stuck && lcd_model_cmd == 0x2Cu && lcd_model_partial)
+        lcd_model_pixels(lcd_model_partial < n ? lcd_model_partial : n);
 }
 static int fm1_lcd_complete(void)
 {
-    uint32_t i;
     lcd_model_polls++;
     lcd_model_owned();
     lcd_model_need(lcd_model_pending && lcd_model_selected, "completion without owner");
@@ -65,13 +82,7 @@ static int fm1_lcd_complete(void)
             else { lcd_model_y0 = a; lcd_model_y1 = b; }
         } else if (lcd_model_cmd == 0x2Cu) {
             lcd_model_need(!(lcd_model_n & 1u), "RGB565 pairs");
-            for (i = 0; i < lcd_model_n; i += 2u) {
-                uint16_t pixel;
-                lcd_model_need(lcd_model_x <= lcd_model_x1 && lcd_model_y <= lcd_model_y1, "pixel inside window");
-                memcpy(&pixel, lcd_model_src + i, sizeof pixel);
-                host_put(lcd_model_y * 240u + lcd_model_x, pixel);
-                if (++lcd_model_x > lcd_model_x1) { lcd_model_x = lcd_model_x0; lcd_model_y++; }
-            }
+            lcd_model_pixels(lcd_model_n);
         }
     } else if (lcd_model_cmd == 0x2Cu) {
         lcd_model_x = lcd_model_x0; lcd_model_y = lcd_model_y0;
