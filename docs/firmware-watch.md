@@ -43,8 +43,10 @@ Routine scan state lives on the repository's
 [`automation/firmware-watch` branch](https://github.com/kmplngj/Felucca/tree/automation/firmware-watch/data/firmware-watch).
 The initial migration also lives on main. Read the state branch for current progress;
 do not treat main's bootstrap snapshot as the latest scan. Changes to the skill,
-helper, schema or registered scope use ordinary PRs to main. The runner merges
-main into its isolated state worktree before scanning and stops on conflicts.
+helper, schema or registered scope use ordinary PRs to main. The runner reads code/instructions from an isolated current-main checkout and
+keeps only ledger changes on the isolated state branch. It reconciles registration
+changes using the guarded procedure below; it does not merge main's whole tree
+into the state branch. Rejected reconciliation stops the run.
 
 | File under `data/firmware-watch/` | Purpose |
 | --- | --- |
@@ -206,6 +208,57 @@ worktrees from acquiring separate run leases. A standalone helper defaults to it
 cache directory. Independent clones/machines require a single serialized scheduled
 runner; a local lease does not claim distributed locking. A stale lease requires confirming its previous run has stopped before
 explicit operator cleanup. Helpers also acquire a short per-command writer lock.
+
+## Registry reconciliation and recovery
+
+Main retains bootstrap pending registrations after the state branch initializes
+those sources. A later main registration can therefore conflict with the state
+registry. Taking either whole file loses new registrations or resurrects sources.
+Merging all of main also publishes unrelated firmware files to the state branch.
+Keep code and ledger worktrees separate instead.
+
+Hold the shared whole-run lease. From the clean state worktree, save valid registry
+versions under ignored build storage. `CODE_ROOT` below is the absolute path of the
+isolated freshly fetched main checkout. Use a unique Git merge base and stop if
+there are multiple bases. Do not change any Git ancestry to manufacture a base.
+
+```sh
+mkdir -p build/firmware-watch-merge
+git merge-base --all HEAD origin/main > build/firmware-watch-merge/bases.txt
+# Continue only if bases.txt contains exactly one full commit SHA.
+git show "$(cat build/firmware-watch-merge/bases.txt):data/firmware-watch/sources.json" > build/firmware-watch-merge/base.json
+git show HEAD:data/firmware-watch/sources.json > build/firmware-watch-merge/ours.json
+git show origin/main:data/firmware-watch/sources.json > build/firmware-watch-merge/theirs.json
+python3 "$CODE_ROOT/tools/firmware_watch.py" reconcile-sources \
+  --base build/firmware-watch-merge/base.json \
+  --ours build/firmware-watch-merge/ours.json \
+  --theirs build/firmware-watch-merge/theirs.json \
+  --state data/firmware-watch/state.json \
+  --output build/firmware-watch-merge/candidate.json
+```
+
+The command only writes a separate candidate. It preserves the state branch's
+active order and verified promotions and appends new main-only pending sources.
+It rejects changed source definitions, identities or immutable pins, removals,
+duplicates, unverified promotions and conflicting configuration changes. It does
+not fetch, initialize sources, modify runtime state or grant review coverage.
+Other metadata changes require manual reconciliation rather than guessing.
+
+Copy the complete ledger to an ignored candidate directory, substitute only its
+`sources.json`, then use the current-main helper's `--data-dir CANDIDATE_DIR validate`.
+Check that runtime state, journal and migration files match the pre-reconciliation
+state branch byte-for-byte. Only after success, copy the candidate to the tracked
+`sources.json` and validate again. Preserve failed inputs for operator inspection.
+If recovering an older interrupted merge, preserve its worktree and create a clean
+state worktree from the fetched canonical branch; do not publish its whole-tree merge.
+
+Run all subsequent commands using the current-main helper with absolute
+`--data-dir` and `--cache-dir` paths into the state worktree. Keep `--lease-dir`
+pointing at the original clone's shared Git common directory. Source sync still
+performs live identity/pin/full-DAG checks; reconciliation initializes nothing.
+Commit/push only ledger paths using the normal remote-advance check. A repeated
+unchanged reconciliation creates no commit. Never merge helper/skill changes
+onto the state branch; they use an ordinary reviewed PR to main.
 
 ## Scheduled Codex task
 

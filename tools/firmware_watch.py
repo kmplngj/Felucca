@@ -879,6 +879,93 @@ class Watch:
         return result
 
 
+def reconcile_sources(base, current, incoming, state):
+    """Merge registry edits without resurrecting successfully initialized sources.
+
+    This is deliberately narrower than a JSON merge driver: only new pending
+    registrations and unchanged pending-to-active promotions are automatic.
+    All other concurrent edits fail closed for an operator to inspect.
+    """
+    def index(config):
+        require(config.get('schema_version') == SCHEMA_VERSION, 'unsupported registry schema')
+        result = {}
+        identities = set()
+        for group in ('repositories', 'pending_source_additions'):
+            require(isinstance(config.get(group), list), 'registry groups must be arrays')
+            for entry in config[group]:
+                name = repository_name(entry['repository'])
+                key = name.lower()
+                require(key not in result, 'duplicate source repository')
+                identity = entry.get('repository_id')
+                require(type(identity) is int and identity > 0 and identity not in identities,
+                        'invalid or reused repository identity')
+                identities.add(identity)
+                require(isinstance(entry.get('historical_targets'), dict)
+                        and entry['historical_targets'], 'source requires historical targets')
+                for branch, target in entry['historical_targets'].items():
+                    branch_name(branch)
+                    sha(target)
+                result[key] = (group, entry)
+        return result
+
+    def definition(entry):
+        return {k: v for k, v in entry.items() if k not in RUNTIME_FIELDS}
+
+    before, ours, theirs = (index(c) for c in (base, current, incoming))
+    require(set(before) <= set(ours) and set(before) <= set(theirs),
+            'source removal requires manual reconciliation')
+    for key in set(before) | set(ours) | set(theirs):
+        entries = [items[key][1] for items in (before, ours, theirs) if key in items]
+        for field in ('repository', 'repository_id', 'historical_targets'):
+            require(all(e[field] == entries[0][field] for e in entries),
+                    'immutable source identity or targets changed: ' + field)
+    runtime = {r['repository'].lower(): r for r in state['repositories']}
+    require(len(runtime) == len(state['repositories'])
+            and set(runtime) == {k for k, (g, _) in ours.items() if g == 'repositories'},
+            'state and current registry repository sets differ')
+    result = copy.deepcopy(current)
+    # Top-level metadata is a normal three-way choice, never a silent union.
+    for key in (set(base) | set(current) | set(incoming)) - {
+            'repositories', 'pending_source_additions'}:
+        missing = object()
+        a, b, c = (v.get(key, missing) for v in (base, current, incoming))
+        require(b == c or b == a or c == a, 'conflicting registry metadata: ' + key)
+        chosen = c if b == a else b
+        if chosen is missing:
+            result.pop(key, None)
+        else:
+            result[key] = copy.deepcopy(chosen)
+    for key, (group, entry) in theirs.items():
+        if key not in ours:
+            require(key not in before and group == 'pending_source_additions',
+                    'new active source requires verified initialization')
+            result['pending_source_additions'].append(copy.deepcopy(entry))
+            continue
+        ours_group, ours_entry = ours[key]
+        if group == ours_group and entry == ours_entry:
+            continue
+        prior = before.get(key)
+        if (group == 'pending_source_additions' and ours_group == 'repositories'
+                and (prior is None or prior[0] == 'pending_source_additions')):
+            require(runtime[key].get('identity_verified') is True,
+                    'promotion lacks successful identity verification')
+            require(definition(entry) == definition(ours_entry)
+                    and (prior is None or definition(prior[1]) == definition(entry)),
+                    'promoted source definition changed; manual reconciliation required')
+            require(set(runtime[key]['recent_frontiers']) == set(entry['historical_targets'])
+                    and set(runtime[key]['pinned_recent_targets']) == set(entry['historical_targets']),
+                    'promoted source state branches differ')
+            continue
+        # Unchanged incoming entries never replace authoritative state-branch data.
+        require(prior is not None and (group, entry) == prior,
+                'source definition changed; manual reconciliation required')
+        require(ours_group == prior[0], 'unexpected source registration transition')
+    require(not (set(ours) - set(theirs)),
+            'state-only registration requires manual reconciliation')
+    index(result)
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', default='data/firmware-watch')
@@ -892,11 +979,23 @@ def main(argv=None):
     commands.add_parser('queue').add_argument('--limit', type=int, default=50)
     commands.add_parser('record').add_argument('--input', required=True)
     commands.add_parser('checkpoint')
+    reconcile = commands.add_parser('reconcile-sources')
+    for option in ('base', 'ours', 'theirs', 'state', 'output'):
+        reconcile.add_argument('--' + option, required=True)
     lease = commands.add_parser('lease')
     lease.add_argument('action', choices=('acquire', 'release'))
     lease.add_argument('--owner', required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'reconcile-sources':
+            result = reconcile_sources(*(read_json(getattr(args, k))
+                                         for k in ('base', 'ours', 'theirs', 'state')))
+            require(Path(args.output).resolve() not in
+                    {Path(getattr(args, k)).resolve() for k in ('base', 'ours', 'theirs', 'state')},
+                    'reconciliation output must be a separate review file')
+            atomic_json(args.output, result)
+            print(json.dumps({'reconciled': args.output, 'coverage_added': 0}))
+            return 0
         watch = Watch(args.data_dir, args.cache_dir, lease_dir=args.lease_dir)
         with writer_lock(args.data_dir):
             watch.recover_transaction()
