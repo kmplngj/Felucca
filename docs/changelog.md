@@ -92,6 +92,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **Native attribution:** ABOUT credits and the retained installer template now
+  distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0
+  dedication. The PHASE source comment agrees; synthesis and generated sounds
+  are unchanged. Physical FM-1 credit readability/scrolling remains pending.
+  See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
+
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
   built-in palettes. Mute marks and inactive graphics keep their distinct state.
