@@ -14,6 +14,7 @@ Host tests and the browser emulator compile the real DSP sources against simulat
 
 | Before you… | Read |
 | --- | --- |
+| Work on an issue, handle a PR, or autonomously process a requested backlog | [Issue delivery skill](.agents/skills/issue-delivery/SKILL.md); apply the mode and permissions matching the current request |
 | Build, generate assets, or run tests | [BUILDING.md](BUILDING.md) |
 | Collect diagnostics from a connected FM-1 | [docs/diagnostics.md](docs/diagnostics.md), [docs/performance.md](docs/performance.md) |
 | Add or change diagnostic commands, fields, build flags or host tools | [Diagnostic capabilities](docs/diagnostics.md#diagnostic-capabilities), [BUILDING.md](BUILDING.md), and the affected usage/protocol guide |

@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-only
+interface:
+  display_name: "Issue and PR delivery"
+  short_description: "Deliver issues, PRs and explicitly assigned backlogs"
+  default_prompt: "Use $issue-delivery to handle the requested issue, PR or backlog through validation, review and handoff."
+
+policy:
+  allow_implicit_invocation: true
