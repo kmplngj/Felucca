@@ -151,6 +151,31 @@ c.render(600);
 check("a fresh instance with the kept sectors has it; one without does not",
       b.ex.web_test_user_preset(0) === 1 && c.ex.web_test_user_preset(0) === 0);
 
+// ---- append-only SCL values and bounded quick-layer pages (#634)
+{
+  const d = await device(null); d.render(600);
+  d.ex.web_buttons(1 << B.SCL); d.render(600);           // physical SEL held
+  d.turn(EN.K2, 15);
+  const at15 = d.screen();
+  let ok = d.ex.web_test_param(26) === 15;              // stable P_SCALE id
+  d.turn(EN.K2, 1); const at16 = d.screen();
+  ok &&= d.ex.web_test_param(26) === 16 && at16.some((v, i) => v !== at15[i]);
+  d.turn(EN.K2, 1); ok &&= d.ex.web_test_param(26) === 17;
+  d.turn(EN.K2, 1); ok &&= d.ex.web_test_param(26) === 18;
+  d.ex.web_buttons((1 << B.SCL) | (1 << B.GLO)); d.render(60);
+  d.ex.web_buttons(1 << B.SCL); d.render(60);
+  d.turn(EN.K2, -3); ok &&= d.ex.web_test_param(26) === 15;
+  d.turn(EN.K2, 3);
+  d.ex.web_buttons((1 << B.SCL) | (1 << B.OCTDN)); d.render(60);
+  d.ex.web_buttons(1 << B.SCL); d.render(60);
+  ok &&= d.ex.web_test_param(26) === 0;                 // opening scale restored
+  d.ex.web_buttons(0); d.render(500);
+  check("SCL 15/16/17/18 page crossing, GLO ownership and OCT- undo", ok);
+  d.ex.web_keys(1 << 7); d.render(100); d.ex.web_keys(0); d.render(1200);
+  d.tap(B.PLAY); d.tap(B.PLAY);
+  check("SCL closes cleanly: notes release and PLAY/STOP still work", d.ex.web_playing() === 0 && d.peak > 0.01);
+}
+
 // ---- legacy and added MACRO models through the panel's save/name/load flow
 // Read the controls as well as slot occupancy: an occupied slot alone cannot prove that
 // the new engine ID, its eight controls and the category survived the flash round trip.

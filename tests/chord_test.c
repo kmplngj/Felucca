@@ -9,6 +9,7 @@
  * Run by tests/run_tests.sh (needs build/gen from one firmware build). */
 #define UI_TEST_NO_MAIN 1
 #include "ui_test.c"
+#include "scale_expected.h"
 
 static int gate_note(const track_t *t, uint32_t note)
 {
@@ -118,6 +119,49 @@ static int theory(void)
         bad += check("DIA3 / DIA7 of every scale and root: 3 / 4 notes, every one in key", ok);
     }
     return bad;
+}
+
+/* Musical reference: every other interval from an independent degree list, then the
+ * documented voicing's degree order and octave offsets (not production masks). */
+static int scale_chord_matrix(void)
+{
+    track_t *t = &trk[0];
+    int ok = 1;
+    reset();
+    for (uint32_t s = 0; s < NELEM(SCALE_EXPECTED); s++)
+        for (int root = 0; root < 12; root++)
+            for (uint32_t mode = CH_DIA3; mode <= CH_DIA7; mode++)
+                for (uint32_t voice = VC_CLOSE; voice <= VC_BASS; voice++)
+                    for (int note = 0; note < 128; note++) {
+                        uint32_t ref = s ? s : 1u, count = SCALE_EXPECTED[ref].count;
+                        int base = expected_snap(ref, root, note), pc = (base - root + 120) % 12;
+                        uint32_t degree = 0, n = mode == CH_DIA3 ? 3u : 4u;
+                        while (SCALE_EXPECTED[ref].notes[degree] != pc) degree++;
+                        int tones[4]; uint8_t want[4], got[4]; uint32_t nw = 0;
+                        for (uint32_t k = 0; k < n; k++) {
+                            uint32_t d = degree + 2u * k;
+                            tones[k] = base - pc + SCALE_EXPECTED[ref].notes[d % count] + 12 * (int)(d / count);
+                        }
+                        if (voice == VC_OPEN) tones[1] += 12;
+                        else if (voice == VC_INV1 || voice == VC_INV2) {
+                            tones[0] += 12;
+                            if (voice == VC_INV2) tones[1] += 12;
+                        } else if (voice == VC_BASS) {
+                            if (n == 4u) tones[2] = tones[3];
+                            else n++;
+                            tones[n - 1u] = base - 12;
+                        }
+                        for (int pitch = 0; pitch < 128; pitch++)
+                            for (uint32_t k = 0; k < n; k++) if (tones[k] == pitch) {
+                                want[nw++] = (uint8_t)pitch; break;
+                            }
+                        if (!nw) want[nw++] = (uint8_t)clamp(base, 0, 127);
+                        t->p[P_SCALE] = (int16_t)s; t->p[P_ROOT] = (int16_t)root;
+                        t->p[P_CHRD] = (int16_t)mode; t->p[P_VOIC] = (int16_t)voice;
+                        uint32_t ng = chord_build(t, (uint32_t)note, got);
+                        ok &= ng == nw && !memcmp(got, want, nw);
+                    }
+    return check("independent 19 scales x 12 roots x DIA3/DIA7 x all voicings x MIDI note range", ok);
 }
 
 static int shapes_voicings(void)
@@ -320,7 +364,7 @@ static int kits(void)
 
 int main(void)
 {
-    int bad = theory() + shapes_voicings() + keys() + arp_rec() + midi_in() + kits();
+    int bad = scale_chord_matrix() + theory() + shapes_voicings() + keys() + arp_rec() + midi_in() + kits();
     printf("%s\n", bad ? "CHORD TEST FAILED" : "chord keys test passed");
     return bad != 0;
 }

@@ -92,6 +92,36 @@ remains future work. Cancelling retires the preview's undo entry without clearin
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
+### Appended twelve-tone scales (#634)
+
+SCL keeps its original sixteen values (0–15) and appends **PHDOM** (16, Phrygian
+dominant: 0, 1, 4, 5, 7, 8, 10), **HUNG** (17, Hungarian minor: 0, 2, 3, 6, 7,
+8, 11) and **DHARM** (18, double harmonic: 0, 1, 4, 5, 7, 8, 11). Intervals are
+semitones above ROOT. They use the existing SNAP, WHITE, SEQ/SEQ+T, ARP and diatonic
+chord paths; DRUM and SLICE keep their own key maps.
+
+Tap the physical **SEL** button to open SCL; KNOB 1 changes ROOT, KNOB 2 SCL,
+KNOB 3 QNT and KNOB 4 TRN. Hold SEL for the quick layer: KNOB 2 still selects
+SCL, the 4×4 map follows its selected page and **KNOB 2 PAGE 1/2** or **2/2**
+identifies the page. Page 1 holds values 0–15; page 2 holds the three additions.
+Keys set ROOT there, KNOB 3/4 remain CHRD/VOIC, and OCT− restores the layer's
+opening values. Releasing SEL closes a held layer; the existing double-tap lock
+and transport controls retain their behavior.
+
+The editor discovers all nineteen labels from the firmware's SCL descriptor;
+no engine, parameter ID, project version or record layout changes. Projects and
+user-sound records/backups retain the new values. Sound audition and phrase loads
+continue to keep the destination track's SCL rather than applying the stored one.
+
+**Downgrade:** the preceding sixteen-scale firmware bounds SCL to 0–15 on project
+restore and user-record decoding; values 16–18 therefore play as **DIMWH (15)**.
+An old editor SET is similarly clamped to 15 by old firmware. Merely storing/exporting
+raw bytes is different from playing them, but saving the bounded runtime can
+replace the original new value. Keep an untouched backup before downgrading;
+playback and a subsequent save are not lossless. Other historical format limitations
+still apply below. Real FM-1 listening, panel, USB/TRS and save/reboot acceptance
+for these three choices remains pending.
+
 ## MIDI timing and arithmetic hardening
 
 TRS input is polled at 2 kHz even while audio renders. Packets and timestamps are

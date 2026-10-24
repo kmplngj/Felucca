@@ -1496,9 +1496,38 @@ static int macro_model_protocol(void)
 }
 #endif
 
+static int scale_protocol(void)
+{
+    static const char *const names[] = {"CHR", "MAJ", "MIN", "DOR", "MIX", "PEN", "MPEN", "HARM",
+        "PHRY", "LYD", "LOC", "MEL", "BLUES", "WHOLE", "DIMHW", "DIMWH", "PHDOM", "HUNG", "DHARM"};
+    static const int values[] = {0, 15, 16, 17, 18, 19, 127, -1};
+    uint8_t a[] = {0, P_SCALE, 0, 64};
+    reset();
+    uint32_t n = request(ED_DESC, a, 2), pos = 14;
+    int ok = n < sizeof ed_out && ed_rv(host_wire + 8) == 0 && ed_rv(host_wire + 10) == 18;
+    pos += (uint32_t)strlen((char *)host_wire + pos) + 1u;
+    pos += (uint32_t)strlen((char *)host_wire + pos) + 1u;
+    for (uint32_t k = 0; k < NELEM(names); k++) {
+        ok &= pos < n - 1u && !strcmp((char *)host_wire + pos, names[k]);
+        pos += (uint32_t)strlen((char *)host_wire + pos) + 1u;
+    }
+    ok &= pos == n - 1u && host_wire[pos] == 0xF7;
+    int bad = check("SCL DESC: unchanged 0..15 plus PHDOM/HUNG/DHARM, all 19 complete names", ok);
+    ok = 1;
+    for (uint32_t k = 0; k < NELEM(values); k++) {
+        int value = values[k], want = clamp(value, 0, 18);
+        a[2] = (uint8_t)((value + 8192) & 127); a[3] = (uint8_t)((value + 8192) >> 7);
+        request(ED_SET, a, 4);
+        ok &= TSEL->p[P_SCALE] == want && ed_rv(host_wire + 7) == want;
+        request(ED_DUMP, 0, 0);
+        ok &= ed_rv(host_wire + 7 + 2u * P_SCALE) == want;
+    }
+    return bad + check("SCL SET/DUMP: 0/15/16/17/18 round-trip, negative/high values clamp 0/18", ok);
+}
+
 int main(void)
 {
-    int bad = backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
+    int bad = scale_protocol() + backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + usb_burst() + menu_protocol() + drum_kit_retired() +
               learn_protocol() + custom_palette()
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
