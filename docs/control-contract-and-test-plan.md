@@ -5,7 +5,11 @@ Research for [#29](https://github.com/kmplngj/Felucca/issues/29) and
 [#30](https://github.com/kmplngj/Felucca/issues/30), inspected 2026-10-24 at
 `5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e` (`main`). This is a source audit and
 decision proposal: it establishes neither an existing defect nor a new control
-mode. No firmware, tests, formats, goldens or budgets were changed or executed.
+mode. No firmware, tests, formats, goldens or budgets were changed. Firmware,
+host, browser and FM-1 checks were not run for this documentation-only report.
+Documentation/helper CI [40088169897](https://github.com/kmplngj/Felucca/actions/runs/40088169897)
+passed at `e420b9e`; root source-range/relative-path, SPDX and whitespace checks
+also passed (71 checked paths/ranges across 76 links at that revision).
 The live issue bodies and their initial audit comments
 ([29](https://github.com/kmplngj/Felucca/issues/29#issuecomment-6383096088),
 [30](https://github.com/kmplngj/Felucca/issues/30#issuecomment-6383096239)) were read.
@@ -18,8 +22,10 @@ composition order as an implicit product decision.
 
 ## Evidence conventions and scope
 
-All numbered source links below are immutable links to the inspected revision.
-They are observations of that revision, not results from running its harnesses.
+Only source links qualified with commit `5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e`
+are immutable evidence for the inspected revision. Relative guide/source links
+provide repository navigation and may change later; they are not pinned evidence.
+Source observations are not results from running that revision's harnesses.
 The [development review](development-review-2026-10-11.md) is historical context;
 its resource totals and test counts do not describe this revision. This report
 does not compare or copy Schwung implementation; the donor links in the issues
@@ -236,7 +242,7 @@ has an observable result and an explicit counterexample it should detect.
 
 | ID and setup | Observable invariant / concrete failure detected | Scope and gate |
 | --- | --- | --- |
-| C1: motion PAN plus deterministic LFO or MODW slot, manual edit or standard/learned CC, then STOP/bypass | Observe render-time value, post-block `p[]`, base snapshot and stop value separately. An offset retained in `p[]`, saved motion value, or lost newly edited base fails | 2 sources x 3 writers x 2 endings = 12 traces; unarmed first, one armed quantized counterpart |
+| C1: motion PAN plus deterministic LFO or MODW slot, manual edit or standard/learned CC, then STOP/bypass | Observe render-time value, post-block `p[]`, base snapshot and stop value separately. An offset retained in `p[]`, saved motion value, or lost newly edited base fails | 2 sources x 3 writers x 2 endings = 12 unarmed traces, plus one armed quantized LFO + standard CC + STOP counterpart: 13 total |
 | C2: prior automation + later lock + same matrix; next step, chance-failed step, loop wrap, ratchet, bulk lock clear and individual record deletion | Lock heard only for its eligible step; next step restores prior automation/base before modulation. Bulk clear leaves the sounding lock until the next step; individual deletion immediately restores every active parameter on that track to its patch base, including an unrelated active parameter. Detect stale lock, extra offset, conflated removal paths or note-on seeing post-render offset | Four playback traces plus two removal traces extending existing lock fixtures; exercise editor operations 6/4 and corresponding panel actions |
 | C3: two to four independent additive slots to PAN/REV, fixed source snapshot; reverse slot assignment/activation order, clear each | Same final render value for same active additive terms; disabling one removes only its contribution and post-block `p[]` is unchanged. Mixed-sign near-bound fixture detects per-slot clamp/order dependence | 2 destinations x slot counts 2..4 x at most 24 permutations; fixed seeds/time, no AMP/DEPTH permutation promise |
 | C4: held MOMENTARY, CC/editor/motion before and after first turn, release and KEEP, snapshot while held | Characterize separate live/base/cache values and both orders. Detect an accidental claim that release reveals latest underlying state or KEEP always updates motion base | 3 writers x 2 orders x 2 endings = 12 traces; freeze changed expected policy only after D1/D2 |
