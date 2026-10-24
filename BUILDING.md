@@ -575,6 +575,12 @@ differing PCM/state word appear in the output; fixture code is in
 
 ## Device diagnostics
 
+The native LCD fault regression compiles the actual driver/canvas/UI against an
+independent DMA oracle (`tests/lcd_fault_test.c`), including sanitizer coverage.
+`python3 tests/lcd_wait_test.py` checks the HAL's real completion/wait bodies with
+substituted registers. These host checks do not qualify hardware DMA abort or
+recovery; see [LCD containment](docs/lcd-fault-containment.md).
+
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
 For static native HOME/menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
