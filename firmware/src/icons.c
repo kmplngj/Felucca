@@ -20,7 +20,8 @@ static int32_t cv_trk(int32_t x, int32_t y, uint32_t size, uint32_t k, uint16_t 
 {
     const aafont_t *f = size > 16u ? &AF_M : &AF_S;
     char s[2] = {(char)('1' + k), 0};
-    const aag_t *g = &f->g[glyph(f, (uint8_t)s[0])];
+    aag_t scratch;
+    const aag_t *g = glyph_metrics(f, glyph(f, (uint8_t)s[0]), &scratch);
     int32_t in = size > 16u ? 2 : 0, w = (int32_t)size - 2 * in;
     cv_rrect(x + in, y + in, w, w, -(w / 4), fill, under);
     GFX_HOOK_ALIGN(x + in, y + in, x + in + w, y + in + w, AL_HV, "track cushion digit");

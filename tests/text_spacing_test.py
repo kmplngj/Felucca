@@ -32,9 +32,15 @@ def parse(path):
         name, f = m.group(1), [x.strip() for x in m.group(2).split(",")]
         arr = lambda n: [int(v, 0) for v in re.search(r"AF_%s_%s\[\d+\] = \{([^}]*)\}" % (name, n), t)
                          .group(1).replace("\n", " ").split(",") if v.strip()]
-        g = [tuple(int(v) for v in e.split(",")) for e in
-             re.findall(r"\{(-?\d+, -?\d+, -?\d+, -?\d+, -?\d+, -?\d+)\}",
-                        re.search(r"AF_%s_G\[\d+\] = \{(.*?)\n\};" % name, t, re.S).group(1))]
+        table = re.search(r"static const (aag_t|aag_fixed_t) AF_%s_G\[\d+\] = \{(.*?)\n\};" % name, t, re.S)
+        fixed_adv = int(f[13]) if len(f) == 15 else 0
+        g = [tuple(int(v.strip()) for v in e.split(",")) for e in re.findall(r"\{([^{}]+)\}", table[2])]
+        if table[1] == 'aag_fixed_t':
+            assert fixed_adv > 0 and int(f[11]) == 0 and int(f[12]) > 0
+            assert all(len(e) == 5 for e in g)
+            g = [(e[0], fixed_adv, *e[1:]) for e in g]
+        else:
+            assert not fixed_adv and all(len(e) == 6 for e in g)
         kern = {}
         if f[8] != "0":
             kern = dict(zip(arr("KERN"), arr("KD")))
@@ -42,7 +48,7 @@ def parse(path):
         raw = re.search(r'\b' + data_name + r'\[\d+\] = \{([^}]*)\}', t)[1]
         data = bytes(int(v.strip(), 0) for v in raw.split(',') if v.strip())
         scale = int(f[12]) if len(f) > 13 else 0
-        hc = f[13] if len(f) > 13 else f[12] if len(f) > 12 else "0"
+        hc = f[14] if len(f) == 15 else f[13] if len(f) > 13 else f[12] if len(f) > 12 else "0"
         faces[name] = {"h": int(f[0]), "asc": int(f[1]), "first": int(f[2]), "last": int(f[3]), "nex": int(f[4]),
                        "g": g, "data": data, "kern": kern, "ex": arr("EX")[:int(f[4])], "scale": scale,
                        "psh": int(f[11]) if len(f) > 11 else 0,
