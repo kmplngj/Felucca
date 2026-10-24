@@ -453,6 +453,16 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     }
     unit profiles "" u_profiles
 
+    UNIT_NEEDS="assets pillow"
+    u_icon_streams() {
+        run "icons: deterministic export, source alpha, metadata, stream and offset boundaries" \
+            python3 tests/icon_stream_test.py --c-reference "$OUT/icon-stream-reference.h"
+        $CC -O1 -w -Ibuild/gen -I"$OUT" -o "$OUT/icon_stream_test" tests/icon_stream_test.c -lm
+        run "icons: actual C Huffman/raw pixels, palettes, clipping, mirroring, caches and lookahead" "$OUT/icon_stream_test"
+    }
+    unit icon_streams "" u_icon_streams
+    UNIT_NEEDS=assets
+
     u_replay() {
         run "timestamped interaction replay: PCM/LCD determinism and real emulator" python3 tests/replay_test.py NativeReplayTests
     }
@@ -1198,6 +1208,13 @@ else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    u_asan_icon_streams() {
+        ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ibuild/gen -I"$OUT" \
+            -o "$A/icon_stream_test" tests/icon_stream_test.c -lm
+        run "icons: strict ASan/UBSan renderer and exact-allocation boundaries" "$A/icon_stream_test"
+    }
+    unit asan_icon_streams "icon_streams" u_asan_icon_streams
+
     u_asan_libc() {
         # The libc harness needs none of the DSP sanitizer exclusions above.
         ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined \
