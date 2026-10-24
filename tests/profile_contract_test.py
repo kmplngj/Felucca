@@ -33,6 +33,7 @@ class Contract(unittest.TestCase):
         self.assertEqual(value['registry']['defaults'], [0, 12, 4, 10])
         self.assertEqual(value['source_pins'], profile.source_pins(ROOT))
         self.assertIn('firmware/engines/LICENSE', value['license_sha256'])
+        self.assertIn('LICENSES/CC0-1.0.txt', value['license_sha256'])
         self.assertIn({'kind': 'engine', 'id': 14}, recipes['macro']['provider_reasons']['braids'])
         self.assertIn({'kind': 'provider', 'id': 'portable-dsp'},
                       recipes['standard']['provider_reasons']['native-core'])
