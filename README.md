@@ -155,7 +155,8 @@ Based on the work of Leo Kuroshita (@kurogedelic), Hügelton Instruments and the
 contributors credited in [CREDITS.md](CREDITS.md). Contributions from upstream and
 other forks retain their attribution and licences.
 
-Felucca is [GPL-3.0-only](LICENSE), including the Hügelton Sample Pack. Bundled fonts,
+Felucca is [GPL-3.0-only](LICENSE). The Hügelton Sample Pack generator and its sounds
+are [CC0 1.0](LICENSES/CC0-1.0.txt). Bundled fonts,
 ported DSP and the five MIT-licensed engines in `firmware/engines/` retain their own
 licences; see [LICENSING.md](LICENSING.md) and [LICENSES/](LICENSES/).
 M-VAVE and FM-1 are trademarks of their owners; this project is not affiliated with them.
