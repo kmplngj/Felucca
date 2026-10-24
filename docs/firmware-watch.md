@@ -60,7 +60,7 @@ record even if it predates later successful source initialization.
 
 ## Issue destinations and implementation boundaries
 
-Follow the [AGENTS ownership table](../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation)
+Follow the [repository ownership table](repository-ownership.md)
 for both issue placement and subsequent implementation. Portable MIT-compatible
 engine code/content/generators/tests go to `kmplngj/Felucca-Engines`; GPL-derived
 portable ports go to `kmplngj/Felucca-Engines-GPL`. Felucca owns firmware IDs,

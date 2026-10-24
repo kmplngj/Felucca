@@ -101,6 +101,6 @@ the user; they do not grant the agent permission to flash or publish.
 - A user can reach the function without guessing a button, page, knob or prerequisite.
 - Each scenario says what to do, what to observe and how to recognize success.
 - The README assessment names updated sections or explains why existing text covers
-  the result, as required by [AGENTS](../../../AGENTS.md#user-facing-documentation).
+  the result, as required by [documentation policy](../../../docs/documentation-policy.md).
 - Replace every template prompt with actual instructions or a specific reason it
   does not apply. Recheck the procedure whenever the implementation changes.
