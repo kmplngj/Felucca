@@ -402,6 +402,10 @@ unit fixture "" u_fixture
                          {f"catalog_{i}" for i in (10, 11, 12, 13)})
         self.assertIn('asan_fuzz_ed', plan)
         self.assertIn('sanitizer', plan['asan_fuzz_ed']['needs'])
+        for name in ('adsr_sync', 'adsr_sync_fm4'):
+            self.assertIn(name, plan)
+            self.assertEqual(plan[name]['needs'], ['assets'])
+            self.assertEqual(plan[name]['dependencies'], [])
         self.assertEqual(plan['regression']['producers'],
                          ['regress', 'regress_os', 'regress_cpu2_0', 'regress_c1',
                           'tests/regress_counter_test.py'])

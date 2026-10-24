@@ -60,6 +60,11 @@ disassembly. The target budget checker verifies its listing hash and selects the
 engine set, independently of the current `build/gen` profile. A listing without a sidecar
 retains the historical full checks; a stale or incompatible sidecar fails validation.
 
+The [ADSR synchronization fix](adsr-render-synchronization.md) records a display
+correctness comparison with extra draw-time hashing, its controlled code/frame cost
+and the remaining MACRO capacity and physical-device gates. It is not a redraw or CPU
+optimization claim.
+
 Run the build and suite sequentially and check each exit status before using its artifacts.
 For release builds, substitute the actual versioned package name. Record the relevant
 environment overrides separately; do not archive unrelated credentials/environment variables.

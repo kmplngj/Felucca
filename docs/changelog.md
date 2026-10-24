@@ -92,6 +92,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **ADSR redraw synchronization:** keep submitted curve values and redraw state
+  coherent across asynchronous parameter changes, avoiding stale curves when values
+  return during a display transfer. Other parameter edits retain conservative redraws;
+  FM-1 qualification remains pending. See [scope and validation](adsr-render-synchronization.md).
+
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
   built-in palettes. Mute marks and inactive graphics keep their distinct state.
