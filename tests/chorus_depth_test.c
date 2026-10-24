@@ -87,6 +87,72 @@ static void trajectory(int from, int to, int rate, int partition, int rapid)
                                        song.g[G_CDEPTH] * 6 * 256));
 }
 
+
+/* A separate wide-product oracle for full chorus state, including the silent gate.
+ * The reference always evaluates the modulated tap; it has no zero-Depth dispatch. */
+static void zero_depth_state(void)
+{
+    uint32_t rate, n, b, i, checked = 0;
+    for (rate = 0; rate < 128; rate++) for (n = 1; n <= CTL; n++) {
+        uint32_t ph = UINT32_MAX - rate, wp = UINT32_MAX - n, live = 0;
+        int32_t depth = 0, in[CTL], wet[CTL];
+        clear();
+        fx.cho_ph = ph; fx.cho_w = wp;
+        for (b = 0; b < 96u + CHO_LEN / n; b++) {
+            uint32_t active, inc, zc = 0;
+            int32_t target = b < 8 ? 0 : b < 16 ? 127 : b < 80 ? 0 : b < 88 ? 1 : 0;
+            /* Repeated reset/drained starts, live zero tails and changing Rate. */
+            song.g[G_CDEPTH] = target;
+            song.g[G_CRATE] = (rate + b) & 127u;
+            inc = LFO_INC[song.g[G_CRATE]] / CTL;
+            active = live;
+            for (i = 0; i < n; i++) {
+                uint32_t k = b * CTL + i, u = k * 1664525u + rate * 1013904223u;
+                int32_t x = b >= 88 ? 0 : (b & 3u) == 0 ? (i ? 0 : 131072) :
+                            (b & 3u) == 1 ? (int32_t)(u & 262143u) - 131072 :
+                            (b & 3u) == 2 ? (i & 1u ? -65537 : 65536) : 0;
+                in[i] = x;
+                active |= x != 0;
+            }
+            if (!live) depth = target * 6 * 256;
+            fx_buses(in, zero, zero, wet, n);
+            for (i = 0; i < n; i++) {
+                int32_t y = 0;
+                ph += inc;
+                if (active) {
+                    int32_t x = clamp(in[i] >> 1, -32768, 32767), r, f;
+                    zc |= x;
+                    reference[wp & (CHO_LEN - 1u)] = (int16_t)x;
+                    depth += clamp(target * 6 * 256 - depth, -96, 96);
+                    r = delay_at(ph, depth); f = r & 255;
+                    y = reference[(wp - ((uint32_t)r >> 8)) & (CHO_LEN - 1u)];
+                    y += ((reference[(wp - ((uint32_t)r >> 8) - 1u) & (CHO_LEN - 1u)] - y) * f) >> 8;
+                    y *= 2;
+                }
+                assert(wet[i] == y);
+                wp++;
+            }
+            if (active) live = zc ? CHO_LEN : live > n ? live - n : 0;
+            assert(fx.cho_ph == ph && fx.cho_w == wp);
+            assert(fx.cho_depth == depth && fx.cho_live == live);
+            assert(!memcmp(reference, cho_buf, sizeof reference));
+            checked++;
+        }
+        assert(!live);
+        /* A drained start at zero must ignore the preceding transient coefficient. */
+        song.g[G_CDEPTH] = 0;
+        fx_buses(in, zero, zero, wet, n);
+        assert(!fx.cho_depth && !fx.cho_live);
+    }
+#ifdef CHORUS_ZERO_TEST_FAST
+    assert(chorus_test_fast > 0);
+    printf("chorus zero: %u full-buffer/state block checks; %llu fast-path samples\n", checked,
+           (unsigned long long)chorus_test_fast);
+#else
+    printf("chorus zero: %u full-buffer/state block checks against original general path\n", checked);
+#endif
+}
+
 static void four_tracks(void)
 {
     uint32_t p, b;
@@ -176,6 +242,7 @@ int main(int argc, char **argv)
                 trajectory(d, d, rate, partition, 0);
             }
     for (chord = 0; chord < 2; chord++) for (jump = 0; jump < 2; jump++) recording(argv[1], chord, jump);
+    if (!legacy) zero_depth_state();
     four_tracks();
     /* Zero frames must not inspect pointers, advance phase or mutate state. */
     if (!legacy) {

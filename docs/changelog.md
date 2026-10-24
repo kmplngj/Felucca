@@ -223,6 +223,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- **Settled zero-Depth chorus:** active shared chorus uses an exact integer tap after
+  Depth settles at zero, preserving phase, buffers and later edits. Matched host
+  instruction counts improve for this endpoint; the target app grows 156 B with
+  unchanged static RAM. Short-block dispatch costs and pending FM-1 listening/timing
+  qualification are recorded in the [bounded experiment](chorus-zero-depth-experiment.md).
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See

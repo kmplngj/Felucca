@@ -702,6 +702,18 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
     rd = fx.dly_live || mulq15(-fx.dly_lp, col) || mulq15(fx.dly_lp, fb) || !zeros32(dly_in, n);   /* (its low-pass
                                                          * at rest: kept by a silent line, feeding nothing back) */
     if (rc) {
+        if (!cdepth && !fx.cho_depth) {
+            /* Settled zero Depth: the native Q8 tap is exactly 400 samples, f = 0.
+             * Keep writing and advancing the LFO so later Depth edits see the same state. */
+            for (i = 0; i < n; i++) {
+                int32_t x = clamp(cho_in[i] >> 1, -32768, 32767);
+                zc |= x;
+                cho_buf[fx.cho_w & (CHO_LEN - 1u)] = (int16_t)x;
+                fx.cho_ph += cinc;
+                wet[i] = (int32_t)cho_buf[(fx.cho_w - 400u) & (CHO_LEN - 1u)] * 2;
+                fx.cho_w++;
+            }
+        } else
         for (i = 0; i < n; i++) {                       /* chorus: modulated short delay, 5..15 ms */
             int32_t x = clamp(cho_in[i] >> 1, -32768, 32767), r;
             zc |= x;
