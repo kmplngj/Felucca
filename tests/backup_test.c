@@ -592,10 +592,6 @@ static int slice_tests(void)
     int found;
     slc_man_t keep0, keep2;
 
-    if ((uintptr_t)nor < (uintptr_t)SMP_DATA || (uintptr_t)nor - (uintptr_t)SMP_DATA > 0xF0000000u) {
-        printf("backup: the flash image must lie above SMP_DATA within 4 GiB (32-bit offsets)\n");
-        return 1;
-    }
     reset();
     slc_store_boot();                                      /* (persist_boot: the scans read the records) */
     make_sample(0, 12000, 1);
@@ -1096,7 +1092,7 @@ static int raw_tests(void)
     memset(&ub, 0, sizeof ub);
     ub.magic = UP_BANK_MAGIC; ub.rsize = sizeof(up_rec_t); ub.nslot = UP_PER_BANK;
     ub.r[0].used = UP_USED; ub.r[0].ver = UP_VER; ub.r[0].engine = ENGI_MACRO; ub.r[0].np = P_COUNT;
-    ub.r[0].p[P_E0] = 47 + 64;
+    up_set_value(&ub.r[0], P_E0, 47);                 /* UP_VER uses packed bytes, not legacy p[72] */
     st_save(OBJ_UPRESET0, &ub, sizeof ub);
     raw_snap();
     bad += check("raw export: CURRENT PER6 preserves stable engine 14's favourites, even when unavailable",

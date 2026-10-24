@@ -16,6 +16,96 @@ static void zone_set(smp_zone_t *z, uint32_t off, uint32_t n)
     z->off = off; z->n = n; z->ls = 0; z->le = n - 1u; z->rate = 1u << 16; z->idx = 0; z->lo = 0; z->hi = 127;
 }
 
+/* Independent IMA vectors, low nibble first, predictor/index reset at each zone.
+ * The unused high nibble after an odd length is deliberately different. Exercise
+ * the validated slot path, not a constructed runtime address. */
+static int sample_addressing(void)
+{
+    static const int16_t PCM[3][7] = {{1, 1, 12, 30, 0, 3, 13},
+                                    {3, 3, 14, 32, -1, 2, 12},
+                                    {4, 4, 15, 33, -3, 0, 10}};
+    static const int32_t INDEX[3] = {0, 8, 10};
+    uint32_t size, k, j, i, bad_pcm = 0, bad_state = 0, bad_bounds = 0;
+    int bad = 0;
+    reset();
+    for (size = 0; size < 2u; size++) {
+        uint32_t len = size ? SMP_USER_SIZE - SMP_USER_DATA : 8u;
+        for (k = 0; k < SMP_USER_SLOTS; k++) {
+            smp_user_hdr_t h = {0};
+            uint8_t *data = host_samples[k] + SMP_USER_DATA;
+            memset(host_samples[k], 0xFF, SMP_USER_SIZE);
+            h.magic = SMP_USER_MAGIC; h.version = 1; h.nz = 4; h.data_len = len;
+            zone_set(&h.zone[0], 0, 1);
+            zone_set(&h.zone[1], 2, 3);
+            zone_set(&h.zone[2], 2, 3);       /* shared data: SLICE keeps it once */
+            zone_set(&h.zone[3], len - 2u, 3);
+            for (j = 0; j < h.nz; j++) h.zone[j].lo = h.zone[j].hi = (uint8_t)(60u + j);
+            data[0] = (uint8_t)(0xF1u + k);
+            data[2] = (uint8_t)(0x71u + k); data[3] = 0xF4;
+            data[len - 2u] = (uint8_t)(0x28u + k); data[len - 1u] = 0xE6;
+            memcpy(host_samples[k], &h, sizeof h);
+            smp_user_scan(k);
+            bad_bounds += usr_nz[k] != 4u || memcmp(host_samples[k], &h, sizeof h) != 0;
+        }
+        for (k = 0; k < SMP_USER_SLOTS; k++) {
+            for (j = 0; j < 4u; j++) {
+                const smp_zone_t *z = &usr_zone[k][j];
+                voice_t v = {0};
+                int32_t pred = 0, idx = 0;
+                uint32_t at = j ? (j == 3u ? 4u : 1u) : 0u;
+                for (i = 0; i < z->n; i++) {
+                    bad_pcm += sample_next(z, &v, 0) != PCM[k][at + i];
+                    bad_pcm += gr_dec(z, i, &pred, &idx) != PCM[k][at + i];
+                    bad_state += v.s[1] != (j == 3u ? (i == 2u ? 6 : 0) : INDEX[i]);
+                    bad_state += idx != v.s[1] || pred != v.s[0];
+                }
+            }
+#if FELUCCA_SLICE
+            {
+                const slc_src_t *s = slc_get(k + 1u);
+                slc_dec_t d;
+                int16_t rb[7];
+                bad_bounds += !s || s->len != 7u || s->nseg != 3u;
+                if (!s) continue;
+                slc_dec_at(&d, 0, 0);
+                for (i = 0; i < 7u; i++) bad_pcm += slc_dec_next(s, &d) != PCM[k][i];
+                for (i = 0; i < 7u; i++) {
+                    slc_dec_at(&d, i, slc_state_at(s, i));
+                    bad_state += slc_dec_next(s, &d) != PCM[k][i];
+                }
+                slc_fill(s, rb, 0, 7, 0, 0);
+                bad_pcm += memcmp(rb, PCM[k], sizeof rb) != 0;
+            }
+#endif
+        }
+        /* Invalid offsets/lengths must invalidate every zone before any decoder runs. */
+        for (k = 0; k < SMP_USER_SLOTS; k++) {
+            smp_user_hdr_t good, h;
+            memcpy(&good, host_samples[k], sizeof good);
+            for (j = 0; j < 6u; j++) {
+                h = good;
+                if (j == 0u) h.zone[3].off = len - 1u;       /* truncated odd-length zone */
+                if (j == 1u) h.zone[3].off = UINT32_MAX;
+                if (j == 2u) h.zone[3].n = UINT32_MAX;
+                if (j == 3u) h.zone[3].n = 0;
+                if (j == 4u) h.zone[3].idx = 89;
+                if (j == 5u) h.data_len = SMP_USER_SIZE - SMP_USER_DATA + 1u;
+                memcpy(host_samples[k], &h, sizeof h);
+                smp_user_scan(k);
+                bad_bounds += usr_nz[k] != 0u;
+                for (i = 0; i < 16u; i++) bad_bounds += usr_zone[k][i].n != 0u;
+#if FELUCCA_SLICE
+                bad_bounds += slc_get(k + 1u) != 0;
+#endif
+            }
+        }
+    }
+    bad += check("sample owners: all slots, short/odd/shared zones and last slot bytes: independent PCM", !bad_pcm);
+    bad += check("sample owners: predictor/index and SLICE checkpoint/reverse-window states", !bad_state);
+    bad += check("sample owners: stored bytes unchanged, malformed/truncated regions rejected", !bad_bounds);
+    return bad;
+}
+
 static int sample_slots(void)
 {
     int bad = 0;
@@ -134,7 +224,7 @@ static int stop_after_checks(void)
 
 int main(void)
 {
-    int bad = sample_slots() + projects() + user_presets() + stop_after_checks();
+    int bad = sample_addressing() + sample_slots() + projects() + user_presets() + stop_after_checks();
     printf("%s\n", bad ? "ROBUSTNESS TEST FAILED" : "robustness test passed");
     return bad != 0;
 }

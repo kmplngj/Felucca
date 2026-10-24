@@ -56,7 +56,7 @@ typedef struct {
     uint32_t data_len, crc, rsv2[2];
     smp_zone_t zone[16];
 } smp_user_hdr_t;                                   /* 32 + 16 x 28 = 480 B, data at +512 */
-static smp_zone_t usr_zone[SMP_USER_SLOTS][16];     /* RAM copy, off rebased onto SMP_DATA */
+static smp_zone_t usr_zone[SMP_USER_SLOTS][16];     /* RAM copy, off tagged with its user-slot owner */
 static uint8_t usr_nz[SMP_USER_SLOTS];
 static const char *const SMP_ALL_NAMES[SMP_NALL] = {SMP_SET_NAMES_INIT, "USR1", "USR2", "USR3"};
 
@@ -64,6 +64,21 @@ static const char *const SMP_ALL_NAMES[SMP_NALL] = {SMP_SET_NAMES_INIT, "USR1", 
 #define SMP_USER_XIP(k) fm1_xip_ptr(SMP_USER_BASE + (k) * SMP_USER_SIZE)
 #endif
 static const uint8_t *smp_user_xip(uint32_t k) { return SMP_USER_XIP(k); }
+/* Runtime offsets only: factory data keeps its generated SMP_DATA index; a validated
+ * user zone carries its slot and data-relative offset. Stored/header offsets stay
+ * relative to +512. Never form an out-of-array SMP_DATA pointer to reach user XIP. */
+#define SMP_OFF_USER 0x80000000u
+#define SMP_OFF_SLOT_SHIFT 17u
+#define SMP_OFF_DATA_MASK ((1u << SMP_OFF_SLOT_SHIFT) - 1u)
+_Static_assert(sizeof SMP_DATA <= SMP_OFF_USER, "factory sample offsets overlap user tag");
+_Static_assert(SMP_USER_SLOTS <= 4u, "sample offset slot bits");
+_Static_assert(SMP_USER_SIZE - SMP_USER_DATA <= 1u << SMP_OFF_SLOT_SHIFT, "sample offset data bits");
+static inline const uint8_t *smp_data(uint32_t off)
+{
+    if (off & SMP_OFF_USER)
+        return smp_user_xip((off >> SMP_OFF_SLOT_SHIFT) & 3u) + SMP_USER_DATA + (off & SMP_OFF_DATA_MASK);
+    return SMP_DATA + off;
+}
 #if FELUCCA_SLICE
 static void slc_user_scan(uint32_t k, int valid);   /* eng_slice.c: SLICE's slice table of the slot */
 #else
@@ -78,13 +93,12 @@ static void smp_user_scan(uint32_t k)
 {
     const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(k);
     smp_zone_t zt[16];
-    uint32_t i, base, nz = 0;
+    uint32_t i, nz = 0;
     smp_user_gen++;
     usr_nz[k] = 0;
     slc_user_scan(k, 0);
     if (h->magic == SMP_USER_MAGIC && h->version == 1 && h->nz && h->nz <= 16u &&
         h->data_len <= SMP_USER_SIZE - SMP_USER_DATA) {
-        base = (uint32_t)(uintptr_t)(smp_user_xip(k) + SMP_USER_DATA) - (uint32_t)(uintptr_t)SMP_DATA;
         for (nz = h->nz, i = 0; i < nz; i++) {
             smp_zone_t *z = &zt[i];
             *z = h->zone[i];
@@ -93,7 +107,7 @@ static void smp_user_scan(uint32_t k)
                 nz = 0;                             /* zone outside the data or malformed: slot unusable */
                 break;
             }
-            z->off += base;
+            z->off |= SMP_OFF_USER | k << SMP_OFF_SLOT_SHIFT;
         }
     }
     for (i = 0; i < 16u; i++)
@@ -138,7 +152,7 @@ static inline const smp_zone_t *smp_zone(uint32_t zi)
  * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] step Q16 */
 static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
 {
-    uint32_t pos = v->ph[0], b = SMP_DATA[z->off + (pos >> 1)];
+    uint32_t pos = v->ph[0], b = smp_data(z->off)[pos >> 1];
     uint32_t code = (pos & 1u) ? (b >> 4) : (b & 15u);
     int32_t step = IMA_STEP[(uint32_t)v->s[1] <= 88u ? v->s[1] : 88], vd = step >> 3;
     if (code & 4u)
