@@ -667,6 +667,7 @@ jobs:
                 echo '```'
               else
                 echo 'Historical selected source: legacy transcript verifier; no structured coverage qualification.'
+              fi
               echo 'Host CPU evidence, allowed fixture skips and FX coverage (both regression builds):'
               echo '```text'
               grep -E '^== CPU baselines:|^regress: CPU counter:|^regress: CPU: .*the budget is not checked|^regress: [0-9]+ golden renders.*CPU (budget not checked|entries over budget)|^official V15 restore: skipped|^FX rest' build/ci/tests.log || true
@@ -674,7 +675,6 @@ jobs:
                 echo 'FX rest: pending coverage (#153; no completed regression outcome in this run)'
               fi
               echo '```'
-              fi
             fi
             echo 'Tagged publication is separate from this read-only build job.'
           } >> "$GITHUB_STEP_SUMMARY"

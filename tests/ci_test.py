@@ -158,6 +158,13 @@ class Checks(unittest.TestCase):
                 for line in fx.splitlines():
                     self.assertIn(line, text)
 
+    def test_structured_source_summary_keeps_cpu_and_fx_evidence(self):
+        tools = self.root / 'tools'
+        tools.mkdir()
+        (tools / 'test_coverage.py').write_text("print('structured fixture')\n")
+        self.test_actions_summary_keeps_actual_cpu_and_pending_dependency_outcomes()
+        self.assertIn('Structured host coverage', (self.root / 'summary.md').read_text())
+
     def test_vendor_skip_words_alone_cannot_grant_exception(self):
         log = self.root / "tests.log"
         log.write_text("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)\nALL HOST TESTS PASSED\n")

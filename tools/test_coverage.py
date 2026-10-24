@@ -167,6 +167,8 @@ def compiler_environment(env, directory):
     for key, default in (('CC', 'cc'), ('CXX', 'c++')):
         words = shlex.split(original.get(key, default))
         if not words or not (actual := shutil.which(words[0], path=original.get('PATH'))):
+            if key == 'CXX' and key not in original:
+                continue  # Optional reference units keep their explicit missing-C++ skip.
             raise ValueError(f'coverage compiler not available: {key}')
         mapping["requested-" + key.lower()] = [actual, *words[1:]]
     path = directory / 'compilers.json'
@@ -177,8 +179,10 @@ def compiler_environment(env, directory):
                         repr([str(Path(__file__).resolve()), 'compiler', str(path), alias]) +
                         ' + sys.argv[1:]\nrunpy.run_path(sys.argv[0], run_name="__main__")\n')
         shim.chmod(0o755)
-    result = dict(env, CC=str(directory / 'requested-cc'), CXX=str(directory / 'requested-cxx'),
+    result = dict(env, CC=str(directory / 'requested-cc'),
                   PATH=str(directory) + os.pathsep + env.get('PATH', ''))
+    if 'requested-cxx' in mapping:
+        result['CXX'] = str(directory / 'requested-cxx')
     return result, mapping
 
 

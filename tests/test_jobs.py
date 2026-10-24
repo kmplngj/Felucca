@@ -151,13 +151,13 @@ def execute(script, output, env, ai_output=False, preflight=False):
     logs = Path(tempfile.mkdtemp(prefix="test-run-", dir=output))
     contract_env = dict(env)
     contract_env.setdefault('FELUCCA_COVERAGE_REPORT', str((logs / 'coverage.json').resolve()))
-    contract = coverage.Coverage(script.parent.parent, contract_env) if production else None
     count = job_count(env)
     with (output / ".test-run.lock").open("a+") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError("another host suite is using this checkout; use a separate worktree")
+        contract = coverage.Coverage(script.parent.parent, contract_env) if production else None
         return run_locked(script, output, env, count, ai_output, preflight, contract, logs)
 
 

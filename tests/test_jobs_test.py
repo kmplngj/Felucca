@@ -58,6 +58,19 @@ class SchedulerTests(unittest.TestCase):
                 self.fail(f"worker did not create {name}")
             time.sleep(0.01)
 
+    def test_rejected_concurrent_production_run_preserves_explicit_report(self):
+        output = self.root / 'host'
+        output.mkdir()
+        report = self.root / 'coverage.json'
+        original = b'{"run_id":"active-owner","status":"complete"}\n'
+        report.write_bytes(original)
+        env = dict(self.env, FELUCCA_COVERAGE_REPORT=str(report))
+        with (output / '.test-run.lock').open('a+') as lock:
+            test_jobs.fcntl.flock(lock, test_jobs.fcntl.LOCK_EX | test_jobs.fcntl.LOCK_NB)
+            with self.assertRaisesRegex(ValueError, 'another host suite'):
+                test_jobs.execute(SHELL, output, env)
+            self.assertEqual(report.read_bytes(), original)
+
     def test_overlap_dependencies_bound_and_ordered_output(self):
         # a and b must overlap to release one another; c reads their shared result.
         self.fixture("a\t\techo a\nb\t\techo b\nc\ta b\techo c", r'''

@@ -461,6 +461,23 @@ class CompilerTests(unittest.TestCase):
             wrapper.write_text('#!/bin/sh\nkill -TERM $$\n')
             self.assertEqual(subprocess.run([e['CC']], env=e).returncode, -15)
 
+    def test_implicit_missing_cxx_keeps_c_runner_available(self):
+        import shutil
+        which = shutil.which
+        env = dict(os.environ)
+        env.pop('CXX', None)
+        def c_only(name, **kwargs):
+            return None if name in ('c++', 'clang++', 'g++') else which(name, **kwargs)
+        with tempfile.TemporaryDirectory() as temporary, patch.object(C.shutil, 'which', side_effect=c_only):
+            result, mapping = C.compiler_environment(env, Path(temporary) / 'shims')
+            self.assertNotIn('CXX', result)
+            self.assertNotIn('requested-cxx', mapping)
+            self.assertEqual(subprocess.run([result['CC'], '--version'], env=result,
+                                            stdout=subprocess.DEVNULL).returncode, 0)
+        env['CXX'] = 'felucca-missing-explicit-cxx'
+        with tempfile.TemporaryDirectory() as temporary, self.assertRaisesRegex(ValueError, 'CXX'):
+            C.compiler_environment(env, Path(temporary) / 'shims')
+
     def test_metadata_failure_cannot_run_unrecorded_compiler(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
