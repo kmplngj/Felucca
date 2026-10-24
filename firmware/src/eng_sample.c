@@ -150,9 +150,9 @@ static inline const smp_zone_t *smp_zone(uint32_t zi)
 
 /* voice: ph[0] position (samples), ph[1] fraction Q16, s[0] predictor, s[1] step
  * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] step Q16 */
-static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
+static inline int32_t sample_next_data(const smp_zone_t *z, voice_t *v, int loop, const uint8_t *data)
 {
-    uint32_t pos = v->ph[0], b = smp_data(z->off)[pos >> 1];
+    uint32_t pos = v->ph[0], b = data[pos >> 1];
     uint32_t code = (pos & 1u) ? (b >> 4) : (b & 15u);
     int32_t step = IMA_STEP[(uint32_t)v->s[1] <= 88u ? v->s[1] : 88], vd = step >> 3;
     if (code & 4u)
@@ -171,6 +171,11 @@ static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
     }
     v->ph[0] = pos;
     return v->s[0];
+}
+
+static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
+{
+    return sample_next_data(z, v, loop, smp_data(z->off));
 }
 
 static void sample_note_on(track_t *t, voice_t *v)
@@ -223,8 +228,10 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
         v->active = 0;
         return;
     }
+    /* The zone is stable for this render; select its byte owner once, outside decoding. */
+    const uint8_t *data = smp_data(z->off);
     if (v->ph[0] == 0 && v->ph[1] == 0 && v->s[3] == 0)
-        v->s[3] = sample_next(z, v, p[P_E3]);         /* prime the interpolator */
+        v->s[3] = sample_next_data(z, v, p[P_E3], data); /* prime the interpolator */
     for (i = 0; i < n; i++) {
         int32_t s;
         frac += stepq;
@@ -240,7 +247,7 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
                 }
                 break;
             }
-            v->s[3] = sample_next(z, v, p[P_E3]);
+            v->s[3] = sample_next_data(z, v, p[P_E3], data);
         }
         s = v->s[2] + (((v->s[3] - v->s[2]) * (int32_t)(frac >> 1)) >> 15);
         if (sh)                                       /* BITS: 0 = clean, up to 12 bits removed */
