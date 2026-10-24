@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
-"""Shared rasteriser of the UI fonts and icons (gen_aa_font.py, gen_aa_icons.py).
+"""Raster helpers for icon/keycap and documentation generators.
 
 TTF -> trimmed 4-bit alpha bitmaps. Pillow + FreeType (+ Raqm for kerning and OpenType features);
 fontTools is not needed here. Nothing is downloaded, nothing is installed.

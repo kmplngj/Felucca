@@ -1,19 +1,98 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Exact icon-stream reuse experiment
 
-Candidate for [#96](https://github.com/kmplngj/Felucca/issues/96), based on clean
-`a7a1f5eb9de7decffbff4ef7aeb4e734b00eb33b`, 2026-10-24. Only identical complete
+Candidate for [#96](https://github.com/kmplngj/Felucca/issues/96), refreshed against
+main `3fce9f9f4d63b56aecfdc0e7e2d35d4271878bcf`, 2026-10-24. Only identical complete
 12 px icon streams share storage. The shared Huffman codebook is still computed
 from **all** unchanged cells of every size before deduplication. No decoder,
 renderer, icon identity, input font, typography, phase count or protocol changes.
 
-Focused export and independent C pixel checks pass. The candidate remains an
-experiment with a measured 208 B net app reduction in both matched target variants;
-the full applicable suite, screen/emulator comparison and FM-1 qualification
-remain pending. No device speed gain is claimed.
+Focused export and independent C pixel checks pass on the refreshed candidate.
+Matched candidate target/resource measurements, the full applicable suite,
+browser/emulator gate and FM-1 qualification remain pending on this base.
+The controlled current-base screen/header comparison passes as detailed below.
+The previous 208 B linked reduction belongs to the historical a7-based experiment,
+not the current native UI. No device speed gain is claimed.
 No alternative codec or font representation was trialed.
 
-## Baseline and chosen class
+## Current native UI integration
+
+The normal, uncommitted merge of `3fce9f9` into candidate
+`70b8794f15a404008670cd7c7dd64a57cc165c1c` completed without conflicts. It retains
+main's native UI, assets, font retirement and readability tests. The focused
+Python test now imports the relocated Huffman helpers from
+[ui_font_data.py](../tools/ui_font_data.py); the generator retains that module's
+import and attribution. The helper implementations, icon rasterization, Fukiai
+font, icon-name input and production icon consumers are unchanged from the prior
+base. No source or generated output was taken from a donor.
+
+Only the four UI headers needed by the focused C harness were regenerated.
+Their provenance records HEAD `70b8794f-dirty` and MERGE_HEAD `3fce9f9`; this is
+an uncommitted candidate, not a clean target-build identity. Evidence is under
+`build/issue96/main3fce-focused/`, with `asset-provenance.json`,
+`candidate-inventory.json` and `focused-results.json`.
+
+The current candidate export SHA-256 is
+`ea2e2a6165977b15655c0ecd5aa9f1b7e033229b8eab8e6ffd7d1474490dfd3e`.
+It contains 105/39/6 cells at 12/16/24 px, respectively; DATA sizes are
+3,486/2,311/508 B including two final zero lookahead bytes per size. The shared
+book remains 57 B and all named icon arrays total 7,343 B before linking.
+The 12 px cells have 99 distinct start offsets; every cell retains its IDX/OFF/INK
+entry. These are exported-array counts, not a new linked saving or runtime claim.
+
+The actual `icon_streams` runner unit passes all four Python tests without skips
+and 48,000 real C raw-alpha/Huffman canvas comparisons plus boundary fixtures.
+The actual `asan_icon_streams` unit repeats the C checks with strict ASan/UBSan
+and passes. The same-host raw oracle is regenerated directly from unchanged raster
+inputs, independently of candidate DATA/OFF. Logs retain the existing font
+`post.stringData` diagnostic and Pillow's missing-Raqm fallback warning. These
+focused units do not establish full-suite or CI coverage.
+
+The preserved pre-change Mac raw-array oracle was also freshly rebuilt against
+the current candidate source and headers: 48,000 comparisons pass normally and
+under strict ASan/UBSan. `preserved-results.json` records commands, source hashes
+and verification that the oracle differs from the original only in its harness
+include path; its raw expected arrays were not regenerated from the candidate.
+
+The coordinator separately captured a clean exact-`3fce9f9` baseline with header
+SHA-256 `5332c159a635d6647080cd3555af110d51b735b9f90284dfa72c6b37e441faa2`.
+Its inventory is 105/39/6 cells, DATA 3,694/2,311/508 B and a 57 B shared book.
+The controlled A/B uses the same current source, generated assets and build
+identity, replacing only the icon header in an isolated include directory.
+All 3,084 screen PPMs and six rolling PPMs are byte-identical, with no missing or
+extra files. The baseline covers 257 scenes in ten palettes plus the page/value
+sweep: zero lint findings and zero off-center findings over 2,817,481 alignment
+measurements. The clean-baseline worktree retains
+`build/issue96-main3fce/controlled-ui-comparison.json`. This establishes that
+header substitution preserves the current native screen pixels; it is not a
+browser, full-suite, device or performance result.
+
+Fresh clean target baselines are also complete under the coordinator's control:
+
+| Current `3fce9f9` baseline | App | RAM | POOL | RAMTEXT | NOINIT |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Default CPU2 support, runtime default OFF | 496,316 B | 62,392 B | 336,440 B | 3,152 B | 15,576 B |
+| `FELUCCA_CPU2=0` | 492,768 B | 55,764 B | 336,440 B | 2,924 B | 15,564 B |
+
+These are baseline totals only. Current candidate linked sizes, deltas, spare
+margins, budgets and artifact-bound resource verification remain pending; the
+exported 208 B payload opportunity must not be substituted for a linked result.
+
+Native text is now M8Stealth only, with S/M bitmaps and shared integer-scaled
+L/N/X roles. [DESIGN.md](../DESIGN.md), [PRODUCT.md](../PRODUCT.md) and
+[lcd-typography.md](lcd-typography.md) remain authoritative. The two style values
+in the low-level pixel oracle are retained internal compatibility coverage;
+STYLE and LARGE are retired native choices, not extra menu routes to test.
+Their reserved stored/wire values remain unchanged. Current screen acceptance
+must use the unified native layout and preserve its graph, focus and rolling
+behavior, without restoring old font or layout alternatives.
+
+## Historical baseline and chosen class
+
+The baseline, linked and host-cost measurements below describe the previous
+a7-based experiment through `70b8794`. They remain useful provenance, but do not
+qualify the refreshed `3fce9f9` integration. New matched resource and full-check
+results must be recorded separately before making current-main claims.
 
 The initial [inventory](https://github.com/kmplngj/Felucca/issues/96#issuecomment-6383180973)
 and [C reference](https://github.com/kmplngj/Felucca/issues/96#issuecomment-6383222917)
@@ -36,7 +115,7 @@ are separate inputs and remain unchanged.
 
 Six complete 12 px streams are identical: cell pairs 9/67 (27 B), 11/71 (28 B),
 29/101 (26 B), 37/80 (29 B), 44/95 (71 B), 57/89 (27 B). Their summed repeated
-payload is 208 B. There are no duplicate streams in the current 16/24 px sets.
+payload is 208 B. There were no duplicate streams in those 16/24 px sets.
 The choice is confined to the measured 12 px opportunity; no other #93 storage
 or numeric-table transformation is included.
 
@@ -103,7 +182,7 @@ whose payload plus final lookahead would reach 65,536 B. No 16-bit offset is
 narrowed or wrapped. There is no runtime dictionary or new allocation, ISR work,
 flash access, retained state, LUT state or decoder code.
 
-## Export, independent rendering and causal checks
+## Historical export, independent rendering and causal checks
 
 The candidate header SHA-256 on the recorded host is
 `f5d5c9a1872948776296d8efb12f68cd7267fb4648d5f05bc836698868a9a9a2`.
@@ -154,7 +233,7 @@ coverage contract. Focused structured evidence records four successful unittest
 tests, the normal compiler/children, and the strict sanitizer compiler/child.
 No asset-dependent test is placed in the portable asset-free unit.
 
-## Bounded host draw-cost comparison
+## Historical bounded host draw-cost comparison
 
 Apple Clang 21.0.0, macOS arm64, `-O1 -w`. The same C benchmark is compiled once
 against the archived baseline header and once against the candidate. Seven
@@ -203,21 +282,32 @@ was hidden or treated as a new visual qualification.
 
 | #96 acceptance area | Current evidence | Still required |
 | --- | --- | --- |
-| Measured class and complete cost | Exact inventory, clean matched target variants: app -208 B each; static regions/stacks unchanged, budgets/resource verification pass | Final CI identity and remaining behavior/device acceptance |
-| Identical decoded alpha and metrics | All exported icon cells, IDs, ink boxes and book checked; normal/strict C pixel and boundary checks | Full UI screens, palettes including user CUSTOM, styles, LARGE, clipping/scrolling/rolling digits and supported free text; font data remains unchanged |
-| Determinism and provenance | Two exports match; exact baseline/candidate header hashes, unchanged input assets and notices | Final revision/toolchain/profile/asset evidence attached to retained candidate |
-| Runtime/resource cost | No added runtime state/decoder; linked regions unchanged, bounded cold/hot/clipped host samples | Actual device display/load cost |
-| Host/browser/audio | Focused Python and real C checks, strict ASan/UBSan, causal negative controls | Full applicable host suite, audio/engine-switch goldens and fresh browser/emulator gate |
+| Measured class and complete cost | Current exported inventory above; historical matched variants measured -208 B app | Matched current-base candidate target builds, symbol/resource verification, budgets and final CI identity |
+| Identical decoded alpha and metrics | Current four Python tests and normal/strict C pixel and boundary checks pass; controlled current-base A/B preserves all 3,084 screen and six rolling images | User CUSTOM, historical stored style/size values and supported free text beyond the captured matrix; FM-1 legibility |
+| Determinism and provenance | Current two exports match; current header/input hashes recorded, unchanged Fukiai inputs and notices | Final committed revision/toolchain/profile/asset evidence attached to retained candidate |
+| Runtime/resource cost | No added runtime state or decoder code; prior host timing samples remain historical | Current matched linked regions/cost checks and actual device display/load cost |
+| Host/browser/audio | Current focused Python/real C and strict ASan/UBSan pass; prior causal controls remain historical | Full applicable host suite, audio/engine-switch goldens and fresh browser/emulator gate |
 | FM-1 | No device access, flash or observations | Readability/panel activity under dense audio; USB audio 44.1/48 kHz and USB/TRS MIDI, lateness/shedding/scan/stream counters, supported CPU2 variants |
 
 Unperformed checks remain pending. No installation, merge, release or publication
 is authorized by this experiment record.
 
+For the current native screen comparison, cover HOME and MIXER, value pages and
+their tall/ordinary focused banks, ENV/LFO/FX/engine graphs, MOD, PRESETS/USER/
+PROJECT names and lists, NAME entry and dialogs, and MENU's uniform rows,
+DISPLAY graph choices, COLOR/LEDS direct editing, AUTO OFF and INFO/ABOUT.
+Include all built-in palettes, representative user CUSTOM pairs, dense/long
+text, active/inactive states, compact/header rolling frames and both historical
+stored size values. Expected candidate output is pixel-identical to the matched
+`3fce9f9` baseline for the same inputs. Retired STYLE/LARGE values are compatibility
+fixtures; the native menu must remain as main defines it. Host captures do not
+establish FM-1 legibility, panel latency or audio deadlines.
+
 README assessment: no change is needed; the existing purpose, display capability
 and measurement/validation overview already cover this internal representation
 experiment. Changelog assessment: no entry for this small internal representation adjustment;
 the existing “Memory and display work” overview remains accurate. Detailed
-208 B net target evidence belongs here, with qualification still pending; this
+historical target evidence and current requalification status belong here; this
 is not a new user-facing capability or a development milestone.
 
 The Fukiai font and generated icon data retain the existing MIT notices; firmware,

@@ -622,7 +622,7 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
             run "bitmap font storage: reject narrowed glyph metrics" python3 tests/bitmap_font_test.py
             run "text: M8Stealth ASCII matches upstream bitmaps" python3 tests/m8_font_test.py build/gen/ui_fonts.h
             run "keycaps: native M8 ink, stable labels, pill masks and unchanged knob data" python3 tests/keycap_font_test.py build/gen/ui_keycaps.h
-            run "text spacing: glyph gaps against the font's own (16x supersampled), S M <= 0.25 px, L <= 0.5 px" \
+            run "text spacing: whole-pixel fixed advances and shared 1x/2x bitmap bounds" \
                 python3 tests/text_spacing_test.py build/gen/ui_fonts.h
         else
             echo "font Python checks skipped (Pillow unavailable)"
@@ -660,6 +660,8 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
         run "UI, a FELUCCA_CPU2=0 build: MENU > SYSTEM without 2ND CORE, the rest as the default build" "$OUT/ui_test_c1"
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/lcd_typography_test" tests/lcd_typography_test.c -lm
         run "LCD typography: stationary units, native capital bands and signed MOD range" "$OUT/lcd_typography_test"
+        $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/lcd_readability_test" tests/lcd_readability_test.c -lm
+        run "LCD readability: real text/background contrast, muted state marks and physical SEL legends" "$OUT/lcd_readability_test"
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/track_badge_test" tests/track_badge_test.c -lm
         run "Track badges: actual 1..4 ink centered in every cushion size and theme state" "$OUT/track_badge_test"
     }

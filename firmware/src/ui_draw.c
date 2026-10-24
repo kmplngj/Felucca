@@ -13,6 +13,7 @@
 static void draw_menu(void);
 static int name_on(void);                              /* NAME (ui_name.c) */
 static uint64_t lock_held(void);                       /* parameter locks: the steps held on STEP (ui_input.c) */
+static int bank_on(void);
 static void name_draw(void);
 #include "ui_help.c"                                   /* 1.5: HELP's hints (draw_foot, ui_layer.c draw_layer) */
 
@@ -151,78 +152,74 @@ static int32_t roll_text(uint32_t k, int32_t x, int32_t y, const char *s, uint16
     return x + text_w(f, s);
 }
 
-/* the header (y 0..24), three calm slots (1.2):
- *   left    the selected track's cushion (ink 4..20), the PROJECT slot letter of its pattern ("1 A", head_slot), the REC
- *           mark attached (filled: it is armed; outlined: another). A message centred hides the letter (its room)
- *   centre  the play state (stop, play, the song's disc), the metronome and the BPM (BPM LOCK ON: a lock right of
- *           it), the group's ink centred on x 120 (head_geo). The metronome swings on the click's beats (seq.c click_beat_now): mirrored
- *           on the bar's 2nd and 4th, the accent's on its 1st; stopped, still and MID
+/* the header (y 0..24), #572 direction A: a line of type, flush left, right-aligned status
+ *   left    the selected track's number ("T1", M; a MIDI IN note into it: the accent) and the PROJECT slot letter of its
+ *           pattern ("T1 A", head_slot). Then the transport: the play state (stop, play, the song's disc), the BPM (M)
+ *           and its unit (S, MID), BPM LOCK ON: a lock, then the REC mark (filled: this track armed; outlined: another).
+ *           The group starts after the track (head_geo), so arming REC moves nothing
  *   right   the octave, or the song row while a song plays (ending at 208), and the battery (ink 216..236; its bolt
  *           says USB power: no separate USB icon)
- * A message or a layer's label replaces the centre and the octave, centred on x 120, up to
- * 166 px; while the BPM is being changed (a SELECT turn: bpm_t) or in the GLO layer the centre stays and the message
- * goes right of the BPM (over the right slot). Every element's ink centred on row 12 (H_HEAD / 2; ui_test.c
- * test_head_centres): icons by cv_icon_mid, text by its capitals' band (CAP_IN; the odd row left over above it, as
- * everywhere). HEAD_MY / HEAD_SY derive their line tops from the generated capital metrics. */
+ * A message or a layer's label replaces the transport and the octave, centred on x 120, up to 166 px; while the BPM
+ * is being changed (a SELECT turn: bpm_t) or in the GLO layer the transport stays and the message goes right of it.
+ * Every element's ink centred on row 12 (H_HEAD / 2; ui_test.c test_head_centres): icons by cv_icon_mid, text by its
+ * capitals' band (CAP_IN; the odd row left over above it, as everywhere). (1.1.5 removed the metronome's swing;
+ * #572 the still metronome itself.) */
 #define HEAD_SY CAP_IN(S, H_HEAD)
 #define HEAD_MY CAP_IN(M, H_HEAD)
-#define HEAD_TRK_X 4                                   /* the track cushion's cell */
-#define HEAD_REC_X 20                                  /* the REC mark's cell (ink 23..33), after the slot letter if any */
-#define HEAD_SLOT_X 23                                 /* the slot letter's pen (ui_draw.c head_slot) */
+#define HEAD_TRK_X 4                                   /* the track's number */
+#define HEAD_REC_X 22                                  /* the REC mark's cell under a centred message (ink 25..35) */
 #define HEAD_BAT_X 214                                 /* the battery's cell */
 #define HEAD_GRP_R 208                                 /* the octave / song row ends here */
 #define HEAD_MSG_W 166                                 /* a message centred on x 120: 37..203 (after the REC mark) */
-#define HEAD_GAP 4                                     /* ink to ink: the metronome -> the BPM -> the lock */
-#define HEAD_PLAY_GAP 6                                /* the play state -> the metronome */
-/* the header's centre (1.5.6): the play state, the metronome and the BPM (BPM LOCK ON: its lock) as one group, its
- * ink (gx0 .. gx1, past it) centred on x 120 (before: the BPM's alone, the rest hanging off to the left). The play
- * state's slot (px0 .. px1) is as wide as the wider of stop and play, so the group stays put on PLAY / STOP (the
- * narrower ink right-aligned in it, its gap to the metronome kept; a song's disc reaches a few px further left). The
- * digits are placed by as many 0s as the BPM has digits (tabular figures: the same advance), so nothing moves while
- * the tempo changes, only with a digit more or less (or BPM LOCK turned). bx: the pen of the BPM, b: its ink; the
- * metronome's ink (mx0 .. mx1, past it); the BPM's rolling strip (sx0 .. sx1: between the metronome's cell, either
- * way round, and the lock's) */
-typedef struct { int32_t bx, b[4], mx0, mx1, sx0, sx1, px0, px1, gx0, gx1; } head_geo_t;
+#define HEAD_GAP 4                                     /* ink to ink: the BPM's unit -> the lock -> the REC mark */
+#define HEAD_PLAY_GAP 5                                /* the play state -> the BPM */
+#define HEAD_UNIT_GAP 3                                /* the BPM -> "BPM" */
+static int head_slot(char *b);
+/* the transport (#572): pw the play state's slot (the wider of stop and play: the BPM stays put on PLAY / STOP; the
+ * narrower ink right-aligned in it), the BPM placed by as many 0s as it has digits (tabular: nothing moves while the
+ * tempo changes within a digit count), "BPM", BPM LOCK's lock. bx: the BPM's pen, b: its ink; ux: the unit's pen;
+ * sx0 .. sx1: the BPM's rolling strip; gx0 .. gx1: the group's ink (the REC mark after it, at gx1 + HEAD_GAP) */
+typedef struct { int32_t bx, b[4], ux, sx0, sx1, px0, px1, gx0, gx1; } head_geo_t;
+static int32_t head_left(void)                         /* the track's number and slot letter: where their ink ends */
+{
+    char sl[3];
+    int32_t x = HEAD_TRK_X + ink_w(&AF_M, "T1");
+    if (head_slot(sl))
+        x += 4 + text_w(&AF_M, sl);
+    return x;
+}
 static void head_geo(head_geo_t *g, const char *bpm)
 {
-    int32_t ib[4], lb[4], pb[4], c = 16, pw, lw = 0;
-    uint32_t sz = 16;
+    int32_t lb[4], pb[4], pw;
     char z[8] = "0000000";
     z[str_len(bpm) < 7u ? str_len(bpm) : 7u] = 0;
     text_ink(&AF_M, z, g->b);
-    icon_ink(16, ICON_TEMPO, ib);
-    if (icon_cell(&sz, ICON_TEMPO) >= 0)
-        c = (int32_t)sz;
+    int32_t cell = 16;                                 /* the icons' cells end at px1 - their ink's right + 16 */
     icon_ink(16, ICON_X_STOP, pb);                     /* the play state's slot: the wider of stop and play */
     pw = pb[2] - pb[0];
+    cell -= pb[2];
     icon_ink(16, ICON_X_PLAY, pb);
     if (pb[2] - pb[0] > pw)
         pw = pb[2] - pb[0];
-    icon_ink(16, ICON_X_LOCK, lb);
-    if (ui_prefs & PREF_BPM_LOCK)
-        lw = HEAD_GAP + lb[2] - lb[0];
-    g->gx0 = HALF_UP(240 - (pw + HEAD_PLAY_GAP + (ib[2] - ib[0]) + HEAD_GAP + (g->b[2] - g->b[0]) + lw));
+    if (16 - pb[2] > cell)
+        cell = 16 - pb[2];
+    icon_ink(16, ICON_X_SONG, pb);
+    if (16 - pb[2] > cell)
+        cell = 16 - pb[2];
+    g->gx0 = head_left() + 8;
     g->px0 = g->gx0;
     g->px1 = g->px0 + pw;
-    g->mx0 = g->px1 + HEAD_PLAY_GAP;
-    g->mx1 = g->mx0 + (ib[2] - ib[0]);
-    g->bx = g->mx1 + HEAD_GAP - g->b[0];
-    g->gx1 = g->bx + g->b[2] + lw;
-    g->sx0 = g->mx1 + (ib[0] > c - ib[2] ? ib[0] : c - ib[2]);
-    g->sx1 = g->bx + g->b[2] + HEAD_GAP - lb[0];
-}
-/* the metronome with its ink at x0 (beat: click_beat_now; the 2nd and 4th mirrored, the same ink box; the 1st the
- * accent's). Mirrored by cv_flip: the cell's alpha drawn right to left, no second glyph */
-static void head_metro(int32_t x0, int32_t beat)
-{
-    int32_t ib[4], c = 16;
-    uint32_t sz = 16;
-    icon_ink(16, ICON_TEMPO, ib);
-    if (icon_cell(&sz, ICON_TEMPO) >= 0)
-        c = (int32_t)sz;
-    cv_flip = (uint8_t)(beat > 0 && (beat & 1));
-    cv_icon_mid(x0 - (cv_flip ? c - ib[2] : ib[0]), H_HEAD / 2, 16, ICON_TEMPO, beat == 0 ? T_ACCENT : T_MID, T_BG);
-    cv_flip = 0;
+    g->bx = g->px1 + HEAD_PLAY_GAP - g->b[0];
+    g->sx0 = g->px1 + cell;                            /* (the rolling strip: clear of the play state's cell) */
+    if (g->sx0 > g->bx + g->b[0])
+        g->sx0 = g->bx + g->b[0];
+    g->sx1 = g->bx + g->b[2] + 1;
+    g->ux = g->bx + g->b[2] + HEAD_UNIT_GAP;
+    g->gx1 = g->ux + ink_w(&AF_S, "BPM");
+    if (ui_prefs & PREF_BPM_LOCK) {
+        icon_ink(16, ICON_X_LOCK, lb);
+        g->gx1 += HEAD_GAP + lb[2] - lb[0];
+    }
 }
 /* the width cv_free_hint(x, .., s, .., maxw) draws (its word, keycap and the ellipsised rest) */
 static int32_t head_hint_w(const char *s, int32_t maxw)
@@ -343,13 +340,10 @@ static void head_group(void)
 }
 static void draw_head(void)
 {
-    static int16_t metro_x = -1;                       /* the metronome's ink as drawn (-1: hidden), its beat */
-    static int8_t metro_beat;
     char b[16];
     head_geo_t g;
-    int32_t beat = -1;                                 /* the metronome stands still (its swing removed in 1.1.5) */
     uint32_t rec = (song.rec >> song.sel) & 1u ? 2u : song.rec != 0u;   /* 2 the selected track armed, 1 another */
-    char sl[3];
+    char sl[3], tn[3] = {'T', 0, 0};
     int slot = head_slot(sl);
     uint32_t sig = (uint32_t)song.playing * 3u + rec * 5u + (uint32_t)(song.octave + 8) * 11u + song.sel * 13131u +
                    (ui.msg_t ? str_hash(7u, ui.msg) : mom_head() ? 6007u + mom.st * 211u : ui.layer * 7919u + (uint32_t)layer_locked() * 3u) + (uint32_t)song.g[G_BPM] * 101u + (ui.bpm_t != 0) * 31u +
@@ -358,7 +352,6 @@ static void draw_head(void)
                    (slot ? str_hash(11u, sl) : 0u) + (uint32_t)midi_lit(song.sel) * 15485863u;   /* (1.5.5) */
     int msg = ui.msg_t || ui.layer || mom_head();
     int centre = !msg || ui.bpm_t || ui.layer == LAYER_GLO;   /* the BPM being changed: it stays, the message right */
-    int32_t rx = HEAD_REC_X;
     if (song.g[G_BPM] != ui.roll_bpm) {
         char a[8];
         fmt_int(a, ui.roll_bpm);
@@ -378,45 +371,42 @@ static void draw_head(void)
             roll_text(ROLL_BPM, g.bx - g.sx0, HEAD_MY, b, ui.bpm_t ? T_ACCENT : T_THEME);
             cv_blit((uint32_t)g.sx0, Y_HEAD);
         }
-        if (metro_x >= 0 && beat != metro_beat) {      /* a beat: the metronome's cell only (either way round) */
-            int32_t cx = g.mx0 - (g.sx0 - g.mx1);
-            metro_beat = (int8_t)beat;
-            cv_begin((uint32_t)(g.sx0 - cx), H_HEAD, T_BG);
-            head_metro(g.mx0 - cx, beat);
-            cv_blit((uint32_t)cx, Y_HEAD);
-        }
         return;
     }
     ui.head_sig = sig;
-    metro_x = -1;
     cv_begin(240, H_HEAD, T_BG);
-    cv_icon_mid(HEAD_TRK_X, H_HEAD / 2, 16, trk_icon(song.sel, 1), midi_lit(song.sel) ? T_TEXT : T_ACCENT, T_BG);   /* (1.5.5:
-                                                       * a MIDI IN note into it, #208: lit) */
-    if (slot && (centre || !msg)) {                    /* the slot letter (not under a message centred: its room) */
+    tn[1] = (char)('1' + song.sel % NTRK);
+    GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
+    cv_text(HEAD_TRK_X, HEAD_MY, &AF_M, tn, midi_lit(song.sel) ? T_ACCENT : T_TEXT);   /* (1.5.5: a MIDI IN note
+                                                       * into it, #208: lit) */
+    if (slot && centre) {                              /* the slot letter (not under a message centred: its room) */
         char l[2] = {sl[0], 0};
+        int32_t x = HEAD_TRK_X + ink_w(&AF_M, "T1") + 4;
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
-        rx = cv_text(HEAD_SLOT_X, HEAD_MY, &AF_M, l, sl[0] == '-' ? T_MID : T_THEME);
-        if (sl[1])                                     /* edited since: the mark, up by the letter's top */
-            rx = cv_text(rx, HEAD_MY, &AF_M, "*", T_MID);
-        rx += 1;                                       /* (the REC mark's cell after it, its ink 3 px on) */
+        x = cv_text(x, HEAD_MY, &AF_M, l, sl[0] == '-' ? T_MID : T_THEME);
+        if (sl[1])                                     /* edited since: the mark */
+            cv_text(x, HEAD_MY, &AF_M, "*", T_MID);
     }
-    draw_rec_mark(rx, T_BG);
     if (centre) {
-        int32_t ib[4], lx = g.bx + g.b[2];             /* lx: the right end of the BPM (and its lock) */
+        int32_t ib[4], lx = g.ux + ink_w(&AF_S, "BPM");   /* lx: the right end of the group so far */
         uint32_t id = song.playing ? (chain.running ? ICON_X_SONG : ICON_X_PLAY) : seq_counting() ? ICON_X_PLAY : ICON_X_STOP;
         icon_ink(16, id, ib);                          /* the play state: the song's disc, play (counting in: the
                                                         * accent's, about to play), stop */
         cv_icon_mid(g.px1 - ib[2], H_HEAD / 2, 16, id, /* (right-aligned in its slot) */
                     song.playing ? T_THEME : seq_counting() ? T_ACCENT : T_MID, T_BG);
-        head_metro(g.mx0, beat);
-        metro_x = (int16_t)g.mx0;
-        metro_beat = (int8_t)beat;
         if (!ui.roll[ROLL_BPM].from[0])
             GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         roll_text(ROLL_BPM, g.bx, HEAD_MY, b, ui.bpm_t ? T_ACCENT : T_THEME);
+        GFX_HOOK_ALIGN(0, 0, 0, HEAD_MY + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "header BPM unit on its baseline");
+        cv_text(g.ux, HEAD_MY + AF_M_CAP_Y + AF_M_CAP_H - AF_S_CAP_H - AF_S_CAP_Y, &AF_S, "BPM", T_MID);
         if (ui_prefs & PREF_BPM_LOCK) {                /* BPM LOCK ON (#58): the lock right of the BPM */
             icon_ink(16, ICON_X_LOCK, ib);
             cv_icon_mid(lx + HEAD_GAP - ib[0], H_HEAD / 2, 16, ICON_X_LOCK, T_MID, T_BG);
+            lx += HEAD_GAP + ib[2] - ib[0];
+        }
+        if (rec) {                                     /* the REC mark after the transport */
+            icon_ink(16, rec == 2u ? ICON_X_REC : ICON_X_REC_O, ib);
+            draw_rec_mark(lx + HEAD_GAP - ib[0], T_BG);
             lx += HEAD_GAP + ib[2] - ib[0];
         }
         if (msg) {                                     /* right of the BPM, over the right slot */
@@ -424,6 +414,7 @@ static void draw_head(void)
             head_msg(x, 236 - x);
         }
     } else {
+        draw_rec_mark(HEAD_REC_X, T_BG);
         head_msg(-1, HEAD_MSG_W);
     }
     if (!msg && (chain.running || song.octave))
@@ -463,22 +454,21 @@ static void draw_gaps(uint32_t y, uint32_t h)
     lcd_fill(0, y, (uint32_t)CARD_X(0), h, T_BG);
     for (i = 0; i < 4u; i++) {                          /* right of each column */
         uint32_t x = (uint32_t)(CARD_X(i) + CARD_W), w = i < 3u ? (uint32_t)CARD_X(i + 1u) - x : 240u - x;
-        if (ux.style && i < 3u) {
-            lcd_rule(x, y, 1, h);
-            lcd_fill(x + 1u, y, w - 1u, h, T_BG);
-        } else {
-            lcd_fill(x, y, w, h, T_BG);
-        }
+        lcd_fill(x, y, w, h, T_BG);                    /* (#572: the columns stand apart by their own rules) */
     }
 }
 /* full redraw: the strips (header, cards, panel, footer) cover the rest; only the BG between them is filled */
 static void draw_frame(void)
 {
-    uint32_t ch = card_h(), gy = graph_y(), gh = graph_h();   /* (MENU > LARGE: tall cards, a strip) */
+    uint32_t ch = card_h(), gy = graph_y(), gh = graph_h();   /* fixed native workspace */
     gap_rows(H_HEAD, Y_LABEL);
-    gap_rows(Y_LABEL + ch, gy);
+    lcd_fill(0, Y_LABEL + ch, 240, gy - (Y_LABEL + ch), T_BG);   /* (#572: no rule here: the columns have theirs) */
     gap_rows(gy + gh, Y_FOOT);
-    draw_gaps(Y_LABEL, ch);
+    if (bank_on()) {                                  /* the bank is continuous across the former card gaps */
+        lcd_fill(0, Y_LABEL, 3, ch, T_BG);
+        lcd_fill(237, Y_LABEL, 3, ch, T_BG);
+    } else
+        draw_gaps(Y_LABEL, ch);
 }
 
 #ifndef CARD_HOOK
@@ -495,10 +485,8 @@ static void card_mot_of(const int16_t *vp)
     card_mot_next = (uint8_t)(id < P_COUNT && ((card_mot_mask[id / 32u] >> (id % 32u)) & 1u));
 }
 
-/* #251, MENU > LARGE: a tall card sets its value in one face over everything its knob can show (L where every value
- * fits L, else M, else S), so turning it never changes the value's size. card_span (what the knob shows: fn's text
- * of each value lo..hi) is set just before a draw_column (card_span_of / card_span_by) and taken by it; none: the
- * value's own face. The face is worked out when what the card is of changes (span_face's key), not every frame. */
+/* Whole-domain text formatter for stable bank faces (#251/#572). Set once for
+ * each column; bank_collect caches the face until the domain or context changes. */
 typedef struct card_span {
     void (*fn)(const struct card_span *sp, int32_t v, char *val);   /* value v as the card shows it (val: 16) */
     const void *p;                                       /* fn's: a param_desc_t, a name list .. */
@@ -526,6 +514,9 @@ static void span_names(const card_span_t *sp, int32_t v, char *val)
 {
     str_cpy(val, ((const char *const *)sp->p)[v], 16);
 }
+static void span_number(const card_span_t *sp, int32_t v, char *val) { (void)sp; fmt_int(val, v); }
+static void span_chance(const card_span_t *sp, int32_t v, char *val) { (void)sp; (void)ev_chance_fmt(val, v); }
+static void span_nudge(const card_span_t *sp, int32_t v, char *val) { (void)sp; ev_nudge_fmt(val, v); }
 static void span_mod_dst(const card_span_t *sp, int32_t v, char *val)   /* MOD's DST: the track's (its engine's) names */
 {
     str_cpy(val, ui_mod_dst_name((const track_t *)sp->p, v), 16);
@@ -560,123 +551,7 @@ static void card_span_track(const track_t *t, uint32_t id, const param_desc_t *d
     (void)t; (void)id;
     card_span_of(d);
 }
-/* the face of a tall card's value s (0 L, 1 M, 2 S): L where the sparse L face has its glyphs and it fits with 3 px
- * either side, M where it fits with 2 (52 px: "THUMB"), else S (cut by cv_text_fit when even S is too wide) */
-static uint32_t tall_face(const char *s)
-{
-    return large_face_has(s) && ink_w(&AF_L, s) <= COL_W - 6 ? 0u : ink_w(&AF_M, s) <= COL_W - 4 ? 1u : 2u;
-}
-static uint32_t span_face(uint32_t c, const card_span_t *sp, const char *label)
-{
-    static uint32_t key[4], face[4] = {3u, 3u, 3u, 3u};   /* (3: none yet) */
-    uint32_t k = str_hash((uint32_t)(uintptr_t)sp->fn * 31u + (uint32_t)(uintptr_t)sp->p * 7u + (uint32_t)sp->lo * 131u +
-                          (uint32_t)sp->hi * 8191u + (uint32_t)sp->ctx * 524287u + song.sel + TSEL->eng_req * 4u, label);
-    int32_t v;
-    char t[16];
-    c &= 3u;
-    if (k == key[c] && face[c] <= 2u)
-        return face[c];
-    key[c] = k;
-    face[c] = 0;
-    for (v = sp->lo; v <= sp->hi && face[c] < 2u; v++) {   /* (a few hundred values at most, once) */
-        uint32_t f;
-        sp->fn(sp, v, t);
-        if ((f = tall_face(t)) > face[c])
-            face[c] = f;
-    }
-    return face[c];
-}
-
-/* MENU > LARGE, a tall card (ui.c LK_TALL; 57 x LG_CARD_H): which knob it is (a "K1" pill in M, the keycap's colours,
- * the accent while it turns, DIM when the knob does nothing here) and the icon at the right of it; the label in M
- * centred (S when M is too wide); the value centred in L, its figures twice the height of M (M, then S, when L is too
- * wide or the sparse L face lacks a glyph: gen_aa_font.py L_CHARS; #251: for any value the knob shows, sp: one face
- * for all of them, span_face); the unit (S) centred under it; the gauge. The value snaps (no rolling digits). MONO,
- * the knob just turned: the label inverted as on the small cards. */
-#ifndef LARGE_HOOK
-#define LARGE_HOOK(s, why) ((void)0)                    /* host: a tall card's value and its face (0 L, 1 M: a glyph not
-                                                         * in L, 2 M: L too wide, 3 S) */
-#endif
-#define LG_MY 4                                         /* the K pill: rows 4..21 */
-#define LG_MH 18
-#define LG_LY 24                                        /* the label's line: M capitals rows 28..38 */
-#define LG_VB 49                                        /* the value's band: L capitals rows 49..69 */
-#define LG_UY 73                                        /* the unit's line (S capitals rows 76..84) */
-#define LG_GY 92                                        /* the gauge, 3 px */
-static void draw_column_tall(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc, int32_t ratio,
-                             uint32_t icon, int hot, int mot, int32_t kid, const card_span_t *sp)
-{
-    uint16_t lc = hot ? T_ACCENT : mot ? T_THEME : T_MID;
-    const aafont_t *lf = &AF_M, *vf = &AF_L;
-    int32_t ly = LG_LY, vy, lw = 0, mw;
-    char k[3] = {'K', (char)('1' + c), 0};
-    uint32_t ic = mot ? ICON_X_MOTION : icon, isz = 16u;
-    cv_begin(COL_W, LG_CARD_H, T_BG);
-    cv_rrect(0, 0, COL_W, LG_CARD_H, 4, T_SURF, T_BG);
-    {   /* the knob: "K1" .. "K4" on a pill */
-        uint16_t fill = hot ? T_ACCENT : label[0] || val[0] ? T_KEY : T_DIM;
-        mw = ink_w(&AF_M, k) + 10;
-        cv_rrect(5, LG_MY, mw, LG_MH, 5, fill, T_SURF);
-        GFX_HOOK_ALIGN(5, LG_MY, 5 + mw, LG_MY + LG_MH, AL_HV, "large card knob pill");
-        cv_text_in(5, LG_MY + CAP_IN(M, LG_MH), mw, &AF_M, k, T_INK, fill);
-    }
-    if (!label[0] && !val[0]) {                         /* a knob that does nothing on this page */
-        cv_blit((uint32_t)CARD_X(c), Y_LABEL);
-        return;
-    }
-    if (FELUCCA_ICONS && ic != ICON_NONE && label[0] && (ic - ICON_TRK < NTRK || icon_cell(&isz, ic) >= 0)) {
-        GFX_HOOK_ALIGN(0, LG_MY, 0, LG_MY + LG_MH, AL_V, "large card icon on its pill's line");
-        cv_icon_in(COL_W - 5 - 16, LG_MY, 16, LG_MH, 16, ic, mot ? (hot ? T_ACCENT : T_THEME) : lc, T_SURF);
-    }
-    if (label[0]) {
-        if ((lw = ink_w(lf, label)) > COL_W - 6) {      /* M too wide: S, on the same capitals' middle */
-            lf = &AF_S;
-            ly = LG_LY + AF_M_CAP_Y + HALF_UP(AF_M_CAP_H - AF_S_CAP_H) - AF_S_CAP_Y;
-            lw = ink_w(lf, label);
-        }
-        if (hot && T_ACCENT == T_MID) {                 /* MONO: the label inverted, the chip 2 px round its ink */
-            int32_t cy = ly + (lf == &AF_M ? AF_M_CAP_Y : AF_S_CAP_Y), chh = lf == &AF_M ? AF_M_CAP_H : AF_S_CAP_H;
-            int32_t x0 = HALF_UP(COL_W - lw) - 2;
-            cv_rrect(x0, cy - 3, lw + 4, chh + 6, 3, T_ACCENT, T_SURF);
-            GFX_HOOK_ALIGN(x0, cy - 3, x0 + lw + 4, cy + chh + 3, AL_HV, "large card label chip (MONO hot)");
-            cv_text_in(0, ly, COL_W, lf, label, T_INK, T_ACCENT);
-        } else {
-            GFX_HOOK_ALIGN(0, 0, COL_W, 0, AL_H, "large card label centred");
-            cv_text_in(0, ly, COL_W, lf, label, lc, T_SURF);
-        }
-    }
-    if (kid >= 0) {                                     /* "[OCT+]": the keycap, centred */
-        GFX_HOOK_ALIGN(0, LG_VB, COL_W, LG_VB + AF_L_CAP_H, AL_HV, "large card keycap centred");
-        cv_keycap(HALF_UP(COL_W - kc_w((uint32_t)kid)), LG_VB + HALF_UP(AF_L_CAP_H - KC_H), (uint32_t)kid,
-                  vc == T_ACCENT || vc == T_DIM ? vc : T_KEY, T_INK, T_SURF);
-    } else if (val[0]) {
-        uint32_t f = tall_face(val), fs = sp->fn ? span_face(c, sp, label) : 0u;
-        int why;
-        if (fs > f)
-            f = fs;                                     /* (the value's own where it needs a smaller one) */
-        vf = f == 0u ? &AF_L : f == 1u ? &AF_M : &AF_S;
-        why = f == 2u ? 3 : f == 1u ? (!large_face_has(val) ? 1 : 2) : 0;
-        LARGE_HOOK(val, why);
-        vy = vf == &AF_L ? LG_VB - AF_L_CAP_Y : vf == &AF_M ? LG_VB + HALF_UP(AF_L_CAP_H - AF_M_CAP_H) - AF_M_CAP_Y
-                                                          : LG_VB + HALF_UP(AF_L_CAP_H - AF_S_CAP_H) - AF_S_CAP_Y;
-        if (vf == &AF_S && ink_w(vf, val) > COL_W - 4) {   /* (a value always fits: the lint reports one cut) */
-            cv_text_fit(2, vy, vf, val, vc, T_SURF, COL_W - 4);
-        } else {
-            GFX_HOOK_ALIGN(0, LG_VB, COL_W, LG_VB + AF_L_CAP_H, AL_HV, "large card value centred");
-            cv_text_in(0, vy, COL_W, vf, val, vc, T_SURF);
-        }
-    }
-    if (unit[0]) {
-        GFX_HOOK_ALIGN(0, 0, COL_W, 0, AL_H, "large card unit centred");
-        cv_text_in(0, LG_UY, COL_W, &AF_S, unit, T_MID, T_SURF);
-    }
-    if (ratio >= 0) {
-        int32_t gw = COL_W - 10, fx = ratio * gw / 1000;
-        cv_rrect(5, LG_GY, gw, 3, 1, ux.style ? T_LINE : T_BG, T_SURF);
-        cv_rrect(5, LG_GY, fx < 3 ? 3 : fx, 3, 1, hot ? T_ACCENT : vc == T_DIM ? T_DIM : T_THEME, T_BG);
-    }
-    cv_blit((uint32_t)CARD_X(c), Y_LABEL);
-}
+#include "ui_bank.c"                                   /* #572: the native bank consumes these same column outputs */
 
 /* one card = one knob: [icon] LABEL / value unit / gauge on a SURF card, redrawn only when it changed.
  * The value is M, or S when M is too wide (engine names, long ENUMs), on the same capital centre;
@@ -686,16 +561,17 @@ static void draw_column_tall(uint32_t c, const char *label, const char *val, con
  * a label too long to share the card with its icon goes without it. A parameter MOTION drives (card_mot_next):
  * the motion icon in place of its own, in the theme colour; a long label moves it left, up to the card's edge;
  * a label with no room for it at all (or FELUCCA_ICONS=0): the label in the theme colour.
- * vc: the value's colour (T_THEME, T_DIM inactive, T_ACCENT the knob just turned) */
+ * vc: the value's state (T_THEME, T_DIM inactive, T_ACCENT the knob just turned).
+ * Inactive values still need reading: their text is MID; their gauge/keycap keeps DIM. */
 static void draw_column(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc,
                         int32_t ratio, uint32_t icon)
 {
     char key[48];
     int hot = c == ui.hot_col && ui.hot_t, named = fmt_named, mot = card_mot_next && label[0], strip, snap;
-    uint32_t kind = large_kind();                       /* MENU > LARGE: tall (draw_column_tall), or the label in M */
+    uint32_t kind = reading_kind();                       /* task-specific bank or compact controls */
     uint8_t sig;
-    uint16_t lc = hot ? T_ACCENT : T_MID;
-    int32_t lx = 5, uw, room = COL_W - 8;
+    uint16_t lc = hot ? T_TEXT : T_MID, tc = vc == T_DIM ? T_MID : vc;
+    int32_t lx = 0, uw, room = COL_W - 6;              /* (#572: 6 px clear of the next column's value) */
     const aafont_t *vf = &AF_M;
     uint32_t n, kn;
     int32_t kid = kc_tag(val, &kn);
@@ -706,6 +582,10 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     card_mot = (uint8_t)((card_mot & ~(1u << c)) | (uint32_t)mot << c);
     if (str_eq(unit, label))
         unit = "";                                      /* "BPM 124 BPM", "USB OFF USB": the label says it */
+    if (bank_on()) {
+        bank_collect(c, label, val, unit, vc, mot, ratio, &sp);
+        return;
+    }
     if (icon == ICON_AUTO)
         icon = icon_for_label(label);
     str_cpy(key, label, 12);                            /* cache key: texts + colour + gauge */
@@ -719,7 +599,7 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     key[n + 1] = (char)('A' + ((vc >> 4) & 15u));
     key[n + 2] = (char)('A' + ((vc >> 8) & 15u));
     key[n + 3] = (char)('A' + (vc >> 12));
-    key[n + 4] = (char)(' ' + (ratio < 0 ? 0 : 1 + ratio * (COL_W - 10) / 1000));   /* the gauge's own pixel (as
+    key[n + 4] = (char)(' ' + (ratio < 0 ? 0 : 1 + ratio * COL_W / 1000));   /* the gauge's own pixel (as
                                                         * drawn: gw; ratio / 20 missed a pixel inside a step, #63 soak) */
     key[n + 5] = (char)(icon == ICON_NONE ? '~' : '!' + icon % 90u);
     key[n + 6] = (char)('0' + hot + 2 * mot + 4 * (int)kind);
@@ -731,8 +611,6 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     }
     sig = (uint8_t)str_hash(str_hash(song.sel + TSEL->eng_req * 4u + ux.gen * 64u, label), unit);
     snap = ui.force || sig != ui.roll[c].sig;           /* what the value is of: label, unit, track, engine, palette */
-    if (kind == LK_TALL)
-        ui.roll[c].from[0] = 0;                         /* (a tall card: no rolling digits) */
     strip = !snap && str_eq(key, ui.col[c]);
     if (strip && !ui.roll[c].from[0])
         return;
@@ -750,68 +628,45 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
         ov[i] = 0;
         ui.roll[c].sig = sig;
         if (!str_eq(ov, val))
-            roll_note(c, ov, val, snap || named || vf != &AF_M || kid >= 0 || kind == LK_TALL);
+            roll_note(c, ov, val, snap || named || vf != &AF_M || kid >= 0);
         else if (snap)
             ui.roll[c].from[0] = 0;
         str_cpy(ui.col[c], key, sizeof ui.col[c]);
-        if (kind == LK_TALL) {
-            draw_column_tall(c, label, val, unit, vc, ratio, icon, hot, mot, kid, &sp);
-            return;
-        }
         cv_begin(COL_W, COL_H, T_BG);
-        cv_rrect(0, 0, COL_W, COL_H, 4, T_SURF, T_BG);
+        if (label[0] || val[0])                         /* #572: the knob's rule (ui_bank.c): heavy and the accent while
+                                                         * it turns, dashed where MOTION drives it */
+            bank_gauge(0, 1, COL_W, mot ? BR_DASH : BR_SOLID, hot, hot ? T_ACCENT : mot ? T_THEME : T_MID, ratio);
     }
     if (label[0] || val[0]) {
-        if (!strip && label[0]) {
-            /* MENU > LARGE on a list / graph page or a layer (LK_LABEL): the label in M where it fits the card (its
-             * capital band shared with S, the icon on it when it fits too), else in S as without LARGE */
-            const aafont_t *lf = kind == LK_LABEL && 5 + text_w(&AF_M, label) <= COL_W - 2 ? &AF_M : &AF_S;
-            int32_t lw = text_w(lf, label), ix = 5;
-            int32_t ly = CARD_LABEL_Y + (lf == &AF_M ? CAP_IN(M, CARD_LABEL_H) : CAP_IN(S, CARD_LABEL_H));
-            int32_t cy = ly + (lf == &AF_M ? AF_M_CAP_Y : AF_S_CAP_Y), chh = lf == &AF_M ? AF_M_CAP_H : AF_S_CAP_H;
-            uint32_t ic = mot ? ICON_X_MOTION : icon;
-            if (mot && ix + ICON_CELL + ICON_GAP + lw > COL_W - 2)
-                ix = COL_W - 2 - lw - ICON_GAP - ICON_CELL;   /* a long label: MOTION's icon moves left */
-            if (FELUCCA_ICONS && ic != ICON_NONE && ix >= 1 && ix + ICON_CELL + ICON_GAP + lw <= COL_W - 2) {
-                GFX_HOOK_ALIGN(ix, cy, ix, cy + chh, AL_V, "card icon on its label's line");
-                lx = ix + cv_icon_in(ix, cy, 0, chh, ICON_CELL, ic,   /* its ink on the label's line */
-                                     mot ? (hot ? T_ACCENT : T_THEME) : lc, T_SURF) + ICON_GAP;
-            }
-            else if (mot)                               /* the label from x 19 (5 + 12 + 2) */
-                lc = hot ? T_ACCENT : T_THEME;          /* no room for MOTION's icon: the label says it */
+        if (!strip && label[0]) {                       /* #572: S labels flush left under the rule, no icons */
+            int32_t b[4], ly = CARD_LABEL_Y + CAP_IN(S, CARD_LABEL_H), cy = ly + AF_S_CAP_Y;
             if (hot && T_ACCENT == T_MID) {             /* MONO: no colour tells the hot knob: its label inverted, */
-                int32_t b[4], w;                        /* the chip 2 px round its ink (M: 3 above, 2 below) */
-                text_ink(lf, label, b);
+                int32_t w;                              /* the chip 2 px round its ink */
+                text_ink(&AF_S, label, b);
                 w = b[2] - b[0] + 4;
                 if (w > COL_W + 1 - lx - b[0]) w = COL_W + 1 - lx - b[0];
-                cv_rrect(lx + b[0] - 2, cy - 3, w, chh + (lf == &AF_M ? 5 : 6), 3, T_ACCENT, T_SURF);
-                GFX_HOOK_ALIGN(lx + b[0] - 2, cy - 3, lx + b[0] - 2 + w, cy + chh + (lf == &AF_M ? 2 : 3), AL_HV,
-                               "card label chip (MONO hot)");
-                cv_text_fit(lx, ly, lf, label, T_INK, T_ACCENT, COL_W - 2 - lx);
+                cv_rect(lx + b[0], cy - 2, w, AF_S_CAP_H + 4, T_ACCENT);
+                GFX_HOOK_ALIGN(lx + b[0], cy - 2, lx + b[0] + w, cy + AF_S_CAP_H + 2, AL_HV, "card label chip (MONO hot)");
+                cv_text_fit(lx + 2, ly, &AF_S, label, T_INK, T_ACCENT, COL_W - 4 - lx);
             } else
-                cv_text_fit(lx, ly, lf, label, lc, T_SURF, COL_W - 2 - lx);
+                cv_text_fit(lx, ly, &AF_S, label, lc, T_SURF, COL_W - 2 - lx);
         }
         if (kid >= 0)                                   /* "[OCT+]": the keycap (accent: it would act; DIM: it would not) */
-            cv_keycap(5, 20, (uint32_t)kid, vc == T_ACCENT || vc == T_DIM ? vc : T_KEY, T_INK, T_SURF);
+            cv_keycap(0, 20, (uint32_t)kid, vc == T_ACCENT || vc == T_DIM ? vc : T_KEY, T_INK, T_SURF);
         else if (vf == &AF_M) {
             if (!ui.roll[c].from[0] && val[0])
                 GFX_HOOK_ALIGN(0, ROLL_Y, COL_W, ROLL_Y + ROLL_H, AL_V, "card value in its roll window");
-            roll_text(c, 5, ROLL_Y + CAP_IN(M, ROLL_H), val, vc);
+            roll_text(c, 0, ROLL_Y + CAP_IN(M, ROLL_H), val, tc);
         } else {
             GFX_HOOK_ALIGN(0, CARD_VALUE_Y, COL_W, CARD_VALUE_Y + CARD_VALUE_H, AL_V, "card fallback value in its value band");
-            cv_text_fit(5, CARD_VALUE_Y + CAP_IN(S, CARD_VALUE_H), vf, val, vc, T_SURF, room - uw);
+            cv_text_fit(0, CARD_VALUE_Y + CAP_IN(S, CARD_VALUE_H), vf, val, tc, T_SURF, room - uw);
         }
         if (unit[0]) {
             int32_t baseline = CARD_VALUE_Y + (vf == &AF_M ? CAP_IN(M, CARD_VALUE_H) + AF_M.asc :
                                                                             CAP_IN(S, CARD_VALUE_H) + AF_S.asc);
             GFX_HOOK_ALIGN(0, 0, 0, baseline, AL_B, "card unit on its value's baseline");
-            cv_text_r(5 + room, baseline - AF_S.asc, &AF_S, unit, T_MID, T_SURF);
-        }
-        if (!strip && ratio >= 0) {
-            int32_t gw = COL_W - 10, fx = ratio * gw / 1000;
-            cv_rrect(5, 38, gw, 3, 1, ux.style ? T_LINE : T_BG, T_SURF);   /* (LINE: no card to cut it from) */
-            cv_rrect(5, 38, fx < 3 ? 3 : fx, 3, 1, hot ? T_ACCENT : vc == T_DIM ? T_DIM : T_THEME, T_BG);
-        }
+            cv_text_r(room, baseline - AF_S.asc, &AF_S, unit, T_MID, T_SURF);
+        }                                               /* (#572: no gauge; the bank's columns have none either) */
     }
     cv_oy = 0;
     cv_blit((uint32_t)CARD_X(c), Y_LABEL + (strip ? ROLL_Y : 0));
@@ -861,6 +716,7 @@ static void sound_name(const track_t *t, char *b)
         str_cpy(b, e->presets[t->preset % e->npresets].name, 16);
 }
 
+#define FOOT_M_Y 16                                    /* the footer's names: M line top (capitals 22..30) */
 static void draw_foot(void)
 {
     char s[48], pn[16], ti[20], ln[24];
@@ -958,31 +814,36 @@ static void draw_foot(void)
                 cv_rect(sx, 14, 9, 2, T_TEXT);          /* the step sounding */
         }
     }
-    {   /* row 2: engine icon + name, sound, page title at the right with its icon before it (MIXER, PHRASES, SONG,
-         * AUTOMATION); icons: their ink on the names' capitals */
-        uint32_t pi = ui.home ? ICON_NONE : page_icon(pg), ei = FELUCCA_ICONS ? engine_icon(t->eng_req) : ICON_NONE;
-        int32_t r = 232, tx, ex, need = text_w(&AF_S, pn), ew = text_w(&AF_S, ename);
-        ex = 8 + (FELUCCA_ICONS ? 12 + 5 : 0) + (ew < 80 ? ew : 80);   /* (where the engine's name ends) */
-        tx = r - text_w(&AF_S, ti) - (pi != ICON_NONE ? 16 : 0);
-        if (!ui.home && pg->graph == GR_EVENTS && tx - 12 - (ex + 10) < need) {
-            str_cpy(ti + 4, ti + 10, sizeof ti - 4);    /* #93: "AUTOMATION 6/6" -> "AUTO 6/6" where the sound's name */
-            tx = r - text_w(&AF_S, ti) - (pi != ICON_NONE ? 16 : 0);   /* would be cut (MENU > LARGE) */
+    {   /* row 2 (#572): the sound's name (M) and its engine (S) at the left; the page's title (M) and its place in the
+         * family (S, "1/2") at the right. The sound's name gives way (ellipsised) where the title needs the room */
+        char *ix = 0;
+        int32_t r = 232, y = FOOT_M_Y, tx, ew = text_w(&AF_S, ename), x;
+        uint32_t i;
+        for (i = str_len(ti); i-- > 0;)                /* "ENV 1/2": the place after the last space */
+            if (ti[i] == ' ') {
+                if (ti[i + 1] >= '0' && ti[i + 1] <= '9' && str_len(ti + i + 1) > 2u && ti[i + 2] == '/')
+                    ix = ti + i + 1;
+                break;
+            }
+        tx = r;
+        if (ix) {
+            tx = r - text_w(&AF_S, ix);
+            GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+            cv_text_on(tx, y + AF_M_CAP_Y + AF_M_CAP_H - AF_S_CAP_H - AF_S_CAP_Y, &AF_S, ix, T_MID, T_BG);
+            ix[-1] = 0;
+            tx -= 4;
         }
-        x = 8;
-        if (FELUCCA_ICONS) {
-            if (ei != ICON_NONE)
-                GFX_HOOK_ALIGN(0, 19 + AF_S_CAP_Y, 0, 19 + AF_S_CAP_Y + AF_S_CAP_H, AL_V,
-                               "footer icons on the names' line");
-            x += cv_icon_in(x, 19 + AF_S_CAP_Y, 0, AF_S_CAP_H, 12, ei, T_MID, T_BG) + 5;
+        if (!ui.home && pg->graph == GR_EVENTS && text_w(&AF_M, ti) > 60)
+            str_cpy(ti, "AUTO", sizeof ti);            /* #93: "AUTOMATION" -> "AUTO" where the sound's name would be cut */
+        tx -= text_w(&AF_M, ti);
+        GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+        cv_text_on(tx, y, &AF_M, ti, T_TEXT, T_BG);
+        GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+        x = cv_free_text(8, y, &AF_M, pn[0] ? pn : ename, T_TEXT, T_BG, tx - 12 - 8 - (pn[0] ? ew + 6 : 0));
+        if (pn[0] && x + 6 + ew <= tx - 10) {
+            GFX_HOOK_ALIGN(0, 0, 0, y + AF_M_CAP_Y + AF_M_CAP_H, AL_B, "footer names on one baseline");
+            cv_text_on(x + 6, y + AF_M_CAP_Y + AF_M_CAP_H - AF_S_CAP_H - AF_S_CAP_Y, &AF_S, ename, T_MID, T_BG);
         }
-        x = cv_text_fit(x, 19, &AF_S, ename, T_THEME, T_BG, 80);
-        cv_free_text(x + 10, 19, &AF_S, pn, T_TEXT, T_BG, tx - 12 - (x + 10));
-        if (pi != ICON_NONE) {
-            GFX_HOOK_ALIGN(0, 19 + AF_S_CAP_Y, 0, 19 + AF_S_CAP_Y + AF_S_CAP_H, AL_V,
-                           "footer icons on the names' line");
-            cv_icon_in(tx, 19 + AF_S_CAP_Y, 0, AF_S_CAP_H, 12, pi, T_MID, T_BG);
-        }
-        cv_text_r(r, 19, &AF_S, ti, T_MID, T_BG);
     }
     cv_blit(0, Y_FOOT);
 }
@@ -1000,7 +861,7 @@ static void engine_columns(void)
     draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
     draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
 }
-static void draw_columns(void)
+static void draw_column_values(void)
 {
     uint32_t c;
     char val[12];
@@ -1150,6 +1011,7 @@ static void draw_columns(void)
         card_mot_of(&TSEL->p[P_REV]);
         card_span_of(&TP[P_REV]);
         draw_column(2, "REV", val, unit, VAL(2u), RATIO(&TP[P_REV], t->p[P_REV]), ICON_AUTO);
+        card_span_by(span_names, N_ONOFF, 0, 1, 0);
         draw_column(3, "MUTE", t->p[P_MUTE] ? "ON" : "OFF", "", t->p[P_MUTE] ? T_ACCENT : VAL(3u), -1, ICON_AUTO);
         return;
     }
@@ -1218,6 +1080,8 @@ static void draw_columns(void)
             on = fop_card(c, &lb, val, &u, &r, &ic);
             if (fop_field(c) != FO_OP && fop_field(c) != FO_STG)   /* (OP, STAGE: 1..6, 1..4) */
                 card_span_by(span_fop, 0, 0, (int32_t)fm6_max(fop_byte(fop_field(c))), (int32_t)c);
+            else
+                card_span_by(span_number, 0, 1, fop_field(c) == FO_OP ? 6 : 4, 0);
             draw_column(c, lb, val, u, on ? VAL(c) : T_DIM, r, ic);
         }
         return;
@@ -1227,6 +1091,7 @@ static void draw_columns(void)
         uint32_t id = P_M1SRC + 3u * mod_ui_slot;
         int32_t s = t->p[id], d = t->p[id + 1u], a = t->p[id + 2u];
         fmt_int(val, (int32_t)mod_ui_slot + 1);
+        card_span_by(span_number, 0, 1, 4, 0);
         draw_column(0, "SLOT", val, "/4", VAL(0u), (int32_t)mod_ui_slot * 1000 / 3, mod_src_icon(MS_OFF));   /* (the mod icon) */
         card_span_by(span_names, N_MSRC, 0, MS_N - 1, 0);
         draw_column(1, "SRC", N_MSRC[clamp(s, 0, MS_N - 1)], "", s ? VAL(1u) : T_DIM, -1, mod_src_icon(s));
@@ -1249,17 +1114,20 @@ static void draw_columns(void)
             if (k == EVK_CHANCE) {                     /* (1.5.5: a condition, "1:4" "FILL", its card COND) */
                 u = ev_chance_fmt(val, v);
                 r = v > 100 ? (v - 100) * 1000 / (int32_t)NCOND : v * 10;
+                card_span_by(span_chance, 0, 0, 100 + NCOND, 0);
             } else if (k == EVK_RATCH) {
                 val[0] = 'x';
                 fmt_int(val + 1, v);
                 r = (v - 1) * 1000 / 3;
             } else if (k == EVK_NUDGE) {
                 ev_nudge_fmt(val, v);
+                card_span_by(span_nudge, 0, -8, 7, 0);
                 u = v ? "/16" : "";
                 r = (v + 8) * 1000 / 15;
                 on &= ev_nudge_plays(TSEL, st);
             } else {
                 fmt_int(val, v);
+                card_span_by(span_number, 0, 1, 127, 0);
                 u = st->flags & SF_ACCENT ? "ACC" : "";
                 r = v * 1000 / 127;
                 on &= !(st->flags & SF_ACCENT);
@@ -1287,6 +1155,8 @@ static void draw_columns(void)
             if (!on)
                 v = motion_base_value(TSEL, id);      /* not locked: the sound's own, DIM */
             ui_param_format(TSEL, id, d, v, val, &unit);
+            card_span_track(TSEL, id, d);
+            ui.read_bank.lock_next = (uint8_t)(1 + on);
             draw_column(c, ui_param_label(TSEL, id), val, unit, on ? VAL(c) : T_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
         }
         return;
@@ -1376,7 +1246,16 @@ static void draw_columns(void)
                     d->fmt == F_ENUM && d->max < 2 ? -1 : RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
     }
 }
-
+static void draw_columns(void)
+{
+    int bank = bank_on();
+    if (!bank && ui.read_bank.was) draw_gaps(Y_LABEL, CARD_H);   /* restore card gaps after releasing held steps */
+    ui.read_bank.mask = 0;
+    ui.read_bank.lock_next = 0;
+    draw_column_values();
+    if (bank) bank_draw();
+    else ui.read_bank.was = 0;
+}
 
 /* Startup uses the saved palette. One identity line: clean release version,
  * verified PR label, or compiled revision. ABOUT retains the complete identity. */
@@ -1574,8 +1453,9 @@ static void style_apply(void)
 {
     if (ui_style > ST_LINE)                             /* 2, the retired PIXEL: LINE; unknown: FLAT */
         ui_style = ui_style == 2u ? ST_LINE : ST_FLAT;
-    if (ux.style != ui_style) {
-        ux.style = ui_style;
+    if (ux.style != ST_LINE) {                          /* #572: one native style, rules on BG; the saved value is kept
+                                                         * for the wire (id 1) and older firmware */
+        ux.style = ST_LINE;
         palette_apply();
         ui.force = 1;
     }
@@ -1717,6 +1597,8 @@ static void ui_draw_page(uint32_t counting)
         }
         if (ui.hot_t)
             ui.hot_t--;
+        if (ui.curve_t)
+            ui.curve_t--;
         if (ui.bpm_t)
             ui.bpm_t--;
         ui.force = 0;
@@ -1749,5 +1631,7 @@ static void ui_draw_page(uint32_t counting)
         ui.bpm_t--;
     if (ui.hot_t)
         ui.hot_t--;
+    if (ui.curve_t)
+        ui.curve_t--;
     ui.force = 0;
 }

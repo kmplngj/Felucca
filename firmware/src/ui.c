@@ -54,8 +54,7 @@ static uint32_t up_gen;                      /* bumped on every user bank change
 #define PREF_ACCEL 4u                          /* MENU > KNOB ACCEL ON (#52): fast turns of wide values x2..x8 */
 #define PREF_USB_FIXED 8u                      /* MENU > USB LEVEL FIXED: USB audio at the full level, MASTER after */
 #define PREF_BPM_LOCK 16u                      /* MENU > BPM LOCK ON (#58): SELECT sets the tempo only with GLO held */
-#define PREF_LARGE 32u                         /* MENU > LARGE ON (#15, Discussion #80): big knob labels and values
-                                                * (ui_draw.c large_kind); clear in every older setting = OFF */
+#define PREF_LARGE 32u                         /* reserved historical size bit: round-trips for rollback; no layout effect */
 #define PREF_SERIAL_OFF 64u                    /* MENU > USB SERIAL OFF (#67): no serial console, the device enumerates as
                                                 * audio + MIDI only (usb.c usb_cdc_switch); clear in every older setting = ON */
 #define PREF_RESTORE_OFF 128u                  /* MENU > RESTORE LAST OFF (1.2, Discussion #130): no autosave written, none
@@ -111,6 +110,17 @@ static uint32_t sel_mode(void) { return ((ui_prefs2 >> 4) & 1u) | ((ui_prefs2 >>
 static uint32_t leds_inv(void) { return settings_leds == LEDS_INV && ui_leds_inv - 1u < 2u ? ui_leds_inv : 0u; }
 enum { HV_SCOPE, HV_TRACKS, HV_LEVELS, HV_COUNT };
 static int home_tracks(void) { return ui_home_view == HV_TRACKS || ui_home_view == HV_LEVELS; }
+/* #572: MENU > DISPLAY > GRAPH (menu_items.c GRAPH_N), bits 1..2 of ANIM IDLE's byte (ui_idle, settings_dev[10]: bit 0
+ * IDLE; every older firmware reads bit 0 only and keeps the byte as saved). Stored 0, every older setting, is TURN, the
+ * default: the codes 0 TURN, 1 SCOPE, 2 CURVE, 3 STILL swap the first two of the menu's order (GRAPH_CODE: its own
+ * inverse) */
+enum { GM_SCOPE, GM_TURN, GM_CURVE, GM_STILL, GM_COUNT };
+#define GRAPH_CODE(v) ((v) < 2u ? (v) ^ 1u : (v))
+static uint32_t graph_mode(void) { return GRAPH_CODE((settings_dev[10] >> 1) & 3u); }
+static void graph_mode_put(uint32_t v)
+{
+    settings_dev[10] = (uint8_t)((settings_dev[10] & ~6u) | GRAPH_CODE(v & 3u) << 1);
+}
 static int home_levels(void) { return ui_home_view == HV_LEVELS; }
 enum { RP_CLICK, RP_LEVEL, RP_COUNTIN };
 static uint32_t rp_get(uint32_t f)                     /* a field as the MENU steps it: 0..2 */
@@ -143,23 +153,29 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 #define VAL(c) ((c) == ui.hot_col && ui.hot_t ? T_ACCENT : T_THEME)   /* the knob just turned: accent */
 #define RATIO(d, v) ((d)->max > (d)->min ? ((int32_t)(v) - (d)->min) * 1000 / ((d)->max - (d)->min) : -1)
 /* layout: header 0..24, four cards 28..72 (57 px at x 3 + 59 c),
- * the panel 76..198 (a SURF area; the graphs live in it), footer 202..240; BG between them */
+ * the panel 76..198 (a SURF area; the graphs live in it), footer 202..240; BG between them. #572: a value page whose
+ * panel draws on the 100 px graph scale gives its bank the X numeral's room: bank 28..94, panel 98..198 (bank_tall) */
 #define Y_HEAD 0
 #define H_HEAD 24
 #define Y_LABEL 28                    /* the cards */
 #define Y_SEP_END 72
 #define CARD_W 57
 #define CARD_H 44
+#define CARD_H_TALL 66              /* (#572: the bank with its X numeral) */
+#define CURVE_HOLD 80u              /* #572 GRAPH TURN: frames (~1.2 s) the curve outlasts the last detent */
 #define CARD_X(c) (3 + 59 * (int32_t)(c))
 #define Y_GRAPH 76                    /* the panel */
 #define H_GRAPH 122
 #define Y_FOOT 202
 #define H_FOOT 38
-/* MENU > LARGE (large_kind below): on the value pages the cards are tall (28..132) and the panel a strip
- * (136..198); elsewhere (lists, rolls, layers) the layout above, its card labels in M */
-#define LG_CARD_H 104
-#define LG_Y_GRAPH 136
-#define LG_H_GRAPH 62
+
+typedef struct {
+    char label[24], value[16], unit[12];
+    uint32_t key;
+    uint16_t color;
+    uint8_t face, small, motion, lock, fixed;
+    int16_t ratio;               /* #572: the knob's place in its range, 0..1000; -1 none (the rule full) */
+} bank_field_t;
 
 static struct {
     uint8_t home;
@@ -175,6 +191,7 @@ static struct {
     uint64_t plk_rm, plk_acc;    /* .. the grid's step keys pressed on a hit (bit = step): it goes when the key is let
                                   * go, unless the key was held for a lock (its accent: plk_acc) */
     uint8_t hot_col, hot_t;      /* column whose knob was just turned (drawn white) */
+    uint8_t curve_t;             /* #572 GRAPH TURN: frames the turned knob's curve stays in the scope's place */
     uint8_t menu;                /* 0 off, 1 list, 2 about + credits, 3 info, 4 AUTO OFF detail (HOME held) */
     uint8_t menu_sel;            /* MENU: the row (menu_items.c MI_*; its tab MI_TAB), kept while the device runs */
     uint8_t menu_row[5];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
@@ -212,6 +229,11 @@ static struct {
     uint32_t enc_t[NE];
     /* drawn-state cache */
     char col[4][32];
+    struct {
+        bank_field_t field[4];
+        uint32_t sig[5];
+        uint8_t mask, was, focus, lock_next;
+    } read_bank;                    /* #572: display cache, reset/snapshotted with the rest of the UI */
     uint32_t graph_sig, head_sig, foot_sig, frame;
     /* rolling digits (ui_draw.c roll_*): the four card values and the header BPM */
     struct {
@@ -260,7 +282,8 @@ enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PA
  * (ui.force), then DISPON (lcd_power(2)) */
 #define ui_scr (settings_dev[27])
 /* MENU > ANIM IDLE (1.2, Discussion #135; menu_items.c, ui_input.c idle_leds): bit 0, the LEDs' idle animation, in a
- * byte no engine uses, kept with the settings; 0 in every older setting = off. The other bits: 0 (room for a delay) */
+ * byte no engine uses, kept with the settings; 0 in every older setting = off. Bits 1..2: GRAPH (#572, graph_mode); bits
+ * 3..7: 0 (room for a delay) */
 #define ui_idle (settings_dev[10])
 #define SCR_DEF 0u                                     /* NEVER (1.1.5.1; 1.1.5: 30 MIN) */
 static const uint8_t SCR_CODE[5] = {0, 2, 1, 4, 7};    /* the stored byte of NEVER 5 15 30 60 MIN (1.1.5: 3 2 1 0 7) */
@@ -447,7 +470,7 @@ static int scr_frame(void)
     }
     ui.msg_t = 0;                                      /* (dark: what would have shown is over; a clean page back) */
     ui.msg2[0] = 0;
-    ui.hot_t = ui.bpm_t = 0;
+    ui.hot_t = ui.bpm_t = ui.curve_t = 0;
     return 0;
 }
 static void scr_shown(void)                            /* after the frame: the redrawn page on */
@@ -467,35 +490,38 @@ static void scr_shown(void)                            /* after the frame: the r
 static const page_t *page_over;   /* a quick layer's own four knobs (ui_layer.c), while it edits or draws them */
 static const page_t *cur_page(void) { return page_over ? page_over : &PAGES[ui.page]; }
 
-/* MENU > LARGE (#15, Discussion #80: what KNOB 1..4 do, in bigger type). Per page type:
- *   LK_TALL  HOME and the value pages (EDIT ENV LFO MOD FX SLICER SCL CHORD ARP VOICE, MIXER, CLOCK,
- *            TOOLS): tall cards (a K1..K4 keycap, the icon, the label in M, the value in L,
- *            in M or S when L is too wide or lacks a glyph for any value of the knob (#251: one size per knob,
- *            ui_draw.c span_face), the unit under it, the gauge), the panel a strip: HOME's
- *            scope, ENV's ADSR, LFO's wave, MIXER's four tracks (name, state, meter) small; the
- *            page's title and number in L on the others (their charts cannot be read that small);
- *   LK_LABEL the list and graph pages (PRESETS, USER, PROJECT, PHRASES, SONG, the piano roll and the drum grid,
- *            AUTOMATION, SLICES), HOME with MENU > HOME TRACKS (1.3) and the quick layers' maps: the layout as it
- *            is, the card labels in M;
- *   LK_OFF   LARGE off; the menu (its own LARGE: ui_menu.c), the dialogs and NAME keep their own layout in every case. */
-enum { LK_OFF, LK_LABEL, LK_TALL };
-static uint32_t large_kind(void)
+/* Reading roles are chosen by task, independent of the reserved legacy size bit.
+ * Value pages keep one focused bank; dense graphs/lists and held layers retain
+ * four compact controls. Every surface keeps the full native workspace. */
+enum { RK_COMPACT, RK_BANK };
+static uint32_t reading_kind(void)
 {
     uint32_t g;
-    if (!(ui_prefs & PREF_LARGE))
-        return LK_OFF;
-    if (ui.layer)
-        return LK_LABEL;
-    if (ui.home)                                        /* (HOME > TRACKS: its rows need the panel, the cards as on */
-        return home_tracks() ? LK_LABEL : LK_TALL;      /* a list page; the rows' names in M: draw_home_tracks) */
+    if (ui.layer) return RK_COMPACT;
+    if (ui.home) return home_tracks() ? RK_COMPACT : RK_BANK;
     g = cur_page()->graph;
     return g == GR_BROWSE || g == GR_SLOTS || g == GR_USER || g == GR_PATS || g == GR_SONG || g == GR_ROLL ||
-           g == GR_SLICES || g == GR_EVENTS ? LK_LABEL : LK_TALL;
+           g == GR_SLICES || g == GR_EVENTS || g == GR_TOOLS ? RK_COMPACT : RK_BANK;
 }
-/* the geometry of the page shown: the cards' height, the panel's top and height */
-static uint32_t card_h(void) { return large_kind() == LK_TALL ? LG_CARD_H : CARD_H; }
-static uint32_t graph_y(void) { return large_kind() == LK_TALL ? LG_Y_GRAPH : Y_GRAPH; }
-static uint32_t graph_h(void) { return large_kind() == LK_TALL ? LG_H_GRAPH : H_GRAPH; }
+static int macro_page(void);
+/* #572: the panel draws on the 100 px graph scale (GOY) and needs no margin above it: the scope, ADSR, LFO, SCALE, FX,
+ * SLICER, INSERT and the engine diagrams. The lists, the roll, MIXER, CHORD, MOD, MACRO's page and FM6's charts (their
+ * captions in the margin above the chart) use the panel's full height */
+static int panel_scaled(void)
+{
+    uint32_t g;
+    if (ui.home)
+        return !home_tracks();
+    g = cur_page()->graph;
+    if (g == GR_NONE)
+        return !macro_page() && !(cur_page()->scope == SC_ENGINE && eng_is(TSEL->eng_req, ENGI_FM6));
+    return g == GR_ADSR || g == GR_LFO || g == GR_SCALE || g == GR_FX || g == GR_SLCR || g == GR_INS || g == GR_ARP ||
+           g == GR_STEPS;
+}
+static int bank_tall(void) { return !ui.layer && reading_kind() == RK_BANK && panel_scaled(); }
+static uint32_t card_h(void) { return bank_tall() ? CARD_H_TALL : CARD_H; }
+static uint32_t graph_y(void) { return Y_LABEL + card_h() + 4u; }
+static uint32_t graph_h(void) { return Y_FOOT - 4u - graph_y(); }
 static int large_face_has(const char *s)                /* every glyph of s in the sparse L face */
 {
     for (; *s; s++)
@@ -632,7 +658,7 @@ static void page_entered(void)
         ui.plk_src = (uint8_t)(ui.page + 1u);
     song.seq_mode = !ui.home && pg->fam == FAM_SEQ;
     ui.entry_open = 0;
-    ui.hot_t = 0;                                /* clear the previous page's emphasis */
+    ui.hot_t = ui.curve_t = 0;                   /* clear the previous page's emphasis (#572: and its curve) */
     ui.act = pg->graph == GR_USER ? 4u : 0u;     /* the save screen is ready for OCT+ */
     ui.tl_clean = 0;
     help_start();
@@ -894,7 +920,7 @@ static void go_home(void)
     ui.home = 1;
     ui.plk_src = 0;                              /* (parameter locks: HOME's four) */
     ui.entry_open = 0;
-    ui.hot_t = 0;
+    ui.hot_t = ui.curve_t = 0;
     song.seq_mode = 0;
     ui.force = 1;
     help_start();
@@ -1863,16 +1889,17 @@ static void preset_step(int32_t direction)
     recent.hold = 0;
 }
 
-/* Seven display rows. FAV and a category use a bounded window, not a repeating carousel.
+static uint32_t sound_list_rows(void) { return 5u; }
+/* The selected name leaves five display rows. FAV and a category use a bounded window, not a repeating carousel.
  * Return total for an empty row; a current sound not in the list shows the start. */
 static uint32_t preset_visible(uint32_t cur, uint32_t total, uint32_t row)
 {
-    uint32_t first, last;
-    if (!total || row >= 7u) return total;
+    uint32_t first, last, rows = sound_list_rows(), middle = rows / 2u;
+    if (!total || row >= rows) return total;
     if (!list_mode())
-        return (cur + total * 4u + row - 3u) % total;
-    first = cur < total && cur > 3u ? cur - 3u : 0u;
-    last = total > 7u ? total - 7u : 0u;
+        return (cur + total * 4u + row - middle) % total;
+    first = cur < total && cur > middle ? cur - middle : 0u;
+    last = total > rows ? total - rows : 0u;
     if (first > last) first = last;
     return first + row < total ? first + row : total;
 }
@@ -1938,7 +1965,7 @@ static void track_select(uint32_t i)
         return;
     song.sel = (uint8_t)i;
     ui.entry_open = 0;
-    ui.hot_t = 0;
+    ui.hot_t = ui.curve_t = 0;
     ui.ev_keep = 0;                              /* (AUTOMATION: a row kept at its default was the other track's) */
     ui.cursor = 0;
     ui.bank = 0;

@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import gen_aa_icons as icons  # noqa: E402
-from gen_aa_font import huff_pack, huff_unpack  # noqa: E402
+from ui_font_data import huff_pack, huff_unpack  # noqa: E402
 
 
 def arrays(source):
