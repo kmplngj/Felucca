@@ -3,7 +3,9 @@
 /* Host test of firmware/src/ota.c: a fake M-UPGRADE serves a real .fwsc over
  * the SysEx protocol (pack7, cmd 0x30 reads, 0xE0000000 -> "success") and a
  * simulated NOR plays the flash.
- *   cc -o ota_test tests/ota_test.c && ./ota_test FILE.fwsc
+ *   cc -o ota_test tests/ota_test.c && ./ota_test FILE.fwsc [STOCK_DIR]
+ * STOCK_DIR: tests/ota_stock_fixtures.py's stand-ins for M-VAVE's official packages
+ * (#619), served to a device whose boot area is FILE.fwsc's.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -15,6 +17,7 @@
 #define FELUCCA_OTA_DRYRUN 0
 
 static uint8_t nor[0x100000];
+static uint8_t dev_head[0x4000];         /* the device's boot area: the first package's */
 static uint8_t *logical;
 static size_t logical_len;
 static uint8_t rx[1024];                 /* one pending host frame (7-bit bytes) */
@@ -169,28 +172,60 @@ static int area_erased(void)
 static void reset_dev(void)
 {
     memset(nor, 0xFF, sizeof nor);
-    memcpy(nor, logical + 0x400, 0x4000);                 /* device flash head = package flash.bin head */
+    memcpy(nor, dev_head, 0x4000);                        /* device flash head = the first package's flash.bin head */
     rx_full = 0; requests = 0; ident_replies = 0; committed = 0; last_code = 0;
     mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0;
 }
 
-int main(int argc, char **argv)
+/* the device's chip key: its isd_config.ini blob rewritten as fm1pkg_make.key_blob does; 0x10000 = a broken blob */
+static void dev_key(uint32_t key)
+{
+    uint8_t e[32], *d;
+    uint32_t off, i;
+    for (off = 32; off < 0x400u; off += 32u) {
+        memcpy(e, nor + off, 32);
+        ota_jl_enc(e, 32);
+        if (memcmp(e + 16, "isd_config.ini", 15))
+            continue;
+        d = nor + ota_rd32(e + 4);
+        for (i = 0; i < 16u; i++)
+            d[i] = 0x10;
+        for (i = 0; i < 16u; i++)
+            d[16 + i] = d[15 - i] ^ (key >> i & 1u ? 0x00 : 0xFF);
+        ota_wr16(d + 32, ota_crc16(d, 32, 0) ^ (key > 0xFFFFu));
+        return;
+    }
+    printf("no isd_config.ini in the device head\n");
+    exit(1);
+}
+
+static int load(const char *path)
 {
     FILE *f;
     uint8_t *raw;
     size_t n, i;
-    int bad = 0, rc;
-    if (argc < 2) { printf("usage: ota_test FILE.fwsc\n"); return 2; }
-    f = fopen(argv[1], "rb");
-    if (!f) { perror(argv[1]); return 2; }
+    f = fopen(path, "rb");
+    if (!f) { perror(path); return 2; }
     raw = malloc(0x200000);
     n = fread(raw, 1, 0x200000, f);
     fclose(f);
-    if (n < 20 * 48 + 0x4400) { printf("%s: too short for a package\n", argv[1]); return 2; }
+    if (n < 20 * 48 + 0x4400) { printf("%s: too short for a package\n", path); free(raw); return 2; }
+    free(logical);
     logical = malloc(n);
     for (i = 0; i < 20; i++) memcpy(logical + i * 47, raw + i * 48, 47);   /* drop the marker bytes */
     memcpy(logical + 20 * 47, raw + 20 * 48, n - 20 * 48);
     logical_len = n - 20;
+    free(raw);
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    int bad = 0, rc;
+    if (argc < 2) { printf("usage: ota_test FILE.fwsc [STOCK_DIR]\n"); return 2; }
+    if ((rc = load(argv[1])) != 0)
+        return rc;
+    memcpy(dev_head, logical + 0x400, sizeof dev_head);
 
     /* handshake outside a session */
     reset_dev();
@@ -234,6 +269,11 @@ int main(int argc, char **argv)
         bad += check("another board's size (0x9D000): -15, no commit, no erase", rc == -15 && !committed && erases == 0 &&
                      area_erased());
         memcpy(logical, keep, sizeof keep);
+        reset_dev();
+        set_fl_size(logical, 0xA9000u);                    /* V16's size is the official loader's only */
+        rc = ota_session();
+        bad += check("own loader, V16's size (0xA9000): -15, no erase", rc == -15 && !committed && erases == 0);
+        memcpy(logical, keep, sizeof keep);
     }
     /* host disappears in the middle */
     reset_dev();
@@ -252,6 +292,36 @@ int main(int argc, char **argv)
         mute_after = total - 1;                            /* answer everything but the confirmation */
         rc = ota_session();
         bad += check("no 'success' -> -13, no commit, area clean", rc == -13 && !committed && area_erased());
+    }
+
+    /* #619: M-VAVE's loader writes the boot area, so only the pinned official images, over whichever boot area the
+     * device has (here the first package's, never theirs), for this chip's key; anything else before any erase */
+    if (argc > 2) {
+        static const struct { const char *file; int rc; uint32_t key; const char *what; } S[] = {
+            {"v15", 0, 0x980Fu, "official V15 image over another boot area: commits"},
+            {"v16", 0, 0x980Fu, "official V16 image (0xA9000) over another boot area"},
+            {"v16", -16, 0x1234u, "official image, another chip key: -16"},
+            {"v16", -16, 0x10000u, "official image, chip key unreadable: -16"},
+            {"head", -5, 0x980Fu, "boot area not the pinned one: -5"},
+            {"flcrc", -5, 0x980Fu, "flash.bin CRC not pinned: -5"},
+            {"size", -5, 0x980Fu, "official loader, unpinned flash.bin size: -5"},
+            {"unknown", -7, 0x980Fu, "unknown loader: -7"},
+        };
+        char path[1024];
+        uint32_t k;
+        for (k = 0; k < sizeof S / sizeof S[0]; k++) {
+            snprintf(path, sizeof path, "%s/%s.fwsc", argv[2], S[k].file);
+            if ((rc = load(path)) != 0)
+                return rc;
+            reset_dev();
+            dev_key(S[k].key);
+            rc = ota_session();
+            bad += check(S[k].what, rc == S[k].rc &&
+                         (rc ? !committed && erases == 0 && area_erased()
+                             : committed && !memcmp(nor + 0xE0020, logical + ota_body_off(), 64) &&
+                               !memcmp(nor + 0xE4F00, committed_parm, 112)) &&
+                         bad_erase == 0 && !memcmp(nor + 0x20, dev_head + 0x20, 0x60));
+        }
     }
 
     printf("%s\n", bad ? "OTA TEST FAILED" : "ota test passed");

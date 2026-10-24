@@ -158,6 +158,17 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Changed
 
+- **Return to official firmware across bootloaders:** Felucca's update staging and
+  the Python installer accept M-VAVE's official V16 as well as V15, each only as the
+  exact reviewed file (whole-file SHA-256 on the host; flash image, boot-area CRCs and
+  chip key on the device), over whichever boot area the unit has. Before, V15 was
+  refused on a unit with V16's bootloader or m-bootloader, and V16 everywhere. M-VAVE's
+  FM1 Open firmware and m-bootloader's installer now get explicit explanations instead
+  of generic failures, and `tools/fm1_bootarea.py` names a flash dump's boot area and
+  its declared clock (V16's: 320 MHz, #618). V16 return and crossed-bootloader
+  transitions await FM-1 qualification; the browser installer keeps V15 until its
+  client update. See [return to official firmware](usb-rescue.md#return-to-official-firmware-and-the-boot-area-619)
+  and [compatible bootloaders](usb-rescue.md#boot-areas-and-other-firmware).
 - **Unified native reading:** value pages use a shared four-knob parameter bank
   and a stable larger current value while keeping full native graphs. Explicit
   scope feedback covers held-step locks, motion and temporary/kept edits; focus
