@@ -148,11 +148,16 @@ def main():
     faces = parse(a.header)
     if not faces["S"]["scale"]:
         raise SystemExit("Only native M8Stealth bitmap headers are supported")
-    for name, width in (("S", 6), ("M", 9), ("L", 17), ("N", 18)):
+    for name, width in (("S", 6), ("M", 9), ("L", 17), ("N", 18), ("X", 26)):
         f = faces[name]
-        assert f["scale"] == (2 if name in ("L", "N") else 1)
+        assert f["scale"] == (2 if name in ("L", "N") else 3 if name == "X" else 1)
         assert not f["kern"] and not f["psh"]
-        assert all(e[1] == width * 16 for e in f["g"])
+        # (#572: L and X keep tabular cells; only the point is proportional, its ink and a source pixel each side)
+        point = 4 if name in ("L", "X") else -1         # L_CHARS " #+-./0..": the point's record
+        assert all(e[1] == width * 16 for i, e in enumerate(f["g"]) if i != point)
+        if point >= 0:
+            e = f["g"][point]
+            assert e[1] == (e[2] + e[4] + f["scale"]) * 16 and e[1] < width * 16
         assert all(e[4] % f["scale"] == e[5] % f["scale"] == 0 for e in f["g"])
         for e in f["g"]:
             bitmap(f, e)

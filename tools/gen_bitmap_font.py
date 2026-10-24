@@ -103,7 +103,12 @@ def emit(name, ascent, glyphs, chars, height, baseline, scale, data=None, offset
         if not shared:
             offsets[code] = len(data)
             data += pack(bits)
-        entry = (offsets[code], (advance * scale + tracking) * 16, bx * scale,
+        pen = advance * scale + tracking
+        if name in ('L', 'X') and code == ord('.'):
+            # Large numerals: the point takes its ink and one source pixel each side, not a digit's cell
+            # ("1.18", not "1. 18"). Digits stay tabular.
+            pen = (bx + w + 1) * scale
+        entry = (offsets[code], pen * 16, bx * scale,
                  (by * scale + baseline - cap_bottom * scale) if w else 0, w * scale, h * scale)
         # aag_t stores off/adv as uint16_t, bx as int8_t and by/bw/bh as uint8_t.
         # Reject narrowing even when Python runs with assertions disabled.

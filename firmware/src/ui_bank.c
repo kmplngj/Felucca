@@ -182,7 +182,8 @@ static void bank_readout(const bank_field_t *f, int hot, const char *status)
     }
     GFX_HOOK_ALIGN(0, 0, 0, nb, AL_B, "bank focus value baseline");
     bank_text(3, nb - bank_cap(vf), vf, f->value, tc, T_SURF);
-    x = 3 + ink_w(vf, f->value) + UI_VALUE_UNIT_GAP + (vf == &AF_X ? 3 : 1);
+    x = 3 + ink_w(vf, f->value) + UI_VALUE_UNIT_GAP + (vf == &AF_X || vf == &AF_L ? 3 : 1);   /* (a scaled numeral's
+                                                       * unit: a source pixel's more air) */
     if (f->unit[0]) {
         GFX_HOOK_ALIGN(0, 0, 0, nb, AL_B, "bank focus unit baseline");
         bank_text(x, nb - bank_cap(uf), uf, f->unit, T_MID, T_SURF);

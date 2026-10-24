@@ -24,6 +24,9 @@ raster weight. Do not add another font to establish hierarchy.
 | N | Full M ink at exact 2×, 18 px high | 18 px | 35 / 28 px | Selected names and NAME field |
 | X | M ink at exact 3×, 27 px high | 26 px | 50 / 40 px | Focused value on tall bank pages (#572) |
 
+L and X keep tabular 17 / 26 px cells for every glyph except the point, which takes its ink and one
+source pixel each side ("1.18", not "1. 18"); a value's size still never changes over its domain.
+
 The 17 px L advance is intentional: three digits fit the narrow cards. It does
 not scale the bitmap horizontally. S/M/N each have 105 records; L has 41 and is
 not a general face for names; X has the same 41 records. L/N/X share every bitmap byte with M;
