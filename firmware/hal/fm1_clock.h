@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Read-only boot clock evidence (#618). Raw words, not a frequency decoder or
  * clock correction. main.c captures into its stack before normal initialization,
- * then publishes into ordinary BSS after that region has been cleared. */
+ * then publishes after RAM initialization. Target pool placement keeps the new
+ * record separate from compiler-merged ordinary BSS globals. */
 #pragma once
 #include <stdint.h>
 
@@ -9,7 +10,12 @@ typedef struct {
     uint32_t r10014, r1000c, r10008, r119a8, r119ac, r119a0, r119a4;
     uint8_t valid;
 } fm1_clock_snapshot_t;
-static fm1_clock_snapshot_t fm1_boot_clock;  /* main.c publishes once, before USB/rescue; console only reads */
+#ifdef __PI32V2__
+static fm1_clock_snapshot_t fm1_boot_clock __attribute__((section(".pool")));
+#else
+static fm1_clock_snapshot_t fm1_boot_clock;
+#endif
+/* main.c publishes once before console startup; console only reads. */
 
 #ifndef FM1_CLOCK_READ32
 #define FM1_CLOCK_READ32(a) (*(volatile const uint32_t *)(uintptr_t)(a))

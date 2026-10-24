@@ -28,8 +28,8 @@ costs and distinguish host/emulator coverage from real FM-1 observations.
 
 With `FELUCCA_CDC=1` (the normal default), startup reads these seven 32-bit
 registers, in order, after the existing CPU1 hold when compiled in and before TIMER4/reset/peripheral
-initialization. Their values survive BSS/data initialization through a temporary
-startup-stack snapshot and are copied into ordinary RAM. Nothing is added to
+initialization. Their values survive RAM initialization through a startup-stack
+snapshot and are copied into a 32-byte target POOL record. Nothing is added to
 NOINIT or persistent storage. The status handler reads the saved words, never the
 live clock registers; polling does not add clock-register accesses.
 
@@ -51,11 +51,19 @@ invalidates that reply; absence is unavailable evidence, never seven zero values
 CDC-disabled builds omit capture and storage. MIDI-only rescue has no CDC console;
 returning to normal startup captures a new boot, not the earlier rescue state.
 
-The added workload is seven sequential volatile reads once at boot, one ordinary
-RAM record, a temporary startup-stack record and seven formatted lines per status
-reply. There is no audio/TIMER5 work, PLL/clock write, delay or corrective path.
+The added workload is seven sequential volatile reads once at boot, the POOL
+record and seven formatted lines per status reply. The startup caller does not
+return while the application runs: its enlarged frame remains active rather than
+being reclaimed after publication. There is no added audio/TIMER5 operation,
+PLL/clock write, delay or corrective path.
 Use matched polling/no-polling runs when assessing the extra reply traffic. Exact
 linked region/frame costs belong to the candidate's target resource report.
+A controlled standard-profile comparison against `29ad24fd` measured +324 bytes
+app and +32 bytes POOL, unchanged ordinary RAM/RAMTEXT/NOINIT, and a startup
+caller frame of 32 rather than 8 bytes (+24 bytes, persistent). Protected interrupt
+function sizes/frames and static budget metrics matched that baseline; relocated
+addresses change machine bytes. This is static build evidence, not device timing
+or a complete stack bound; final committed-package results are recorded in the PR.
 
 For a device comparison, follow the idle setup below on an already installed,
 identified candidate and collect one run per available bootloader/reset path.
