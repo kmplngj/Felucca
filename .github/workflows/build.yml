@@ -111,6 +111,10 @@ jobs:
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" 2>&1 | tee build/ci/actionlint.log
           python3 -m unittest discover -s tests -p ci_test.py -v 2>&1 | tee build/ci/helper-tests.log
+          if [ -f tests/coverage_contract_test.py ]; then
+            python3 tests/coverage_contract_test.py -v 2>&1 | tee build/ci/coverage-helper-tests.log
+            python3 tests/test_jobs_test.py -v 2>&1 | tee build/ci/scheduler-helper-tests.log
+          fi
           if [ -f tests/ci_target_test.py ]; then
             python3 -m unittest discover -s tests -p ci_target_test.py -v 2>&1 | tee build/ci/target-helper-tests.log
           else
@@ -479,6 +483,9 @@ jobs:
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
           set -o pipefail
+          export FELUCCA_COVERAGE_REPORT="$PWD/build/ci/coverage.json"
+          FELUCCA_COVERAGE_ID="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+          export FELUCCA_COVERAGE_ID
           sh tests/run_tests.sh 2>&1 | tee build/ci/tests.log
           python3 tools/ci.py verify-tests build/ci/tests.log
       - name: Cache Playwright browser downloads
@@ -542,7 +549,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: 9abac79667e72a6918bb824967151a57bbc60826 # WebApp #8: saved settings replace stale refusal feedback
+          ref: a881cb73ae66730f6c2a6bff14a2f170e09d7690 # WebApp #15: deterministic WATCH test fixture (merged)
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site
@@ -649,6 +656,18 @@ jobs:
             echo 'Host CPU budgets require available counters and matching host/compiler baselines; ns/sample is informational. Target budgets are static estimates. FM-1 audio deadlines, USB/MIDI, panel behavior and flashing remain device checks.'
             if [ -f build/ci/tests.log ]; then
               echo ''
+              if [ -f tools/test_coverage.py ]; then
+                echo 'Structured host coverage (required by this selected source):'
+                echo '```text'
+                if [ -f build/ci/coverage.json ]; then
+                  python3 tools/test_coverage.py summary build/ci/coverage.json
+                else
+                  echo 'No structured report produced; full coverage is incomplete.'
+                fi
+                echo '```'
+              else
+                echo 'Historical selected source: legacy transcript verifier; no structured coverage qualification.'
+              fi
               echo 'Host CPU evidence, allowed fixture skips and FX coverage (both regression builds):'
               echo '```text'
               grep -E '^== CPU baselines:|^regress: CPU counter:|^regress: CPU: .*the budget is not checked|^regress: [0-9]+ golden renders.*CPU (budget not checked|entries over budget)|^official V15 restore: skipped|^FX rest' build/ci/tests.log || true

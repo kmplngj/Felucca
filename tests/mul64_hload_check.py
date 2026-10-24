@@ -143,9 +143,28 @@ def totals(rows, windows):
 def new_findings(rows, baseline, window):
     """ISR/CPU1-reachable functions whose multiplies near a load exceed the baseline (missing = 0)"""
     key = str(window)
-    if window not in baseline.get("windows", []):
-        raise ValueError(f"baseline has no window N={window} (has {baseline.get('windows')})")
-    old = {r["name"]: r["near_mul"][key] for r in baseline["functions"]}
+    if not isinstance(baseline, dict) or baseline.get("schema") != 1:
+        raise ValueError("expected a schema 1 inventory object")
+    windows = baseline.get("windows")
+    if not isinstance(windows, list) or any(type(n) is not int or n <= 0 for n in windows):
+        raise ValueError("windows must be a list of positive integers")
+    if window not in windows:
+        raise ValueError(f"baseline has no window N={window} (has {windows})")
+    functions = baseline.get("functions")
+    if not isinstance(functions, list):
+        raise ValueError("functions must be a list")
+    old = {}
+    for row in functions:
+        if not isinstance(row, dict) or not isinstance(row.get("name"), str) or not row["name"]:
+            raise ValueError("each function needs a nonempty name")
+        name = row["name"]
+        if name in old:
+            raise ValueError(f"duplicate function {name}")
+        counts = row.get("near_mul")
+        value = counts.get(key) if isinstance(counts, dict) else None
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{name}: near_mul N={window} must be a nonnegative integer")
+        old[name] = value
     return [(r["name"], old.get(r["name"], 0), r["near_mul"][key]) for r in rows
             if r["tags"] != "-" and r["near_mul"][key] > old.get(r["name"], 0)]
 
@@ -160,19 +179,31 @@ def main(argv=None):
     ap.add_argument("--fail-on-new", metavar="BASELINE", help="exit 1 (2 without usable IR) if an ISR/CPU1-reachable function has more "
                     "multiplies near a 16-bit load than in BASELINE (a --json file); not part of tests/run_tests.sh")
     a = ap.parse_args(argv)
+    if a.window <= 0 or a.top < 0:
+        ap.error("window must be positive and top must be nonnegative")
     dis = Path(a.dis)
     baseline = None
     if a.fail_on_new:                     # read first: --json may name the same file
         try:
             baseline = json.loads(Path(a.fail_on_new).read_text())
+            new_findings([], baseline, a.window)  # validate before --json can overwrite the baseline
         except (OSError, ValueError) as e:
             print(f"mul64_hload: baseline: {e}", file=sys.stderr)
             return 2
     try:
         funcs = parse(dis.read_text().splitlines())
-    except OSError as e:
+    except (OSError, UnicodeError) as e:
         print(f"mul64_hload: {e}", file=sys.stderr)
         return 2
+    if not any(funcs.values()):
+        print(f"mul64_hload: {dis}: no recognized function instructions", file=sys.stderr)
+        return 2
+    if baseline is not None:
+        missing = [root for tag in "AT" for root in ROOTS[tag] if not funcs.get(root)]
+        if missing:
+            print(f"mul64_hload: --fail-on-new needs a full target listing; missing instructions for "
+                  + ", ".join(missing), file=sys.stderr)
+            return 2
     windows = sorted({*WINDOWS, a.window})
     rows = analyse(funcs, windows)
     ir = Path(a.ir) if a.ir else dis.with_name("felucca.ll")
@@ -180,14 +211,14 @@ def main(argv=None):
     if ir.is_file():
         try:
             sets = reach(ir.read_text())
-        except ValueError as e:
+        except (OSError, ValueError) as e:
             print(f"mul64_hload: {e}", file=sys.stderr)
             return 2
     else:
         warn = f"no IR at {ir}: reachability unknown, every function is shown as '-'"
-    if baseline is not None and not (sets.get("A") or sets.get("T")):
+    if baseline is not None and not (sets.get("A") and sets.get("T")):
         # '-' would mean "main loop only" and be skipped by new_findings(): never gate on unknown reachability
-        why = f"no IR at {ir}" if warn else f"{ir} has no audio/TIMER5 ISR roots"
+        why = f"no IR at {ir}" if warn else f"{ir} lacks the audio or TIMER5 ISR root"
         print(f"mul64_hload: --fail-on-new needs reachability data: {why}. Provide the matching unoptimized "
               "LLVM IR as felucca.ll beside the listing, or pass it with --ir PATH.", file=sys.stderr)
         return 2

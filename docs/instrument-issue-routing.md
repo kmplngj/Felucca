@@ -4,7 +4,7 @@
 Portable implementation ideas were transferred from Felucca using GitHub's issue
 transfer operation, retaining their discussions and original URL redirects. These
 moves do not implement, enable or qualify any instrument. The
-[AGENTS ownership table](../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation)
+[repository ownership table](repository-ownership.md)
 defines future implementation and issue routing; the
 [firmware-watch skill](../.agents/skills/firmware-watch/SKILL.md) applies it to findings.
 

@@ -7,6 +7,10 @@ import shlex
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from test_coverage import Producer
+coverage = Producer()
 out = ROOT / 'build/host/send_gain'
 out.mkdir(parents=True, exist_ok=True)
 host = (ROOT / 'tests/hostsim.c').read_text().replace('"../firmware/src/', f'"{ROOT}/firmware/src/')
@@ -31,16 +35,20 @@ if os.environ.get('SANITIZE', '1') != '0':
                            input='int main(void){return 0;}', text=True, capture_output=True)
     if probe.returncode or subprocess.run([str(out / 'probe')], capture_output=True).returncode:
         print('send gain: sanitizer SKIP (compiler/runtime unavailable)')
+        coverage.outcome('sends-sanitizer', 'skipped', 'sanitizer-unavailable')
     else:
         subprocess.run(cc + ['-O1', '-g'] + sanitizers + ['-w', '-I' + str(ROOT / 'build/gen'),
                        '-I' + str(ROOT / 'firmware/src'), f'-DFX_TEST_HOSTSIM="{out / "hostsim.c"}"',
                        str(ROOT / 'tests/send_gain_test.c'), '-lm', '-o', str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
+        coverage.outcome('sends-sanitizer')
 else:
     print('send gain: sanitizer SKIP (SANITIZE=0)')
+    coverage.outcome('sends-sanitizer', 'skipped', 'sanitizer-disabled')
 
 # Exercise actual load routes through the established UI fixture, without running the full UI suite.
 load = out / 'loads'
 subprocess.run(cc + ['-O2', '-w', '-I' + str(ROOT / 'build/gen'), '-I' + str(ROOT / 'firmware/src'),
                str(ROOT / 'tests/send_gain_load_test.c'), '-lm', '-o', str(load)], check=True)
 subprocess.run([str(load)], check=True)
+coverage.outcome('sends-native', builds=['O2', 'Os'], cpu2=[0, 1], loads=True)

@@ -150,6 +150,9 @@ try {
   await check("boot and LCD", async () => {
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.evaluate(() => document.fonts.ready);
+    assert.equal(await page.getByRole("button", { name: "SEL", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "SCL", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("slider", { name: "SELECT", exact: true }).count(), 1);
     await page.getByRole("button", { name: "Switch on", exact: true }).click();
     await page.locator("#start").waitFor({ state: "hidden" });
     await waitFor(() => __feluccaTest.frames > 5 && (__feluccaTest.leds[0] & (1 << 6)));
@@ -168,6 +171,8 @@ try {
   });
   await check("note release becomes quiet", () => freshAudio(false));
   await check("pointer opens ENV and encoder redraws LCD", async () => {
+    await page.getByRole("button", { name: "SEL", exact: true }).click();
+    await waitFor(() => (__feluccaTest.leds[0] & (1 << 1)) !== 0);
     const before = await screen("before-env");
     await page.getByRole("button", { name: "ENV", exact: true }).click();
     await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
@@ -183,9 +188,35 @@ try {
     assert.notEqual(edited.sha256, env.sha256, "encoder did not change the LCD");
     return edited;
   });
+  await check("GRAPH TURN: a turned knob's curve replaces the scope, then the scope returns", async () => {
+    // #572: HOME's panel (tall bank: rows 98..198) in silence is the flat scope; KNOB 1 (ANALOG's CUT) shows the
+    // filter curve while it turns and about 1.2 s after; then the same flat scope again.
+    const panel = () => page.locator("#screen").evaluate((canvas) => {
+      const context = new OffscreenCanvas(240, 240).getContext("2d", { willReadFrequently: true });
+      context.drawImage(canvas, 0, 0);
+      return Array.from(context.getImageData(0, 100, 240, 96).data).join(",");
+    });
+    await tap("HOME");
+    await page.waitForTimeout(400);
+    const rest = await panel();
+    const draws = await page.evaluate(() => __feluccaTest.draws);
+    for (let i = 0; i < 4; i++) await page.getByRole("slider", { name: "KNOB 1", exact: true }).press("ArrowUp");
+    await waitFor((n) => __feluccaTest.draws > n, draws);
+    await page.waitForTimeout(150);
+    const turning = await panel();
+    assert.notEqual(turning, rest, "turning KNOB 1 did not replace the scope with its curve");
+    await screen("graph-turn");
+    await page.waitForTimeout(2000);
+    assert.equal(await panel(), rest, "the scope did not return after the curve's hold");
+    await tap("ENV");                                 // (back on ENV, as the following checks expect)
+    await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
+    await page.waitForTimeout(200);
+    return { curve_shown: true, scope_returned: true };
+  });
   await check("portrait layout remains playable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 600);
+    assert.equal(await page.getByRole("button", { name: "SEL", exact: true }).count(), 1);
     await check("portrait wrapper text contrast", wrapperContrast);
     const key = page.getByRole("button", { name: "F3", exact: true });
     await key.scrollIntoViewIfNeeded();

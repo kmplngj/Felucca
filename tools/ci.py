@@ -97,19 +97,17 @@ def fetch_sdk(root):
 
 
 def verify_tests(log):
-    text = log.read_text()
-    # Optional local suites become required here. Whole host CPU budgets may be
-    # unavailable (counter or matching host baseline); individual missing entries
-    # in an available budget are coverage failures.
-    allowed = "official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)"
-    forbidden = [line for line in text.splitlines() if line != allowed
-                 and re.search(r"^== skip |^target: skip |: skipped \(|no budget \(BUDGET_UPDATE|no baseline \(BUDGET_UPDATE", line)]
-    if forbidden or "ALL HOST TESTS PASSED" not in text:
-        raise ValueError("incomplete test coverage:\n" + "\n".join(forbidden))
-    for path in ("build/felucca.dis", "build/emu/felucca.wasm", "build/host/asan/fuzz_ed",
-                 "build/host/phys_ref", "build/host/regress", "build/host/regress_os"):
-        if not Path(path).is_file():
-            raise ValueError(f"required test output missing: {path}")
+    from test_coverage import verify
+    report = os.environ.get('FELUCCA_COVERAGE_REPORT')
+    run_id = os.environ.get('FELUCCA_COVERAGE_ID')
+    if not report or not run_id:
+        raise ValueError('incomplete test coverage: explicit report and invocation identity required')
+    if not log.is_file():
+        raise ValueError('incomplete test coverage: transcript missing')
+    try:
+        verify(Path(report), run_id, build.SRC)
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise ValueError(f'incomplete test coverage: invalid evidence: {error}') from error
 
 
 def portable_tests():
@@ -142,15 +140,10 @@ def emulator_tests():
 
 def host_cpu_provenance():
     """Record the host compiler and the runner's baseline/flag selection before tests."""
-    cc = shlex.split(os.environ.get("CC", "cc"))
-    common = ["-O1", "-Wall", "-Wno-unused-function"]
-    novec = ["-fno-vectorize", "-fno-slp-vectorize"]
-    probe = subprocess.run(cc + common + novec + ["-x", "c", "-c", "-o", os.devnull, "-"],
-                           input="int x;", text=True, capture_output=True)
-    if probe.returncode:
-        novec = ["-fno-tree-vectorize", "-fno-tree-slp-vectorize"]
-    paths = subprocess.check_output([sys.executable, str(build.SRC / "tests/cpu_baseline.py"),
-                                     *cc, *common], text=True).splitlines()
+    from test_coverage import host_config, baseline_config
+    configuration = host_config()
+    cc, common, novec = (configuration[k] for k in ('requested', 'common', 'novec'))
+    paths = baseline_config(configuration, build.SRC)
     return {
         "compiler_command": cc,
         "compiler": subprocess.check_output(cc + ["--version"], text=True).strip(),
@@ -160,7 +153,7 @@ def host_cpu_provenance():
                    "baseline": path, "baseline_present": (build.SRC / path).is_file()}
             for name, flags, path in zip(("regress", "regress_os"), (["-O2"], ["-Os", *novec]), paths)
         },
-        "counter_policy": "Available counter and matching host baseline required; actual outcomes in tests.log",
+        "counter_policy": "Available counter and matching host baseline required; actual outcomes/argv in diagnostic coverage report",
     }
 
 
