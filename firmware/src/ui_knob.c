@@ -21,9 +21,10 @@
  *   GLO layer      track k's LEVEL                        param_turn, accel once    track k           no (a layer)
  *
  * "param_turn, accel once": accel(EN_K1 + k) over the descriptor's range (0, no acceleration, for a list of names),
- * then param_turn (bounds, enum order and aliases). A fixed value (min == max) or an empty cell is not edited on a
- * page or momentarily (knob_live); HOME turns its engine knob as ever. Capture (motion.c motion_capture) records only
- * while the track is armed and playing; LEARN (midi_learn.c ml_knob) picks only while MIDI LEARN is on. */
+ * then param_turn (bounds, enum order and aliases). A fixed value (min == max) or an empty cell is not edited anywhere
+ * (knob_live, in knob_edit and mom_target): no turn, no capture, no LEARN pick; HOME as the pages and MOMENTARY (#295
+ * follow-up). Capture (motion.c motion_capture) records only while the track is armed and playing; LEARN
+ * (midi_learn.c ml_knob) picks only while MIDI LEARN is on. */
 
 static int32_t accel(uint32_t role, int32_t s, int32_t range);   /* (ui_input.c) */
 static uint64_t lock_held(void);                                   /* (ui_input.c) */
@@ -108,9 +109,12 @@ static void knob_put(const knob_target_t *kt, int16_t value)
         motion_capture(kt->t, id, *kt->vp);
     ml_knob(kt->t, id);                                 /* (MIDI LEARN: picked) */
 }
-/* a permanent turn: acceleration once, or MIXER's MUTE set by direction */
+/* a live permanent turn: acceleration once, or MIXER's MUTE set by direction.
+ * Reject fixed/empty targets before value calculation, capture and LEARN. */
 static void knob_edit(const knob_target_t *kt, uint32_t k, int32_t s)
 {
+    if (!knob_live(kt))
+        return;
     knob_put(kt, kt->dir ? (int16_t)(s > 0) : knob_value(kt, k, s));
 }
 /* ENV + knob (#569), inspired by X0X 102c47b9's single-knob-default gesture. The caller resolves a live sound/FX

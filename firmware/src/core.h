@@ -441,3 +441,6 @@ static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIME
 /* Early boot/rescue decisions share the existing twelve retained bytes. */
 #include "boot_policy.h"
 boot_policy_guard_t bootguard __attribute__((section(".noinit")));
+#ifndef ENGINES_QUAL
+#define ENGINES_QUAL const   /* engines.c ENGINES[]: const in the firmware; a host test defines it empty to swap an entry */
+#endif

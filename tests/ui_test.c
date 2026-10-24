@@ -47,6 +47,7 @@ static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty
 static int c1_exclusion, c1_recovers;                   /* #410: a retained exclusion the player's ON may clear (menu_items.c) */
 #define C1_RECOVER() (c1_exclusion ? (c1_exclusion = 0, ++c1_recovers, 1) : 0)
 #endif
+#define ENGINES_QUAL                                   /* (a writable ENGINES[]: test_knob_policy swaps in a copy) */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -10928,6 +10929,33 @@ static int test_knob_policy(void)
     vp = &TSEL->p[id];
     ok = kp_turn(0, 3, vp, param_turn(d, *vp, 3), sel, id, motion_param(id), 1);
     bad += check("#295 HOME: KNOB 1 the selected track's engine knob only; captured, LEARN picks it", ok);
+    kp_end();
+
+    /* a fixed value (min == max) is not turned on HOME, as on a page or MOMENTARY: no turn, no automation event, no
+     * LEARN pick. No shipped engine maps a fixed value to a HOME knob, so SAMPLE's CUT (KNOB 2) is made fixed for
+     * the case (a writable copy of its engine stands in for ENGINES[] meanwhile); KNOB 1 (SET) still turns */
+    kp_start(HV_SCOPE);
+    if (eng_ok(ENGI_SAMPLE)) {
+        static engine_t fixed;                           /* a writable copy of SAMPLE whose CUT is fixed */
+        const engine_t *se0 = ENGINES[ENGI_SAMPLE], *se = &fixed;
+        uint8_t e = TSEL->eng_req;
+        fixed = *se0;
+        fixed.edit[4].min = fixed.edit[4].max = 100;
+        ENGINES[ENGI_SAMPLE] = &fixed;
+        TSEL->eng_req = ENGI_SAMPLE;
+        id = se->knob[1];
+        vp = &TSEL->p[id];
+        *vp = 100;
+        ok = track_desc(TSEL, id)->min == track_desc(TSEL, id)->max;
+        ok &= kp_turn(1, 5, vp, 100, sel, id, 0, 0) && kp_turn(1, -7, vp, 100, sel, id, 0, 0);
+        id = se->knob[0];
+        vp = &TSEL->p[id];
+        d = track_desc(TSEL, id);
+        ok &= kp_turn(0, 1, vp, param_turn(d, *vp, 1), sel, id, motion_param(id), 1);
+        ENGINES[ENGI_SAMPLE] = se0;
+        TSEL->eng_req = e;
+        bad += check("#295 HOME: a fixed engine value (min == max) is not turned, captured or picked; the others are", ok);
+    }
     kp_end();
 
     kp_start(HV_LEVELS);
