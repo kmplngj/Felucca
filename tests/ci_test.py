@@ -85,21 +85,22 @@ class Checks(unittest.TestCase):
     def test_success_message_does_not_hide_skipped_tests(self):
         log = self.root / "tests.log"
         for message in ("== skip the sanitizer runs (the compiler has no ASan / UBSan)",
+                        "SKIP: required sanitizer runs unavailable",
                         "target: skip (build/felucca.dis missing)",
                         "logical image vs fm1pkg.js: skipped (needs node and build/felucca.fwsc)",
                         "target: render cost 1 no budget (BUDGET_UPDATE=1 adds it)",
                         "regress: CPU cpu/mix/idle: 1 instructions / sample, no baseline (BUDGET_UPDATE=1 adds it)"):
             log.write_text(message + "\nALL HOST TESTS PASSED\n")
-            with self.subTest(message=message), self.assertRaisesRegex(ValueError, "incomplete test coverage"):
+            with self.subTest(message=message), patch.dict(os.environ, FELUCCA_COVERAGE_REPORT='', FELUCCA_COVERAGE_ID=''), self.assertRaisesRegex(ValueError, "incomplete test coverage"):
                 ci.verify_tests(log)
 
-    def test_whole_host_cpu_budget_skips_remain_explicit_and_allowed(self):
+    def test_cpu_skip_words_without_semantic_evidence_cannot_grant_exception(self):
         log = self.root / "tests.log"
         for message in (
                 "regress: CPU: 2 of 2 counts unavailable (perf_event_open failed: Operation not permitted); the budget is not checked",
                 "regress: CPU: no baseline for this host (BUDGET_UPDATE=1 sh tests/run_tests.sh writes it); the budget is not checked"):
             log.write_text(message + "\nALL HOST TESTS PASSED\n")
-            with self.subTest(message=message), patch.object(ci.Path, "is_file", return_value=True):
+            with self.subTest(message=message), patch.dict(os.environ, FELUCCA_COVERAGE_REPORT='', FELUCCA_COVERAGE_ID=''), self.assertRaisesRegex(ValueError, 'explicit report'):
                 ci.verify_tests(log)
 
     def test_host_cpu_provenance_records_usable_clang_and_gcc_flags(self):
@@ -157,17 +158,24 @@ class Checks(unittest.TestCase):
                 for line in fx.splitlines():
                     self.assertIn(line, text)
 
-    def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
+    def test_structured_source_summary_keeps_cpu_and_fx_evidence(self):
+        tools = self.root / 'tools'
+        tools.mkdir()
+        (tools / 'test_coverage.py').write_text("print('structured fixture')\n")
+        self.test_actions_summary_keeps_actual_cpu_and_pending_dependency_outcomes()
+        self.assertIn('Structured host coverage', (self.root / 'summary.md').read_text())
+
+    def test_vendor_skip_words_alone_cannot_grant_exception(self):
         log = self.root / "tests.log"
         log.write_text("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)\nALL HOST TESTS PASSED\n")
-        with patch.object(ci.Path, "is_file", return_value=True):
+        with patch.dict(os.environ, FELUCCA_COVERAGE_REPORT='', FELUCCA_COVERAGE_ID=''), self.assertRaisesRegex(ValueError, 'explicit report'):
             ci.verify_tests(log)
 
     def test_complete_tests_require_outputs(self):
         log = self.root / "tests.log"
         log.write_text("ALL HOST TESTS PASSED\n")
         with patch.object(ci.Path, "is_file", return_value=False):
-            with self.assertRaisesRegex(ValueError, "required test output missing"):
+            with self.assertRaisesRegex(ValueError, "incomplete test coverage"):
                 ci.verify_tests(log)
 
     def release(self, root=None):
