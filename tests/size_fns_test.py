@@ -2,14 +2,17 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Portable fixtures for selective minsize's ISR exclusion and final annotation."""
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import size_fns as S
+import build as B
 
 
 def function(name, body="ret void", attrs="#0"):
@@ -141,6 +144,73 @@ class Reachability(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reviewed target/count contract"):
             S.isr_reach(module("call void bitcast (void (...)* %f to void (void ()*)*)(void ()* @other)",
                               extra=function("other")))
+
+    def test_isr_call_into_a_separately_compiled_module_is_rejected(self):
+        # #454: a module compiled as its own unit is only a declaration in felucca.c's IR; interrupt code
+        # reaching it (directly, through a callee or a constant table) must fail, intrinsics stay allowed
+        decl = "declare void @sound_install()\ndeclare void @llvm.memset.p0i8.i32(i8*, i8, i32, i32, i1)\n"
+        self.assertEqual(S.isr_reach(module(extra=decl + function("ui", "call void @sound_install()"))),
+                         set(S.ISR_ROOTS))
+        self.assertIn("leaf", S.isr_reach(module("call void @leaf()", extra=decl + function(
+            "leaf", "call void @llvm.memset.p0i8.i32(i8* null, i8 0, i32 4, i32 1, i1 false)"))))
+        for ir in (module("call void @sound_install()", extra=decl),
+                   module("call void @leaf()", extra=decl + function("leaf", "call void @sound_install()")),
+                   module("%f = load void ()*, void ()** @alias\n  call void %f()",
+                          extra=decl + "@alias = alias void ()*, void ()** @table\n"
+                          "@table = constant [2 x void ()*] [void ()* @cb, void ()* @sound_install]\n" +
+                          function("cb"))):
+            with self.assertRaisesRegex(ValueError, "sound_install, defined outside this translation unit"):
+                S.isr_reach(ir, indirect={S.ISR_ROOTS[0]: (1, ("table",))} if "@table" in ir else S.ISR_INDIRECT)
+
+    def test_module_mode_annotates_main_loop_definitions_without_roots(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+            src, dst = Path(tmp) / "sound.ll", Path(tmp) / "sound_size.ll"
+            src.write_text(function("sound_install", "call void @sound_port_lock()", "local_unnamed_addr #0") +
+                           "declare void @sound_port_lock()\nattributes #0 = { nounwind optsize }\n")
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", src, dst], capture_output=True, text=True)
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("missing ISR roots", p.stderr)
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", "--module", src, dst],
+                               capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("@sound_install() local_unnamed_addr minsize #0", dst.read_text())
+
+    def test_check_mode_is_analysis_only_and_enforces_the_boundary(self):
+        # FELUCCA_SIZE=0 builds run `size_fns.py --check felucca.ll`: same failure, nothing annotated or written
+        with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
+            src = Path(tmp) / "felucca.ll"
+            decl = "declare void @sound_install()\n"
+            src.write_text(module("call void @sound_install()", extra=decl))
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", "--check", src], capture_output=True, text=True)
+            self.assertNotEqual(p.returncode, 0)
+            self.assertIn("sound_install, defined outside this translation unit", p.stderr)
+            src.write_text(module())
+            p = subprocess.run([sys.executable, ROOT / "tools/size_fns.py", "--check", src], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("boundary check passed", p.stdout)
+            self.assertEqual(sorted(x.name for x in Path(tmp).iterdir()), ["felucca.ll"])
+
+    def test_build_runs_the_check_when_size_is_off(self):
+        text = (ROOT / "tools/build.py").read_text()
+        self.assertRegex(text, r'if not size:\n\s+subprocess\.run\(\[sys\.executable, SRC / "tools" / "size_fns\.py", "--check"')
+
+    def test_no_size_analysis_uses_the_compiled_main_unit_configuration(self):
+        # A boundary check of amalgamated IR cannot detect a call crossing the real object boundary.
+        class StopCompile(Exception):
+            pass
+
+        for separate in ((), ("sound",)):
+            with self.subTest(separate=separate), tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp, \
+                 patch.dict(os.environ, {"FELUCCA_SIZE": "0"}), patch.object(B, "OUT", Path(tmp)), \
+                 patch.object(B, "SEPARATE", separate), patch.object(B, "tc_all", side_effect=StopCompile) as compile_:
+                with self.assertRaises(StopCompile):
+                    B.build_app()
+                commands = compile_.call_args.args
+                obj = next(c for c in commands if c[-1] == Path(tmp) / "felucca.o")
+                ir = next(c for c in commands if c[-1] == Path(tmp) / "felucca.ll")
+                self.assertEqual([f for f in ir if str(f).startswith("-D")],
+                                 [f for f in obj if str(f).startswith("-D")])
+                self.assertEqual("-DSOUND_SEPARATE=1" in ir, bool(separate))
 
     def test_cli_failure_does_not_write_output(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:

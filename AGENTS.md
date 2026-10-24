@@ -89,9 +89,9 @@ Repository choice and license placement are in [Repository ownership](docs/repos
 
 | Location | Responsibility |
 | --- | --- |
-| `firmware/src/felucca.c` | Single translation unit: includes the other C files in dependency order |
+| `firmware/src/felucca.c` | Main translation unit: includes the other C files in dependency order; layers, cycles, the module boundary rule and the separate-compilation measurement in [docs/modules.md](docs/modules.md) |
 | `firmware/src/core.h`, `engines.c`, `voice.c` | Types, stable engine IDs, per-part engine memory, voice allocation |
-| `firmware/src/sound.c` | Sound install: the one path that publishes engine, preset and values into a track ([extending](docs/extending.md#14-switching-fades-and-reset)) |
+| `firmware/src/sound.c` | Sound install: the one path that publishes engine, preset and values into a track ([extending](docs/extending.md#14-switching-fades-and-reset)); a header-bounded module in the one unit (`sound.h` interface, `sound_port.h` needs; `tests/module_boundary_test.py` enforces it) |
 | `firmware/src/audio.c`, `fx.c`, `eng_*.c` | Audio interrupt, mixer, effects, engines, fixed-point helpers |
 | `firmware/src/main.c`, `ui*.c`, `panel.c` | Boot, main loop, UI and panel event handling |
 | `firmware/src/ui_knob.c` | Panel knob editing: the value a knob edits on HOME, MIXER, a page, GLO and MOMENTARY, and its turn/capture/LEARN policy ([extending](docs/extending.md#38-panel-drawing-and-main-loop-services)) |
@@ -104,8 +104,9 @@ Repository choice and license placement are in [Repository ownership](docs/repos
 | `web/emu/` | Browser emulator; editor/installer development has moved to Felucca-WebApp |
 
 Keep hardware register access in `hal/`; expose a HAL helper to application and loader
-code. `tools/build.py` enforces this boundary. Follow the existing include order and use
-`static` for implementation-local functions and state. A new C file must be wired into
+code. `tools/build.py` enforces this boundary. Follow the existing include order and the
+layer direction in [docs/modules.md](docs/modules.md), and use `static` for
+implementation-local functions and state. A new C file must be wired into
 the firmware and relevant host/emulator compilation paths, not merely added to disk.
 
 ## Invariants that changes must preserve
