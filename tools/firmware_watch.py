@@ -960,6 +960,8 @@ def reconcile_sources(base, current, incoming, state):
         require(prior is not None and (group, entry) == prior,
                 'source definition changed; manual reconciliation required')
         require(ours_group == prior[0], 'unexpected source registration transition')
+        require(definition(ours_entry) == definition(prior[1]),
+                'source definition changed; manual reconciliation required')
     require(not (set(ours) - set(theirs)),
             'state-only registration requires manual reconciliation')
     index(result)

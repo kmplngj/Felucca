@@ -232,7 +232,7 @@ Merging all of main also publishes unrelated firmware files to the state branch.
 Keep code and ledger worktrees separate instead.
 
 Hold the shared whole-run lease. From the clean state worktree, save valid registry
-versions under ignored build storage. `CODE_ROOT` below is the absolute path of the
+versions under ignored build storage. `watch_code_dir` above is the absolute path of the
 isolated freshly fetched main checkout. Use a unique Git merge base and stop if
 there are multiple bases. Do not change any Git ancestry to manufacture a base.
 
@@ -243,7 +243,7 @@ git merge-base --all HEAD origin/main > build/firmware-watch-merge/bases.txt
 git show "$(cat build/firmware-watch-merge/bases.txt):data/firmware-watch/sources.json" > build/firmware-watch-merge/base.json
 git show HEAD:data/firmware-watch/sources.json > build/firmware-watch-merge/ours.json
 git show origin/main:data/firmware-watch/sources.json > build/firmware-watch-merge/theirs.json
-python3 "$CODE_ROOT/tools/firmware_watch.py" reconcile-sources \
+python3 "$watch_code_dir/tools/firmware_watch.py" reconcile-sources \
   --base build/firmware-watch-merge/base.json \
   --ours build/firmware-watch-merge/ours.json \
   --theirs build/firmware-watch-merge/theirs.json \

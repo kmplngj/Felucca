@@ -109,6 +109,29 @@ class RegistryReconciliationTests(unittest.TestCase):
         with self.assertRaises(W.WatchError):
             self.merge()
 
+    def test_current_only_definition_edits_require_manual_review(self):
+        for group in ('repositories', 'pending_source_additions'):
+            for edit in ('change', 'remove', 'add'):
+                with self.subTest(group=group, edit=edit):
+                    self.setUp()
+                    if group == 'repositories':
+                        self.base = copy.deepcopy(self.ours)
+                    else:
+                        self.ours = copy.deepcopy(self.base)
+                        self.state = {'repositories': []}
+                    self.theirs = copy.deepcopy(self.base)
+                    entry = self.ours[group][0]
+                    if edit == 'change':
+                        entry['unknown_metadata'] = {'changed': True}
+                    elif edit == 'remove':
+                        del entry['unknown_metadata']
+                    else:
+                        entry['new_metadata'] = {'added': True}
+                    inputs = copy.deepcopy((self.base, self.ours, self.theirs, self.state))
+                    with self.assertRaisesRegex(W.WatchError, 'source definition changed; manual reconciliation'):
+                        self.merge()
+                    self.assertEqual(inputs, (self.base, self.ours, self.theirs, self.state))
+
     def test_unverified_promotion_is_blocked(self):
         self.state['repositories'][0]['identity_verified'] = False
         with self.assertRaises(W.WatchError):
