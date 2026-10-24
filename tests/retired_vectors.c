@@ -214,7 +214,7 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
             rv_die("old_pack of the input", c->name);
         in = old;
     }
-    if (!proj_import_any(&pre, in, (int)inlen))       /* read, nothing converted yet */
+    if (!proj_import_any(&pre, in, (int)inlen))       /* read (PHYS already migrated: the inputs come from the case) */
         rv_die("proj_import_any", c->name);
     if (!proj_import(&post, in, (int)inlen))          /* the load path: + proj_fm4, proj_perc */
         rv_die("proj_import", c->name);
@@ -227,7 +227,7 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
     printf("     \"tracks\": [");
     for (t = 0; t < NTRK; t++)
         printf("%s{\"engine_in\": %u, \"preset_in\": %u, \"engine_out\": %u, \"preset_out\": %u}", t ? ", " : "",
-               (unsigned)pre.t[t].engine, (unsigned)pre.t[t].preset, (unsigned)post.t[t].engine,
+               (unsigned)c->engine[t], (unsigned)c->preset[t], (unsigned)post.t[t].engine,
                (unsigned)post.t[t].preset);
     printf("],\n     \"motion_dropped\": [");
     for (i = 0; i < pre.motion.count && i < MOTION_MAX; i++)
