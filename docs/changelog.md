@@ -168,8 +168,7 @@ recorded in the linked reports, rather than every current build or device.
   automatically, including on macOS without manual pip setup; see
   [Python environments](../BUILDING.md#python-environments).
 
-- **PR installation:** the CLI uses the maintained Python updater again. Native Rust
-  updater setup, cached artifacts and backend selection have been removed; the locked
+- **PR installation:** the CLI uses the maintained Python updater. The locked
   `midi` group supplies `mido`/`python-rtmidi` in the trusted caller checkout. See [BUILDING](../BUILDING.md#test-a-pull-request-on-hardware).
 
 - **Update-loader compatibility:** installers bind current Felucca packages to loader
