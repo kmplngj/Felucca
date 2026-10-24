@@ -81,8 +81,8 @@ components:
     backgroundColor: "{colors.grey-theme}"
     textColor: "{colors.grey-bg}"
     height: "19px"
-  curve-dot:
-    size: "4px"
+  curve-marker:
+    size: "5px"
 ---
 
 # Design System: Felucca native panel
@@ -155,9 +155,12 @@ pre-rendered keycap pills, because they depict physical things. Rules are 1 px; 
   automation, DIM inactive. Focus makes it 3 px.
 - **Focused readout:** label (M) and `K1`/state (S) on one line; the numeral (X or L) flush left with its
   unit (M or S) on the numeral's baseline.
-- **Curves:** 2 px THEME traces on a RAISE baseline with dotted RAISE guides. The focused value's point is
-  a 4 × 4 dot (ACCENT while turning): the filter response at the cutoff, the ADSR's attack peak, decay end,
-  plateau or release end. ADSR stages carry dotted guides and A D S R letters.
+- **Curves:** 2 px THEME traces on a RAISE baseline with dotted RAISE guides. ADSR stages carry dotted
+  guides and A D S R letters.
+- **Curve marker:** the focused value's point, drawn last: a 5 × 5 dot centred on the trace, cut free by a
+  1 px ring of the ground (it reads apart from a curve of its own colour, dark or light), a 3 px stub above,
+  and for a point in time (cutoff, attack peak, decay end, release end) a 1 px line to the baseline; a level
+  (sustain) has the dot alone. At rest the dot is TEXT and the line MID; while the knob turns, all ACCENT.
 - **GRAPH (MENU > DISPLAY):** TURN (default) swaps the live scope for the turned knob's curve while it turns
   and about 1.2 s after; SCOPE, CURVE (curve plus a small scope strip) and STILL.
 - **Lists:** selected full name in N above five rows; the selected row inverted in THEME.

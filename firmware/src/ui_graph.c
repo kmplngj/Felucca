@@ -18,21 +18,33 @@ static int32_t graph_ht = 100;
 /* Matches voice.c: attack is linear, decay and release are exponential
  * (env += (target - env) * k each tick, ~99 % after the set time). Time
  * axis is the parameter value (the times themselves are exponential). */
-/* #572: the focused value's point on its curve: a 4 x 4 dot over the 2 px trace (mark: the accent while the knob
- * turns, else the curve's colour) */
-static void curve_dot(int32_t x, int32_t y, uint16_t mark) { cv_rect(x - 1, y - 1, 4, 4, mark); }
+/* #572: the focused value's marker, drawn last over its curve: a 5 x 5 dot centred on the trace's point, cut free of
+ * the 2 px trace by a ring of the panel's ground (so it reads apart from a curve of its own colour, on dark and light
+ * grounds alike), a 3 px stub above and, for a point in time, a 1 px line down to the baseline (bot: -1 none). At
+ * rest TEXT (the line MID); while the knob turns everything the accent */
+static void curve_marker(int32_t x, int32_t y, int32_t bot, int hot)
+{
+    uint16_t dot = hot ? T_ACCENT : T_TEXT, line = hot ? T_ACCENT : T_MID;
+    cv_rect(x - 3, y - 3, 7, 7, cv_bg);
+    cv_rect(x - 2, y - 2, 5, 5, dot);
+    cv_rect(x, y - 7, 1, 3, line);
+    if (bot > y + 3)
+        cv_rect(x, y + 4, 1, bot - y - 3, line);
+}
 /* a quiet guide: a dotted RAISE line x from y0 to y1 */
 static void curve_guide(int32_t x, int32_t y0, int32_t y1)
 {
     for (; y0 <= y1; y0 += 3)
         cv_rect(x, y0, 1, 1, T_RAISE);
 }
-/* id: ATK DEC SUS REL; fi: the one in focus (0..3; else none), its point dotted in mark; labels: A D S R under the
- * baseline (room for S capitals: graph_ht's 12 % under the curve) */
-static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint32_t fi, uint16_t mark, int labels)
+/* id: ATK DEC SUS REL; fi: the one in focus (0..3; else none), its marker (curve_marker; hot: the knob turns);
+ * labels: A D S R under the baseline (room for S capitals: graph_ht's 12 % under the curve) */
+static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint32_t fi, int hot, int labels)
 {
+    int32_t mx = -1, my = 0, mbot = -1;
     int32_t a = 4 + t->p[id[0]] * 50 / 127, d = 6 + t->p[id[1]] * 50 / 127, r = 6 + t->p[id[3]] * 60 / 127;
-    int32_t top = 6 * graph_ht / 100, bot = 88 * graph_ht / 100, sus = t->p[id[2]] * 1000 / 127;   /* 0..1000 */
+    int32_t top = 8 * graph_ht / 100, bot = 88 * graph_ht / 100, sus = t->p[id[2]] * 1000 / 127;   /* 0..1000; (8 %:
+                                                       * the attack peak's marker stub clear of the top) */
     int32_t x0 = 12, x1 = x0 + a, x3 = 226 - r, i, px, py;
     int32_t e = 32768;                                                  /* exp(-4.6 u), Q15 */
 #define EGY(lvl) (bot - (lvl) * (bot - top) / 1000)
@@ -60,9 +72,9 @@ static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint3
             cv_text((xd + x3) / 2 - 2, gy - AF_S_CAP_Y, &AF_S, "S", T_MID);
             cv_text(x3 + r / 2 - 2, gy - AF_S_CAP_Y, &AF_S, "R", T_MID);
         }
-        if (fi == 0u) curve_dot(x1, top, mark);
-        else if (fi == 1u) curve_dot(px, py, mark);
-        else if (fi == 2u) curve_dot((xd + x3) / 2, EGY(sus), mark);
+        if (fi == 0u) { mx = x1; my = top; mbot = bot + 2; }           /* times: down to the baseline */
+        else if (fi == 1u) { mx = px; my = py; mbot = bot + 2; }
+        else if (fi == 2u) { mx = (xd + x3) / 2; my = EGY(sus); }     /* the level: the dot alone */
     }
     cv_line_t(px, py, x3, EGY(sus), c, 2);                               /* sustain */
     px = x3;
@@ -74,13 +86,14 @@ static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint3
         px = x3 + i;
         py = EGY(sus * e >> 15);
     }
-    if (fi == 3u)
-        curve_dot(px, py, mark);
+    if (fi == 3u) { mx = px; my = py; mbot = bot + 2; }
+    if (mx >= 0)
+        curve_marker(mx, my, mbot, hot);
 #undef EGY
 }
 static void graph_adsr(const track_t *t, uint16_t c)
 {
-    graph_adsr_of(t, c, cur_page()->id, ui.read_bank.focus, ui.hot_t && ui.hot_col == ui.read_bank.focus ? T_ACCENT : c, 1);
+    graph_adsr_of(t, c, cur_page()->id, ui.read_bank.focus, ui.hot_t && ui.hot_col == ui.read_bank.focus, 1);
 }
 
 static void graph_lfo(const track_t *t, uint16_t c)
@@ -167,7 +180,7 @@ static uint32_t curve_sig(const track_t *t, uint32_t k)
 /* The filter's response: a 2-pole state-variable filter (eng_analog.c: k the damping, ANALOG_K; the three modes
  * peak alike, 1/k, at the cutoff): |H|^2 = num / ((1 - s^2)^2 + k^2 s^2), s = f / fc, num 1 (LP), s^2 (BP), s^4 (HP).
  * A log axis, 20 Hz at the left .. 20 kHz (10 octaves, FG_OCT px each), +18 dB at top .. -42 dB at bot; the
- * cutoff a 2 px line to the baseline in `mark`. Integer only: exp2 / log2 in fixed point (display accuracy) */
+ * cutoff's marker on the response (curve_marker). Integer only: exp2 / log2 in fixed point (display accuracy) */
 #define FG_OCT 22
 static uint64_t fg_exp2_q16(int32_t e)               /* 2^(e / 256), Q16 (e: octaves in 1/256) */
 {
@@ -187,7 +200,7 @@ static int32_t fg_log2_q8(uint64_t x)                /* log2(x) in 1/256, x > 0 
     return n * 256 + (int32_t)(m + ((m * (256u - m) * 87u) >> 16));   /* log2(1 + f) ~ f + .34 f(1 - f) */
 }
 static int32_t fg_x(uint32_t hz) { return (fg_log2_q8(hz) - fg_log2_q8(20u)) * FG_OCT / 256; }
-static void graph_filter(const track_t *t, uint16_t c, uint16_t mark, int32_t top, int32_t bot)
+static void graph_filter(const track_t *t, uint16_t c, int hot, int32_t top, int32_t bot)
 {
     static const uint16_t GRID[3] = {100, 1000, 10000};
     int32_t cut = filter_cut_id(t), res = filter_res_id(t, cut), x, py = bot, yc = bot, xc, i;
@@ -212,10 +225,8 @@ static void graph_filter(const track_t *t, uint16_t c, uint16_t mark, int32_t to
             yc = y;
         py = y;
     }
-    if (xc >= 0 && xc < PANEL_W) {                   /* the cutoff: a quiet guide down, its dot on the response */
-        curve_guide(PANEL_X0 + xc, yc + 4, bot + 1);
-        curve_dot(PANEL_X0 + xc, yc, mark);
-    }
+    if (xc >= 0 && xc < PANEL_W)                     /* the cutoff: its marker on the response, down to the baseline */
+        curve_marker(PANEL_X0 + xc, yc, bot + 2, hot);
 }
 
 /* step bar x of step i of a 16-step row: 4 groups, as the footer (9 px bars, 13 px apart, 4 px between groups),
@@ -2192,19 +2203,19 @@ static void panel_scope(const track_t *t, uint16_t c)
     uint32_t k = panel_curve(t);
     int strip = k != CK_NONE && graph_mode() == GM_CURVE;
     int32_t h = (int32_t)cv_h, bot = h - (strip ? SCOPE_STRIP_H + 10 : 12);
-    uint16_t mark = ui.hot_t && ui.hot_col == ui.read_bank.focus ? T_ACCENT : c;
+    int hot = ui.hot_t && ui.hot_col == ui.read_bank.focus;
     cv_oy = 0;
     if (k == CK_NONE) {
         graph_scope(c);
         return;
     }
     if (k == CK_FILTER) {
-        graph_filter(t, c, mark, 6, bot);
+        graph_filter(t, c, hot, 9, bot);
     } else {
         int32_t ht = graph_ht;
         graph_ht = bot * 100 / 88;                   /* (graph_adsr_of: its baseline at 88 % of graph_ht) */
         int32_t id = column_param(ui.read_bank.focus);
-        graph_adsr_of(t, c, AMP_ENV, id >= P_ATK && id <= P_REL ? (uint32_t)(id - P_ATK) : 4u, mark, !strip);
+        graph_adsr_of(t, c, AMP_ENV, id >= P_ATK && id <= P_REL ? (uint32_t)(id - P_ATK) : 4u, hot, !strip);
         graph_ht = ht;
     }
     if (strip)
