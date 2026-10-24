@@ -74,7 +74,8 @@ to recover first; capture does not abort or reset the transport.
 native UI against an independent delayed-consumption DMA model. It checks
 command/coordinate/payload/final-DMA failure, persistent ownership, bounded
 observations, wrap, repeated recovery failure, late sleep/wake, full-clear failure,
-latest menu/page/name/dialog/theme pixels, active panel edits, capture and partial
+latest menu/page/name/dialog/theme/mixer pixels, direct mixer knob writes after
+failed canvas acquisition, active panel edits, capture and partial
 initialization. [`lcd_wait_test.py`](../tests/lcd_wait_test.py) compiles the actual
 HAL completion/wait functions with substituted registers to check poll and
 acknowledgment behavior. Existing power and independent screenshot-wire models

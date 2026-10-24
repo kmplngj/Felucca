@@ -89,6 +89,20 @@ static void final_canvas_and_retry(void)
     lcd_model_fail_at = lcd_model_sent + 1u; lcd_fill(0, 0, 1, 1, 0);
     need(lcd_fault && lcd_faults == 2u, "a failed recovery relatches with a fresh backoff");
 }
+static void mixer_canvas_failure(void)
+{
+    uint32_t sent;
+    reset_model(); go_page(GR_TRK); ui.force = 1;
+    need(strip_kind() != SK_TRK, "mixer test exercises direct knob canvas path");
+    cv_begin(240, 124, T_BG);
+    lcd_model_fail_at = lcd_model_sent + 6u; cv_blit(0, 20);
+    need(!lcd_fault && lcd_busy && lcd_model_pending, "mixer starts before failed ownership acquisition");
+    memcpy(held_canvas, cv_px, sizeof cv_px); sent = lcd_model_sent;
+    draw_tracks();
+    need(lcd_fault && lcd_busy && lcd_model_sent == sent, "mixer cancels all submissions after acquisition failure");
+    need(!memcmp(held_canvas, cv_px, sizeof cv_px), "mixer knob raster never changes DMA-owned canvas");
+    lcd_model_owned();
+}
 static void latest_scene(uint32_t palette, uint32_t style, uint32_t large, uint32_t scene)
 {
     uint32_t normal_sent;
@@ -103,6 +117,7 @@ static void latest_scene(uint32_t palette, uint32_t style, uint32_t large, uint3
     else if (scene == 2u) { ui.menu = 0; go_page(GR_ADSR); }
     else if (scene == 3u) { ui.menu = 0; name_open(NK_USER_SAVE, 5); }
     else if (scene == 4u) { ui.menu = 0; ui.home = 1; }
+    else if (scene == 5u) { ui.menu = 0; go_page(GR_TRK); }
     ui.force = 0; fm1_ms += 15; ui_draw();
     need(lcd_fault && ui.force && lcd_model_sent == normal_sent + 6u, "failed page change keeps latest redraw pending");
     lcd_model_release = 1; fm1_ms += LCD_RETRY_MS; ui_draw(); lcd_sync();
@@ -217,9 +232,9 @@ int main(int argc, char **argv)
         reset_model(); cv_begin(2, 2, 0x1234); cv_blit(0, 0); cv_px[0] ^= 1u; lcd_model_owned(); return 0;
     }
     if (argc != 1) return 2;
-    failures_at_each_transfer(); final_canvas_and_retry();
+    failures_at_each_transfer(); final_canvas_and_retry(); mixer_canvas_failure();
     for (p = 0; p < NPALETTES; p++) for (s = 0; s < 2u; s++) for (large = 0; large < 2u; large++)
-        for (scene = 0; scene < 5u; scene++) latest_scene(p, s, large, scene);
+        for (scene = 0; scene < 6u; scene++) latest_scene(p, s, large, scene);
     power_and_capture(); final_capture_and_sleep(); normalization_failures(); boot_failure();
     printf("PASS LCD containment: actual driver/canvas/UI, source ownership, bounded retries, late completion, latest pixels, power/capture/boot (%u checks)\n", fault_checks);
     return 0;

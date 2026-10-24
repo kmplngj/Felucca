@@ -1830,6 +1830,8 @@ static void draw_tracks(void)
             continue;
         }
         cv_begin(CARD_W, H_GRAPH, T_BG);
+        if (LCD_FAILED())
+            return;                                 /* knob arcs write directly to the borrowed canvas */
         cv_rrect(0, 0, CARD_W, H_GRAPH, 5, T_SURF, T_BG);
         cv_icon_on(4, 5, 16, trk_icon(c, sel), lit ? (sel ? T_TEXT : T_ACCENT) : sel ? T_ACCENT : T_MID, T_SURF);
         if (st)
