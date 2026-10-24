@@ -202,7 +202,7 @@ class ResourceReport(unittest.TestCase):
         # profile/identity freshness and external target tools are fixture inputs;
         # configuration, fingerprints, inventories and resource guards stay real.
         with tempfile.TemporaryDirectory() as folder:
-            base = Path(folder)
+            base = Path(folder).resolve()
             root = base / 'source'
             tools = root / 'tools'
             tools.mkdir(parents=True)
