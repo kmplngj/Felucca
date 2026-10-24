@@ -2052,6 +2052,22 @@ describes older containers and their recovery paths.
   have no parameters, protocol or saved state. The standard CC map (1.1: CC5 7 10 71..75 91 93 94, README "MIDI
   in") sets parameters as a knob does: the editor sees those changes as `CHANGED` / `TRACK_CHANGED` pushes.
 
+### Appended SCL values (#634)
+
+Track parameter SCL (id 26) remains `F_ENUM`, default 0. Its descriptor now reports
+min 0, max 18: unchanged names/IDs 0–15, then PHDOM 16, HUNG 17 and DHARM 18.
+Clients must use DESC's range and name list, including when formatting DUMP and
+TRACK_DUMP values; the current client discovers all nineteen. SET/TRACK_PARAM use
+the existing descriptor clamp (negative → 0, values above 18 → 18). No command,
+parameter count, project version or storage layout changes.
+
+Before this extension, the same restore/record-read and SET paths clamp to max 15,
+so data using 16–18 plays as DIMWH on the preceding firmware. Its runtime re-save
+can replace the new value; preserve an untouched backup for downgrade/re-upgrade.
+Raw object export does not by itself run the playback clamp. User sounds retain
+the stored SCL, while sound audition and phrase loading keep the destination
+track's own SCL, as before.
+
 ## Protocol changelog
 
 Release notes below describe additions; the linked reference entries define the wire

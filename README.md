@@ -25,6 +25,9 @@ instrument; some details may differ in this fork.
 
 This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
 native pixel typography, performance diagnostics and broader host/emulator regression coverage.
+Nineteen twelve-tone scales include Phrygian dominant, Hungarian minor and double harmonic;
+the SEL quick layer pages through the complete set ([controls and downgrade limits](docs/fork-features.md#appended-twelve-tone-scales-634)).
+Physical listening, panel and I/O qualification for the three additions remains pending.
 The M8Stealth display uses native pixel lettering for both regular text
 and control/status badges, with stable number/unit placement
 ([LCD typography](docs/lcd-typography.md)). One native UI combines a focused

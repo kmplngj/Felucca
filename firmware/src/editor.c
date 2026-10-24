@@ -21,6 +21,9 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
        ED_MOTION = 64, ED_BACKUP_LIST, ED_BACKUP_GET, ED_BACKUP_PUT };                              /* v6: song chain */
 
 static uint8_t ed_out[664] __attribute__((section(".pool")));   /* (MOTION op 8: 128 records and their kinds, 653 bytes) */
+_Static_assert(NELEM(N_SCALE) <= 24u, "SCL fits the ordinary editor enum name limit");
+_Static_assert(14u + sizeof("SCL") + 1u + NELEM(N_SCALE) * sizeof("DIMHW") + 1u <= sizeof ed_out,
+               "SCL descriptor fits every complete name in the editor reply");
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
 _Static_assert(14u + 2u * (8u + 1u) + MAC_NSHAPE * (12u + 1u) + 1u <= sizeof ed_out,
                "MACRO model descriptor fits the complete editor reply");

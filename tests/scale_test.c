@@ -7,17 +7,8 @@
 #undef main
 
 static const uint8_t WHITE_KEYS[] = {0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26};
-static const struct { uint8_t count, notes[12]; } EXPECTED[] = {
-    {12, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
-    {7, {0, 2, 4, 5, 7, 9, 11}}, {7, {0, 2, 3, 5, 7, 8, 10}},
-    {7, {0, 2, 3, 5, 7, 9, 10}}, {7, {0, 2, 4, 5, 7, 9, 10}},
-    {5, {0, 2, 4, 7, 9}}, {5, {0, 3, 5, 7, 10}},
-    {7, {0, 2, 3, 5, 7, 8, 11}}, {7, {0, 1, 3, 5, 7, 8, 10}},
-    {7, {0, 2, 4, 6, 7, 9, 11}}, {7, {0, 1, 3, 5, 6, 8, 10}},
-    {7, {0, 2, 3, 5, 7, 9, 11}}, {6, {0, 3, 5, 6, 7, 10}},
-    {6, {0, 2, 4, 6, 8, 10}}, {8, {0, 1, 3, 4, 6, 7, 9, 10}},
-    {8, {0, 2, 3, 5, 6, 8, 9, 11}},
-};
+#include "scale_expected.h"
+#define EXPECTED SCALE_EXPECTED
 
 static void mapping_test(void)
 {
@@ -33,6 +24,7 @@ static void mapping_test(void)
         for (k = 0; k < EXPECTED[s].count; k++)
             mask |= 1u << EXPECTED[s].notes[k];
         assert(scale_mask(t) == mask);
+        assert(!strcmp(TP[P_SCALE].names[s], SCALE_NAMES_EXPECTED[s]));
         for (root = 0; root < 12; root++)
             for (oct = -3; oct <= 3; oct++)
                 for (trans = -24; trans <= 24; trans++) {
@@ -41,6 +33,13 @@ static void mapping_test(void)
                     t->p[P_TRANS] = (int16_t)trans;
                     for (k = w = 0; k < 27u; k++) {
                         uint32_t actual = kb_map(t, k);
+                        for (int q = QN_SNAP; q <= QN_SEQT; q++) {
+                            if (q == QN_WHITE) continue;
+                            t->p[P_QUANT] = (int16_t)q;
+                            int note = 53 + (int)k + 12 * oct + trans;
+                            assert(kb_map(t, k) == (uint32_t)clamp(expected_snap(s, root, note), 0, 127));
+                        }
+                        t->p[P_QUANT] = QN_WHITE;
                         if (k == WHITE_KEYS[w]) {
                             /* Four white keys precede C4; use a positive cycle
                              * offset to independently handle the lower degrees. */
@@ -72,7 +71,7 @@ static void mapping_test(void)
     t->p[P_TRANS] = 0;
     song.octave = 0;
     assert(kb_map(t, 11) == 63u && kb_map(t, 10) == 63u && kb_map(t, 7) == 60u && kb_map(t, 8) == 60u);
-    puts("scales: all 16 scales, 12 roots, octave/transpose ranges, bypass, drums and SNAP ok");
+    puts("scales: all 19 scales, 12 roots, octave/transpose ranges, bypass, drums and SNAP ok");
 }
 
 static void key_events_test(void)
@@ -507,6 +506,55 @@ static void seq_trn_test(void)
     puts("scales: QNT SEQ+T moves the sequence by TRN then snaps (steps unchanged, nothing held); other QNT values ignore TRN");
 }
 
+/* Independent note fixtures through the real event owners, including released-note identity. */
+static void event_matrix_test(void)
+{
+    track_t *t = &trk[0];
+    for (uint32_t s = 0; s < NELEM(EXPECTED); s++)
+        for (int root = 0; root < 12; root++) {
+            arp_reset(t);
+            t->p[P_AMODE] = 0; t->p[P_SCALE] = (int16_t)s; t->p[P_ROOT] = (int16_t)root;
+            t->p[P_QUANT] = QN_SNAP;
+            usb.config = 1;
+            for (uint32_t k = 0; k < 27u; k++) {
+                uint32_t want = (uint32_t)expected_snap(s, root, 53 + (int)k);
+                mo_w = mo_r = 0;
+                fm1_in.notes = 1u << k; keyboard_block();
+                assert(gated_note(t, want) && mo_w == 1u && ((midi_out_q[0] >> 16) & 127u) == want);
+                t->p[P_SCALE] = (int16_t)((s + 1u) % NELEM(EXPECTED));
+                fm1_in.notes = 0; keyboard_block();
+                assert(!gated(t) && mo_w == 2u && ((midi_out_q[1] >> 16) & 127u) == want);
+                assert(((midi_out_q[1] >> 8) & 255u) == 0x80u);
+                t->p[P_SCALE] = (int16_t)s;
+            }
+            for (int q = QN_SEQ; q <= QN_SEQT; q++)
+                for (int trans = -24; trans <= 24; trans += 24)
+                    for (uint32_t note = 0; note < 128u; note++) {
+                        step_t step = {.note = {(uint8_t)note}, .n = 1, .time = ST_NOTE};
+                        int want = expected_snap(s, root, (int)note + (q == QN_SEQT ? trans : 0));
+                        t->p[P_QUANT] = (int16_t)q; t->p[P_TRANS] = (int16_t)trans;
+                        seq_step(t, &step, 0, div_samples(0), SEQ_ROLLED);
+                        assert(t->seq_n == 1u && t->seq_notes[0] == clamp(want, 0, 127));
+                        assert(step.note[0] == note);
+                        seq_release(t);
+                        assert(!gated(t));
+                    }
+            /* A physical key stays held while ROOT/SCL changes: arp remaps its origin,
+             * not the previous snapped note. A changed octave applies only to new keys. */
+            arp_reset(t); t->p[P_QUANT] = QN_SNAP;
+            fm1_in.notes = 1u << 11; keyboard_block();
+            t->p[P_SCALE] = (int16_t)s; t->p[P_ROOT] = (int16_t)root;
+            t->p[P_TRANS] = 12; song.octave = 2;
+            uint32_t list[16], count;
+            uint32_t n = arp_list(t, list, &count);
+            assert(n == 1u && list[0] == expected_snap(s, root, 76));
+            fm1_in.notes = 0; keyboard_block();
+            assert(t->nheld == 0);
+            usb.config = 0;
+        }
+    puts("scales: 19 x 12 roots: SNAP/MIDI on-off, SEQ/SEQ+T 0..127 bounds and held ARP remapping ok");
+}
+
 int main(void)
 {
     host_tracks_init();
@@ -515,5 +563,6 @@ int main(void)
     seq_quant_test();
     seq_trn_test();
     arp_follow_test();
+    event_matrix_test();
     return 0;
 }

@@ -798,7 +798,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO,
        S_MACRO_SYNC, S_MACRO_TRIPLE, S_MACRO_QUESTION,
 #endif
-       S_COUNT };
+       S_SCL15, S_SCL16, S_SCL17, S_SCL18, S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "phrases", "project", "tools", "song_empty", "song", "step", "auto_steps", "auto_add_chance", "automation", "drum",
     "drum_hand", "drum_cym", "mixer", "mixer_from_home", "mixer_pan", "env", "env_dest", "lfo", "mod", "fx", "slicer", "dly", "scl", "chord", "chord_wide", "chord_off", "chord_kit", "arp",
@@ -837,6 +837,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto",
     "macro_sync", "macro_triple", "macro_question",
 #endif
+    "layer_scl_15", "layer_scl_16", "layer_scl_17", "layer_scl_18",
 };
 
 /* the STEP page's piano roll (ui_graph.c graph_roll) on track 1, stopped unless said: an empty pattern; ACID in
@@ -1445,6 +1446,8 @@ static void setup(int s)
         ui.hot_col = 0; ui.hot_t = 30;
         break;
     case S_GLO_EXT: go_home(); ui.layer = LAYER_GLO; song.g[G_CLOCK] = 1; trk[0].p[P_MUTE] = trk[3].p[P_MUTE] = 1; break;
+    case S_SCL15: case S_SCL16: case S_SCL17: case S_SCL18:
+        go_home(); ui.layer = LAYER_SCL; TSEL->p[P_SCALE] = (int16_t)(15u + s - S_SCL15); break;
     case S_SCL_PEEK: go_title("ENV"); ui.layer = LAYER_SCL; break;
     case S_SCL_ACTIVE: go_home(); ui.layer = LAYER_SCL; TSEL->p[P_ROOT] = 3; TSEL->p[P_SCALE] = 2; ui.hot_col = 1; ui.hot_t = 30; break;
     case S_EDIT_PEEK: go_title("EDIT 1"); ui.layer = LAYER_EDIT; break;

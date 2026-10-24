@@ -1211,9 +1211,33 @@ static int raw_tests(void)
     return bad;
 }
 
+static int scale_backup(void)
+{
+    static const int values[] = {0, 15, 16, 17, 18, -1, 19, 127};
+    static uint8_t bytes[ST_PAYLOAD_MAX];
+    int ok = 1;
+    for (uint32_t k = 0; k < NELEM(values); k++) {
+        uint32_t len = 0, crc = 0;
+        int want = clamp(values[k], 0, 18);
+        reset(); TSEL->p[P_SCALE] = (int16_t)values[k];
+        ok &= !list(0, &len, &crc) && !get_all(0, len, bytes);
+        TSEL->p[P_SCALE] = 2;
+        ok &= !put_all(0, bytes, len, crc) && TSEL->p[P_SCALE] == want;
+        TSEL->p[P_SCALE] = (int16_t)values[k];
+        int rc = up_store(0, "SCALE");
+        ok &= rc == 0;
+        ok &= !list(6u, &len, &crc) && !get_all(6u, len, bytes);
+        memset(up_bank, 0, sizeof up_bank);
+        ok &= !put_all(6u, bytes, len, crc);
+        int16_t p[P_COUNT]; up_values(up_rec(0), p);
+        ok &= p[P_SCALE] == want;
+    }
+    return check("SCL full backup runtime/user-bank 0/15/16/17/18 plus malformed clamps", ok);
+}
+
 int main(void)
 {
-    int bad = 0;
+    int bad = scale_backup();
     uint32_t len = 0, crc = 0, before;
     static project_store_t st;
     static project_v6_t v6;

@@ -584,9 +584,41 @@ static int durability_test(void)
     return bad;
 }
 
+static int scales_roundtrip(void)
+{
+    static const int values[] = {0, 15, 16, 17, 18, -1, 19, 127};
+    static project_store_t packed;
+    static project_t decoded;
+    int16_t stored[P_COUNT];
+    int ok = 1;
+    reset();
+    for (uint32_t k = 0; k < NELEM(values); k++) {
+        int value = values[k], want = clamp(value, 0, 18);
+        TSEL->p[P_SCALE] = (int16_t)value;
+        TSEL->step[0] = (step_t){.note = {61}, .n = 1, .time = ST_NOTE};
+        project_capture(&decoded);
+        ok &= proj_pack(&packed, &decoded) && proj_import(&decoded, &packed, sizeof packed);
+        ok &= !project_restore_runtime(&decoded) && TSEL->p[P_SCALE] == want;
+        TSEL->p[P_SCALE] = (int16_t)value;
+        int rc = up_store(0, "SCALE");
+        ok &= rc == 0;
+        up_values(up_rec(0), stored);
+        ok &= stored[P_SCALE] == want;
+        /* Sound audition and phrase load intentionally keep the destination track's SCL. */
+        TSEL->p[P_SCALE] = 2;
+        ok &= !up_load(0) && TSEL->p[P_SCALE] == 2;
+        up_pat_load(TSEL, 0);
+        ok &= TSEL->p[P_SCALE] == 2 && TSEL->step[0].note[0] == 61;
+        up_boot();
+        up_values(up_rec(0), stored);
+        ok &= stored[P_SCALE] == want;
+    }
+    return check("SCL project/store/reboot boundaries 0/15/16/17/18 and malformed; sound/phrase preserve track scale", ok);
+}
+
 int main(void)
 {
-    int bad = 0, ok;
+    int bad = scales_roundtrip(), ok;
     uint32_t before;
     persist_t p;
     project_store_t old, got;

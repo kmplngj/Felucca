@@ -4258,6 +4258,22 @@ static int test_quick_layers(void)
     btn_up(B_SCL); frame();
     bad += check("  OCT- in SCL: ROOT and SCL as the layer opened", ok && TSEL->p[P_ROOT] == 7 && TSEL->p[P_SCALE] == 2);
 
+    /* The selected scale follows KNOB 2 across the old sixteen-cell boundary.
+     * While held, GLO cannot steal the layer; OCT- restores the opening value. */
+    ui_power_on(); TSEL->p[P_SCALE] = 15;
+    btn_down(B_SCL); frames(512);
+    ok = ui.layer == LAYER_SCL;
+    turn(EN_K2, 1); ok &= TSEL->p[P_SCALE] == 16;
+    turn(EN_K2, 1); ok &= TSEL->p[P_SCALE] == 17;
+    turn(EN_K2, 1); ok &= TSEL->p[P_SCALE] == 18;
+    btn_down(B_GLO); frame(); btn_up(B_GLO); frame();
+    ok &= ui.layer == LAYER_SCL;
+    turn(EN_K2, -3); ok &= TSEL->p[P_SCALE] == 15;
+    turn(EN_K2, 3); oct_back();
+    ok &= TSEL->p[P_SCALE] == 15;
+    btn_up(B_SCL); frame();
+    bad += check("SCL KNOB2: 15/16/17/18 and back, GLO ownership and OCT- undo preserved", ok && !ui.layer);
+
     /* EDIT: the engines from F3 (NENGINES of them), sound loads with UNDO, INIT with the dialog */
     ui_power_on();
     set_engine_of(TSEL, 0); go_home(); frame();
