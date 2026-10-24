@@ -119,8 +119,9 @@ glyphs and ink fit 195 px on a tall bank, else L within the band's room (195 or
 clears its column by 6 px, else S. Required strings are not abbreviated to create
 room; units have their own slot.
 
-The focused status names its editing scope: VALUE, AUTO, INACTIVE/FIXED, TEMP,
-KEPT, or LOCK/BASE with the first held step number (a + marks multiple steps).
+The focused status names the knob and, where it does not simply set a value, its editing
+scope: `K1` alone for an ordinary value; AUTO, INACTIVE/FIXED, TEMP, KEPT, or LOCK/BASE
+with the first held step number (a + marks multiple steps).
 The readout takes the actual existing column formatter output. A step lock does
 not show the sound's base value while editing the lock. MOMENTARY restore/KEEP
 and message/layer priority remain unchanged. The focused overview label is set in

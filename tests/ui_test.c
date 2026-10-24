@@ -9268,6 +9268,11 @@ static int test_graph_modes(void)
     ok &= ui.curve_t > 0u && ui.hot_col == 0u;
     ui.force = 1; frame();
     ok &= ui.read_bank.focus == 0u && panel_curve(TSEL) == CK_FILTER;
+    {
+        char st[20];
+        bank_status(st, &ui.read_bank.field[0]);
+        ok &= str_eq(st, "K1");                        /* (an ordinary value: the knob alone, no VALUE) */
+    }
     turn(EN_K3, 1); ui.force = 1; frame();             /* ATK: the amplifier envelope */
     ok &= ui.read_bank.focus == 2u && panel_curve(TSEL) == CK_ENV;
     ui.curve_t = 0;

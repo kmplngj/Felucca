@@ -87,7 +87,8 @@ static void bank_collect(uint32_t c, const char *label, const char *val, const c
 }
 static void bank_status(char *s, const bank_field_t *f)
 {
-    const char *state = f->motion ? "AUTO" : f->fixed ? "FIXED" : f->color == T_DIM ? "INACTIVE" : "VALUE";
+    /* #572: an ordinary value is the knob alone ("K1"); a word only where the knob does something else */
+    const char *state = f->motion ? "AUTO" : f->fixed ? "FIXED" : f->color == T_DIM ? "INACTIVE" : "";
     s[0] = 'K'; s[1] = (char)('1' + ui.read_bank.focus); s[2] = ' '; s[3] = 0;
     if (f->lock) {
         uint64_t held = lock_held();
@@ -99,6 +100,7 @@ static void bank_status(char *s, const bank_field_t *f)
         return;
     }
     if (mom.st) state = mom.st == MOM_ST_KEPT ? "KEPT" : "TEMP";
+    if (!state[0]) s[2] = 0;
     str_cpy(s + 3, state, 12);
 }
 static uint32_t bank_field_sig(const bank_field_t *f)
