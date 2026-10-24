@@ -470,7 +470,7 @@ static int scr_frame(void)
     }
     ui.msg_t = 0;                                      /* (dark: what would have shown is over; a clean page back) */
     ui.msg2[0] = 0;
-    ui.hot_t = ui.bpm_t = 0;
+    ui.hot_t = ui.bpm_t = ui.curve_t = 0;
     return 0;
 }
 static void scr_shown(void)                            /* after the frame: the redrawn page on */
@@ -658,7 +658,7 @@ static void page_entered(void)
         ui.plk_src = (uint8_t)(ui.page + 1u);
     song.seq_mode = !ui.home && pg->fam == FAM_SEQ;
     ui.entry_open = 0;
-    ui.hot_t = 0;                                /* clear the previous page's emphasis */
+    ui.hot_t = ui.curve_t = 0;                   /* clear the previous page's emphasis (#572: and its curve) */
     ui.act = pg->graph == GR_USER ? 4u : 0u;     /* the save screen is ready for OCT+ */
     ui.tl_clean = 0;
     help_start();
@@ -920,7 +920,7 @@ static void go_home(void)
     ui.home = 1;
     ui.plk_src = 0;                              /* (parameter locks: HOME's four) */
     ui.entry_open = 0;
-    ui.hot_t = 0;
+    ui.hot_t = ui.curve_t = 0;
     song.seq_mode = 0;
     ui.force = 1;
     help_start();
@@ -1965,7 +1965,7 @@ static void track_select(uint32_t i)
         return;
     song.sel = (uint8_t)i;
     ui.entry_open = 0;
-    ui.hot_t = 0;
+    ui.hot_t = ui.curve_t = 0;
     ui.ev_keep = 0;                              /* (AUTOMATION: a row kept at its default was the other track's) */
     ui.cursor = 0;
     ui.bank = 0;

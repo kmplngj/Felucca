@@ -178,10 +178,11 @@ static uint64_t fg_exp2_q16(int32_t e)               /* 2^(e / 256), Q16 (e: oct
 }
 static int32_t fg_log2_q8(uint64_t x)                /* log2(x) in 1/256, x > 0 */
 {
-    int32_t n = 63;
+    int32_t n = 0, k;
     uint32_t m;
-    while (!(x >> n))
-        n--;
+    for (k = 32; k; k >>= 1)                         /* the top bit in 6 steps (a curve: 440 calls a redraw) */
+        if (x >> (n + k))
+            n += k;
     m = (uint32_t)(n >= 8 ? x >> (n - 8) : x << (8 - n)) & 255u;
     return n * 256 + (int32_t)(m + ((m * (256u - m) * 87u) >> 16));   /* log2(1 + f) ~ f + .34 f(1 - f) */
 }

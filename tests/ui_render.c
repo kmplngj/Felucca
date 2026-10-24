@@ -793,7 +793,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_MENU_MIDI_TRACK, S_MENU_MIDI_TCH_UNUSED, S_MENU_MIDI_AUTO, S_HOME_TRACKS_MIDI, S_MIXER_MIDI, S_EDIT_PHASE_FOLD,
        S_MENU_OFF_IDLE, S_MENU_OFF_MODE, S_MENU_OFF_DARK, S_MENU_OFF_WAKE, S_MENU_OFF_BACK, S_MENU_OFF_ERROR,
        S_GRAPH_TURN_CUT, S_GRAPH_TURN_ATK, S_GRAPH_TURN_FILTER, S_GRAPH_TURN_RES, S_GRAPH_SCOPE_HOT, S_GRAPH_CURVE,
-       S_GRAPH_STILL, S_GRAPH_STILL_HP, S_MENU_GRAPH,
+       S_GRAPH_STILL, S_GRAPH_STILL_HP, S_MENU_GRAPH, S_GRAPH_CUT_MIN, S_GRAPH_CUT_MAX, S_ENV_LONG, S_ENV_SHORT,
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
        S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO,
        S_MACRO_SYNC, S_MACRO_TRIPLE, S_MACRO_QUESTION,
@@ -832,7 +832,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "menu_midi_track", "menu_midi_channels_unused", "menu_midi_auto_select", "home_tracks_midi", "mixer_midi", "edit_phase_fold",
     "menu_auto_off_idle", "menu_auto_off_mode", "menu_auto_off_dark", "menu_auto_off_wake", "menu_auto_off_back", "menu_auto_off_error",
     "graph_turn_cut", "graph_turn_atk", "graph_turn_filter", "graph_turn_res", "graph_scope_hot", "graph_curve",
-    "graph_still", "graph_still_hp", "menu_graph",
+    "graph_still", "graph_still_hp", "menu_graph", "graph_cut_min", "graph_cut_max", "env_long", "env_short",
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
     "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto",
     "macro_sync", "macro_triple", "macro_question",
@@ -1154,6 +1154,13 @@ static void setup(int s)
     case S_GRAPH_STILL: graph_mode_put(GM_STILL); ui.hot_col = 3; break;
     case S_GRAPH_STILL_HP: graph_mode_put(GM_STILL); TSEL->p[P_FTYPE] = 2; go_title("FILTER"); ui.hot_col = 0; break;
     case S_MENU_GRAPH: ui.menu = 1; ui.menu_sel = MI_GRAPH; graph_mode_put(GM_CURVE); break;
+    /* #572 harden: the curves at their limits, the focus dots at the panel's edges */
+    case S_GRAPH_CUT_MIN: graph_mode_put(GM_STILL); TSEL->p[P_E4] = 0; TSEL->p[P_E5] = 0; ui.hot_col = 0; ui.hot_t = 30; break;
+    case S_GRAPH_CUT_MAX: graph_mode_put(GM_CURVE); TSEL->p[P_E4] = 127; TSEL->p[P_E5] = 127; ui.hot_col = 1; ui.hot_t = 30; break;
+    case S_ENV_LONG: TSEL->p[P_ATK] = 127; TSEL->p[P_DEC] = 127; TSEL->p[P_SUS] = 0; TSEL->p[P_REL] = 127; go_title("ENV");
+        ui.hot_col = 3; ui.hot_t = 30; break;
+    case S_ENV_SHORT: TSEL->p[P_ATK] = 0; TSEL->p[P_DEC] = 0; TSEL->p[P_SUS] = 127; TSEL->p[P_REL] = 0; go_title("ENV");
+        ui.hot_col = 0; break;
     case S_LFO: go_title("LFO"); break;
     case S_MOD: TSEL->p[P_M1SRC] = 1; TSEL->p[P_M1DST] = 2; TSEL->p[P_M1AMT] = 40; TSEL->p[P_M2SRC] = 6;
         TSEL->p[P_M2DST] = 14; TSEL->p[P_M2AMT] = -64; mod_ui_slot = 1; go_title("MOD"); break;

@@ -9297,6 +9297,22 @@ static int test_graph_modes(void)
     menu_put(MI_GRAPH, GM_TURN);
     ok &= !(settings_dev[10] & 6u);
     bad += check("#572 GRAPH SCOPE / CURVE / STILL: stored in bits 1..2 of settings_dev[10]; STILL draws without the scope", ok);
+
+    ui_power_on(); song.playing = 0; frame();          /* harden: a page change ends the turned knob's curve */
+    turn(EN_K1, 1);
+    ok = ui.curve_t > 0u;
+    open_family(FAM_ENV); frame(); go_home(); frame();
+    ok &= !ui.curve_t && panel_curve(TSEL) == CK_NONE;
+    {   /* the curve's log2: exact top bit, monotonic over 2^0 .. 2^63 */
+        int32_t prev = -1;
+        uint32_t k;
+        for (k = 0; k < 64u; k++) {
+            int32_t l = fg_log2_q8((uint64_t)1 << k), m = k ? fg_log2_q8(((uint64_t)1 << k) - 1u) : 0;
+            ok &= l == (int32_t)k * 256 && l > prev && (!k || (m < l && m >= (int32_t)(k - 1u) * 256));
+            prev = l;
+        }
+    }
+    bad += check("#572 GRAPH harden: a page change ends TURN's curve; the curve's log2 exact at every power of two", ok);
     ui_power_on(); frame();
     return bad;
 }

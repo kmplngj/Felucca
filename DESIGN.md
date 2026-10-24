@@ -121,6 +121,7 @@ M8Stealth only: the 5×7 and 8×9 bitmap sets plus exact integer scales that sha
 - **M** (9 px): values, names, titles, settings labels and values, footer names.
 - **S** (7 px): column labels, units, the knob/state line, hints, graph letters.
 - A focused value keeps one face over its whole domain (no size jumps while turning).
+- L and X keep tabular digit cells; only the point is proportional ("1.18", not "1. 18").
 - Words are the firmware's own, in capitals except mixed-case names. An ordinary value's state reads only
   `K1`; states add a word (`AUTO`, `LOCK 7`, `BASE 7`, `TEMP`, `KEPT`, `INACTIVE`, `FIXED`).
 
