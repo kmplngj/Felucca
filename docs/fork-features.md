@@ -13,15 +13,61 @@ publishes tested main builds and a pinned WebApp fork; its
   idle controls and voices, and ten seconds of quiet stereo output. Long effect tails
   keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
   [autosave contract](extending.md#41-flash-map-and-deferred-save-example).
-- **UI fonts:** source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects
-  `m8stealth`, `tamzen` or `inter-tight` at build time. All builds use native
+- **UI typography:** firmware uses only M8Stealth57/89, with two native bitmap
+  grids and exact 2× and 3× reading roles. Settings content uses 9 px capitals;
+  focused instrument values use 27 px where the page's graph leaves room, otherwise
+  18 px, as do full names. Scaled roles share
+  their native bitmap data. Tamzen and Inter Tight firmware variants are retired;
+  `FELUCCA_FONT` may be unset or `m8stealth`. All builds use native
   M8Stealth57 keycap and state-badge legends, including SAVE, OCT−/+, REC and MUTE.
   Rounded pill edges and Fukiai icons remain antialiased. Numeric card/MOD units
   have a fixed right edge, and small-value fallbacks share the primary value band;
   see [LCD typography and fit rules](lcd-typography.md).
-  The [controlled font comparison](font-experiment.md) records about 39 KB less
+  The historical [controlled font comparison](font-experiment.md) records about 39 KB less
   firmware flash and 1,032 B less POOL RAM for pixel-font decode caches than Inter Tight.
+  Retiring alternate options does not itself reduce an already-M8 build.
   Physical FM-1 readability and redraw checks remain pending. [Compare real renderer captures](ui-comparison.md).
+- **LCD state readability:** muted track names and settings, mixer annotations,
+  pitch labels and MOD values/units retain readable text colors while mute marks
+  and dim graphics distinguish their state. Button legends use the physical
+  **SEL** name; **SELECT** is the separate encoder and **SCL** still names the
+  scale page. The emulator panel uses the same printed legend. See
+  [text roles and contrast scope](lcd-typography.md#readable-inactive-information);
+  physical readability and loaded-panel checks remain pending.
+- **Unified native UI:** value pages use four fixed knob positions and a larger
+  last-touched value while retaining the complete musical graph. The readout
+  distinguishes ordinary values, automation, held-step locks and temporary/kept
+  edits. Selection remains after turn feedback expires; no new gesture is needed.
+  Lists show the full selected name above five rows; settings show seven uniform
+  label/value rows with explicit ON/OFF, and NAME uses a full mixed-case field with a caret. The global size
+  switch is retired; old stored values and editor id 2 remain reserved for rollback.
+  See the [reading roles and focus rules](lcd-typography.md#focused-parameter-bank).
+  Physical FM-1 readability and loaded-panel qualification remain pending.
+- **One native look (#572, direction A):** rules instead of boxes in every palette.
+  Value pages show the focused knob's label and state on one line, its value as a
+  large numeral, then the four knob columns under rules. The focused column's rule
+  shows the state by its form: solid for a value, dashed for automation, doubled for a
+  step lock, dotted for a MOMENTARY value. It uses the palette's accent only while the
+  knob turns (grey while it rests). The header reads `T1 ▶ 124 BPM` from the left, then
+  BPM LOCK's lock and the REC mark, so arming REC never moves the tempo; the octave and
+  battery stay right. The still metronome icon is gone. Compact knob rows, MENU tabs (names with an underline), settings rows and
+  the footer (sound, engine, page) follow the same type system. MENU > STYLE is retired:
+  both stored values draw this look, the row is hidden, and editor id 1 is kept for
+  rollback (`uiCaps` bit 5).
+- **MENU > DISPLAY > GRAPH (#572):** where the live waveform is shown (HOME with
+  HOME SCOPE, and engine pages without a graph of their own), choose what the panel
+  shows. **TURN** (default): the turned knob's filter response or amplifier
+  envelope while it turns and about a second after, then the waveform again.
+  **SCOPE**: always the waveform. **CURVE**: the focused knob's curve (otherwise the
+  filter's, otherwise the envelope) with a small live waveform under it. **STILL**:
+  that curve without animation. The filter curve follows the engine's cutoff,
+  resonance and ANALOG's LP/BP/HP type. Editor id 34; older firmware ignores it.
+- **Settings navigation:** hold HOME to open MENU, turn ALGORITHM for categories
+  and PRESETS for rows. Any KNOB 1–4 changes the selected setting immediately;
+  all value rows also accept OCT−/+. COLOR and LEDS follow that same rule and
+  show the result immediately. A chevron and OCT+ OPEN identify grouped details
+  or separate views; ordinary values have no chevron. AUTO OFF keeps its five directly
+  editable detail rows and BACK action. Saved settings and editor IDs are unchanged.
 - **RECENT sounds:** on SAVE > PRESETS, turn KNOB 4 (LIST) past OTHER to RECENT for
   the last eight loaded sounds, newest first. PRESETS browses them; loading from RECENT
   keeps the list order, and SAVE held undoes the audition. Deleted or replaced user
@@ -37,7 +83,7 @@ publishes tested main builds and a pinned WebApp fork; its
   [the gesture and test procedure](#single-parameter-default).
 - **Previous page:** on a family's page, hold OCT− and tap its family button to go
   back one page, wrapping from first to last. It consumes the octave modifier and
-  preserves sounding notes' pitch. Press OCT− first for FX, GLO, SCL, EDIT and SEQ;
+  preserves sounding notes' pitch. Press OCT− first for FX, GLO, SEL, EDIT and SEQ;
   their quick layers use OCT− pressed afterward for UNDO. Other-family buttons,
   dialogs and MIDI LEARN retain their normal behavior.
 
@@ -53,11 +99,15 @@ An early nudged first step uses the upcoming loop's condition, including at LEN 
 ## Single-parameter default
 
 Hold **ENV**, turn **KNOB 1–4** on the value to restore, then release ENV. The
-header says **DEFAULT**, the touched card stays highlighted and the page stays
+header says **DEFAULT**, the touched knob keeps its focused readout and the page stays
 open. One detent in either direction is enough; fast turns and extra detents do
 not add another edit. If it is already at its default, the gesture still consumes
 ENV's page tap without capturing motion or changing the MIDI LEARN selection.
 ENV tapped without a supported knob gesture continues to open/cycle the ENV pages.
+With DISPLAY > GRAPH set to TURN, a supported knob's curve appears for the same
+hold interval as an ordinary turn, including an already-default detent, then the
+scope returns. The focus remains on the touched knob. HOME's curve HELP hint uses
+**ENV KNOB: DEF** for this gesture within its existing three control groups.
 
 The value comes from the current parameter descriptor, fitted to its range and
 current enum alias. It is **not the loaded preset's value**. Engine model,
@@ -85,16 +135,17 @@ one. Install an identified build containing #569 using the
 Use headphones/output at a comfortable level, stop playback with PLAY, and test:
 
 1. Tap HOME until HOME appears. Hold HOME until MENU opens, release it, turn
-   ALGORITHM to DISPLAY and PRESETS to HOME, select SCOPE with KNOB 1, then tap
+   ALGORITHM to DISPLAY and PRESETS to HOME, select SCOPE with KNOB 4 or OCT−/+, then tap
    HOME to close MENU. Select track 1 with ALGORITHM. Hold EDIT until its map
    appears, turn KNOB 1 (ENG) to ANALOG and release EDIT. Turn HOME KNOB 1 (CUT)
    left away from its current setting. Hold ENV, turn KNOB 1 once, release ENV:
-   CUT reaches **2.5 kHz** (raw 90), the other cards stay unchanged and
+   CUT reaches **2.5 kHz** (raw 90), the other knob values stay unchanged and
    HOME stays open. Repeat in the opposite direction and at the default itself.
 2. Tap HOME once to MIXER. Move KNOB 2 (PAN) away from centre; ENV + KNOB 2
    restores **0%** without changing LEVEL, REV or MUTE. Turn KNOB 4 right to MUTE
    ON; ENV + KNOB 4 restores **OFF**, including when the reset detent turns right.
-3. Open MENU as above, set DISPLAY > HOME to LEVELS, then close it with HOME.
+3. Open MENU as above, set DISPLAY > HOME to LEVELS with KNOB 4 or OCT−/+,
+   then close it with HOME.
    Turn KNOB 2 away from its level; ENV + KNOB 2 restores only track 2's LEVEL
    (**−4.0 dB**, raw 104). Return HOME to SCOPE after this check.
 4. Tap ENV until ENV DEST appears, turn KNOB 4 (ESYNC) left to OFF, then tap ENV
@@ -131,7 +182,9 @@ selects operator 1–6; **KNOB 2** edits its coarse frequency. In **RATIO** mode
 range is 0.50, then 1–31. In **FIXED** mode it visits just **1, 10, 100 and 1000 HZ**,
 stopping at each end even with KNOB ACCEL enabled. **KNOB 3 (FINE)** still supplies
 0–99 hundredths of a decade in FIXED mode; the chart shows the resulting frequency.
-The card's gauge spans those four decades in both NORMAL and LARGE display modes.
+The native focused readout and range rule span those four decades. STYLE and LARGE
+are retired native menu choices; their reserved stored/wire values remain compatibility
+fixtures and do not select another native layout.
 
 To switch modes, keep tapping and releasing **EDIT** through **OP ENV** to
 **OPERATOR 2**, then turn **KNOB 2 (MODE)**. A mode switch changes only MODE:
@@ -145,8 +198,21 @@ Merely loading, viewing or toggling modes does not rewrite the coarse byte.
 An actual edit makes the patch **SLOT OWN**. Holding **SAVE** undoes the knob gesture;
 holding it again redoes it. Projects, user presets and DX7 export retain the whole
 coarse byte. Fine, detune and the existing EDIT 1/2 macros keep their prior behavior.
-This panel correction has host/emulator coverage; physical FM-1 knob/LCD and listening
-qualification remain pending.
+Host checks cover these panel edits and stored round trips; physical FM-1 knob/LCD
+and listening qualification remain pending.
+
+The refresh against main `3fce9f9f4d63b56aecfdc0e7e2d35d4271878bcf` preserves its
+native M8Stealth layout and GRAPH behavior. Earlier target, full-suite and emulator
+evidence from `d2f329eb64cbf5df8d438031ea5e9a74b79047c9` is historical; those gates
+must be repeated for the refreshed candidate. Focused current checks pass: the UI
+unit (default and compiled CPU2-off, typography/readability and track badges),
+the exhaustive FM6 FIXED check, and all seven native replay tests. The new real-panel
+filter/envelope default test fails before the curve-hold refresh and passes after
+it, including repeated no-op detents and return to the scope. Replay compares the
+actual native bank/overview with the independent ordinary +90 reference and
+identical audio. Local logs and dirty merge/profile provenance are under
+`build/597-main3fce-refresh/`; these focused checks are not full-suite or CI evidence.
+FM-1 checks above remain unperformed.
 
 ## MIDI timing and arithmetic hardening
 

@@ -130,7 +130,7 @@ static void fop_freq(const uint8_t *op, char *s)
 }
 
 /* card slot of an operator page: its label, value (12), unit, gauge (0..1000, -1 none), icon; 0 = shown DIM (a level
- * at 0, the operator silent). fop_card_at: as if its byte held vo (>= 0; MENU > LARGE's face, ui_draw.c span_fop) */
+ * at 0, the operator silent). fop_card_at: as if its byte held vo (>= 0; focused bank's face, ui_draw.c span_fop) */
 static int fop_card_at(uint32_t slot, int32_t vo, const char **label, char *val, const char **unit, int32_t *ratio,
                        uint32_t *icon)
 {

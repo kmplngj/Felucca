@@ -184,12 +184,13 @@ class NativeReplayTests(unittest.TestCase):
         self.assertEqual(manifest["final_state"]["home"], 1)
         self.assertEqual(manifest["final_state"]["buttons_mask"], 0)
         self.assertEqual(manifest["audio"], control["audio"])
-        def cards(directory, frame, x=0):
+        def bank(directory, frame, x=3, y0=28, y1=94):
             pixels = (directory / f"frame-{frame:04d}.ppm").read_bytes()[15:]
-            return b"".join(pixels[(y * 240 + x) * 3:(y + 1) * 240 * 3] for y in range(28, 74))
-        self.assertEqual(cards(actual, 1), cards(expected, 1))
-        self.assertNotEqual(cards(actual, 0), cards(actual, 1))
-        self.assertEqual(cards(actual, 0, 60), cards(actual, 1, 60))
+            return b"".join(pixels[(y * 240 + x) * 3:(y * 240 + 237) * 3] for y in range(y0, y1))
+        # Native HOME's focused bank is 28..94; only its lower 68..94 overview has separate knob columns.
+        self.assertEqual(bank(actual, 1), bank(expected, 1))
+        self.assertNotEqual(bank(actual, 0), bank(actual, 1))
+        self.assertEqual(bank(actual, 0, 62, 68), bank(actual, 1, 62, 68))
 
     def test_equal_timestamp_file_order_and_final_partial_half(self):
         data = copy.deepcopy(BASE)

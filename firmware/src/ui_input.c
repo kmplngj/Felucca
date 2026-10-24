@@ -118,7 +118,7 @@ static uint32_t oct_leds(void)
     if (ui.menu && !ui.confirm)
         return ui.menu >= 2u ? 1u :                    /* (INFO, ABOUT: OCT- back, lit) */
                ui.menu_sel == MI_LCLEAR ? (ml_count() ? OCT_BREATH : 0u) :   /* LEARN CLEAR: while CCs are learned */
-               !menu_has_value() ? OCT_BREATH :        /* AUTO OFF / CALIBRATION / INFO / ABOUT: OCT+ opens */
+               !menu_has_value() ? OCT_BREATH :        /* detail/actions: OCT+ opens */
                (menu_step(ui.menu_sel, -1) != menu_get(ui.menu_sel) ? OCT_BREATH_DN : 0u) |   /* a value: each */
                (menu_step(ui.menu_sel, 1) != menu_get(ui.menu_sel) ? OCT_BREATH : 0u);         /* way it can go */
     if (ui.confirm || act_cols())
@@ -1809,11 +1809,13 @@ static void ui_input(void)
             lock_turn(k, s, held);
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
             continue;
         }
         if (mom_down() && mom_turn(k, s)) {             /* MOMENTARY: LFO held (no automation, no undo) */
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
             continue;
         }
         /* #569: layers, wake/menu/dialog input, step locks and MOMENTARY keep precedence. ENV must be the only
@@ -1823,6 +1825,7 @@ static void ui_input(void)
             ui.pg_down &= (uint16_t)~(1u << panel.btn[B_ENV]);
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
             ui_message("DEFAULT");
             continue;
         }
@@ -1832,6 +1835,7 @@ static void ui_input(void)
                                                                                                           * column) */
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
         }
         if (ui.home) {                                  /* (LEVELS: track k's, as MIXER; ui_knob.c knob_home) */
             knob_home(k, &kt);

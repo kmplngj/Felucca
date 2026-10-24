@@ -83,7 +83,7 @@ static int32_t ref_kern(const aafont_t *f, uint32_t a, uint32_t b)
     }
     return 0;
 }
-/* a glyph's alpha values: 2 px per byte, or (f->hc) the Huffman bit stream of tools/gen_aa_font.py, decoded
+/* a glyph's alpha values: 2 px per byte, or (f->hc) the Huffman bit stream of tools/ui_font_data.py, decoded
  * here by matching each (length, code) against the canonical code table built from hc's length counts */
 static uint8_t alpha[64 * 64];
 static void ref_unpack(const aafont_t *f, const aag_t *g)
@@ -152,19 +152,19 @@ static int32_t ref_text(int32_t x, int32_t y, const aafont_t *f, const char *s, 
 
 int main(void)
 {
-    const aafont_t *F[3] = {&AF_S, &AF_M, &AF_L};
-    const uint8_t *books[4] = {AF_S.hc, AF_M.hc, AF_L.hc, AI_HC};
+    const aafont_t *F[4] = {&AF_S, &AF_M, &AF_L, &AF_N};
+    const uint8_t *books[5] = {AF_S.hc, AF_M.hc, AF_L.hc, AF_N.hc, AI_HC};
     uint32_t font_books = 0, all_books = 0;
     /* Check compiled consumers independently of the generator's count: a future
      * font/codebook change must not silently make the cache rebuild every draw. */
-    for (uint32_t i = 0; i < 4u; i++) {
+    for (uint32_t i = 0; i < 5u; i++) {
         uint32_t j;
         if (!books[i]) continue;
         for (j = 0; j < i && books[j] != books[i]; j++)
             ;
         if (j != i) continue;
         all_books++;
-        if (i < 3u) font_books++;
+        if (i < 4u) font_books++;
     }
     if (font_books != UI_FONT_HUFFMAN_BOOKS || all_books != HC_FONTS) {
         fprintf(stderr, "Huffman cache contract: %u font books, %u total, declared %u/%u\n",
@@ -176,7 +176,7 @@ int main(void)
     for (uint32_t p = 0; p < NPALETTES; p++) {
         palette_set(p);
         for (uint32_t k = 0; k < 2u; k++)
-            for (uint32_t f = 0; f < 3u; f++)
+            for (uint32_t f = 0; f < 4u; f++)
                 for (uint32_t s = 0; s < NSTR; s++)
                     for (uint32_t at = 0; at < 3u; at++) {
                         uint16_t fg = k ? T_TEXT : T_THEME, bg = k ? T_BG : T_SURF;

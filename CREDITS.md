@@ -9,9 +9,9 @@ thanks the work below; each keeps its own licence (see [LICENSE](LICENSE), [LICE
   Pack (the drum samples, GPL-3.0-only, not CC0); the [Fukiai](https://github.com/hugelton/Fukiai) icon
   font ([MIT](LICENSES/MIT-Fukiai.txt)); the ANALOG, LOFI, TRIO, WHEEL and NOISE engines
   ([Felucca-Engines](https://github.com/hugelton/Felucca-Engines), [MIT](LICENSES/MIT-Felucca-Engines.txt))
-- Fonts: [Inter Tight](https://github.com/rsms/inter-tight) by The Inter Project Authors, [SIL OFL 1.1](LICENSES/OFL-InterTight.txt);
-  this fork's default UI text: [M8Stealth57/89](assets/fonts/m8stealth/README.md) by Trash80 ([CC BY-SA 3.0](LICENSES/CC-BY-SA-3.0-M8Stealth.txt));
-  optional [Tamzen](assets/fonts/tamzen/README.md) by Suraj N. Kurapati, based on Tamsyn by Scott Fial ([licence](LICENSES/Tamzen.txt));
+- Fonts: native UI text: [M8Stealth57/89](assets/fonts/m8stealth/README.md) by Trash80 ([CC BY-SA 3.0](LICENSES/CC-BY-SA-3.0-M8Stealth.txt));
+  documentation diagrams: [Inter Tight](https://github.com/rsms/inter-tight) by The Inter Project Authors, [SIL OFL 1.1](LICENSES/OFL-InterTight.txt);
+  retired comparison builds used Tamzen by Suraj N. Kurapati, based on Tamsyn by Scott Fial ([preserved licence](LICENSES/Tamzen.txt));
   the browser emulator's labels: [DotGothic16](https://github.com/fontworks-fonts/DotGothic16) by The DotGothic16 Project Authors, [SIL OFL 1.1](LICENSES/OFL-DotGothic16.txt)
 - Samples: [Versilian Studios](https://versilian-studios.com/) [VSCO-2 Community Edition](https://github.com/sgossner/VSCO-2-CE) and [VCSL](https://github.com/sgossner/VCSL), CC0 1.0: the SAMPLE sets, also SLICE's PIANO and PIANO HD ([attribution](assets/samples-cc0/ATTRIBUTION.txt))
 - VOICE engine: after [klattsch](https://github.com/tgies/klattsch) by Tony Gies (MIT); formant data from Klatt (1980) and Hillenbrand et al. (1995)

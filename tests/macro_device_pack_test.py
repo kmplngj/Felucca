@@ -20,6 +20,8 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import macro_device_pack as pack
+from test_coverage import Producer
+coverage = Producer()
 
 
 def smf_events(data):
@@ -92,6 +94,7 @@ def check_midi(data):
 def check_webapp(webapp, out):
     if webapp is None:
         print("SKIP production WebApp readProject parser: pass --webapp PATH to its source checkout")
+        coverage.outcome('macro-webapp-parser', 'not_applicable', 'not-requested')
         return
     parser = webapp / "fm1backup.js"
     if not parser.is_file() or not shutil.which("node"):
@@ -112,6 +115,7 @@ console.log('WebApp production readProject: all four files accepted; corrupt CRC
 """
     subprocess.run(["node", "--input-type=module", "-e", script, parser.resolve().as_uri(),
                     *[str(out / f"{stem}.felucca-project.json") for stem in pack.STEMS]], check=True)
+    coverage.outcome('macro-webapp-parser', parser_sha256=hashlib.sha256(parser.read_bytes()).hexdigest())
 
 
 def main():
@@ -163,6 +167,7 @@ def main():
         else:
             raise AssertionError("existing output silently overwritten")
         check_midi((out / "macro-ch1-4.mid").read_bytes())
+        coverage.outcome('macro-pack', projects=4, smf=True, native_serializer=True)
         check_webapp(args.webapp, out)
     print("MACRO device pack focused checks passed (no physical device accessed)")
 

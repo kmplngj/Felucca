@@ -13,7 +13,7 @@ UI adds (transport, tracks 1-4, USB, favourites, ...) by EXTRA (ICON_X_<NAME>).
 
 Output: per size S in --sizes
   AI<S>_DATA    cells of S x S px, 4-bit alpha, rows back to back, each cell a byte-aligned bit stream of the
-                canonical Huffman code AI_HC (gen_aa_font.py huff_pack, the fonts' M and L: one code for
+                canonical Huffman code AI_HC (ui_font_data.py huff_pack, the fonts' M and L: one code for
                 every size; gfx.c cv_alpha_hc draws it), 2 spare bytes at the end
   AI<S>_OFF     each cell's byte offset in AI<S>_DATA
   AI<S>_INK     each cell's ink box (the UI centres an icon by its ink: src/icons.c icon_ink)
@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import aa_raster as ar  # noqa: E402
-from gen_aa_font import huff_pack, huff_unpack  # noqa: E402
+from ui_font_data import huff_pack, huff_unpack  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -264,7 +264,7 @@ def main():
     # one Huffman code for every cell of every size (one decoding table in RAM: gfx.c hc_lut)
     hc, packed = huff_pack([v for s in sizes for _, v, _ in cells[s]])
     packed = iter(packed)
-    out.append("/* the cells' Huffman code (gen_aa_font.py huff_pack; gfx.c cv_alpha_hc) */")
+    out.append("/* the cells' Huffman code (ui_font_data.py huff_pack; gfx.c cv_alpha_hc) */")
     out.append(ar.c_array("AI_HC", "uint8_t", hc, 24))
     cost = {}
     for s in sizes:
