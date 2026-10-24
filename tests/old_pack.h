@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* A project as firmware before 1.2 wrote it (the host tests' old images; included after src/project.c):
  *   FUN9 (1.1: np 99, 3648 bytes), FUN8 (1.0.x: np 91, 3584), FUN7 (np as given, 3388, no patches)
- * byte for byte as their proj_pack: np parameters mapped by count (the first np - 8 are today's ids 0.., the last 8
+ * byte for byte as their proj_encode: np parameters mapped by count (the first np - 8 are today's ids 0.., the last 8
  * P_E0..P_E7), 9-byte steps without a nudge (bit 7 of the note bytes 0), the motion block of 260 bytes (count <= 64,
  * 64 x (place, id, i16 value); the ids from P_E0 on at that store's own: id - (P_COUNT - np), a lock's bit kept), the
  * patches at name - 512 (not FUN7), the name, the FNV-1a hash. -> its size, 0 when q does not fit the old format.

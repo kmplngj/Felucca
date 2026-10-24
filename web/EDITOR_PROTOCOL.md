@@ -60,7 +60,7 @@ Step payload lengths are defined once in [Step record](#step-record).
 This section is the canonical definition of a step in editor messages, project
 files and user-preset patterns. These are three different encodings; do not copy
 one directly into another. Source: `editor.c` (`ed_args_ok`, `ed_step_put`,
-`ed_step_reply`), `project.c` (`proj_pack`, `proj_unpack`), `upreset.c`
+`ed_step_reply`), `project_codec.c` (`proj_encode`, `proj_unpack_tracks`), `upreset.c`
 (`up_pat_from`, `up_pat_norm`, `up_parse`) and `core.h` (step helpers).
 
 <a id="v5-the-drum-grid"></a>
@@ -1702,8 +1702,8 @@ version and count fields and a project's own FNV-1a hash; the bytes are never de
 | state | meaning |
 | --- | --- |
 | 0 EMPTY | no valid commit record (never written, erased, a torn first write, or a stock-firmware area), or one of 0 bytes (an erased project slot): size 0. `copy` 127 when there is no record |
-| 1 CURRENT | the schema this firmware writes: PER4 / PER6, FUN10 with today's P_COUNT, `UPB1` 192-byte records x 16, `UPF6` 1, `FM6V` 1 with 32 voices |
-| 2 LEGACY | an older schema this firmware still converts when it loads it: FUN1..FUN9, a FUN10 of fewer parameters (mapped by count), PER1/2/3/5, a PER6 whose extension it cannot read (its PER4 block is read), the retired FM6 bank |
+| 1 CURRENT | the schema this firmware writes: PER4 / PER6, FUN10 with today's P_COUNT and today's header bytes (`parts` 4, `phys` 2 or above; `project_codec.c proj_classify`), `UPB1` 192-byte records x 16, `UPF6` 1, `FM6V` 1 with 32 voices |
+| 2 LEGACY | an older schema this firmware still converts when it loads it: FUN1..FUN9, a FUN10 of fewer parameters (mapped by count) or whose `parts` / `phys` byte asks for the pre-1.0 conversions (CURRENT before #300; this firmware never writes one), PER1/2/3/5, a PER6 whose extension it cannot read (its PER4 block is read), the retired FM6 bank |
 | 3 UNKNOWN | intact on flash but no supported container identification: a later format, a serialized project count outside 8..P_COUNT or beyond its layout's extent, a project whose own hash fails, another bank shape. The firmware does not load it (a project slot shows EMPTY; see docs/legacy-formats.md for which writes can still replace it) |
 | 4 DAMAGED | a valid commit record whose payload fails the record's CRC on every copy |
 

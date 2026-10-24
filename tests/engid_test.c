@@ -249,18 +249,18 @@ static int projects(void)
         int32_t peak = 0;
         reset();
         project_capture(&p);                          /* (once through a restore: the project as one is after a load) */
-        ok = proj_pack(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE) && project_restore_runtime(&q) == 0;
+        ok = proj_encode(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE) && project_restore_runtime(&q) == 0;
         project_capture(&p);
         p.t[1].engine = (uint8_t)ids[e];
         p.t[1].preset = 9;
         for (i = 0; i < 8u; i++) p.t[1].p[P_E0 + i] = (int16_t)(i & 1u ? 127 : -64 + (int32_t)i);
         p.sum = proj_sum(&p);
-        ok &= proj_pack(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE) && q.t[1].engine == ids[e] && q.t[1].preset == 9u;
+        ok &= proj_encode(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE) && q.t[1].engine == ids[e] && q.t[1].preset == 9u;
         ok &= project_restore_runtime(&q) == 0 && trk[1].eng_req == ids[e] && trk[1].preset == 9u &&
               eng_of(trk[1].eng_req) == &ENG_NONE;
         for (i = 0; i < 8u; i++) ok &= trk[1].p[P_E0 + i] == (int16_t)(i & 1u ? 127 : -64 + (int32_t)i);
         project_capture(&q);
-        ok &= proj_pack(&st2, &q) && !memcmp(&st, &st2, sizeof st);
+        ok &= proj_encode(&st2, &q) && !memcmp(&st, &st2, sizeof st);
         bad += check(e ? "a project with id 40 (no build's): kept, N/A, packed again byte for byte"
                        : "a project with an id this build lacks: kept (id, preset, E values), N/A, packed byte for byte", ok);
         song.sel = 1;
@@ -292,7 +292,7 @@ static int projects(void)
         p.t[2].engine = ENG_ID_MAX; p.sum = proj_sum(&p);
         ok = project_restore_runtime(&p) == 1 && trk[2].eng_req == 0u;
         p.t[2].engine = 0; p.sum = proj_sum(&p);
-        ok &= proj_pack(&st, &p);
+        ok &= proj_encode(&st, &p);
         st.raw[68u + st.raw[66] + (st.raw[66] + 2u + NSTEP * 9u) * 2u] = (uint8_t)ENG_ID_MAX;   /* track 3's engine */
         {
             uint32_t sum = proj_hash(st.raw, PROJ_STORE_SIZE - 4u);
@@ -490,9 +490,9 @@ static int unavailable_storage(void)
         ok = up_load(5) == 0 && TSEL->eng_req == ENGI_FM6 && TSEL->p[P_E7] == 127;
         fm6_pack(fm6_patch[0], got); ok &= !memcmp(pk, got, sizeof pk);
         project_capture(&p);
-        ok &= proj_pack(&st, &p) && proj_import(&q, &st, sizeof st) && project_restore_runtime(&q) == 0;
+        ok &= proj_encode(&st, &p) && proj_import(&q, &st, sizeof st) && project_restore_runtime(&q) == 0;
         project_capture(&q);
-        ok &= proj_pack(&st2, &q) && !memcmp(&st, &st2, sizeof st) && !memcmp(q.fm6[0], pk, sizeof pk);
+        ok &= proj_encode(&st2, &q) && !memcmp(&st, &st2, sizeof st) && !memcmp(q.fm6[0], pk, sizeof pk);
         up_store(5, "KEPT AGAIN");
         ok &= !upf_get(5, got) && !memcmp(pk, got, sizeof pk);
         request(ED_FM6_GET, a, sizeof a);

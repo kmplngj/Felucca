@@ -558,16 +558,26 @@ any separate opt-in FPU/ABI/IRQ/device experiment.
   written first and the header (magic, sequence, CRC) last as the commit record; the newest
   valid copy wins. Settings (`settings_persist.c`), user presets (`upreset.c`) and projects
   (`project.c`) sit on it.
+- **Project record codec (#300).** The stored project belongs to `project_codec.c`, interface
+  [`project_codec.h`](../firmware/src/project_codec.h): `proj_classify` (CURRENT / LEGACY / UNKNOWN / DAMAGED, also
+  the raw export's state), `proj_decode` (the one decode of every caller: validation, `proj_engines_ok`, the retired
+  sounds, `proj_bound`, in that order), `proj_encode`, `proj_accepts_length` (the lengths a backup PUT takes). Readers of
+  older formats sit behind one hook, `proj_decode_legacy` in `project_legacy.c`, which #456 stage 2b deletes. A caller
+  never runs a reader or `proj_bound` itself (`tests/project_codec_boundary_test.py`). **Adding a project field:**
+  list it in `PROJ_FIELDS` / `PROJ_TRK_FIELDS` (a size check fails until you do), handle it in `proj_encode` and
+  `proj_unpack_current`, and in `project_capture`, `autosave_sig` and `project_restore_runtime`
+  (`tests/persistence_test.c` fails when one of the three misses it); the codec tests (`project_test.c`,
+  `fuzz_proj.c`) build without the UI.
 - **Track parameters.** The `P_COUNT` a record was written with is stored; older records map by
   count (`params_by_count()`), so common parameters may only be added before `P_E0`. Projects
-  ("FUN" formats, header comment in `project.c`) and user presets (`UP_VER`, header comment in
+  ("FUN" formats, header comments in `project_codec.c` and `project_legacy.c`) and user presets (`UP_VER`, header comment in
   `upreset.c`) document which counts, formats and migrations exist. If a change cannot map by
   count, bump the version and translate.
 - **Old formats.** Keep reading every older format (`tests/old_pack.h` holds the historical
   layouts, `tests/persistence_test.c`, `project_test.c`, `upreset_test.c`, `fuzz_proj.c`
   cover them). Add round-trip, default and malformed-input tests together with the change.
   State downgrade limits explicitly: for example firmware that does not know a newer project
-  count refuses it (`np > P_COUNT`; see the `project.c` header).
+  count refuses it (`np > P_COUNT`; see the `project_codec.c` header).
   Historical conversion is moving to the web editor (#456/#457): [legacy-formats.md](legacy-formats.md) inventories
   every stored format and conversion and proposes the supported schema. Do not add another permanent firmware
   converter for a new layout; keep the raw store export (`STORE_LIST` / `STORE_GET`, `editor_backup.c`) listing

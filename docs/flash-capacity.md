@@ -138,7 +138,7 @@ motion and the name lie elsewhere). Bytes 0 and 1 of the record (the CRC) fall o
 operator 1's R1 (each limited to 0..99), bytes 6 and 7 on operator 1's L2 and L3 (also 0..99; `0x41` and
 `0x54` are legal), and the other 76 bytes are free within their field ranges, so a matching record is
 constructible. `tests/project_test.c` builds one, round-trips it through `fm6_unpack`/`fm6_pack` (a fixed
-point, so the autosave would write it back) and `proj_pack`/`proj_import`, and checks the loader's own
+point, so the autosave would write it back) and `proj_encode`/`proj_decode`, and checks the loader's own
 classification of the packed bytes. It needs a crafted voice (the editor's patch write or an FM6 voice);
 a random or hand-edited patch matches with probability about 2^-32, and a project of init or factory
 patches does not. The validators were not weakened and no historical payload was rewritten. This is
@@ -260,7 +260,7 @@ that is a hardware-and-loader decision, not part of this plan.
 ### Compression
 
 The project payload compresses well when little is set. Measured with `zlib` level 9 on the host over
-the 3,840-byte FUN10 produced by `proj_pack` in a host build (the default project, 16 + 8 notes on two
+the 3,840-byte FUN10 produced by `proj_encode` in a host build (the default project, 16 + 8 notes on two
 tracks, and every step of all four tracks filled with random note/velocity/time; parameters, FM6 patches
 and automation stay at their defaults in all three):
 
@@ -271,7 +271,7 @@ and automation stay at their defaults in all three):
 | dense steps (256 steps) | 3,840 | 1,041 |
 
 A fully edited project (non-default parameters, FM6 patches, 128 automation records) was **not**
-measured: an attempt with random parameter values was rejected by `proj_pack` and is not reported. These
+measured: an attempt with random parameter values was rejected by `proj_encode` and is not reported. These
 are best cases; the contract for a fixed object stays the worst case, so compression cannot create
 guaranteed room in the project or the autosave. It does suit stores that can say "full" ([A8](#5-allocation-table)).
 A target codec's code size and main-loop time are unmeasured.
@@ -352,7 +352,7 @@ Facts the design follows from (the format is F3's job):
   hashes *values*, so a sidecar field that is not in that hash is never autosaved. Every sidecar chunk
   must add itself to the signature.
 - `ed_bk_commit` ([editor_backup.c:92-104](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/editor_backup.c#L92-L104))
-  re-imports and re-packs every project it restores (`proj_bound`, `proj_pack`), so the stored bytes, and
+  re-imports and re-packs every project it restores (`proj_decode`, `proj_encode`), so the stored bytes, and
   the FNV `sum` in their last 4 bytes, can differ from the archived ones (an older parameter count is mapped
   up). **A tag that is a hash of the serialized bytes does not survive a backup restore.** The tag must be
   a hash of the musical values (the `autosave_sig` function, minus the sidecar) or a uid stored in the

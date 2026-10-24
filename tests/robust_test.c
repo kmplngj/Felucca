@@ -56,7 +56,7 @@ static int projects(void)
     uint32_t i, pos, sum, e0;
     reset();
     project_capture(&p);
-    bad += check("a captured project packs and imports", proj_pack(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE));
+    bad += check("a captured project packs and imports", proj_encode(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE));
     pos = 68u + st.raw[66];                                 /* track 1's engine byte (after its parameters) */
     for (e0 = ENG_ID_MAX; e0 < 256u; e0 += 37u) {        /* (#212: past the engine id space; an id below it that
                                                              * this build lacks is kept: tests/engid_test.c) */
