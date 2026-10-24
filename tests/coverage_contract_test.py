@@ -380,7 +380,18 @@ class LifecycleTests(unittest.TestCase):
                 C.requirements(['invented'], {})
 
     def test_native_partitions_run_without_optional_wasm_compiler(self):
-        plan = subprocess.check_output(['sh', 'tests/run_tests.sh', '--plan'], cwd=ROOT, text=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'tests').mkdir()
+            (root / 'tools').symlink_to(ROOT / 'tools', target_is_directory=True)
+            (root / 'firmware').symlink_to(ROOT / 'firmware', target_is_directory=True)
+            (root / 'tests/run_tests.sh').write_text((ROOT / 'tests/run_tests.sh').read_text())
+            plan = subprocess.check_output(['sh', 'tests/run_tests.sh', '--plan'], cwd=root, text=True)
+            self.assertFalse((root / 'build/felucca.fwsc').exists())
+            worker = subprocess.run(['sh', 'tests/run_tests.sh', '--unit', 'emulator_partitions'],
+                                    cwd=root, text=True, capture_output=True)
+            self.assertNotEqual(worker.returncode, 0)
+            self.assertIn('run ./build.sh first', worker.stdout)
         row = next(line for line in plan.splitlines() if line.startswith('emulator_partitions\t'))
         metadata = json.loads(row.split('@coverage=', 1)[1])
         self.assertIn('assets', metadata['needs'])

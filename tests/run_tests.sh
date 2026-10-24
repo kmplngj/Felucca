@@ -427,7 +427,7 @@ u_screen_capture() {
 }
 unit screen_capture "" u_screen_capture
 
-[ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
+[ "$MODE" = --plan ] || [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
     $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/boot_policy_test" tests/boot_policy_test.c
