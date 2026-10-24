@@ -11,7 +11,7 @@
  *
  * Sections of the JSON (all byte strings are lower-case hex):
  *   constants    the ids the vectors use, FX_DEF, FM4_TO_FM6, DRUM_KIT_E, the sizes
- *   projects     input FUN10 / FUN7 image -> output FUN10 image (import, proj_bound, pack: the load path of proj_fetch);
+ *   projects     input FUN10 / FUN8 / FUN7 image -> output FUN10 image (import, proj_bound, pack: the load path of proj_fetch);
  *                tracks (engine / preset before and after), motion_dropped (events the conversion removed)
  *   presets      a UPB1 record as stored -> the record in the RAM mirror after up_bank_check (the boot path) -> what
  *                up_load makes of it in the selected track (engine, preset, 111 values, the FM6 patch)
@@ -196,7 +196,7 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
     project_t q, pre, post;
     const uint8_t *in;
     uint32_t inlen, t, i, nd = 0;
-    /* FUN7 (the oldest the vectors keep) for one case of each retired sound; the rest in FUN10 only (file size) */
+    /* Each historical format for one case of each retired sound; the rest in FUN10 only (file size). */
     if (strcmp(format, "FUN10") && strcmp(c->name, "digital presets 0-3") && !strstr(c->name, "ALG 5-6") &&
         !strstr(c->name, "phys byte 0") && !strstr(c->name, "phys byte 1") && !strstr(c->name, "PERC"))
         return;
@@ -207,7 +207,7 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
         in = in10.raw;
         inlen = sizeof in10;
     } else {
-        uint32_t magic = np == 99u ? OLD_FUN9 : np == 91u ? OLD_FUN8 : OLD_FUN7;
+        uint32_t magic = !strcmp(format, "FUN8") ? OLD_FUN8 : OLD_FUN7;
         memset(old, 0, sizeof old);
         inlen = old_pack(old, &q, magic, np);
         if (!inlen)
@@ -251,8 +251,8 @@ static void rv_projects(void)
     uint32_t k, t, fmt;
     pv_n = 0;
     printf("  \"projects\": [");
-    for (fmt = 0; fmt < 2u; fmt++) {          /* FUN10, then FUN7 (np 91: 1.0.x, the oldest the vectors keep) */
-        const char *f = fmt ? "FUN7" : "FUN10";
+    for (fmt = 0; fmt < 3u; fmt++) {          /* FUN10, FUN8 (1.0.x), FUN7 (before FM6 patches) */
+        const char *f = fmt == 0u ? "FUN10" : fmt == 1u ? "FUN8" : "FUN7";
         uint32_t np = fmt ? 91u : P_COUNT;
         /* DIGITAL: the factory presets, then every algorithm with shaped OP ENV and the noisy feedback */
         for (k = 0; k < 2u; k++) {

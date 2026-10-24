@@ -18,9 +18,30 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "retired_vectors.json"
 SECTIONS = ("projects", "presets", "favourites", "load")
 
 
+def validate_projects(data):
+    """Check wire identity independently of the C generator's format selection."""
+    formats = {"FUN7": (0x46554E37, 3388), "FUN8": (0x46554E38, 3584), "FUN10": (0x46554E41, 3840)}
+    for case in data["projects"]:
+        name = case["name"]
+        fmt = case["format"]
+        if fmt not in formats:
+            raise ValueError(f"{name}: unsupported project format {fmt}")
+        raw = bytes.fromhex(case["input"])
+        magic, size = formats[fmt]
+        if (len(raw) != size or int.from_bytes(raw[:4], "little") != magic
+                or int.from_bytes(raw[4:8], "little") != size):
+            raise ValueError(f"{name}: {fmt} input magic/size does not match its format")
+        if raw[66] != case["np"]:
+            raise ValueError(f"{name}: {fmt} input parameter count does not match np")
+        out = bytes.fromhex(case["output"])
+        if (len(out) != 3840 or int.from_bytes(out[:4], "little") != 0x46554E41
+                or int.from_bytes(out[4:8], "little") != 3840):
+            raise ValueError(f"{name}: output is not a complete FUN10 record")
+
+
 def generate(binary):
     out = subprocess.run([binary], check=True, stdout=subprocess.PIPE, text=True).stdout
-    json.loads(out)  # must be valid JSON before it is compared or written
+    validate_projects(json.loads(out))  # reject misleading identities before --check or --update
     return out
 
 
@@ -47,7 +68,11 @@ def main(argv):
     if len(argv) != 3 or argv[1] not in ("--check", "--update"):
         print(__doc__)
         return 2
-    new = generate(argv[2])
+    try:
+        new = generate(argv[2])
+    except ValueError as error:
+        print(f"FAIL: retired vector wire identity: {error}")
+        return 1
     if argv[1] == "--update":
         FIXTURE.parent.mkdir(parents=True, exist_ok=True)
         FIXTURE.write_text(new)
