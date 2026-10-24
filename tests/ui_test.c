@@ -10921,6 +10921,24 @@ static int test_knob_default_exclusions(void)
     }
     bad += check("#569 ENV+knob: all FM6 operator-page knobs retain their operator/byte edits", ok);
     kp_end();
+
+    /* Combined #533/#569: ENV is not a reset modifier on operator pages.
+     * Imported high coarse bits still survive the ordinary FIXED detent. */
+    ok = 1;
+    for (i = 0; i < 6u; i++) {
+        uint8_t expected[FP_SIZE + 1u];
+        uint32_t at = (5u - i) * FP_OP;
+        kd_start(HV_SCOPE, ENGI_FM6);
+        fm6_unpack(FM6_INIT, expected);
+        expected[at + FP_MODE] = 1;
+        expected[at + FP_FC] = 29;
+        fm6_set_patch(song.sel, expected); fm6_adopt(song.sel);
+        go_title("OPERATOR"); fop_pick(i + 1u); frame();
+        expected[at + FP_FC] = 30;
+        ok &= kd_refused(1, 1) && !memcmp(expected, fm6_patch[song.sel], FP_SIZE);
+        kp_end();
+    }
+    bad += check("#533/#569 ENV+FIXED: six operators keep ordinary decades and imported high bits, never reset", ok);
 #if FELUCCA_SLICE
     kd_start(HV_SCOPE, ENGI_SLICE);
     go_title("SLICES"); frame();

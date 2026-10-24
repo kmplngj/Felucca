@@ -25,6 +25,9 @@ instrument; some details may differ in this fork.
 
 This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
 pixel-font options, performance diagnostics and broader host/emulator regression coverage.
+Holding ENV while turning an ordinary sound knob restores that parameter's declared
+default; FM6 operator pages retain their own edits, including four bounded FIXED
+frequency decades ([controls and pending device checks](docs/fork-features.md#fm6-operator-frequency-editing)).
 The default M8Stealth display uses native pixel lettering for both regular text
 and control/status badges, with stable number/unit placement
 ([LCD typography](docs/lcd-typography.md)).
