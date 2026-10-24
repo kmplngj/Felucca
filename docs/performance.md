@@ -327,6 +327,33 @@ Current compiler flags and reachability exclusions are authoritative in `tools/b
 and `tools/size_fns.py`. Clock/voltage changes, a second core, or FPU/DSP rewrites are
 separate hardware experiments with their own correctness, timing and reliability evidence.
 
+## pi32v2 code generation
+
+These facts come from static target builds of JieLi Clang 4.0.1, recorded in the
+[2026-10-24 code-generation review](codegen-review-2026-10-24.md). Recheck them after a
+toolchain change, and confirm in `build/felucca.dis` before relying on them.
+
+- **CPU flags.** The driver defaults to the `generic` CPU. `-mcpu=r3`, `-mfprev1`,
+  `-pi32v2-enable-simd` and `-enable-ipra` produce a byte-identical image for the current
+  integer DSP; do not add them for speed. FPU arithmetic is [#82](https://github.com/kmplngj/Felucca/issues/82).
+- **Division is never strength-reduced,** at `-Os` or `-O2`. Signed division, and unsigned
+  division by anything but a power of two, is the hardware divide, including constant
+  divisors and `%`. A pointer difference over a non-power-of-two struct is a divide too:
+  `t - trk` divides by `sizeof(track_t)`. In audio-reachable code, hoist the divide out of
+  the loop, use a stored index, or use an exactly tested multiply-shift
+  ([#623](https://github.com/kmplngj/Felucca/issues/623)).
+- **Keep products 32×32→64.** That is one instruction. A product with a 64-bit operand
+  costs a sign extension, three multiplies and an add chain. Narrow an intermediate only
+  under a proven bound, so the output stays bit-identical
+  ([#624](https://github.com/kmplngj/Felucca/issues/624)).
+- **64/32 division is native** (`r1_r0 = r3_r2 / r7 (u)`), but another optimization level
+  can turn it into an unlinked `__udivdi3` call. Run `tests/build_guard_target_test.py`
+  after any flag change.
+- **`-O2` is an experiment, not a default.** It currently fails to link, grows code by
+  about 18 % and leaves the innermost kernels unchanged
+  ([#625](https://github.com/kmplngj/Felucca/issues/625)). Its benefit can only be
+  established by device timing.
+
 ## Report a result
 
 Record: revision/diff, compiler/SDK/flags/assets, workload and duration, host counter

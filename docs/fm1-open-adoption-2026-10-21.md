@@ -70,6 +70,9 @@ ticket. Gain/send caching #160, idle-track work #161, coefficients #180 and
 output work #7 already own other overlapping techniques. Hot-code residency
 #459/#6 and FPU #82 are independent experiments; the donor SDK's SRAM-required
 symbol list is not source or proof that the same placement fits our linker.
+The donor's compiler and backend switches were measured separately in the
+[code-generation review](codegen-review-2026-10-24.md): its CPU/FPU switches leave
+Felucca's image unchanged, and `-O2` remains experiment #625.
 
 For every retained optimization, establish an unchanged baseline and one-cause
 A/B comparison with exact source, dependency, toolchain, profile, flags and asset
