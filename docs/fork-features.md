@@ -77,6 +77,10 @@ publishes tested main builds and a pinned WebApp fork; its
   LFO restores the value, or OCT+ while holding keeps it. The header shows MOMENTARY
   TURN, how many values will restore, or KEPT until LFO is released. Messages and
   quick-layer labels take priority.
+- **One parameter's default:** hold ENV alone and turn one sound knob to restore
+  its descriptor's declared default, retaining the current page and other values.
+  This is separate from the loaded preset and whole-sound INIT; see
+  [the gesture and test procedure](#single-parameter-default).
 - **Previous page:** on a family's page, hold OCT− and tap its family button to go
   back one page, wrapping from first to last. It consumes the octave modifier and
   preserves sounding notes' pitch. Press OCT− first for FX, GLO, SEL, EDIT and SEQ;
@@ -91,6 +95,124 @@ a single undo step and a live, reversible preview (OCT+ applies; OCT− cancels)
 remains future work. Cancelling retires the preview's undo entry without clearing
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
+
+## Single-parameter default
+
+Hold **ENV**, turn **KNOB 1–4** on the value to restore, then release ENV. The
+header says **DEFAULT**, the touched knob keeps its focused readout and the page stays
+open. One detent in either direction is enough; fast turns and extra detents do
+not add another edit. If it is already at its default, the gesture still consumes
+ENV's page tap without capturing motion or changing the MIDI LEARN selection.
+ENV tapped without a supported knob gesture continues to open/cycle the ENV pages.
+With DISPLAY > GRAPH set to TURN, a supported knob's curve appears for the same
+hold interval as an ordinary turn, including an already-default detent, then the
+scope returns. The focus remains on the touched knob. HOME's curve HELP hint uses
+**ENV KNOB: DEF** for this gesture within its existing three control groups.
+
+The value comes from the current parameter descriptor, fitted to its range and
+current enum alias. It is **not the loaded preset's value**. Engine model,
+INSERT type and ENV SYNC descriptors are resolved again for each event. No sound
+is reloaded or initialized; no motion lane, step lock or saved preset is cleared.
+
+Supported targets are HOME's engine knobs (SCOPE and TRACKS), HOME LEVELS' four
+track levels, MIXER LEVEL/PAN/REV/MUTE, ordinary track/engine sound cells, MOD's
+value cells and live global FX cells. MENU/settings, NAME/dialogs, browsers,
+lists/actions, STEP/DETAIL/held locks, SONG, AUTOMATION, SLICES markers, FM6's
+operator pages, MOD's slot selector, CLOCK and empty/fixed cells retain their
+existing gestures. Other quick layers keep their knobs. LFO + ENV retains
+MOMENTARY; holding another button alongside ENV does not invoke the default.
+The first wake gesture remains swallowed while the screen is dark.
+
+A changed track value uses the same capture and MIDI LEARN policy as a permanent
+turn: armed playback records eligible values; an unarmed edit updates the motion
+base. Existing recorded events can subsequently play over it. MIXER MUTE is
+picked by LEARN but never captured; global FX values neither capture nor pick.
+No new IDs, commands, stored fields or serializer versions are introduced.
+
+**FM-1 qualification is pending.** Back up the current project and use a disposable
+one. Install an identified build containing #569 using the
+[build/install guide](../BUILDING.md#install); record its full commit and profile.
+Use headphones/output at a comfortable level, stop playback with PLAY, and test:
+
+1. Tap HOME until HOME appears. Hold HOME until MENU opens, release it, turn
+   ALGORITHM to DISPLAY and PRESETS to HOME, select SCOPE with KNOB 4 or OCT−/+, then tap
+   HOME to close MENU. Select track 1 with ALGORITHM. Hold EDIT until its map
+   appears, turn KNOB 1 (ENG) to ANALOG and release EDIT. Turn HOME KNOB 1 (CUT)
+   left away from its current setting. Hold ENV, turn KNOB 1 once, release ENV:
+   CUT reaches **2.5 kHz** (raw 90), the other knob values stay unchanged and
+   HOME stays open. Repeat in the opposite direction and at the default itself.
+2. Tap HOME once to MIXER. Move KNOB 2 (PAN) away from centre; ENV + KNOB 2
+   restores **0%** without changing LEVEL, REV or MUTE. Turn KNOB 4 right to MUTE
+   ON; ENV + KNOB 4 restores **OFF**, including when the reset detent turns right.
+3. Open MENU as above, set DISPLAY > HOME to LEVELS with KNOB 4 or OCT−/+,
+   then close it with HOME.
+   Turn KNOB 2 away from its level; ENV + KNOB 2 restores only track 2's LEVEL
+   (**−4.0 dB**, raw 104). Return HOME to SCOPE after this check.
+4. Tap ENV until ENV DEST appears, turn KNOB 4 (ESYNC) left to OFF, then tap ENV
+   until ENV appears. Move KNOB 1 (ATK) away; ENV + KNOB 1 restores the
+   declared ATK default, **2.1 ms** (raw 10), while retaining ENV. Tap FX until REVERB appears;
+   move KNOB 2 (SIZE), then ENV + KNOB 2 restores **71%** (raw 90). Other FX and
+   track values stay unchanged.
+5. Hold LFO and ENV together, turn a HOME sound knob, then release the buttons:
+   its temporary edit returns instead of becoming a default. On CLOCK, ENV +
+   KNOB 1 continues an ordinary tempo edit; it must not jump to 120 BPM.
+6. From stopped HOME, tap REC to arm the selected track and start playback; press
+   and release C4 if the disposable sequence is empty. Move CUT away, then repeat
+   the track reset. Tap SEQ until AUTOMATION appears and check that the default
+   was captured while existing records remain. Tap REC to disarm and repeat on
+   HOME to check the new base while later motion events still play. With MIDI
+   LEARN on (hold GLO, tap D4, release GLO), a changed track reset picks its
+   parameter, while an already-default reset leaves the current pick alone.
+   OCT+ finishes LEARN. Repeat under the same USB MIDI/audio and panel workload
+   as the baseline, checking audio, responsiveness and
+   [deadline/error counter deltas](performance.md#device-timing-and-stress-procedure).
+
+Stop playback, leave LEARN off and restore the prior project/settings when done.
+Report the artifact/commit, profile, device identity, scenario and expected versus
+observed values, page, audio and counters. Host, target and emulator checks do not
+establish physical panel, USB/TRS or audio-deadline acceptance.
+
+The gesture is inspired by [X0X's single-knob-default change](https://github.com/charlesvestal/fm1-x0x/commit/102c47b9e9a4c5ac499b03698ed990a2599744f2);
+Felucca implements it through its existing target, descriptor and motion policies.
+
+## FM6 operator frequency editing
+
+On an FM6 track, tap and release **EDIT** until **OPERATOR** appears. **KNOB 1 (OP)**
+selects operator 1–6; **KNOB 2** edits its coarse frequency. In **RATIO** mode the
+range is 0.50, then 1–31. In **FIXED** mode it visits just **1, 10, 100 and 1000 HZ**,
+stopping at each end even with KNOB ACCEL enabled. **KNOB 3 (FINE)** still supplies
+0–99 hundredths of a decade in FIXED mode; the chart shows the resulting frequency.
+The native focused readout and range rule span those four decades. STYLE and LARGE
+are retired native menu choices; their reserved stored/wire values remain compatibility
+fixtures and do not select another native layout.
+
+To switch modes, keep tapping and releasing **EDIT** through **OP ENV** to
+**OPERATOR 2**, then turn **KNOB 2 (MODE)**. A mode switch changes only MODE:
+coarse, fine and detune remain stored as they were. Imported DX7 coarse values
+0–31 remain valid; FIXED uses their low two bits. Editing a FIXED decade preserves
+the other three bits, so returning to RATIO restores that group of four ratios
+with the edited low bits. For example, imported coarse 29 means 10 HZ in FIXED;
+turning right once gives coarse 30, or 100 HZ, and switching to RATIO gives 30.
+Merely loading, viewing or toggling modes does not rewrite the coarse byte.
+
+An actual edit makes the patch **SLOT OWN**. Holding **SAVE** undoes the knob gesture;
+holding it again redoes it. Projects, user presets and DX7 export retain the whole
+coarse byte. Fine, detune and the existing EDIT 1/2 macros keep their prior behavior.
+Host checks cover these panel edits and stored round trips; physical FM-1 knob/LCD
+and listening qualification remain pending.
+
+The refresh against main `3fce9f9f4d63b56aecfdc0e7e2d35d4271878bcf` preserves its
+native M8Stealth layout and GRAPH behavior. Earlier target, full-suite and emulator
+evidence from `d2f329eb64cbf5df8d438031ea5e9a74b79047c9` is historical; those gates
+must be repeated for the refreshed candidate. Focused current checks pass: the UI
+unit (default and compiled CPU2-off, typography/readability and track badges),
+the exhaustive FM6 FIXED check, and all seven native replay tests. The new real-panel
+filter/envelope default test fails before the curve-hold refresh and passes after
+it, including repeated no-op detents and return to the scope. Replay compares the
+actual native bank/overview with the independent ordinary +90 reference and
+identical audio. Local logs and dirty merge/profile provenance are under
+`build/597-main3fce-refresh/`; these focused checks are not full-suite or CI evidence.
+FM-1 checks above remain unperformed.
 
 ## MIDI timing and arithmetic hardening
 

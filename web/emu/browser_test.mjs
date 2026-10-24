@@ -188,6 +188,33 @@ try {
     assert.notEqual(edited.sha256, env.sha256, "encoder did not change the LCD");
     return edited;
   });
+  await check("held ENV restores one HOME default and consumes its page tap", async () => {
+    await tap("HOME");
+    await waitFor(() => __feluccaTest.macro?.engine === 0 && (__feluccaTest.leds[0] & (1 << 6)));
+    const slider = page.getByRole("slider", { name: "KNOB 1", exact: true });
+    // The probe observes existing firmware state; all editing still uses DOM events.
+    const initial = await page.evaluate(() => __feluccaTest.macro.params);
+    for (let i = 0; i < 5; i++) await slider.press("ArrowDown");
+    await waitFor((old) => __feluccaTest.macro.params[4] !== old && __feluccaTest.macro.params[4] !== 90, initial[4]);
+    const before = await page.evaluate(() => __feluccaTest.macro.params);
+    const env = page.getByRole("button", { name: "ENV", exact: true });
+    await env.focus(); await page.keyboard.down("Enter");
+    await page.waitForTimeout(100);
+    await slider.press("ArrowUp");
+    await waitFor(() => __feluccaTest.macro.params[4] === 90);
+    await slider.press("ArrowDown"); // already default: consume this opposite detent too
+    await page.waitForTimeout(100);
+    await env.focus(); await page.keyboard.up("Enter");
+    await page.waitForTimeout(200);
+    const after = await page.evaluate(() => ({ params: __feluccaTest.macro.params, leds: __feluccaTest.leds[0] }));
+    assert.equal(after.params[4], 90, "ANALOG CUT did not retain its declared default");
+    assert(before.every((v, i) => i === 4 || after.params[i] === v), "another engine value changed");
+    assert((after.leds & (1 << 6)) && !(after.leds & (1 << 2)), "ENV release navigated away from HOME");
+    const observed = await screen("home-default");
+    await tap("ENV"); // restore the ENV page and its edited attack for the persistence check below
+    await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
+    return { params: after.params, ...observed };
+  });
   await check("GRAPH TURN: a turned knob's curve replaces the scope, then the scope returns", async () => {
     // #572: HOME's panel (tall bank: rows 98..198) in silence is the flat scope; KNOB 1 (ANALOG's CUT) shows the
     // filter curve while it turns and about 1.2 s after; then the same flat scope again.
