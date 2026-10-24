@@ -48,7 +48,7 @@
 #define SLC_HOP 32u                  /* AUTO detector: samples per hop */
 
 typedef struct {
-    uint32_t off, at, n;             /* data (SMP_DATA index), material position of its first sample, samples */
+    uint32_t off, at, n;             /* runtime smp_data offset, material position of its first sample, samples */
 } slc_seg_t;
 typedef struct {
     uint32_t len, rate, nseg, nauto; /* material samples (0 = none), rate (as smp_zone_t), segments, AUTO slices */
@@ -131,7 +131,7 @@ static inline int32_t slc_dec_next(const slc_src_t *s, slc_dec_t *d)
         d->pred = 0;
         d->idx = 0;
     }
-    b = SMP_DATA[g->off + (rel >> 1)];
+    b = smp_data(g->off)[rel >> 1];
     code = (rel & 1u) ? (b >> 4) : (b & 15u);
     step = IMA_STEP[d->idx];
     vd = step >> 3;

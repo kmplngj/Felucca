@@ -3240,6 +3240,26 @@ static int test_product_ux(void)
     }
     ok &= !memcmp(lo, sample_wave.lo, sizeof lo) && !memcmp(hi, sample_wave.hi, sizeof hi);
     bad += check("sample waveform is bounded, matches audio IMA decode and leaves voices intact", ok);
+    ok = 1;
+    for (uint32_t k = 0; k < SMP_USER_SLOTS; k++) {
+        static const int16_t pcm[3][3] = {{1, 12, 30}, {3, 14, 32}, {4, 15, 33}};
+        smp_user_hdr_t *h = (smp_user_hdr_t *)((uint8_t *)host_slots + k * SMP_USER_SIZE);
+        uint8_t *data = (uint8_t *)h + SMP_USER_DATA;
+        memset(h, 0, SMP_USER_DATA + 3u);
+        h->magic = SMP_USER_MAGIC; h->version = 1; h->nz = 1; h->data_len = 3;
+        h->zone[0] = (smp_zone_t){.off = 1, .n = 3, .le = 2, .rate = 65536, .hi = 127};
+        data[1] = (uint8_t)(0x71u + k); data[2] = 0xF4;     /* low nibble first, last high nibble unused */
+        smp_user_scan(k);
+        TSEL->p[P_E0] = (int16_t)(SMP_NSETS + k);
+        sample_wave_tick(TSEL);
+        memset(lo, 0, sizeof lo); memset(hi, 0, sizeof hi);
+        for (i = 0; i < 3u; i++) hi[i * SAMPLE_WAVE_COLS / 3u] = pcm[k][i];
+        ok &= sample_wave.ready && sample_wave.pos == 3u && sample_wave.zone == &usr_zone[k][0] &&
+              sample_wave.peak == pcm[k][2] && !memcmp(voices, TSEL->v, sizeof voices) &&
+              !memcmp(lo, sample_wave.lo, sizeof lo) && !memcmp(hi, sample_wave.hi, sizeof hi);
+        memset(h, 0, SMP_USER_DATA + 3u); smp_user_scan(k);
+    }
+    bad += check("sample waveform: every user-slot owner, odd length and independent IMA values", ok);
     ui_power_on(); return bad;
 }
 
