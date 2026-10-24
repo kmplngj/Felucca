@@ -58,6 +58,9 @@
 #include <stdint.h>
 #include "fm1_time.h"
 #include "fm1_sys.h"
+#if FELUCCA_CDC
+#include "fm1_clock.h"
+#endif
 #include "fm1_irq.h"
 #include "fm1_guard.h"
 #if FELUCCA_CPU2

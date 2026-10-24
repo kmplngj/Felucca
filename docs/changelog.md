@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Read-only boot clock evidence:** normal USB SERIAL diagnostics report seven
+  saved startup clock-register words without changing clock configuration.
+  The collector retains raw values and supports older firmware that omits them.
+  Real bootloader/reset-path readings and any correction decision remain pending;
+  see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
 - **Build metadata contracts:** canonical supported-profile exports include stable IDs,
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds
   emit artifact-bound resource/stack reports, with stale-evidence verification using the
