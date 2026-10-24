@@ -79,7 +79,7 @@ has no independent tie-breaker in the inspected code.
 | Permanent knob / SET / TRACK_PARAM / mapped or learned CC, not selected-and-recording | Write control value, then eligible `motion_capture` updates the valid patch base even if earlier motion was active | Later motion can override the control value; STOP or bypass restores the latest base |
 | Same paths on selected armed playing track | Quantized sparse event; immediate value marked transient while base is valid | STOP before the quantized step restores the original patch base |
 | Automation event and lock on same track/step/id | One shared record, of either kind; latest record write replaces the earlier kind/value | No simultaneous pair exists for that key |
-| Motion plus step lock | Lock applies only when its step plays; next step restores latest automation event in this pass up to that step, otherwise base; step zero restores base before its records | Lock lasts the whole step, including ratchets; removing a currently sounding lock's record lets it expire at the next step |
+| Motion plus step lock | Lock applies only when its step plays; next step restores latest automation event in this pass up to that step, otherwise base; step zero restores base before its records | Lock lasts the whole step, including ratchets. Bulk lock clear (`motion_clear_locks`, editor operation 6 or panel lock-clear gesture) leaves a sounding lock until the next step. Individual record deletion (`motion_delete_event`, editor operation 4 or AUTOMATION delete) immediately restores all active parameters on that track to their patch bases |
 | Several per-block matrix slots on same id | Each slot's fixed-point offset is computed, offsets summed, then destination clamped once | `mod_end` restores the exact incoming control value, including on the silent early-return path |
 | DEPTH / AMP / note-time modulation | DEPTH is computed before the other LFO-dependent slots; AMP/DEPTH gains multiply; VEL/TIME act at note/step time | These are not interchangeable additive parameter offsets; retain rounding and RNG order |
 | MIDI packet and due sequencer step in one audio block | `events_block` drains MIDI in queue order, then runs `seq_tick`; a due motion/lock write can therefore follow a CC write | This does not imply that motion always wins over a later main-loop edit |
@@ -91,6 +91,8 @@ has no independent tie-breaker in the inspected code.
 
 Sources: [capture](https://github.com/kmplngj/Felucca/blob/5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e/firmware/src/motion.c#L219-L240),
 [record replacement/publication](https://github.com/kmplngj/Felucca/blob/5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e/firmware/src/motion.c#L164-L216),
+[restore and clear masks](https://github.com/kmplngj/Felucca/blob/5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e/firmware/src/motion.c#L113-L121),
+[editor removal operations](https://github.com/kmplngj/Felucca/blob/5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e/firmware/src/editor.c#L463-L465),
 [unlock/step](https://github.com/kmplngj/Felucca/blob/5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e/firmware/src/motion.c#L242-L288),
 [matrix](https://github.com/kmplngj/Felucca/blob/5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e/firmware/src/mod.c#L133-L243),
 [render restore paths](https://github.com/kmplngj/Felucca/blob/5b613a595d6d6a9a218278c5ae38f00cfa8e9c6e/firmware/src/fx.c#L1105-L1175),
@@ -235,7 +237,7 @@ has an observable result and an explicit counterexample it should detect.
 | ID and setup | Observable invariant / concrete failure detected | Scope and gate |
 | --- | --- | --- |
 | C1: motion PAN plus deterministic LFO or MODW slot, manual edit or standard/learned CC, then STOP/bypass | Observe render-time value, post-block `p[]`, base snapshot and stop value separately. An offset retained in `p[]`, saved motion value, or lost newly edited base fails | 2 sources x 3 writers x 2 endings = 12 traces; unarmed first, one armed quantized counterpart |
-| C2: prior automation + later lock + same matrix; next step, chance-failed step, loop wrap and ratchet | Lock heard only for its eligible step; next step restores prior automation/base before modulation. Detect stale lock, extra offset or note-on seeing post-render offset | Four deterministic traces extending existing lock fixtures |
+| C2: prior automation + later lock + same matrix; next step, chance-failed step, loop wrap, ratchet, bulk lock clear and individual record deletion | Lock heard only for its eligible step; next step restores prior automation/base before modulation. Bulk clear leaves the sounding lock until the next step; individual deletion immediately restores every active parameter on that track to its patch base, including an unrelated active parameter. Detect stale lock, extra offset, conflated removal paths or note-on seeing post-render offset | Four playback traces plus two removal traces extending existing lock fixtures; exercise editor operations 6/4 and corresponding panel actions |
 | C3: two to four independent additive slots to PAN/REV, fixed source snapshot; reverse slot assignment/activation order, clear each | Same final render value for same active additive terms; disabling one removes only its contribution and post-block `p[]` is unchanged. Mixed-sign near-bound fixture detects per-slot clamp/order dependence | 2 destinations x slot counts 2..4 x at most 24 permutations; fixed seeds/time, no AMP/DEPTH permutation promise |
 | C4: held MOMENTARY, CC/editor/motion before and after first turn, release and KEEP, snapshot while held | Characterize separate live/base/cache values and both orders. Detect an accidental claim that release reveals latest underlying state or KEEP always updates motion base | 3 writers x 2 orders x 2 endings = 12 traces; freeze changed expected policy only after D1/D2 |
 | C5: sounding motion + held MOMENTARY + sound/user preset/engine/project load; release after load | New sound values remain after release; unrelated track's cache remains on a single-track load, project clears all; common motion retained and incompatible engine ids removed according to load type | Four load routes plus one same-engine counterpart; assert undo base too. Detect stale pointer/value restoration over a new sound |
@@ -244,7 +246,9 @@ has an observable result and an explicit counterexample it should detect.
 | C8: learned E-slot, standard CC74/71 and engine-specific motion under same/different engine load | Learned mapping keeps its E-slot code, semantic CC re-resolves or ignores, incompatible motion removed. Detect treating all three bindings as engine-specific or all slot-following | Two representative engines with different descriptors and one unsupported CC target |
 
 “Clear restores intended value” is source-specific: matrix clear restores control
-value, lock expiry restores automation/base, motion bypass/STOP restores base,
+value, lock expiry after bulk clear restores automation/base, individual record
+deletion immediately restores all active track parameters to patch bases,
+motion bypass/STOP restores base,
 MOMENTARY release restores its cached live value, and CC121 resets controllers
 without resetting mapped sound parameters. Deleting an event, clearing locks,
 disabling motion and stopping are separate transitions, not synonyms.
