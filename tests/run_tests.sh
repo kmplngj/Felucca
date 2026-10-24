@@ -1378,7 +1378,7 @@ u_emulator_partitions() {
         echo "== skip emulator partitions (needs node and build/gen)"
     fi
 }
-UNIT_NEEDS="assets node emcc"
+UNIT_NEEDS="assets node"
 UNIT_PRODUCERS=web/emu/partition_test.sh
 unit emulator_partitions "" u_emulator_partitions
 UNIT_PRODUCERS=

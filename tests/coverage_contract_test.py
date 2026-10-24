@@ -206,6 +206,20 @@ class ContractTests(unittest.TestCase):
             with self.subTest(name=name, status=status), self.assertRaises(ValueError):
                 self.verify(self.semantic(name, status=status, reason=reason))
 
+    def test_native_only_partitions_cannot_qualify_required_wasm(self):
+        d = self.semantic('official-v15')
+        command = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
+        command['argv'] = ['sh', 'web/emu/partition_test.sh']
+        outcomes, python, _ = C.command_policy(command['argv'])
+        command.update(required_producer=bool(outcomes), required_python=python, expected_outcomes=outcomes)
+        command.pop('python', None)
+        command['producer']['outcomes'] = [dict(name=name, status='passed', reason=None, details={}) for name in outcomes]
+        self.verify(d)
+        wasm = next(row for row in command['producer']['outcomes'] if row['name'] == 'wasm-partitions')
+        wasm.update(status='skipped', reason='emcc-unavailable')
+        with self.assertRaisesRegex(ValueError, 'unapproved semantic skip'):
+            self.verify(d)
+
     def test_optional_macro_client_parser_requires_actual_opt_in(self):
         d = self.semantic('official-v15')
         event = next(e for e in d['units'][0]['events'] if e['kind'] == 'command')
@@ -316,16 +330,19 @@ class LifecycleTests(unittest.TestCase):
             root = Path(temporary)
             events = root / 'outer-events'
             env = dict(os.environ, FELUCCA_COVERAGE_UNIT=str(events), FELUCCA_COVERAGE_ID='outer')
-            env, _ = C.compiler_environment(env, root / 'outer-shims')
+            env, mapping = C.compiler_environment(env, root / 'outer-shims')
             result = subprocess.run([sys.executable, str(ROOT / 'tools/test_coverage.py'),
                                      'command', sys.executable, 'tests/coverage_contract_test.py',
                                      'LifecycleTests.test_fresh_identity_invalidation_and_changed_input_failure',
                                      'LifecycleTests.test_real_shell_scheduler_contract_normal_compact_serial_parallel',
+                                     'CompilerTests.test_implicit_missing_cxx_keeps_c_runner_available',
                                      '-q'], cwd=ROOT, env=env, text=True, capture_output=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows = [C.read_json(p) for p in events.glob('*.json')]
             self.assertTrue(any(e['kind'] == 'command' for e in rows))
             self.assertEqual({e['run_id'] for e in rows}, {'outer'})
+            bound = {argv[0] for argv in mapping.values()}
+            self.assertTrue(all(e['executable'] in bound for e in rows if e['kind'] in ('compiler', 'probe')))
 
     def test_verified_archive_identity_requires_real_manifest_content_and_modes(self):
         import source_archive
@@ -361,6 +378,16 @@ class LifecycleTests(unittest.TestCase):
                               'emcc-unavailable', 'sanitizer-disabled'])
             with self.assertRaisesRegex(ValueError, 'unknown coverage prerequisite'):
                 C.requirements(['invented'], {})
+
+    def test_native_partitions_run_without_optional_wasm_compiler(self):
+        plan = subprocess.check_output(['sh', 'tests/run_tests.sh', '--plan'], cwd=ROOT, text=True)
+        row = next(line for line in plan.splitlines() if line.startswith('emulator_partitions\t'))
+        metadata = json.loads(row.split('@coverage=', 1)[1])
+        self.assertIn('assets', metadata['needs'])
+        self.assertIn('node', metadata['needs'])
+        self.assertNotIn('emcc', metadata['needs'])
+        self.assertEqual(metadata['producers'], ['web/emu/partition_test.sh'])
+        self.assertEqual(C.PRODUCERS['web/emu/partition_test.sh'], {'native-partitions', 'wasm-partitions'})
 
     def test_fresh_identity_invalidation_and_changed_input_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -466,6 +493,7 @@ class CompilerTests(unittest.TestCase):
         which = shutil.which
         env = dict(os.environ)
         env.pop('CXX', None)
+        env.pop('FELUCCA_COVERAGE_UNIT', None)  # Nested shim fixtures must not publish into their caller.
         def c_only(name, **kwargs):
             return None if name in ('c++', 'clang++', 'g++') else which(name, **kwargs)
         with tempfile.TemporaryDirectory() as temporary, patch.object(C.shutil, 'which', side_effect=c_only):
