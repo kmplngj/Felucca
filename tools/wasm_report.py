@@ -45,6 +45,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -206,18 +207,28 @@ def source_identity(root):
 
 
 def sdk_tools(emcc, root, env, log):
+    if any(env.get(name) for name in ('NODE_OPTIONS', 'NODE_PATH')):
+        raise ValueError('SDK provenance unsupported Node environment hooks')
     # em-config is the installed producer's authority, including Homebrew wrappers.
     config = emcc.parent / 'em-config'
     if not config.is_file():
         raise ValueError('SDK provenance missing: no em-config beside resolved emcc')
     get = lambda key: command([config, key], root, env, log)
+    # A config file can select an external compiler wrapper even when the
+    # corresponding environment override is refused. Its closure is unsupported.
+    if get('COMPILER_WRAPPER') not in ('', 'None'):
+        raise ValueError('SDK provenance unsupported configured compiler wrapper')
     sdk = Path(get('EMSCRIPTEN_ROOT')).resolve()
     if not (sdk / 'emcc.py').is_file():
         raise ValueError('SDK provenance missing: invalid Emscripten root')
     llvm, binaryen, cache = (Path(get(key)).resolve() for key in ('LLVM_ROOT', 'BINARYEN_ROOT', 'CACHE'))
     node = get('NODE_JS')
     if node.startswith('['):
-        node = ast.literal_eval(node)[0]
+        value = ast.literal_eval(node)
+        if (not isinstance(value, list) or len(value) != 1 or
+                not isinstance(value[0], str) or not value[0]):
+            raise ValueError('SDK provenance unsupported configured Node arguments')
+        node = value[0]
     node = Path(shutil.which(node, path=env.get('PATH')) or node).resolve()
     # Homebrew's wrapper selects its own Python independently of the caller.
     wrapper = emcc.read_text(errors='ignore')[:8192]
@@ -260,18 +271,54 @@ def tool_fingerprint(resolved):
     tools, roots, version, release, revision = resolved
     inventory = {}
     for label, base in roots.items():
-        if not base.is_dir():
+        if not base.is_dir() or base.resolve(strict=True) != base:
             raise ValueError(f'SDK provenance missing: {label}')
-        for path in sorted(base.rglob('*')):
-            relative = path.relative_to(base)
-            if (any(part in ('.git', '__pycache__') for part in relative.parts)
-                    or (label == 'emscripten' and relative.parts[0] in
-                        ('cache', 'test', 'tests'))
-                    or path.suffix in ('.pyc', '.pyo', '.lock')
-                    or path.name in ('sanity.txt', 'cache.lock')):
-                continue
-            if path.is_file():
-                inventory[label + '/' + relative.as_posix()] = R.digest(path)
+        pending = [base]
+        while pending:
+            folder = pending.pop()
+            # Check again when visiting a queued directory: an alias introduced
+            # after discovery must not make the walk silently escape the root.
+            if folder.resolve(strict=True) != folder:
+                raise ValueError('SDK provenance unsupported nested directory symlink')
+            with os.scandir(folder) as entries:
+                for entry in sorted(entries, key=lambda item: item.name):
+                    path = Path(entry.path)
+                    relative = path.relative_to(base)
+                    if (any(part in ('.git', '__pycache__') for part in relative.parts) or
+                            (label == 'emscripten' and relative.parts[0] in ('cache', 'test', 'tests'))):
+                        continue  # Outside the declared installed-input closure.
+                    mode = path.lstat().st_mode
+                    link = None
+                    if stat.S_ISLNK(mode):
+                        try:
+                            destination = path.resolve(strict=True)
+                            target_mode = destination.stat().st_mode
+                        except (OSError, RuntimeError) as error:
+                            raise ValueError('SDK provenance broken or cyclic symlink: ' + str(path)) from error
+                        if stat.S_ISDIR(target_mode):
+                            raise ValueError('SDK provenance unsupported nested directory symlink: ' + str(path))
+                        if not stat.S_ISREG(target_mode):
+                            raise ValueError('SDK provenance unsupported symlink target: ' + str(path))
+                        link = {'text': os.readlink(path), 'destination': str(destination)}
+                    elif stat.S_ISDIR(mode):
+                        pending.append(path)
+                        continue
+                    elif stat.S_ISREG(mode):
+                        destination = path
+                    else:
+                        raise ValueError('SDK provenance unsupported input type: ' + str(path))
+                    # Only known mutable file receipts are excluded; naming a
+                    # directory symlink *.lock cannot bypass the checks above.
+                    if path.suffix in ('.pyc', '.pyo', '.lock') or path.name in ('sanity.txt', 'cache.lock'):
+                        continue
+                    name = label + '/' + relative.as_posix()
+                    inventory[name] = R.digest(destination)
+                    if link is not None:
+                        if path.resolve(strict=True) != destination or os.readlink(path) != link['text']:
+                            raise ValueError('SDK provenance file symlink changed during inventory')
+                        inventory['link:' + name] = sha(link)
+            if folder.resolve(strict=True) != folder:
+                raise ValueError('SDK provenance directory identity changed during inventory')
     inventory.update({'tool/' + name: R.digest(path) for name, path in tools.items()})
     return {'emcc_version': version, 'emcc_sha256': R.digest(tools['emcc']),
             'clang_sha256': R.digest(tools['clang']), 'wasm_ld_sha256': R.digest(tools['wasm_ld']),
@@ -419,7 +466,7 @@ def build_runtime(root, target_path=None, env=None):
             'OBJC_INCLUDE_PATH', 'LIBRARY_PATH', 'COMPILER_PATH', 'GCC_EXEC_PREFIX', 'SDKROOT',
             'MACOSX_DEPLOYMENT_TARGET', 'CCC_OVERRIDE_OPTIONS', 'CLANG_CONFIG_FILE_SYSTEM_DIR',
             'CLANG_CONFIG_FILE_USER_DIR', 'CLANG_NO_DEFAULT_CONFIG', 'LD_PRELOAD',
-            'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH',
+            'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'NODE_OPTIONS', 'NODE_PATH',
         }
         forbidden = [k for k in env if env[k] and
                      (k.startswith(('EMCC_', '_EMCC_', 'EMMAKEN_')) or
@@ -449,7 +496,7 @@ def build_runtime(root, target_path=None, env=None):
         source = source_identity(root)
         resolved_tools = sdk_tools(emcc, root, env, log)
         toolchain = tool_fingerprint(resolved_tools)
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
         if target:
             raise
         provenance_error = str(error)
@@ -491,10 +538,22 @@ def build_runtime(root, target_path=None, env=None):
         return None
     # Re-query from the same frozen emcc entry, not PATH and not the old resolved
     # roots: configuration aliases/cache symlinks can move during compilation.
-    post_resolved_tools = sdk_tools(emcc, root, env, log)
+    try:
+        post_resolved_tools = sdk_tools(emcc, root, env, log)
+        post_toolchain = tool_fingerprint(post_resolved_tools)
+    except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        if target is not None:
+            raise
+        print('emu: receipt unavailable: ' + str(error))
+        print(f'emu: build/emu ({files[0]["bytes"]} B wasm, {identity["version"]})')
+        return None
+    if target is None and (post_resolved_tools != resolved_tools or post_toolchain != toolchain):
+        print('emu: receipt unavailable: SDK inputs changed during runtime build')
+        print(f'emu: build/emu ({files[0]["bytes"]} B wasm, {identity["version"]})')
+        return None
     if (R.input_hashes(root) != inputs or {p: R.digest(root / p) for p in profiles} != profiles
             or source_identity(root) != source or post_resolved_tools != resolved_tools
-            or tool_fingerprint(post_resolved_tools) != toolchain
+            or post_toolchain != toolchain
             or R.loader_environment_fingerprints(env) != loader_environment
             or output_files(root) != files
             or (target_path is not None and R.digest(target_path) != target_link['report_sha256'])):
@@ -526,7 +585,7 @@ def main():
     args = parser.parse_args()
     try:
         build_runtime(ROOT, args.target_report)
-    except (KeyError, TypeError, OSError, ValueError, subprocess.CalledProcessError) as error:
+    except (KeyError, TypeError, OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
         parser.error(str(error))
 
 

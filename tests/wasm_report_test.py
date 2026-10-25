@@ -86,8 +86,10 @@ class RuntimeReport(unittest.TestCase):
 import json,os,pathlib,sys
 sdk=pathlib.Path(os.environ["FIXTURE_SDK"])
 if pathlib.Path(sys.argv[0]).name=="em-config":
-    values={"EMSCRIPTEN_ROOT":str(sdk),"LLVM_ROOT":str(sdk/"llvm/bin"),
-            "BINARYEN_ROOT":str(sdk/"binaryen"),"CACHE":str(sdk/"cache"),"NODE_JS":sys.executable}
+    wrapper=(sdk/"compiler-wrapper.txt").read_text().strip() if (sdk/"compiler-wrapper.txt").exists() else os.getenv("FIXTURE_COMPILER_WRAPPER","None")
+    values={"EMSCRIPTEN_ROOT":str(sdk),"LLVM_ROOT":os.getenv("FIXTURE_LLVM_ROOT",str(sdk/"llvm/bin")),
+            "BINARYEN_ROOT":os.getenv("FIXTURE_BINARYEN_ROOT",str(sdk/"binaryen")),"CACHE":str(sdk/"cache"),
+            "NODE_JS":os.getenv("FIXTURE_NODE_JS",sys.executable),"COMPILER_WRAPPER":wrapper}
     print(values[sys.argv[1]])
 elif "--version" in sys.argv:
     print("fixture emcc 1.0")
@@ -122,6 +124,14 @@ else:
         p=pathlib.Path(os.environ["FIXTURE_LINK"])
         p.unlink()
         p.symlink_to(os.environ["FIXTURE_DESTINATION"],target_is_directory=True)
+    if action=="introduce-directory-link":
+        import shutil
+        p=sdk/"cache/sysroot/lib"
+        destination=pathlib.Path(os.environ["FIXTURE_DESTINATION"])
+        shutil.move(p,destination)
+        p.symlink_to(destination,target_is_directory=True)
+    if action=="introduce-wrapper":
+        (sdk/"compiler-wrapper.txt").write_text("/outside/sdk/compiler-wrapper")
 '''.replace('PYTHON', sys.executable)
         for name in ('emcc', 'em-config'):
             (self.sdk / name).write_text(tool)
@@ -291,6 +301,151 @@ else:
             self.build()
         self.assertFalse((self.root / W.RECEIPT).exists())
 
+    def test_nested_library_directory_symlink_cannot_hide_mutation(self):
+        link = self.sdk / 'cache/sysroot/lib'
+        external = self.base / 'external-libraries'
+        shutil.move(link, external)
+        link.symlink_to(external, target_is_directory=True)
+        self.env['FIXTURE_ACTION'] = 'library'
+        with self.assertRaisesRegex(ValueError, 'directory symlink'):
+            self.build()
+        self.assertFalse((self.base / 'argv.json').exists())
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def assert_unpaired_without_receipt(self):
+        receipt = self.root / W.RECEIPT
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text('old receipt must be retired')
+        self.assertIsNone(self.build(False))
+        self.assertTrue((self.root / W.FILES[0]).is_file())
+        self.assertFalse(receipt.exists())
+
+    def test_unpaired_nested_directory_symlink_keeps_compile_available(self):
+        link = self.sdk / 'cache/sysroot/lib'
+        external = self.base / 'external-libraries'
+        shutil.move(link, external)
+        link.symlink_to(external, target_is_directory=True)
+        self.assert_unpaired_without_receipt()
+
+    def test_directory_symlink_named_lock_file_is_still_refused(self):
+        (self.sdk / 'cache/sysroot/hidden.lock').symlink_to(self.sdk / 'cache/sysroot/lib',
+                                                          target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'directory symlink'):
+            self.build()
+        self.assertFalse((self.base / 'argv.json').exists())
+
+    def test_directory_link_introduced_during_compile_is_refused(self):
+        self.env.update(FIXTURE_ACTION='introduce-directory-link',
+                        FIXTURE_DESTINATION=str(self.base / 'post-build-libraries'))
+        with self.assertRaisesRegex(ValueError, 'directory symlink'):
+            self.build()
+        self.assertTrue((self.base / 'argv.json').exists())
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def test_unpaired_postcompile_directory_link_keeps_output_without_receipt(self):
+        self.env.update(FIXTURE_ACTION='introduce-directory-link',
+                        FIXTURE_DESTINATION=str(self.base / 'post-build-libraries'))
+        self.assert_unpaired_without_receipt()
+
+    def assert_invalid_sdk_link_refused(self, kind):
+        link = self.sdk / 'cache/sysroot/unsupported-link'
+        if kind == 'dangling':
+            link.symlink_to(self.base / 'missing-target')
+        elif kind == 'cyclic':
+            link.symlink_to(link)
+        elif kind == 'directory-cycle':
+            link.symlink_to(link.parent, target_is_directory=True)
+        else:
+            fifo = self.base / 'fifo'
+            os.mkfifo(fifo)
+            link.symlink_to(fifo)
+        with self.assertRaisesRegex(ValueError, 'SDK provenance'):
+            self.build()
+        self.assertFalse((self.base / 'argv.json').exists())
+        self.assert_unpaired_without_receipt()
+
+    def test_dangling_sdk_link_is_refused_with_unpaired_fallback(self):
+        self.assert_invalid_sdk_link_refused('dangling')
+
+    def test_cyclic_sdk_link_is_refused_with_unpaired_fallback(self):
+        self.assert_invalid_sdk_link_refused('cyclic')
+
+    def test_directory_walk_cycle_is_refused_with_unpaired_fallback(self):
+        self.assert_invalid_sdk_link_refused('directory-cycle')
+
+    def test_nonregular_sdk_link_is_refused_without_reading_fifo(self):
+        self.assert_invalid_sdk_link_refused('fifo')
+
+    def external_library_file_link(self):
+        link = self.sdk / 'cache/sysroot/lib/libc.a'
+        first, second = self.base / 'libc-first.a', self.base / 'libc-second.a'
+        shutil.move(link, first)
+        shutil.copyfile(first, second)
+        link.symlink_to(first)
+        return link, first, second
+
+    def test_regular_file_symlink_remains_supported(self):
+        _, first, _ = self.external_library_file_link()
+        receipt = self.build()
+        self.assertEqual(receipt['files'], W.output_files(self.root))
+        self.assertNotIn(str(first), json.dumps(receipt['configuration']))
+
+    def test_regular_file_symlink_content_change_is_refused(self):
+        self.external_library_file_link()
+        self.env['FIXTURE_ACTION'] = 'library'
+        with self.assertRaisesRegex(ValueError, 'tool/SDK inputs changed'):
+            self.build()
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def test_regular_file_symlink_equal_byte_retarget_is_refused(self):
+        link, _, second = self.external_library_file_link()
+        self.env.update(FIXTURE_ACTION='retarget', FIXTURE_LINK=str(link),
+                        FIXTURE_DESTINATION=str(second))
+        with self.assertRaisesRegex(ValueError, 'tool/SDK inputs changed'):
+            self.build()
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def test_configured_external_compiler_wrapper_refused_with_unpaired_fallback(self):
+        self.env['FIXTURE_COMPILER_WRAPPER'] = '/outside/sdk/compiler-wrapper'
+        with self.assertRaisesRegex(ValueError, 'configured compiler wrapper'):
+            self.build()
+        self.assertFalse((self.base / 'argv.json').exists())
+        self.assert_unpaired_without_receipt()
+
+    def test_empty_configured_compiler_wrapper_is_supported(self):
+        self.env['FIXTURE_COMPILER_WRAPPER'] = ''
+        self.assertIsNotNone(self.build())
+
+    def test_unpaired_wrapper_introduced_after_compile_keeps_output_without_receipt(self):
+        self.env['FIXTURE_ACTION'] = 'introduce-wrapper'
+        self.assert_unpaired_without_receipt()
+
+    def test_configured_single_element_node_list_is_supported(self):
+        self.env['FIXTURE_NODE_JS'] = repr([sys.executable])
+        self.assertIsNotNone(self.build())
+
+    def test_configured_node_extra_arguments_or_invalid_list_refused(self):
+        for value in ([sys.executable, '--require', '/outside/sdk/preload.js'], [], [''], [1]):
+            with self.subTest(value=value):
+                self.env['FIXTURE_NODE_JS'] = repr(value)
+                with self.assertRaisesRegex(ValueError, 'configured Node arguments'):
+                    self.build()
+                self.assertFalse((self.base / 'argv.json').exists())
+        self.env['FIXTURE_NODE_JS'] = repr([sys.executable, '--require', '/outside/sdk/preload.js'])
+        self.assert_unpaired_without_receipt()
+
+    def test_node_environment_hooks_refused_with_unpaired_fallback(self):
+        for name, value in (('NODE_OPTIONS', '--require /outside/sdk/preload.js'),
+                            ('NODE_PATH', '/outside/sdk/modules')):
+            with self.subTest(name=name):
+                (self.base / 'argv.json').unlink(missing_ok=True)
+                self.env[name] = value
+                with self.assertRaisesRegex(ValueError, 'unsupported paired compiler environment'):
+                    self.build()
+                self.assertFalse((self.base / 'argv.json').exists())
+                self.assert_unpaired_without_receipt()
+                del self.env[name]
+
     def assert_retargeted_identity_rejected(self, kind):
         # Equal bytes intentionally distinguish destination identity from the
         # content-only checks that missed the reviewer's external-cache case.
@@ -306,6 +461,12 @@ else:
             shutil.copytree(first, second)
         else:
             shutil.copy2(first, second)
+        if kind in ('llvm', 'binaryen'):
+            # Configured selector aliases remain supported and re-resolved, but
+            # an alias inside the SDK tree is now independently unsupported.
+            link = self.base / (kind + '-configured')
+            key = 'FIXTURE_LLVM_ROOT' if kind == 'llvm' else 'FIXTURE_BINARYEN_ROOT'
+            self.env[key] = str(link / 'bin' if kind == 'llvm' else link)
         link.symlink_to(first, target_is_directory=directory)
         frozen_emcc = (self.sdk / 'emcc').resolve()
         self.env.update(FIXTURE_ACTION='retarget', FIXTURE_LINK=str(link),
@@ -577,7 +738,7 @@ else:
             W.logical_mapping(native, unknown, native_constants, runtime_constants)
 
     def test_paired_unknown_compiler_environment_fails_before_compile(self):
-        for name in ('EMCC_CFLAGS', 'CPATH', 'C_INCLUDE_PATH', 'LIBRARY_PATH', 'COMPILER_PATH',
+        for name in ('EMCC_CFLAGS', 'EM_COMPILER_WRAPPER', 'CPATH', 'C_INCLUDE_PATH', 'LIBRARY_PATH', 'COMPILER_PATH',
                      'SDKROOT', 'CCC_OVERRIDE_OPTIONS', 'CLANG_CONFIG_FILE_USER_DIR', 'LD_PRELOAD'):
             with self.subTest(name=name):
                 self.env[name] = '/unbound/compiler/input'

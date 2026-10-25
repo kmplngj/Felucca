@@ -71,8 +71,15 @@ The paired driver refuses unsupported extra flags/compiler search-path injection
 stale inputs, missing SDK provenance, output leftovers or source/tool changes during
 compilation. Configured SDK/cache roots and tool paths are resolved again after
 compilation; changed identities or contents prevent receipt publication, including
-retargeted symlinks. It does not stamp an existing Wasm as freshly built. A normal unpaired
+retargeted symlinks. Included SDK inventories refuse nested directory symlinks and
+broken, cyclic or unsupported link targets; regular file aliases bind both their
+resolved identities and contents. Configured `COMPILER_WRAPPER` executables are
+unsupported for paired provenance rather than silently omitted from the tool closure.
+Paired builds also refuse extra configured Node arguments and nonempty `NODE_OPTIONS`
+or `NODE_PATH`; external preload/module dependencies are outside this bounded recipe.
+It does not stamp an existing Wasm as freshly built. A normal unpaired
 `sh web/emu/build.sh` stays available for development and does not claim a native match.
+Unsupported SDK provenance leaves that development build without a receipt.
 
 Matching means source/profile/logical build correspondence, with documented simulator
 adapters. It does not mean equal target/Emscripten flags or device execution. The runtime
