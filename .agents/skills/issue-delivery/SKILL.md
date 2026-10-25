@@ -7,7 +7,8 @@ description: Deliver individual issues or pull requests, or autonomously work th
 # Issue and PR delivery
 
 Produce changes the owner can verify and accept efficiently. Reassess the current
-problem, finish bounded work, and keep validation and unresolved decisions visible.
+problem and take the shortest supported path to a testable candidate. Finish bounded
+work, and keep implementation progress separate from review and hardware acceptance.
 
 ## Select the scope and authority
 
@@ -58,8 +59,13 @@ protections. Prepare a concrete result before asking for a necessary decision.
    code alone does not establish pending hardware acceptance.
 
 Proceed when the implementation owner, current gap, active work and required
-validation are known. If access or a decision blocks one package, keep its status
-explicit and continue independent work within scope.
+validation are known; research further when a concrete unresolved question affects
+correctness or acceptance. Reuse context and evidence already established in the
+run, refreshing facts affected by new commits, changed scope or external state.
+Keep adjacent ideas in the existing queue rather than expanding the investigation
+or writing another adoption plan. For research-only requests, deliver the requested
+analysis. If access or a decision blocks one package, keep its status explicit and
+continue independent work within scope.
 
 ## Choose a bounded package
 
@@ -68,12 +74,43 @@ impact, dependencies, risk and verification effort. For related issues, read the
 [batch procedure](../../../docs/development-batches.md); prefer two or three that
 share a subsystem and test setup. Keep independent changes in separate PRs and
 freeze each package's issue list, scope and acceptance checks before final testing.
+Prefer finishing an active package to starting another. Resolve routine implementation
+choices within the established contracts; escalate actual product, design or hardware
+decisions with a concrete recommendation. Queue unrelated discoveries for a later batch.
 
 Implement bounded UI defects and necessary functional improvements. For unresolved
 design foundations or major visual changes, prepare options, a recommendation and
 the decision needed. Keep experiments in isolated prototypes, branches or draft
 PRs with a hypothesis, check method and open decision. Adopting experimental
 behavior as a product default requires an explicit decision.
+
+## Reuse upstream implementations before redesigning
+
+When a selected feature or fix already exists in upstream or another firmware fork,
+prefer adopting its implementation over recreating it from a description. Inspect
+the relevant current donor source and dependencies; reuse existing source reviews
+when they cover the exact revision and files. Broad donor surveys belong to a
+requested research/watch task or a specific unresolved source-selection question.
+
+Pin the donor repository and full commit, retain attribution and notices, and check
+the copied files, assets and transitive dependencies under
+[CONTRIBUTING](../../../CONTRIBUTING.md), [LICENSING](../../../LICENSING.md) and the
+repository ownership rules above. Unresolved provenance or incompatible licensing
+blocks copying; a donor's root licence alone is insufficient.
+
+Start with the smallest faithful port and the glue Felucca needs: target compiler
+and HAL, part/voice ownership, memory and interrupt limits, stable IDs, persistence,
+protocol and native controls. Preserve donor DSP behavior where compatible and
+record necessary deviations. Reuse donor tests and fixtures where applicable, then
+cover Felucca's integration contracts. Donor success does not establish FM-1 acceptance.
+
+Optimize when measurements show a budget/deadline problem, a reproduced defect
+requires it, or optimization is explicitly in scope. Otherwise retain the adopted
+implementation and queue optional improvements. Keep a working port as the baseline
+for subsequent optimization; change one measured cause at a time. If it cannot run
+within the target's limits, make only the adaptations needed to establish that
+baseline and record the limitation. Avoid combining adoption with speculative DSP
+rewrites, new abstractions or unrelated cleanup.
 
 ## Delegate with the requested models
 
@@ -122,11 +159,15 @@ same toolchain, profile, flags and workload. Follow
 and resource provenance, including integrated deltas for a batch.
 
 Run affected checks during implementation, then the full applicable integrated
-validation and fresh target build required for firmware changes. Rebuild harnesses
-after source edits. Use emulator/simulator checks where useful and exercise browser
-flows and relevant errors yourself where available, following the repository's
-browser gate. Inspect warnings, skip hints and failure logs. Verify CI for the
-current PR head, not a superseded commit.
+validation and fresh target build at the frozen firmware candidate, following the
+batch procedure. Rebuild affected harnesses after source edits. One coordinator
+owns integrated builds; workers use focused checks and isolated outputs. Reuse
+successful evidence only when its revision, inputs, toolchain, profile and flags
+match the candidate and it covers the required checks. Repeat checks for changed
+inputs, failures or unresolved concerns. Use emulator/simulator checks where useful
+and exercise browser flows and relevant errors yourself where available, following
+the repository's browser gate. Inspect warnings, skip hints and failure logs. Verify
+CI for the current PR head, not a superseded commit.
 
 Report each check as passed, failed, unavailable/skipped or pending manual/device
 validation. Separate host regressions, target static budgets, browser behavior and
@@ -136,25 +177,28 @@ failures must be identified with evidence, not presented as a passing suite.
 
 ## Complete the review loop
 
-For an implementation-ready PR with authorized remote writes, obtain Codex Review
-and CodeRabbit Review where available. Check existing reviews and repository review
-configuration first; reuse current coverage and request deliberately rather than
-posting repeated commands. Follow [the CodeRabbit guide](../../../.github/CODERABBIT.md).
+For an implementation-ready PR with authorized remote writes, obtain Codex Review.
+Automatic CodeRabbit feedback is advisory under
+[the CodeRabbit guide](../../../.github/CODERABBIT.md). Inspect available relevant
+feedback without waiting for CodeRabbit to run or its quota to reset. Check existing
+reviews and repository review configuration first; reuse current coverage and
+request deliberately rather than posting repeated commands.
 Review requests belong to the authorized delivery workflow; ordinary status comments
 must not accidentally address bots or copy their command handles.
 
-Wait for results and inspect all relevant findings and threads against the current
-code and requirement. Apply sound corrections; explain inaccurate or inapplicable
+Wait for required review results and inspect all relevant findings and threads
+against the current code and requirement. Apply sound corrections; explain inaccurate or inapplicable
 suggestions with evidence. Rerun affected checks, verify CI on the new head and
-request fresh review after material changes. Retain coverage identity: a review
-of an earlier head does not automatically cover subsequent changes.
+batch related corrections before requesting fresh review after material changes.
+Retain coverage identity: a review of an earlier head does not automatically cover
+subsequent changes.
 
-When review/CI is unavailable, failing or persistently pending, record the exact
-missing gate and move to independent work. Missing results are not approval;
+When required review/CI is unavailable, failing or persistently pending, record
+the exact missing gate and move to independent work. Missing results are not approval;
 avoid polling or requesting reviews indefinitely without new evidence.
-For autonomous merging, both Codex and CodeRabbit reviews are required unless an
-explicit repository/user policy accepts an alternative. Service unavailability
-leaves that gate pending rather than making the review optional.
+Codex unavailability leaves the required review pending unless an explicit
+repository/user policy accepts an alternative. CodeRabbit availability is not a
+merge prerequisite.
 
 ## Merge gate and hardware handoff
 

@@ -191,6 +191,11 @@ static int drum_from_perc(uint32_t engine, int16_t *e)
     return 1;
 }
 
+/* the sends a factory preset without its own (preset_t.fx[i] 0; FX() stores the value + 1) gets: DIST CHORUS DELAY
+ * REVERB (P_DIST..). Defined once: sound.c (factory presets) and fm4_convert.c (DIGITAL's presets) read it, and
+ * tests/retired_vectors.c records it, so the two paths cannot drift apart (#299) */
+static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
+
 /* ------------------------------------------------- voices, engines --- */
 enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */
 /* voice_t, vmod_t, preset_t, engine_t: felucca_engine.h (above) */
