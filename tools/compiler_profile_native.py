@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 
 SOURCE = "baae84778dc3dc4602b1a2c3a1e1d40e8885f777"
 ENGINE = "9630426f5c4a34a209ca851356fbe8ba3c4c6d19"
@@ -125,10 +126,23 @@ def main(root, out):
         capture = bool(options.get("capture_output"))
         echo_stdout = not capture and options.get("stdout") is None
         echo_stderr = not capture and options.get("stderr") is None
+        def disposition(value):
+            if capture or value == subprocess.PIPE:
+                return "captured"
+            if value == subprocess.DEVNULL:
+                return "caller-discarded"
+            if value == subprocess.STDOUT:
+                return "merged-into-stdout"
+            return "captured-and-echoed"
+        stream_disposition = {key: disposition(options.get(key)) for key in ("stdout", "stderr")}
         if not capture:
-            if any(options.get(key) not in (None, subprocess.PIPE) for key in ("stdout", "stderr")):
+            if (options.get("stdout") not in (None, subprocess.PIPE, subprocess.DEVNULL) or
+                    options.get("stderr") not in (None, subprocess.PIPE, subprocess.DEVNULL, subprocess.STDOUT)):
                 raise ValueError("unexpected explicit stream redirection in fixed producer")
-            options.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Preserve intentional discard/merge requests; capture only inherited streams.
+            for key in ("stdout", "stderr"):
+                if options.get(key) is None:
+                    options[key] = subprocess.PIPE
         start, utc = time.perf_counter_ns(), datetime.now(timezone.utc).isoformat()
         error = None
         try:
@@ -147,7 +161,8 @@ def main(root, out):
             row = {"run": active, "argv": [str(a) for a in args],
                    "returncode": result.returncode, "start_ns": start, "end_ns": end,
                    "seconds": (end-start)/1e9, "utc_start": utc,
-                   "stdout": f"{stem}.stdout", "stderr": f"{stem}.stderr"}
+                   "stdout": f"{stem}.stdout", "stderr": f"{stem}.stderr",
+                   "stream_disposition": stream_disposition}
             records.append(row)
             with (out / "commands.jsonl").open("a") as stream:
                 stream.write(json.dumps(row) + "\n")
@@ -282,6 +297,7 @@ if __name__ == "__main__":
         main(root, output)
     except BaseException as error:
         status = 1
+        (output / "traceback.txt").write_text(traceback.format_exc())
         write(output / "FAILURE.json", {"type": type(error).__name__, "message": str(error),
                                        "comparison_qualified": False})
         print(f"native comparison failed: {error}", file=sys.stderr)
