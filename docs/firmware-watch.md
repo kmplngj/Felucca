@@ -8,6 +8,15 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [Matryoshka adoption review](matryoshka-adoption-plan-2026-10-25.md), tracked in
+[Felucca #672](https://github.com/kmplngj/Felucca/issues/672), proposes a pending
+`glvno/matryoshka` main registration at
+`99f1149d55fa549c4202e6f5080610770399c832` (841 reachable commits, zero individually
+reviewed). The complete non-shallow main graph was fetched and integrity checked.
+The local registration requires ordinary review to main and state-branch integration
+before the existing runner verifies identity, branch, immutable pin and full history
+and initializes it. This snapshot creates no per-commit credit or new schedule.
+
 [Registration #446](https://github.com/kmplngj/Felucca/issues/446) adds two pending
 sources on `main`: `okumurari2/maku` (repository ID `1411236607`), retaining
 historical target `2aea69253110233f0934da0444381177a2bbd7d5`, and

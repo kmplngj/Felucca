@@ -331,6 +331,41 @@
       "requested_at": "2026-10-18",
       "source_name": "Tessera (formerly Melodee-Tess)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/672",
+      "authorization": "User requested on 2026-10-25: analyse glvno/matryoshka firmware and optimizations, create justified adoption issues and consider adding it to the firmware watcher. Source review recommends registration.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "99f1149d55fa549c4202e6f5080610770399c832"
+      },
+      "historical_total_at_setup": 841,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; verify repository identity/main/pin, fetch complete non-shallow DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. This source snapshot grants no per-commit coverage.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "99f1149d55fa549c4202e6f5080610770399c832"
+      },
+      "recent_frontiers": {
+        "main": "99f1149d55fa549c4202e6f5080610770399c832"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/672",
+        "https://github.com/kmplngj/Felucca/issues/179",
+        "https://github.com/kmplngj/Felucca/issues/180",
+        "https://github.com/kmplngj/Felucca/issues/59",
+        "https://github.com/kmplngj/Felucca/issues/32",
+        "https://github.com/kmplngj/Felucca/issues/33"
+      ],
+      "repository": "glvno/matryoshka",
+      "repository_id": 1416374163,
+      "requested_at": "2026-10-25",
+      "source_name": "Matryoshka (Modular-1-derived nested modular synth; exact coefficient caches, partial LCD updates, A/B morphs and macro ranges)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [
