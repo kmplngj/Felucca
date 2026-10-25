@@ -148,6 +148,32 @@ class AppGuards(unittest.TestCase):
                     noinit_header(self.noinit_used) + " 6 .missing bad 00000000\n  ALLOC, CODE\n"):
             self.assertIn("soft-double: missing or malformed section evidence", " ".join(self.check(hdr=hdr, syms=syms)))
 
+    def test_soft_double_gnu_unknown_or_malformed_attributes_fail_closed(self):
+        syms = symbols(self.values) + noinit_symbols(self.noinit_used)
+        syms += "02000200 g F .text 00000040 __adddf3\n"
+        for attrs in ("CONTENTS, ALLOC, LOAD, READONLY, COD",
+                      "CONTENTS, ALLOC, LOAD, READONLY, CODE, UNKNOWN",
+                      "ALLOC, UNKNOWN", "", "CONTENTS, , ALLOC, CODE"):
+            with self.subTest(attrs=attrs):
+                hdr = noinit_header(self.noinit_used).replace(
+                    "CONTENTS, ALLOC, LOAD, READONLY, CODE", attrs)
+                errors, notes = self.run_check(hdr=hdr, syms=syms)
+                self.assertIn("soft-double: missing or malformed section evidence", " ".join(errors))
+                self.assertNotIn("no known soft-double", " ".join(notes))
+
+    def test_soft_double_gnu_known_nonexecutable_attributes_pass(self):
+        syms = symbols(self.values) + noinit_symbols(self.noinit_used)
+        syms += "02000200 g F .text 00000040 __adddf3\n"
+        # The section name alone cannot establish ALLOC or CODE.
+        for attrs in ("CODE", "CONTENTS, CODE", "ALLOC",
+                      "CONTENTS, ALLOC, LOAD, DATA", "CONTENTS, READONLY, DEBUGGING"):
+            with self.subTest(attrs=attrs):
+                hdr = noinit_header(self.noinit_used).replace(
+                    "CONTENTS, ALLOC, LOAD, READONLY, CODE", attrs)
+                errors, notes = self.run_check(hdr=hdr, syms=syms)
+                self.assertEqual(errors, [])
+                self.assertIn("no known soft-double helpers defined in final executable sections", notes)
+
     def test_soft_double_native_jieli_section_headers(self):
         for section in (".text", ".ram_text", ".c1_text"):
             hdr = ("probe.elf:\tfile format ELF32-pi32v2\n\nSections:\n"

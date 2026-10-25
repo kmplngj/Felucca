@@ -163,7 +163,10 @@ weak and zero-sized aliases. The diagnostic lists the names: inspect the express
 that introduced them and use intentional fp32/fixed-point operations. There is no
 profile or radio exemption and no override flag.
 
-GNU-style section headers must show `ALLOC` and `CODE`. The installed JieLi
+GNU-style section headers must show `ALLOC` and `CODE`. Their attribute lists use
+only the reviewed words `CONTENTS`, `ALLOC`, `LOAD`, `READONLY`, `CODE`, `DATA` and
+`DEBUGGING`; an unknown word or malformed list cannot establish nonexecution for a
+matching helper and fails with a section-evidence diagnostic. The installed JieLi
 objdump instead reports `TEXT`/`DATA`; for that format, the detector requires `TEXT`
 in one of `app.ld`'s allocated executable outputs (`.text`, `.ram_text`, `.c1_text`).
 An unfamiliar `TEXT` output containing a matching helper fails with a section-evidence

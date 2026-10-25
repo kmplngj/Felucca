@@ -530,7 +530,11 @@ def soft_double_check(hdr, syms):
                 section = None
         elif section:
             if re.fullmatch(r"\s*[A-Z_]+(?:,\s*[A-Z_]+)*\s*", line):
-                sections[section] = set(line.replace(",", " ").split())
+                attrs = set(line.replace(",", " ").split())
+                # An unknown word may be a damaged CODE/ALLOC marker, not
+                # evidence that a matching helper lives outside executable code.
+                if attrs <= {"CONTENTS", "ALLOC", "LOAD", "READONLY", "CODE", "DATA", "DEBUGGING"}:
+                    sections[section] = attrs
             section = None
 
     found, errors = set(), []
