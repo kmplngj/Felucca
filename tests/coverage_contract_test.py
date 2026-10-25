@@ -68,6 +68,99 @@ class ContractTests(unittest.TestCase):
              patch.object(C, 'selected_engines', return_value=[0]):
             return C.verify(path, 'fresh', self.root)
 
+    def shard_receipts(self):
+        metadata = dict(needs=[], capabilities=['case'])
+        plan = ''.join(name + '\t\techo test\t@coverage=' + json.dumps(metadata) + '\n'
+                       for name in ('unit_a', 'unit_b'))
+        (self.root / 'tests/run_tests.sh').write_text("#!/bin/sh\ncat <<'PLAN'\n" + plan + 'PLAN\n')
+        paths = []
+        for index, name in enumerate(('unit_a', 'unit_b'), 1):
+            directory = self.root / ('receipt-' + str(index))
+            directory.mkdir()
+            d = copy.deepcopy(self.data)
+            d.update(run_id='fresh-' + str(index), checkout_root=str(self.root), logs_root='/other/runner/logs',
+                     scope=dict(kind='shard', index=index, count=2, cohort='cohort'),
+                     compiler_map={'cc': [sys.executable]})
+            for stage, contents in (('plan.stdout.log', plan), ('plan.stderr.log', ''), ('preflight.log', 'ok')):
+                (directory / stage).write_text(contents)
+            d['stage_logs'] = {p.name: C.digest(p) for p in directory.iterdir()}
+            d['plan_sha256'] = C.digest(directory / 'plan.stdout.log')
+            d['summary']['scope'] = d['scope']
+            d['summary']['units'][0]['name'] = name
+            d['units'][0]['name'] = name
+            for event in d['units'][0]['events']:
+                event['run_id'] = d['run_id']
+            (directory / 'unit.log').write_bytes((self.logs / 'unit.log').read_bytes())
+            d['outputs'] = {p: value for p, value in d['outputs'].items() if C.REQUIRED_OUTPUTS[p] is None}
+            for output in d['outputs']:
+                destination = directory / 'outputs' / output
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes((self.root / output).read_bytes())
+            C.atomic(directory / 'coverage.json', d)
+            paths.append(directory)
+        return paths
+
+    def verify_shards(self, paths, cohort='cohort'):
+        with patch.object(C, 'snapshot', return_value=self.source), \
+             patch.object(C, 'host_config', return_value={'fixture': True}), \
+             patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']), \
+             patch.object(C, 'selected_engines', return_value=[0]), \
+             patch.object(C, 'compiler_environment', return_value=({}, {'cc': [sys.executable]})):
+            return C.verify_shards(paths, cohort, self.root)
+
+    def test_aggregate_requires_all_shards_fresh_cohort_and_unmodified_evidence(self):
+        paths = self.shard_receipts()
+        self.assertEqual(self.verify_shards(paths)['status'], 'complete')
+        for receipts, cohort in ((paths[:1], 'cohort'), (paths + paths[:1], 'cohort'),
+                                 ([paths[0], paths[0]], 'cohort'), (paths, 'old-cohort')):
+            with self.subTest(receipts=receipts, cohort=cohort), self.assertRaises(ValueError):
+                self.verify_shards(receipts, cohort)
+        report = paths[1] / 'coverage.json'
+        original = C.read_json(report)
+        for mutation in ('duplicate_unit', 'missing_unit', 'stale_run', 'failed', 'skip', 'compiler', 'source'):
+            d = copy.deepcopy(original)
+            if mutation == 'duplicate_unit':
+                d['units'][0]['name'] = d['summary']['units'][0]['name'] = 'unit_a'
+            elif mutation == 'missing_unit':
+                d['units'] = d['summary']['units'] = []
+            elif mutation == 'stale_run': d['run_id'] = 'fresh-1'
+            elif mutation == 'failed': d['summary']['status'] = 'failed'
+            elif mutation == 'skip': d['summary']['units'][0]['status'] = 'skipped'
+            elif mutation == 'compiler': d['compiler_hashes'][sys.executable] = 'wrong'
+            else: d['before'] = d['after'] = dict(self.source, revision='b' * 40)
+            C.atomic(report, d)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                self.verify_shards(paths)
+        C.atomic(report, original)
+        for name in ('unit.log', 'preflight.log', 'plan.stderr.log', 'outputs/build/felucca.dis'):
+            file = paths[1] / name
+            before = file.read_bytes()
+            file.write_bytes(before + b'changed')
+            with self.subTest(log=name), self.assertRaises(ValueError):
+                self.verify_shards(paths)
+            file.write_bytes(before)
+
+    def test_aggregate_accepts_relocated_checkout_without_weakening_input_or_flag_checks(self):
+        paths = self.shard_receipts()
+        self.source['configuration'] = {'CC': str(self.root / 'tools/cc') + ' -DVALUE=1'}
+        for directory in paths:
+            d = C.read_json(directory / 'coverage.json')
+            d['checkout_root'] = '/separate/runner/source'
+            d['before'] = d['after'] = dict(self.source, configuration={
+                'CC': '/separate/runner/source/tools/cc -DVALUE=1'})
+            C.atomic(directory / 'coverage.json', d)
+        self.assertEqual(self.verify_shards(paths)['status'], 'complete')
+        d = C.read_json(paths[1] / 'coverage.json')
+        d['before']['configuration']['CC'] += ' -DOTHER=1'
+        C.atomic(paths[1] / 'coverage.json', d)
+        with self.assertRaisesRegex(ValueError, 'source/configuration'):
+            self.verify_shards(paths)
+
+    def test_partial_receipts_never_satisfy_full_verifier(self):
+        for kind in ('shard', 'focused'):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'partial scope'):
+                self.verify(scope=dict(kind=kind))
+
     def test_complete_fixture_requires_real_child_and_capability_completion(self):
         self.verify()
         for changed in ('no_events', 'no_capability', 'fake_skip', 'changed_declaration'):
@@ -434,41 +527,55 @@ class LifecycleTests(unittest.TestCase):
             helper = shlex.quote(str(ROOT / 'tools/test_coverage.py'))
             metadata = json.dumps(dict(needs=[], capabilities=['case']))
             plan = ''.join(f'{name}\t{dependency}\techo\t{name}\t@coverage={metadata}\n'
-                           for name, dependency in (('a', ''), ('b', ''), ('c', 'a b')))
+                           for name, dependency in (('a', ''), ('b', ''), ('c', 'a b'), ('d', ''), ('e', '')))
             script.write_text("#!/bin/sh\ncase \"$1\" in\n--preflight) echo preflight;;\n--plan) cat <<'PLAN'\n" +
                               plan + 'PLAN\n;;\n--unit)\n' +
                               f'python3 {helper} command sh -c "echo actual-$2" || exit $?\n' +
                               f'python3 {helper} outcome case passed\n;;\nesac\n')
             source = dict(revision='a' * 40, inputs={'fixture': C.digest(script)}, configuration={})
-            semantic = []
-            for jobs in (1, 2):
-                for compact in (False, True):
-                    env = dict(os.environ, TEST_JOBS=str(jobs), FELUCCA_COVERAGE_REPORT=str(root / 'coverage.json'),
-                               FELUCCA_COVERAGE_ID=f'run-{jobs}-{compact}')
-                    env.pop('FELUCCA_COVERAGE_UNIT', None)
-                    # This intentionally small source/engine fixture still runs the real
-                    # shell, scheduler, private shims, child adapter and report writer.
-                    with patch.object(J, '__file__', str(root / 'tests/test_jobs.py')), \
-                         patch.object(C, 'snapshot', return_value=source), \
-                         patch.object(C, 'selected_engines', return_value=[0]), \
-                         patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']):
-                        # Redirect fd1 too: report_log copies raw bytes to stdout.buffer.
-                        with tempfile.TemporaryFile() as output:
-                            old = os.dup(1)
-                            try:
-                                sys.stdout.flush()
-                                os.dup2(output.fileno(), 1)
-                                self.assertEqual(J.execute(script, root / 'host', env, compact, True), 0)
-                            finally:
-                                sys.stdout.flush()
-                                os.dup2(old, 1)
-                                os.close(old)
-                    report = json.loads((root / 'coverage.json').read_text())
-                    self.assertEqual(report['status'], 'complete')
-                    self.assertEqual(report['summary']['preflight']['status'], 'passed')
+            semantic, receipts = [], []
+            for output in ('build/felucca.dis', 'build/emu/felucca.wasm'):
+                destination = root / output
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(b'shared prerequisite')
+            cases = [(jobs, compact, dict(kind='full')) for jobs in (1, 2) for compact in (False, True)]
+            cases += [(2, True, dict(kind='shard', index=i, count=2, cohort='integration')) for i in (1, 2)]
+            for jobs, compact, scope in cases:
+                env = dict(os.environ, TEST_JOBS=str(jobs), FELUCCA_COVERAGE_REPORT=str(root / 'coverage.json'),
+                           FELUCCA_COVERAGE_ID=f'run-{jobs}-{compact}-{scope.get("index", 0)}')
+                env.pop('FELUCCA_COVERAGE_UNIT', None)
+                # This intentionally small source/engine fixture still runs the real
+                # shell, scheduler, private shims, child adapter and report writer.
+                with patch.object(J, '__file__', str(root / 'tests/test_jobs.py')), \
+                     patch.object(C, 'snapshot', return_value=source), \
+                     patch.object(C, 'selected_engines', return_value=[0]), \
+                     patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']):
+                    # Redirect fd1 too: report_log copies raw bytes to stdout.buffer.
+                    with tempfile.TemporaryFile() as output:
+                        old = os.dup(1)
+                        try:
+                            sys.stdout.flush()
+                            os.dup2(output.fileno(), 1)
+                            self.assertEqual(J.execute(script, root / 'host', env, compact, True, scope), 0)
+                        finally:
+                            sys.stdout.flush()
+                            os.dup2(old, 1)
+                            os.close(old)
+                report = json.loads((root / 'coverage.json').read_text())
+                self.assertEqual(report['status'], 'complete')
+                self.assertEqual(report['summary']['preflight']['status'], 'passed')
+                if scope['kind'] == 'shard':
+                    receipts.append(Path(report['logs_root']))
+                else:
                     semantic.append([(u['name'], [(e['kind'], e.get('name'), e.get('returncode')) for e in
-                                                sorted(u['events'], key=lambda e: e['kind'])]) for u in report['units']])
+                                            sorted(u['events'], key=lambda e: e['kind'])]) for u in report['units']])
             self.assertTrue(all(s == semantic[0] for s in semantic))
+            with patch.object(C, 'snapshot', return_value=source), \
+                 patch.object(C, 'selected_engines', return_value=[0]), \
+                 patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']):
+                result = C.verify_shards(receipts, 'integration', root)
+                self.assertEqual(set(result['units']), {'a', 'b', 'c', 'd', 'e'})
+
 
 
 class CompilerTests(unittest.TestCase):

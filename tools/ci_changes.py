@@ -26,6 +26,38 @@ BACKUP_INPUTS = {"web/fm1backup.js", "web/test_backup.mjs"}
 REVIEW_INPUTS = {"AGENTS.md", ".coderabbit.yaml", ".github/CODERABBIT.md",
                  ".agents/skills/firmware-watch/SKILL.md"}
 
+# Draft feedback is deliberately narrower than acceptance. Shared contracts,
+# persistence, protocol, build inputs and unfamiliar paths retain full validation.
+UI_FEEDBACK = ('ui', 'ui_render', 'ui_compare', 'settings', 'boot_splash', 'frame')
+DSP_FEEDBACK = ('regression', 'sound_install', 'engines', 'union', 'arena')
+
+
+def feedback(event_name, event, selection, release=False):
+    pr = event.get('pull_request', {})
+    if (release or event_name != 'pull_request' or not isinstance(pr, dict) or pr.get('draft') is not True
+            or not selection['suites']['full']):
+        return 'full', []
+    units = set()
+    for path in selection['paths']:
+        suites = select([path])
+        if not any(suites.values()):
+            continue
+        if not suites['full']:
+            return 'full', []  # Mixed independent suites need their normal gates.
+        if path.startswith('firmware/src/ui') and path.endswith('.c'):
+            units.update(UI_FEEDBACK)
+        elif (path.startswith('firmware/src/eng_') and path.endswith('.c')
+              and path != 'firmware/src/eng_macro.c'):
+            units.update(DSP_FEEDBACK)
+            engine = Path(path).stem.removeprefix('eng_')
+            if engine in {'phys', 'drum', 'noise', 'fm6', 'slice'}:
+                units.add(engine)
+        elif path == 'firmware/src/fx.c':
+            units.update(('regression', 'fx_rest', 'audio_transitions', 'insert', 'chorus', 'sends'))
+        else:
+            return 'full', []
+    return ('quick', sorted(units)) if units else ('full', [])
+
 
 def select(paths, force=False):
     selected = dict.fromkeys(SUITES, False)
@@ -97,11 +129,19 @@ def main():
         result = {"suites": select([], force=True), "reason": str(error), "paths": []}
     else:
         result = plan(os.environ.get("GITHUB_EVENT_NAME", ""), event, args.release)
+    stage, units = feedback(os.environ.get('GITHUB_EVENT_NAME', ''),
+                            event if 'event' in locals() and isinstance(event, dict) else {},
+                            result, args.release)
+    result['stage'], result['focus'] = stage, units
+    matrix = {'include': [{'shard': 1, 'total': 1}]} if stage == 'quick' else {
+        'include': [{'shard': 1, 'total': 2}, {'shard': 2, 'total': 2}]}
     print(json.dumps(result, indent=2, ensure_ascii=True))
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a") as stream:
             for suite, enabled in result["suites"].items():
                 stream.write(f"{suite}={str(enabled).lower()}\n")
+            stream.write(f'stage={stage}\nfocus={",".join(units)}\n')
+            stream.write('matrix=' + json.dumps(matrix, separators=(',', ':')) + '\n')
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as stream:
             stream.write("### CI selection\n\n")

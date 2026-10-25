@@ -17,6 +17,9 @@ import runpy
 import unittest
 
 SCHEMA = 1
+REQUIRED_OUTPUTS = {'build/felucca.dis': None, 'build/emu/felucca.wasm': None,
+                    'build/host/asan/fuzz_ed': 'asan_fuzz_ed', 'build/host/phys_ref': 'phys_ref',
+                    'build/host/regress': 'regression', 'build/host/regress_os': 'regression'}
 PRODUCERS = {'tests/target_budget.py': {'target-budget'},
              'tests/install_test.py': {'js-synthetic', 'built-package-parity', 'official-v15'},
              'tests/fx_rest_test.py': {'fx-rest'},
@@ -124,6 +127,48 @@ def command_policy(argv):
     python = bool(argv and Path(argv[0]).name.startswith('python') and
                   len(argv) > offset and argv[offset].endswith('.py'))
     return sorted(outcomes), python, offset
+
+
+def shard_plan(plan, count=2):
+    """Partition dependency-connected components; each unit has one owner."""
+    if count != 2:
+        raise ValueError('host coverage supports exactly two shards')
+    parents = {u['name']: u['name'] for u in plan}
+    def owner(name):
+        while parents[name] != name:
+            name = parents[name]
+        return name
+    for unit in plan:
+        for dependency in unit['dependencies']:
+            parents[owner(unit['name'])] = owner(dependency)
+    components = {}
+    for unit in plan:
+        components.setdefault(owner(unit['name']), []).append(unit['name'])
+    groups = [set() for _ in range(count)]
+    for names in sorted(components.values(), key=lambda names: (-len(names), names[0])):
+        groups[min(range(count), key=lambda i: (len(groups[i]), i))].update(names)
+    return [[u['name'] for u in plan if u['name'] in names] for names in groups]
+
+
+def select_plan(plan, scope):
+    if scope['kind'] == 'full':
+        return plan
+    if scope['kind'] == 'shard':
+        names = set(shard_plan(plan, scope['count'])[scope['index'] - 1])
+    elif scope['kind'] == 'focused':
+        names = set(scope['selected'])
+        by_name = {u['name']: u for u in plan}
+        if not names or names - by_name.keys():
+            raise ValueError('unknown or empty focused host unit selection')
+        pending = list(names)
+        while pending:
+            for dependency in by_name[pending.pop()]['dependencies']:
+                if dependency not in names:
+                    names.add(dependency)
+                    pending.append(dependency)
+    else:
+        raise ValueError('unknown host coverage scope')
+    return [u for u in plan if u['name'] in names]
 
 
 def write_event(kind, **data):
@@ -309,70 +354,113 @@ class Coverage:
         data['compiler_hashes'] = self.compiler_hashes
         data['baselines'] = self.baselines
         data['engine_ids'] = self.engine_ids
+        data['checkout_root'] = str(self.root.resolve())
+        data['scope'] = summary.get('scope', dict(kind='full'))
         data['outputs'] = {p: dict(sha256=digest(self.root / p), bytes=(self.root / p).stat().st_size)
                            for p in ('build/felucca.dis', 'build/emu/felucca.wasm', 'build/host/asan/fuzz_ed',
                                      'build/host/phys_ref', 'build/host/regress', 'build/host/regress_os')
                            if (self.root / p).is_file()}
+        if data['scope']['kind'] == 'shard':
+            # A receipt remains verifiable after artifact download into another checkout.
+            names = {u['name'] for u in summary['units']}
+            data['outputs'] = {p: item for p, item in data['outputs'].items()
+                               if REQUIRED_OUTPUTS[p] is None or REQUIRED_OUTPUTS[p] in names}
+            for p in data['outputs']:
+                destination = logs / 'outputs' / p
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(self.root / p, destination)
         for unit in summary['units']:
             events = [read_json(p) for p in sorted((logs / (unit['name'] + '.coverage')).glob('*.json'))]
             data['units'].append(dict(name=unit['name'], events=events, log=unit['log'],
                                       log_sha256=digest(logs / unit['log'])))
         data['logs_root'] = str(logs.resolve())
+        data['stage_logs'] = {name: digest(logs / name) for name in
+                              ('preflight.log', 'plan.stdout.log', 'plan.stderr.log') if (logs / name).is_file()}
         data['plan_sha256'] = digest(logs / 'plan.stdout.log') if (logs / 'plan.stdout.log').exists() else None
         if data['before'] != data['after']:
             summary['status'] = 'failed'
         data['status'] = 'complete' if summary['status'] == 'passed' and data['before'] == data['after'] else 'incomplete'
         atomic(self.path, data)
+        if data['scope']['kind'] == 'shard' and self.path != logs / 'coverage.json':
+            atomic(logs / 'coverage.json', data)
         summary['coverage'] = dict(path=str(self.path), run_id=self.run_id)
         self.temporary.cleanup()
         return data['before'] == data['after']
 
 
 def verify(path, run_id, root=ROOT):
+    return _verify(path, run_id, root)
+
+
+def _verify(path, run_id, root=ROOT, shard=False):
     def require(condition, message):
         if not condition:
             raise ValueError('incomplete test coverage: ' + message)
 
     d = read_json(path)
+    scope = d.get('scope', dict(kind='full'))
+    require(scope.get('kind') == ('shard' if shard else 'full'), 'partial scope cannot establish full coverage')
     require(d.get('schema') == SCHEMA and d.get('run_id') == run_id and bool(run_id), 'schema or run identity')
     require(not any(key in os.environ for key in ('GOLDEN_UPDATE', 'BUDGET_UPDATE')),
             'baseline update mode is not comparison coverage')
     require(d.get('status') == 'complete', 'run not complete')
-    require(d.get('before') == d.get('after') == snapshot(root, os.environ), 'source/configuration changed or stale')
-    require(d['compiler'] == host_config(), 'host compiler/configuration changed')
-    require(d['baselines'] == baseline_config(d['compiler'], root), 'CPU baseline selection changed')
+    normalize = (lambda value: portable(value, d.get('checkout_root', ''), root)) if shard else (lambda value: value)
+    require(d.get('before') == d.get('after') and normalize(d.get('before')) == snapshot(root, os.environ),
+            'source/configuration changed or stale')
+    require(normalize(d['compiler']) == host_config(), 'host compiler/configuration changed')
+    require(d['baselines'] == baseline_config(normalize(d['compiler']), root), 'CPU baseline selection changed')
     require(d['engine_ids'] == selected_engines(root, os.environ), 'profile applicability changed')
-    require(d['compiler_hashes'] and all(digest(p) == sha for p, sha in d['compiler_hashes'].items()),
-            'compiler executable changed or absent')
+    if shard:
+        with tempfile.TemporaryDirectory() as temporary:
+            _, mapping = compiler_environment(dict(os.environ), Path(temporary) / 'bin')
+            require(compiler_identity(d['compiler_map'], d['compiler_hashes'], normalize) ==
+                    compiler_identity(mapping, {a[0]: digest(a[0]) for a in mapping.values()}),
+                    'compiler executable changed or absent')
+    else:
+        require(d['compiler_hashes'] and all(digest(p) == sha for p, sha in d['compiler_hashes'].items()),
+                'compiler executable changed or absent')
     summary = d['summary']
+    require(summary.get('scope', dict(kind='full')) == scope, 'runner scope mismatch')
     require(summary['status'] == 'passed' and summary.get('signal') is None, 'runner failed or cancelled')
     for stage in ('preflight', 'plan'):
         require(summary.get(stage, {}).get('status') == 'passed' and summary[stage].get('returncode') == 0,
                 stage + ' not complete')
-    logs = Path(d['logs_root'])
+    logs = Path(path).resolve().parent if shard else Path(d['logs_root'])
     require(digest(logs / 'plan.stdout.log') == d['plan_sha256'], 'plan log changed')
+    if shard:
+        require(set(d.get('stage_logs', {})) == {'preflight.log', 'plan.stdout.log', 'plan.stderr.log'} and
+                all(Path(name).name == name and digest(logs / name) == sha
+                    for name, sha in d['stage_logs'].items()), 'preflight/plan log changed or absent')
     names = [u['name'] for u in summary['units']]
     require(names and len(names) == len(set(names)), 'missing/duplicate units')
     require(names == [u['name'] for u in d['units']], 'unit evidence mismatch')
     expected = subprocess.check_output(['sh', str(Path(root) / 'tests/run_tests.sh'), '--plan'],
                                        cwd=root, text=True)
     require(hashlib.sha256(expected.encode()).hexdigest() == d['plan_sha256'], 'source plan does not match evidence')
-    require([line.split('\t')[0] for line in expected.splitlines()] == names, 'expected unit absent')
-    for line, unit in zip(expected.splitlines(), summary['units']):
+    expected_lines = expected.splitlines()
+    if shard:
+        selected = select_plan([dict(name=line.split('\t')[0], dependencies=line.split('\t')[1].split())
+                                for line in expected_lines], scope)
+        selected_names = {u['name'] for u in selected}
+        expected_lines = [line for line in expected_lines if line.split('\t')[0] in selected_names]
+    require([line.split('\t')[0] for line in expected_lines] == names, 'expected unit absent')
+    for line, unit in zip(expected_lines, summary['units']):
         fields = line.split('\t')
         metadata = json.loads(fields.pop().split('=', 1)[1])
         require(unit['dependencies'] == fields[1].split() and unit['command'] == fields[2:] and
                 unit['needs'] == metadata['needs'] and unit['capabilities'] == metadata['capabilities'] and
                 unit.get('producers', []) == metadata.get('producers', []),
                 unit['name'] + ': declared plan metadata changed')
-    required_outputs = {'build/felucca.dis', 'build/emu/felucca.wasm', 'build/host/asan/fuzz_ed',
-                        'build/host/phys_ref', 'build/host/regress', 'build/host/regress_os'}
+    required_outputs = {p for p, owner in REQUIRED_OUTPUTS.items() if not shard or owner is None or owner in names}
     require(set(d['outputs']) == required_outputs, 'required outputs absent')
-    require(all(item['bytes'] > 0 and (Path(root) / p).stat().st_size == item['bytes'] and
-                digest(Path(root) / p) == item['sha256'] for p, item in d['outputs'].items()),
+    output_root = logs / 'outputs' if shard else Path(root)
+    require(all(item['bytes'] > 0 and (output_root / p).stat().st_size == item['bytes'] and
+                digest(output_root / p) == item['sha256'] for p, item in d['outputs'].items()),
             'required output empty, stale or changed')
     for unit, evidence in zip(summary['units'], d['units']):
         name = unit['name']
+        require(Path(unit['log']).name == unit['log'] and evidence['log'] == unit['log'],
+                name + ': invalid log identity')
         require(digest(logs / unit['log']) == evidence['log_sha256'], name + ': log changed')
         if unit['status'] == 'not_applicable':
             require(not evidence['events'] and unit.get('returncode') is None, name + ': excluded unit executed')
@@ -468,6 +556,55 @@ def verify(path, run_id, root=ROOT):
     return d
 
 
+def portable(value, old_root, root):
+    """Relocate only the recorded checkout prefix; all semantic values stay exact."""
+    if not old_root or not Path(old_root).is_absolute():
+        raise ValueError('coverage receipt lacks checkout identity')
+    if isinstance(value, str):
+        return value.replace(old_root + '/', str(Path(root).resolve()) + '/') if old_root != str(root) else value
+    if isinstance(value, list):
+        return [portable(v, old_root, root) for v in value]
+    if isinstance(value, dict):
+        return {k: portable(v, old_root, root) for k, v in value.items()}
+    return value
+
+
+def compiler_identity(mapping, hashes, normalize=lambda value: value):
+    if not mapping or not hashes or any(argv[0] not in hashes for argv in mapping.values()):
+        raise ValueError('incomplete compiler identity')
+    return {alias: dict(executable=normalize(argv[0]), arguments=normalize(argv[1:]), sha256=hashes[argv[0]])
+            for alias, argv in mapping.items()}
+
+
+def verify_shards(paths, cohort, root=ROOT):
+    """Require two independent, complete receipts covering the source DAG once."""
+    if len(paths) != 2 or not cohort:
+        raise ValueError('coverage requires exactly two shard receipts and a cohort identity')
+    reports, identities, indexes = [], set(), set()
+    for directory in paths:
+        path = Path(directory) / 'coverage.json'
+        d = read_json(path)
+        scope = d.get('scope', {})
+        if (scope.get('kind') != 'shard' or scope.get('count') != 2 or
+            type(scope.get('index')) is not int or scope['index'] not in (1, 2) or
+            scope.get('cohort') != cohort or not d.get('run_id') or
+            d['run_id'] in identities or scope['index'] in indexes):
+            raise ValueError('missing, duplicate or stale shard identity')
+        identities.add(d['run_id'])
+        indexes.add(scope['index'])
+        reports.append(_verify(path, d['run_id'], root, shard=True))
+    names = [u['name'] for d in reports for u in d['units']]
+    expected = subprocess.check_output(['sh', str(Path(root) / 'tests/run_tests.sh'), '--plan'], cwd=root, text=True)
+    if len(names) != len(set(names)) or set(names) != {line.split('\t')[0] for line in expected.splitlines()}:
+        raise ValueError('missing or duplicate shard units')
+    # Target/emulator inputs are prerequisites replicated independently on both runners.
+    for output in (p for p, owner in REQUIRED_OUTPUTS.items() if owner is None):
+        if reports[0]['outputs'][output] != reports[1]['outputs'][output]:
+            raise ValueError('shard prerequisite output differs: ' + output)
+    return dict(schema=SCHEMA, status='complete', cohort=cohort, units=names,
+                runs=sorted(identities), shards=2)
+
+
 def summarize(path):
     d = read_json(path)
     print('Structured host coverage: schema=%s status=%s invocation=%s revision=%s' %
@@ -509,6 +646,16 @@ def main():
             print('NOVEC=' + shlex.quote(' '.join(c['novec'])))
         else:
             print(json.dumps(c))
+    elif sys.argv[1] == 'verify-shards':
+        parser = argparse.ArgumentParser(description='Verify complete two-runner host coverage')
+        parser.add_argument('--cohort', required=True)
+        parser.add_argument('receipts', nargs='+', type=Path)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            result = verify_shards(args.receipts, args.cohort)
+        except (ValueError, OSError, KeyError, TypeError, IndexError, subprocess.SubprocessError) as error:
+            parser.exit(1, 'incomplete shard coverage: ' + str(error) + '\n')
+        print(json.dumps(result, sort_keys=True))
     elif sys.argv[1] == 'summary':
         summarize(sys.argv[2])
 

@@ -252,7 +252,13 @@ recorded in the linked reports, rather than every current build or device.
   these are dated comparisons, not current whole-firmware totals.
 - **Development turnaround:** change-based CI selection, dependency caches,
   parallel independent host tests and reuse of automatic PR firmware artifacts
-  reduce repeated validation/build work. Required checks still gate merges;
-  see [CI scope and artifacts](../.github/CI.md). The host suite's opt-in
+  reduce repeated validation/build work. Classified draft changes use explicit
+  focused feedback; ready candidates retain complete validation. Full host work
+  runs across two runners with a source-derived aggregate rejecting missing,
+  duplicate or stale evidence. Standalone backup fixtures can reuse matching
+  verified receipts; firmware identity and releases stay fresh. Required checks
+  still gate merges; see [CI stages and artifacts](../.github/CI.md#feedback-and-merge-stages).
+  These are CI scheduling changes, not firmware CPU or hardware performance claims.
+  The host suite's opt-in
   [`--ai-output` mode](../BUILDING.md#tests) condenses console output while retaining
   full logs, failure exit codes and warning/skip hints; test coverage is unchanged.
