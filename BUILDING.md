@@ -90,7 +90,8 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
   at build time). On macOS, install uv with `brew install uv`. The locked `build`
   dependency group provides Pillow, fontTools and Brotli.
 - Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
-  `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
+  `linux/amd64` `debian:bookworm-slim` container using Docker's x86 emulation on Apple silicon.
+  Rosetta is optional and is not required for a successful build. Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
 - The JieLi Linux toolchain (clang 4.0.1 for pi32v2, from JieLi's package server):
 
@@ -1002,6 +1003,15 @@ python3 tools/build_report.py --verify build/resource-report.json
 The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
 and `AC79_SDK` values override those defaults; unset or empty values use them.
+
+Initial input capture refuses unsupported compiler search/configuration variables
+for native target builds, including `CPATH`, `LIBRARY_PATH` and `SDKROOT`. Docker
+does not forward these host values, so Docker target builds ignore them. Host loader
+injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`) remains refused
+with either backend because generators still run on the host. `LD_LIBRARY_PATH`
+is allowed and bound only by a value hash, not by the selected library contents.
+The optional paired Wasm build runs on the host and still refuses compiler-search
+overrides even when its target used Docker. See [build-input identity and limits](docs/build-bundles.md#identity-and-immutability).
 
 Verification hashes all required artifacts and input files, recomputes effective compiler
 macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.
