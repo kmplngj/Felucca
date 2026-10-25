@@ -32,9 +32,21 @@ if _source_os.path.isfile(_source_os.path.join(_source_root, "SOURCE-PINS.json")
 import argparse
 import hashlib
 import json
+import importlib.metadata
 from pathlib import Path
 import re
 import subprocess
+import sys
+
+COMPILER_ENV = ('CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_PATH',
+                'LIBRARY_PATH', 'COMPILER_PATH', 'GCC_EXEC_PREFIX', 'SDKROOT',
+                'CLANG_CONFIG_FILE_SYSTEM_DIR', 'CLANG_CONFIG_FILE_USER_DIR',
+                'CLANG_CONFIG_FILE', 'CLANG_CONFIG_FILE_PATH', 'CLANG_NO_DEFAULT_CONFIG',
+                'CCC_OVERRIDE_OPTIONS', 'CCC_ADD_ARGS', 'LD_PRELOAD',
+                'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH')
+ALLOWED_LOADER_ENV = ('LD_LIBRARY_PATH',)
+HOST_INJECTION_ENV = ('LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH')
+HEADER_ROOTS = ('pi32v2/lib/clang/4.0.1/include', 'pi32v2/include')
 
 
 def digest(path):
@@ -70,9 +82,65 @@ def input_hashes(root, *, include_generated=True):
     return {name: digest(root / name) for name in sorted(names) if (root / name).is_file()}
 
 
+def generator_runtime(root):
+    """Record the environment that generates the bound headers, not the sealing process's environment."""
+    def version(distribution):
+        try:
+            return importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            return None
+    try:
+        from PIL import features
+        raqm, freetype = features.version('raqm'), features.version('freetype2')
+    except ImportError:
+        raqm = freetype = None
+    lock = root / 'uv.lock'
+    return {'python': sys.version.split()[0], 'Pillow': version('Pillow'),
+            'fontTools': version('fonttools'), 'Brotli': version('Brotli'),
+            'raqm': raqm, 'freetype': freetype,
+            'lock_sha256': digest(lock) if lock.is_file() else None}
+
+
+def loader_environment_fingerprints(env):
+    """Bind allowed loader search values without publishing host paths.
+
+    This identifies the value, not the resolved libraries or system runtime.
+    """
+    return {name: hashlib.sha256(env[name].encode('utf-8')).hexdigest()
+            for name in ALLOWED_LOADER_ENV if env.get(name)}
+
+
 def tool_fingerprints(build):
     """Hash tool/SDK inputs before any jobs; do not launch the compiler here."""
-    return {'compiler_sha256': digest(build.toolchain() / 'pi32v2/bin/clang'),
+    docker = build.use_docker()
+    for name in COMPILER_ENV:
+        # Docker does not forward host compiler search/configuration variables.
+        # Host Python generators still run locally, so loader injection remains
+        # unsupported with either compiler backend.
+        if build.os.environ.get(name) and (not docker or name in HOST_INJECTION_ENV):
+            raise ValueError('unsupported compiler environment: ' + name)
+    toolchain = build.toolchain()
+    headers = {}
+    for directory in HEADER_ROOTS:
+        include = toolchain / directory
+        if not include.is_dir() or not (include / 'stdint.h').is_file():
+            raise ValueError('missing compiler include root/stdint.h: ' + directory)
+        if include.is_symlink():
+            raise ValueError('compiler include root is a symlink: ' + directory)
+        for path in sorted(include.rglob('*')):
+            if path.is_symlink():
+                raise ValueError('compiler header path is a symlink: ' + str(path.relative_to(toolchain)))
+            if path.is_file():
+                if not path.resolve().is_relative_to(toolchain.resolve()):
+                    raise ValueError('compiler header escapes toolchain')
+                headers[path.relative_to(toolchain).as_posix()] = digest(path)
+    return {'generator_runtime': generator_runtime(build.SRC),
+            'loader_environment_sha256': loader_environment_fingerprints(build.os.environ),
+            'compiler_headers_sha256': headers,
+            'execution_environment': {'backend': 'docker' if docker else 'native',
+                                      'image_reference': build.DOCKER_IMAGE if docker else None,
+                                      'system_runtime_fingerprint': None},
+            'compiler_sha256': digest(build.toolchain() / 'pi32v2/bin/clang'),
             'toolchain_sha256': {name: digest(build.toolchain() / name) for name in
                                  ('pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy')},
             'sdk_sha256': {name: hashlib.sha256(build.fm1pkg_make.sdk_file(name)).hexdigest()
@@ -91,10 +159,16 @@ def configuration(build):
     # source/generated defaults and conditional macros without a second compile.
     macros = build.tc('cc', *flags, '-dM', '-E', build.FW / 'src/felucca.c')
     defines = dict(re.findall(r'^#define (FELUCCA_\w+)(?:[ \t]+(.*))?$', macros, re.M))
+    constants = dict(re.findall(r'^#define (FS|CTL|NPART|NVOICE|NTRK|NSTEP|HALF_FRAMES|C1_NP|NENGINES|ENG_ID_MAX)[ \t]+(.*)$',
+                                macros, re.M))
     if not {'FELUCCA_CPU2', 'FELUCCA_ID', 'FELUCCA_SLICE', 'FELUCCA_FM4'} <= defines.keys():
         raise ValueError('compiler did not expose required effective build defines')
     fingerprints = tool_fingerprints(build)
     return {'compile_flags': ['-target', 'pi32v2', *flags], 'effective_defines': defines,
+            'logical_constants': constants, 'generator_runtime': fingerprints['generator_runtime'],
+            'loader_environment_sha256': fingerprints['loader_environment_sha256'],
+            'compiler_headers_sha256': fingerprints['compiler_headers_sha256'],
+            'execution_environment': fingerprints['execution_environment'],
             'selective_minsize': build.os.environ.get('FELUCCA_SIZE') != '0',
             'cpu2': build.CPU2, 'product': build.PRODUCT, 'version_override': build.VERSION,
             'compiler': {'version': '\n'.join(line for line in build.tc('pi32v2/bin/clang', '--version').strip().splitlines()

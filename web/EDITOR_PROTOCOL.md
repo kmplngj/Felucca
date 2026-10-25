@@ -838,8 +838,10 @@ from an experimental firmware is not a SONG or preference capability.
 Command 33 remains SONG. Older editors can ignore the additional INFO bytes.
 
 `uiCaps`: bit 0 palette, bit 1 font weight (retired: firmware since the 1.0 UI has one
-weight and no longer sets it), bit 2 MIDI monitor when compiled in, bit 3 favorites. The standard build
-advertises 9 (palette and favorites).
+weight and no longer sets it), bit 2 MIDI monitor when compiled in, bit 3 favorites, bit 4 unified native UI, bit 5 one
+native style. The standard build advertises 57 (palette, favorites, unified UI, one style). Bits 4 and 5 are
+informational, not `UI_SET` slots: hide legacy MENU id 2 (LARGE) when bit 4 is present and legacy MENU id 1 (STYLE)
+when bit 5 is present. Without them, retain the older firmware's controls. Unknown capability bits must be ignored.
 
 <a id="cmd-34"></a>
 ### 34 UI_STATE
@@ -1228,6 +1230,29 @@ is told: no list of settings is fixed in the editor. INFO advertises `4E 01 coun
 (`50 01 caps`): `count` items, MENU_DESC index 0..count−1. Firmware without the tag answers neither command.
 
 <a id="cmd-72"></a>
+**Retired native style choice (#572):** MENU index/id 1 remains STYLE with its historical FLAT/LINE values, clamp
+behaviour and settings byte (`settings_dev[29]`). Both values now draw the same native rule style, and the native
+DISPLAY tab skips that row. `MENU_SET` still stores the value; downgrading restores the last saved style. Current
+clients use tagged `uiCaps` bit 5 to hide this control.
+
+**GRAPH (#572, id 34):** what the panel shows where the live scope is drawn (HOME's SCOPE view and engine pages
+without a graph of their own). SCOPE always the scope; TURN the turned knob's filter or envelope curve while it turns
+and about a second after, then the scope; CURVE the focused knob's curve (else the filter's, else the amplifier
+envelope) with a small scope strip; STILL the same curve without the scope. Stored in bits 1–2 of `settings_dev[10]`
+(ANIM IDLE's byte, bit 0 unchanged) with 0 meaning TURN, so every older setting reads TURN. Older firmware ignores
+the bits and keeps them as saved.
+
+**Retired native size choice (#578):** MENU index/id 2 remains LARGE with its
+historical OFF/ON values, clamp behavior and settings bit (`settings_dev[30]`
+bit 5). Both values now draw the same native UI, and the native DISPLAY tab skips
+that row. Legacy `MENU_SET` still stores the requested bit through the same
+coalesced/deferred settings path; it never assigns focus or changes another ID.
+Imports/exports retain this bit and all other settings bytes. Downgrading restores
+the last saved historical size choice. Current clients use tagged `uiCaps` bit 4
+to hide this retired control; older clients can still read/write it harmlessly.
+The client display adaptation is tracked separately in
+[#582](https://github.com/kmplngj/Felucca/issues/582).
+
 ### 72 MENU_DESC
 
 Available: INFO `4E 01` (1.0.4). Request length (argument bytes): **1**.
@@ -1289,7 +1314,7 @@ before MIDI IN the first 21, 1.2 the first 23, 1.3 / 1.4 the first 24, 1.5 / 1.5
 | index | id | name | kind | values (min 0) | default | tab |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | 0 | COLOR | 0 | 0..9: GREY GREEN AMBER ICE VIOLET ROSE PAPER HI-CON NIGHT MONO (the order of `UI_PALETTES`); 1.6: 10 CUSTOM while one is stored (CUSTOM palette, cmds 80, 81) | GREY | 0 DISPLAY |
-| 1 | 1 | STYLE | 0 | 0 FLAT, 1 LINE | FLAT | 0 DISPLAY |
+| 1 | 1 | STYLE | 0 | 0 FLAT, 1 LINE (#572: retired; both draw the one native rule style, see below) | FLAT | 0 DISPLAY |
 | 2 | 2 | LARGE | 0 | 0 OFF, 1 ON | OFF | 0 DISPLAY |
 | 3 | 3 | ANIM | 0 | 0 ON, 1 OFF, 2 IDLE (1.2: ON plus the LEDs' idle animation; firmware before: max 1) | ON | 0 DISPLAY |
 | 4 | 4 | LEDS | 0 | 0 OFF, 1 DIM LO, 2 DIM HI, 3 INV (darkest first, as the menu steps them); 1.5.6 (#212): 4 INV LO, 5 INV HI (INV with the idle LEDs at a steady low level: appended) | DIM HI | 0 DISPLAY |
@@ -1322,6 +1347,7 @@ before MIDI IN the first 21, 1.2 the first 23, 1.3 / 1.4 the first 24, 1.5 / 1.5
 | 31 | 31 | WAKE | 0 | 0 +MIDI, 1 PANEL (1.5.5; formerly SCREEN WAKE) | +MIDI | 0 DISPLAY |
 | 32 | 32 | 2ND CORE | 0 | 0 OFF, 1 ON (BETA) (1.6.1, Discussion #141: the second core renders some of the parts; from the next power-on) | OFF | 4 SYSTEM |
 | 33 (32 without CPU2) | 33 | ALL DARK | 0 | 0 NEVER; 1–4 5 MIN/15 MIN/30 MIN/60 MIN | NEVER | 0 DISPLAY |
+| 34 (33 without CPU2) | 34 | GRAPH | 0 | 0 SCOPE, 1 TURN, 2 CURVE, 3 STILL (#572) | TURN | 0 DISPLAY |
 
 The device's AUDIO tab shows SPEAKER EQ, USB LEVEL, CLICK, CLICK LEVEL, COUNT-IN and (1.2) TUNE (index 9, 10, 12, 13,
 14, 22).

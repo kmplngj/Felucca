@@ -831,7 +831,7 @@ static int auto_list(void)
         bad += check("  names: ENV FLT / LFO FLT", str_eq(a, "ENV FLT") && str_eq(b, "LFO FLT"));
     }
     ui_prefs |= PREF_LARGE;
-    bad += check("  MENU > LARGE: the list layout with labels in M (as the other lists)", large_kind() == LK_LABEL);
+    bad += check("  unified AUTOMATION: compact controls preserve the full list workspace", reading_kind() == RK_COMPACT);
     ui_prefs &= ~PREF_LARGE;
     return bad;
 }

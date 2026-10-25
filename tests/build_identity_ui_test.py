@@ -27,10 +27,10 @@ CASES = {
 
 def run():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/identity-ui'
-    for font in ('m8stealth', 'tamzen', 'inter-tight'):
+    for font in ('m8stealth',):
         directory = out / font
         directory.mkdir(parents=True, exist_ok=True)
-        generator = 'gen_aa_font.py' if font == 'inter-tight' else 'gen_bitmap_font.py'
+        generator = 'gen_bitmap_font.py'
         subprocess.run([sys.executable, str(ROOT / 'tools' / generator),
                         str(directory / 'ui_fonts.h'), '--preset', font], check=True)
         for name, (revision, pr, origin) in CASES.items():

@@ -31,7 +31,9 @@ class FirmwareEngineContract(unittest.TestCase):
     def compile(self, *flags):
         return subprocess.run([*self.cc, '-std=c99', '-fsyntax-only', '-x', 'c',
                                '-I', str(self.root / 'firmware/src'), '-I', str(ROOT / 'build/gen'), *flags, '-'],
-                              input='#define FS 44100\n#define CTL 32\n#include "core.h"\nint main(void) { return 0; }\n',
+                              input=('#define FS 44100\n#define CTL 32\n'
+                                     '#define __attribute__(x) /* target section placement, as in hostsim.c */\n'
+                                     '#include "core.h"\nint main(void) { return 0; }\n'),
                               text=True, capture_output=True)
 
     def test_supported_real_firmware_host(self):

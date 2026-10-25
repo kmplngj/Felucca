@@ -1,4 +1,4 @@
-# M8Stealth experiment sources
+# M8Stealth sources
 
 Unmodified font files by Trash80 from Dirtywave/M8WebDisplay, commit
 `eabcc3da605b38f8fbe113c610c84122a17eb5ed`:
@@ -20,13 +20,19 @@ They are reference data for `tests/m8_font_test.py`, not packed firmware inputs.
 
 `tools/gen_bitmap_font.py --preset m8stealth` rasterises at native grids (8/12 ppem),
 packs one bit per pixel, and uses whole-pixel advances of 6/9 px.
-The large face shares M ink at 2x, with its advance reduced from 18 to 17 px
-to keep a 1 px gap and fit three-digit card readouts. ASCII ink matches the
-reference atlases exactly.
+L/N share M ink at exact 2×, with 18 px capitals. L's advance is reduced from 18 to 17 px to
+keep a 1 px gap and fit three-digit card readouts; N retains 18 px. These roles
+add metadata only. A doubled S is possible without a new raster, but is not
+emitted without a reading task that needs it. ASCII ink matches the reference atlases exactly.
+`tests/m8_font_test.py` also compares direct 16/24 ppem rasterisation of the
+original WOFF2 files with exact doubling of their 8/12 ppem native output:
+all 95 ASCII glyphs per file match in ink, bearings and advance, with monochrome
+Pillow/FreeType rendering. This does not assert another application's smoothing
+or the M8 device firmware's internal renderer.
 The output adds copyright, degree, middle dot, umlauts and ellipsis because
 these ten Felucca characters are absent from the font cmap. These bitmap
 adaptations are identified as changes and retain CC BY-SA 3.0.
-The WOFF2 files remain unmodified. This is a firmware branch experiment.
+The WOFF2 files remain unmodified.
 
 ## Preserved embedded attribution
 

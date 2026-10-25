@@ -12,7 +12,7 @@
 <style>
 /* DotGothic16 (SIL OFL 1.1, fonts/OFL.txt), cut to printable ASCII, for the knob labels */
 @font-face { font-family: "DotGothic16"; src: url("fonts/DotGothic16-subset.woff") format("woff"); font-display: swap; }
-:root { --bg: #8e8e93; --fg: #111; --dim: #2c2c2e; --rule: #5a5a5e;
+:root { --bg: #8e8e93; --fg: #111; --dim: #242426; --rule: #5a5a5e;
         --body: #1d1d1f; --tray: #141415; --part: #2a2a2d; --edge: #3a3a3e; --label: #d6d6d8;
         --lit: #fff4d6; --green: #5fe08a; color-scheme: light; }
 html, body { background: var(--bg); }
@@ -69,7 +69,7 @@ a { color: inherit; }
 kbd { font: 600 11px ui-monospace, Menlo, monospace; border: 1px solid var(--rule); padding: 0 4px; color: var(--fg); }
 footer { margin-top: 12px; font-size: 12px; }
 footer nav a { margin: 0 6px; }
-footer small { font-size: 11px; opacity: .8; }
+footer small { font-size: 11px; }
 </style>
 </head>
 <body>
@@ -187,12 +187,13 @@ function build(name) {
     knobs.push({ g, ind, x, y, name: n, role: n === "MASTER" ? "master" : EN[n] });
   });
   const button = ([x, y, w, h], n, sub) => {
+    const printed = n === "SCL" ? "SEL" : n;             // the physical legend; the input bit keeps its internal name
     const g = el("g", {});
     el("rect", { x, y, width: w, height: h, rx: 8, fill: "var(--part)", stroke: "var(--edge)", "stroke-width": 1.5, class: "face btn" }, g);
     const ink = n === "REC" ? "#ff453a" : undefined;
-    if (sub) { label(g, x + w / 2, y + h / 2 - 2, n, 10.8, SANS, ink); label(g, x + w / 2, y + h / 2 + 11, sub, 9.9); }
-    else label(g, x + w / 2, y + h / 2 + 4.5, n, 12.6, SANS, ink);
-    buttons.push({ g, bit: B[n], name: sub ? `${n} / ${sub}` : n });
+    if (sub) { label(g, x + w / 2, y + h / 2 - 2, printed, 10.8, SANS, ink); label(g, x + w / 2, y + h / 2 + 11, sub, 9.9); }
+    else label(g, x + w / 2, y + h / 2 + 4.5, printed, 12.6, SANS, ink);
+    buttons.push({ g, bit: B[n], name: sub ? `${printed} / ${sub}` : printed });
   };
   button(L.oct[0], "OCT-");
   button(L.oct[1], "OCT+");

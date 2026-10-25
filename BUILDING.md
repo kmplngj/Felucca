@@ -89,8 +89,9 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - [uv](https://docs.astral.sh/uv/) and Python 3 (the UI font and icons are rasterised
   at build time). On macOS, install uv with `brew install uv`. The locked `build`
   dependency group provides Pillow, fontTools and Brotli.
-- Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
-  `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
+- Docker Desktop. The JieLi toolchain is Linux x86-64 only; target builds use a
+  `linux/amd64` `debian:bookworm-slim` container using Docker's x86 emulation on Apple silicon.
+  Rosetta is optional and is not required for a successful build. Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
 - The JieLi Linux toolchain (clang 4.0.1 for pi32v2, from JieLi's package server):
 
@@ -110,6 +111,32 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - Emscripten (optional, `emcc`: the browser emulator, `web/emu/`).
 
 On Linux x86-64 the toolchain runs natively and Docker is not needed.
+
+A target-builder invocation owns one lazily started container: loader/app workers and
+resource-report tool calls share it, with the toolchain mounted read-only. It is removed
+on success, build failure, SIGINT or SIGTERM. Lifecycle Docker clients run in separate
+sessions so terminal interrupts reach the Python owner, which waits for an in-flight
+startup response before removing its container. No container or compiled-output cache is
+reused across builds. Independent builds have different container identities. Linux-native
+execution is unchanged. Standalone imported tool calls, including resource-report CLI
+verification, continue to use temporary one-shot containers. A target builder called
+outside Python's main thread also uses the one-shot path, because it cannot install
+process signal handlers for persistent-container cleanup.
+
+Before reuse, the builder inspects the selected `linux/amd64` image configuration.
+It starts an advertised immutable repository digest when available, or the image ID
+for older image stores. A manifest/index without a usable repository digest uses
+the one-shot path rather than assuming its selected manifest ID is runnable.
+Custom images with an `ENTRYPOINT`, or images whose selected configuration cannot be
+verified, use the existing one-shot path with a visible note. The default image must
+support `sleep infinity` and direct tool execution. Docker-compatible Podman clients may
+use plain image inspection only when it proves the same Linux/amd64 configuration.
+No TTY or shell wraps compiler arguments. Cleanup cannot be guaranteed after SIGKILL,
+a host crash or loss of the container engine; a cleanup failure reports the exact owned
+container name/ID and never removes another build's container. Do not treat that failure
+as a clean successful lifecycle. This changes build overhead, not firmware arithmetic,
+compiler flags or audio CPU use.
+
 Install uv using its [installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
 ### Python environments
@@ -151,41 +178,67 @@ uv run --locked --group build ./build.sh
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
-Choose the firmware UI font with `FELUCCA_FONT`. The choice is compiled into the
-firmware:
+### Final-image soft-double policy
 
-| Value | UI font |
-| --- | --- |
-| `inter-tight` | Inter Tight |
-| `tamzen` | Tamzen regular 6×12 / 8×16 pixel faces |
-| `m8stealth` | Trash80 M8Stealth57 / M8Stealth89 pixel faces, the default |
+Every target application build checks the final linked ELF symbol table against
+26 exact double-precision helper names exported by the generic JieLi Clang 4.0.1
+compiler runtime (`SOFT_DOUBLE_HELPERS` in `tools/build.py`). The check covers double
+arithmetic/comparisons, fp32/double and double/half conversions, signed/unsigned
+32/64-bit integer/double conversions, and complex-double multiply/divide. A helper
+defined in an allocated `CODE` output section fails the build, including local,
+weak and zero-sized aliases. The diagnostic lists the names: inspect the expressions
+that introduced them and use intentional fp32/fixed-point operations. There is no
+profile or radio exemption and no override flag.
 
-```sh
-FELUCCA_FONT=inter-tight uv run --locked --group build ./build.sh
-FELUCCA_FONT=tamzen uv run --locked --group build ./build.sh
-FELUCCA_FONT=m8stealth uv run --locked --group build ./build.sh
-```
+GNU-style section headers must show `ALLOC` and `CODE`. Their attribute lists use
+only the reviewed words `CONTENTS`, `ALLOC`, `LOAD`, `READONLY`, `CODE`, `DATA` and
+`DEBUGGING`; an unknown word or malformed list cannot establish nonexecution for a
+matching helper and fails with a section-evidence diagnostic. The installed JieLi
+objdump instead reports `TEXT`/`DATA`; for that format, the detector requires `TEXT`
+in one of `app.ld`'s allocated executable outputs (`.text`, `.ram_text`, `.c1_text`).
+An unfamiliar `TEXT` output containing a matching helper fails with a section-evidence
+diagnostic until its allocation is reviewed.
 
-Plain `uv run --locked --group build ./build.sh` selects M8Stealth when
-`FELUCCA_FONT` is unset. The pixel fonts
-save about 39 KB of firmware flash and use 1,032 B less POOL RAM for Huffman
-decode caches than Inter Tight; other RAM regions are unchanged. Tamzen stores
-6×12 and 8×16 pixel faces as 1-bit glyphs; large readouts share the 8×16 data at 2×.
-The line boxes and baselines keep the existing layout metrics, while the visible
-capital heights change. Rebuild after choosing a variant, then run
-`uv run --locked --group build tests/run_tests.sh`; host tests and the browser emulator
-use the generated font
-header from that build. Real FM-1 readability and redraw behavior still need
-comparison.
-M8Stealth uses Trash80's native 5×7 and 8×9 faces, with 6/9 px advances and shared
-M ink at 2× for L, with 17 px large advances to fit three-digit card readouts.
-Its WOFF2 inputs require Brotli (`fonttools[woff]`); the WOFF2
-container is decoded only during asset generation. The ten extra Felucca marks
-are explicit local bitmap adaptations. All font variants use native M8Stealth57
-keycap and badge legends; only their rounded pill edges retain antialiasing.
-The [LCD typography guide](docs/lcd-typography.md) describes the text roles,
-fixed unit positions and fit rules. The font selector still controls regular text.
-Measurements and validation are recorded in [the font experiment](docs/font-experiment.md).
+Undefined, absolute, common, file/section/debug records and symbols in nonallocated
+or nonexecutable sections do not establish linked code. Integer-only 64-bit helpers,
+fp32 helpers and ordinary names containing `double` remain outside this policy.
+Matching helper rows with malformed symbol/section evidence fail the check rather
+than establishing absence. A successful check means only that no known helper is
+defined in final executable sections; it does not prove hardware FPU use, absence
+of every double expression or improved CPU time. New toolchain/ABI spellings need
+a reviewed policy and fixture update. See [performance guidance](docs/performance.md#soft-double-link-guard).
+
+Portable coverage is in `python3 tests/build_guard_test.py` (also run with `python3 -O`).
+The separate `python3 tests/build_guard_target_test.py` compiles dynamic double
+arithmetic/conversions and an fp32 control with the production generic flags. Only
+these tiny probes link the installed generic `pi32v2/lib/libcompiler_rt.a` to prove
+the final-image detector; the firmware's explicit-object link remains unchanged.
+The fixture retains sources, objects, undefined object symbols, final ELF symbols,
+section headers, disassembly, link logs and tool/runtime hashes in a fresh directory
+under `build/host/build_guard_target/`. It also preserves the existing integer-64
+compile/link cases. An absent default toolchain produces an explicit skip; an
+explicitly configured missing toolchain, a missing runtime archive or a failed
+probe fails the fixture. A skip is not target evidence. No FM-1 execution is needed
+to validate this build-only policy.
+
+Native firmware uses M8Stealth only. `FELUCCA_FONT` may be unset or explicitly
+`m8stealth`; retired `tamzen` and `inter-tight` values fail before generation.
+After updating from an older font build, rebuild assets and firmware before
+running host tests or the browser emulator.
+
+Trash80's native 5×7 and 8×9 faces have 6/9 px advances. L/N share M at exact 2× (18 px capitals),
+with 17 px focused-value and 18 px full-name advances. Scaled roles add only
+glyph metadata and descriptors, without another bitmap set or decode cache.
+The WOFF2 inputs require Brotli (`fonttools[woff]`); decoding happens only during
+asset generation. Ten extra Felucca marks are explicit local bitmap adaptations.
+Keycap/badge legends use native M8Stealth57; their rounded pill edges and icons
+retain antialiasing. The [LCD typography guide](docs/lcd-typography.md) describes
+roles, fit and the independent source-raster checks. A doubled S would be exact
+14 px ink too, but no current task requires another role, so it is not emitted.
+Real FM-1 readability and
+redraw behavior remain pending. The dated [font experiment](docs/font-experiment.md)
+retains the historical comparisons; removing alternate build options does not
+itself save bytes in a build that already selected M8Stealth.
 
 `uv run --locked --group build ./build.sh --release 1.0` makes a release build:
 the package identity becomes `FM-1_910`
@@ -376,8 +429,46 @@ plus per-log `diagnostics`, bounded failure `excerpt` fields and their limitatio
 Preflight/plan failures and cancellation remain failures even when no unit started.
 Read the summary and relevant raw logs to investigate; do not equate a short report
 with complete target or FM-1 qualification. The browser gate is already compact and
-does not use this flag. CI's existing full-transcript coverage verifier continues
-to consume normal output; a compact transcript is not its input format.
+does not use this flag. Warning/skip hints remain presentation only; neither a
+success banner nor a unit's zero exit establishes complete required coverage.
+
+Every full runner invocation also writes versioned `coverage.json` beside its
+summary, with the same contract in normal/compact and serial/parallel modes.
+It records the source revision and input hashes before/after the run, clean exact
+Engines pin, selected profile, relevant environment, actual compiler identities
+and observed argv, child completion and semantic capability results. Private
+per-run compiler passthroughs preserve multiword `CC`/`CXX`, argument boundaries,
+exit codes and signals; their paths/logs are diagnostic, never release inputs.
+Missing assets/tools stay in the expected plan with an explicit unavailable
+outcome. Opt-in TSAN not requested and source-resolved MACRO exclusions are
+`not_applicable`; they are not passed tests.
+
+For strict verification, choose an explicit destination and a fresh identity
+before launching the runner, then use the same environment for the verifier:
+
+```sh
+mkdir -p build/ci
+export FELUCCA_COVERAGE_REPORT="$PWD/build/ci/coverage.json"
+export FELUCCA_COVERAGE_ID="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+uv run --locked --group build tests/run_tests.sh --ai-output > build/ci/tests.log 2>&1
+uv run --locked --group build python tools/ci.py verify-tests build/ci/tests.log
+```
+
+The destination is invalidated at startup; reusing its invocation ID is an error.
+Keep sources, generated assets, compiler/configuration and outputs unchanged until
+verification finishes. CI rejects required skips, missing child completion,
+failed/blocked/cancelled units, altered/empty outputs, changed logs and stale or
+unknown evidence. Local optional skips remain available but fail strict coverage.
+Recorded unittest runs must execute at least one test; an empty successful suite
+does not establish coverage.
+Only absent proprietary V15 input, an unavailable whole CPU budget (counters or
+matching baseline), C1's unqualified CPU comparison and declared applicability
+exclusions retain their existing exceptions. Available CPU budgets missing entries
+fail. See [CI policy](.github/CI.md#required-checks-and-evidence).
+Baseline update modes (including empty or `0` environment values) cannot claim
+comparison coverage and are rejected by strict verification. A report's
+`complete` status means its execution and inputs completed consistently; the strict
+verifier still evaluates every required capability. No report is a device result.
 
 Runs the host tests and, with Node.js, the web page tests (and, with Emscripten too,
 the browser emulator's). Run it after `uv run --locked --group build ./build.sh`
@@ -883,8 +974,9 @@ browser builds consume those same includes. `python3 tools/profile.py --check` r
 stale files, a different profile/feature selection, source hashes or engine pin; host and
 emulator entry points run it before compiling. Use the same `FELUCCA_PROFILE` and
 `FELUCCA_SLICE`/`FELUCCA_FM4` environment for those entry points as for the target build.
-When `FELUCCA_FONT` is unset, freshness checks retain the font recorded by the target
-build; an explicit font override must match. Do not override `FELUCCA_PROFILE_ENGINE_*`
+Freshness checks accept only the supported M8Stealth font; rebuild older alternate
+font artifacts. An explicit `FELUCCA_FONT=m8stealth` override must match.
+Do not override `FELUCCA_PROFILE_ENGINE_*`
 compiler macros; they are generated.
 Existing host-only DIGITAL, test14 and omit fixtures remain supported.
 
@@ -937,6 +1029,15 @@ python3 tools/build_report.py --verify build/resource-report.json
 The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
 and `AC79_SDK` values override those defaults; unset or empty values use them.
+
+Initial input capture refuses unsupported compiler search/configuration variables
+for native target builds, including `CPATH`, `LIBRARY_PATH` and `SDKROOT`. Docker
+does not forward these host values, so Docker target builds ignore them. Host loader
+injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`) remains refused
+with either backend because generators still run on the host. `LD_LIBRARY_PATH`
+is allowed and bound only by a value hash, not by the selected library contents.
+The optional paired Wasm build runs on the host and still refuses compiler-search
+overrides even when its target used Docker. See [build-input identity and limits](docs/build-bundles.md#identity-and-immutability).
 
 Verification hashes all required artifacts and input files, recomputes effective compiler
 macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.

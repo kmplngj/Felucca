@@ -27,6 +27,35 @@ async function check(name, action) {
   const observed = await action();
   report.checks.push({ name, status: "pass", ms: Date.now() - start, ...(observed && { observed }) });
 }
+// Wrapper text sits on the page's flat background. Read actual rendered colors
+// and ancestor opacity so a faded footer cannot pass on its CSS token alone.
+async function wrapperContrast() {
+  const rows = await page.locator(".keys, footer").evaluateAll((roots) => {
+    const rgba = (value) => value.match(/[\d.]+/g).map(Number);
+    const background = rgba(getComputedStyle(document.body).backgroundColor);
+    const luminance = (rgb) => rgb.slice(0, 3).map((c) => {
+      const s = c / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+    const elements = new Set();
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) if (walker.currentNode.textContent.trim()) elements.add(walker.currentNode.parentElement);
+    }
+    return [...elements].filter((el) => el.getClientRects().length).map((el) => {
+      const ink = rgba(getComputedStyle(el).color);
+      let alpha = ink[3] ?? 1;
+      for (let parent = el; parent; parent = parent.parentElement) alpha *= Number(getComputedStyle(parent).opacity);
+      const rendered = ink.slice(0, 3).map((c, i) => c * alpha + background[i] * (1 - alpha));
+      const a = luminance(rendered), b = luminance(background);
+      return { text: el.textContent.trim().slice(0, 80), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+    });
+  });
+  assert(rows.length > 20, "wrapper text was not rendered");
+  for (const row of rows) assert(row.ratio >= 4.5, `${row.text}: rendered contrast ${row.ratio.toFixed(2)}:1 < 4.5:1`);
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "horizontal page overflow");
+  return { text_elements: rows.length, minimum_ratio: Math.min(...rows.map((row) => row.ratio)) };
+}
 async function screen(name) {
   const pixels = await page.locator("#screen").evaluate((canvas) => {
     // Read a copy so observation does not change the page canvas's rendering mode.
@@ -121,6 +150,9 @@ try {
   await check("boot and LCD", async () => {
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.evaluate(() => document.fonts.ready);
+    assert.equal(await page.getByRole("button", { name: "SEL", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "SCL", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("slider", { name: "SELECT", exact: true }).count(), 1);
     await page.getByRole("button", { name: "Switch on", exact: true }).click();
     await page.locator("#start").waitFor({ state: "hidden" });
     await waitFor(() => __feluccaTest.frames > 5 && (__feluccaTest.leds[0] & (1 << 6)));
@@ -129,6 +161,7 @@ try {
     assert.equal(await page.evaluate(() => __feluccaTest.context.sampleRate), 44100);
     return screen("home");
   });
+  await check("desktop wrapper text contrast", wrapperContrast);
   await check("keyboard note produces stereo PCM", async () => {
     await page.keyboard.down("z");
     const observed = await freshAudio(true);
@@ -138,6 +171,8 @@ try {
   });
   await check("note release becomes quiet", () => freshAudio(false));
   await check("pointer opens ENV and encoder redraws LCD", async () => {
+    await page.getByRole("button", { name: "SEL", exact: true }).click();
+    await waitFor(() => (__feluccaTest.leds[0] & (1 << 1)) !== 0);
     const before = await screen("before-env");
     await page.getByRole("button", { name: "ENV", exact: true }).click();
     await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
@@ -153,9 +188,36 @@ try {
     assert.notEqual(edited.sha256, env.sha256, "encoder did not change the LCD");
     return edited;
   });
+  await check("GRAPH TURN: a turned knob's curve replaces the scope, then the scope returns", async () => {
+    // #572: HOME's panel (tall bank: rows 98..198) in silence is the flat scope; KNOB 1 (ANALOG's CUT) shows the
+    // filter curve while it turns and about 1.2 s after; then the same flat scope again.
+    const panel = () => page.locator("#screen").evaluate((canvas) => {
+      const context = new OffscreenCanvas(240, 240).getContext("2d", { willReadFrequently: true });
+      context.drawImage(canvas, 0, 0);
+      return Array.from(context.getImageData(0, 100, 240, 96).data).join(",");
+    });
+    await tap("HOME");
+    await page.waitForTimeout(400);
+    const rest = await panel();
+    const draws = await page.evaluate(() => __feluccaTest.draws);
+    for (let i = 0; i < 4; i++) await page.getByRole("slider", { name: "KNOB 1", exact: true }).press("ArrowUp");
+    await waitFor((n) => __feluccaTest.draws > n, draws);
+    await page.waitForTimeout(150);
+    const turning = await panel();
+    assert.notEqual(turning, rest, "turning KNOB 1 did not replace the scope with its curve");
+    await screen("graph-turn");
+    await page.waitForTimeout(2000);
+    assert.equal(await panel(), rest, "the scope did not return after the curve's hold");
+    await tap("ENV");                                 // (back on ENV, as the following checks expect)
+    await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
+    await page.waitForTimeout(200);
+    return { curve_shown: true, scope_returned: true };
+  });
   await check("portrait layout remains playable", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 600);
+    assert.equal(await page.getByRole("button", { name: "SEL", exact: true }).count(), 1);
+    await check("portrait wrapper text contrast", wrapperContrast);
     const key = page.getByRole("button", { name: "F3", exact: true });
     await key.scrollIntoViewIfNeeded();
     const box = await key.boundingBox();

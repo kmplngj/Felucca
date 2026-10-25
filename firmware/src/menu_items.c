@@ -16,7 +16,7 @@
 #if FELUCCA_CPU2 && !defined(C1_RECOVER)
 #define C1_RECOVER() 0                                  /* (the host and the browser: no retained exclusion, felucca.c has the target's) */
 #endif
-enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_HOME, MI_HOLD, MI_ACCEL, MI_LATCH, MI_BPMLOCK, MI_SCLLED,
+enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_HOME, MI_GRAPH, MI_HOLD, MI_ACCEL, MI_LATCH, MI_BPMLOCK, MI_SCLLED,
        MI_PREVIEW, MI_CHADD, MI_SELECT, MI_LOWCUT, MI_USB,
        MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_MIDIIN, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_MFOLLOW, MI_SCRWAKE, MI_LCLEAR, MI_SERIAL, MI_RESTORE, MI_HELP,
 #if FELUCCA_CPU2
@@ -28,7 +28,7 @@ enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_H
                                                         * DISPLAY, TUNE in AUDIO, MIDI IN in MIDI, INFO in SYSTEM;
                                                         * 1.3: HOME in DISPLAY; 1.5: HELP in SYSTEM; 1.5.5: SELECT
                                                         * in CONTROL, T1..T4 CHANNEL, AUTO SELECT and SCREEN WAKE
-                                                        * in MIDI; 1.6.1: 2ND CORE in SYSTEM) */
+                                                        * in MIDI; 1.6.1: 2ND CORE in SYSTEM; GRAPH in DISPLAY) */
 #define MI_VALUES MI_PANEL
 #if FELUCCA_CPU2
 #define MI_TEXT(row) ((row) == MI_CPU2)                /* OFF / ON (BETA): its values as words, not a switch (ui_menu.c) */
@@ -38,11 +38,14 @@ enum { MI_COLOR, MI_STYLE, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_SCOPE, MI_H
 static int menu_valued(uint32_t row) { return (row < MI_VALUES && row != MI_LCLEAR) || row == MI_DARK; }
 /* AUTO OFF remains the legacy combined wire setting; its native row opens the detail page. WAKE and ALL DARK
  * are described in DISPLAY to clients but only appear on that native detail page, never as extra tab rows. */
-static int menu_native_row(uint32_t row) { return row != MI_SCRWAKE && row != MI_DARK; }
+static int menu_native_row(uint32_t row)
+{
+    return row != MI_STYLE && row != MI_LARGE && row != MI_SCRWAKE && row != MI_DARK;   /* (STYLE, LARGE: retired, id kept) */
+}
 #define MI_PROJECT(row) ((row) == MI_TUNE || ((row) >= MI_MIDIIN && (row) <= MI_TCH4))   /* the project's values (song.g,
                                                                                          * song.mch), not settings */
 #define MI_TCH(row) ((row) >= MI_TCH1 && (row) <= MI_TCH4)   /* 1.5.5 (#202): T1..T4 CHANNEL, MIDI IN TRACK's */
-static const char *const MI_NAME[MI_COUNT] = {"COLOR", "STYLE", "LARGE", "ANIM", "LEDS", "AUTO OFF", "SCOPE", "HOME", "HOLD", "KNOB ACCEL",
+static const char *const MI_NAME[MI_COUNT] = {"COLOR", "STYLE", "LARGE", "ANIM", "LEDS", "AUTO OFF", "SCOPE", "HOME", "GRAPH", "HOLD", "KNOB ACCEL",
                                               "FX LATCH", "BPM LOCK", "SCALE LEDS", "STEP PREVIEW", "CHORD ENTRY", "SELECT",
                                               "SPEAKER EQ", "USB LEVEL", "CLICK", "CLICK LEVEL", "COUNT-IN", "TUNE",
                                               "MIDI IN", "T1 CHANNEL", "T2 CHANNEL", "T3 CHANNEL", "T4 CHANNEL",
@@ -66,6 +69,7 @@ static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_DISPLAY,                                                           /* SCREEN OFF (1.1.5) */
     MTAB_DISPLAY,                                                           /* SCOPE (1.2) */
     MTAB_DISPLAY,                                                           /* HOME (1.3) */
+    MTAB_DISPLAY,                                                           /* GRAPH (#572) */
     MTAB_CONTROL, MTAB_CONTROL, MTAB_CONTROL, MTAB_CONTROL,                 /* HOLD KNOB ACCEL FX LATCH BPM LOCK */
     MTAB_CONTROL,                                                           /* SCALE LEDS (1.2) */
     MTAB_CONTROL, MTAB_CONTROL,                                             /* STEP PREVIEW, CHORD ENTRY (1.2) */
@@ -120,7 +124,8 @@ static uint32_t mtab_index(uint32_t row)
     return k;
 }
 /* STYLE (ui_style, gfx.c ST_*): FLAT the filled cards; LINE black areas divided by 1 px rules (#50, #57: the 0.9 look)
- * (1.0.2: PIXEL retired, a saved PIXEL reads as LINE) */
+ * (1.0.2: PIXEL retired, a saved PIXEL reads as LINE). #572: one native style; the value stays saved and on wire id 1
+ * (an older firmware draws it again), the native DISPLAY tab skips the row and both values draw the rules */
 static const char *const STYLE_N[2] = {"FLAT", "LINE"};
 /* the two-valued rows: a bit of ui_prefs (PREF_REC: of ui_rec_prefs, ui.c PREF_SCALE_LEDS) and its names (bit clear =
  * the default, bit set). A step up (a knob right,
@@ -128,7 +133,7 @@ static const char *const STYLE_N[2] = {"FLAT", "LINE"};
  * second name (STYLE LINE, USB LEVEL FIXED); a step down the other (menu_step) */
 typedef struct { uint8_t row; uint32_t bit; const char *name[2]; } menu_flag_t;
 static const menu_flag_t MENU_FLAGS[] = {
-    {MI_LARGE, PREF_LARGE, {"OFF", "ON"}},            /* #15 / Discussion #80: ON, big knob labels and values (ui.c large_kind) */
+    {MI_LARGE, PREF_LARGE, {"OFF", "ON"}},            /* legacy wire id 2 only; retained bit for downgrade, ignored by native drawing */
     {MI_ACCEL, PREF_ACCEL, {"OFF", "ON"}},            /* #52: ui_input.c accel */
     {MI_LATCH, PREF_LATCH, {"OFF", "ON"}},
     {MI_USB, PREF_USB_FIXED, {"MASTER", "FIXED"}},     /* fx.c fx_usb_fixed: FIXED, USB at the full level */
@@ -170,6 +175,10 @@ static const char *const ANIM_N[3] = {"ON", "OFF", "IDLE"};
 static const uint8_t ANIM_ORD[3] = {1, 0, 2};          /* (a value's place in the menu's order, and back: its own inverse) */
 /* 1.3 (Discussions #112, #134): what HOME shows under its cards (ui.c ui_home_view): the scope, or the four tracks */
 static const char *const HOME_N[HV_COUNT] = {"SCOPE", "TRACKS", "LEVELS"};   /* (1.5, #134: LEVELS) */
+/* #572: what the panel shows where the live scope is drawn (HOME's SCOPE view, an engine page without a graph of its
+ * own): SCOPE always; TURN the turned knob's curve while it turns, then the scope; CURVE the focused knob's curve with
+ * a small scope under it; STILL the curve and no scope (ui.c graph_mode). In the menu's order; stored by GRAPH_CODE */
+static const char *const GRAPH_N[GM_COUNT] = {"SCOPE", "TURN", "CURVE", "STILL"};
 
 /* MENU > USB SERIAL (#67). The serial console is a developer tool (README: FELUCCA_CDC). ON (the default) presents it,
  * the descriptors byte for byte as before; OFF re-enumerates as audio + MIDI only, device class 0 (the bytes of a
@@ -212,6 +221,7 @@ static uint32_t menu_n(uint32_t row)
     return row == MI_COLOR ? palette_n() : row == MI_LOWCUT || (row >= MI_CLICK && row <= MI_COUNTIN) ? 3u :
            row == MI_HOLD ? 4u : row == MI_LEDS ? LEDS_ROWS : row == MI_SCROFF ? NELEM(SCROFF_N) : row == MI_DARK ? 5u :
            row == MI_TUNE ? TUNE_N : row == MI_MIDIIN ? NELEM(N_ROUTE) : MI_TCH(row) ? MCH_N : row == MI_ANIM ? 3u : row == MI_HOME ? HV_COUNT :
+           row == MI_GRAPH ? GM_COUNT :
            row == MI_SELECT ? SEL_N : 2u;
 }
 static uint32_t menu_get(uint32_t row)
@@ -229,6 +239,7 @@ static uint32_t menu_get(uint32_t row)
     case MI_DARK: return scr_dark_get();
     case MI_ANIM: return ui_prefs & PREF_ANIM_OFF ? 1u : (ui_idle & 1u) ? 2u : 0u;
     case MI_HOME: return ui_home_view < HV_COUNT ? ui_home_view : HV_SCOPE;
+    case MI_GRAPH: return graph_mode();
     case MI_SELECT: return sel_mode();
     case MI_CLICK: case MI_CLKLVL: case MI_COUNTIN: return rp_get(row - MI_CLICK);
     case MI_TUNE: return (uint32_t)(clamp(song.g[G_TUNE], TUNE_MIN, TUNE_MIN + (int32_t)TUNE_N - 1) - TUNE_MIN);
@@ -258,6 +269,7 @@ static const char *menu_vname(uint32_t row, uint32_t v)
     case MI_DARK: return OFF_TIME_N[v % NELEM(OFF_TIME_N)];
     case MI_ANIM: return ANIM_N[v % 3u];
     case MI_HOME: return HOME_N[v % HV_COUNT];
+    case MI_GRAPH: return GRAPH_N[v % GM_COUNT];
     case MI_SELECT: return SELECT_N[v % SEL_N];
     case MI_LEDS: return LEDS_ROW_N[v % LEDS_ROWS];
     case MI_MIDIIN: return N_ROUTE[v % NELEM(N_ROUTE)];
@@ -324,6 +336,10 @@ static int menu_try_put(uint32_t row, uint32_t v)
         break;                                         /* (1.5: up to 1.4.1 it fell through: ANIM set HOME too) */
     case MI_HOME:                                      /* (another look: HOME drawn anew) */
         ui_home_view = (uint8_t)(v < HV_COUNT ? v : HV_SCOPE);
+        ui.force = 1;
+        break;
+    case MI_GRAPH:                                     /* (the panel drawn anew in the new mode) */
+        graph_mode_put(v);
         ui.force = 1;
         break;
     case MI_SELECT:                                    /* (1.5.5 PAGE bit 4; 1.5.6 MODW VEL bit 6 too: ui.c sel_mode) */

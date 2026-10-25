@@ -144,6 +144,9 @@ def mutation_check(source, out, cc, spring, timeout, name, old, new, boundary=Tr
 
 
 def main():
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from test_coverage import Producer
+    coverage = Producer()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fx-source", type=Path, default=ROOT / "firmware/src/fx.c")
     parser.add_argument("--require-rest", action="store_true", help="fail instead of skip if dependency is absent")
@@ -159,6 +162,7 @@ def main():
     source, spring = instrument(raw)
     if source is None:
         print("FX rest: SKIP (#153 depends on unmerged #41; no silent-bus paths in selected fx.c)")
+        coverage.outcome('fx-rest', 'skipped', 'source-dependency-absent')
         return int(args.require_rest)
     cc = shlex.split(args.cc)
     print(f"FX rest: source={args.fx_source.resolve()} sha256={hashlib.sha256(raw.encode()).hexdigest()}", flush=True)
@@ -198,6 +202,7 @@ def main():
         for name, old, new in mutations:
             mutation_check(source, out, cc, spring, args.timeout, name, old, new)
     print(f"FX rest: PASS ({time.monotonic() - started:.1f}s)", flush=True)
+    coverage.outcome('fx-rest', comparisons=['O2', 'Os'], spring_assertion=spring)
     return 0
 
 

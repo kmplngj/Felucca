@@ -41,6 +41,7 @@ static const uint8_t ED_MENU[][2] = {
                                                         * SYSTEM, from the next power-on; omitted when CPU2=0, id reserved) */
 #endif
     {MI_DARK, 33},                                     /* ALL DARK: append after reserved CPU2 id 32, even without CPU2 */
+    {MI_GRAPH, 34},                                    /* #572: GRAPH SCOPE / TURN / CURVE / STILL, DISPLAY */
 };
 #define ED_MENU_N NELEM(ED_MENU)
 
