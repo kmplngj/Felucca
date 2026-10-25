@@ -299,7 +299,9 @@ Engine-arena owner checks (host only): `-DFELUCCA_ARENA_CHECK=1` turns `ENG_MEM_
 next engine during a fade and is no owner) and the claimed owner (`eng_mem_owner`). A failure
 calls `eng_arena_fail` before any access and hands back scratch memory. Without the define the
 macro is plain `ENG_MEM(p)`: no code or data (identical `-O2`/`-Os` host assembly of
-`tests/regress.c`; the target build is untouched). `tests/arena_test.c` (negative fixtures,
+`tests/regress.c`; the target build is untouched). Fresh matched JieLi release
+[standard, CPU2-off and MACRO builds](arena-check-target-footprint-139.md) also
+prove byte-identical complete ELF/app/map output with the disabled wrappers removed. `tests/arena_test.c` (negative fixtures,
 fixed-seed random runs) and a checked `union_test` run from `tests/run_tests.sh`, also under
 ASan/UBSan. Limits: it does not see an out-of-bounds write inside the arena or a wrong slot of
 the right owner, and engines that keep state outside the arena (WHEEL, `gr_rng`) are not covered.
@@ -324,7 +326,10 @@ archive the default result first, then rebuild the default afterward. LLVM 4 doc
 that `minsize` may sacrifice runtime speed, unlike `optsize`'s more limited tradeoff:
 [LLVM 4 function attributes](https://releases.llvm.org/4.0.1/docs/LangRef.html#function-attributes).
 Current compiler flags and reachability exclusions are authoritative in `tools/build.py`
-and `tools/size_fns.py`. Clock/voltage changes, a second core, or FPU/DSP rewrites are
+and `tools/size_fns.py`. The [remaining-helper experiment](selective-minsize-521.md)
+measured a 64 B option for HELP/category helpers and rejected promotion because
+of extra main-loop calls without service-latency evidence; production selection
+is unchanged. Clock/voltage changes, a second core, or FPU/DSP rewrites are
 separate hardware experiments with their own correctness, timing and reliability evidence.
 
 ## Report a result
