@@ -145,6 +145,9 @@ static void up_pat_norm(uint8_t *note, uint8_t *flags);
  * UP_PUT and SAVE store it (flash or a restored backup may hold anything there) */
 static void up_bank_check(uint32_t b, int len)
 {
+#ifndef UP_HOST
+    up_browse_invalidate();                       /* boot/import can replace a bank without changing up_gen */
+#endif
     up_bank_t *bk = &up_bank[b];
     uint32_t i, k;
     if (len != (int)sizeof *bk || bk->magic != UP_BANK_MAGIC || bk->rsize != sizeof(up_rec_t) ||
@@ -296,6 +299,7 @@ static void up_values(const up_rec_t *r, int16_t *v)   /* mapped and clamped for
 
 static void up_boot(void)                      /* persist_boot: the banks from flash */
 {
+    up_browse_invalidate();                       /* also for a build without flash */
 #if FELUCCA_FLASH
     uint32_t b;
     for (b = 0; b < UP_SLOTS / UP_PER_BANK; b++)
@@ -345,6 +349,7 @@ static int up_put(uint32_t k, const up_rec_t *r)
         bk->magic = magic;
         bk->rsize = rsize;
         bk->nslot = nslot;
+        up_browse_invalidate();                   /* a failed write publishes only the restored record */
         return 2;
     }
 #endif
@@ -358,6 +363,7 @@ static int up_put(uint32_t k, const up_rec_t *r)
                 trk[i].user = 0;
     }
     up_gen++;
+    up_browse_invalidate();                       /* explicit even if the generation wraps to a cached value */
 #if FELUCCA_FLASH
     if (flash_ok)
         return 0;
@@ -561,7 +567,7 @@ static uint32_t up_count(void)                 /* used slots */
 {
     uint32_t k, n = 0;
     for (k = 0; k < UP_SLOTS; k++)
-        n += (uint32_t)up_used(k);
+        n += (uint32_t)up_browse_used(k);
     return n;
 }
 
@@ -569,7 +575,7 @@ static uint32_t up_nth(uint32_t n)             /* slot of the n-th used one (n <
 {
     uint32_t k;
     for (k = 0; k < UP_SLOTS; k++)
-        if (up_used(k) && !n--)
+        if (up_browse_used(k) && !n--)
             return k;
     return 0;
 }
@@ -578,7 +584,7 @@ static uint32_t up_rank(uint32_t slot)         /* used slots before it */
 {
     uint32_t k, n = 0;
     for (k = 0; k < slot && k < UP_SLOTS; k++)
-        n += (uint32_t)up_used(k);
+        n += (uint32_t)up_browse_used(k);
     return n;
 }
 

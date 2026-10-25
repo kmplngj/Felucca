@@ -79,6 +79,7 @@ static void reset(void)
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml);
     memset(settings_dev, 0, sizeof settings_dev); memset(&settings, 0, sizeof settings); settings_init();
     memset(proj_slot, 0, sizeof proj_slot); memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     host_wire_n = 0;
     transport_req = panic_req = 0; sx_ready = sx_collect = sx_busy = 0;
     so_r = so_w = mi_r = mi_w = 0; usb.config = 1;

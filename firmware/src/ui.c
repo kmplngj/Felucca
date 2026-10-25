@@ -14,6 +14,7 @@ static int project_used(uint32_t slot);
 static int graph_project_used(uint32_t slot);       /* cached slot validity for display only (ui_graph.c) */
 static uint32_t chain_prepare(void);
 static int up_used(uint32_t k);              /* user presets: upreset.c */
+static int up_browse_used(uint32_t k);       /* main-loop display/list cache; never authorizes a load */
 static int up_load(uint32_t k);
 static uint32_t up_count(void);
 static uint32_t up_nth(uint32_t n);
@@ -40,9 +41,28 @@ static int project_erase(uint32_t slot);
 static void project_cur_name(char *b);
 static uint32_t user_of(const track_t *t)    /* user preset slot its sound came from, UP_SLOTS = none */
 {
-    return t->user && up_used(t->user - 1u) ? t->user - 1u : UP_SLOTS;
+    return t->user && up_browse_used(t->user - 1u) ? t->user - 1u : UP_SLOTS;
 }
 static uint32_t up_gen;                      /* bumped on every user bank change (redraws) */
+static struct {
+    uint32_t gen, used;
+    uint8_t ready;
+} up_browse;                                 /* RAM bank validity, main loop only; no interrupt reader */
+_Static_assert(UP_SLOTS <= 32u, "user validity mask fits one word");
+static void up_browse_invalidate(void) { up_browse.ready = 0; }
+static int up_browse_used(uint32_t k)
+{
+    if (k >= UP_SLOTS) return 0;
+    if (!up_browse.ready || up_browse.gen != up_gen) {
+        uint32_t used = 0;
+        for (uint32_t i = 0; i < UP_SLOTS; i++)
+            if (up_used(i)) used |= 1u << i;
+        up_browse.used = used;
+        up_browse.gen = up_gen;
+        up_browse.ready = 1;
+    }
+    return (up_browse.used >> k) & 1u;
+}
 #include "favorites.c"
 #include "category.c"                   /* sound categories (Discussion #90): PRESETS > LIST */
 /* MENU's two-valued settings (ui_menu.c MENU_FLAGS), a bit each in a byte no engine uses (as ui_layer.c layer_seen):
@@ -1848,7 +1868,7 @@ static uint32_t eng_list_pos(uint32_t *total)
     uint32_t cur = np ? preset_rank(en, preset_orig(en, TSEL->preset % en->npresets)) : 0u;   /* (#124: the aliases
                                         * skipped, as on PRESETS: SAMPLE 1 loads as 0, so counting it stuck KNOB 2) */
     for (k = 0; k < UP_SLOTS; k++)
-        if (up_used(k) && up_engine(k) == e) {
+        if (up_browse_used(k) && up_engine(k) == e) {
             if (k == u)
                 cur = np + n;
             n++;
@@ -1870,7 +1890,7 @@ static void eng_list_step(int32_t direction)         /* the next / previous soun
     } else {
         n -= np;
         for (k = 0; k < UP_SLOTS; k++)
-            if (up_used(k) && up_engine(k) == e && !n--) {
+            if (up_browse_used(k) && up_engine(k) == e && !n--) {
                 up_load(k);
                 break;
             }

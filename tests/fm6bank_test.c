@@ -182,6 +182,7 @@ static void reset(void)
     chain_defaults(&chain_config);
     memset(proj_slot, 0, sizeof proj_slot);
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&upf, 0, sizeof upf);
     memset(&ui, 0, sizeof ui);
     memset(&motion, 0, sizeof motion);

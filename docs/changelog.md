@@ -223,6 +223,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- **User-preset browsing:** main-loop sound lists and USER display rows reuse structural
+  validity of the RAM-mirrored records until a bank change, with explicit boot/restore/
+  rollback invalidation. Loading and editor/storage boundaries still validate actual
+  records. Query counts, preliminary profile costs and pending FM-1 qualification are
+  documented in the [cache report](user-preset-validity-cache.md); no device speedup is claimed.
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See

@@ -109,6 +109,7 @@ static void reset(void)
     chain_defaults(&chain_config);
     memset(proj_slot, 0, sizeof proj_slot);
     memset(up_bank, 0, sizeof up_bank);
+    up_browse_invalidate();                       /* fixture replaces the RAM banks directly */
     memset(&persist_saved, 0, sizeof persist_saved);
     memset(&settings, 0, sizeof settings);
     memset(&ui, 0, sizeof ui);
@@ -1466,6 +1467,15 @@ int main(void)
                      !memcmp(&proj_wire, &b, sizeof b));
         b.nslot = 3;
         bad += check("a bank with the wrong slot count is refused", put_all(7, &b, sizeof b, st_crc32(&b, sizeof b)) == 2u);
+        int empty = !up_count();                   /* warm the empty display before the actual backup restore */
+        memset(&b, 0, sizeof b);
+        b.magic = UP_BANK_MAGIC; b.rsize = sizeof(up_rec_t); b.nslot = UP_PER_BANK;
+        b.r[15].used = UP_USED; b.r[15].ver = UP_VER; b.r[15].np = P_COUNT;
+        memcpy(b.r[15].name, "RESTORED", 9);
+        bad += check("backup bank replacement refreshes a warm user list at slot U16",
+                     empty && put_all(6, &b, sizeof b, st_crc32(&b, sizeof b)) == 0 && up_count() == 1u && up_nth(0) == 15u);
+        bad += check("backup empty bank clears a warm user list",
+                     put_all(6, 0, 0, st_crc32(0, 0)) == 0 && !up_count());
     }
     bad += ext_tests();
     bad += raw_tests();
