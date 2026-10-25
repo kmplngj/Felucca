@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: One-off native compiler profile
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - .github/workflows/compiler-profile-native.yml
+      - tools/compiler_profile_native.py
+
+permissions:
+  contents: read
+
+jobs:
+  compiler-profile-native:
+    name: compiler-profile-native
+    if: >-
+      github.repository == 'kmplngj/Felucca' &&
+      github.event.pull_request.head.repo.full_name == 'kmplngj/Felucca' &&
+      github.head_ref == 'kori/670-native-compiler-profile'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    defaults:
+      run:
+        shell: bash
+        working-directory: frozen-source
+    steps:
+      - name: Check out experiment orchestration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: orchestration
+          persist-credentials: false
+      - name: Preserve helper outside frozen sources
+        working-directory: .
+        run: |
+          cp orchestration/tools/compiler_profile_native.py "$RUNNER_TEMP/compiler_profile_native.py"
+      - name: Check out the exact profiled source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: baae84778dc3dc4602b1a2c3a1e1d40e8885f777
+          path: frozen-source
+          submodules: recursive
+          persist-credentials: false
+      - name: Preserve frozen dependency pins and select existing cache key
+        id: inputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/felucca-python-project"
+          cp pyproject.toml uv.lock .python-version "$RUNNER_TEMP/felucca-python-project/"
+          target_cache_key=$(python3 tools/ci_target.py cache-key)
+          test -n "$target_cache_key"
+          echo "target_cache_key=$target_cache_key" >> "$GITHUB_OUTPUT"
+          {
+            echo "JIELI_TOOLCHAIN=$RUNNER_TEMP/jieli/toolchain"
+            echo "AC79_SDK=$RUNNER_TEMP/sdk"
+          } >> "$GITHUB_ENV"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.23'
+          enable-cache: false
+      - name: Install the existing locked build dependencies
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/felucca-python
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends libfribidi0 libraqm0
+          uv sync --locked --only-group build --project "$RUNNER_TEMP/felucca-python-project" \
+            --python "$(command -v python3)" --no-python-downloads
+          echo "$UV_PROJECT_ENVIRONMENT/bin" >> "$GITHUB_PATH"
+          echo "PYTHON=$UV_PROJECT_ENVIRONMENT/bin/python" >> "$GITHUB_ENV"
+      - name: Restore existing target dependency cache only
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/jieli
+            ${{ runner.temp }}/sdk
+          key: target-${{ runner.os }}-${{ runner.arch }}-${{ steps.inputs.outputs.target_cache_key }}
+      - name: Acquire and verify target inputs using frozen production recipes
+        run: |
+          if [ ! -x "$JIELI_TOOLCHAIN/pi32v2/bin/clang" ]; then
+            sh tools/get_toolchain.sh "$RUNNER_TEMP/jieli"
+          fi
+          python3 tools/ci.py sdk
+      - name: Reconstruct and profile only the exact matching IR
+        env:
+          EXPERIMENT_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          ulimit -n 8192
+          "$PYTHON" "$RUNNER_TEMP/compiler_profile_native.py" \
+            --source "$GITHUB_WORKSPACE/frozen-source" \
+            --out "$RUNNER_TEMP/native-compiler-profile"
+      - name: Upload comparison evidence, including failed gates
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compiler-profile-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-compiler-profile/
+          retention-days: 14
+          if-no-files-found: warn
