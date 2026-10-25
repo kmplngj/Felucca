@@ -136,6 +136,7 @@ a host crash or loss of the container engine; a cleanup failure reports the exac
 container name/ID and never removes another build's container. Do not treat that failure
 as a clean successful lifecycle. This changes build overhead, not firmware arithmetic,
 compiler flags or audio CPU use.
+
 Install uv using its [installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
 ### Python environments

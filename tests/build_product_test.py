@@ -672,6 +672,64 @@ finally:
                     self.assertEqual(daemon.returncode, 0, daemon_error)
 
 
+class SessionCleanupContext(unittest.TestCase):
+    """Only this context's propagating exception takes precedence over cleanup failure."""
+    def setUp(self):
+        self.session = MagicMock()
+        self.cleanup_error = RuntimeError('daemon unavailable')
+        self.session.close.side_effect = self.cleanup_error
+        for name, value in (('use_docker', lambda: True),
+                            ('ToolchainSession', lambda: self.session), ('_TOOL_SESSION', None)):
+            patched = patch.object(B, name, value)
+            patched.start()
+            self.addCleanup(patched.stop)
+
+    def finished(self):
+        self.session.close.assert_called_once_with()
+        self.session.install_handlers.assert_called_once_with()
+        self.session.restore_handlers.assert_called_once_with()
+        self.assertIsNone(B._TOOL_SESSION)
+
+    def test_cleanup_failure_in_handled_caller_exception_is_fatal(self):
+        caller = ValueError('already handled by caller')
+        try:
+            raise caller
+        except ValueError:
+            with self.assertRaisesRegex(SystemExit, 'owned toolchain cleanup failed') as raised:
+                with B.toolchain_session():
+                    self.assertIs(B._TOOL_SESSION, self.session)
+            self.assertIs(sys.exc_info()[1], caller)
+        self.assertIs(raised.exception.__cause__, self.cleanup_error)
+        self.session.cleanup_error.assert_called_once_with(self.cleanup_error)
+        self.finished()
+
+    def test_cleanup_failure_preserves_the_actual_body_exception(self):
+        for primary in (ValueError('body failed'), SystemExit(17), KeyboardInterrupt()):
+            with self.subTest(primary=type(primary).__name__):
+                self.session.reset_mock()
+                try:
+                    raise LookupError('already handled by caller')
+                except LookupError:
+                    with self.assertRaises(type(primary)) as raised:
+                        with B.toolchain_session():
+                            raise primary
+                self.assertIs(raised.exception, primary)
+                self.session.cleanup_error.assert_called_once_with(self.cleanup_error)
+                self.finished()
+
+    def test_successful_cleanup_in_handled_caller_exception_returns_normally(self):
+        self.session.close.side_effect = None
+        caller = ValueError('already handled by caller')
+        try:
+            raise caller
+        except ValueError:
+            with B.toolchain_session():
+                self.assertIs(B._TOOL_SESSION, self.session)
+            self.assertIs(sys.exc_info()[1], caller)
+        self.session.cleanup_error.assert_not_called()
+        self.finished()
+
+
 class NoJobs(unittest.TestCase):
     """main() with mocked generators and compilers: bad input starts none of them, good input uses one identity."""
 

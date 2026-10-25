@@ -362,13 +362,16 @@ def toolchain_session():
         raise RuntimeError("nested target build session")
     session = ToolchainSession()
     _TOOL_SESSION = session
+    primary_error = False
     try:
         if threading.current_thread() is not threading.main_thread():
             session.fallback("target main called outside the Python main thread")
         session.install_handlers()
         yield
+    except BaseException:
+        primary_error = True
+        raise
     finally:
-        primary_error = sys.exc_info()[0] is not None
         try:
             session.close()
         except Exception as error:
