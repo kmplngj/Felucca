@@ -74,10 +74,13 @@ class NativeBundle(unittest.TestCase):
             run(['git', 'clone', '--no-local', '--no-checkout', ROOT, control], ROOT, 'clone')
             run(['git', 'checkout', '--detach', revision], control, 'checkout')
             run(['git', 'remote', 'set-url', 'origin', git(ROOT, 'remote', 'get-url', 'origin')], control, 'origin')
+            run(['git', 'submodule', 'init', '--', 'firmware/engines'], control, 'engine-registration')
             run(['git', 'clone', '--no-local', ROOT / 'firmware/engines', engine], ROOT, 'engines')
             pin = git(ROOT, 'rev-parse', revision + ':firmware/engines')
             run(['git', 'checkout', '--detach', pin], engine, 'engine-pin')
             run(['git', 'remote', 'set-url', 'origin', git(ROOT / 'firmware/engines', 'remote', 'get-url', 'origin')], engine, 'engine-origin')
+            self.assertIn('firmware/engines/src/felucca_engine.h',
+                          git(control, 'ls-files', '--recurse-submodules').splitlines())
             cfg = original['configuration']
             args = ['--release', cfg['version_override'][1:]] if cfg['version_override'] else []
             args += ['--product', cfg['product']]
