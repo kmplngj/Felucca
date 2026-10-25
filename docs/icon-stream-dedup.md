@@ -1,5 +1,21 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
-# Exact icon-stream reuse experiment
+# Exact icon-stream reuse
+
+## Delivery and evidence scope
+
+The stream-reuse implementation is carried with the native attribution correction
+in [PR #596](https://github.com/kmplngj/Felucca/pull/596), preserving their separate
+logical commits. Its current validation and exact build identities are recorded
+in that PR. Standard full CI covers the real C icon oracle, strict sanitizers,
+ABOUT navigation and scrolling, normal/FM4 native renders and the browser gate;
+the optional MACRO profile needs its own target resource/budget check.
+
+The sections below retain the **2026-10-24 experiment**, source pins and measured
+208 B result. Those are not a new combined-build saving, and cannot simply be
+added to another PR's size change. Identity, flags and generated inputs must be
+reported with any later comparison. This bounded data representation changes no
+decoder/cache code or decoded pixels; physical LCD and device-timing observations
+remain separate and unperformed. No device speed gain is claimed.
 
 Candidate for [#96](https://github.com/kmplngj/Felucca/issues/96), refreshed against
 main `3fce9f9f4d63b56aecfdc0e7e2d35d4271878bcf`, 2026-10-24. Only identical complete
@@ -18,7 +34,7 @@ replay and partition checks passed. Hosted CI and FM-1 qualification remain
 separate pending gates. No device speed gain is claimed.
 No alternative codec or font representation was trialed.
 
-## Current native UI integration
+## Recorded native UI integration (2026-10-24)
 
 The normal merge of `3fce9f9` into the previous candidate `70b8794`
 completed without conflicts and was signed as
@@ -112,7 +128,7 @@ Their reserved stored/wire values remain unchanged. Current screen acceptance
 must use the unified native layout and preserve its graph, focus and rolling
 behavior, without restoring old font or layout alternatives.
 
-## Completed current integration checks
+## Completed recorded integration checks (2026-10-24)
 
 The final `7736398` standard target build is clean and retains app 496,108 B,
 RAM 62,392 B, POOL 336,440 B, RAMTEXT 3,152 B and NOINIT 15,576 B. The preceding
