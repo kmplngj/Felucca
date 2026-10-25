@@ -47,6 +47,7 @@ static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty
 static int c1_exclusion, c1_recovers;                   /* #410: a retained exclusion the player's ON may clear (menu_items.c) */
 #define C1_RECOVER() (c1_exclusion ? (c1_exclusion = 0, ++c1_recovers, 1) : 0)
 #endif
+#define ENGINES_QUAL                                   /* (a writable ENGINES[]: test_knob_policy swaps in a copy) */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -10293,6 +10294,103 @@ static int test_fm6_ops(void)
     return bad;
 }
 
+/* #533: drive the production panel path with every legal imported DX7 coarse byte.
+ * The stored byte stays five-bit; only FIXED's low two bits form the editable decade. */
+static int test_fm6_fixed(void)
+{
+    static const char *const HZ[] = {"1", "10", "100", "1000"};
+    uint8_t v[FP_SIZE + 1u], imported[FP_SIZE + 1u], packed[FM6_PACKED], exported[FM6_PACKED];
+    uint32_t o, c, a, size_bit, d, b, at, tr, gen;
+    int bad = 0, edit = 1, view = 1, ratio_mode = 1, kept = 1;
+    ui_power_on(); song.sel = 1; tr = song.sel;
+    for (o = 0; o < 6u; o++)
+        for (c = 0; c < 32u; c++)
+            for (a = 0; a < 2u; a++) {
+                b = (5u - o) * FP_OP;
+                fm6_unpack(FM6_INIT, v);
+                v[b + FP_MODE] = 1; v[b + FP_FC] = (uint8_t)c;
+                v[b + FP_FF] = 37; v[b + FP_DET] = 11;
+                fm6_pack(v, packed); fm6_unpack(packed, imported);
+                fm6_set_patch(tr, imported); fm6_adopt(tr);
+                go_title("OPERATOR"); fop_pick(o + 1u);
+                ui_prefs = a ? PREF_ACCEL : 0;
+                for (size_bit = 0; size_bit < 2u; size_bit++) {
+                    const char *label, *unit;
+                    char val[12], freq[12], expected[12];
+                    int32_t r;
+                    uint32_t icon;
+                    ui_prefs = (uint8_t)((a ? PREF_ACCEL : 0) | (size_bit ? PREF_LARGE : 0));
+                    draw_columns();
+                    fop_card(1, &label, val, &unit, &r, &icon);
+                    view &= str_eq(label, "FIXED") && str_eq(val, HZ[c & 3u]) && str_eq(unit, "HZ") &&
+                            r == (int32_t)((c & 3u) * 1000u / 3u);
+                    view &= bank_on() && ui.read_bank.field[1].ratio == r && !ui.read_bank.field[1].fixed;
+                    fop_freq(fop_bytes(tr), freq);
+                    v[b + FP_FC] = (uint8_t)(c & 3u);
+                    fop_freq(v + b, expected);
+                    view &= str_eq(freq, expected) && fm6_osc_base(fop_bytes(tr), 60, 0) == fm6_osc_base(v + b, 60, 0);
+                }
+                view &= !memcmp(imported, fm6_patch[tr], FP_SIZE);
+                fm6_pack(fm6_patch[tr], exported);
+                kept &= !memcmp(packed, exported, FM6_PACKED);
+                go_title("OPERATOR 2"); turn(EN_K2, -1);
+                ratio_mode &= fm6_patch[tr][b + FP_FC] == c && fm6_patch[tr][b + FP_MODE] == 0;
+                turn(EN_K2, 1);
+                kept &= !memcmp(imported, fm6_patch[tr], FP_SIZE);
+                go_title("OPERATOR");
+                /* Fast repeated detents and batched overshoot both stop at the same endpoints. */
+                for (d = 0; d < 6u; d++) {
+                    uint32_t want = (c & 3u) + d + 1u;
+                    turn(EN_K2, 1); host_ticks -= 200000u;
+                    edit &= fm6_patch[tr][b + FP_FC] == ((c & ~3u) | (want > 3u ? 3u : want));
+                }
+                gen = fm6_pgen[tr];
+                turn(EN_K2, 200);
+                edit &= fm6_patch[tr][b + FP_FC] == (c | 3u) && fm6_pgen[tr] == gen;
+                for (d = 0; d < 6u; d++) {
+                    turn(EN_K2, -1); host_ticks -= 200000u;
+                    edit &= fm6_patch[tr][b + FP_FC] == ((c & ~3u) | (d < 3u ? 2u - d : 0u));
+                }
+                gen = fm6_pgen[tr];
+                turn(EN_K2, -200);
+                edit &= fm6_pgen[tr] == gen;
+                memcpy(v, imported, FP_SIZE); v[b + FP_FC] = (uint8_t)(c & ~3u);
+                edit &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+                /* RATIO retains 0 = x0.50 and all integer ratios through 31. */
+                go_title("OPERATOR 2"); turn(EN_K2, -1);
+                go_title("OPERATOR"); turn(EN_K2, 200);
+                ratio_mode &= fm6_patch[tr][b + FP_FC] == 31u;
+                turn(EN_K2, -200);
+                ratio_mode &= fm6_patch[tr][b + FP_FC] == 0u;
+            }
+    bad += check("FM6 FIXED: all 6 operators x 32 DX7 coarse bytes x ACCEL OFF/ON, four bounded decades both ways; other bytes stay", edit);
+    bad += check("FM6 FIXED: unified bank/rule and chart agree with DSP low bits for both historical size bits; viewing preserves bytes", view);
+    bad += check("FM6 FIXED: mode toggles and DX7 export preserve high coarse bits; RATIO remains 0..31", kept && ratio_mode);
+    /* A fresh real edit owns the patch, and SAVE undo/redo and stored containers keep its high bits. */
+    ui_power_on(); song.sel = 1; tr = song.sel;
+    fm6_unpack(FM6_INIT, v);
+    v[5u * FP_OP + FP_MODE] = 1; v[5u * FP_OP + FP_FC] = 29;
+    fm6_set_patch(tr, v); fm6_adopt(tr);
+    memcpy(imported, fm6_patch[tr], FP_SIZE);
+    go_title("OPERATOR"); fop_pick(1);
+    turn(EN_K2, 1);
+    kept = patch_diff(imported, fm6_patch[tr], &at) == 1 && at == 5u * FP_OP + FP_FC && fm6_patch[tr][at] == 30 && slot_own();
+    memcpy(v, fm6_patch[tr], FP_SIZE);
+    hold(B_SAVE); kept &= !memcmp(imported, fm6_patch[tr], FP_SIZE) && slot_own();
+    hold(B_SAVE); kept &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+    stop_transport(); project_save(2);
+    a = (uint32_t)up_store(9, "FIXED"); kept &= a == 0u || a == 3u;
+    TSEL->p[P_E7] = 0; fm6_poll(); project_load(2);
+    kept &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+    TSEL->p[P_E7] = 1; fm6_poll(); up_load(9);
+    kept &= !memcmp(v, fm6_patch[tr], FP_SIZE) && slot_own();
+    fm6_pack(fm6_patch[tr], packed); fm6_unpack(packed, imported);
+    kept &= !memcmp(v, imported, FP_SIZE);
+    bad += check("FM6 FIXED: high bits survive a one-byte edit, SLOT OWN, undo/redo, project, user preset and DX7 round trips", kept);
+    ui_power_on();
+    return bad;
+}
+
 /* 1.3 (Discussions #112, #134): MENU > DISPLAY > HOME SCOPE / TRACKS (ui.c ui_home_view, settings byte [15][26]) and
  * HOME > TRACKS (ui_graph.c draw_home_tracks): the setting (its default, names, tab, byte, the other settings' bytes
  * untouched, an unknown value as SCOPE, the menu's knob, the settings record); the rows read from the screen: a note's
@@ -10557,6 +10655,378 @@ static void kp_end(void)
     ui.ml.on = 0; ui.ml.pick = 0;
     menu_put(MI_HOME, HV_SCOPE);
 }
+/* #569: real ENV press/turn/release, including the repeated already-default detent. The target and expected
+ * default are supplied independently of the gesture resolver. Other values, page, encoder timing and motion
+ * records stay unchanged; a changed value alone follows the permanent edit's capture/LEARN policy. */
+static int kd_turn(uint32_t k, int32_t s, int16_t *vp, int16_t want, uint32_t ti, uint32_t id, int cap, int pick)
+{
+    uint8_t home = ui.home, page = ui.page;
+    uint32_t enc[sizeof ui.enc_t / sizeof ui.enc_t[0]];
+    motion_store_t after;
+    int ok;
+    memcpy(enc, ui.enc_t, sizeof enc);
+    btn_down(B_ENV); frame();
+    ok = kp_turn(k, s, vp, want, ti, id, cap, pick);
+    ok &= msg_is("DEFAULT") && ui.hot_col == k && !(ui.pg_down & (1u << panel.btn[B_ENV]));
+    memcpy(&after, &motion, sizeof after);
+    ok &= kp_turn(k, -s, vp, want, ti, id, 0, 0) && !memcmp(&after, &motion, sizeof after);
+    btn_up(B_ENV); frame();
+    ok &= ui.home == home && ui.page == page && !memcmp(enc, ui.enc_t, sizeof enc) && !mom.n;
+    return ok;
+}
+static void kd_start(uint32_t view, uint32_t engine)
+{
+    kp_start(view);
+    set_engine_of(TSEL, engine);
+    frame();
+    ui_prefs |= PREF_ACCEL;                            /* reset consumes a detent, never an accelerated turn */
+}
+/* A default detent is still a real knob gesture for GRAPH TURN, including an already-default detent. */
+static int test_knob_default_graph(void)
+{
+    static const uint8_t KNOBS[] = {0, 2};              /* ANALOG CUT and ATK: filter and envelope curves */
+    static const uint8_t CURVES[] = {CK_FILTER, CK_ENV};
+    uint32_t i, n;
+    int bad = 0, ok = 1;
+    for (i = 0; i < NELEM(KNOBS); i++) {
+        uint32_t k = KNOBS[i], id;
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        id = eng_of(TSEL->eng_req)->knob[k];
+        TSEL->p[id] = 0;
+        ui.curve_t = 0;
+        btn_down(B_ENV); frame(); turn(EN_K1 + k, 1);
+        ok &= TSEL->p[id] == track_desc(TSEL, id)->def && ui.curve_t > 0u &&
+              ui.read_bank.focus == k && panel_curve(TSEL) == CURVES[i] && msg_is("DEFAULT");
+        ui.curve_t = 0;                                /* the held gesture's next, already-default detent renews it */
+        turn(EN_K1 + k, -1);
+        ok &= ui.curve_t > 0u && panel_curve(TSEL) == CURVES[i];
+        btn_up(B_ENV); frame();
+        ok &= ui.home && ui.read_bank.focus == k;
+        for (n = 0; n <= CURVE_HOLD; n++) frame();
+        ok &= !ui.curve_t && panel_curve(TSEL) == CK_NONE && ui.read_bank.focus == k;
+        kp_end();
+    }
+    bad += check("#569/#572 ENV default: filter/envelope focus and curve hold renew on changed/no-op detents, then scope returns", ok);
+    return bad;
+}
+static int test_knob_defaults(void)
+{
+    static const uint8_t MIX_ID[] = {P_LEVEL, P_PAN, P_REV, P_MUTE};
+    static const struct { const char *page; uint8_t knob, id; } CELL[] = {
+        {"ENV", 0, P_ATK}, {"FX", 1, P_CHOR}, {"EDIT 1", 1, P_E1}, {"MOD", 1, P_M1SRC},
+        {"VOICE 2", 2, P_PAN}, {"ARP", 1, P_ARATE}, {"SCL", 3, P_TRANS}, {"LFO 2", 0, P_LSYNC},
+    };
+    int bad = 0, ok;
+    uint32_t view, k, id, i, n;
+    int16_t *vp, want, v;
+    const param_desc_t *d;
+    for (view = HV_SCOPE; view <= HV_LEVELS; view++) {
+        kd_start(view, 0u /* ANALOG */);
+        ok = 1;
+        for (k = 0; k < 4u; k++) {
+            uint32_t ti = view == HV_LEVELS ? k : song.sel;
+            id = view == HV_LEVELS ? P_LEVEL : eng_of(0u /* ANALOG */)->knob[k];
+            d = track_desc(&trk[ti], id);
+            vp = &trk[ti].p[id];
+            want = d->def;
+            *vp = want == d->min ? d->max : d->min;
+            ok &= kd_turn(k, k & 1u ? -7 : 9, vp, want, ti, id, ti == song.sel && motion_param(id), 1);
+        }
+        bad += check(view == HV_LEVELS ? "#569 ENV+knob: HOME LEVELS edits only knob k's track; selected-track capture" :
+                     view == HV_TRACKS ? "#569 ENV+knob: HOME TRACKS four declared defaults, no page/timing leak" :
+                     "#569 ENV+knob: HOME four declared defaults, both directions, repeated no-ops", ok);
+        kp_end();
+    }
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    go_title("MIXER"); frame();
+    ok = 1;
+    for (k = 0; k < 4u; k++) {
+        id = MIX_ID[k]; d = &TP[id]; vp = &TSEL->p[id];
+        *vp = d->def == d->min ? d->max : d->min;
+        ok &= kd_turn(k, k & 1u ? -11 : 5, vp, d->def, song.sel, id, k != 3u && motion_param(id), 1);
+    }
+    bad += check("#569 ENV+knob: MIXER LEVEL PAN REV MUTE defaults; MUTE picked but never captured", ok);
+    kp_end();
+
+    ok = 1;
+    for (i = 0; i < NELEM(CELL); i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        go_title(CELL[i].page); frame();
+        id = CELL[i].id; d = track_desc(TSEL, id); vp = &TSEL->p[id];
+        *vp = d->def == d->min ? d->max : d->min;
+        ok &= kd_turn(CELL[i].knob, -6, vp, d->def, song.sel, id, motion_param(id), 1);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: ordinary track/engine cells, MOD values and ordered enums", ok);
+
+    kd_start(HV_SCOPE, ENGI_PHYS);
+    go_title("EDIT 1"); frame();
+    TSEL->p[P_E0] = PM_SYMP; TSEL->p[P_E1] = 100;
+    ok = track_desc(TSEL, P_E1) == &PHYS_D_CHRD &&
+         kd_turn(1, 8, &TSEL->p[P_E1], 64, song.sel, P_E1, 1, 1);
+    TSEL->p[P_E0] = PM_MEMB; TSEL->p[P_E1] = 20;
+    ok &= track_desc(TSEL, P_E1) == &PHYS_D_HARM &&
+          kd_turn(1, -9, &TSEL->p[P_E1], 64, song.sel, P_E1, 1, 1);
+    bad += check("#569 ENV+knob: current PHYS model's descriptor is resolved on each event", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, ENGI_SAMPLE);
+    TSEL->p[P_E0] = 1;                                /* retired TRANH alias; declared SET default is PIANO */
+    ok = kd_turn(0, -9, &TSEL->p[P_E0], 0, song.sel, P_E0, 1, 1);
+    {
+        /* No shipped descriptor declares a retired alias or out-of-range default. Exercise the operation with
+         * local writable descriptors, without casting away const or changing the production engine table. */
+        param_desc_t alias = {"SET", F_ENUM, 0, SMP_NALL - 1, 1, SMP_ALL_NAMES, 0};
+        knob_target_t kt = {0, &v, &alias, 0};
+        v = 2;
+        ok &= knob_default(&kt) && v == 0;
+        alias.names = 0; alias.min = 10; alias.max = 20; alias.def = 127; v = 12;
+        ok &= knob_default(&kt) && v == 20;
+        alias.min = alias.max = 15; v = 12;
+        ok &= !knob_default(&kt) && v == 12;
+        kt.vp = 0; ok &= !knob_default(&kt);
+    }
+    bad += check("#569 ENV+knob: retired enum aliases, fitted defaults and refused fixed/empty targets", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    go_title("INSERT"); frame();
+    TSEL->p[P_ITYPE] = IT_SOFT; TSEL->p[P_IA] = 3;
+    ok = kd_turn(1, 7, &TSEL->p[P_IA], 64, song.sel, P_IA, 1, 1);
+    TSEL->p[P_ITYPE] = IT_CRUSH; TSEL->p[P_IB] = 3;
+    ok &= kd_turn(2, -8, &TSEL->p[P_IB], 96, song.sel, P_IB, 1, 1);
+    go_title("ENV"); frame();
+    TSEL->p[P_ESYNC] = 1; TSEL->p[P_ATK] = 100;
+    ok &= track_desc(TSEL, P_ATK) == &ESYNC_DESC[0] &&
+          kd_turn(0, 12, &TSEL->p[P_ATK], 10, song.sel, P_ATK, 1, 1);
+    bad += check("#569 ENV+knob: current INSERT descriptor and exact ENV-SYNC default (not a turned/rounded value)", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    ok = 1;
+    for (i = 0; i < NPAGES; i++) {
+        if (PAGES[i].fam != FAM_FX || PAGES[i].scope != SC_GLOBAL) continue;
+        ui.home = 0; ui.page = (uint8_t)i; frame();
+        for (k = 0; k < 4u; k++) {
+            id = PAGES[i].id[k];
+            if (id == 0xFFu) continue;
+            d = &GP[id]; vp = &song.g[id];
+            *vp = d->def == d->min ? d->max : d->min;
+            ok &= kd_turn(k, -5, vp, d->def, 0, 0, 0, 0);
+        }
+    }
+    bad += check("#569 ENV+knob: every global FX cell resets without capture or LEARN", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    go_title("MIXER"); frame();
+    TSEL->p[P_PAN] = 0; ui.ml.pick = 1; ui.ml.trk = 0; ui.ml.id = P_REV;
+    n = motion.count;
+    btn_down(B_ENV); frame(); turn(EN_K2, 12); btn_up(B_ENV); frame();
+    bad += check("#569 already-default gesture consumes ENV but retains an existing LEARN pick and motion",
+                 !ui.home && str_eq(cur_page()->title, "MIXER") && !TSEL->p[P_PAN] && motion.count == n &&
+                 ui.ml.pick && !ui.ml.trk && ui.ml.id == P_REV);
+    kp_end();
+
+    /* Armed capture keeps the base; an unarmed live edit updates it. Neither path deletes existing motion or
+     * locks. Later automation may still override the reset, as it does an ordinary permanent knob turn. */
+    ok = 1;
+    for (i = 0; i < 4u; i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        go_title("MIXER"); frame();
+        TSEL->p[P_PAN] = -32;
+        motion_begin(); motion_set_enabled(TSEL, 1);
+        motion_set_event(TSEL, 1, P_PAN, 50);
+        motion_set_lock(TSEL, 3, P_REV, 40);
+        motion_step(TSEL, 1, &motion, 1);
+        song.playing = (i >> 1) & 1u; song.rec = i & 1u ? 1u << song.sel : 0;
+        n = motion.count;
+        ok &= kd_turn(1, 6, &TSEL->p[P_PAN], 0, song.sel, P_PAN, i == 3u, 1);
+        ok &= motion_base_value(TSEL, P_PAN) == (i == 3u ? -32 : 0) && motion_lock_count(TSEL) == 1u &&
+              motion.count == n + (i == 3u);
+        motion_step(TSEL, 1, &motion, 1);
+        ok &= TSEL->p[P_PAN] == 50;
+        motion_restore(TSEL);
+        ok &= TSEL->p[P_PAN] == (i == 3u ? -32 : 0);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: stopped/unarmed/recording motion bases, later events and locks preserved", ok);
+    return bad;
+}
+/* A refused context keeps ENV's ordinary pending page tap. Its knob may still select, act or edit as before. */
+static int kd_refused(uint32_t k, int32_t s)
+{
+    int ok;
+    ui.msg_t = 0;
+    btn_down(B_ENV); frame();
+    turn(EN_K1 + k, s);
+    ok = (ui.pg_down & (1u << panel.btn[B_ENV])) && !msg_is("DEFAULT");
+    btn_up(B_ENV); frame();
+    return ok;
+}
+static int test_knob_default_exclusions(void)
+{
+    static const struct { const char *page; uint8_t knob; } EX[] = {
+        {"PRESETS", 3}, {"USER", 0}, {"PHRASES", 0}, {"PROJECT", 3}, {"TOOLS", 1},
+        {"STEP", 0}, {"DETAIL", 0}, {"SONG", 1}, {"AUTOMATION", 0},
+    };
+    static const uint8_t LAYER[] = {B_FX, B_GLO, B_SCL, B_EDIT, B_SEQ, B_REC};
+    int bad = 0, ok;
+    uint32_t i, k, id, n;
+    int16_t *vp, v;
+    const param_desc_t *d;
+
+    ok = 1;
+    for (i = 0; i < NELEM(EX); i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        song.playing = song.rec = 0;
+        go_title(EX[i].page); frame();
+        ok &= kd_refused(EX[i].knob, 1);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: browsers/lists/actions, STEP/DETAIL, SONG and AUTOMATION keep ordinary gestures", ok);
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    ui_prefs &= ~PREF_ACCEL;
+    go_title("CLOCK"); frame();
+    song.g[G_BPM] = 100;
+    ok = kd_refused(0, 3) && song.g[G_BPM] == 103;
+    go_title("CLOCK"); frame(); song.g[G_SWING] = 10;
+    ok &= kd_refused(1, 2) && song.g[G_SWING] == 12;
+    go_title("CLOCK"); frame(); song.g[G_CLOCK] = 0;
+    ok &= kd_refused(2, 1) && song.g[G_CLOCK] == 1;
+    go_title("MOD"); frame(); mod_ui_slot = 0;
+    ok &= kd_refused(0, 1) && mod_ui_slot == 1u;
+    bad += check("#569 ENV+knob: CLOCK tempo/swing/source and MOD slot selection are not defaults", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, ENGI_SAMPLE);
+    go_title("EDIT 2"); frame();
+    n = motion.count; ui.ml.pick = 0;
+    ok = kd_refused(1, 8) && !TSEL->p[P_E5] && motion.count == n && !ui.ml.pick;
+    go_title("CHORUS"); frame();
+    kp_take();
+    ok &= kd_refused(2, -9) && kp_only(0) && motion.count == n && !ui.ml.pick;
+    bad += check("#569 ENV+knob: fixed and empty page cells refuse without consuming ENV or adding side effects", ok);
+    kp_end();
+
+    kd_start(HV_SCOPE, ENGI_FM6);
+    ok = 1;
+    for (i = GR_FMOP; i <= GR_FMENV; i++) {
+        for (k = 0; k < 4u; k++) {
+            go_page(i); frame();
+            ok &= kd_refused(k, 1);
+        }
+    }
+    bad += check("#569 ENV+knob: all FM6 operator-page knobs retain their operator/byte edits", ok);
+    kp_end();
+
+    /* Combined #533/#569: ENV is not a reset modifier on operator pages.
+     * Imported high coarse bits still survive the ordinary FIXED detent. */
+    ok = 1;
+    for (i = 0; i < 6u; i++) {
+        uint8_t expected[FP_SIZE + 1u];
+        uint32_t at = (5u - i) * FP_OP;
+        kd_start(HV_SCOPE, ENGI_FM6);
+        fm6_unpack(FM6_INIT, expected);
+        expected[at + FP_MODE] = 1;
+        expected[at + FP_FC] = 29;
+        fm6_set_patch(song.sel, expected); fm6_adopt(song.sel);
+        go_title("OPERATOR"); fop_pick(i + 1u); frame();
+        expected[at + FP_FC] = 30;
+        ok &= kd_refused(1, 1) && !memcmp(expected, fm6_patch[song.sel], FP_SIZE);
+        kp_end();
+    }
+    bad += check("#533/#569 ENV+FIXED: six operators keep ordinary decades and imported high bits, never reset", ok);
+#if FELUCCA_SLICE
+    kd_start(HV_SCOPE, ENGI_SLICE);
+    go_title("SLICES"); frame();
+    ok = kd_refused(0, 1);
+    go_title("SLICES"); frame();
+    ok &= kd_refused(1, -1);
+    bad += check("#569 ENV+knob: SLICES marker selection and movement retain ordinary gestures", ok);
+    kp_end();
+#endif
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    ui_prefs &= ~PREF_ACCEL;
+    id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; d = track_desc(TSEL, id);
+    *vp = 20; n = motion.count; ui.ml.pick = 0;
+    btn_down(B_ENV); frame(); btn_down(B_LFO); frame();
+    turn(EN_K1, 3);
+    ok = *vp == param_turn(d, 20, 3) && mom.n == 1u && motion.count == n && !ui.ml.pick && !msg_is("DEFAULT");
+    btn_up(B_ENV); frame(); btn_up(B_LFO); frame();
+    ok &= *vp == 20 && !mom.n;
+    bad += check("#569 ENV+LFO+knob: existing MOMENTARY takes precedence and restores its cache", ok);
+    kp_end();
+
+    ok = 1;
+    for (i = 0; i < NELEM(LAYER); i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        id = eng_of(TSEL->eng_req)->knob[3]; vp = &TSEL->p[id]; *vp = 20;
+        btn_down(B_ENV); frame(); btn_down(LAYER[i]); frames(500);
+        turn(EN_K4, 1);
+        ok &= *vp == 20 && ui.layer && !msg_is("DEFAULT");
+        btn_up(B_ENV); frame(); btn_up(LAYER[i]); frame(); frames(400);
+        kp_end();
+    }
+    bad += check("#569 ENV with FX/GLO/SEL/EDIT/SEQ/REC layers: the layer owns the detent, no sound default", ok);
+
+    /* SAVE/ARP/HOME held are also modifiers, even when they are not quick layers. Release them after ENV so
+     * their existing tap/hold behavior cannot disguise an accidental default during the knob event. */
+    ok = 1;
+    {
+        static const uint8_t OTHER[] = {B_SAVE, B_ARP, B_HOME};
+        for (i = 0; i < NELEM(OTHER); i++) {
+            kd_start(HV_SCOPE, 0u /* ANALOG */);
+            ui_prefs &= ~PREF_ACCEL;
+            id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; d = track_desc(TSEL, id); *vp = 20;
+            btn_down(B_ENV); frame(); btn_down(OTHER[i]); frame();
+            turn(EN_K1, 2);
+            ok &= *vp == param_turn(d, 20, 2) && !msg_is("DEFAULT");
+            btn_up(B_ENV); frame(); btn_up(OTHER[i]); frame();
+            kp_end();
+        }
+    }
+    bad += check("#569 ENV must be the sole editing button; SAVE, ARP and HOME combinations keep ordinary turns", ok);
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    song.playing = 0; song.rec = 1u << song.sel;
+    go_home(); frame(); go_title("STEP"); frame();
+    key_down(white(0)); frame();
+    id = lock_id(0); d = track_desc(TSEL, id); TSEL->p[id] = 20;
+    btn_down(B_ENV); frame(); turn(EN_K1, 3);
+    ok = lock_held() && motion_lock_get(TSEL, ui.cursor, id, &v) && v == param_turn(d, 20, 3) &&
+         TSEL->p[id] == 20 && !msg_is("DEFAULT");
+    key_up(white(0)); frame(); btn_up(B_ENV); frame();
+    bad += check("#569 ENV with a held STEP: parameter-lock turn wins, the base sound is not reset", ok);
+    kp_end();
+
+    ok = 1;
+    for (i = 0; i < 3u; i++) {
+        kd_start(HV_SCOPE, 0u /* ANALOG */);
+        song.playing = song.rec = 0;
+        id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; *vp = 20;
+        if (!i) { hold(B_HOME); ok &= ui.menu != 0; }
+        else if (i == 1u) name_open(NK_USER_SAVE, 5);
+        else confirm_open(CF_CLEAR_SEQ, song.sel);
+        btn_down(B_ENV); frame(); turn(EN_K1, 1); btn_up(B_ENV); frame();
+        ok &= *vp == 20 && !msg_is("DEFAULT") && (!i ? ui.menu != 0 : i == 1u ? name_on() : ui.confirm != 0);
+        kp_end();
+    }
+    bad += check("#569 ENV+knob: MENU/settings, NAME and dialogs retain ownership", ok);
+
+    kd_start(HV_SCOPE, 0u /* ANALOG */);
+    song.playing = song.rec = 0;
+    id = eng_of(TSEL->eng_req)->knob[0]; vp = &TSEL->p[id]; *vp = 20;
+    scr_dark_put(1); fm1_ms += 300000u; frame();
+    ok = scrn.st == SCR_OFF;
+    btn_down(B_ENV); frame(); turn(EN_K1, 9); btn_up(B_ENV); frame(); frames(400);
+    ok &= *vp == 20 && ui.home && !scrn.eat && !msg_is("DEFAULT");
+    bad += check("#569 dark wake consumes ENV+knob and its release, without reset or navigation", ok);
+    kp_end();
+    return bad;
+}
 static int test_knob_policy(void)
 {
     int bad = 0, ok;
@@ -10572,6 +11042,33 @@ static int test_knob_policy(void)
     vp = &TSEL->p[id];
     ok = kp_turn(0, 3, vp, param_turn(d, *vp, 3), sel, id, motion_param(id), 1);
     bad += check("#295 HOME: KNOB 1 the selected track's engine knob only; captured, LEARN picks it", ok);
+    kp_end();
+
+    /* a fixed value (min == max) is not turned on HOME, as on a page or MOMENTARY: no turn, no automation event, no
+     * LEARN pick. No shipped engine maps a fixed value to a HOME knob, so SAMPLE's CUT (KNOB 2) is made fixed for
+     * the case (a writable copy of its engine stands in for ENGINES[] meanwhile); KNOB 1 (SET) still turns */
+    kp_start(HV_SCOPE);
+    if (eng_ok(ENGI_SAMPLE)) {
+        static engine_t fixed;                           /* a writable copy of SAMPLE whose CUT is fixed */
+        const engine_t *se0 = ENGINES[ENGI_SAMPLE], *se = &fixed;
+        uint8_t e = TSEL->eng_req;
+        fixed = *se0;
+        fixed.edit[4].min = fixed.edit[4].max = 100;
+        ENGINES[ENGI_SAMPLE] = &fixed;
+        TSEL->eng_req = ENGI_SAMPLE;
+        id = se->knob[1];
+        vp = &TSEL->p[id];
+        *vp = 100;
+        ok = track_desc(TSEL, id)->min == track_desc(TSEL, id)->max;
+        ok &= kp_turn(1, 5, vp, 100, sel, id, 0, 0) && kp_turn(1, -7, vp, 100, sel, id, 0, 0);
+        id = se->knob[0];
+        vp = &TSEL->p[id];
+        d = track_desc(TSEL, id);
+        ok &= kp_turn(0, 1, vp, param_turn(d, *vp, 1), sel, id, motion_param(id), 1);
+        ENGINES[ENGI_SAMPLE] = se0;
+        TSEL->eng_req = e;
+        bad += check("#295 HOME: a fixed engine value (min == max) is not turned, captured or picked; the others are", ok);
+    }
     kp_end();
 
     kp_start(HV_LEVELS);
@@ -10704,6 +11201,9 @@ static int test_knob_policy(void)
         bad += check("#295 MOMENTARY: a knob that picks (MOD's slot) picks as ever", ok);
     }
     kp_end();
+    bad += test_knob_defaults();
+    bad += test_knob_default_graph();
+    bad += test_knob_default_exclusions();
     return bad;
 }
 static int test_home_tracks(void)
@@ -11760,6 +12260,10 @@ int main(int argc, char **argv)
     int bad = 0;
     if (argc == 2 && !strcmp(argv[1], "--catalog"))
         return test_catalog_controls() + test_unknown_engine() != 0;
+    if (argc == 2 && !strcmp(argv[1], "--fm6-fixed"))
+        return test_fm6_fixed() != 0;
+    if (argc == 2 && !strcmp(argv[1], "--knob-default-graph"))
+        return test_knob_default_graph() != 0;
     if (argc == 2 && !strcmp(argv[1], "--menu"))
         return test_menu_tabs() + test_auto_off_navigation() + test_menu_prefs() != 0;
     if (argc == 2 && !strcmp(argv[1], "--auto-off"))
@@ -11854,6 +12358,7 @@ int main(int argc, char **argv)
     bad += test_momentary_status();
     bad += test_fm6_charts();
     bad += test_fm6_ops();
+    bad += test_fm6_fixed();
     bad += test_home_tracks();
     bad += test_knob_policy();
     bad += test_scope_redraw();

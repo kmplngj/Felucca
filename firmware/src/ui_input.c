@@ -1798,6 +1798,7 @@ static void ui_input(void)
     }
     for (k = 0; k < 4u && !kq; k++) {
         const page_t *pg = cur_page();
+        knob_target_t kt;
         int16_t *hv;
         uint64_t held;
         if ((s = panel_enc(EN_K1 + k)) == 0)
@@ -1817,6 +1818,17 @@ static void ui_input(void)
             ui.curve_t = CURVE_HOLD;
             continue;
         }
+        /* #569: layers, wake/menu/dialog input, step locks and MOMENTARY keep precedence. ENV must be the only
+         * held button; a refused target follows its ordinary path. Consume ENV's pending page tap even on a no-op */
+        if (!ui.uboot && fm1_in.buttons == (1u << panel.btn[B_ENV]) &&
+            knob_default_target(k, &kt) && knob_default(&kt)) {
+            ui.pg_down &= (uint16_t)~(1u << panel.btn[B_ENV]);
+            ui.hot_col = (uint8_t)k;
+            ui.hot_t = 40;
+            ui.curve_t = CURVE_HOLD;
+            ui_message("DEFAULT");
+            continue;
+        }
         if (ui.home || pg->scope == SC_STEP || pg->scope == SC_TRK || page_desc(pg, k, &hv) ||
             ((pg->graph == GR_USER || pg->graph == GR_MOD || pg->graph == GR_PATS) && k == 0u)
             || pg->graph == GR_SONG || (pg->graph == GR_SLICES && k < 2u) || fop_page(pg->graph)) {   /* (not an empty
@@ -1826,7 +1838,6 @@ static void ui_input(void)
             ui.curve_t = CURVE_HOLD;
         }
         if (ui.home) {                                  /* (LEVELS: track k's, as MIXER; ui_knob.c knob_home) */
-            knob_target_t kt;
             knob_home(k, &kt);
             knob_edit(&kt, k, s);
         } else {

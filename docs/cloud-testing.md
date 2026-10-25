@@ -37,6 +37,8 @@ isolated browser context, then closes the browser and server. It tests:
   followed by a quiet release.
 - Physical SEL/SELECT legends, pointer navigation through SEL to ENV, and a
   keyboard encoder edit changing the LCD.
+- Holding ENV while turning a HOME knob restores ANALOG CUT's declared default,
+  preserves other engine values and consumes the pending ENV page tap.
 - GRAPH TURN (#572): turning KNOB 1 on HOME replaces the flat scope with the filter
   curve, and the same scope returns after the curve's hold.
 - Keyboard hints and footer text meeting 4.5:1 contrast in desktop and portrait

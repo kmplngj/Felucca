@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Single-parameter defaults:** hold ENV alone and turn a supported sound knob
+  to restore its current descriptor's declared default without leaving the page.
+  Track capture/LEARN rules are retained, and already-default turns add no edit.
+  This does not restore a preset or clear automation. FM-1 qualification remains
+  pending; see [controls and tests](fork-features.md#single-parameter-default).
 - **Build metadata contracts:** canonical supported-profile exports include stable IDs,
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds
   emit artifact-bound resource/stack reports, with stale-evidence verification using the
@@ -108,6 +113,11 @@ recorded in the linked reports, rather than every current build or device.
 - **Browser emulator readability:** keyboard hints, footer links, build version and
   small-print text meet a 4.5:1 contrast floor against the neutral page background.
 
+- **FM6 FIXED frequency:** the native operator knob now traverses four bounded
+  decades (1, 10, 100, 1000 HZ), with a matching native focused readout and range rule. Imported DX7
+  coarse high bits survive edits and mode toggles; RATIO remains 0.50 and 1–31.
+  See [controls and compatibility](fork-features.md#fm6-operator-frequency-editing);
+  physical FM-1 qualification remains pending.
 - **Hosted editor settings:** applied RAM-only and deferred-save settings retain
   the device's returned value; rejected edits restore the confirmed value while
   preserving newer picker drafts. Saved edits replace earlier warnings with

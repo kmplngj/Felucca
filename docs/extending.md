@@ -474,7 +474,12 @@ A knob turn that edits a parameter value goes through
 turn: acceleration once, `param_turn`, then automation capture and the MIDI LEARN
 pick for a track's value. A global value is neither captured nor picked; MIXER MUTE
 is set by direction and only picked. `mom_target`/`mom_turn` share the same targets
-for MOMENTARY (LFO held) without capture, LEARN or undo. Resolvers have no side
+for MOMENTARY (LFO held) without capture, LEARN or undo. `knob_put` owns permanent
+value publication and those side effects; `knob_default` uses it only when the
+current descriptor's fitted default changes a live value. ENV's single-value
+gesture uses `knob_default_target`: sound cells, with global resets confined to
+FX pages (CLOCK is excluded). `ui_input` consumes ENV's page tap even for an
+already-default no-op, after layer/lock/MOMENTARY precedence. Resolvers have no side
 effects. The module header's table records each caller's rules. Navigation and gesture
 arbitration stay in `ui_input.c`/`ui_layer.c`: quick-layer precedence, consumed
 encoder deltas, step locks, pages whose knobs pick or act, and feedback priority.

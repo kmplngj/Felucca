@@ -172,6 +172,26 @@ class NativeReplayTests(unittest.TestCase):
         self.assertEqual(captured["audio"], plain["audio"])
         self.assertEqual(captured["final_state"], plain["final_state"])
 
+    def test_env_knob_default_matches_declared_value_without_navigation(self):
+        data = json.loads((ROOT / "tests/scenarios/knob-default.json").read_text())
+        actual, manifest = self.run_scenario(data)
+        # Independent reference: a regular +90 turn from the explicit zero CUT,
+        # rather than using the new default operation to construct its own oracle.
+        reference = copy.deepcopy(data)
+        reference["events"] = [e for e in reference["events"] if e["type"] != "button"]
+        reference["events"][2]["delta"] = 90
+        expected, control = self.run_scenario(reference)
+        self.assertEqual(manifest["final_state"]["home"], 1)
+        self.assertEqual(manifest["final_state"]["buttons_mask"], 0)
+        self.assertEqual(manifest["audio"], control["audio"])
+        def bank(directory, frame, x=3, y0=28, y1=94):
+            pixels = (directory / f"frame-{frame:04d}.ppm").read_bytes()[15:]
+            return b"".join(pixels[(y * 240 + x) * 3:(y * 240 + 237) * 3] for y in range(y0, y1))
+        # Native HOME's focused bank is 28..94; only its lower 68..94 overview has separate knob columns.
+        self.assertEqual(bank(actual, 1), bank(expected, 1))
+        self.assertNotEqual(bank(actual, 0), bank(actual, 1))
+        self.assertEqual(bank(actual, 0, 62, 68), bank(actual, 1, 62, 68))
+
     def test_equal_timestamp_file_order_and_final_partial_half(self):
         data = copy.deepcopy(BASE)
         data["events"] = [
