@@ -455,6 +455,11 @@ UNIT_NEEDS=assets
 if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_profiles() {
         run "profiles: isolated host selection, metadata and stored-sound round trips" python3 tests/profile_integration_test.py
+        if [ "${GITHUB_ACTIONS:-false}" = true ]; then
+            run "profiles: real native bundle keys and Git-free reproduction" python3 tests/native_bundle_integration.py
+        else
+            echo "profiles: native bundle proof runs in CI; standalone: python3 tests/native_bundle_integration.py"
+        fi
     }
     unit profiles "" u_profiles
 

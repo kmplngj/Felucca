@@ -386,6 +386,18 @@ This uses the native browser-emulator integration on Linux/macOS and needs no ha
 uv run --locked --group build tests/run_tests.sh
 ```
 
+In GitHub Actions, the `profiles` unit also runs `tests/native_bundle_integration.py`:
+two isolated real target builds (Git control and verified Git-free source), followed
+by native bundle creation/verification and independent stable-key metadata checks.
+It reuses the installed toolchain/SDK; the original CI build and runtime stay untouched.
+Local `profiles` remains a host-only check. To run the native proof explicitly after
+a fresh matching target build in a clean committed checkout, use
+`uv run --locked --group build python tests/native_bundle_integration.py` (inside the
+storage guard on this Mac). Stale reports or missing build prerequisites fail.
+Logs and the actual bundle are retained under `build/ci/native-bundle/run-*/`.
+The controlled pair uses commit identity without the CI PR display label; it does
+not claim byte equality with the outer PR-labelled firmware or device acceptance.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for
