@@ -102,6 +102,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **Native attribution:** ABOUT credits and the retained installer template now
+  distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0
+  dedication. The PHASE source comment agrees; synthesis and generated sounds
+  are unchanged. Native host rendering and scroll checks qualify this text change;
+  no physical display observation is claimed.
+  See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
+
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
   built-in palettes. Mute marks and inactive graphics keep their distinct state.
@@ -232,6 +239,10 @@ recorded in the linked reports, rather than every current build or device.
   a `FELUCCA_CPU2=0` build removes the worker entirely.
 
 ### Optimized
+
+- Native icons share identical complete 12 px compressed streams while preserving
+  icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
+  [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.
 
 - Docker target builds share one invocation-owned toolchain container across loader,
   application and resource checks, reducing repeated container startup overhead.

@@ -15,7 +15,8 @@ Output: per size S in --sizes
   AI<S>_DATA    cells of S x S px, 4-bit alpha, rows back to back, each cell a byte-aligned bit stream of the
                 canonical Huffman code AI_HC (ui_font_data.py huff_pack, the fonts' M and L: one code for
                 every size; gfx.c cv_alpha_hc draws it), 2 spare bytes at the end
-  AI<S>_OFF     each cell's byte offset in AI<S>_DATA
+  AI<S>_OFF     each cell's byte offset in AI<S>_DATA (12 px identical complete streams share their first offset;
+                offsets need not increase, and the cell's dimensions, not the next offset, bound decoding)
   AI<S>_INK     each cell's ink box (the UI centres an icon by its ink: src/icons.c icon_ink)
   AI<S>_IDX[ICON_COUNT]  cell number of every icon at that size, 0xFF = not rasterised at that size
   (12 px: all legacy icons + SMALL_EXTRA; 16 px: only the --big set; 24 px: HUGE_DEFAULT)
@@ -211,6 +212,23 @@ def ink_box(b, s):
     return min(xs), min(ys), max(xs) + 1, max(ys) + 1
 
 
+def cell_streams(streams, deduplicate=False):
+    """Byte-aligned streams of one size/codebook, keeping an offset per cell and decoder lookahead."""
+    data, offs, first = bytearray(), [], {}
+    for stream in streams:
+        if deduplicate and stream in first:
+            offs.append(first[stream])
+            continue
+        off = len(data)
+        if off + len(stream) + 2 >= 65536:
+            raise ValueError("icon data over 64 KiB: split the size")
+        offs.append(off)
+        first[stream] = off
+        data += stream
+    data += bytes(2)                                   # gfx.c cv_alpha_hc reads up to 2 bytes ahead
+    return data, offs
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", nargs="?")
@@ -268,16 +286,14 @@ def main():
     out.append(ar.c_array("AI_HC", "uint8_t", hc, 24))
     cost = {}
     for s in sizes:
-        data, offs, idx, inks = bytearray(), [], [0xFF] * len(names), []
+        streams, idx, inks = [], [0xFF] * len(names), []
         for n, v, b in cells[s]:
             p = next(packed)
             assert huff_unpack(hc, p, s * s) == v
-            idx[names.index(n)] = len(offs)
-            offs.append(len(data))
-            data += p
+            idx[names.index(n)] = len(streams)
+            streams.append(p)
             inks.append(ink_box(b, s))
-        data += bytes(2)                               # gfx.c cv_alpha_hc reads up to 2 bytes ahead
-        assert len(data) < 65536
+        data, offs = cell_streams(streams, deduplicate=s == 12)
         out.append(f"#define AI{s}_N {len(offs)}")
         out.append(ar.c_array(f"AI{s}_DATA", "uint8_t", list(data), 24, "0x{:02x}"))
         out.append(ar.c_array(f"AI{s}_OFF", "uint16_t", offs, 16))
