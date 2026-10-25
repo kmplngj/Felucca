@@ -32,6 +32,7 @@ def noinit_header(extent):
     """`objdump -h` rows of the app ELF with a .noinit section that spans `extent` B of its region"""
     return ("Sections:\nIdx Name          Size      VMA       LMA       File off  Algn\n"
             "  0 .text         00001000  02000120  02000120  00000100  2**2\n"
+            "                  CONTENTS, ALLOC, LOAD, READONLY, CODE\n"
             f"  5 .noinit       {extent:08x}  {NOINIT_ORG:08x}  {NOINIT_ORG:08x}  00040000  2**2\n"
             "                  ALLOC\n")
 
@@ -71,6 +72,109 @@ class AppGuards(unittest.TestCase):
     def test_valid_neighbors(self):
         self.assertEqual(self.check(), [])
         self.assertEqual(self.check(rt="file format ELF32-pi32v2\n"), [])  # explicitly empty RAM section
+
+    def test_soft_double_arithmetic_comparison_and_conversion_exports(self):
+        names = ("__adddf3 __subdf3 __muldf3 __divdf3 __negdf2 __powidf2 "
+                 "__eqdf2 __nedf2 __gedf2 __gtdf2 __ledf2 __ltdf2 __unorddf2 "
+                 "__extendsfdf2 __truncdfsf2 __truncdfhf2 "
+                 "__fixdfsi __fixdfdi __fixunsdfsi __fixunsdfdi "
+                 "__floatsidf __floatdidf __floatunsidf __floatundidf __muldc3 __divdc3").split()
+        for name in names:
+            with self.subTest(name=name):
+                errors, notes = self.run_check(syms=symbols(self.values) + noinit_symbols(self.noinit_used) +
+                                               f"02000200 g     F .text\t00000040 {name}\n")
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn("soft-double helpers defined in final executable sections: " + name + ";", errors[0])
+                self.assertNotIn("no known soft-double", " ".join(notes))
+
+    def test_soft_double_defined_local_weak_alias_and_section_variants(self):
+        for section in (".text", ".ram_text", ".c1_text", ".custom_exec"):
+            hdr = noinit_header(self.noinit_used)
+            if section != ".text":
+                hdr += f" 6 {section} 00000040 01c00000 02001120 00001100 2**2\n  CONTENTS, ALLOC, LOAD, CODE\n"
+            for flags in ("g     F", "l     F", " w    F", "g", "", "g\tF", "g     O"):
+                for size in ("00000000", "00000040"):
+                    with self.subTest(section=section, flags=flags, size=size):
+                        syms = symbols(self.values) + noinit_symbols(self.noinit_used)
+                        syms += f"  01C00000\t{flags}  {section}\t {size} __floatundidf\n"
+                        self.assertIn("__floatundidf;", " ".join(self.check(hdr=hdr, syms=syms)))
+
+    def test_soft_double_exact_names_and_unrelated_helpers_pass(self):
+        names = ("__muldi3 __divdi3 __udivdi3 __umoddi3 __ashldi3 __ashrdi3 __lshrdi3 "
+                 "__cmpdi2 __ucmpdi2 __addsf3 __divsf3 __fixsfdi __floatdisf "
+                 "double_buffer double __adddf3_extra prefix__adddf3 __ADDDF3").split()
+        syms = symbols(self.values) + noinit_symbols(self.noinit_used)
+        syms += "".join(f"02000200 g F .text 00000040 {name}\n" for name in names)
+        errors, notes = self.run_check(syms=syms)
+        self.assertEqual(errors, [])
+        self.assertIn("no known soft-double helpers defined in final executable sections", notes)
+
+    def test_soft_double_nondefinitions_and_nonexecutable_records_pass(self):
+        hdr = noinit_header(self.noinit_used)
+        hdr += (" 6 .debug_info 00000040 00000000 00000000 00001100 2**0\n  CONTENTS, READONLY, DEBUGGING\n"
+                " 7 .data 00000040 01c08000 02001120 00001200 2**2\n  CONTENTS, ALLOC, LOAD, DATA\n"
+                " 8 .nonalloc 00000040 00000000 00000000 00001300 2**2\n  CONTENTS, CODE\n")
+        for flags, section in (("", "*UND*"), ("g", "*ABS*"), ("", "*COM*"),
+                               ("g F", ".debug_info"), ("g O", ".data"), ("g F", ".nonalloc"),
+                               ("l d", ".text"), ("l df", "*ABS*"), ("l f", ".text")):
+            with self.subTest(flags=flags, section=section):
+                syms = symbols(self.values) + noinit_symbols(self.noinit_used)
+                syms += f"00000000 {flags} {section} 00000000 __adddf3\n"
+                self.assertEqual(self.check(hdr=hdr, syms=syms), [])
+        # Discarded input/source and debug strings never enter the final symbol rows.
+        self.assertEqual(self.check(dis=self.dis + " 2000122: 00 00 \tr0 = 0 <double_buffer>\n"), [])
+
+    def test_soft_double_diagnostic_is_sorted_deduplicated_and_aggregated(self):
+        syms = symbols(self.values) + noinit_symbols(self.noinit_used)
+        for name in ("__truncdfsf2", "__adddf3", "__truncdfsf2"):
+            syms += f"02000200 g F .text 00000040 {name}\n"
+        self.noinit_used = NOINIT_LEN - 99
+        errors = self.check(syms=syms, img=bytes(4), rt=" 1c00000: 00 00 \tcall r0\n")
+        self.assertIn("__adddf3, __truncdfsf2;", errors[0])
+        self.assertEqual(sum("soft-double" in e for e in errors), 1)
+        for message in ("not the entry stub", ".ram_text contains calls", "NOINIT headroom 99 B"):
+            self.assertIn(message, " ".join(errors))
+
+    def test_soft_double_matching_malformed_rows_or_sections_fail_closed(self):
+        for row in ("garbage g F .text 00000040 __adddf3", "02000200 g F .text invalid __adddf3",
+                    "02000200 badflags .text 00000040 __adddf3", "__adddf3",
+                    "02000200 g F .text __adddf3"):
+            with self.subTest(row=row):
+                errors, notes = self.run_check(syms=symbols(self.values) + noinit_symbols(self.noinit_used) + row + "\n")
+                self.assertIn("soft-double: malformed symbol row", " ".join(errors))
+                self.assertNotIn("no known soft-double", " ".join(notes))
+        syms = symbols(self.values) + noinit_symbols(self.noinit_used) + "02000200 g F .missing 00000000 __adddf3\n"
+        for hdr in (noinit_header(self.noinit_used),
+                    noinit_header(self.noinit_used) + " 6 .missing bad 00000000\n  ALLOC, CODE\n"):
+            self.assertIn("soft-double: missing or malformed section evidence", " ".join(self.check(hdr=hdr, syms=syms)))
+
+    def test_soft_double_native_jieli_section_headers(self):
+        for section in (".text", ".ram_text", ".c1_text"):
+            hdr = ("probe.elf:\tfile format ELF32-pi32v2\n\nSections:\n"
+                   "Idx Name          Size      Address          Type\n"
+                   "  0               00000000 0000000000000000 \n"
+                   f"  1 {section} 00000d2e 0000000001c0a800 TEXT DATA \n"
+                   "  2 .bss 0000002c 0000000001c0ba30 BSS\n"
+                   "  3 .symtab 00000370 0000000000000000 \n")
+            syms = f"01c0a8da g     F {section}\t\t 0000028c __adddf3\n"
+            errors, _ = B.soft_double_check(hdr, syms)
+            self.assertIn("helpers defined in final executable sections: __adddf3;", " ".join(errors))
+            padded_hdr = hdr.replace("Idx Name          Size      Address          Type", " \tIdx\tName  Size\tAddress  Type ")
+            self.assertEqual(B.soft_double_check(padded_hdr, syms)[0], errors)
+            self.assertEqual(B.soft_double_check(hdr, "01c0ba30 g .bss 00000000 __adddf3\n")[0], [])
+            self.assertEqual(B.soft_double_check(hdr, "00000000 l d .symtab 00000000 __adddf3\n")[0], [])
+            for damaged in (hdr.replace("00000d2e", "bad-size"),
+                            hdr.replace("TEXT DATA", "BAD"), hdr.replace(section, ".unknown_text")):
+                row = syms.replace(section, ".unknown_text") if ".unknown_text" in damaged else syms
+                self.assertIn("missing or malformed section evidence", " ".join(B.soft_double_check(damaged, row)[0]))
+
+    def test_soft_double_native_missing_section_type_fails_closed(self):
+        hdr = ("Sections:\nIdx Name          Size      Address          Type\n"
+               "  0 .text         00000010 0000000002000120\n")
+        syms = "02000120 g     F .text\t\t 00000000 __adddf3\n"
+        errors, notes = B.soft_double_check(hdr, syms)
+        self.assertIn("missing or malformed section evidence", " ".join(errors))
+        self.assertNotIn("no known soft-double", " ".join(notes))
 
     def test_second_core_ram_section_is_required_and_only_calls_the_job(self):
         section = "Disassembly of section .c1_text:\n 1c01000: 00 00 \tcall r0\n"
