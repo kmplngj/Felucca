@@ -34,6 +34,16 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
+  exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
+  Offline verification checks artifact correspondence; full host/browser/device acceptance,
+  public build service and deployment remain separate.
+  Native target builds now refuse unsupported compiler search/configuration variables
+  such as `CPATH`, `LIBRARY_PATH` and `SDKROOT`; Docker target builds ignore these
+  unforwarded host values. Host loader injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+  `DYLD_LIBRARY_PATH`) is refused for both backends. `LD_LIBRARY_PATH` remains allowed
+  and is recorded only as a value hash; see [build-input identity](build-bundles.md#identity-and-immutability).
+
 - **Build metadata contracts:** canonical supported-profile exports include stable IDs,
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds
   emit artifact-bound resource/stack reports, with stale-evidence verification using the
@@ -229,6 +239,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- Docker target builds share one invocation-owned toolchain container across loader,
+  application and resource checks, reducing repeated container startup overhead.
+  Compiler arguments and firmware behavior are unchanged; the benefit depends on
+  host load and compiler time. Native Linux builds keep their existing path. See
+  [builder lifetime and fallback](../BUILDING.md#prerequisites-macos) and
+  [the controlled measurements](https://github.com/kmplngj/Felucca/pull/661).
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See

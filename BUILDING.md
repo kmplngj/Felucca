@@ -89,8 +89,9 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - [uv](https://docs.astral.sh/uv/) and Python 3 (the UI font and icons are rasterised
   at build time). On macOS, install uv with `brew install uv`. The locked `build`
   dependency group provides Pillow, fontTools and Brotli.
-- Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
-  `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
+- Docker Desktop. The JieLi toolchain is Linux x86-64 only; target builds use a
+  `linux/amd64` `debian:bookworm-slim` container using Docker's x86 emulation on Apple silicon.
+  Rosetta is optional and is not required for a successful build. Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
 - The JieLi Linux toolchain (clang 4.0.1 for pi32v2, from JieLi's package server):
 
@@ -110,6 +111,32 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - Emscripten (optional, `emcc`: the browser emulator, `web/emu/`).
 
 On Linux x86-64 the toolchain runs natively and Docker is not needed.
+
+A target-builder invocation owns one lazily started container: loader/app workers and
+resource-report tool calls share it, with the toolchain mounted read-only. It is removed
+on success, build failure, SIGINT or SIGTERM. Lifecycle Docker clients run in separate
+sessions so terminal interrupts reach the Python owner, which waits for an in-flight
+startup response before removing its container. No container or compiled-output cache is
+reused across builds. Independent builds have different container identities. Linux-native
+execution is unchanged. Standalone imported tool calls, including resource-report CLI
+verification, continue to use temporary one-shot containers. A target builder called
+outside Python's main thread also uses the one-shot path, because it cannot install
+process signal handlers for persistent-container cleanup.
+
+Before reuse, the builder inspects the selected `linux/amd64` image configuration.
+It starts an advertised immutable repository digest when available, or the image ID
+for older image stores. A manifest/index without a usable repository digest uses
+the one-shot path rather than assuming its selected manifest ID is runnable.
+Custom images with an `ENTRYPOINT`, or images whose selected configuration cannot be
+verified, use the existing one-shot path with a visible note. The default image must
+support `sleep infinity` and direct tool execution. Docker-compatible Podman clients may
+use plain image inspection only when it proves the same Linux/amd64 configuration.
+No TTY or shell wraps compiler arguments. Cleanup cannot be guaranteed after SIGKILL,
+a host crash or loss of the container engine; a cleanup failure reports the exact owned
+container name/ID and never removes another build's container. Do not treat that failure
+as a clean successful lifecycle. This changes build overhead, not firmware arithmetic,
+compiler flags or audio CPU use.
+
 Install uv using its [installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
 ### Python environments
@@ -150,6 +177,49 @@ uv run --locked --group build ./build.sh
 
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
+
+### Final-image soft-double policy
+
+Every target application build checks the final linked ELF symbol table against
+26 exact double-precision helper names exported by the generic JieLi Clang 4.0.1
+compiler runtime (`SOFT_DOUBLE_HELPERS` in `tools/build.py`). The check covers double
+arithmetic/comparisons, fp32/double and double/half conversions, signed/unsigned
+32/64-bit integer/double conversions, and complex-double multiply/divide. A helper
+defined in an allocated `CODE` output section fails the build, including local,
+weak and zero-sized aliases. The diagnostic lists the names: inspect the expressions
+that introduced them and use intentional fp32/fixed-point operations. There is no
+profile or radio exemption and no override flag.
+
+GNU-style section headers must show `ALLOC` and `CODE`. Their attribute lists use
+only the reviewed words `CONTENTS`, `ALLOC`, `LOAD`, `READONLY`, `CODE`, `DATA` and
+`DEBUGGING`; an unknown word or malformed list cannot establish nonexecution for a
+matching helper and fails with a section-evidence diagnostic. The installed JieLi
+objdump instead reports `TEXT`/`DATA`; for that format, the detector requires `TEXT`
+in one of `app.ld`'s allocated executable outputs (`.text`, `.ram_text`, `.c1_text`).
+An unfamiliar `TEXT` output containing a matching helper fails with a section-evidence
+diagnostic until its allocation is reviewed.
+
+Undefined, absolute, common, file/section/debug records and symbols in nonallocated
+or nonexecutable sections do not establish linked code. Integer-only 64-bit helpers,
+fp32 helpers and ordinary names containing `double` remain outside this policy.
+Matching helper rows with malformed symbol/section evidence fail the check rather
+than establishing absence. A successful check means only that no known helper is
+defined in final executable sections; it does not prove hardware FPU use, absence
+of every double expression or improved CPU time. New toolchain/ABI spellings need
+a reviewed policy and fixture update. See [performance guidance](docs/performance.md#soft-double-link-guard).
+
+Portable coverage is in `python3 tests/build_guard_test.py` (also run with `python3 -O`).
+The separate `python3 tests/build_guard_target_test.py` compiles dynamic double
+arithmetic/conversions and an fp32 control with the production generic flags. Only
+these tiny probes link the installed generic `pi32v2/lib/libcompiler_rt.a` to prove
+the final-image detector; the firmware's explicit-object link remains unchanged.
+The fixture retains sources, objects, undefined object symbols, final ELF symbols,
+section headers, disassembly, link logs and tool/runtime hashes in a fresh directory
+under `build/host/build_guard_target/`. It also preserves the existing integer-64
+compile/link cases. An absent default toolchain produces an explicit skip; an
+explicitly configured missing toolchain, a missing runtime archive or a failed
+probe fails the fixture. A skip is not target evidence. No FM-1 execution is needed
+to validate this build-only policy.
 
 Native firmware uses M8Stealth only. `FELUCCA_FONT` may be unset or explicitly
 `m8stealth`; retired `tamzen` and `inter-tight` values fail before generation.
@@ -959,6 +1029,15 @@ python3 tools/build_report.py --verify build/resource-report.json
 The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
 and `AC79_SDK` values override those defaults; unset or empty values use them.
+
+Initial input capture refuses unsupported compiler search/configuration variables
+for native target builds, including `CPATH`, `LIBRARY_PATH` and `SDKROOT`. Docker
+does not forward these host values, so Docker target builds ignore them. Host loader
+injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`) remains refused
+with either backend because generators still run on the host. `LD_LIBRARY_PATH`
+is allowed and bound only by a value hash, not by the selected library contents.
+The optional paired Wasm build runs on the host and still refuses compiler-search
+overrides even when its target used Docker. See [build-input identity and limits](docs/build-bundles.md#identity-and-immutability).
 
 Verification hashes all required artifacts and input files, recomputes effective compiler
 macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.
