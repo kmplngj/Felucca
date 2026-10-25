@@ -70,4 +70,3 @@ A pending local registration was added to sources.json, preserving all prior pen
 Validation for this planning/configuration change: inspect the registry delta, run the existing ledger validator, check relative links and whitespace, and verify the created issue/comment bodies by readback. Firmware/RAM deltas are not applicable: no firmware changes or builds. Host regressions, target build, browser and physical FM-1 checks were not run. The implementation issues retain their exact-package hardware and resource gates.
 
 The existing README already explains selective source gathering, experimentation, firmware watch and measured optimization. No README edit is needed for this proposal. No changelog entry is warranted until a meaningful capability is implemented or an optimization retained. Diagnostic capability and protocol guides need no changes because no diagnostic/protocol behavior was added.
-

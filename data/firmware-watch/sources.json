@@ -267,6 +267,72 @@
       "status": "pending_initialization"
     },
     {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/202",
+      "authorization": "Register the two firmware-watch sources requested in Felucca issue #446; musical feature implementation remains with the existing adoption owners.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "2aea69253110233f0934da0444381177a2bbd7d5"
+      },
+      "initialization_policy": "After this registration reaches main and the canonical state registry, initialize independently at the start of the next audit. Reverify stable repository identity and canonical name/main/pin, fetch the complete non-shallow DAG and fresh tip, preserve existing intervals and journal, calculate queues from complete DAGs and confirmed records, then remove this pending entry only after successful initialization. Full-DAG counts have not been collected for this registration; snapshot review grants no per-commit coverage. Retain an explicit blocker on failure.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "2aea69253110233f0934da0444381177a2bbd7d5"
+      },
+      "recent_frontiers": {
+        "main": "2aea69253110233f0934da0444381177a2bbd7d5"
+      },
+      "recent_reviewed": 0,
+      "registration_issue": "https://github.com/kmplngj/Felucca/issues/446",
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/200",
+        "https://github.com/kmplngj/Felucca/issues/202",
+        "https://github.com/kmplngj/Felucca/issues/208",
+        "https://github.com/kmplngj/Felucca/issues/214",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/18"
+      ],
+      "repository": "okumurari2/maku",
+      "repository_id": 1411236607,
+      "requested_at": "2026-10-18",
+      "source_name": "MAKU",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/167",
+      "authorization": "Register the two firmware-watch sources requested in Felucca issue #446; musical feature implementation remains with the existing adoption owners.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "4ac494e51ee73abdbbf70f2979184e2a147a5e53"
+      },
+      "initialization_policy": "After this registration reaches main and the canonical state registry, initialize independently at the start of the next audit. Reverify stable repository identity and canonical name/main/pin, fetch the complete non-shallow DAG and fresh tip, preserve existing intervals and journal, calculate queues from complete DAGs and confirmed records, then remove this pending entry only after successful initialization. Full-DAG counts have not been collected for this registration; snapshot review grants no per-commit coverage. Retain an explicit blocker on failure.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "4ac494e51ee73abdbbf70f2979184e2a147a5e53"
+      },
+      "previous_repository": "Rastapopolix/melodee-tess",
+      "recent_frontiers": {
+        "main": "4ac494e51ee73abdbbf70f2979184e2a147a5e53"
+      },
+      "recent_reviewed": 0,
+      "registration_issue": "https://github.com/kmplngj/Felucca/issues/446",
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/162",
+        "https://github.com/kmplngj/Felucca/issues/167",
+        "https://github.com/kmplngj/Felucca/issues/208",
+        "https://github.com/kmplngj/Felucca/issues/214"
+      ],
+      "repository": "Rastapopolix/tessera",
+      "repository_id": 1414783836,
+      "requested_at": "2026-10-18",
+      "source_name": "Tessera (formerly Melodee-Tess)",
+      "status": "pending_initialization"
+    },
+    {
       "adoption_plan": "https://github.com/kmplngj/Felucca/issues/672",
       "authorization": "User requested on 2026-10-25: analyse glvno/matryoshka firmware and optimizations, create justified adoption issues and consider adding it to the firmware watcher. Source review recommends registration.",
       "branches": [
