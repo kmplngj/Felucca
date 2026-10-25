@@ -311,6 +311,7 @@ def require(condition, message="validation failed"):
 p=Path("build/issue139");label=sys.argv[1];a=p/label/"baseline";b=Path(sys.argv[2]) if len(sys.argv)>2 else p/"control-source/build";archive=p/label/"control"
 require(not any(d.is_symlink() for d in (p.parent,p,p/label,archive)), "use confined archive directories")
 def hashes(directory):
+ require(directory.is_dir(), f"missing generated-input directory: {directory}")
  return {str(f.relative_to(directory)):hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(directory.rglob("*")) if f.is_file()}
 require(hashes(a/"gen")==hashes(b/"gen"), "generated inputs")
 out={}

@@ -137,17 +137,26 @@ JIELI_TOOLCHAIN=/path/to/toolchain uv run --locked --group build python3 build/i
 JIELI_TOOLCHAIN=/path/to/toolchain uv run --locked --group build python3 build/issue521/reproduce.py candidate
 ```
 
-This exact appendix was executed sequentially in a clean checkout at the measured
-base, using the archived fresh full-baseline generated inputs: all three modes
-passed their target guards and reproduced the table. Each app was byte-identical
-to its original measured counterpart. No tracked source changed.
+The original appendix was executed sequentially in a clean checkout at the
+measured base, using the archived fresh full-baseline generated inputs: all three
+modes passed their target guards and reproduced the table. Each app was
+byte-identical to its original measured counterpart. No tracked source changed.
+The later argument and recorded-output/IR gates were checked with those retained
+artifacts and injected mismatches in normal and optimized Python, without a new
+target build.
 
 Validation gates use explicit failures, including under `python3 -O` or
 `PYTHONOPTIMIZE`. The JSON outputs and artifacts go to separate
 `build/issue521/reproduce-*`
-directories. Compare app sizes and resource/stack maps with the table; compare
-`felucca.ll` for identical unoptimized input and `felucca_size.ll` for the five
-additional `minsize` headers. Inspect `preset_cat` and `ui_draw_page` in each
+directories. Before writing a successful summary, the script requires the exact
+recorded app size/hash, complete resource/stack dictionaries and (for selective
+modes) unoptimized/annotated IR hashes. It also recomputes the baseline annotation
+and requires exactly the five selected additional `minsize` headers, with no
+other IR changes. The no-size control compiles directly and has no LLVM IR
+artifacts to compare. These expectations were checked against the retained
+original artifacts and their clean reproduction; they are not new measurements.
+A mismatch is a failed reproduction to investigate, not permission to update the
+constants. Inspect `preset_cat` and `ui_draw_page` in each
 `felucca.dis` for the extra calls described above. These raw control binaries are
 not installable qualification packages.
 
@@ -162,17 +171,57 @@ from pathlib import Path
 def require(condition, message="validation failed"):
  if not condition:
   raise RuntimeError(message)
+if len(sys.argv)!=2:raise SystemExit("usage: reproduce.py default | no-size | candidate")
+mode=sys.argv[1]
+if mode not in ("default","no-size","candidate"):raise SystemExit("default | no-size | candidate")
 root=Path.cwd();sys.path.insert(0,str(root/"tools"))
 import build as B
 import size_fns as S
 import build_report as R
-mode=sys.argv[1]
-if mode not in ("default","no-size","candidate"):raise SystemExit("default | no-size | candidate")
 if mode=="no-size":os.environ["FELUCCA_SIZE"]="0"
 else:os.environ.pop("FELUCCA_SIZE",None)
 B.OUT=root/"build"/"issue521"/("reproduce-"+mode);B.OUT.mkdir(parents=True,exist_ok=True)
 original=B.tc
 selected={"help_page","help_parse","help_row","cat_of_engine","preset_cat"}
+# Literal expectations from the retained original comparison and its clean reproduction.
+expected_app={
+ "default":(491876,"4af1d9e5505aff2fd722c7a8defe8d8cd8ec5c2355341d1840e6d8e4d1f422de"),
+ "no-size":(510680,"734134a23507fb2930652a6904884fb6b7a0b85a9ef2f1944cdccfa6a1e61df4"),
+ "candidate":(491812,"b5a45f9549ac7ea1cc40be05e96f4c381a13b25bf35249ccc75849c1b08a3445")}
+app_bytes,app_hash=expected_app[mode]
+expected_resources={}
+for name,origin,capacity,used,floor,authority in (
+ ("app",33554720,581564,app_bytes,0,"tools/build.py APP_SLOT"),
+ ("RAM",29392896,73728,62136 if mode=="no-size" else 62152,4096,"tools/build.py check"),
+ ("POOL",29466624,368640,336440,8192,"tools/build.py check"),
+ ("NOINIT",29868032,15696,15576,100,"tools/build.py check"),
+ ("RAMTEXT",29360128,24576,3152,0,"firmware/app.ld linker region")):
+ expected_resources[name]=dict(origin=origin,capacity_bytes=capacity,used_bytes=used,
+  spare_bytes=capacity-used,enforced_spare_min_bytes=floor,margin_bytes=capacity-used-floor,authority=authority)
+expected_resources["RAMTEXT"]["sections"]={".ram_text":2924,".c1_text":228}
+expected_stacks={}
+for name,origin,reserved in (
+ ("main_user",29835520,24320),("main_supervisor",29860096,7936),
+ ("main_user_guard",29835264,256),("main_supervisor_guard",29859840,256),
+ ("worker_user_including_guard",29393408,4096),("worker_supervisor",29397504,256)):
+ expected_stacks[name]=dict(origin=origin,end=origin+reserved,reserved_bytes=reserved)
+for name in ("worker_user_including_guard","worker_supervisor"):
+ expected_stacks[name]["accounted_in"]="RAM"
+expected_ir={"default":"bfcd2a0c7a1ce0a8f85ae33a020bebece3f28ca39a09e1ef401892b27446fa30",
+ "candidate":"0bc6cf5c3598677e591d74fa98e0ff8fe4074410a76226a6ffb66e4f6496077f"}
+def check_ir():
+ raw=(B.OUT/"felucca.ll").read_bytes()
+ require(hashlib.sha256(raw).hexdigest()=="bb088879151ac90f70b245111a41226d56e07535a0422aca1228b9f1f77cd7d6", "unoptimized IR differs from recorded input")
+ baseline,_,protected=S.annotate(raw.decode(),S.size_names())
+ require(not selected&protected, "selected helpers are protected")
+ candidate,hit,_=S.annotate(baseline,selected)
+ require(hit==selected, "selected helper definitions are missing")
+ def headers(text):return {m[2].strip('"'):m[0] for m in S.IR_DEF.finditer(text)}
+ before,after=headers(baseline),headers(candidate)
+ require(before.keys()==after.keys() and {n for n in before if before[n]!=after[n]}==selected, "expected exactly five additional minsize headers")
+ actual=(B.OUT/"felucca_size.ll").read_bytes()
+ require(actual.decode()==(candidate if mode=="candidate" else baseline), "unexpected annotated IR delta")
+ require(hashlib.sha256(actual).hexdigest()==expected_ir[mode], "annotated IR differs from recorded result")
 def tc(*args):
     ir=B.OUT/"felucca_size.ll"
     if mode=="candidate" and args[0]=="cc" and ir in args:
@@ -186,6 +235,11 @@ img,hdr,syms,dis,rt=B.build_app()
 errors,notes=B.check(img,hdr,syms,dis,rt)
 require(not errors, errors)
 resources,stacks=R.resources(B,(img,hdr,syms,dis,rt))
+require(len(img)==app_bytes, "app size differs from recorded result")
+require(hashlib.sha256(img).hexdigest()==app_hash, "app hash differs from recorded result")
+require(resources==expected_resources, "resources differ from recorded result")
+require(stacks==expected_stacks, "stack reservations differ from recorded result")
+if mode!="no-size":check_ir()
 (B.OUT/"symbols.txt").write_text(syms)
 (B.OUT/"sections.txt").write_text(hdr)
 (B.OUT/"summary.json").write_text(json.dumps({"mode":mode,"resources":resources,"stack_reservations":stacks,"checks":notes,"app_sha256":hashlib.sha256(img).hexdigest()},indent=2)+"\n")
