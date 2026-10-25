@@ -121,6 +121,17 @@ growth above both 25% and 20 instructions/sample; mixed workloads use their full
 Host ns/sample depends on scheduling, clock and compiler, so compare repeated runs on
 the same machine and keep CPU-heavy unrelated work out of timing experiments.
 
+### Host retirement observation
+
+The explicit [voice-retirement/LFO measurement](voice-retirement-measurement.md)
+uses `tools/retirement_measure.py` to compare unchanged source, an observer and a
+narrow fresh-phrase counterfactual in separate ignored host snapshots. It is off
+unless invoked and adds no device transport, production hook, target flag or
+resource reservation. Observer file IO invalidates host timing/cost comparisons;
+CPU_FILE `-` means CPU budgets are not checked. PCM/state observations do not
+establish a retirement policy, target timing or device behavior. Use the focused
+guide's pinned inputs, prerequisites and reproduction steps.
+
 ### Target regression
 
 ```sh
