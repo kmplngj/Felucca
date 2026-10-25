@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Exercise the real driver against external fake compiler/SDK processes, never a compiler."""
 import copy
+import contextlib
+from collections import Counter
+import io
 import json
 import os
 from pathlib import Path
@@ -38,6 +41,7 @@ class RuntimeReport(unittest.TestCase):
         self.env['FIXTURE_ACTION'] = ''
         self.env['FIXTURE_ARGV'] = str(self.base / 'argv.json')
         self.env['FIXTURE_EXECUTABLE'] = str(self.base / 'executable.json')
+        self.env['FIXTURE_FROZEN_CACHE'] = str(self.base / 'frozen-cache.txt')
         for name, value in {
             '.gitignore': 'build/\n',
             '.gitmodules': '[submodule "firmware/engines"]\n\tpath = firmware/engines\n'
@@ -104,6 +108,7 @@ elif "-dM" in sys.argv:
 else:
     pathlib.Path(os.environ["FIXTURE_ARGV"]).write_text(json.dumps(sys.argv[1:]))
     pathlib.Path(os.environ["FIXTURE_EXECUTABLE"]).write_text(json.dumps(sys.argv[0]))
+    pathlib.Path(os.environ["FIXTURE_FROZEN_CACHE"]).write_text(os.getenv("EM_FROZEN_CACHE", ""))
     action=os.getenv("FIXTURE_ACTION","")
     if action=="fail":
         sys.exit(7)
@@ -118,6 +123,9 @@ else:
         p=sdk/"llvm/bin/clang";p.write_bytes(p.read_bytes()+b" ")
     if action=="library":
         p=sdk/"cache/sysroot/lib/libc.a";p.write_bytes(p.read_bytes()+b" ")
+    if action=="sdk-tests":
+        for directory in ("test", "tests"):
+            p=sdk/directory/"fixture.txt";p.write_bytes(p.read_bytes()+b" ")
     if action=="configuration":
         p=sdk/".emscripten";p.write_bytes(p.read_bytes()+b" ")
     if action=="retarget":
@@ -218,6 +226,55 @@ else:
         self.assertTrue((self.root / W.FILES[0]).is_file())
         self.assertFalse((self.root / W.RECEIPT).exists())
 
+    def assert_stale_identity_developer_build_available(self, *, commit):
+        path = self.root / 'web/emu/worklet.js'
+        path.write_text('/* developer edit after generation */\n')
+        if commit:
+            self.commit(self.root)
+        # The real identity checker sees the dirty/changed revision, not a mock.
+        with self.assertRaisesRegex(ValueError, 'stale generated build identity'):
+            self.build()
+        self.assertFalse((self.base / 'argv.json').exists())
+        generated = {p: (self.root / p).read_bytes() for p in W.PROFILES}
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assert_unpaired_without_receipt()
+        self.assertIn('receipt unavailable:', output.getvalue())
+        self.assertIn('stale generated build identity', output.getvalue())
+        self.assertEqual({p: (self.root / p).read_bytes() for p in W.PROFILES}, generated)
+        self.assertEqual(json.loads((self.base / 'argv.json').read_text()),
+                         W.arguments('v1.6.1', self.env, self.root)[0][1:])
+
+    def test_unpaired_stale_identity_after_edit_keeps_build_available(self):
+        self.assert_stale_identity_developer_build_available(commit=False)
+
+    def test_unpaired_stale_identity_after_commit_keeps_build_available(self):
+        self.assert_stale_identity_developer_build_available(commit=True)
+
+    def test_unpaired_stale_profile_keeps_build_available(self):
+        # The external profile-check fixture models a changed profile selection.
+        (self.root / 'tools/profile.py').write_text(
+            'import json,os\n'
+            'selected=json.load(open("build/gen/resolved-profile.json"))["profile"]\n'
+            'if selected != os.getenv("FELUCCA_PROFILE", "standard"):\n'
+            '    raise SystemExit("stale generated profile; rebuild with ./build.sh")\n')
+        self.commit(self.root)
+        self.prepare()
+        path = self.root / W.PROFILES[0]
+        path.write_text(json.dumps({'profile': 'standard', 'source_pins': {'engines_gitlink': self.pin}}))
+        self.env['FELUCCA_PROFILE'] = 'macro'
+        with self.assertRaisesRegex(ValueError, 'command failed'):
+            self.build()
+        self.assertFalse((self.base / 'argv.json').exists())
+        before = path.read_bytes()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assert_unpaired_without_receipt()
+        self.assertIn('receipt unavailable:', output.getvalue())
+        self.assertEqual(path.read_bytes(), before)
+        self.assertTrue(any('stale generated profile' in p.read_text()
+                            for p in (self.root / 'build/wasm-report').glob('attempt-*.log')))
+
     def test_failed_native_verifier_never_compiles(self):
         self.env['FIXTURE_TARGET_EXIT'] = '9'
         with self.assertRaisesRegex(ValueError, 'command failed'):
@@ -287,6 +344,71 @@ else:
         after = W.tool_fingerprint(resolved)
         self.assertEqual(before['clang_sha256'], after['clang_sha256'])
         self.assertNotEqual(before['sdk_content_manifest_sha256'], after['sdk_content_manifest_sha256'])
+
+    def emsdk_layout(self):
+        upstream = self.base / 'emsdk/upstream'
+        upstream.mkdir(parents=True)
+        shutil.move(self.sdk, upstream / 'emscripten')
+        self.sdk = upstream / 'emscripten'
+        (upstream / 'bin').mkdir()
+        for name in ('clang', 'wasm-ld'):
+            shutil.move(self.sdk / 'llvm/bin' / name, upstream / 'bin' / name)
+        shutil.move(self.sdk / 'binaryen/bin/wasm-opt', upstream / 'bin/wasm-opt')
+        shutil.rmtree(self.sdk / 'llvm')
+        shutil.rmtree(self.sdk / 'binaryen')
+        for name in ('test', 'tests'):
+            path = self.sdk / name / 'fixture.txt'
+            path.parent.mkdir()
+            path.write_text('mutable SDK test data\n')
+        self.env.update(FIXTURE_SDK=str(self.sdk), EM_CONFIG=str(self.sdk / '.emscripten'),
+                        FIXTURE_LLVM_ROOT=str(upstream / 'bin'), FIXTURE_BINARYEN_ROOT=str(upstream),
+                        PATH=str(self.sdk) + os.pathsep + self.env['PATH'])
+        return upstream
+
+    def test_emsdk_layout_excluded_tests_do_not_block_paired_build(self):
+        self.emsdk_layout()
+        self.env['FIXTURE_ACTION'] = 'sdk-tests'
+        receipt = self.build()
+        self.assertIsNotNone(receipt)
+        self.assertEqual(receipt['files'], W.output_files(self.root))
+        self.assertEqual((self.base / 'frozen-cache.txt').read_text(), '1')
+
+    def test_emsdk_layout_included_library_mutation_still_refuses_receipt(self):
+        self.emsdk_layout()
+        self.env['FIXTURE_ACTION'] = 'library'
+        with self.assertRaisesRegex(ValueError, 'tool/SDK inputs changed'):
+            self.build()
+        self.assertTrue((self.base / 'argv.json').exists())
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def test_emsdk_layout_each_selected_directory_is_walked_once(self):
+        self.emsdk_layout()
+        resolved = W.sdk_tools(self.sdk / 'emcc', self.root, self.env, self.root / 'build/sdk.log')
+        self.assertEqual(resolved[1]['llvm'], resolved[1]['binaryen'])
+        visits = Counter()
+        scandir = os.scandir
+        def count(path):
+            visits[Path(path)] += 1
+            return scandir(path)
+        with patch.object(W.os, 'scandir', side_effect=count):
+            W.tool_fingerprint(resolved)
+        self.assertTrue(visits)
+        self.assertEqual(set(visits.values()), {1}, visits)
+
+    def test_sdk_fingerprint_binds_root_and_configuration_identities(self):
+        resolved = W.sdk_tools(self.sdk / 'emcc', self.root, self.env, self.root / 'build/sdk.log')
+        before = W.tool_fingerprint(resolved)
+        tools, roots, *metadata = resolved
+        external = self.base / 'same-sysroot'
+        shutil.copytree(roots['sysroot'], external)
+        moved_roots = dict(roots, sysroot=external)
+        self.assertNotEqual(W.tool_fingerprint((tools, moved_roots, *metadata))['sdk_content_manifest_sha256'],
+                            before['sdk_content_manifest_sha256'])
+        configuration = self.base / 'same-config'
+        shutil.copyfile(tools['configuration'], configuration)
+        moved_tools = dict(tools, configuration=configuration)
+        self.assertNotEqual(W.tool_fingerprint((moved_tools, roots, *metadata))['sdk_content_manifest_sha256'],
+                            before['sdk_content_manifest_sha256'])
 
     def test_retargeted_external_cache_is_rejected_before_receipt(self):
         first, second = self.base / 'cache-first', self.base / 'cache-second'

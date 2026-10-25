@@ -45,6 +45,7 @@ COMPILER_ENV = ('CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_P
                 'CCC_OVERRIDE_OPTIONS', 'CCC_ADD_ARGS', 'LD_PRELOAD',
                 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH')
 ALLOWED_LOADER_ENV = ('LD_LIBRARY_PATH',)
+HOST_INJECTION_ENV = ('LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH')
 HEADER_ROOTS = ('pi32v2/lib/clang/4.0.1/include', 'pi32v2/include')
 
 
@@ -111,8 +112,12 @@ def loader_environment_fingerprints(env):
 
 def tool_fingerprints(build):
     """Hash tool/SDK inputs before any jobs; do not launch the compiler here."""
+    docker = build.use_docker()
     for name in COMPILER_ENV:
-        if build.os.environ.get(name):
+        # Docker does not forward host compiler search/configuration variables.
+        # Host Python generators still run locally, so loader injection remains
+        # unsupported with either compiler backend.
+        if build.os.environ.get(name) and (not docker or name in HOST_INJECTION_ENV):
             raise ValueError('unsupported compiler environment: ' + name)
     toolchain = build.toolchain()
     headers = {}
@@ -132,8 +137,8 @@ def tool_fingerprints(build):
     return {'generator_runtime': generator_runtime(build.SRC),
             'loader_environment_sha256': loader_environment_fingerprints(build.os.environ),
             'compiler_headers_sha256': headers,
-            'execution_environment': {'backend': 'docker' if build.use_docker() else 'native',
-                                      'image_reference': build.DOCKER_IMAGE if build.use_docker() else None,
+            'execution_environment': {'backend': 'docker' if docker else 'native',
+                                      'image_reference': build.DOCKER_IMAGE if docker else None,
                                       'system_runtime_fingerprint': None},
             'compiler_sha256': digest(build.toolchain() / 'pi32v2/bin/clang'),
             'toolchain_sha256': {name: digest(build.toolchain() / name) for name in

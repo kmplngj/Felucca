@@ -7,6 +7,7 @@ These tests do not claim a real target, Git-free compiler reproduction or matchi
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -29,6 +30,9 @@ import source_archive_test as archive_fixtures
 
 class Bundles(unittest.TestCase):
     def setUp(self):
+        # Synthetic repositories have no relationship to the workflow's PR checkout.
+        environment = patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'})
+        environment.start(); self.addCleanup(environment.stop)
         self.fixture = archive_fixtures.Archives(); self.fixture.setUp(); self.addCleanup(self.fixture.doCleanups)
         self.root = self.fixture.repo
         self.fixture.git(self.root, 'remote', 'add', 'origin', 'https://github.com/kmplngj/Felucca.git')

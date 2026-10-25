@@ -75,11 +75,21 @@ retargeted symlinks. Included SDK inventories refuse nested directory symlinks a
 broken, cyclic or unsupported link targets; regular file aliases bind both their
 resolved identities and contents. Configured `COMPILER_WRAPPER` executables are
 unsupported for paired provenance rather than silently omitted from the tool closure.
+The SDK inventory walks identical resolved roots once and prunes nested roots that
+are inventoried separately. Emscripten's mutable test/cache exclusions also apply
+through an enclosing LLVM/Binaryen root; the explicitly selected cache's sysroot
+headers and installed libraries remain included, with `EM_FROZEN_CACHE=1` for paired
+builds. The manifest digest binds every configured root and resolved tool/configuration
+identity, including roots sharing a walk. Nested directory aliases remain refused.
 Paired builds also refuse extra configured Node arguments and nonempty `NODE_OPTIONS`
 or `NODE_PATH`; external preload/module dependencies are outside this bounded recipe.
 It does not stamp an existing Wasm as freshly built. A normal unpaired
 `sh web/emu/build.sh` stays available for development and does not claim a native match.
 Unsupported SDK provenance leaves that development build without a receipt.
+Stale generated profile or build identity after an edit, commit or profile-selection
+change also leaves an unpaired development build available using the existing generated
+inputs, with a freshness diagnostic and no receipt. It does not regenerate or qualify
+those inputs. The same stale state stops a paired build before compilation.
 
 Matching means source/profile/logical build correspondence, with documented simulator
 adapters. It does not mean equal target/Emscripten flags or device execution. The runtime
@@ -141,9 +151,14 @@ this tool invents no runtime key, wire field or compatibility policy.
 
 The native header inventory covers the fixed JieLi4.0.1 roots
 `pi32v2/lib/clang/4.0.1/include` and `pi32v2/include`, including their content hashes.
-Missing roots/stdint.h and symlinked header paths fail before generation. Unsupported
-nonempty compiler search/configuration and preload/injection variables also fail at that
-initial capture; clearing them only when sealing cannot qualify an older build.
+Missing roots/stdint.h and symlinked header paths fail before generation. Native target
+execution refuses unsupported nonempty compiler search/configuration variables at that
+initial capture; clearing them only when sealing cannot qualify an older native build.
+Docker target execution does not forward those host compiler search/configuration
+variables and does not bind their ignored values. A native-only Docker build or seal
+therefore does not promise that a paired host Wasm build is available under that same
+environment: the host Wasm compiler still refuses unsupported search/configuration
+variables. Preload/injection variables remain refused for both target backends.
 The inherited `LD_LIBRARY_PATH` needed by some Python installations is supported:
 `loader_environment_sha256` binds its nonempty value by hash before and after generation
 without exposing absolute paths. Paired runtime evidence binds the same map. Other

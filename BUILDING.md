@@ -960,6 +960,15 @@ The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
 and `AC79_SDK` values override those defaults; unset or empty values use them.
 
+Initial input capture refuses unsupported compiler search/configuration variables
+for native target builds, including `CPATH`, `LIBRARY_PATH` and `SDKROOT`. Docker
+does not forward these host values, so Docker target builds ignore them. Host loader
+injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`) remains refused
+with either backend because generators still run on the host. `LD_LIBRARY_PATH`
+is allowed and bound only by a value hash, not by the selected library contents.
+The optional paired Wasm build runs on the host and still refuses compiler-search
+overrides even when its target used Docker. See [build-input identity and limits](docs/build-bundles.md#identity-and-immutability).
+
 Verification hashes all required artifacts and input files, recomputes effective compiler
 macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.
 It needs the configured target tools and SDK but does not compile firmware. Source and

@@ -38,6 +38,11 @@ recorded in the linked reports, rather than every current build or device.
   exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
   Offline verification checks artifact correspondence; full host/browser/device acceptance,
   public build service and deployment remain separate.
+  Native target builds now refuse unsupported compiler search/configuration variables
+  such as `CPATH`, `LIBRARY_PATH` and `SDKROOT`; Docker target builds ignore these
+  unforwarded host values. Host loader injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+  `DYLD_LIBRARY_PATH`) is refused for both backends. `LD_LIBRARY_PATH` remains allowed
+  and is recorded only as a value hash; see [build-input identity](build-bundles.md#identity-and-immutability).
 
 - **Build metadata contracts:** canonical supported-profile exports include stable IDs,
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds

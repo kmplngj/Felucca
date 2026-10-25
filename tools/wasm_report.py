@@ -269,10 +269,17 @@ def sdk_tools(emcc, root, env, log):
 
 def tool_fingerprint(resolved):
     tools, roots, version, release, revision = resolved
-    inventory = {}
+    # Bind every configured selector, even if equal/nested roots share a walk.
+    inventory = {'root:' + label: sha(str(base)) for label, base in roots.items()}
+    walks = {}
     for label, base in roots.items():
         if not base.is_dir() or base.resolve(strict=True) != base:
             raise ValueError(f'SDK provenance missing: {label}')
+        walks.setdefault(base, label)
+    # Apply Emscripten's exclusions by physical path, including when a broader
+    # LLVM/Binaryen installation root contains the same Emscripten directory.
+    excluded = {roots['emscripten'] / name for name in ('cache', 'test', 'tests')}
+    for base, label in walks.items():
         pending = [base]
         while pending:
             folder = pending.pop()
@@ -284,8 +291,7 @@ def tool_fingerprint(resolved):
                 for entry in sorted(entries, key=lambda item: item.name):
                     path = Path(entry.path)
                     relative = path.relative_to(base)
-                    if (any(part in ('.git', '__pycache__') for part in relative.parts) or
-                            (label == 'emscripten' and relative.parts[0] in ('cache', 'test', 'tests'))):
+                    if (any(part in ('.git', '__pycache__') for part in relative.parts) or path in excluded):
                         continue  # Outside the declared installed-input closure.
                     mode = path.lstat().st_mode
                     link = None
@@ -301,7 +307,10 @@ def tool_fingerprint(resolved):
                             raise ValueError('SDK provenance unsupported symlink target: ' + str(path))
                         link = {'text': os.readlink(path), 'destination': str(destination)}
                     elif stat.S_ISDIR(mode):
-                        pending.append(path)
+                        # The selected child root has its own walk. Check the
+                        # entry's type first so a directory alias cannot hide it.
+                        if path not in walks:
+                            pending.append(path)
                         continue
                     elif stat.S_ISREG(mode):
                         destination = path
@@ -320,6 +329,7 @@ def tool_fingerprint(resolved):
             if folder.resolve(strict=True) != folder:
                 raise ValueError('SDK provenance directory identity changed during inventory')
     inventory.update({'tool/' + name: R.digest(path) for name, path in tools.items()})
+    inventory.update({'tool-path:' + name: sha(str(path)) for name, path in tools.items()})
     return {'emcc_version': version, 'emcc_sha256': R.digest(tools['emcc']),
             'clang_sha256': R.digest(tools['clang']), 'wasm_ld_sha256': R.digest(tools['wasm_ld']),
             'wasm_opt_sha256': R.digest(tools['wasm_opt']), 'sdk_release': release,
@@ -473,9 +483,15 @@ def build_runtime(root, target_path=None, env=None):
                       (k.startswith('EM_') and k not in permitted_em) or k in inherited_options)]
         if forbidden:
             raise ValueError('unsupported paired compiler environment: ' + ', '.join(sorted(forbidden)))
-    command([sys.executable, 'tools/profile.py', '--check'], root, env, log)
-    from build_identity import check
-    check(root, root / 'build/gen')
+    provenance_error = None
+    try:
+        command([sys.executable, 'tools/profile.py', '--check'], root, env, log)
+        from build_identity import check
+        check(root, root / 'build/gen')
+    except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        if target is not None:
+            raise
+        provenance_error = 'generated input freshness unavailable: ' + str(error)
     if not (root / 'build/gen/felucca_tables.h').is_file():
         raise ValueError('run ./build.sh once first (build/gen)')
     identity = json.loads((root / PROFILES[2]).read_text())
@@ -491,15 +507,15 @@ def build_runtime(root, target_path=None, env=None):
     profiles = {p: R.digest(root / p) for p in PROFILES if (root / p).is_file()}
     target_link = ({'report_sha256': R.digest(target_path),
                     'configuration_sha256': target['configuration_sha256']} if target else None)
-    provenance_error = None
-    try:
-        source = source_identity(root)
-        resolved_tools = sdk_tools(emcc, root, env, log)
-        toolchain = tool_fingerprint(resolved_tools)
-    except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
-        if target:
-            raise
-        provenance_error = str(error)
+    if provenance_error is None:
+        try:
+            source = source_identity(root)
+            resolved_tools = sdk_tools(emcc, root, env, log)
+            toolchain = tool_fingerprint(resolved_tools)
+        except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+            if target:
+                raise
+            provenance_error = str(error)
     # Unpaired developer invocations retain their old availability/flags even
     # when a nonstandard SDK or dirty source cannot supply a sealed receipt.
     definitions = None
