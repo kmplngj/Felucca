@@ -83,6 +83,13 @@ the existing no-call/worker-only-indirect build guards remain enabled. None of t
 selected functions is stored in an IR global/callback table. They have no section
 or protected attributes to replace. CPU2 OFF/ON/failure behavior is not changed.
 
+The 595-function result is a separate audit of the recorded IR, including the
+explicit worker and flash-busy roots. The reproduction script below rechecks ISR
+reachability through `size_fns.annotate()` and the build's `.ram_text` no-call rule;
+it does not recompute that broader closure or exclude helpers reached from
+`c1_parts`. Exact IR hashes bind the recorded inputs and results, not a general
+worker-protection guarantee. A different candidate needs a fresh complete audit.
+
 | Issue file | Disposition and reason |
 | --- | --- |
 | `ui_help.c` (3 definitions) | Measured only: read-only main-loop page/layer hint rendering; at most 3 hints and finite strings; no IRQ masking, flash operation, allocation or wait. MACRO has read-only shape-dependent hints. |
