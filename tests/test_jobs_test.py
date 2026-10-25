@@ -71,6 +71,35 @@ class SchedulerTests(unittest.TestCase):
                 test_jobs.execute(SHELL, output, env)
             self.assertEqual(report.read_bytes(), original)
 
+    def test_shards_cover_every_unit_once_and_keep_dependency_components(self):
+        plan = test_jobs.parse_plan('a\t\techo\nb\ta\techo\nc\t\techo\nd\tc\techo\ne\t\techo')
+        shards = test_jobs.coverage.shard_plan(plan)
+        self.assertEqual(shards, test_jobs.coverage.shard_plan(plan))
+        self.assertEqual(sorted(n for shard in shards for n in shard), sorted(u['name'] for u in plan))
+        self.assertFalse(set(shards[0]) & set(shards[1]))
+        for shard in shards:
+            for unit in plan:
+                if unit['name'] in shard:
+                    self.assertTrue(set(unit['dependencies']) <= set(shard))
+        focused = test_jobs.coverage.select_plan(plan, dict(kind='focused', selected=['b']))
+        self.assertEqual([u['name'] for u in focused], ['a', 'b'])
+        with self.assertRaises(ValueError):
+            test_jobs.coverage.select_plan(plan, dict(kind='focused', selected=['unknown']))
+
+    def test_real_runner_shard_and_focus_execute_only_declared_closure(self):
+        self.fixture('a\t\techo\nb\ta\techo\nc\t\techo', 'echo actual-$2')
+        for args, expected in ((['--shard', '1/2', '--cohort', 'ci-fresh'], ['a', 'b']),
+                               (['--select', 'b'], ['a', 'b'])):
+            process = subprocess.run([sys.executable, str(RUNNER), str(self.script), *args],
+                                     cwd=self.root, env=self.env, capture_output=True, text=True)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            summaries = sorted(self.root.glob('build/host/test-run-*/summary.json'), key=lambda p: p.stat().st_mtime_ns)
+            summary = json.loads(summaries[-1].read_text())
+            self.assertEqual([u['name'] for u in summary['units']], expected)
+            self.assertNotEqual(summary['scope']['kind'], 'full')
+            self.assertNotIn('ALL HOST TESTS PASSED', process.stdout)
+            self.assertNotIn('actual-c', process.stdout)
+
     def test_overlap_dependencies_bound_and_ordered_output(self):
         # a and b must overlap to release one another; c reads their shared result.
         self.fixture("a\t\techo a\nb\t\techo b\nc\ta b\techo c", r'''
@@ -394,6 +423,10 @@ unit fixture "" u_fixture
         result = subprocess.run(["sh", "tests/run_tests.sh", "--plan"], cwd=self.root,
                                 env=env, capture_output=True, text=True, check=True)
         plan = {unit["name"]: unit for unit in test_jobs.parse_plan(result.stdout)}
+        shards = test_jobs.coverage.shard_plan(list(plan.values()))
+        self.assertEqual(sorted(name for shard in shards for name in shard), sorted(plan))
+        for shard in shards:
+            self.assertTrue(all(set(plan[name]['dependencies']) <= set(shard) for name in shard))
         self.assertEqual(plan["web"]["dependencies"], ["editor", "descriptors"])
         self.assertEqual(plan["ui_fm4"]["dependencies"], ["ui_render"])
         self.assertEqual(plan["reverb"]["dependencies"], ["perform"])

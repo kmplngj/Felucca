@@ -7,6 +7,8 @@ host harness and JieLi Clang 4.0.1 for pi32v2. No repository secrets are require
 Build jobs have `contents: read`, checkout does not retain credentials, Actions
 are pinned to commit SHAs, jobs time out after 60 minutes, and superseded PR runs
 are canceled. Fork PRs use `pull_request`; there is no `pull_request_target` job.
+Actions artifact reads use read-only `actions: read` permission for verified
+receipt lookup; no write token or repository secret is needed.
 Repository Actions policy may require maintainer approval for first-time fork
 contributors. This change does not alter branch protection or repository settings.
 
@@ -59,6 +61,60 @@ detection is disabled so both old and new paths are considered. Missing history,
 new-branch zero SHAs and unsupported events select full validation. The selection
 summary and `selection.json` workflow artifact record the suites, reason and paths.
 Full history is fetched only for selection and builds that need it.
+
+## Feedback and merge stages
+
+Known firmware UI, native engine and effect changes in a draft PR can run focused
+host regressions with fresh target/resource/package guards. The selection map in
+`tools/ci_changes.py` includes prerequisite closure; it is not an AI choice of which
+tests to omit. Shared contracts, persistence, protocol, build inputs, dependency
+pins, unfamiliar paths and mixed independent suites retain full validation even
+while draft. Documentation and independent-tool selections keep their existing
+lightweight checks.
+
+Partial runs use the **Draft feedback** caller. They never report the required
+`firmware / Workflow and CI helper checks` or `firmware / Target, host and emulator`
+names. A successful focused run therefore cannot establish merge acceptance.
+Both ready-for-review and converted-to-draft transitions trigger classification;
+ready PRs always run their complete applicable plan. Later code pushes refresh
+that candidate. Manual target-only builds remain explicit, and releases always
+run full validation.
+
+Full host validation partitions the source-derived dependency graph across two
+independent target/host runners. It retains every existing golden, sanitizer,
+reference, compatibility and profile-applicability obligation. Each shard has a
+fresh invocation ID within a run/attempt cohort and exports complete logs, required
+outputs and its source/configuration-bound receipt. The aggregate restores the
+same generated inputs and compiler identity, independently reconstructs the full
+plan and verifies every unit exactly once. It refuses missing, duplicate, stale,
+failed, canceled or unapproved skipped work. Matching target/Wasm prerequisite
+bytes are required across runners. A single shard or focused report cannot pass
+ordinary full-suite verification. Historical exact-PR sources without this interface
+retain their original complete single-runner path and verifier.
+
+Only shard 1 reproduces and stages the package/site. Candidate artifacts become
+validated artifacts after successful combined host and browser validation. The
+browser job continues independently of host work.
+
+## Verified evidence reuse
+
+The standalone backup fixture is the first audited identity-independent scope.
+It can reuse a successful automatic CI receipt from this repository when all
+tracked inputs, clean recursive engine pins, workflow/helper bytes, Node binary
+and runtime versions, platform, locale and relevant configuration match. The
+fingerprint includes actual file bytes and modes. A bounded artifact lookup uses
+that exact fingerprint, verifies the original successful run/repository/job and
+evidence hashes, and reports the original run and revision as **reused**.
+
+Missing, unavailable, expired, malformed or mismatching evidence runs the fixture
+fresh. Fork origins and other workflows cannot supply a reusable receipt. ZIP
+members, paths and sizes are bounded; reused results are never relabeled as fresh
+invocations. Newly executed fixtures alone publish new receipts.
+
+Firmware and browser builds embed Git/PR identity, which changes across merges
+even when the tree is identical. They continue to run fresh, as do target/identity
+checks and releases. Reuse is not keyed by a branch name or an unqualified green
+status, and does not substitute an older package for the current build.
 
 Run selector regressions locally with:
 
@@ -237,7 +293,7 @@ Artifacts section. Artifact access follows repository permissions and may
 require sign-in. Only explicit build paths are uploaded, never an environment
 dump, credentials or dependency caches. Public GitHub-hosted runner use follows
 GitHub's plan; private forks can consume minutes and artifact storage. There is
-one target/host job and one parallel browser job for a full run, with focused
+two target/host shards and one parallel browser job for a full run, with focused
 independent jobs when applicable, and no recurring nightly schedule. Focused emulator diagnostics include its fresh
 WASM, copied browser files and native song output; focused checks do not upload a
 validated firmware package. Documentation-only runs upload workflow diagnostics.

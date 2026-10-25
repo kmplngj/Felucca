@@ -158,10 +158,34 @@ class Checks(unittest.TestCase):
             download = aggregate.index('Download candidate ' + kind)
             promote = aggregate.index('Upload validated ' + kind)
             self.assertLess(aggregate.index('Check selected validation results'), download)
+            self.assertLess(aggregate.index('Verify complete source-derived host coverage'), download)
             self.assertLess(download, promote)
             self.assertIn('name: candidate-' + kind + '-${{', aggregate)
             self.assertIn('name: ' + kind + '-${{', aggregate)
         self.assertNotIn('always()', aggregate)
+
+    def test_two_runner_coverage_is_required_only_for_selected_full_host_work(self):
+        workflow = (ci.build.SRC / '.github/workflows/build.yml').read_text()
+        self.assertIn("sharded: ${{ inputs.validation == 'full' && steps.changes.outputs.full == 'true' && steps.changes.outputs.matrix != '' }}", workflow)
+        host = self.workflow_job('validation')
+        self.assertIn('fail-fast: false', host)
+        self.assertIn('--shard "$SHARD_INDEX/$SHARD_TOTAL" --cohort "$COHORT"', host)
+        self.assertIn('--select "$FOCUS_UNITS"', host)
+        aggregate = self.workflow_job('build')
+        self.assertIn('tools/test_coverage.py verify-shards --cohort', aggregate)
+        self.assertIn('host-shard-${{ github.run_id }}-${{ github.run_attempt }}-*', aggregate)
+
+    def test_draft_feedback_cannot_report_the_required_firmware_check_names(self):
+        workflow = (ci.build.SRC / '.github/workflows/ci.yml').read_text()
+        firmware = workflow.split('\n  firmware:\n', 1)[1].split('\n  draft-feedback:\n', 1)[0]
+        draft = workflow.split('\n  draft-feedback:\n', 1)[1]
+        self.assertIn('ready_for_review', workflow)
+        self.assertIn('converted_to_draft', workflow)
+        self.assertIn("needs.stage.outputs.stage != 'quick'", firmware)
+        self.assertIn('name: Draft feedback', draft)
+        self.assertIn('github.event.pull_request.draft', draft)
+        self.assertIn('draft_feedback: true', draft)
+        self.assertIn('validation: quick', draft)
 
     def test_host_cpu_provenance_records_usable_clang_and_gcc_flags(self):
         compilers = [path for name in ("clang", "gcc") if (path := shutil.which(name))]

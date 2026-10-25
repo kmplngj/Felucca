@@ -417,6 +417,27 @@ simultaneous full suites in separate worktrees: a checkout lock protects shared
 generated outputs. Generate assets before starting a suite, and leave sources,
 assets and build flags unchanged while it runs.
 
+For development feedback, select named units and their prerequisite closure:
+
+```sh
+uv run --locked --group build python tests/test_jobs.py tests/run_tests.sh --preflight --select ui,ui_render --ai-output
+```
+
+This writes an explicitly focused report. It cannot satisfy strict full-suite
+verification. Unknown units fail instead of silently reducing coverage.
+
+CI runs the complete unit plan across two independent runners. Each uses
+`tests/test_jobs.py tests/run_tests.sh --preflight --shard 1/2 --cohort ID`
+(the other uses `2/2`), a fresh individual coverage ID and matching source,
+generated inputs, compilers, profile and flags. Dependency-connected units stay
+on the same runner; every unit has exactly one owner. The final required check
+verifies both complete receipt directories with
+`tools/test_coverage.py verify-shards --cohort ID RECEIPT1 RECEIPT2`.
+Missing or duplicate units/shards, changed inputs, incomplete children and altered
+logs or outputs fail the aggregate. Ordinary full verification rejects individual
+shards. These controls preserve the existing full plan; they do not qualify FM-1
+timing or physical behavior. See [CI stages and receipts](.github/CI.md#feedback-and-merge-stages).
+
 For AI-assisted runs or a short console report, use:
 
 ```sh
