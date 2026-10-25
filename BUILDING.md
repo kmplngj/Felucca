@@ -90,7 +90,8 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
   at build time). On macOS, install uv with `brew install uv`. The locked `build`
   dependency group provides Pillow, fontTools and Brotli.
 - Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
-  `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
+  `linux/amd64` `debian:bookworm-slim` container using Docker's x86 emulation on Apple silicon.
+  Rosetta is optional and is not required for a successful build. Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
 - The JieLi Linux toolchain (clang 4.0.1 for pi32v2, from JieLi's package server):
 

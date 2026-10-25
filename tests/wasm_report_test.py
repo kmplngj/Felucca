@@ -119,6 +119,8 @@ else:
              "profile":"build/gen/resolved-profile.json","report":"build/resource-report.json"}
     if action in changes:
         p=pathlib.Path(changes[action]); p.write_bytes(p.read_bytes()+b" ")
+    if action=="source-mode":
+        p=pathlib.Path("web/emu/worklet.js");p.chmod(p.stat().st_mode | 0o111)
     if action=="tool":
         p=sdk/"llvm/bin/clang";p.write_bytes(p.read_bytes()+b" ")
     if action=="library":
@@ -324,6 +326,145 @@ else:
                 self.assertFalse((self.root / W.RECEIPT).exists())
                 for path, data in before.items():
                     path.write_bytes(data)
+
+    def test_unpaired_failed_compile_and_missing_output_still_fail(self):
+        for action in ('fail', 'missing'):
+            with self.subTest(action=action):
+                self.env['FIXTURE_ACTION'] = action
+                for name in (W.RECEIPT, W.FILES[0]):
+                    path = self.root / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text('old output must not be reused')
+                reason = r'command failed \(7\)' if action == 'fail' else 'missing/unsafe runtime output'
+                with self.assertRaisesRegex(ValueError, reason):
+                    self.build(False)
+                self.assertTrue((self.base / 'argv.json').is_file())
+                self.assertFalse((self.root / W.RECEIPT).exists())
+                self.assertFalse((self.root / W.FILES[0]).exists())
+
+    def test_unpaired_source_generated_profile_mutations_keep_output_without_receipt(self):
+        changed = {'source': 'web/emu/worklet.js', 'generated': 'build/gen/felucca_tables.h',
+                   'profile': 'build/gen/resolved-profile.json'}
+        for action, name in changed.items():
+            with self.subTest(action=action):
+                path = self.root / name
+                before = path.read_bytes()
+                self.env['FIXTURE_ACTION'] = action
+                output = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(output):
+                        self.assert_unpaired_without_receipt()
+                    self.assertTrue((self.base / 'argv.json').is_file())
+                    self.assertEqual((self.root / W.FILES[0]).read_bytes(), b'\x00asmREAL-FIXTURE')
+                    self.assertIn('receipt unavailable:', output.getvalue())
+                    self.assertIn('changed during runtime build', output.getvalue())
+                    self.assertNotEqual(path.read_bytes(), before)
+                finally:
+                    path.write_bytes(before)
+
+    def test_unpaired_real_source_identity_exception_keeps_output_without_receipt(self):
+        self.git(self.root, 'config', 'core.filemode', 'true')
+        before = build_report.input_hashes(self.root)
+        self.env['FIXTURE_ACTION'] = 'source-mode'
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assert_unpaired_without_receipt()
+        self.assertEqual(build_report.input_hashes(self.root), before)
+        self.assertIn('clean committed firmware sources', output.getvalue())
+        with self.assertRaisesRegex(ValueError, 'clean committed firmware sources'):
+            W.source_identity(self.root)
+
+    def test_paired_real_source_identity_exception_still_refuses_receipt(self):
+        self.git(self.root, 'config', 'core.filemode', 'true')
+        self.env['FIXTURE_ACTION'] = 'source-mode'
+        with self.assertRaisesRegex(ValueError, 'clean committed firmware sources'):
+            self.build()
+        self.assertTrue((self.base / 'argv.json').is_file())
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def late_snapshot_change(self):
+        original = W.snapshot
+        calls = []
+        def snapshot(inputs, profiles, configuration, target):
+            calls.append(None)
+            if len(calls) == 2:
+                # A real generated-input change after the first post-check,
+                # recomputed by the actual snapshot/hash functions.
+                path = self.root / 'build/gen/felucca_tables.h'
+                path.write_bytes(path.read_bytes() + b' /* late edit */')
+                inputs = build_report.input_hashes(self.root)
+            return original(inputs, profiles, configuration, target)
+        return calls, snapshot
+
+    def test_unpaired_late_snapshot_change_keeps_output_without_receipt(self):
+        calls, snapshot = self.late_snapshot_change()
+        output = io.StringIO()
+        with patch.object(W, 'snapshot', side_effect=snapshot), contextlib.redirect_stdout(output):
+            self.assert_unpaired_without_receipt()
+        self.assertEqual(len(calls), 2)
+        self.assertIn('changed before runtime receipt publication', output.getvalue())
+
+    def test_paired_late_snapshot_change_still_refuses_receipt(self):
+        calls, snapshot = self.late_snapshot_change()
+        with patch.object(W, 'snapshot', side_effect=snapshot):
+            with self.assertRaisesRegex(ValueError, 'changed before runtime receipt publication'):
+                self.build()
+        self.assertEqual(len(calls), 2)
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def after_compile_sdk_query(self, action):
+        original = W.sdk_tools
+        calls = []
+        def query(*args):
+            result = original(*args)
+            calls.append(None)
+            if len(calls) == 2:
+                action()
+            return result
+        return calls, query
+
+    def test_late_missing_unsafe_or_changed_required_output_is_always_a_build_failure(self):
+        library = self.sdk / 'cache/sysroot/lib/libc.a'
+        library_before = library.read_bytes()
+        outside = self.base / 'outside.wasm'
+        outside.write_bytes(b'\x00asmREAL-FIXTURE')
+        for paired in (False, True):
+            for kind in ('changed', 'missing', 'unsafe', 'changed-with-sdk-drift'):
+                with self.subTest(paired=paired, kind=kind):
+                    self.env['FIXTURE_ACTION'] = 'library' if kind == 'changed-with-sdk-drift' else ''
+                    def damage():
+                        path = self.root / W.FILES[0]
+                        if kind in ('changed', 'changed-with-sdk-drift'):
+                            path.write_bytes(b'corrupted output')
+                        else:
+                            path.unlink()
+                            if kind == 'unsafe':
+                                path.symlink_to(outside)
+                    calls, query = self.after_compile_sdk_query(damage)
+                    try:
+                        with patch.object(W, 'sdk_tools', side_effect=query):
+                            with self.assertRaises(ValueError):
+                                self.build(paired)
+                        self.assertEqual(len(calls), 2)
+                        self.assertFalse((self.root / W.RECEIPT).exists())
+                    finally:
+                        library.write_bytes(library_before)
+
+    def test_late_extra_developer_output_is_unpaired_only_and_never_receipted(self):
+        extra = self.root / 'build/emu/developer-notes.txt'
+        for paired in (False, True):
+            with self.subTest(paired=paired):
+                extra.unlink(missing_ok=True)
+                calls, query = self.after_compile_sdk_query(lambda: extra.write_text('keep developer notes'))
+                with patch.object(W, 'sdk_tools', side_effect=query):
+                    if paired:
+                        with self.assertRaisesRegex(ValueError, 'unexpected runtime output set'):
+                            self.build()
+                    else:
+                        self.assert_unpaired_without_receipt()
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(extra.read_text(), 'keep developer notes')
+                self.assertFalse((self.root / W.RECEIPT).exists())
 
     def test_sdk_manifest_covers_header_and_library_not_just_executables(self):
         log = self.root / 'build/sdk.log'

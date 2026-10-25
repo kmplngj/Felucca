@@ -546,37 +546,42 @@ def build_runtime(root, target_path=None, env=None):
     for name in FILES[2:]:
         shutil.copyfile(root / name.replace('build/emu/', 'web/emu/', 1), root / name)
     files = output_files(root, exact=target is not None)
+
+    def unavailable(reason):
+        # Provenance drift can leave a useful developer build. Missing, unsafe
+        # or changed producer outputs are still a failed build in either mode.
+        if output_files(root, exact=False) != files:
+            raise ValueError('runtime outputs changed before receipt publication')
+        print('emu: receipt unavailable: ' + reason)
+        print(f'emu: build/emu ({files[0]["bytes"]} B wasm, {identity["version"]})')
+        return None
+
     if target is None and output_names(root) != set(FILES):
         provenance_error = 'extra developer runtime files; exact output inventory cannot be sealed'
     if provenance_error:
-        print('emu: receipt unavailable: ' + provenance_error)
-        print(f'emu: build/emu ({files[0]["bytes"]} B wasm, {identity["version"]})')
-        return None
+        return unavailable(provenance_error)
     # Re-query from the same frozen emcc entry, not PATH and not the old resolved
     # roots: configuration aliases/cache symlinks can move during compilation.
     try:
         post_resolved_tools = sdk_tools(emcc, root, env, log)
         post_toolchain = tool_fingerprint(post_resolved_tools)
+        if (R.input_hashes(root) != inputs or {p: R.digest(root / p) for p in profiles} != profiles
+                or source_identity(root) != source or post_resolved_tools != resolved_tools
+                or post_toolchain != toolchain
+                or R.loader_environment_fingerprints(env) != loader_environment
+                or (target_path is not None and R.digest(target_path) != target_link['report_sha256'])):
+            raise ValueError('source/generated/profile/report/tool/SDK inputs changed during runtime build')
+        after = snapshot(R.input_hashes(root), {p: R.digest(root / p) for p in profiles}, config, target_link)
+        if after != before:
+            raise ValueError('source/generated/profile inputs changed before runtime receipt publication')
     except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
         if target is not None:
             raise
-        print('emu: receipt unavailable: ' + str(error))
-        print(f'emu: build/emu ({files[0]["bytes"]} B wasm, {identity["version"]})')
-        return None
-    if target is None and (post_resolved_tools != resolved_tools or post_toolchain != toolchain):
-        print('emu: receipt unavailable: SDK inputs changed during runtime build')
-        print(f'emu: build/emu ({files[0]["bytes"]} B wasm, {identity["version"]})')
-        return None
-    if (R.input_hashes(root) != inputs or {p: R.digest(root / p) for p in profiles} != profiles
-            or source_identity(root) != source or post_resolved_tools != resolved_tools
-            or post_toolchain != toolchain
-            or R.loader_environment_fingerprints(env) != loader_environment
-            or output_files(root) != files
-            or (target_path is not None and R.digest(target_path) != target_link['report_sha256'])):
-        raise ValueError('source/generated/profile/report/tool/SDK inputs changed during runtime build')
-    after = snapshot(R.input_hashes(root), {p: R.digest(root / p) for p in profiles}, config, target_link)
-    if after != before:
-        raise ValueError('source/generated/profile inputs changed before runtime receipt publication')
+        return unavailable(str(error))
+    if target is None and output_names(root) != set(FILES):
+        return unavailable('extra developer runtime files; exact output inventory cannot be sealed')
+    if output_files(root) != files:
+        raise ValueError('runtime outputs changed before receipt publication')
     receipt = {'schema_version': 1, 'kind': 'felucca-wasm-build-receipt', 'source': source,
                'target': target_link, 'profile_sha256': profiles, 'input_sha256': inputs,
                'configuration': config, 'logical_mapping': mapping,

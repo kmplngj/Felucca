@@ -90,6 +90,11 @@ Stale generated profile or build identity after an edit, commit or profile-selec
 change also leaves an unpaired development build available using the existing generated
 inputs, with a freshness diagnostic and no receipt. It does not regenerate or qualify
 those inputs. The same stale state stops a paired build before compilation.
+If provenance changes during compilation or the final freshness checks, an unpaired
+build likewise keeps its completed outputs with a diagnostic and no receipt; a paired
+build fails before receipt publication. Missing, unsafe or changed required output
+files remain build failures in both modes. Extra developer files may remain only in
+unpaired output and prevent a receipt.
 
 Matching means source/profile/logical build correspondence, with documented simulator
 adapters. It does not mean equal target/Emscripten flags or device execution. The runtime
