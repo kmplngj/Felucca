@@ -233,6 +233,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- Docker target builds share one invocation-owned toolchain container across loader,
+  application and resource checks, reducing repeated container startup overhead.
+  Compiler arguments and firmware behavior are unchanged; the benefit depends on
+  host load and compiler time. Native Linux builds keep their existing path. See
+  [builder lifetime and fallback](../BUILDING.md#prerequisites-macos) and
+  [the controlled measurements](https://github.com/kmplngj/Felucca/pull/661).
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See
