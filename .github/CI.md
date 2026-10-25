@@ -7,6 +7,8 @@ host harness and JieLi Clang 4.0.1 for pi32v2. No repository secrets are require
 Build jobs have `contents: read`, checkout does not retain credentials, Actions
 are pinned to commit SHAs, jobs time out after 60 minutes, and superseded PR runs
 are canceled. Fork PRs use `pull_request`; there is no `pull_request_target` job.
+Actions artifact reads use read-only `actions: read` permission for verified
+receipt lookup; no write token or repository secret is needed.
 Repository Actions policy may require maintainer approval for first-time fork
 contributors. This change does not alter branch protection or repository settings.
 
@@ -14,14 +16,16 @@ contributors. This change does not alter branch protection or repository setting
 
 Every PR and `main` push starts CI, including documentation changes. Workflow
 syntax, CI helper failure cases and change-selection regressions always run.
-The existing `firmware / Target, host and emulator` check always completes and
-requires every selected focused job to succeed; a failed or canceled selected
-job cannot turn into a successful check. There are no workflow-level path filters
+The existing `firmware / Target, host and emulator` check aggregates the selected
+focused, target/host and full-browser jobs. Every selected job must succeed; a
+failed, canceled or unexpectedly skipped selected job cannot turn into a successful
+check. Canceled workflows stop their running jobs instead of waiting for an
+unconditional aggregate. There are no workflow-level path filters
 that could leave a required check pending. Existing check names are preserved.
 
 | Changed inputs | Validation |
 | --- | --- |
-| Known documentation, documentation images, `AGENTS.md`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
+| Known documentation, documentation images, `AGENTS.md`, Markdown under `.agents/skills/`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
 | Portable fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/console_diagnostics.c`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
 | `tools/firmware_watch.py`, its tests and `data/firmware-watch/**` | Portable Python suite, including ledger migration/integrity and offline Git-DAG recovery tests; no firmware build |
 | `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
@@ -37,8 +41,13 @@ without generated firmware assets or a connected device. Changes to `console.c`
 continue to select full firmware validation.
 
 Independent selections combine when a PR changes several independent areas.
-Full validation includes the focused suites, so separate focused jobs are not
-duplicated. Firmware is a single translation unit, and host/emulator harnesses
+Skill scripts, non-Markdown assets and unfamiliar files still require full validation;
+mixing skill instructions with firmware changes also selects full validation.
+Full validation includes the focused suites, so their separate focused jobs are
+not duplicated. Its target/host work and Chromium UI/AudioWorklet checks run on
+independent runners. The browser job builds a fresh emulator at the same selected
+revision and profile; native/WASM parity checks remain in the host suite.
+Firmware is a single translation unit, and host/emulator harnesses
 include shared sources: changing an engine or a firmware UI file still runs the
 complete suite. Changes to the Python build/package tools still require real
 target/package validation even when portable mocked fixtures exist.
@@ -52,6 +61,60 @@ detection is disabled so both old and new paths are considered. Missing history,
 new-branch zero SHAs and unsupported events select full validation. The selection
 summary and `selection.json` workflow artifact record the suites, reason and paths.
 Full history is fetched only for selection and builds that need it.
+
+## Feedback and merge stages
+
+Known firmware UI, native engine and effect changes in a draft PR can run focused
+host regressions with fresh target/resource/package guards. The selection map in
+`tools/ci_changes.py` includes prerequisite closure; it is not an AI choice of which
+tests to omit. Shared contracts, persistence, protocol, build inputs, dependency
+pins, unfamiliar paths and mixed independent suites retain full validation even
+while draft. Documentation and independent-tool selections keep their existing
+lightweight checks.
+
+Partial runs use the **Draft feedback** caller. They never report the required
+`firmware / Workflow and CI helper checks` or `firmware / Target, host and emulator`
+names. A successful focused run therefore cannot establish merge acceptance.
+Both ready-for-review and converted-to-draft transitions trigger classification;
+ready PRs always run their complete applicable plan. Later code pushes refresh
+that candidate. Manual target-only builds remain explicit, and releases always
+run full validation.
+
+Full host validation partitions the source-derived dependency graph across two
+independent target/host runners. It retains every existing golden, sanitizer,
+reference, compatibility and profile-applicability obligation. Each shard has a
+fresh invocation ID within a run/attempt cohort and exports complete logs, required
+outputs and its source/configuration-bound receipt. The aggregate restores the
+same generated inputs and compiler identity, independently reconstructs the full
+plan and verifies every unit exactly once. It refuses missing, duplicate, stale,
+failed, canceled or unapproved skipped work. Matching target/Wasm prerequisite
+bytes are required across runners. A single shard or focused report cannot pass
+ordinary full-suite verification. Historical exact-PR sources without this interface
+retain their original complete single-runner path and verifier.
+
+Only shard 1 reproduces and stages the package/site. Candidate artifacts become
+validated artifacts after successful combined host and browser validation. The
+browser job continues independently of host work.
+
+## Verified evidence reuse
+
+The standalone backup fixture is the first audited identity-independent scope.
+It can reuse a successful automatic CI receipt from this repository when all
+tracked inputs, clean recursive engine pins, workflow/helper bytes, Node binary
+and runtime versions, platform, locale and relevant configuration match. The
+fingerprint includes actual file bytes and modes. A bounded artifact lookup uses
+that exact fingerprint, verifies the original successful run/repository/job and
+evidence hashes, and reports the original run and revision as **reused**.
+
+Missing, unavailable, expired, malformed or mismatching evidence runs the fixture
+fresh. Fork origins and other workflows cannot supply a reusable receipt. ZIP
+members, paths and sizes are bounded; reused results are never relabeled as fresh
+invocations. Newly executed fixtures alone publish new receipts.
+
+Firmware and browser builds embed Git/PR identity, which changes across merges
+even when the tree is identical. They continue to run fresh, as do target/identity
+checks and releases. Reuse is not keyed by a branch name or an unqualified green
+status, and does not substitute an older package for the current build.
 
 Run selector regressions locally with:
 
@@ -219,14 +282,19 @@ Setup failures may have only checkout details; the complete Actions step logs
 remain on the run page. A canceled job can upload available diagnostics while
 its runner remains alive; a killed runner cannot guarantee an upload.
 
+Target/host validation stages candidate firmware and release artifacts. The final
+required check promotes them under the existing `firmware-*` and `release-*` names
+only after all selected validation, including full-browser checks, succeeds.
+Candidate artifacts are not accepted firmware; device checks remain separate.
+
 Diagnostics expire after 14 days; successful firmware/release artifacts after
 30 days (subject to repository policy). Download them from the Actions run's
 Artifacts section. Artifact access follows repository permissions and may
 require sign-in. Only explicit build paths are uploaded, never an environment
 dump, credentials or dependency caches. Public GitHub-hosted runner use follows
 GitHub's plan; private forks can consume minutes and artifact storage. There is
-at most one target/test job per run, with focused independent jobs when applicable,
-and no recurring nightly schedule. Focused emulator diagnostics include its fresh
+two target/host shards and one parallel browser job for a full run, with focused
+independent jobs when applicable, and no recurring nightly schedule. Focused emulator diagnostics include its fresh
 WASM, copied browser files and native song output; focused checks do not upload a
 validated firmware package. Documentation-only runs upload workflow diagnostics.
 

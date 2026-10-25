@@ -99,7 +99,8 @@ release/site packaging includes every `LICENSES/*.txt` notice with the package.
 Tamzen/Tamsyn is no longer a build input. Its notice remains in
 `LICENSES/Tamzen.txt` for historical distributions and the dated font comparison.
 
-On the device, HOME held > ABOUT opens the information screen; turning PRESETS scrolls on into
+On the device, hold HOME, select SYSTEM with ALGORITHM and ABOUT with PRESETS, then tap
+OCT+ to open the information screen; turning PRESETS scrolls on into
 CREDITS, a short list of these authors, licences and source URLs.
 
 ## JieLi SDK files in the packages (Apache-2.0)
