@@ -81,7 +81,7 @@ class NativeBundle(unittest.TestCase):
             cfg = original['configuration']
             args = ['--release', cfg['version_override'][1:]] if cfg['version_override'] else []
             args += ['--product', cfg['product']]
-            run([sys.executable, 'tools/build.py', *args], control, 'control-build')
+            run(['sh', 'build.sh', *args], control, 'control-build')
             control_report = json.loads((control / 'build/resource-report.json').read_text())
             (evidence / 'control-report.json').write_bytes((control / 'build/resource-report.json').read_bytes())
             label = control_report['build_identity']['version'].removeprefix('v')
@@ -93,7 +93,7 @@ class NativeBundle(unittest.TestCase):
             reproduced = work / 'extracted' / ('felucca-' + label + '-source')
             self.assertFalse((reproduced / '.git').exists())
             S.verify_tree(reproduced)
-            run([sys.executable, 'tools/build.py', *args], reproduced, 'git-free-build')
+            run(['sh', 'build.sh', *args], reproduced, 'git-free-build')
             (evidence / 'git-free-report.json').write_bytes((reproduced / 'build/resource-report.json').read_bytes())
             resolved = json.loads((control / 'build/gen/resolved-profile.json').read_text())
             self.assertEqual(resolved['engine_ids'], original_profile['engine_ids'])

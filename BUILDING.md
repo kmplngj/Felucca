@@ -386,10 +386,11 @@ This uses the native browser-emulator integration on Linux/macOS and needs no ha
 uv run --locked --group build tests/run_tests.sh
 ```
 
-In GitHub Actions, the `profiles` unit also runs `tests/native_bundle_integration.py`:
+In upstream GitHub Actions (`kmplngj/Felucca`), the `profiles` unit also runs
+`tests/native_bundle_integration.py`:
 two isolated real target builds (Git control and verified Git-free source), followed
 by native bundle creation/verification and independent stable-key metadata checks.
-It reuses the installed toolchain/SDK; the original CI build and runtime stay untouched.
+It uses `build.sh` and its normal toolchain/SDK defaults; the original CI build and runtime stay untouched.
 Local `profiles` remains a host-only check. To run the native proof explicitly after
 a fresh matching target build in a clean committed checkout, use
 `uv run --locked --group build python tests/native_bundle_integration.py` (inside the
