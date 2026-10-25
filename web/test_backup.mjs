@@ -172,5 +172,3 @@ ok(await athrows(() => restoreBackup(failing.request, file)) && failing.log.incl
 
 console.log(fails ? `BACKUP WEB TESTS FAILED (${fails})` : "backup web tests passed");
 process.exit(fails ? 1 : 0);
-
-// Temporary CI receipt/feedback routing probe.
