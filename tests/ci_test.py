@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -103,6 +104,65 @@ class Checks(unittest.TestCase):
             with self.subTest(message=message), patch.dict(os.environ, FELUCCA_COVERAGE_REPORT='', FELUCCA_COVERAGE_ID=''), self.assertRaisesRegex(ValueError, 'explicit report'):
                 ci.verify_tests(log)
 
+    def workflow_job(self, name):
+        workflow = (ci.build.SRC / ".github/workflows/build.yml").read_text()
+        return re.split(r"\n  [a-z][a-z-]*:\n", workflow.split("\n  " + name + ":\n", 1)[1], maxsplit=1)[0]
+
+    def test_required_check_allows_cancellation_and_waits_for_independent_runners(self):
+        aggregate = self.workflow_job("build")
+        self.assertIn("    name: Target, host and emulator\n", aggregate)
+        self.assertIn("    if: ${{ !cancelled() }}\n", aggregate)
+        self.assertNotIn("if: always()", aggregate)
+        self.assertIn("needs: [workflow-checks, python-checks, backup-checks, emulator-checks, validation, full-browser-checks]", aggregate)
+        for name in ("validation", "full-browser-checks"):
+            job = self.workflow_job(name)
+            # Neither long-running job waits for the other. Default success()
+            # also stops both jobs when their workflow is canceled.
+            self.assertIn("    needs: workflow-checks\n", job)
+            header = job.split("    steps:\n", 1)[0]
+            self.assertNotIn("    if: always()", header)
+            self.assertNotIn("    if: ${{ always()", header)
+        self.assertIn("    if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'\n",
+                      self.workflow_job("full-browser-checks"))
+
+    def test_browser_gate_builds_fresh_selected_sources_with_workflow_owned_pins(self):
+        browser = self.workflow_job("full-browser-checks")
+        pins = browser.index("cp pyproject.toml uv.lock .python-version")
+        selected = browser.index("ref: ${{ inputs.source_ref || github.sha }}")
+        self.assertLess(pins, selected)
+        self.assertIn('uv sync --locked --only-group build --project "$RUNNER_TEMP/felucca-python-project"', browser)
+        self.assertIn('build.generate()', browser)
+        self.assertIn("build.VERSION = build.resolve(['--release', release] if release else [])['version']", browser)
+        self.assertIn('FELUCCA_VERIFIED_PR: ${{ inputs.verified_pr }}', browser)
+        self.assertIn('FELUCCA_VERIFIED_COMMIT: ${{ inputs.source_ref }}', browser)
+        self.assertIn('sh web/emu/build.sh', browser)
+        self.assertNotIn('tools/ci.py emulator-tests', browser)
+        self.assertIn('npm test --prefix web/emu', browser)
+        for path in ('build/ci/', 'build/browser/', 'build/emu/', 'build/gen/resolved-profile.json'):
+            self.assertIn(path, browser)
+        self.assertIn('browser-provenance.txt', browser)
+        self.assertIn('git submodule status --recursive', browser)
+        # Keep the existing complete host/parity coverage in the other runner.
+        host = self.workflow_job("validation")
+        self.assertIn('sh tests/run_tests.sh', host)
+        self.assertIn('python3 tools/ci.py verify-tests', host)
+        self.assertNotIn('npm test --prefix web/emu', host)
+        self.assertIn('Reproduce package from a clean checkout', host)
+
+    def test_validated_artifacts_are_promoted_only_after_required_results_pass(self):
+        aggregate = self.workflow_job("build")
+        host = self.workflow_job("validation")
+        for kind in ('firmware', 'release'):
+            self.assertIn('name: candidate-' + kind + '-${{', host)
+            self.assertNotIn('name: ' + kind + '-${{', host)
+            download = aggregate.index('Download candidate ' + kind)
+            promote = aggregate.index('Upload validated ' + kind)
+            self.assertLess(aggregate.index('Check selected validation results'), download)
+            self.assertLess(download, promote)
+            self.assertIn('name: candidate-' + kind + '-${{', aggregate)
+            self.assertIn('name: ' + kind + '-${{', aggregate)
+        self.assertNotIn('always()', aggregate)
+
     def test_host_cpu_provenance_records_usable_clang_and_gcc_flags(self):
         compilers = [path for name in ("clang", "gcc") if (path := shutil.which(name))]
         if not compilers:
@@ -120,7 +180,7 @@ class Checks(unittest.TestCase):
 
     def test_actions_summary_keeps_actual_cpu_and_pending_dependency_outcomes(self):
         workflow = (ci.build.SRC / ".github/workflows/build.yml").read_text()
-        script = workflow.split("      - name: Summarize validation and limits\n", 1)[1].split("        run: |\n", 1)[1]
+        script = workflow.split("      - name: Summarize validation and limits\n", 1)[1].split("        run: |\n", 1)[1].split("\n  build:\n", 1)[0]
         script = "\n".join(line[10:] for line in script.splitlines())
         script = script.replace("${{ job.status }}", "success").replace("${{ needs.workflow-checks.outputs.full }}", "true")
         log = self.root / "build/ci/tests.log"

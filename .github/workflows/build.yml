@@ -26,7 +26,7 @@ on:
         type: string
     outputs:
       version:
-        value: ${{ jobs.build.outputs.version }}
+        value: ${{ jobs.validation.outputs.version }}
 
 permissions:
   contents: read
@@ -275,25 +275,153 @@ jobs:
             build/emu/
             build/host/emu_native.f32
             build/browser/
-  build:
-    name: Target, host and emulator
-    needs: [workflow-checks, python-checks, backup-checks, emulator-checks]
-    # Preserve the existing required check and fail if a selected suite fails.
-    if: always()
+  full-browser-checks:
+    name: Full browser UI and audio validation
+    needs: workflow-checks
+    if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    timeout-minutes: 15
     env:
       VERSION: ${{ inputs.version }}
-      VALIDATION: ${{ inputs.validation }}
       FELUCCA_VERIFIED_PR: ${{ inputs.verified_pr }}
       FELUCCA_VERIFIED_COMMIT: ${{ inputs.source_ref }}
-      CC: clang
-      SANITIZE: '1'
+    steps:
+      - name: Check out workflow-owned dependencies
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+      - name: Preserve locked generation dependencies outside PR sources
+        run: |
+          mkdir -p "$RUNNER_TEMP/felucca-python-project"
+          cp pyproject.toml uv.lock .python-version "$RUNNER_TEMP/felucca-python-project/"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+          ref: ${{ inputs.source_ref || github.sha }}
+      - name: Check full browser prerequisites
+        run: |
+          if [ ! -f web/emu/package.json ] || [ ! -f web/emu/package-lock.json ]; then
+            echo 'Full validation requires the browser harness in the selected sources. Rebase onto current sources, use a compatible workflow, or select --validation target when supported.' >&2
+            exit 1
+          fi
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.23'
+          enable-cache: true
+          working-directory: ${{ runner.temp }}/felucca-python-project
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/emu/package-lock.json
+      - name: Cache Emscripten
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/emsdk
+          key: emsdk-${{ runner.os }}-${{ runner.arch }}-dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72-6.0.11-v1
+      - name: Install pinned generation and emulator dependencies
+        env:
+          EMSDK: ${{ runner.temp }}/emsdk
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/felucca-python
+        run: |
+          mkdir -p build/ci
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
+          uv sync --locked --only-group build --project "$RUNNER_TEMP/felucca-python-project" --python "$(command -v python3)" --no-python-downloads
+          echo "$UV_PROJECT_ENVIRONMENT/bin" >> "$GITHUB_PATH"
+          echo "PYTHON=$UV_PROJECT_ENVIRONMENT/bin/python" >> "$GITHUB_ENV"
+          if [ ! -d "$EMSDK/.git" ]; then
+            git init "$EMSDK"
+            git -C "$EMSDK" remote add origin https://github.com/emscripten-core/emsdk.git
+            git -C "$EMSDK" fetch --depth 1 origin dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+            git -C "$EMSDK" checkout --detach FETCH_HEAD
+          fi
+          test "$(git -C "$EMSDK" rev-parse HEAD)" = dd8e25632640cfc1fb570c7fa4cc374e8a5e5a72
+          git -C "$EMSDK" diff --exit-code
+          git -C "$EMSDK" diff --cached --exit-code
+          "$EMSDK/emsdk" install 6.0.11
+          "$EMSDK/emsdk" activate 6.0.11
+      - name: Cache Playwright browser downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/emu/package-lock.json') }}
+      - name: Install pinned browser test dependencies
+        run: |
+          npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
+          npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
+      - name: Record browser checkout and dependency provenance
+        env:
+          EMSDK: ${{ runner.temp }}/emsdk
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${VERSION#v}"; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          {
+            git show -s --format=fuller HEAD
+            echo "Engine profile: $FELUCCA_PROFILE; release version: $VERSION"
+            git submodule status --recursive
+            test -z "$(git submodule status --recursive | grep -E '^[+U-]' || true)"
+            git submodule foreach --recursive 'git diff --exit-code && git diff --cached --exit-code'
+            sha256sum "$RUNNER_TEMP/felucca-python-project/uv.lock" web/emu/package-lock.json
+            python3 --version
+            clang --version
+            node --version
+            git -C "$EMSDK" rev-parse HEAD
+            "$EMSDK/upstream/emscripten/emcc" --version
+          } > build/ci/browser-provenance.txt
+      - name: Build fresh emulator and run browser UI and audio checks
+        env:
+          EMSDK: ${{ runner.temp }}/emsdk
+        run: |
+          set -o pipefail
+          source "$EMSDK/emsdk_env.sh"
+          # Use the longstanding generation API rather than a newer ci.py command:
+          # verified historical PR sources can still provide their own emulator.
+          python3 - <<'PYGEN' 2>&1 | tee build/ci/browser-assets.log
+          import os, sys
+          sys.path.insert(0, 'tools')
+          import build
+          release = os.environ.get('VERSION')
+          build.VERSION = build.resolve(['--release', release] if release else [])['version']
+          build.generate()
+          PYGEN
+          sh web/emu/build.sh 2>&1 | tee build/ci/emulator-build.log
+          npm test --prefix web/emu
+          git diff --exit-code
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: full-browser-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: |
+            build/ci/
+            build/emu/
+            build/build-identity.json
+            build/profile-contract.json
+            build/gen/resolved-profile.json
+            build/browser/
+  build:
+    name: Target, host and emulator
+    needs: [workflow-checks, python-checks, backup-checks, emulator-checks, validation, full-browser-checks]
+    # Run after failed dependencies, but stop when the workflow is canceled.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Check selected validation results
         env:
+          FULL_SELECTED: ${{ needs.workflow-checks.outputs.full }}
+          VALIDATION_RESULT: ${{ needs.validation.result }}
+          BROWSER_SELECTED: ${{ needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' }}
+          BROWSER_RESULT: ${{ needs.full-browser-checks.result }}
           WORKFLOW_RESULT: ${{ needs.workflow-checks.result }}
           PYTHON_SELECTED: ${{ needs.workflow-checks.outputs.python }}
           PYTHON_RESULT: ${{ needs.python-checks.result }}
@@ -306,11 +434,59 @@ jobs:
           import os
           if os.environ['WORKFLOW_RESULT'] != 'success':
               raise SystemExit('Workflow/selection checks did not succeed')
-          for suite in ('PYTHON', 'BACKUP', 'EMULATOR'):
+          for suite in ('PYTHON', 'BACKUP', 'EMULATOR', 'BROWSER'):
               expected = 'success' if os.environ[suite + '_SELECTED'] == 'true' else 'skipped'
               if os.environ[suite + '_RESULT'] != expected:
                   raise SystemExit(suite + ' validation did not complete as selected')
+          expected = 'success' if os.environ['FULL_SELECTED'] == 'true' else 'skipped'
+          if os.environ['VALIDATION_RESULT'] != expected:
+              raise SystemExit('Target/host validation did not complete as selected')
           PY
+      - name: Download candidate firmware after all selected gates pass
+        if: needs.workflow-checks.outputs.full == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate-firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ inputs.profile != 'standard' && format('{0}-', inputs.profile) || '' }}${{ github.run_id }}
+          path: ${{ runner.temp }}/validated-firmware
+      - name: Upload validated firmware
+        if: needs.workflow-checks.outputs.full == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ inputs.profile != 'standard' && format('{0}-', inputs.profile) || '' }}${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: error
+          path: ${{ runner.temp }}/validated-firmware/
+      - name: Download candidate release after all selected gates pass
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.version != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate-release-${{ github.run_id }}
+          path: ${{ runner.temp }}/validated-release
+      - name: Upload validated release
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.version != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: error
+          path: ${{ runner.temp }}/validated-release/
+
+  validation:
+    name: Target and host validation
+    needs: workflow-checks
+    if: needs.workflow-checks.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      VERSION: ${{ inputs.version }}
+      VALIDATION: ${{ inputs.validation }}
+      FELUCCA_VERIFIED_PR: ${{ inputs.verified_pr }}
+      FELUCCA_VERIFIED_COMMIT: ${{ inputs.source_ref }}
+      CC: clang
+      SANITIZE: '1'
+    steps:
       - name: Check out workflow orchestration
         if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -330,13 +506,6 @@ jobs:
           persist-credentials: false
           submodules: recursive
           ref: ${{ inputs.source_ref || github.sha }}
-      - name: Check full browser prerequisites
-        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
-        run: |
-          if [ ! -f web/emu/package.json ] || [ ! -f web/emu/package-lock.json ]; then
-            echo 'Full validation requires the browser harness in the selected sources. Rebase onto current sources, use a compatible workflow, or select --validation target when supported.' >&2
-            exit 1
-          fi
       - name: Validate version and record checkout
         if: needs.workflow-checks.outputs.full == 'true'
         id: version
@@ -488,12 +657,6 @@ jobs:
           export FELUCCA_COVERAGE_ID
           sh tests/run_tests.sh 2>&1 | tee build/ci/tests.log
           python3 tools/ci.py verify-tests build/ci/tests.log
-      - name: Cache Playwright browser downloads
-        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/emu/package-lock.json') }}
       - name: Prepare MACRO device acceptance projects and MIDI
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full' && inputs.profile == 'macro'
         run: |
@@ -502,12 +665,6 @@ jobs:
           else
             echo 'Selected revision predates the optional MACRO device pack; firmware validation continues.'
           fi
-      - name: Browser UI and AudioWorklet smoke test
-        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
-        run: |
-          npm ci --prefix web/emu --ignore-scripts --no-audit --no-fund
-          npm exec --prefix web/emu -- playwright install --with-deps --only-shell chromium
-          npm test --prefix web/emu
       - name: Reproduce package from a clean checkout
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
@@ -606,11 +763,11 @@ jobs:
             build/ui_fm4/**/*.png
             build/reverb_demo/*.wav
             build/fm6_demo/*.wav
-      - name: Upload validated firmware
+      - name: Stage candidate firmware
         if: needs.workflow-checks.outputs.full == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ inputs.profile != 'standard' && format('{0}-', inputs.profile) || '' }}${{ github.run_id }}
+          name: candidate-firmware-${{ inputs.validation == 'target' && 'target-' || '' }}${{ inputs.profile != 'standard' && format('{0}-', inputs.profile) || '' }}${{ github.run_id }}
           retention-days: 30
           if-no-files-found: error
           path: |
@@ -627,11 +784,11 @@ jobs:
             LICENSING.md
             LICENSES/
             assets/samples-cc0/ATTRIBUTION.txt
-      - name: Upload validated release
+      - name: Stage candidate release
         if: needs.workflow-checks.outputs.full == 'true' && inputs.version != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-${{ github.run_id }}
+          name: candidate-release-${{ github.run_id }}
           retention-days: 30
           if-no-files-found: error
           path: |
