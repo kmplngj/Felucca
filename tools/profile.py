@@ -33,10 +33,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE_ID_LIMIT = 64
+IDENTITY_REFERENCE = 'profiles/engine-identities.json'
 
 SUPPORTED_PROFILES = ('standard', 'reduced-lofi', 'macro')
 
@@ -61,7 +63,46 @@ def unique(values, label):
     return set(values)
 
 
-def resolve(catalog, profile):
+def validate_identities(catalog, reference):
+    """Compare the catalog with the reviewed allocation authority supplied by its root.
+
+    This catches accidental catalog drift, not deliberate edits to both inputs.
+    Reserved slots have no key; allocated keys survive retirement and source moves.
+    """
+    if not isinstance(reference, dict) or type(reference.get('schema_version')) is not int or reference['schema_version'] != 1:
+        raise ValueError('unsupported engine identity reference schema')
+    slots = reference.get('slots')
+    if not isinstance(slots, list) or any(not isinstance(s, dict) or type(s.get('id')) is not int or 'key' not in s for s in slots):
+        raise ValueError('invalid engine identity reference slots')
+    ids = unique([s['id'] for s in slots], 'engine IDs in identity reference')
+    if ids != set(range(ENGINE_ID_LIMIT)):
+        raise ValueError('identity reference must list all 64 stable slots')
+    allocated = {}
+    for slot in slots:
+        status, key = slot.get('status'), slot.get('key')
+        if status not in ('active', 'retired', 'reserved'):
+            raise ValueError('invalid engine identity status')
+        if status == 'reserved':
+            if key is not None:
+                raise ValueError('reserved engine identity slot must have no key')
+        else:
+            if not isinstance(key, str) or not re.fullmatch(r'felucca\.engine\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*', key):
+                raise ValueError('invalid namespaced engine key in identity reference')
+            allocated[slot['id']] = key
+    unique(list(allocated.values()), 'engine keys in identity reference')
+    keys = [e.get('key') for e in catalog['engines']]
+    for key in keys:
+        if not isinstance(key, str) or not re.fullmatch(r'felucca\.engine\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*', key):
+            raise ValueError('missing or invalid namespaced engine key in catalog')
+    unique(keys, 'engine keys in catalog')
+    if {e['id'] for e in catalog['engines']} != allocated.keys():
+        raise ValueError('catalog must retain every allocated engine identity, including retired slots')
+    for e in catalog['engines']:
+        if e['key'] != allocated[e['id']]:
+            raise ValueError(f"engine identity mapping changed at ID {e['id']}")
+
+
+def resolve(catalog, profile, reference):
     if catalog['schema_version'] != 1 or profile['schema_version'] != 1:
         raise ValueError('unsupported profile schema')
     ids = unique([e['id'] for e in catalog['engines']], 'engine IDs in registry')
@@ -69,6 +110,7 @@ def resolve(catalog, profile):
         raise ValueError('engine IDs must be in stable range 0..63')
     if ids != set(range(max(ids) + 1)):
         raise ValueError('missing reserved stable slot in registry')
+    validate_identities(catalog, reference)
     unique([e['name'] for e in catalog['engines']], 'engine names')
     for e in catalog['engines']:
         for facet in ('tag', 'icon', 'category', 'preset_categories', 'cc', 'order', 'union_control', 'source', 'symbol', 'render', 'budget_functions', 'tests', 'assets', 'requires'):
@@ -161,7 +203,7 @@ def validate_selection(root, name):
     catalog, profile = read_json(catalog_path), read_json(profile_path)
     if profile['name'] != name:
         raise ValueError('profile filename/name mismatch')
-    engines, providers = resolve(catalog, profile)
+    engines, providers = resolve(catalog, profile, read_json(root / IDENTITY_REFERENCE))
     return catalog, profile, engines, providers
 
 
@@ -180,7 +222,7 @@ def generated(root, name, font_variant=None, *, feature_flags=None):
     all_engines = sorted(catalog['engines'], key=lambda e: e['id'])
     engines = [e for e in all_engines if e['id'] in selected]
     icons = read_json(root / 'assets/icons.json')['names']
-    inputs = ['profiles/catalog.json', f'profiles/{name}.json', 'assets/icons.json', 'tools/profile.py']
+    inputs = ['profiles/catalog.json', IDENTITY_REFERENCE, f'profiles/{name}.json', 'assets/icons.json', 'tools/profile.py']
     inputs += [e['source'] for e in engines]
     inputs += [i for p in providers for i in p['generator_inputs']]
     for asset in catalog['shared_assets']:
@@ -204,6 +246,10 @@ def generated(root, name, font_variant=None, *, feature_flags=None):
                     generator_inputs=sorted(set(i for p in providers for i in p['generator_inputs'])),
                     tests=sorted(set(catalog['shared_tests'] + [t for e in engines for t in e['tests']] + [t for p in providers for t in p.get('tests',[])])),
                     licenses=sorted(set([l for p in providers for l in p['licenses']] + ['LICENSING.md', 'assets/samples-cc0/ATTRIBUTION.txt'] + [str(p.relative_to(root)) for p in (root/'LICENSES').glob('*.txt')])), input_sha256=hashes)
+    slots = {s['id']: s for s in read_json(root / IDENTITY_REFERENCE)['slots']}
+    resolved['engine_identity_reference'] = {'path': IDENTITY_REFERENCE, 'sha256': hashes[IDENTITY_REFERENCE]}
+    resolved['engine_identities'] = [dict(id=e['id'], key=e['key'], status=slots[e['id']]['status'],
+                                          owner=e['owner'], source=e['source']) for e in engines]
     # Firmware HEAD is provenance, not a C selection input; commits do not force identical code to rebuild.
     stamp_inputs = dict(resolved)
     stamp_inputs['source_pins'] = {k:v for k,v in pins.items() if k!='firmware_revision'}
@@ -276,10 +322,12 @@ def contract(root):
                             for path in recipe['resolved']['licenses']})
     return {'schema_version': 1, 'kind': 'felucca-supported-profile-contract',
             'source_pins': source_pins(root), 'registry': catalog,
+            'engine_identity_reference': read_json(root / IDENTITY_REFERENCE),
             'validation': {
                 'authority': 'tools/profile.py resolve, validate_selection, generated and source_pins',
                 'engine_id_min': 0, 'engine_id_max': ENGINE_ID_LIMIT - 1,
                 'stable_slots_must_be_contiguous': True, 'retired_engine_ids': [1],
+                'engine_keys_must_match_reviewed_reference': IDENTITY_REFERENCE,
                 'boot_default_engine_ids_required': catalog['defaults'],
                 'provider_dependency_cycles_allowed': False,
                 'explicit_exclusions_must_not_conflict_with_selection_or_dependencies': True,

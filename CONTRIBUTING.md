@@ -50,3 +50,13 @@ Existing native engines stay here until a separately qualified extraction. GPL a
 must not be submitted to the MIT collection under an MIT header.
 
 The web editor and installer live in [Felucca-WebApp](https://github.com/kmplngj/Felucca-WebApp).
+
+Engine contributions must retain the firmware-owned numeric ID and immutable
+`felucca.engine.<stable-slug>` key across compatible updates and repository moves.
+New allocations require review of both `profiles/catalog.json` and the permanent
+`profiles/engine-identities.json` reference; retired slots keep their key/ID and
+must not be reused. Do not rewrite the reference to make an accidental renumbering
+pass. It is a reviewed authority, not a security signature. Follow the
+[identity/allocation contract](docs/build-profiles.md#stable-engine-exchange-keys)
+and [engine extension rules](docs/extending.md#11-stable-ids). Per-engine saved-sound
+compatibility fingerprints and the remaining #422 update policy are still pending.

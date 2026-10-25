@@ -38,6 +38,29 @@ class Contract(unittest.TestCase):
         self.assertIn({'kind': 'provider', 'id': 'portable-dsp'},
                       recipes['standard']['provider_reasons']['native-core'])
         self.assertNotIn('engines-gpl', before)
+        identities=value['engine_identity_reference']['slots']
+        self.assertEqual(len(identities),64)
+        self.assertEqual(identities[1],{'id':1,'key':'felucca.engine.digital','status':'retired'})
+        self.assertEqual(identities[14],{'id':14,'key':'felucca.engine.macro','status':'active'})
+        self.assertTrue(all(s['status']=='reserved' and s['key'] is None for s in identities[15:]))
+        for recipe in recipes.values():
+            resolved=recipe['resolved']
+            self.assertEqual([e['id'] for e in resolved['engine_identities']],resolved['engine_ids'])
+            for engine in resolved['engine_identities']:
+                self.assertEqual(engine['key'],identities[engine['id']]['key'])
+            self.assertEqual(resolved['engine_identity_reference']['sha256'],resolved['input_sha256'][profile.IDENTITY_REFERENCE])
+        for fm4 in ('0','1'):
+            resolved=json.loads(profile.generated(ROOT,'standard',feature_flags={'FELUCCA_FM4':fm4,'FELUCCA_SLICE':'1'})['resolved-profile.json'])
+            self.assertEqual(any(e['id']==1 and e['status']=='retired' for e in resolved['engine_identities']),fm4=='1')
+
+    def test_contract_rejects_mapping_drift_through_the_production_resolver(self):
+        read=profile.read_json
+        def changed(path):
+            data=read(path)
+            if path.name=='catalog.json':data['engines'][14]['key']='felucca.engine.other'
+            return data
+        with patch.object(profile,'read_json',side_effect=changed):
+            with self.assertRaisesRegex(ValueError,'mapping changed'):profile.contract(ROOT)
 
     def test_export_reuses_production_dependency_validation(self):
         original = profile.read_json(ROOT / 'profiles/catalog.json')

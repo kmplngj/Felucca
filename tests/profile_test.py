@@ -22,12 +22,13 @@ class ResolverTests(unittest.TestCase):
     def setUp(self):
         self.catalog=profile.read_json(ROOT/'profiles/catalog.json')
         self.standard=profile.read_json(ROOT/'profiles/standard.json')
+        self.reference=profile.read_json(ROOT/profile.IDENTITY_REFERENCE)
     def fails(self, text, c=None, p=None):
         with self.assertRaisesRegex(ValueError,text):
-            profile.resolve(c or self.catalog,p or self.standard)
+            profile.resolve(c or self.catalog,p or self.standard,self.reference)
     def test_standard_and_reduced_stable_ids(self):
-        a,_=profile.resolve(self.catalog,self.standard)
-        b,_=profile.resolve(self.catalog,profile.read_json(ROOT/'profiles/reduced-lofi.json'))
+        a,_=profile.resolve(self.catalog,self.standard,self.reference)
+        b,_=profile.resolve(self.catalog,profile.read_json(ROOT/'profiles/reduced-lofi.json'),self.reference)
         self.assertEqual(set(e['id'] for e in a)-set(e['id'] for e in b),{3})
         self.assertEqual(self.catalog['defaults'],[0,12,4,10])
         self.assertNotIn('FELUCCA_CPU2',json.dumps(self.catalog))
@@ -66,6 +67,65 @@ class ResolverTests(unittest.TestCase):
         self.standard['engines'].append(63);self.fails('unknown')
         self.standard['engines'].pop();self.standard['engines'].append(3);self.fails('duplicate')
         self.standard['engines'].pop();self.catalog['engines'][2]['id']=0;self.fails('duplicate')
+
+    def test_keys_cannot_be_reassigned_removed_or_duplicated(self):
+        for mutate, error in (
+                (lambda c: c['engines'][0].update(key=c['engines'][2]['key']), 'duplicate engine keys'),
+                (lambda c: c['engines'][0].update(key='felucca.engine.renamed'), 'mapping changed'),
+                (lambda c: c['engines'][0].pop('key'), 'missing or invalid'),
+                (lambda c: c['engines'][0].update(key='donor.engine.analog'), 'missing or invalid'),
+                (lambda c: c['engines'][0].update(key='felucca.engine.Bad_slug'), 'missing or invalid'),
+                (lambda c: c['engines'].pop(), 'retain every allocated'),
+                (lambda c: (c['engines'][0].update(id=2), c['engines'][2].update(id=0)), 'mapping changed')):
+            catalog=copy.deepcopy(self.catalog);mutate(catalog)
+            with self.subTest(error=error): self.fails(error,c=catalog)
+
+    def test_reference_rejects_ambiguous_or_missing_allocations(self):
+        for mutate, error in (
+                (lambda r: r['slots'].pop(), 'all 64'),
+                (lambda r: r['slots'][63].update(id=62), 'duplicate engine IDs'),
+                (lambda r: r['slots'][0].update(id=True), 'invalid engine identity reference slots'),
+                (lambda r: r['slots'][0].update(status='unknown'), 'status'),
+                (lambda r: r['slots'][0].update(key='analog'), 'namespaced'),
+                (lambda r: r['slots'][2].update(key=r['slots'][0]['key']), 'duplicate engine keys'),
+                (lambda r: r['slots'][63].update(key='felucca.engine.future'), 'reserved'),
+                (lambda r: r['slots'][14].update(key=None,status='reserved'), 'retain every allocated'),
+                (lambda r: r['slots'][15].update(key='felucca.engine.future',status='active'), 'retain every allocated')):
+            reference=copy.deepcopy(self.reference);mutate(reference)
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError,error):
+                profile.resolve(self.catalog,self.standard,reference)
+
+    def test_display_and_source_metadata_are_not_engine_identity(self):
+        self.catalog['engines'][3].update(name='DISPLAY',symbol='ENG_RELOCATED',source='elsewhere/lofi.c')
+        engines,_=profile.resolve(self.catalog,self.standard,self.reference)
+        self.assertEqual(next(e for e in engines if e['id']==3)['key'],'felucca.engine.lofi')
+
+    def test_requested_root_supplies_reference_and_reference_is_a_freshness_input(self):
+        original=profile.generated(ROOT,'standard')
+        pins=json.loads(original['resolved-profile.json'])['source_pins']
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            for rel in json.loads(original['resolved-profile.json'])['input_sha256']:
+                dest=root/rel;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy(ROOT/rel,dest)
+            # Editing both authorities deliberately is permitted, not a signature bypass.
+            catalog=profile.read_json(root/'profiles/catalog.json')
+            reference=profile.read_json(root/profile.IDENTITY_REFERENCE)
+            catalog['engines'][3]['key']='felucca.engine.fixture-lofi'
+            reference['slots'][3]['key']='felucca.engine.fixture-lofi'
+            (root/'profiles/catalog.json').write_text(json.dumps(catalog))
+            path=root/profile.IDENTITY_REFERENCE;path.write_text(json.dumps(reference))
+            with patch.object(profile,'source_pins',return_value=pins):
+                before=profile.generated(root,'standard')
+                info=json.loads(before['resolved-profile.json'])
+                self.assertEqual(next(e for e in info['engine_identities'] if e['id']==3)['key'],'felucca.engine.fixture-lofi')
+                out=root/'generated';out.mkdir()
+                for name,content in before.items(): (out/name).write_text(content)
+                path.write_text(path.read_text()+'\n')
+                changed=profile.generated(root,'standard')
+                self.assertNotEqual(before,changed)
+                with self.assertRaisesRegex(ValueError,'stale generated profile'):profile.check_outputs(changed,out)
+                path.unlink()
+                with self.assertRaises(FileNotFoundError):profile.generated(root,'standard')
     def test_defaults_and_exclusions(self):
         self.standard['engines'].remove(0);self.fails('default')
         self.standard['engines'].append(0);self.standard['exclude']=[3];self.fails('conflict')
