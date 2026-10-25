@@ -561,7 +561,7 @@ static void cv_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint
 /* ------------------------------------------------------------- text --- */
 /* Only these accessors interpret the two glyph record layouts. Compact faces
  * have psh=0; original alpha phase arrays keep their direct, typed view. */
-static const aag_t *glyph_metrics(const aafont_t *f, uint32_t i, aag_t *scratch)
+static inline __attribute__((always_inline)) const aag_t *glyph_metrics(const aafont_t *f, uint32_t i, aag_t *scratch)
 {
     const aag_fixed_t *g;
     if (!f->fixed_adv)
