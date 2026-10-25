@@ -185,6 +185,152 @@
       "requested_at": "2026-10-21",
       "source_name": "FM Lab (single-instrument DX7 sound-design firmware, original voices, operator waves and optional 2x quality)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/370",
+      "authorization": "User requested 2026-10-21: analyse m-vave/fm1_open features, instruments, optimizations and GUI, plan adoption, create GitHub issues and add it to the watcher if useful.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "4c7496daac04a95ff10d1afdcc8f9ead2dbabc41"
+      },
+      "historical_total_at_setup": 8,
+      "initialization_policy": "Initialize at the start of the next audit run after this registration reaches main and the state branch; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/368",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "4c7496daac04a95ff10d1afdcc8f9ead2dbabc41"
+      },
+      "recent_frontiers": {
+        "main": "4c7496daac04a95ff10d1afdcc8f9ead2dbabc41"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/18",
+        "https://github.com/kmplngj/Felucca/issues/59",
+        "https://github.com/kmplngj/Felucca/issues/99",
+        "https://github.com/kmplngj/Felucca/issues/102",
+        "https://github.com/kmplngj/Felucca/issues/191",
+        "https://github.com/kmplngj/Felucca/issues/366",
+        "https://github.com/kmplngj/Felucca/issues/367",
+        "https://github.com/kmplngj/Felucca/issues/368",
+        "https://github.com/kmplngj/Felucca/issues/369",
+        "https://github.com/kmplngj/Felucca/issues/370",
+        "https://github.com/kmplngj/Felucca/issues/498",
+        "https://github.com/kmplngj/Felucca/issues/499",
+        "https://github.com/kmplngj/Felucca/issues/500"
+      ],
+      "repository": "m-vave/fm1_open",
+      "repository_id": 1416743005,
+      "requested_at": "2026-10-21",
+      "source_name": "FM1 Open (M-VAVE V14 APP, visible browser/DSP sources and separately licensed binary device SDK)",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/481",
+      "authorization": "User requested in the Clipper adoption chat (2026-10-19): analyse the firmware, plan features/instruments/optimizations, create GitHub issues and add it to the firmware watcher.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "7008d31e78da5d4e5e0a1f25a994ba7b2266c702"
+      },
+      "historical_total_at_setup": 49,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/480",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "7008d31e78da5d4e5e0a1f25a994ba7b2266c702"
+      },
+      "recent_frontiers": {
+        "main": "7008d31e78da5d4e5e0a1f25a994ba7b2266c702"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/481",
+        "https://github.com/kmplngj/Felucca/issues/478",
+        "https://github.com/kmplngj/Felucca/issues/479",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/24",
+        "https://github.com/kmplngj/Felucca/issues/480",
+        "https://github.com/kmplngj/Felucca/issues/17",
+        "https://github.com/kmplngj/Felucca/issues/234"
+      ],
+      "repository": "isod89/clipper-fm1",
+      "repository_id": 1424928986,
+      "requested_at": "2026-10-19",
+      "source_name": "Clipper (SLOOP/Felucca-derived synth; VPS, TERRAIN, VECTOR, WSEQ, HYBRID, FMX and synth workflow experiments)",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/202",
+      "authorization": "Register the two firmware-watch sources requested in Felucca issue #446; musical feature implementation remains with the existing adoption owners.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "2aea69253110233f0934da0444381177a2bbd7d5"
+      },
+      "initialization_policy": "After this registration reaches main and the canonical state registry, initialize independently at the start of the next audit. Reverify stable repository identity and canonical name/main/pin, fetch the complete non-shallow DAG and fresh tip, preserve existing intervals and journal, calculate queues from complete DAGs and confirmed records, then remove this pending entry only after successful initialization. Full-DAG counts have not been collected for this registration; snapshot review grants no per-commit coverage. Retain an explicit blocker on failure.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "2aea69253110233f0934da0444381177a2bbd7d5"
+      },
+      "recent_frontiers": {
+        "main": "2aea69253110233f0934da0444381177a2bbd7d5"
+      },
+      "recent_reviewed": 0,
+      "registration_issue": "https://github.com/kmplngj/Felucca/issues/446",
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/200",
+        "https://github.com/kmplngj/Felucca/issues/202",
+        "https://github.com/kmplngj/Felucca/issues/208",
+        "https://github.com/kmplngj/Felucca/issues/214",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/18"
+      ],
+      "repository": "okumurari2/maku",
+      "repository_id": 1411236607,
+      "requested_at": "2026-10-18",
+      "source_name": "MAKU",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/167",
+      "authorization": "Register the two firmware-watch sources requested in Felucca issue #446; musical feature implementation remains with the existing adoption owners.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "4ac494e51ee73abdbbf70f2979184e2a147a5e53"
+      },
+      "initialization_policy": "After this registration reaches main and the canonical state registry, initialize independently at the start of the next audit. Reverify stable repository identity and canonical name/main/pin, fetch the complete non-shallow DAG and fresh tip, preserve existing intervals and journal, calculate queues from complete DAGs and confirmed records, then remove this pending entry only after successful initialization. Full-DAG counts have not been collected for this registration; snapshot review grants no per-commit coverage. Retain an explicit blocker on failure.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "4ac494e51ee73abdbbf70f2979184e2a147a5e53"
+      },
+      "previous_repository": "Rastapopolix/melodee-tess",
+      "recent_frontiers": {
+        "main": "4ac494e51ee73abdbbf70f2979184e2a147a5e53"
+      },
+      "recent_reviewed": 0,
+      "registration_issue": "https://github.com/kmplngj/Felucca/issues/446",
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/162",
+        "https://github.com/kmplngj/Felucca/issues/167",
+        "https://github.com/kmplngj/Felucca/issues/208",
+        "https://github.com/kmplngj/Felucca/issues/214"
+      ],
+      "repository": "Rastapopolix/tessera",
+      "repository_id": 1414783836,
+      "requested_at": "2026-10-18",
+      "source_name": "Tessera (formerly Melodee-Tess)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [

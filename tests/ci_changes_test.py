@@ -28,6 +28,25 @@ class SelectionTest(unittest.TestCase):
             "assets/fonts/m8stealth/README.md", "web/EDITOR_PROTOCOL.md",
         ]), set())
 
+    def test_skill_markdown_needs_no_firmware_validation(self):
+        for path in (".agents/skills/issue-delivery/SKILL.md",
+                     ".agents/skills/issue-delivery/references/backlog.md",
+                     ".agents/skills/new-skill/references/guide.md"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), set())
+        self.assertEqual(self.suites([".agents/skills/issue-delivery/SKILL.md",
+                                      "tests/diagnostics_test.py"]), {"python"})
+
+    def test_skill_scripts_assets_and_firmware_mixtures_keep_full_validation(self):
+        for path in (".agents/skills/new-skill/scripts/helper.py",
+                     ".agents/skills/new-skill/assets/sound.wav",
+                     ".agents/skills/new-skill/agents/openai.yaml",
+                     ".agents/skills-other/new.md"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), {"full"})
+        self.assertEqual(self.suites([".agents/skills/issue-delivery/SKILL.md",
+                                      "firmware/src/audio.c"]), {"full"})
+
     def test_independent_suites_and_mixed_changes(self):
         for path in changes.PYTHON_INPUTS:
             with self.subTest(path=path):
@@ -156,6 +175,17 @@ class DiffTest(unittest.TestCase):
         self.assertTrue(result["suites"]["full"])
         self.assertIn("firmware/src/audio.c", result["paths"])
 
+    def test_skill_instruction_only_pr_uses_lightweight_checks(self):
+        self.write(".agents/skills/issue-delivery/SKILL.md")
+        self.commit()
+        self.write(".agents/skills/issue-delivery/references/backlog.md")
+        result = self.pr(self.commit())
+        self.assertEqual(set(result["paths"]), {
+            ".agents/skills/issue-delivery/SKILL.md",
+            ".agents/skills/issue-delivery/references/backlog.md",
+        })
+        self.assertFalse(any(result["suites"].values()))
+
     def test_pr_excludes_unrelated_base_branch_changes(self):
         self.git("switch", "-c", "feature")
         self.write("docs/change.md")
@@ -207,8 +237,9 @@ class RequiredCheckTest(unittest.TestCase):
         # Exercise the script actually used by the preserved required check.
         block = workflow.read_text().split("      - name: Check selected validation results\n", 1)[1]
         script = textwrap.dedent(block.split("        run: |\n", 1)[1].split("      - ", 1)[0])
-        env = dict(os.environ, WORKFLOW_RESULT="success")
-        for suite in ("PYTHON", "BACKUP", "EMULATOR"):
+        env = dict(os.environ, WORKFLOW_RESULT="success", FULL_SELECTED="false",
+                   VALIDATION_RESULT="skipped")
+        for suite in ("PYTHON", "BACKUP", "EMULATOR", "BROWSER"):
             env[suite + "_SELECTED"] = "false"
             env[suite + "_RESULT"] = "skipped"
 
@@ -220,11 +251,18 @@ class RequiredCheckTest(unittest.TestCase):
         for result in ("failure", "cancelled", "skipped"):
             with self.subTest(workflow=result):
                 self.assertNotEqual(run({"WORKFLOW_RESULT": result}), 0)
-            for suite in ("PYTHON", "BACKUP", "EMULATOR"):
+            with self.subTest(validation=result):
+                self.assertNotEqual(run({"FULL_SELECTED": "true", "VALIDATION_RESULT": result,
+                                         "BROWSER_SELECTED": "true", "BROWSER_RESULT": "success"}), 0)
+            for suite in ("PYTHON", "BACKUP", "EMULATOR", "BROWSER"):
                 with self.subTest(suite=suite, result=result):
                     self.assertNotEqual(run({suite + "_SELECTED": "true", suite + "_RESULT": result}), 0)
-        for suite in ("PYTHON", "BACKUP", "EMULATOR"):
+        for suite in ("PYTHON", "BACKUP", "EMULATOR", "BROWSER"):
             self.assertEqual(run({suite + "_SELECTED": "true", suite + "_RESULT": "success"}), 0)
+        self.assertEqual(run({"FULL_SELECTED": "true", "VALIDATION_RESULT": "success",
+                              "BROWSER_SELECTED": "true", "BROWSER_RESULT": "success"}), 0)
+        # Explicit target-only builds still require target validation, not browser work.
+        self.assertEqual(run({"FULL_SELECTED": "true", "VALIDATION_RESULT": "success"}), 0)
 
 
 if __name__ == "__main__":

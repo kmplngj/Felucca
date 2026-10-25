@@ -42,9 +42,12 @@ python3 tests/mul64_hload_check.py --fail-on-new tests/mul64_hload_baseline.json
 ```
 
 It exits 1 only when an A/T/C-reachable function has more `near_mul` (at `--window`, default 8)
-than the baseline records (missing = 0), and 2 for unusable input. Gating needs reachability: without
+than the baseline records (missing = 0), and 2 for unusable input. Empty or unrecognized listings
+are unusable even in report mode. Gating also requires instructions for both the audio and TIMER5
+roots in the listing and validates the baseline before writing output (including when `--json`
+names the baseline). Gating needs reachability: without
 the matching unoptimized IR (`felucca.ll` beside the listing, or `--ir PATH`), or with IR lacking the
-audio/TIMER5 roots, it exits 2 rather than treating every function as main-loop only. Plain report
+audio or TIMER5 root, it exits 2 rather than treating every function as main-loop only. Plain report
 mode still prints `-` and exits 0 in that case.
 
 ## Instruction syntax found
@@ -289,19 +292,77 @@ same project, MIDI and audio setup for both. Follow [stress-device](stress-devic
 provenance and the result template, and [diagnostics](diagnostics.md#idle-baseline-setup) for the
 console route.
 
-1. **Build** both packages from the PR head and keep each build's listing (needed to map a crash `pc`):
+1. **Freeze and build.** Use the exact full commit supplied in the hardware handoff, a clean recursive
+   checkout, and the [build prerequisites](../BUILDING.md#prerequisites-macos). Do not change source,
+   engine pins, assets or build options between B and C. The following creates a new evidence directory
+   per variant and keeps the matching IR, listing and profile sidecar; the listing maps a crash `pc`.
+   The explicit flags prevent an inherited reproducer flag from accidentally turning B into C.
+   Record any other nondefault build options and keep them identical; this comparison uses the
+   standard profile, M8Stealth, compiled CPU2 support and the selective size pass. Retain a normal
+   `.fwsc` package and its identity before starting, for restoration after the soaks.
    ```sh
-   FELUCCA_CRASH_CTX=1 ./build.sh
-   cp build/felucca.fwsc build/soak-B.fwsc; cp build/felucca.dis build/soak-B.dis
-   FELUCCA_CRASH_CTX=1 FELUCCA_MUL64_REPRO=1 ./build.sh
-   cp build/felucca.fwsc build/soak-C.fwsc; cp build/felucca.dis build/soak-C.dis
+   set -eu
+   test -z "$(git status --porcelain)"
+   export FELUCCA_PROFILE=standard FELUCCA_FONT=m8stealth FELUCCA_CPU2=1 FELUCCA_SIZE=1
+   export FELUCCA_CRASH_CTX=1
+   for variant in B C; do
+     if [ "$variant" = B ]; then export FELUCCA_MUL64_REPRO=0; else export FELUCCA_MUL64_REPRO=1; fi
+     mkdir -p build/soak425
+     mkdir "build/soak425/$variant"
+     git rev-parse HEAD > "build/soak425/$variant/revision.txt"
+     git submodule status --recursive > "build/soak425/$variant/engines.txt"
+     uv run --locked --group build ./build.sh > "build/soak425/$variant/build.log" 2>&1
+     cp build/felucca.fwsc build/felucca.bin build/felucca.elf build/felucca.dis \
+       build/felucca.dis.profile.json build/felucca.ll build/build-identity.json \
+       build/gen/resolved-profile.json "build/soak425/$variant/"
+     python3 tests/mul64_hload_check.py "build/soak425/$variant/felucca.dis" \
+       --json "build/soak425/$variant/mul64_hload.json" > "build/soak425/$variant/inventory.txt"
+     python3 tests/target_budget.py "build/soak425/$variant/felucca.dis" tests/target_budget.txt \
+       > "build/soak425/$variant/target-budget.txt"
+   done
+   unset FELUCCA_CRASH_CTX FELUCCA_MUL64_REPRO
    ```
-   Export a full backup first (stress-device step 2). Install with `python3 tools/fm1_install.py
-   build/soak-B.fwsc` ([BUILDING > Install](../BUILDING.md#install)).
+   Check both build logs for warnings, memory usage and `.ram_text` checks. The resource table above
+   describes #476's revision, not a promise for a newer commit: record fresh app/RAM/POOL/NOINIT
+   values, the 24 B diagnostic NOINIT floor, inventory and budget results for each artifact.
+   Create operator-supplied manifests and validate packages offline (this opens no device):
+   ```sh
+   python3 - <<'PY'
+   import hashlib, json, sys
+   from pathlib import Path
+   sys.path.insert(0, 'tools')
+   from fm1_install import load_package
+   revision = None
+   for variant in ('B', 'C'):
+       directory = Path('build/soak425') / variant
+       identity = json.loads((directory / 'build-identity.json').read_text())
+       assert not identity['dirty'] and identity['revision'] == (directory / 'revision.txt').read_text().strip()
+       assert revision is None or identity['revision'] == revision
+       revision = identity['revision']
+       product, _ = load_package(directory / 'felucca.fwsc', False)
+       manifest = {'build_identity': identity, 'variant': variant, 'product': product,
+                   'flags': {'FELUCCA_PROFILE': 'standard', 'FELUCCA_FONT': 'm8stealth',
+                             'FELUCCA_CPU2': 1, 'FELUCCA_SIZE': 1, 'FELUCCA_CRASH_CTX': 1,
+                             'FELUCCA_MUL64_REPRO': int(variant == 'C')},
+                   'sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in sorted(directory.iterdir()) if p.is_file() and p.name != 'manifest.json'}}
+       (directory / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+   PY
+   ```
+   Retain the toolchain version/compiler hash, SDK reference/file hashes and relevant source/asset
+   hashes using [performance provenance](performance.md#establish-a-comparable-baseline); manifests
+   bind the resulting files but cannot prove which firmware is running. Export a full backup first
+   (stress-device step 2). Install B with `uv run --locked --group midi tools/fm1_install.py
+   build/soak425/B/felucca.fwsc` ([BUILDING > Install](../BUILDING.md#install)).
 2. **Check the build.** Turn USB SERIAL on (diagnostics, idle baseline steps 1-4) and collect 10 s:
-   `python3 tools/fm1_diagnostics.py --port PORT --scenario 'soak425 B check' --duration 10 --interval 5`.
-   `status` must show `crash_ctx 1` (C also `mul64_repro 1`). Note the `crash` `count` (an older record
-   reads `ctx 0`).
+   `python3 tools/fm1_diagnostics.py --port PORT --scenario 'soak425 B check' --duration 10 --interval 5
+   --firmware-revision FULL_TESTED_REVISION --manifest build/soak425/B/manifest.json`.
+   Verify the ABOUT commit matches the artifact. `status` must show `crash_ctx 1`; B must have no
+   `mul64_*` keys, while C must show `mul64_repro 1` and increasing `mul64_runs`. Note the `crash`
+   `count` (an older record reads `ctx 0`). Keep the running second-core state identical: hold HOME
+   until MENU opens, release, select SYSTEM with ALGORITHM and 2ND CORE with PRESETS, tap OCT−
+   for OFF, tap HOME, then restart if changed. Confirm `status cpu2 0`; compiled CPU2 support alone
+   does not mean the worker is running. Any worker-enabled repeat is a separately labeled B/C pair.
 3. **MIDI routing.** Hold **HOME** until MENU opens, release, turn **ALGORITHM** to the **MIDI** tab,
    turn **PRESETS** to **MIDI IN** and set it to **CH1-4** with **OCT+**/**OCT−** (the default): USB MIDI
    channels 1-4 play parts 1-4. Tap **HOME** to close MENU.
@@ -318,14 +379,19 @@ console route.
 6. **Collect each segment** (10 minutes; six per build: 3 sounds x 2 rates):
    ```sh
    python3 tools/fm1_diagnostics.py --port PORT --scenario 'soak425 B FM6-PADx4 uac44100' \
-     --duration 600 --interval 30 --firmware-revision HEAD_SHA
+     --duration 600 --interval 30 --firmware-revision FULL_TESTED_REVISION \
+     --manifest build/soak425/B/manifest.json
    ```
    Change the label for each segment and build. Leave the panel untouched while it runs.
-7. **Repeat 1-6 with build C** (`build/soak-C.fwsc`), same order and setup. Optionally add one long run
+7. **Install the preserved build C** (`build/soak425/C/felucca.fwsc`) with the same uv installer command
+   as step 1, then repeat steps 2-6 using C's manifest, same order and setup. Do not rebuild between
+   the two soaks. Optionally add one long run
    (2 h or overnight) of C with the 48 kHz FM6 segment.
 8. **After any reset or freeze**: collect `crash` again after the reboot (step 2's 10 s command) and keep
-   it with the segment's output and the matching `soak-*.dis`.
-9. **Finish**: reinstall the normal build, restore the backup and USB SERIAL setting.
+   it with the segment's output and the matching `build/soak425/B/felucca.dis` or `C/felucca.dis`.
+9. **Finish**: reinstall the retained normal package with the same uv installer command, restore the
+   backup and original USB SERIAL/2ND CORE settings. The diagnostic C package must not become the
+   normal comparison build. Retain the normal package before starting; do not depend on a later rebuild.
 
 ### Expected results and how to read them
 
@@ -340,6 +406,14 @@ console route.
 
 Report for each segment: build (B/C), revision, sound, sample rate, duration, the collector's
 `summary.json` deltas, `mul64_*` values, any `crash` output, and audible problems.
+Keep all three capture files (`summary.json`, `samples.jsonl`, `console.raw`) and any audio recording
+with each manifest. Collector `VALID` proves continuity, not absence of corruption: inspect absolute
+start/end mismatch counters too, because a mismatch before collection can leave a zero interval delta.
+An INVALID capture, missing counters or C without increasing `mul64_runs` is incomplete evidence;
+retain the reason and repeat after correcting the setup. A clean B/C soak is a bounded negative
+result, not a justification to call flagged instructions unaffected. Per-function mitigation remains
+pending device evidence; attach any reproduction/crash signature before evaluating the ordered
+candidates and their unchanged goldens/resource cost.
 
 ## Limits
 

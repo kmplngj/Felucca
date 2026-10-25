@@ -232,15 +232,17 @@ static void hk_ink(uint16_t ink, uint16_t bg);
 static void fm6_hook(uint32_t kind, uint32_t a, uint32_t b);
 #define FM6_CHART_HOOK(kind, a, b) fm6_hook(kind, a, b)
 /* MENU > LARGE: the tall cards' values by the face they got (ui_draw.c LARGE_HOOK), the characters L lacked */
-static uint64_t lg_n[4];
+static uint64_t lg_n[5];                         /* why: 0 L, 1 M (a glyph not in L), 2 M (L too wide), 3 S, 4 X */
 static char lg_miss[96], lg_wide[16][12], lg_small[16][12];
 static uint32_t lg_nwide, lg_nsmall;
 static void lg_hook(const char *s, int why);
-static int8_t lg_face[4] = {-1, -1, -1, -1};     /* #251: the face tall card c got in its last draw (0 L, 1 M, 2 S;
+static int8_t lg_face[4] = {-1, -1, -1, -1};     /* #251: the face tall card c got in its last draw (0 X, 1 L, 2 M, 3 S;
                                                   * c: draw_column_tall's card, where the hook is) */
 static char lg_val[4][16];                       /* .. and its value */
-#define LARGE_HOOK(s, why) (lg_face[c & 3u] = (int8_t)((why) == 0 ? 0 : (why) == 3 ? 2 : 1), \
+#define LARGE_HOOK(s, why) (lg_face[c & 3u] = (int8_t)((why) == 0 ? 1 : (why) == 3 ? 3 : 2), \
                             snprintf(lg_val[c & 3u], 16, "%s", s), lg_hook(s, why))
+#define BANK_HOOK(k, s, face) (lg_face[(k) & 3u] = (int8_t)(face), snprintf(lg_val[(k) & 3u], 16, "%s", s), \
+                              lg_hook(s, (face) == 0u ? 4 : (face) == 1u ? 0 : (face) == 3u ? 3 : !large_face_has(s) ? 1 : 2))
 static void cs_hook(const char *v, const char *u);
 #define CARD_HOOK(v, u) cs_hook(v, u)
 #define UI_TEST_NO_MAIN 1
@@ -265,7 +267,7 @@ static void cs_hook(const char *v, const char *u)
 static void lg_hook(const char *s, int why)
 {
     uint32_t i;
-    lg_n[why & 3]++;
+    lg_n[why < 5 ? why : 3]++;
     if (why == 1)
         for (; *s; s++) {
             uint32_t c = fold(&AF_L, (uint8_t)*s);
@@ -281,7 +283,7 @@ static void lg_hook(const char *s, int why)
 }
 
 /* an icon drawn: its ink, read from its cell's nibbles here (not icons.c icon_ink's table: measured, not trusted) */
-/* n alpha values of a cell from its bit stream (the canonical Huffman code AI_HC, as gen_aa_font.py huff_unpack:
+/* n alpha values of a cell from its bit stream (the canonical Huffman code AI_HC, as ui_font_data.py huff_unpack:
  * decoded here bit by bit, not by gfx.c's table) */
 static void icon_unpack(const uint8_t *d, uint8_t *out, uint32_t n)
 {
@@ -693,6 +695,7 @@ static void state(void)                          /* a playing song with steps on
         slc_man_save = 0;
     }
 #endif
+    settings_dev[10] &= (uint8_t)~6u;             /* (#572: GRAPH TURN, the default) */
     for (i = 0; i < SCOPE_N; i++)                 /* a stand-in signal for the scope */
         scope_buf[i] = (int16_t)((int32_t)((i * 37u) % 128u) * 200 - 12800 + (int32_t)((i % 32u) < 16u ? 3000 : -3000));
     scope_w = 0;
@@ -789,6 +792,8 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_MENU_SELECT, S_PROJECT_ERASE, S_CONFIRM_ERASE_PROJ, S_TOOLS_CLEAN, S_CONFIRM_CLEAN,
        S_MENU_MIDI_TRACK, S_MENU_MIDI_TCH_UNUSED, S_MENU_MIDI_AUTO, S_HOME_TRACKS_MIDI, S_MIXER_MIDI, S_EDIT_PHASE_FOLD,
        S_MENU_OFF_IDLE, S_MENU_OFF_MODE, S_MENU_OFF_DARK, S_MENU_OFF_WAKE, S_MENU_OFF_BACK, S_MENU_OFF_ERROR,
+       S_GRAPH_TURN_CUT, S_GRAPH_TURN_ATK, S_GRAPH_TURN_FILTER, S_GRAPH_TURN_RES, S_GRAPH_SCOPE_HOT, S_GRAPH_CURVE,
+       S_GRAPH_STILL, S_GRAPH_STILL_HP, S_MENU_GRAPH, S_GRAPH_CUT_MIN, S_GRAPH_CUT_MAX, S_ENV_LONG, S_ENV_SHORT,
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
        S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO,
        S_MACRO_SYNC, S_MACRO_TRIPLE, S_MACRO_QUESTION,
@@ -826,6 +831,8 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "menu_select", "project_erase", "confirm_erase_project", "tools_clean", "confirm_clean",
     "menu_midi_track", "menu_midi_channels_unused", "menu_midi_auto_select", "home_tracks_midi", "mixer_midi", "edit_phase_fold",
     "menu_auto_off_idle", "menu_auto_off_mode", "menu_auto_off_dark", "menu_auto_off_wake", "menu_auto_off_back", "menu_auto_off_error",
+    "graph_turn_cut", "graph_turn_atk", "graph_turn_filter", "graph_turn_res", "graph_scope_hot", "graph_curve",
+    "graph_still", "graph_still_hp", "menu_graph", "graph_cut_min", "graph_cut_max", "env_long", "env_short",
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
     "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto",
     "macro_sync", "macro_triple", "macro_question",
@@ -1137,6 +1144,23 @@ static void setup(int s)
         go_title("ENV"); ui.hot_col = 0; ui.hot_t = 30; break;
     case S_ENV_DEST_SYNC: TSEL->p[P_ESYNC] = 1; go_title("ENV DEST"); break;
     case S_FILTER: TSEL->p[P_FTYPE] = 1; go_title("FILTER"); break;   /* 1.5: ANALOG's TYPE CUT RES KTR */
+    /* #572 GRAPH: the turned knob's curve in the scope's place (TURN while ui.curve_t), CURVE / STILL at rest, SCOPE */
+    case S_GRAPH_TURN_CUT: TSEL->p[P_E4] = 62; ui.hot_col = 0; ui.hot_t = 30; ui.curve_t = 60; break;
+    case S_GRAPH_TURN_ATK: TSEL->p[P_ATK] = 40; ui.hot_col = 2; ui.hot_t = 30; ui.curve_t = 60; break;
+    case S_GRAPH_TURN_FILTER: TSEL->p[P_FTYPE] = 1; go_title("FILTER"); ui.hot_col = 1; ui.hot_t = 30; ui.curve_t = 60; break;
+    case S_GRAPH_TURN_RES: TSEL->p[P_E5] = 110; ui.hot_col = 1; ui.hot_t = 0; ui.curve_t = 20; break;
+    case S_GRAPH_SCOPE_HOT: graph_mode_put(GM_SCOPE); ui.hot_col = 0; ui.hot_t = 30; ui.curve_t = 60; break;
+    case S_GRAPH_CURVE: graph_mode_put(GM_CURVE); ui.hot_col = 0; break;
+    case S_GRAPH_STILL: graph_mode_put(GM_STILL); ui.hot_col = 3; break;
+    case S_GRAPH_STILL_HP: graph_mode_put(GM_STILL); TSEL->p[P_FTYPE] = 2; go_title("FILTER"); ui.hot_col = 0; break;
+    case S_MENU_GRAPH: ui.menu = 1; ui.menu_sel = MI_GRAPH; graph_mode_put(GM_CURVE); break;
+    /* #572 harden: the curves at their limits, the focus dots at the panel's edges */
+    case S_GRAPH_CUT_MIN: graph_mode_put(GM_STILL); TSEL->p[P_E4] = 0; TSEL->p[P_E5] = 0; ui.hot_col = 0; ui.hot_t = 30; break;
+    case S_GRAPH_CUT_MAX: graph_mode_put(GM_CURVE); TSEL->p[P_E4] = 127; TSEL->p[P_E5] = 127; ui.hot_col = 1; ui.hot_t = 30; break;
+    case S_ENV_LONG: TSEL->p[P_ATK] = 127; TSEL->p[P_DEC] = 127; TSEL->p[P_SUS] = 0; TSEL->p[P_REL] = 127; go_title("ENV");
+        ui.hot_col = 3; ui.hot_t = 30; break;
+    case S_ENV_SHORT: TSEL->p[P_ATK] = 0; TSEL->p[P_DEC] = 0; TSEL->p[P_SUS] = 127; TSEL->p[P_REL] = 0; go_title("ENV");
+        ui.hot_col = 0; break;
     case S_LFO: go_title("LFO"); break;
     case S_MOD: TSEL->p[P_M1SRC] = 1; TSEL->p[P_M1DST] = 2; TSEL->p[P_M1AMT] = 40; TSEL->p[P_M2SRC] = 6;
         TSEL->p[P_M2DST] = 14; TSEL->p[P_M2AMT] = -64; mod_ui_slot = 1; go_title("MOD"); break;
@@ -1406,7 +1430,7 @@ static void setup(int s)
     case S_MOMENTARY_READY: go_home(); song.playing = 0; mom.st = MOM_ST_READY; break;
     case S_MOMENTARY_N: go_home(); song.playing = 0; mom.n = MOM_N; mom.st = MOM_ST_N + MOM_N; break;
     case S_MOMENTARY_KEPT: go_home(); song.playing = 0; mom.st = MOM_ST_KEPT; break;
-    case S_MENU_END: ui.menu = 1; ui.menu_sel = MI_COUNT - 1u; ui_prefs = 0xFF; ui_rec_prefs = 0x2A; break;   /* the last row,
+    case S_MENU_END: ui.menu = 1; ui.menu_sel = MI_SELECT; ui_prefs = 0xFF; ui_rec_prefs = 0x2A; break;   /* the eighth visible row,
                                                      * every flag set (CLICK ON, LEVEL HIGH, COUNT-IN 2 BARS) */
     /* the MENU's tabs (1.0.5): menu DISPLAY (COLOR), menu_hold CONTROL, menu_speaker AUDIO, menu_system SYSTEM (USB
      * SERIAL); menu_slide: from DISPLAY to CONTROL with ANIM ON, the frame half way (draw) */
@@ -1745,8 +1769,8 @@ static void draw(int s)
 static uint32_t nsweep, nmotion;
 /* #251, MENU > LARGE: a tall card's value keeps its face (L, M or S) over the whole range of what the knob turns; a
  * knob whose values take two faces is a finding. lg_span_* around one knob's sweep, lg_span_draw after each draw */
-static uint32_t lg_span_mask, lg_nspan, lg_njump, lg_nface[3];   /* (lg_nface: the knobs set wholly in L, M, S) */
-static char lg_span_ex[3][16];
+static uint32_t lg_span_mask, lg_nspan, lg_njump, lg_nface[4];   /* (lg_nface: the knobs set wholly in X, L, M, S) */
+static char lg_span_ex[4][16];
 static void lg_span_begin(void) { lg_span_mask = 0; memset(lg_span_ex, 0, sizeof lg_span_ex); }
 static void lg_span_draw(uint32_t c)
 {
@@ -1760,18 +1784,19 @@ static void lg_span_end(uint32_t c, const char *label)
     if (!lg_span_mask) return;
     lg_nspan++;
     if (!(lg_span_mask & (lg_span_mask - 1u)))
-        lg_nface[lg_span_mask == 1u ? 0 : lg_span_mask == 2u ? 1 : 2]++;
+        lg_nface[lg_span_mask == 1u ? 0 : lg_span_mask == 2u ? 1 : lg_span_mask == 4u ? 2 : 3]++;
     if (lg_span_mask & (lg_span_mask - 1u)) {
         lg_njump++;
         nfind++;
-        if (rep) fprintf(rep, "FIND %-26s K%u %s: its values change size (L '%s' M '%s' S '%s')\n", cur_name, c + 1u,
-                         label, lg_span_ex[0], lg_span_ex[1], lg_span_ex[2]);
+        if (rep) fprintf(rep, "FIND %-26s K%u %s: its values change size (X '%s' L '%s' M '%s' S '%s')\n", cur_name,
+                         c + 1u, label, lg_span_ex[0], lg_span_ex[1], lg_span_ex[2], lg_span_ex[3]);
     }
 }
 static void lg_draw_one(uint32_t c)                  /* the four cards drawn, card c's face noted */
 {
     nscr = npend = 0;
     ui.force = 1;
+    ui.hot_col = (uint8_t)c;                         /* inspect the swept knob in the large focused reading path */
     lg_face[c & 3u] = -1;
     draw_columns();
     lint();
@@ -2459,7 +2484,7 @@ int main(int argc, char **argv)
         if (nruled < 100u) { fprintf(stderr, "ui_render: dividers on %u STYLE screens only\n", nruled); return 1; }
         fprintf(rep, "STYLE LINE (every palette): %u lint findings\n", nfind - n0);
     }
-    {   /* MENU > LARGE (ui.c large_kind): every screen in every palette in FLAT and LINE, linted (GREY: gray, MONO:
+    {   /* MENU > LARGE (ui.c reading_kind): every screen in every palette in FLAT and LINE, linted (GREY: gray, MONO:
          * neutral); GREY MONO in FLAT as OUTDIR/ppm/LARGE_<PALETTE>_<screen>.ppm (ui_render.py: sheet_LARGE_<PALETTE>.png),
          * LINE GREY as LARGE-LINE_GREY; the tall cards' value faces counted (lg_hook) */
         static const char *const ST_N[2] = {"LARGE", "LARGE-LINE"};
@@ -2479,7 +2504,7 @@ int main(int argc, char **argv)
                     pal(p);
                     ui_style = (uint8_t)st; style_apply();
                     draw((int)s);
-                    ntall += !ui.menu && !ui.confirm && !name_on() && large_kind() == LK_TALL;
+                    ntall += !ui.menu && !ui.confirm && !name_on() && reading_kind() == RK_BANK;
                     lint();
                     if (!st && p == UI_GREY_INDEX) font_scene("LARGE", S_NAME[s]);
                     mono_check();
@@ -2489,21 +2514,21 @@ int main(int argc, char **argv)
         ui_style = ST_FLAT; style_apply();
         sweep_columns();                                /* every value of every column, tall */
         large_on = 0;
-        if (ntall < 100u) { fprintf(stderr, "ui_render: LARGE drew %u screens with tall cards only\n", ntall); return 1; }
-        fprintf(rep, "MENU > LARGE (FLAT and LINE, every palette, the page / value sweep): %u lint findings; %u screens with tall"
-                " cards\n", nfind - n0, ntall);
-        fprintf(rep, "  tall card values: %llu in L, %llu in M (a glyph not in L: \"%s\"), %llu in M (L too wide), %llu in S\n",
-                (unsigned long long)lg_n[0], (unsigned long long)lg_n[1], lg_miss, (unsigned long long)lg_n[2],
-                (unsigned long long)lg_n[3]);
+        if (ntall < 100u) { fprintf(stderr, "ui_render: LARGE drew %u screens with large reading roles only\n", ntall); return 1; }
+        fprintf(rep, "MENU > LARGE (FLAT and LINE, every palette, the page / value sweep): %u lint findings; %u screens with large"
+                " reading roles\n", nfind - n0, ntall);
+        fprintf(rep, "  large reading values: %llu in X, %llu in L, %llu in M (a glyph not in L: \"%s\"), %llu in M (L too wide), "
+                "%llu in S\n", (unsigned long long)lg_n[4], (unsigned long long)lg_n[0], (unsigned long long)lg_n[1], lg_miss,
+                (unsigned long long)lg_n[2], (unsigned long long)lg_n[3]);
         fprintf(rep, "  too wide for L, e.g.:");
         for (s = 0; s < lg_nwide; s++) fprintf(rep, " '%s'", lg_wide[s]);
         fprintf(rep, "\n  in S, e.g.:");
         for (s = 0; s < lg_nsmall; s++) fprintf(rep, " '%s'", lg_small[s]);
         fprintf(rep, "\n");
-        fprintf(rep, "  #251: %u knobs swept tall, %u whose values change size; %u wholly in L, %u in M, %u in S\n", lg_nspan,
-                lg_njump, lg_nface[0], lg_nface[1], lg_nface[2]);
-        printf("ui_render: MENU > LARGE: %u knobs swept tall, %u whose values change size (#251); %u in L, %u in M, %u in S\n",
-               lg_nspan, lg_njump, lg_nface[0], lg_nface[1], lg_nface[2]);
+        fprintf(rep, "  #251: %u knob reading domains swept, %u whose values change size; %u wholly in X, %u in L, %u in M, %u in S\n",
+                lg_nspan, lg_njump, lg_nface[0], lg_nface[1], lg_nface[2], lg_nface[3]);
+        printf("ui_render: MENU > LARGE: %u knob reading domains swept, %u whose values change size (#251); %u in X, %u in L, %u in M, "
+               "%u in S\n", lg_nspan, lg_njump, lg_nface[0], lg_nface[1], lg_nface[2], lg_nface[3]);
         if (lg_nspan < 100u) { fprintf(stderr, "ui_render: LARGE swept %u knobs tall only\n", lg_nspan); return 1; }
     }
     {   /* every FM6 chart (the lint above, fmp_check, runs on each), in GREY: gray */

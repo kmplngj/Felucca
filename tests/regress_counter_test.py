@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Exercise real regress reports/exit codes with deterministic counter failures."""
 import os
+import json
 from pathlib import Path
 import platform
 import shlex
@@ -14,9 +15,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from test_coverage import Producer
+    coverage = Producer()
     system = platform.system()
     if system not in ("Darwin", "Linux"):
         print("skip counter injection (requires macOS or Linux)")
+        coverage.outcome('counter-injection', 'skipped', 'platform-unsupported')
         return 0
     binaries = sys.argv[1:]
     with tempfile.TemporaryDirectory(dir=ROOT / "build") as tmp:
@@ -39,6 +44,9 @@ def main():
             for key in ("BUDGET_UPDATE", "GOLDEN_UPDATE", "COUNTER_CRASH"):
                 env.pop(key, None)
             env.update(COUNTER_STATE=str(state), COUNTER_FAIL_JOB=str(fail_job))
+            report = tmp / 'coverage.json'
+            report.unlink(missing_ok=True)
+            env['FELUCCA_COVERAGE_CHILD'] = str(report)
             env["DYLD_INSERT_LIBRARIES" if system == "Darwin" else "LD_PRELOAD"] = str(shim)
             if update:
                 env["BUDGET_UPDATE"] = "1"
@@ -48,6 +56,7 @@ def main():
                                      str(tmp / "missing.txt") if missing else str(baseline)],
                                     cwd=ROOT, env=env, text=True, capture_output=True, timeout=120)
             count = struct.unpack("I", state.read_bytes())[0]
+            result.coverage = json.loads(report.read_text())['outcomes'][0]
             return result, count
 
         def skipped(result, should_fail=False):
@@ -57,11 +66,16 @@ def main():
             assert "CPU note " not in result.stdout, result.stdout
             assert "CPU baseline " not in result.stdout, result.stdout
             assert baseline.read_text() == original, "partial counts rewrote the baseline"
+            cpu = result.coverage['details']
+            assert cpu['cpu_status'] == 'skipped' and cpu['cpu_reason'] == 'counter-unavailable', cpu
+            assert cpu['available'] < cpu['total'] and cpu['missing_entries'] == 0, cpu
 
         for binary in binaries:
             result, count = run(binary)
             assert result.returncode == 1 and "CPU OVER BUDGET" in result.stdout, result.stdout + result.stderr
             assert "CPU budget not checked" not in result.stdout, result.stdout
+            assert result.coverage['details']['cpu_status'] == 'passed', result.coverage
+            assert result.coverage['details']['missing_entries'] > 0, result.coverage
             # A late failure must invalidate comparisons for earlier successful workers too.
             result, _ = run(binary, fail_job=count)
             skipped(result)
@@ -82,6 +96,7 @@ def main():
         assert result.returncode == 0, result.stdout + result.stderr
         assert "# Compiler: " in baseline.read_text(), baseline.read_text()
         assert "CPU baseline " in result.stdout and "rewritten" in result.stdout, result.stdout
+        coverage.outcome('counter-injection')
         print("counter fixtures: first/middle failure, missing baseline, update preservation, crash: ok")
     return 0
 

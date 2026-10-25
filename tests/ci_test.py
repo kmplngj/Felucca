@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -85,22 +86,82 @@ class Checks(unittest.TestCase):
     def test_success_message_does_not_hide_skipped_tests(self):
         log = self.root / "tests.log"
         for message in ("== skip the sanitizer runs (the compiler has no ASan / UBSan)",
+                        "SKIP: required sanitizer runs unavailable",
                         "target: skip (build/felucca.dis missing)",
                         "logical image vs fm1pkg.js: skipped (needs node and build/felucca.fwsc)",
                         "target: render cost 1 no budget (BUDGET_UPDATE=1 adds it)",
                         "regress: CPU cpu/mix/idle: 1 instructions / sample, no baseline (BUDGET_UPDATE=1 adds it)"):
             log.write_text(message + "\nALL HOST TESTS PASSED\n")
-            with self.subTest(message=message), self.assertRaisesRegex(ValueError, "incomplete test coverage"):
+            with self.subTest(message=message), patch.dict(os.environ, FELUCCA_COVERAGE_REPORT='', FELUCCA_COVERAGE_ID=''), self.assertRaisesRegex(ValueError, "incomplete test coverage"):
                 ci.verify_tests(log)
 
-    def test_whole_host_cpu_budget_skips_remain_explicit_and_allowed(self):
+    def test_cpu_skip_words_without_semantic_evidence_cannot_grant_exception(self):
         log = self.root / "tests.log"
         for message in (
                 "regress: CPU: 2 of 2 counts unavailable (perf_event_open failed: Operation not permitted); the budget is not checked",
                 "regress: CPU: no baseline for this host (BUDGET_UPDATE=1 sh tests/run_tests.sh writes it); the budget is not checked"):
             log.write_text(message + "\nALL HOST TESTS PASSED\n")
-            with self.subTest(message=message), patch.object(ci.Path, "is_file", return_value=True):
+            with self.subTest(message=message), patch.dict(os.environ, FELUCCA_COVERAGE_REPORT='', FELUCCA_COVERAGE_ID=''), self.assertRaisesRegex(ValueError, 'explicit report'):
                 ci.verify_tests(log)
+
+    def workflow_job(self, name):
+        workflow = (ci.build.SRC / ".github/workflows/build.yml").read_text()
+        return re.split(r"\n  [a-z][a-z-]*:\n", workflow.split("\n  " + name + ":\n", 1)[1], maxsplit=1)[0]
+
+    def test_required_check_allows_cancellation_and_waits_for_independent_runners(self):
+        aggregate = self.workflow_job("build")
+        self.assertIn("    name: Target, host and emulator\n", aggregate)
+        self.assertIn("    if: ${{ !cancelled() }}\n", aggregate)
+        self.assertNotIn("if: always()", aggregate)
+        self.assertIn("needs: [workflow-checks, python-checks, backup-checks, emulator-checks, validation, full-browser-checks]", aggregate)
+        for name in ("validation", "full-browser-checks"):
+            job = self.workflow_job(name)
+            # Neither long-running job waits for the other. Default success()
+            # also stops both jobs when their workflow is canceled.
+            self.assertIn("    needs: workflow-checks\n", job)
+            header = job.split("    steps:\n", 1)[0]
+            self.assertNotIn("    if: always()", header)
+            self.assertNotIn("    if: ${{ always()", header)
+        self.assertIn("    if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'\n",
+                      self.workflow_job("full-browser-checks"))
+
+    def test_browser_gate_builds_fresh_selected_sources_with_workflow_owned_pins(self):
+        browser = self.workflow_job("full-browser-checks")
+        pins = browser.index("cp pyproject.toml uv.lock .python-version")
+        selected = browser.index("ref: ${{ inputs.source_ref || github.sha }}")
+        self.assertLess(pins, selected)
+        self.assertIn('uv sync --locked --only-group build --project "$RUNNER_TEMP/felucca-python-project"', browser)
+        self.assertIn('build.generate()', browser)
+        self.assertIn("build.VERSION = build.resolve(['--release', release] if release else [])['version']", browser)
+        self.assertIn('FELUCCA_VERIFIED_PR: ${{ inputs.verified_pr }}', browser)
+        self.assertIn('FELUCCA_VERIFIED_COMMIT: ${{ inputs.source_ref }}', browser)
+        self.assertIn('sh web/emu/build.sh', browser)
+        self.assertNotIn('tools/ci.py emulator-tests', browser)
+        self.assertIn('npm test --prefix web/emu', browser)
+        for path in ('build/ci/', 'build/browser/', 'build/emu/', 'build/gen/resolved-profile.json'):
+            self.assertIn(path, browser)
+        self.assertIn('browser-provenance.txt', browser)
+        self.assertIn('git submodule status --recursive', browser)
+        # Keep the existing complete host/parity coverage in the other runner.
+        host = self.workflow_job("validation")
+        self.assertIn('sh tests/run_tests.sh', host)
+        self.assertIn('python3 tools/ci.py verify-tests', host)
+        self.assertNotIn('npm test --prefix web/emu', host)
+        self.assertIn('Reproduce package from a clean checkout', host)
+
+    def test_validated_artifacts_are_promoted_only_after_required_results_pass(self):
+        aggregate = self.workflow_job("build")
+        host = self.workflow_job("validation")
+        for kind in ('firmware', 'release'):
+            self.assertIn('name: candidate-' + kind + '-${{', host)
+            self.assertNotIn('name: ' + kind + '-${{', host)
+            download = aggregate.index('Download candidate ' + kind)
+            promote = aggregate.index('Upload validated ' + kind)
+            self.assertLess(aggregate.index('Check selected validation results'), download)
+            self.assertLess(download, promote)
+            self.assertIn('name: candidate-' + kind + '-${{', aggregate)
+            self.assertIn('name: ' + kind + '-${{', aggregate)
+        self.assertNotIn('always()', aggregate)
 
     def test_host_cpu_provenance_records_usable_clang_and_gcc_flags(self):
         compilers = [path for name in ("clang", "gcc") if (path := shutil.which(name))]
@@ -119,7 +180,7 @@ class Checks(unittest.TestCase):
 
     def test_actions_summary_keeps_actual_cpu_and_pending_dependency_outcomes(self):
         workflow = (ci.build.SRC / ".github/workflows/build.yml").read_text()
-        script = workflow.split("      - name: Summarize validation and limits\n", 1)[1].split("        run: |\n", 1)[1]
+        script = workflow.split("      - name: Summarize validation and limits\n", 1)[1].split("        run: |\n", 1)[1].split("\n  build:\n", 1)[0]
         script = "\n".join(line[10:] for line in script.splitlines())
         script = script.replace("${{ job.status }}", "success").replace("${{ needs.workflow-checks.outputs.full }}", "true")
         log = self.root / "build/ci/tests.log"
@@ -157,17 +218,24 @@ class Checks(unittest.TestCase):
                 for line in fx.splitlines():
                     self.assertIn(line, text)
 
-    def test_only_the_unredistributed_vendor_fixture_skip_is_allowed(self):
+    def test_structured_source_summary_keeps_cpu_and_fx_evidence(self):
+        tools = self.root / 'tools'
+        tools.mkdir()
+        (tools / 'test_coverage.py').write_text("print('structured fixture')\n")
+        self.test_actions_summary_keeps_actual_cpu_and_pending_dependency_outcomes()
+        self.assertIn('Structured host coverage', (self.root / 'summary.md').read_text())
+
+    def test_vendor_skip_words_alone_cannot_grant_exception(self):
         log = self.root / "tests.log"
         log.write_text("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)\nALL HOST TESTS PASSED\n")
-        with patch.object(ci.Path, "is_file", return_value=True):
+        with patch.dict(os.environ, FELUCCA_COVERAGE_REPORT='', FELUCCA_COVERAGE_ID=''), self.assertRaisesRegex(ValueError, 'explicit report'):
             ci.verify_tests(log)
 
     def test_complete_tests_require_outputs(self):
         log = self.root / "tests.log"
         log.write_text("ALL HOST TESTS PASSED\n")
         with patch.object(ci.Path, "is_file", return_value=False):
-            with self.assertRaisesRegex(ValueError, "required test output missing"):
+            with self.assertRaisesRegex(ValueError, "incomplete test coverage"):
                 ci.verify_tests(log)
 
     def release(self, root=None):

@@ -181,6 +181,8 @@ class ResourceReport(unittest.TestCase):
                 path = tc / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(name)
+            for name in R.HEADER_ROOTS:
+                path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
             def command(tool, *args):
                 if tool == 'cc':
                     self.assertIn('-E', args)
@@ -188,7 +190,8 @@ class ResourceReport(unittest.TestCase):
                     self.assertNotIn('-c', args)
                     self.assertIn('-Os', args)
                     return ('#define FELUCCA_ENGINE_H\n#define FELUCCA_CPU2 1\n'
-                            '#define FELUCCA_ID "FM-1_900"\n#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n')
+                            '#define FELUCCA_ID "FM-1_900"\n#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n'
+                            '#define NPART 4\n#define NTRK NPART\n#define NSTEP 64\n')
                 return 'clang version 4.0.1\nInstalledDir: /different/workspace\n'
             with patch.object(B, 'tc', side_effect=command), patch.object(B, 'toolchain', return_value=tc), \
                     patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'):
@@ -196,13 +199,112 @@ class ResourceReport(unittest.TestCase):
             self.assertEqual(result['effective_defines']['FELUCCA_CPU2'], '1')
             self.assertEqual(result['effective_defines']['FELUCCA_ENGINE_H'], '')
             self.assertNotIn('InstalledDir', result['compiler']['version'])
+            self.assertEqual(result['logical_constants'], {'NPART': '4', 'NTRK': 'NPART', 'NSTEP': '64'})
+            self.assertEqual(result['generator_runtime'], R.generator_runtime(B.SRC))
+
+    def test_generator_environment_is_bound_before_asset_generation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'uv.lock').write_text('locked generator inputs\n')
+            before = R.generator_runtime(root)
+            self.assertEqual(before['lock_sha256'], R.digest(root / 'uv.lock'))
+            self.assertNotIn(str(root), json.dumps(before))
+            tools = {'generator_runtime': before}
+            (root / 'uv.lock').write_text('different lock\n')
+            with patch.object(R, 'input_hashes', return_value={}), \
+                    patch.object(R, 'tool_fingerprints', return_value={'generator_runtime': R.generator_runtime(root)}):
+                with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
+                    R.check_initial_inputs(B, {}, tools)
+
+    def test_ci_python_loader_environment_is_bound_and_changes_refused(self):
+        self.enterContext(patch.object(B, 'use_docker', return_value=False))
+        ci_value = '/opt/hostedtoolcache/Python/3.12.15/x64/lib'
+        expected = {'LD_LIBRARY_PATH': hashlib.sha256(ci_value.encode('utf-8')).hexdigest()}
+        with tempfile.TemporaryDirectory() as folder:
+            tc = Path(folder)
+            for name in ('pi32v2/bin/clang', 'pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy'):
+                path = tc / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture tool')
+            for name in R.HEADER_ROOTS:
+                path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
+            macros = ('#define FELUCCA_CPU2 0\n#define FELUCCA_ID "FM-1_900"\n'
+                      '#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n')
+            with patch.object(B, 'toolchain', return_value=tc), \
+                    patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'), \
+                    patch.object(B, 'tc', side_effect=lambda tool, *args: macros if tool == 'cc' else 'clang fixture'), \
+                    patch.object(R, 'input_hashes', return_value={}), \
+                    patch.dict(os.environ, {'LD_LIBRARY_PATH': ci_value}):
+                before = R.tool_fingerprints(B)
+                self.assertEqual(R.ALLOWED_LOADER_ENV, ('LD_LIBRARY_PATH',))
+                self.assertEqual(R.loader_environment_fingerprints({}), {})
+                self.assertEqual(R.loader_environment_fingerprints({'LD_LIBRARY_PATH': ''}), {})
+                self.assertEqual(R.loader_environment_fingerprints({'LD_LIBRARY_PATH': ci_value}), expected)
+                self.assertNotIn(ci_value, json.dumps(expected))
+                self.assertEqual(before['loader_environment_sha256'], expected)
+                self.assertEqual(R.configuration(B)['loader_environment_sha256'], expected)
+                R.check_initial_inputs(B, {}, before)
+                for changed in (ci_value + '/changed', ''):
+                    with self.subTest(changed=changed), patch.dict(os.environ, {'LD_LIBRARY_PATH': changed}):
+                        self.assertNotEqual(before['loader_environment_sha256'],
+                                            R.tool_fingerprints(B)['loader_environment_sha256'])
+                        with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
+                            R.check_initial_inputs(B, {}, before)
+                for forbidden in ('CPATH', 'LD_PRELOAD', 'DYLD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES'):
+                    with self.subTest(forbidden=forbidden), patch.dict(os.environ, {forbidden: 'injected'}):
+                        with self.assertRaisesRegex(ValueError, 'unsupported compiler environment: ' + forbidden):
+                            R.tool_fingerprints(B)
+
+    def test_installed_headers_missing_changed_and_injected_search_paths(self):
+        self.enterContext(patch.object(B, 'use_docker', return_value=False))
+        for name in R.COMPILER_ENV:
+            with self.subTest(name=name), patch.dict(os.environ, {name: 'injected'}):
+                with self.assertRaisesRegex(ValueError, 'unsupported compiler environment: ' + name):
+                    R.tool_fingerprints(B)
+        with tempfile.TemporaryDirectory() as folder:
+            tc = Path(folder)
+            for name in ('pi32v2/bin/clang', 'pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy'):
+                path = tc / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture tool')
+            with patch.object(B, 'toolchain', return_value=tc), patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'):
+                with self.assertRaisesRegex(ValueError, 'missing compiler include root'):
+                    R.tool_fingerprints(B)
+                for name in R.HEADER_ROOTS:
+                    path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
+                before = R.tool_fingerprints(B)
+                header = tc / R.HEADER_ROOTS[0] / 'stdint.h'; header.write_text('changed header')
+                self.assertNotEqual(before['compiler_headers_sha256'], R.tool_fingerprints(B)['compiler_headers_sha256'])
+                with patch.object(R, 'input_hashes', return_value={}):
+                    with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
+                        R.check_initial_inputs(B, {}, before)
+
+    def test_docker_ignores_unforwarded_compiler_search_but_refuses_host_injection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            tc = Path(folder)
+            for name in ('pi32v2/bin/clang', 'pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy'):
+                path = tc / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture tool')
+            for name in R.HEADER_ROOTS:
+                path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
+            with patch.object(B, 'use_docker', return_value=True), \
+                    patch.object(B, 'toolchain', return_value=tc), \
+                    patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'), \
+                    patch.object(B, 'tc', side_effect=AssertionError('capture must not compile')), \
+                    patch.object(R, 'input_hashes', return_value={}), \
+                    patch.dict(os.environ, {name: '' for name in R.COMPILER_ENV}):
+                before = R.tool_fingerprints(B)
+                self.assertEqual(before['execution_environment']['backend'], 'docker')
+                for name in ('CPATH', 'LIBRARY_PATH', 'SDKROOT', 'CCC_OVERRIDE_OPTIONS'):
+                    with self.subTest(name=name), patch.dict(os.environ, {name: 'host-only-search'}):
+                        self.assertEqual(R.tool_fingerprints(B), before)
+                        R.check_initial_inputs(B, {}, before)
+                for name in ('LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH'):
+                    with self.subTest(name=name), patch.dict(os.environ, {name: 'host-injection'}):
+                        with self.assertRaisesRegex(ValueError, 'unsupported compiler environment: ' + name):
+                            R.tool_fingerprints(B)
 
     def test_cli_default_empty_and_explicit_tool_sdk_paths(self):
         # Run the actual CLI and build helpers in an isolated source tree. Only
         # profile/identity freshness and external target tools are fixture inputs;
         # configuration, fingerprints, inventories and resource guards stay real.
         with tempfile.TemporaryDirectory() as folder:
-            base = Path(folder)
+            base = Path(folder).resolve()
             root = base / 'source'
             tools = root / 'tools'
             tools.mkdir(parents=True)
@@ -245,6 +347,8 @@ class ResourceReport(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content)
                 path.chmod(0o755)
+            for name in R.HEADER_ROOTS:
+                path = toolchain / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
             for name in B.SDK_SHA256:
                 path = sdk / 'cpu/wl82/tools' / name
                 path.parent.mkdir(parents=True, exist_ok=True)

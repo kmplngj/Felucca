@@ -13,15 +13,61 @@ publishes tested main builds and a pinned WebApp fork; its
   idle controls and voices, and ten seconds of quiet stereo output. Long effect tails
   keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
   [autosave contract](extending.md#41-flash-map-and-deferred-save-example).
-- **UI fonts:** source builds use M8Stealth57/89 by default. `FELUCCA_FONT` selects
-  `m8stealth`, `tamzen` or `inter-tight` at build time. All builds use native
+- **UI typography:** firmware uses only M8Stealth57/89, with two native bitmap
+  grids and exact 2× and 3× reading roles. Settings content uses 9 px capitals;
+  focused instrument values use 27 px where the page's graph leaves room, otherwise
+  18 px, as do full names. Scaled roles share
+  their native bitmap data. Tamzen and Inter Tight firmware variants are retired;
+  `FELUCCA_FONT` may be unset or `m8stealth`. All builds use native
   M8Stealth57 keycap and state-badge legends, including SAVE, OCT−/+, REC and MUTE.
   Rounded pill edges and Fukiai icons remain antialiased. Numeric card/MOD units
   have a fixed right edge, and small-value fallbacks share the primary value band;
   see [LCD typography and fit rules](lcd-typography.md).
-  The [controlled font comparison](font-experiment.md) records about 39 KB less
+  The historical [controlled font comparison](font-experiment.md) records about 39 KB less
   firmware flash and 1,032 B less POOL RAM for pixel-font decode caches than Inter Tight.
+  Retiring alternate options does not itself reduce an already-M8 build.
   Physical FM-1 readability and redraw checks remain pending. [Compare real renderer captures](ui-comparison.md).
+- **LCD state readability:** muted track names and settings, mixer annotations,
+  pitch labels and MOD values/units retain readable text colors while mute marks
+  and dim graphics distinguish their state. Button legends use the physical
+  **SEL** name; **SELECT** is the separate encoder and **SCL** still names the
+  scale page. The emulator panel uses the same printed legend. See
+  [text roles and contrast scope](lcd-typography.md#readable-inactive-information);
+  physical readability and loaded-panel checks remain pending.
+- **Unified native UI:** value pages use four fixed knob positions and a larger
+  last-touched value while retaining the complete musical graph. The readout
+  distinguishes ordinary values, automation, held-step locks and temporary/kept
+  edits. Selection remains after turn feedback expires; no new gesture is needed.
+  Lists show the full selected name above five rows; settings show seven uniform
+  label/value rows with explicit ON/OFF, and NAME uses a full mixed-case field with a caret. The global size
+  switch is retired; old stored values and editor id 2 remain reserved for rollback.
+  See the [reading roles and focus rules](lcd-typography.md#focused-parameter-bank).
+  Physical FM-1 readability and loaded-panel qualification remain pending.
+- **One native look (#572, direction A):** rules instead of boxes in every palette.
+  Value pages show the focused knob's label and state on one line, its value as a
+  large numeral, then the four knob columns under rules. The focused column's rule
+  shows the state by its form: solid for a value, dashed for automation, doubled for a
+  step lock, dotted for a MOMENTARY value. It uses the palette's accent only while the
+  knob turns (grey while it rests). The header reads `T1 ▶ 124 BPM` from the left, then
+  BPM LOCK's lock and the REC mark, so arming REC never moves the tempo; the octave and
+  battery stay right. The still metronome icon is gone. Compact knob rows, MENU tabs (names with an underline), settings rows and
+  the footer (sound, engine, page) follow the same type system. MENU > STYLE is retired:
+  both stored values draw this look, the row is hidden, and editor id 1 is kept for
+  rollback (`uiCaps` bit 5).
+- **MENU > DISPLAY > GRAPH (#572):** where the live waveform is shown (HOME with
+  HOME SCOPE, and engine pages without a graph of their own), choose what the panel
+  shows. **TURN** (default): the turned knob's filter response or amplifier
+  envelope while it turns and about a second after, then the waveform again.
+  **SCOPE**: always the waveform. **CURVE**: the focused knob's curve (otherwise the
+  filter's, otherwise the envelope) with a small live waveform under it. **STILL**:
+  that curve without animation. The filter curve follows the engine's cutoff,
+  resonance and ANALOG's LP/BP/HP type. Editor id 34; older firmware ignores it.
+- **Settings navigation:** hold HOME to open MENU, turn ALGORITHM for categories
+  and PRESETS for rows. Any KNOB 1–4 changes the selected setting immediately;
+  all value rows also accept OCT−/+. COLOR and LEDS follow that same rule and
+  show the result immediately. A chevron and OCT+ OPEN identify grouped details
+  or separate views; ordinary values have no chevron. AUTO OFF keeps its five directly
+  editable detail rows and BACK action. Saved settings and editor IDs are unchanged.
 - **RECENT sounds:** on SAVE > PRESETS, turn KNOB 4 (LIST) past OTHER to RECENT for
   the last eight loaded sounds, newest first. PRESETS browses them; loading from RECENT
   keeps the list order, and SAVE held undoes the audition. Deleted or replaced user
@@ -33,7 +79,7 @@ publishes tested main builds and a pinned WebApp fork; its
   quick-layer labels take priority.
 - **Previous page:** on a family's page, hold OCT− and tap its family button to go
   back one page, wrapping from first to last. It consumes the octave modifier and
-  preserves sounding notes' pitch. Press OCT− first for FX, GLO, SCL, EDIT and SEQ;
+  preserves sounding notes' pitch. Press OCT− first for FX, GLO, SEL, EDIT and SEQ;
   their quick layers use OCT− pressed afterward for UNDO. Other-family buttons,
   dialogs and MIDI LEARN retain their normal behavior.
 

@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-24T00:00:00+00:00",
+  "title": "Design System: Felucca native panel",
+  "extensions": {
+    "colorMeta": {
+      "grey": {
+        "role": "palette",
+        "displayName": "GREY",
+        "canonical": "#efebef",
+        "tonalRamp": [
+          "#080808",
+          "#cecbce",
+          "#efebef",
+          "#fffbff"
+        ]
+      },
+      "green": {
+        "role": "palette",
+        "displayName": "GREEN",
+        "canonical": "#52d77b",
+        "tonalRamp": [
+          "#001008",
+          "#e7f7e7",
+          "#52d77b",
+          "#ffd75a"
+        ]
+      },
+      "amber": {
+        "role": "palette",
+        "displayName": "AMBER",
+        "canonical": "#ffaa29",
+        "tonalRamp": [
+          "#100c08",
+          "#f7efde",
+          "#ffaa29",
+          "#63d7e7"
+        ]
+      },
+      "ice": {
+        "role": "palette",
+        "displayName": "ICE",
+        "canonical": "#52baef",
+        "tonalRamp": [
+          "#081018",
+          "#e7f3ff",
+          "#52baef",
+          "#ff8e63"
+        ]
+      },
+      "violet": {
+        "role": "palette",
+        "displayName": "VIOLET",
+        "canonical": "#b58af7",
+        "tonalRamp": [
+          "#100c18",
+          "#f7ebff",
+          "#b58af7",
+          "#6be7ad"
+        ]
+      },
+      "rose": {
+        "role": "palette",
+        "displayName": "ROSE",
+        "canonical": "#f771b5",
+        "tonalRamp": [
+          "#180810",
+          "#ffebf7",
+          "#f771b5",
+          "#ffd76b"
+        ]
+      },
+      "paper": {
+        "role": "palette",
+        "displayName": "PAPER",
+        "canonical": "#085542",
+        "tonalRamp": [
+          "#f7efe7",
+          "#211c18",
+          "#085542",
+          "#ad3808"
+        ]
+      },
+      "hi-con": {
+        "role": "palette",
+        "displayName": "HI-CON",
+        "canonical": "#ffeb00",
+        "tonalRamp": [
+          "#000000",
+          "#fffbff",
+          "#ffeb00",
+          "#00e7ff"
+        ]
+      },
+      "night": {
+        "role": "palette",
+        "displayName": "NIGHT",
+        "canonical": "#39df63",
+        "tonalRamp": [
+          "#000000",
+          "#94e7ad",
+          "#39df63",
+          "#fffbff"
+        ]
+      },
+      "mono": {
+        "role": "palette",
+        "displayName": "MONO",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#000000",
+          "#ffffff",
+          "#ffffff",
+          "#ffffff"
+        ]
+      }
+    },
+    "platform": "embedded 240x240 RGB565 LCD, bitmap text, no touch",
+    "narrative": {
+      "northStar": "The concert-poster grid",
+      "rules": [
+        "Rules instead of boxes",
+        "The rule is the knob: range fill, state by form",
+        "Accent only while a control acts",
+        "Keep every existing piece of information; rearrange it",
+        "Settings and lists compact and uniform",
+        "M8Stealth only: S 7, M 9, L/N 18, X 27 px capitals"
+      ]
+    },
+    "sources": {
+      "palettes": "build/gen/ui_palettes.h (tools/gen_ui_palettes.py)",
+      "fonts": "tools/gen_bitmap_font.py",
+      "renderer": "tests/ui_render.c",
+      "brief": ".impeccable/native-ui-a-brief.md"
+    }
+  }
+}

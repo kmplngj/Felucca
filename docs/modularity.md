@@ -285,6 +285,12 @@ real test of the contract, so the contract is frozen only after it.
 
 ## Mapping other firmwares
 
+The [Clipper adoption review](clipper-adoption-2026-10-19.md) adds a staged
+VPS/TERRAIN-first instrument experiment through GPL Engines and native optional
+profiles. Its synth workflow informs Instrument mode #205; #478 owns the bounded
+sample-asset pruning profile experiment. HYBRID/FMX need deep-patch capacity and
+producer contracts before client work. These remain plans, not supported profiles.
+
 The [Optimist adoption review](optimist-adoption-2026-10-19.md) maps its browser
 builder, instrument auditions and measured optimization candidates to this roadmap
 and the existing engine, firmware and WebApp owners. These remain planned work;
@@ -301,6 +307,7 @@ engine/content path; only the workflow becomes a mode.
 | X0X ([#108](https://github.com/kmplngj/Felucca/issues/108)) | 303/808/909 ([#107](https://github.com/kmplngj/Felucca/issues/107)) | Rhythm (#215) | – | 909 samples in the standard image |
 | ChoralRoot ([#189](https://github.com/kmplngj/Felucca/issues/189)) | FM TONE, VA, CZ-1 ([#188](https://github.com/kmplngj/Felucca/issues/188)), HALL ([#187](https://github.com/kmplngj/Felucca/issues/187)) | Performance (#207), strum ([#36](https://github.com/kmplngj/Felucca/issues/36)) | – | Engine restriction per part; removed engines |
 | Sloop ([#142](https://github.com/kmplngj/Felucca/issues/142)) | Samples, drum synth ([#141](https://github.com/kmplngj/Felucca/issues/141)) | Performance sections (#207); fills in #215 | Visualizers ([#143](https://github.com/kmplngj/Felucca/issues/143)–[#146](https://github.com/kmplngj/Felucca/issues/146)) | Dedicated drum track outside the four parts |
+| Clipper ([#481](https://github.com/kmplngj/Felucca/issues/481)) | VPS/TERRAIN-first GPL pilot, staged synth engines ([#480](https://github.com/kmplngj/Felucca/issues/480)); reduced sample-assets profile (#478) | Instrument (#205) | Modulation #356, tuning #70, MPE #269, delay #73 | Dense donor IDs, repurposed track storage, shared WAVE table policy, 256-frame halves |
 | WaveLoop ([#169](https://github.com/kmplngj/Felucca/issues/169)) | Patches, Yama drums ([#168](https://github.com/kmplngj/Felucca/issues/168)) | (Performance) | MiniLab controller profile (#166) | Setlist without an allocation |
 | Ghoulbox ([#133](https://github.com/kmplngj/Felucca/issues/133)) | Samples, GURDY ([#129](https://github.com/kmplngj/Felucca/issues/129)) | – | RPG UI/boot scenes as a view | Samples in the standard image |
 | JIANT / Jangada ([#137](https://github.com/kmplngj/Felucca/issues/137), [#134](https://github.com/kmplngj/Felucca/issues/134)) | DRUM-X, BYTE/FLOAT ([#135](https://github.com/kmplngj/Felucca/issues/135)), ROBO ([#132](https://github.com/kmplngj/Felucca/issues/132)) | Drone evolution: Ambient/Generative | – | Retired engines, half-rate as a default |

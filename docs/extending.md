@@ -169,7 +169,9 @@ entry point changes engine, preset and values inside one window.
 - `F_*` formats are in `core.h`; reuse an existing format before adding one (UI, protocol and
   `tests/descdump.c` all switch on it).
 - [#31](https://github.com/kmplngj/Felucca/issues/31) owns shared parameter-metadata
-  exploration; reuse these native descriptors and preserve numeric/wire IDs rather
+  exploration; its [consumer audit and read-only proposal](parameter-metadata-research.md)
+  describe the existing owners, intentional panel/editor differences and follow-up
+  contract cases. Reuse these native descriptors and preserve numeric/wire IDs rather
   than creating a plugin metadata system in an engine extension.
 
 ### 1.6 Presets, categories, UI and help
@@ -763,7 +765,7 @@ Platform / persistence:
 - [ ] ISR reachability checked if size lists or callbacks changed.
 - [ ] Old-format import, round trip, malformed input and downgrade behaviour tested;
       `web/EDITOR_PROTOCOL.md` updated.
-- [ ] `README.md` reviewed for user-facing changes (AGENTS.md "User-facing documentation").
+- [ ] `README.md` reviewed for user-facing changes ([documentation policy](documentation-policy.md)).
 - [ ] `./build.sh` clean (no new warnings) and `tests/run_tests.sh` green; skipped checks and
       real-device validation stated (AGENTS.md "Completion evidence").
 

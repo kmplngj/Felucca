@@ -135,6 +135,8 @@ class CommandLineFixtures(unittest.TestCase):
     def test_artifact_selection_is_independent_of_current_generated_profile(self):
         self.script=self.root/'tests/target_budget.py';self.script.parent.mkdir()
         shutil.copyfile(SCRIPT,self.script)
+        (self.root / 'tools').mkdir()
+        shutil.copyfile(HERE.parent / 'tools/test_coverage.py', self.root / 'tools/test_coverage.py')
         current=self.root/'build/gen/resolved-profile.json';current.parent.mkdir(parents=True)
         current.write_text(json.dumps({'excluded_engine_budget_functions':['lofi_render']}))
         self.assert_status(self.cli(),0)

@@ -34,6 +34,16 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
+  exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
+  Offline verification checks artifact correspondence; full host/browser/device acceptance,
+  public build service and deployment remain separate.
+  Native target builds now refuse unsupported compiler search/configuration variables
+  such as `CPATH`, `LIBRARY_PATH` and `SDKROOT`; Docker target builds ignore these
+  unforwarded host values. Host loader injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+  `DYLD_LIBRARY_PATH`) is refused for both backends. `LD_LIBRARY_PATH` remains allowed
+  and is recorded only as a value hash; see [build-input identity](build-bundles.md#identity-and-immutability).
+
 - **Build metadata contracts:** canonical supported-profile exports include stable IDs,
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds
   emit artifact-bound resource/stack reports, with stale-evidence verification using the
@@ -92,6 +102,22 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **LCD state readability:** muted track names/settings, mixer annotations,
+  piano-roll pitch labels and MOD text/units retain readable contrast across
+  built-in palettes. Mute marks and inactive graphics keep their distinct state.
+  Control hints, calibration prompts and the emulator panel use the printed SEL
+  button name, distinct from the SELECT encoder and musical SCL page. See
+  [roles and validation scope](lcd-typography.md#readable-inactive-information);
+  physical FM-1 readability and loaded-panel checks remain pending.
+- **Firmware CI coverage:** required host work and nested checks now use a
+  source/configuration-bound structured report instead of success banners and
+  recognized skip wording. Missing dependencies, child completion or stale evidence
+  fail strict verification; documented CPU/V15 and profile exceptions stay explicit.
+  See the [runner contract](../BUILDING.md#tests). Firmware/device behavior is unchanged.
+
+- **Browser emulator readability:** keyboard hints, footer links, build version and
+  small-print text meet a 4.5:1 contrast floor against the neutral page background.
+
 - **Hosted editor settings:** applied RAM-only and deferred-save settings retain
   the device's returned value; rejected edits restore the confirmed value while
   preserving newer picker drafts. Saved edits replace earlier warnings with
@@ -142,12 +168,35 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Changed
 
+- **Unified native reading:** value pages use a shared four-knob parameter bank
+  and a stable larger current value while keeping full native graphs. Explicit
+  scope feedback covers held-step locks, motion and temporary/kept edits; focus
+  remains after turn feedback expires. Names have a larger reading role above five
+  list rows. Settings use seven uniform 9 px rows and explicit ON/OFF; single
+  values, including COLOR/LEDS, edit directly. AUTO OFF groups related values on
+  a detail page with the same typography. NORMAL/LARGE is consolidated;
+  the old settings bit and editor id remain reserved for compatible rollback.
+  Physical FM-1 readability and loaded-panel
+  qualification remain pending. See the [reading contract](lcd-typography.md#focused-parameter-bank).
+- **One native look (direction A, #572):** rules instead of boxes in every palette.
+  Value pages show the focused knob as a 27 px numeral where the graph leaves room, the
+  four knob columns under rules whose form names the editing state (solid, dashed
+  automation, doubled lock, dotted MOMENTARY), and the accent only while a knob turns. The header
+  reads `T1 ▶ 124 BPM` flush left with the REC mark after the tempo.
+  Compact knob rows, MENU tabs, settings rows and the footer share the same type system.
+  MENU > STYLE is retired with its value and editor id kept for rollback. New
+  MENU > DISPLAY > **GRAPH** (default TURN): the turned knob's filter response or
+  envelope replaces the live waveform while it turns, then the waveform returns; SCOPE,
+  CURVE and STILL keep the waveform, add a small one, or stop animating. Physical FM-1
+  readability and redraw checks remain pending. See the [feature guide](fork-features.md).
 - **LCD typography:** control hints and state badges now use native M8Stealth57
   lettering alongside the default M8 text. Numeric card and MOD units stay in a
   fixed slot, and small-value fallbacks share a consistent vertical band.
   Track digits center on their cushion, removing the old extra shift for “1”.
-  Rounded pill edges, icons, text-font comparison builds and LARGE mode remain
-  available. See [roles, fit rules and validation scope](lcd-typography.md);
+  One M8Stealth family now supplies two native bitmap grids and exact 2× reading
+  roles. No additional 14 px role is emitted. Tamzen and Inter Tight firmware variants
+  are retired; rounded pill edges and icons retain antialiasing.
+  See [roles, fit rules and validation scope](lcd-typography.md);
   physical readability and loaded-panel qualification remain pending.
 - **Display inactivity:** AUTO OFF combines the existing screen timeout with LED-only
   and combined darkness, retaining NEVER as default and the existing screen-only
@@ -159,8 +208,7 @@ recorded in the linked reports, rather than every current build or device.
   automatically, including on macOS without manual pip setup; see
   [Python environments](../BUILDING.md#python-environments).
 
-- **PR installation:** the CLI uses the maintained Python updater again. Native Rust
-  updater setup, cached artifacts and backend selection have been removed; the locked
+- **PR installation:** the CLI uses the maintained Python updater. The locked
   `midi` group supplies `mido`/`python-rtmidi` in the trusted caller checkout. See [BUILDING](../BUILDING.md#test-a-pull-request-on-hardware).
 
 - **Update-loader compatibility:** installers bind current Felucca packages to loader
@@ -173,8 +221,8 @@ recorded in the linked reports, rather than every current build or device.
   Engines collection with an explicit API contract; standard/reduced build profiles
   and firmware engine metadata preserve stable IDs. GPL collection integration and
   broader usage modes remain planned; see the [modularity roadmap](modularity.md).
-- **Display and startup:** M8Stealth is the default font, with Tamzen and Inter Tight
-  build options. The minimal startup identity follows saved colors and can be
+- **Display and startup:** M8Stealth supplies native text. The minimal startup
+  identity follows saved colors and can be
   dismissed by a button or key without triggering its normal action.
 - **Effect controls:** shared chorus Depth and per-track chorus/delay/reverb sends
   glide during sound. These smoothing experiments are implemented; FM-1 listening

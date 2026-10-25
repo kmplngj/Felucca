@@ -14,14 +14,16 @@ contributors. This change does not alter branch protection or repository setting
 
 Every PR and `main` push starts CI, including documentation changes. Workflow
 syntax, CI helper failure cases and change-selection regressions always run.
-The existing `firmware / Target, host and emulator` check always completes and
-requires every selected focused job to succeed; a failed or canceled selected
-job cannot turn into a successful check. There are no workflow-level path filters
+The existing `firmware / Target, host and emulator` check aggregates the selected
+focused, target/host and full-browser jobs. Every selected job must succeed; a
+failed, canceled or unexpectedly skipped selected job cannot turn into a successful
+check. Canceled workflows stop their running jobs instead of waiting for an
+unconditional aggregate. There are no workflow-level path filters
 that could leave a required check pending. Existing check names are preserved.
 
 | Changed inputs | Validation |
 | --- | --- |
-| Known documentation, documentation images, `AGENTS.md`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
+| Known documentation, documentation images, `AGENTS.md`, Markdown under `.agents/skills/`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
 | Portable fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/console_diagnostics.c`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
 | `tools/firmware_watch.py`, its tests and `data/firmware-watch/**` | Portable Python suite, including ledger migration/integrity and offline Git-DAG recovery tests; no firmware build |
 | `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
@@ -37,8 +39,13 @@ without generated firmware assets or a connected device. Changes to `console.c`
 continue to select full firmware validation.
 
 Independent selections combine when a PR changes several independent areas.
-Full validation includes the focused suites, so separate focused jobs are not
-duplicated. Firmware is a single translation unit, and host/emulator harnesses
+Skill scripts, non-Markdown assets and unfamiliar files still require full validation;
+mixing skill instructions with firmware changes also selects full validation.
+Full validation includes the focused suites, so their separate focused jobs are
+not duplicated. Its target/host work and Chromium UI/AudioWorklet checks run on
+independent runners. The browser job builds a fresh emulator at the same selected
+revision and profile; native/WASM parity checks remain in the host suite.
+Firmware is a single translation unit, and host/emulator harnesses
 include shared sources: changing an engine or a firmware UI file still runs the
 complete suite. Changes to the Python build/package tools still require real
 target/package validation even when portable mocked fixtures exist.
@@ -85,8 +92,25 @@ diagnostics join the existing 14-day artifacts. No model/API calls are needed.
 | Delivery | Package byte equality from a second clean checkout; firmware and source archive equality for release builds; identical package from unpacked complete source without Git; no tracked changes or baseline updates |
 | Release | Required files, attribution and every license, SHA-256 coverage of every bundle/asset file, firmware/source archive checksums and source pin/content verification |
 
-`tools/ci.py verify-tests` rejects skipped local optional suites, absent test
-outputs and missing target-budget entries even if the runner prints success.
+`tools/ci.py verify-tests` requires the schema-versioned report and fresh invocation
+ID selected before the full runner starts (`FELUCCA_COVERAGE_REPORT` and
+`FELUCCA_COVERAGE_ID`). It verifies the source-derived expected plan, prerequisites
+and applicability independently of installed dependencies. Missing sanitizer,
+Pillow, DaisySP, sample assets, Node or Wasm coverage cannot disappear from that
+plan or be satisfied by a successful process printing a skip. Required nested
+producers and Python unittest completion/skips are structured outcomes, including
+the Chorus/Send/audio-transition sanitizer variants. Normal/compact output and
+serial/parallel scheduling use the same contract; regex diagnostic hints have no
+acceptance authority. The verifier rejects absent/failed/blocked/cancelled work,
+unapproved or unknown skips, stale identities, changed inputs/configuration,
+missing child completion and altered/empty required outputs or adjacent logs.
+
+The diagnostic report binds before/after tracked and untracked source content,
+generated inputs, revision/dirty state, exact clean Engines pin, profile/config,
+resolved compilers and observed effective argv. O2 and Os/no-vectorization regression
+compiles and actual selected baseline arguments are checked explicitly. Invocation
+IDs, compiler shim paths and timings stay out of reproducible release provenance.
+See [runner instructions](../BUILDING.md#tests) for strict local reproduction.
 Linux uses `perf_event_open` to count user-space instructions of each regression
 worker's calling thread. Both host CPU budgets are checked when every count and
 the matching platform/compiler baseline are available. A denied or unavailable
@@ -102,12 +126,25 @@ This infrastructure change does not change firmware, flags or test baselines.
 The only permitted fixture skip is the official V15 restore comparison: that
 requires the vendor firmware, which is deliberately not redistributed here.
 
-For the FX rest regression tracked in [#153](https://github.com/kmplngj/Felucca/issues/153),
-the summary retains actual FX rest diagnostics and reports pending coverage when
-the full test log has no completed success, failure or dependency-skip outcome.
-`FX rest: SKIP` reports pending coverage while [#41](https://github.com/kmplngj/Felucca/pull/41)'s
-silent-bus paths are unavailable. It does not establish FX equivalence. Once those
-paths land, require the regression rather than accepting its dependency skip.
+Disabled opt-in TSAN is explicitly not requested; MACRO-specific units are excluded
+only when the resolved source/profile omits engine 14. Available CPU comparisons
+must contain every required budget entry; C1_HOST retains its explicitly unqualified
+CPU comparison while its sound/state checks run.
+The MACRO pack's separately opt-in `--webapp PATH` parser check is also explicitly
+not requested when that actual argument is absent; native pack/serializer/MIDI
+checks remain required. Supplying it requires successful real client parsing.
+
+Current sources require the FX rest regression with `--require-rest`. Historical
+exact-source builds run their own selected runner/verifier and retain that source's
+FX dependency policy. The Actions summary labels sources predating this contract as
+legacy transcript verification, never structured qualification. Target-only scope
+still explicitly omits host coverage; no new fallback in the current verifier accepts
+legacy banners. Source/archive and release reproduction retain their existing
+selected-source behavior and stable provenance.
+Current verified no-Git source archives bind identity through the existing
+`SOURCE-PINS.json` full-tree verifier, retaining its extra-file/mode/symlink checks
+and external-uv-environment/no-bytecode rules. A missing Git directory never enables
+a transcript-only acceptance fallback.
 
 ## Dependencies and provenance
 
@@ -172,7 +209,9 @@ golden, sanitizer and coverage check still runs. `TEST_JOBS=1` uses the same uni
 plan serially for debugging and comparisons; see [host runner controls](../BUILDING.md#tests).
 Each unique `build/host/test-run-*/summary.json` records unit timings, dependencies
 and results. Its adjacent unit logs are retained in diagnostics even on failure,
-and the merged test log remains ordered for `tools/ci.py verify-tests`. An
+and the merged test log remains ordered. `coverage.json` binds its plan and unit
+logs and required output hashes; per-unit coverage directories retain observed
+compiler and child diagnostics. An
 unsuccessful dependency unit, failing compile/test or interrupted runner cannot
 produce the success banner. Optional local skips remain explicit and CI still
 rejects them through its coverage verifier. The runner's process groups are terminated on
@@ -187,14 +226,19 @@ Setup failures may have only checkout details; the complete Actions step logs
 remain on the run page. A canceled job can upload available diagnostics while
 its runner remains alive; a killed runner cannot guarantee an upload.
 
+Target/host validation stages candidate firmware and release artifacts. The final
+required check promotes them under the existing `firmware-*` and `release-*` names
+only after all selected validation, including full-browser checks, succeeds.
+Candidate artifacts are not accepted firmware; device checks remain separate.
+
 Diagnostics expire after 14 days; successful firmware/release artifacts after
 30 days (subject to repository policy). Download them from the Actions run's
 Artifacts section. Artifact access follows repository permissions and may
 require sign-in. Only explicit build paths are uploaded, never an environment
 dump, credentials or dependency caches. Public GitHub-hosted runner use follows
 GitHub's plan; private forks can consume minutes and artifact storage. There is
-at most one target/test job per run, with focused independent jobs when applicable,
-and no recurring nightly schedule. Focused emulator diagnostics include its fresh
+one target/host job and one parallel browser job for a full run, with focused
+independent jobs when applicable, and no recurring nightly schedule. Focused emulator diagnostics include its fresh
 WASM, copied browser files and native song output; focused checks do not upload a
 validated firmware package. Documentation-only runs upload workflow diagnostics.
 
