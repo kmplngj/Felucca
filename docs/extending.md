@@ -42,6 +42,13 @@ the portable host contract, never firmware engine IDs or storage versions.
   `ENGINES[]` (`firmware/src/engines.c`). The editor protocol, user presets, projects and favourites store
   it. **Append; never reorder or reuse.** `NENGINES` is only the length of this build's table (its highest
   id + 1); it is no stored value and no marker ([#212](https://github.com/kmplngj/Felucca/issues/212)).
+- Allocate its immutable `felucca.engine.<stable-slug>` key in `profiles/catalog.json`
+  and the reviewed `profiles/engine-identities.json` 64-slot reference together.
+  Never rename/reassign an allocated key or reuse its ID; retirement retains both.
+  Source moves, display names and compatible releases do not create a new identity.
+  Incompatible saved-sound changes require explicit migration or a separately reviewed
+  identity/ID, not a catalog rename. The [key contract](build-profiles.md#stable-engine-exchange-keys)
+  explains the host-only metadata, namespace and remaining #422 compatibility work.
 - A retired engine keeps its slot. Engine 1 (DIGITAL) is the example: `ENG_FM4_GONE` fills
   the slot, `eng_ok()` refuses to select it and old sounds convert to FM6
   (`firmware/src/fm4_convert.c`).

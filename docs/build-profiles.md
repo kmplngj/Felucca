@@ -20,6 +20,42 @@ the firmware; it does not alter the portable `engine_t`. Existing arena sizing a
 FX order stay with their native owners. No usage mode, retained object or storage sector
 is allocated by this work.
 
+## Stable engine exchange keys
+
+Each catalog entry has a firmware-owned, immutable key such as
+`felucca.engine.analog`. Keys use `felucca.engine.` followed by lowercase ASCII
+letters/digits in hyphen-separated words, starting with a letter. Display `name`,
+C `symbol`, UI `tag`, source location and donor provenance are not this identity;
+compatible updates or repository moves retain both key and numeric ID. Existing
+numeric storage/wire IDs and UI/protocol fields keep their current meaning.
+
+`profiles/engine-identities.json` is the reviewed allocation reference for all 64
+slots: 0..14 are allocated, DIGITAL 1 is retired, MACRO 14 is active, and 15..63 are
+reserved with null keys. Active means allocated, not selected in every profile.
+Retirement keeps the key/ID and catalog entry permanently. A new allocation needs
+an explicit reviewed change to a reserved slot and the catalog; never derive IDs
+from discovery/display order or hashes. Felucca owns its namespace and numeric
+mapping; engine collections do not independently allocate Felucca wire IDs.
+
+The production resolver requires the reference explicitly; root-based operations
+load it from that root, including verified source archives. It rejects duplicate,
+missing or changed allocated mappings, duplicate keys, invalid namespaces and an
+incomplete/ambiguous 64-slot reference. The reference is a committed review
+authority, not a signature: deliberately changing both catalog and reference is
+not mechanically prevented and requires identity/compatibility review.
+
+Resolved JSON exposes selected `engine_identities` (ID, key, allocation status,
+owner and source) and the reference path/hash. The canonical contract includes
+the complete reference. Its bytes are declared selection inputs and are covered
+by complete-source inventory verification; a reference edit makes old generated
+metadata stale. Keys/reference data stay external and are not emitted into C
+tables; only the existing unused selection-SHA macro changes with these inputs.
+This is the first host-only stage of [#422](https://github.com/kmplngj/Felucca/issues/422).
+Per-provider GPL pins/resolution remain with #360. Complete configuration identity
+and transport, saved-sound compatibility revisions/fingerprints and storage/client
+round-trip qualification remain open in #422. The selection digest is not a full
+configuration, compatibility or final-binary digest, nor an authenticity check.
+
 `reduced-lofi` removes LOFI's implementation at id 3. Its engine table slot becomes
 `ENG_NONE`; editor INFO reports the same 14-slot prefix with a '-' name and cleared
 availability bit for 3. Factory LOFI presets and WRAM data are absent. Stored projects,
