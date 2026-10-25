@@ -89,7 +89,7 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - [uv](https://docs.astral.sh/uv/) and Python 3 (the UI font and icons are rasterised
   at build time). On macOS, install uv with `brew install uv`. The locked `build`
   dependency group provides Pillow, fontTools and Brotli.
-- Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
+- Docker Desktop. The JieLi toolchain is Linux x86-64 only; target builds use a
   `linux/amd64` `debian:bookworm-slim` container using Docker's x86 emulation on Apple silicon.
   Rosetta is optional and is not required for a successful build. Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
@@ -111,6 +111,32 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - Emscripten (optional, `emcc`: the browser emulator, `web/emu/`).
 
 On Linux x86-64 the toolchain runs natively and Docker is not needed.
+
+A target-builder invocation owns one lazily started container: loader/app workers and
+resource-report tool calls share it, with the toolchain mounted read-only. It is removed
+on success, build failure, SIGINT or SIGTERM. Lifecycle Docker clients run in separate
+sessions so terminal interrupts reach the Python owner, which waits for an in-flight
+startup response before removing its container. No container or compiled-output cache is
+reused across builds. Independent builds have different container identities. Linux-native
+execution is unchanged. Standalone imported tool calls, including resource-report CLI
+verification, continue to use temporary one-shot containers. A target builder called
+outside Python's main thread also uses the one-shot path, because it cannot install
+process signal handlers for persistent-container cleanup.
+
+Before reuse, the builder inspects the selected `linux/amd64` image configuration.
+It starts an advertised immutable repository digest when available, or the image ID
+for older image stores. A manifest/index without a usable repository digest uses
+the one-shot path rather than assuming its selected manifest ID is runnable.
+Custom images with an `ENTRYPOINT`, or images whose selected configuration cannot be
+verified, use the existing one-shot path with a visible note. The default image must
+support `sleep infinity` and direct tool execution. Docker-compatible Podman clients may
+use plain image inspection only when it proves the same Linux/amd64 configuration.
+No TTY or shell wraps compiler arguments. Cleanup cannot be guaranteed after SIGKILL,
+a host crash or loss of the container engine; a cleanup failure reports the exact owned
+container name/ID and never removes another build's container. Do not treat that failure
+as a clean successful lifecycle. This changes build overhead, not firmware arithmetic,
+compiler flags or audio CPU use.
+
 Install uv using its [installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
 ### Python environments
