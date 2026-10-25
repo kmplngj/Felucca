@@ -437,6 +437,28 @@ class LifecycleTests(unittest.TestCase):
             bound = {argv[0] for argv in mapping.values()}
             self.assertTrue(all(e['executable'] in bound for e in rows if e['kind'] in ('compiler', 'probe')))
 
+    def test_nested_lifecycle_with_production_compiler_layer(self):
+        # The portable host unit already runs under a production compiler shim.
+        # Add that layer here too, so the fast helper gate exercises the same
+        # nested lifecycle boundary before the complete host suite starts.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith('FELUCCA_COVERAGE_')}
+            env.update(FELUCCA_COVERAGE_UNIT=str(root / 'production-events'),
+                       FELUCCA_COVERAGE_ID='production')
+            env, mapping = C.compiler_environment(env, root / 'production-shims')
+            result = subprocess.run([sys.executable, str(ROOT / 'tools/test_coverage.py'),
+                                     'command', sys.executable, 'tests/coverage_contract_test.py',
+                                     'LifecycleTests.test_nested_lifecycle_fixtures_do_not_pollute_outer_invocation',
+                                     '-q'], cwd=ROOT, env=env, text=True, capture_output=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = [C.read_json(p) for p in (root / 'production-events').glob('*.json')]
+            self.assertTrue(any(e['kind'] == 'command' for e in rows))
+            self.assertEqual({e['run_id'] for e in rows}, {'production'})
+            bound = {argv[0] for argv in mapping.values()}
+            self.assertTrue(all(e['executable'] in bound for e in rows if e['kind'] in ('compiler', 'probe')))
+
     def test_verified_archive_identity_requires_real_manifest_content_and_modes(self):
         import source_archive
         with tempfile.TemporaryDirectory() as temporary:

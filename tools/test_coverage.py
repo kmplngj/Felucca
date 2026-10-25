@@ -113,10 +113,10 @@ def host_config(env=None, probe=True):
                 compiler=subprocess.check_output(cc + ['--version'], text=True, env=env).strip())
 
 
-def baseline_config(configuration, root=ROOT):
+def baseline_config(configuration, root=ROOT, env=None):
     return subprocess.check_output([sys.executable, str(Path(root) / 'tests/cpu_baseline.py'),
                                     *configuration['requested'], *configuration['common']],
-                                   text=True).splitlines()
+                                   text=True, env=env).splitlines()
 
 
 def command_policy(argv):
@@ -336,7 +336,7 @@ class Coverage:
         self.before = snapshot(root, env)
         self.engine_ids = selected_engines(self.root, env)
         self.compiler = host_config(env)
-        self.baselines = baseline_config(self.compiler, self.root)
+        self.baselines = baseline_config(self.compiler, self.root, env=env)
         self.temporary = tempfile.TemporaryDirectory(prefix='felucca-coverage-')
         self.worker_env, self.compiler_map = compiler_environment(env, Path(self.temporary.name) / 'bin')
         self.compiler_hashes = {argv[0]: digest(argv[0]) for argv in self.compiler_map.values()}
@@ -392,7 +392,17 @@ def verify(path, run_id, root=ROOT):
     return _verify(path, run_id, root)
 
 
+def _verification_environment():
+    # Verification observes an existing receipt; its compiler/plan probes do not
+    # belong to a calling test unit. Keep compiler shims and flags intact, but
+    # prevent every shim in a nested chain from publishing observer events.
+    return {key: value for key, value in os.environ.items()
+            if not key.startswith('FELUCCA_COVERAGE_')}
+
+
 def _verify(path, run_id, root=ROOT, shard=False):
+    probe_env = _verification_environment()
+
     def require(condition, message):
         if not condition:
             raise ValueError('incomplete test coverage: ' + message)
@@ -407,12 +417,12 @@ def _verify(path, run_id, root=ROOT, shard=False):
     normalize = (lambda value: portable(value, d.get('checkout_root', ''), root)) if shard else (lambda value: value)
     require(d.get('before') == d.get('after') and normalize(d.get('before')) == snapshot(root, os.environ),
             'source/configuration changed or stale')
-    require(normalize(d['compiler']) == host_config(), 'host compiler/configuration changed')
-    require(d['baselines'] == baseline_config(normalize(d['compiler']), root), 'CPU baseline selection changed')
+    require(normalize(d['compiler']) == host_config(probe_env), 'host compiler/configuration changed')
+    require(d['baselines'] == baseline_config(normalize(d['compiler']), root, env=probe_env), 'CPU baseline selection changed')
     require(d['engine_ids'] == selected_engines(root, os.environ), 'profile applicability changed')
     if shard:
         with tempfile.TemporaryDirectory() as temporary:
-            _, mapping = compiler_environment(dict(os.environ), Path(temporary) / 'bin')
+            _, mapping = compiler_environment(probe_env, Path(temporary) / 'bin')
             require(compiler_identity(d['compiler_map'], d['compiler_hashes'], normalize) ==
                     compiler_identity(mapping, {a[0]: digest(a[0]) for a in mapping.values()}),
                     'compiler executable changed or absent')
@@ -435,7 +445,7 @@ def _verify(path, run_id, root=ROOT, shard=False):
     require(names and len(names) == len(set(names)), 'missing/duplicate units')
     require(names == [u['name'] for u in d['units']], 'unit evidence mismatch')
     expected = subprocess.check_output(['sh', str(Path(root) / 'tests/run_tests.sh'), '--plan'],
-                                       cwd=root, text=True)
+                                       cwd=root, text=True, env=probe_env)
     require(hashlib.sha256(expected.encode()).hexdigest() == d['plan_sha256'], 'source plan does not match evidence')
     expected_lines = expected.splitlines()
     if shard:
@@ -594,7 +604,8 @@ def verify_shards(paths, cohort, root=ROOT):
         indexes.add(scope['index'])
         reports.append(_verify(path, d['run_id'], root, shard=True))
     names = [u['name'] for d in reports for u in d['units']]
-    expected = subprocess.check_output(['sh', str(Path(root) / 'tests/run_tests.sh'), '--plan'], cwd=root, text=True)
+    expected = subprocess.check_output(['sh', str(Path(root) / 'tests/run_tests.sh'), '--plan'],
+                                       cwd=root, text=True, env=_verification_environment())
     if len(names) != len(set(names)) or set(names) != {line.split('\t')[0] for line in expected.splitlines()}:
         raise ValueError('missing or duplicate shard units')
     # Target/emulator inputs are prerequisites replicated independently on both runners.
