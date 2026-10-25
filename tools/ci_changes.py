@@ -39,7 +39,8 @@ def select(paths, force=False):
             selected["backup"] = True
         elif path.startswith("web/emu/"):
             selected["emulator"] = True
-        elif path in REVIEW_INPUTS or path.startswith(".github/ISSUE_TEMPLATE/"):
+        elif (path in REVIEW_INPUTS or path.startswith(".github/ISSUE_TEMPLATE/")
+              or (path.startswith(".agents/skills/") and path.endswith(".md"))):
             continue
         elif path.endswith(".md") and (
                 path in {"README.md", "BUILDING.md", "CONTRIBUTING.md", ".github/CI.md"}
