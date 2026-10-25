@@ -151,6 +151,49 @@ uv run --locked --group build ./build.sh
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
+### Final-image soft-double policy
+
+Every target application build checks the final linked ELF symbol table against
+26 exact double-precision helper names exported by the generic JieLi Clang 4.0.1
+compiler runtime (`SOFT_DOUBLE_HELPERS` in `tools/build.py`). The check covers double
+arithmetic/comparisons, fp32/double and double/half conversions, signed/unsigned
+32/64-bit integer/double conversions, and complex-double multiply/divide. A helper
+defined in an allocated `CODE` output section fails the build, including local,
+weak and zero-sized aliases. The diagnostic lists the names: inspect the expressions
+that introduced them and use intentional fp32/fixed-point operations. There is no
+profile or radio exemption and no override flag.
+
+GNU-style section headers must show `ALLOC` and `CODE`. Their attribute lists use
+only the reviewed words `CONTENTS`, `ALLOC`, `LOAD`, `READONLY`, `CODE`, `DATA` and
+`DEBUGGING`; an unknown word or malformed list cannot establish nonexecution for a
+matching helper and fails with a section-evidence diagnostic. The installed JieLi
+objdump instead reports `TEXT`/`DATA`; for that format, the detector requires `TEXT`
+in one of `app.ld`'s allocated executable outputs (`.text`, `.ram_text`, `.c1_text`).
+An unfamiliar `TEXT` output containing a matching helper fails with a section-evidence
+diagnostic until its allocation is reviewed.
+
+Undefined, absolute, common, file/section/debug records and symbols in nonallocated
+or nonexecutable sections do not establish linked code. Integer-only 64-bit helpers,
+fp32 helpers and ordinary names containing `double` remain outside this policy.
+Matching helper rows with malformed symbol/section evidence fail the check rather
+than establishing absence. A successful check means only that no known helper is
+defined in final executable sections; it does not prove hardware FPU use, absence
+of every double expression or improved CPU time. New toolchain/ABI spellings need
+a reviewed policy and fixture update. See [performance guidance](docs/performance.md#soft-double-link-guard).
+
+Portable coverage is in `python3 tests/build_guard_test.py` (also run with `python3 -O`).
+The separate `python3 tests/build_guard_target_test.py` compiles dynamic double
+arithmetic/conversions and an fp32 control with the production generic flags. Only
+these tiny probes link the installed generic `pi32v2/lib/libcompiler_rt.a` to prove
+the final-image detector; the firmware's explicit-object link remains unchanged.
+The fixture retains sources, objects, undefined object symbols, final ELF symbols,
+section headers, disassembly, link logs and tool/runtime hashes in a fresh directory
+under `build/host/build_guard_target/`. It also preserves the existing integer-64
+compile/link cases. An absent default toolchain produces an explicit skip; an
+explicitly configured missing toolchain, a missing runtime archive or a failed
+probe fails the fixture. A skip is not target evidence. No FM-1 execution is needed
+to validate this build-only policy.
+
 Native firmware uses M8Stealth only. `FELUCCA_FONT` may be unset or explicitly
 `m8stealth`; retired `tamzen` and `inter-tight` values fail before generation.
 After updating from an older font build, rebuild assets and firmware before

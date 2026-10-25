@@ -332,6 +332,24 @@ of extra main-loop calls without service-latency evidence; production selection
 is unchanged. Clock/voltage changes, a second core, or FPU/DSP rewrites are
 separate hardware experiments with their own correctness, timing and reliability evidence.
 
+## Soft-double link guard
+
+`tools/build.py` always rejects known JieLi Clang 4.0.1 double-precision runtime
+helpers defined in allocated executable sections of the final application ELF.
+The [build policy and target probes](../BUILDING.md#final-image-soft-double-policy)
+describe its exact arithmetic/conversion scope, excluded symbol states and
+retained evidence. Integer-only 64-bit and fp32 helpers remain allowed by this
+guard. Malformed matching symbol/section evidence fails rather than reporting
+absence; the existing resource, ROM, HAL and flash-safe guards remain independent.
+
+This prevents a class of future linked-helper regressions. It is not a measured
+CPU or size improvement, a source-level double ban, or proof of single-precision
+hardware FPU use. Inlined software arithmetic and new ABI names are outside its
+exact-name policy. When a helper is reported, inspect its caller and conversion
+units before changing arithmetic; then repeat the applicable sound, target budget,
+resource and device measurements. A clean guard result cannot establish deadline
+headroom or qualify a future float-kernel/FPU experiment.
+
 ## Report a result
 
 Record: revision/diff, compiler/SDK/flags/assets, workload and duration, host counter

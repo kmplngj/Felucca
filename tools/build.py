@@ -77,6 +77,16 @@ LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
 CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
 LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$", re.I)
+# Exact exports of the installed generic JieLi Clang 4.0.1 compiler runtime.
+# Integer-only 64-bit and fp32 helpers are deliberately outside this policy.
+SOFT_DOUBLE_HELPERS = frozenset({
+    "__adddf3", "__subdf3", "__muldf3", "__divdf3", "__negdf2", "__powidf2",
+    "__eqdf2", "__nedf2", "__gedf2", "__gtdf2", "__ledf2", "__ltdf2", "__unorddf2",
+    "__extendsfdf2", "__truncdfsf2", "__truncdfhf2",
+    "__fixdfsi", "__fixdfdi", "__fixunsdfsi", "__fixunsdfdi",
+    "__floatsidf", "__floatdidf", "__floatunsidf", "__floatundidf",
+    "__muldc3", "__divdc3",
+})
 
 # SDK files of AC79NN_SDK_V1.2.1_2023-12-13 (the tested version)
 SDK_SHA256 = {
@@ -492,8 +502,73 @@ def ram_text_empty(hdr, syms):
     return all(evidence) if evidence else None
 
 
+def soft_double_check(hdr, syms):
+    """Known runtime definitions in allocated CODE output sections, from final objdump -h/-t."""
+    sections = {}
+    section = None
+    native = bool(re.search(r"^\s*Idx\s+Name\s+Size\s+Address\s+Type\s*$", hdr, re.M))
+    for line in hdr.splitlines():
+        p = line.split()
+        if p and p[0].isdigit():
+            section = p[1] if len(p) >= 2 else None
+            if section:
+                sections[section] = None
+            if native:
+                # JieLi's objdump reports TEXT/DATA rather than GNU's ALLOC/CODE.
+                # app.ld's three executable outputs are all allocated; do not
+                # infer allocation for an unknown TEXT section in this format.
+                if (len(p) >= 5 and all(re.fullmatch(r"[0-9a-f]+", v, re.I) for v in p[2:4])
+                        and set(p[4:]) <= {"TEXT", "DATA", "BSS"}):
+                    if "TEXT" not in p[4:]:
+                        sections[section] = set()
+                    elif section in (".text", ".ram_text", ".c1_text"):
+                        sections[section] = {"ALLOC", "CODE"}
+                section = None
+                continue
+            if (len(p) != 7 or not all(re.fullmatch(r"[0-9a-f]+", v, re.I) for v in p[2:6])
+                    or not re.fullmatch(r"2\*\*\d+", p[-1])):
+                section = None
+        elif section:
+            if re.fullmatch(r"\s*[A-Z_]+(?:,\s*[A-Z_]+)*\s*", line):
+                attrs = set(line.replace(",", " ").split())
+                # An unknown word may be a damaged CODE/ALLOC marker, not
+                # evidence that a matching helper lives outside executable code.
+                if attrs <= {"CONTENTS", "ALLOC", "LOAD", "READONLY", "CODE", "DATA", "DEBUGGING"}:
+                    sections[section] = attrs
+            section = None
+
+    found, errors = set(), []
+    for line in syms.splitlines():
+        p = line.split()
+        if not p or p[-1] not in SOFT_DOUBLE_HELPERS:
+            continue
+        # Optional binding/type flags precede the final section, size and name.
+        # Do not let a damaged matching row turn into evidence of absence.
+        if (len(p) < 4 or not re.fullmatch(r"[0-9a-f]+", p[0], re.I)
+                or not re.fullmatch(r"[0-9a-f]+", p[-2], re.I)
+                or not re.fullmatch(r"[lg!uwCvWIiDdFfO ]*", " ".join(p[1:-3]))):
+            errors.append(f"soft-double: malformed symbol row: {line.strip()}")
+            continue
+        flags = "".join(p[1:-3])
+        if p[-3] in ("*UND*", "*ABS*", "*COM*") or "d" in flags or "f" in flags:
+            continue                # undefined, absolute, common, section/debug or file record
+        attrs = sections.get(p[-3])
+        if attrs is None:
+            errors.append(f"soft-double: missing or malformed section evidence for {p[-1]} in {p[-3]}")
+        elif {"ALLOC", "CODE"} <= attrs:
+            found.add(p[-1])         # local/weak and zero-sized aliases still define linked code
+    if found:
+        errors.append("soft-double helpers defined in final executable sections: " + ", ".join(sorted(found)) +
+                      "; use fp32/fixed-point arithmetic or review the unintended double conversion")
+    notes = [] if errors else ["no known soft-double helpers defined in final executable sections"]
+    return errors, notes
+
+
 def check(img, hdr, syms, dis, rt, *, resources=None):
     errors, notes = [], []
+    double_errors, double_notes = soft_double_check(hdr, syms)
+    errors += double_errors
+    notes += double_notes
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
     if not m or int(m.group(1), 16) != APP_XIP:
         errors.append(f"_start is not at {APP_XIP:#x}")
