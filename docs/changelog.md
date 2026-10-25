@@ -223,6 +223,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- **Cold main-loop code size:** selective `minsize` call boundaries save
+  1,752–2,044 app bytes in controlled standard/CPU2-off/MACRO target comparisons,
+  while using 16 more bytes of main RAM. ISR/callback and flash-busy protections
+  remain in place. Loaded control/editor latency and the additional AUTOMATION
+  stack frame await FM-1 qualification; see the [experiment and tradeoffs](cold-minsize-boundaries.md).
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See
