@@ -181,7 +181,8 @@ boundary reallocates the budget rather than increasing it.
 
 `configuration` contains exact C compiler flags, effective `FELUCCA_*` macros obtained
 by preprocessing with those flags, selective minsize state, compiler version/hash,
-linker/objdump/objcopy hashes and actual SDK file hashes. The compiler's host-specific
+linker/objdump/objcopy hashes, the installed compiler header inventories, build-time
+generator versions/lock hash, logical constants and actual SDK file hashes. The compiler's host-specific
 `InstalledDir` line is omitted. There is no timestamp or absolute workspace path in the
 report. `build_identity` preserves clean/dirty status and revision. `input_sha256` hashes
 the entire tracked source inventory, recursive engine sources, nonignored untracked
@@ -224,3 +225,12 @@ value in that copied JSON, then run
 must fail while the original report and artifacts remain intact. No device installation
 is required because this work changes build metadata only; live timing,
 stack headroom and existing profile hardware qualification remain separate gates.
+
+## Immutable maintainer bundles
+
+[Build bundles and paired runtime receipts](build-bundles.md) bind an existing canonical
+profile build to its exact native report/package, complete source archive and actual
+Git-free reproduction. An optional build-time Wasm receipt binds the simulator files to
+that native build; absent or failed runtime output stays unavailable. This is local
+maintainer staging, with no public builder, deployment, installation approval or new
+profile/default. Full host/browser/device acceptance remains separate.
