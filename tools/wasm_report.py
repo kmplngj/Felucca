@@ -348,7 +348,17 @@ def output_names(root):
             if (p.is_file() or p.is_symlink()) and p.relative_to(root).as_posix() != RECEIPT}
 
 
+def output_directories(root):
+    # Workspace aliases above the resolved source root are supported; producer
+    # output directories below it must remain real at every validation boundary.
+    for name in ('build', 'build/emu', 'build/emu/fonts'):
+        if (root / name).is_symlink():
+            raise ValueError('unsafe runtime output directory: ' + name)
+
+
 def output_files(root, *, exact=True):
+    root = Path(root).resolve()
+    output_directories(root)
     if exact and output_names(root) != set(FILES):
         raise ValueError('unexpected runtime output set')
     result = []
@@ -499,9 +509,7 @@ def build_runtime(root, target_path=None, env=None):
     if not emcc_name:
         raise ValueError('no emcc (Emscripten)')
     emcc = Path(emcc_name).resolve()
-    for directory in (root / 'build/emu', root / 'build/emu/fonts'):
-        if directory.is_symlink():
-            raise ValueError('unsafe runtime output directory')
+    output_directories(root)
     compile_argv, preprocess_argv = arguments(identity['version'], env, root, target)
     inputs = R.input_hashes(root)
     profiles = {p: R.digest(root / p) for p in PROFILES if (root / p).is_file()}

@@ -450,6 +450,50 @@ else:
                     finally:
                         library.write_bytes(library_before)
 
+    def test_late_output_directory_aliases_are_hard_failures_with_or_without_sdk_drift(self):
+        library = self.sdk / 'cache/sysroot/lib/libc.a'
+        library_before = library.read_bytes()
+        for relative in ('build', 'build/emu', 'build/emu/fonts'):
+            for paired in (False, True):
+                for drift in (False, True):
+                    with self.subTest(directory=relative, paired=paired, sdk_drift=drift):
+                        path = self.root / relative
+                        moved = self.base / ('moved-' + relative.replace('/', '-'))
+                        self.env['FIXTURE_ACTION'] = 'library' if drift else ''
+                        def alias():
+                            shutil.move(path, moved)
+                            path.symlink_to(moved, target_is_directory=True)
+                        calls, query = self.after_compile_sdk_query(alias)
+                        try:
+                            with patch.object(W, 'sdk_tools', side_effect=query):
+                                with self.assertRaises(ValueError):
+                                    self.build(paired)
+                            self.assertEqual(len(calls), 2)
+                            self.assertFalse((self.root / W.RECEIPT).exists())
+                            self.assertTrue(path.is_symlink())
+                            self.assertEqual((moved / ('felucca.wasm' if relative == 'build/emu' else
+                                                       'emu/felucca.wasm' if relative == 'build' else
+                                                       'DotGothic16-subset.woff')).is_file(), True)
+                        finally:
+                            if path.is_symlink():
+                                path.unlink()
+                            if moved.exists():
+                                shutil.move(moved, path)
+                            library.write_bytes(library_before)
+                            (self.root / W.RECEIPT).unlink(missing_ok=True)
+
+    def test_workspace_alias_above_source_root_remains_supported(self):
+        workspace = self.base / 'workspace-alias'
+        workspace.symlink_to(self.base, target_is_directory=True)
+        source = workspace / self.root.name
+        for paired in (False, True):
+            with self.subTest(paired=paired):
+                with patch.dict(os.environ, self.env, clear=True):
+                    receipt = W.build_runtime(source, source / 'build/resource-report.json' if paired else None,
+                                              self.env)
+                self.assertIsNotNone(receipt)
+                self.assertEqual(W.output_files(source), W.output_files(self.root))
+
     def test_late_extra_developer_output_is_unpaired_only_and_never_receipted(self):
         extra = self.root / 'build/emu/developer-notes.txt'
         for paired in (False, True):

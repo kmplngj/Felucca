@@ -93,8 +93,11 @@ those inputs. The same stale state stops a paired build before compilation.
 If provenance changes during compilation or the final freshness checks, an unpaired
 build likewise keeps its completed outputs with a diagnostic and no receipt; a paired
 build fails before receipt publication. Missing, unsafe or changed required output
-files remain build failures in both modes. Extra developer files may remain only in
-unpaired output and prevent a receipt.
+files remain build failures in both modes. Producer-owned `build`, `build/emu` and
+`build/emu/fonts` directories are rechecked for aliases before compilation and at
+final output validation, including unavailable-receipt returns. Workspace aliases
+above the resolved source root remain supported. Extra developer files may remain
+only in unpaired output and prevent a receipt.
 
 Matching means source/profile/logical build correspondence, with documented simulator
 adapters. It does not mean equal target/Emscripten flags or device execution. The runtime
