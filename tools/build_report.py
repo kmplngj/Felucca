@@ -42,8 +42,9 @@ COMPILER_ENV = ('CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_P
                 'LIBRARY_PATH', 'COMPILER_PATH', 'GCC_EXEC_PREFIX', 'SDKROOT',
                 'CLANG_CONFIG_FILE_SYSTEM_DIR', 'CLANG_CONFIG_FILE_USER_DIR',
                 'CLANG_CONFIG_FILE', 'CLANG_CONFIG_FILE_PATH', 'CLANG_NO_DEFAULT_CONFIG',
-                'CCC_OVERRIDE_OPTIONS', 'CCC_ADD_ARGS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+                'CCC_OVERRIDE_OPTIONS', 'CCC_ADD_ARGS', 'LD_PRELOAD',
                 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH')
+ALLOWED_LOADER_ENV = ('LD_LIBRARY_PATH',)
 HEADER_ROOTS = ('pi32v2/lib/clang/4.0.1/include', 'pi32v2/include')
 
 
@@ -99,6 +100,15 @@ def generator_runtime(root):
             'lock_sha256': digest(lock) if lock.is_file() else None}
 
 
+def loader_environment_fingerprints(env):
+    """Bind allowed loader search values without publishing host paths.
+
+    This identifies the value, not the resolved libraries or system runtime.
+    """
+    return {name: hashlib.sha256(env[name].encode('utf-8')).hexdigest()
+            for name in ALLOWED_LOADER_ENV if env.get(name)}
+
+
 def tool_fingerprints(build):
     """Hash tool/SDK inputs before any jobs; do not launch the compiler here."""
     for name in COMPILER_ENV:
@@ -120,6 +130,7 @@ def tool_fingerprints(build):
                     raise ValueError('compiler header escapes toolchain')
                 headers[path.relative_to(toolchain).as_posix()] = digest(path)
     return {'generator_runtime': generator_runtime(build.SRC),
+            'loader_environment_sha256': loader_environment_fingerprints(build.os.environ),
             'compiler_headers_sha256': headers,
             'execution_environment': {'backend': 'docker' if build.use_docker() else 'native',
                                       'image_reference': build.DOCKER_IMAGE if build.use_docker() else None,
@@ -150,6 +161,7 @@ def configuration(build):
     fingerprints = tool_fingerprints(build)
     return {'compile_flags': ['-target', 'pi32v2', *flags], 'effective_defines': defines,
             'logical_constants': constants, 'generator_runtime': fingerprints['generator_runtime'],
+            'loader_environment_sha256': fingerprints['loader_environment_sha256'],
             'compiler_headers_sha256': fingerprints['compiler_headers_sha256'],
             'execution_environment': fingerprints['execution_environment'],
             'selective_minsize': build.os.environ.get('FELUCCA_SIZE') != '0',

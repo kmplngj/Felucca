@@ -69,7 +69,9 @@ configuration mapping. A successful matched build writes
 the native report SHA256. Attempt logs are retained under `build/wasm-report/`.
 The paired driver refuses unsupported extra flags/compiler search-path injections,
 stale inputs, missing SDK provenance, output leftovers or source/tool changes during
-compilation. It does not stamp an existing Wasm as freshly built. A normal unpaired
+compilation. Configured SDK/cache roots and tool paths are resolved again after
+compilation; changed identities or contents prevent receipt publication, including
+retargeted symlinks. It does not stamp an existing Wasm as freshly built. A normal unpaired
 `sh web/emu/build.sh` stays available for development and does not claim a native match.
 
 Matching means source/profile/logical build correspondence, with documented simulator
@@ -133,8 +135,13 @@ this tool invents no runtime key, wire field or compatibility policy.
 The native header inventory covers the fixed JieLi4.0.1 roots
 `pi32v2/lib/clang/4.0.1/include` and `pi32v2/include`, including their content hashes.
 Missing roots/stdint.h and symlinked header paths fail before generation. Unsupported
-nonempty compiler search/configuration/loader injection variables also fail at that
+nonempty compiler search/configuration and preload/injection variables also fail at that
 initial capture; clearing them only when sealing cannot qualify an older build.
+The inherited `LD_LIBRARY_PATH` needed by some Python installations is supported:
+`loader_environment_sha256` binds its nonempty value by hash before and after generation
+without exposing absolute paths. Paired runtime evidence binds the same map. Other
+injection variables remain refused. This records loader search configuration, not the
+contents of the selected system libraries.
 
 This is a declared-input identity, not a fingerprint of every execution dependency.
 `configuration.execution_environment` records native/Docker execution and the image

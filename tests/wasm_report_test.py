@@ -37,6 +37,7 @@ class RuntimeReport(unittest.TestCase):
         self.env['FIXTURE_SDK'] = str(self.sdk)
         self.env['FIXTURE_ACTION'] = ''
         self.env['FIXTURE_ARGV'] = str(self.base / 'argv.json')
+        self.env['FIXTURE_EXECUTABLE'] = str(self.base / 'executable.json')
         for name, value in {
             '.gitignore': 'build/\n',
             '.gitmodules': '[submodule "firmware/engines"]\n\tpath = firmware/engines\n'
@@ -100,6 +101,7 @@ elif "-dM" in sys.argv:
         print("#define "+key+" "+value)
 else:
     pathlib.Path(os.environ["FIXTURE_ARGV"]).write_text(json.dumps(sys.argv[1:]))
+    pathlib.Path(os.environ["FIXTURE_EXECUTABLE"]).write_text(json.dumps(sys.argv[0]))
     action=os.getenv("FIXTURE_ACTION","")
     if action=="fail":
         sys.exit(7)
@@ -114,6 +116,12 @@ else:
         p=sdk/"llvm/bin/clang";p.write_bytes(p.read_bytes()+b" ")
     if action=="library":
         p=sdk/"cache/sysroot/lib/libc.a";p.write_bytes(p.read_bytes()+b" ")
+    if action=="configuration":
+        p=sdk/".emscripten";p.write_bytes(p.read_bytes()+b" ")
+    if action=="retarget":
+        p=pathlib.Path(os.environ["FIXTURE_LINK"])
+        p.unlink()
+        p.symlink_to(os.environ["FIXTURE_DESTINATION"],target_is_directory=True)
 '''.replace('PYTHON', sys.executable)
         for name in ('emcc', 'em-config'):
             (self.sdk / name).write_text(tool)
@@ -140,7 +148,8 @@ else:
         runtime = dict(self.native, **W.ADAPTER, FELUCCA_ISR_ASSERT='1', **self.constants)
         (self.sdk / 'macros.json').write_text(json.dumps(runtime))
         self.report = {
-            'configuration': {'effective_defines': self.native, 'logical_constants': self.constants},
+            'configuration': {'effective_defines': self.native, 'logical_constants': self.constants,
+                              'loader_environment_sha256': build_report.loader_environment_fingerprints(self.env)},
             'configuration_sha256': 'f' * 64, 'build_identity': identity,
             'input_sha256': build_report.input_hashes(self.root),
         }
@@ -233,7 +242,7 @@ else:
                 self.assertFalse((self.root / W.RECEIPT).exists())
 
     def test_source_generated_profile_report_tool_library_mutations_fail_closed(self):
-        for action in ('source', 'generated', 'profile', 'report', 'tool', 'library'):
+        for action in ('source', 'generated', 'profile', 'report', 'tool', 'library', 'configuration'):
             with self.subTest(action=action):
                 # Each mutation needs independent committed and generated inputs.
                 self.env['FIXTURE_ACTION'] = action
@@ -241,7 +250,8 @@ else:
                           (self.root / 'web/emu/worklet.js',
                            self.root / 'build/gen/felucca_tables.h',
                            self.root / 'build/gen/resolved-profile.json', self.target,
-                           self.sdk / 'llvm/bin/clang', self.sdk / 'cache/sysroot/lib/libc.a')}
+                           self.sdk / 'llvm/bin/clang', self.sdk / 'cache/sysroot/lib/libc.a',
+                           self.sdk / '.emscripten')}
                 with self.assertRaisesRegex(ValueError, 'changed during runtime build'):
                     self.build()
                 self.assertFalse((self.root / W.RECEIPT).exists())
@@ -267,6 +277,91 @@ else:
         after = W.tool_fingerprint(resolved)
         self.assertEqual(before['clang_sha256'], after['clang_sha256'])
         self.assertNotEqual(before['sdk_content_manifest_sha256'], after['sdk_content_manifest_sha256'])
+
+    def test_retargeted_external_cache_is_rejected_before_receipt(self):
+        first, second = self.base / 'cache-first', self.base / 'cache-second'
+        shutil.move(self.sdk / 'cache', first)
+        shutil.copytree(first, second)
+        (second / 'sysroot/include/stdint.h').write_text('changed external cache header\n')
+        link = self.sdk / 'cache'
+        link.symlink_to(first, target_is_directory=True)
+        self.env.update(FIXTURE_ACTION='retarget', FIXTURE_LINK=str(link),
+                        FIXTURE_DESTINATION=str(second))
+        with self.assertRaisesRegex(ValueError, 'tool/SDK inputs changed'):
+            self.build()
+        self.assertFalse((self.root / W.RECEIPT).exists())
+
+    def assert_retargeted_identity_rejected(self, kind):
+        # Equal bytes intentionally distinguish destination identity from the
+        # content-only checks that missed the reviewer's external-cache case.
+        locations = {'cache': self.sdk / 'cache', 'sysroot': self.sdk / 'cache/sysroot',
+                     'llvm': self.sdk / 'llvm', 'binaryen': self.sdk / 'binaryen',
+                     'sdk': self.sdk, 'configuration': self.sdk / '.emscripten',
+                     'clang': self.sdk / 'llvm/bin/clang', 'em-config': self.sdk / 'em-config'}
+        link = locations[kind]
+        first, second = self.base / (kind + '-first'), self.base / (kind + '-second')
+        directory = link.is_dir()
+        shutil.move(link, first)
+        if directory:
+            shutil.copytree(first, second)
+        else:
+            shutil.copy2(first, second)
+        link.symlink_to(first, target_is_directory=directory)
+        frozen_emcc = (self.sdk / 'emcc').resolve()
+        self.env.update(FIXTURE_ACTION='retarget', FIXTURE_LINK=str(link),
+                        FIXTURE_DESTINATION=str(second))
+        with self.assertRaisesRegex(ValueError, 'tool/SDK inputs changed'):
+            self.build()
+        self.assertEqual(json.loads((self.base / 'executable.json').read_text()), str(frozen_emcc))
+        self.assertFalse((self.root / W.RECEIPT).exists())
+        self.assertEqual(len(list((self.root / 'build/wasm-report').glob('attempt-*.log'))), 1)
+
+    def test_cache_identity_change_with_equal_bytes_is_rejected(self):
+        self.assert_retargeted_identity_rejected('cache')
+
+    def test_sysroot_symlink_identity_change_with_equal_bytes_is_rejected(self):
+        self.assert_retargeted_identity_rejected('sysroot')
+
+    def test_llvm_identity_change_with_equal_bytes_is_rejected(self):
+        self.assert_retargeted_identity_rejected('llvm')
+
+    def test_binaryen_identity_change_with_equal_bytes_is_rejected(self):
+        self.assert_retargeted_identity_rejected('binaryen')
+
+    def test_sdk_identity_change_keeps_frozen_emcc_and_is_rejected(self):
+        self.assert_retargeted_identity_rejected('sdk')
+
+    def test_configuration_symlink_identity_change_with_equal_bytes_is_rejected(self):
+        self.assert_retargeted_identity_rejected('configuration')
+
+    def test_compiler_symlink_identity_change_with_equal_bytes_is_rejected(self):
+        self.assert_retargeted_identity_rejected('clang')
+
+    def test_em_config_symlink_identity_change_with_equal_bytes_is_rejected(self):
+        self.assert_retargeted_identity_rejected('em-config')
+
+    def test_allowed_loader_environment_is_hashed_and_bound_to_native(self):
+        self.env['LD_LIBRARY_PATH'] = '/fixture/setup-python/lib'
+        self.prepare()
+        receipt = self.build()
+        expected = build_report.loader_environment_fingerprints(self.env)
+        self.assertEqual(receipt['configuration']['loader_environment_sha256'], expected)
+        self.assertEqual(expected, self.report['configuration']['loader_environment_sha256'])
+        self.assertNotIn(self.env['LD_LIBRARY_PATH'], json.dumps(receipt['configuration']))
+        bad = copy.deepcopy(receipt)
+        bad['configuration']['loader_environment_sha256'] = {'LD_LIBRARY_PATH': '0' * 64}
+        with self.assertRaisesRegex(ValueError, 'loader environment mismatch'):
+            W.verify_receipt(self.root, bad, self.report, target_report_sha256=W.R.digest(self.target))
+        bad['configuration']['loader_environment_sha256'] = {'LD_PRELOAD': '0' * 64}
+        with self.assertRaisesRegex(ValueError, 'loader environment mismatch'):
+            W.verify_receipt(self.root, bad, self.report, target_report_sha256=W.R.digest(self.target))
+
+    def test_loader_environment_mismatch_stops_before_native_verifier_or_compile(self):
+        self.env['LD_LIBRARY_PATH'] = '/different/setup-python/lib'
+        with self.assertRaisesRegex(ValueError, 'loader environment mismatch'):
+            self.build()
+        self.assertFalse((self.base / 'argv.json').exists())
+        self.assertFalse((self.root / W.RECEIPT).exists())
 
     def test_unsupported_native_flash_and_unknown_flags_rejected(self):
         for flags in ('-DFELUCCA_CPU2=0', '-include other.h', '-sFILESYSTEM=1', '-mystery'):
@@ -483,7 +578,7 @@ else:
 
     def test_paired_unknown_compiler_environment_fails_before_compile(self):
         for name in ('EMCC_CFLAGS', 'CPATH', 'C_INCLUDE_PATH', 'LIBRARY_PATH', 'COMPILER_PATH',
-                     'SDKROOT', 'CCC_OVERRIDE_OPTIONS', 'CLANG_CONFIG_FILE_USER_DIR'):
+                     'SDKROOT', 'CCC_OVERRIDE_OPTIONS', 'CLANG_CONFIG_FILE_USER_DIR', 'LD_PRELOAD'):
             with self.subTest(name=name):
                 self.env[name] = '/unbound/compiler/input'
                 with self.assertRaisesRegex(ValueError, 'unsupported paired compiler environment'):

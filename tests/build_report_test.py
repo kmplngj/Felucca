@@ -216,6 +216,42 @@ class ResourceReport(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
                     R.check_initial_inputs(B, {}, tools)
 
+    def test_ci_python_loader_environment_is_bound_and_changes_refused(self):
+        ci_value = '/opt/hostedtoolcache/Python/3.12.15/x64/lib'
+        expected = {'LD_LIBRARY_PATH': hashlib.sha256(ci_value.encode('utf-8')).hexdigest()}
+        with tempfile.TemporaryDirectory() as folder:
+            tc = Path(folder)
+            for name in ('pi32v2/bin/clang', 'pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy'):
+                path = tc / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture tool')
+            for name in R.HEADER_ROOTS:
+                path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
+            macros = ('#define FELUCCA_CPU2 0\n#define FELUCCA_ID "FM-1_900"\n'
+                      '#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n')
+            with patch.object(B, 'toolchain', return_value=tc), \
+                    patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'), \
+                    patch.object(B, 'tc', side_effect=lambda tool, *args: macros if tool == 'cc' else 'clang fixture'), \
+                    patch.object(R, 'input_hashes', return_value={}), \
+                    patch.dict(os.environ, {'LD_LIBRARY_PATH': ci_value}):
+                before = R.tool_fingerprints(B)
+                self.assertEqual(R.ALLOWED_LOADER_ENV, ('LD_LIBRARY_PATH',))
+                self.assertEqual(R.loader_environment_fingerprints({}), {})
+                self.assertEqual(R.loader_environment_fingerprints({'LD_LIBRARY_PATH': ''}), {})
+                self.assertEqual(R.loader_environment_fingerprints({'LD_LIBRARY_PATH': ci_value}), expected)
+                self.assertNotIn(ci_value, json.dumps(expected))
+                self.assertEqual(before['loader_environment_sha256'], expected)
+                self.assertEqual(R.configuration(B)['loader_environment_sha256'], expected)
+                R.check_initial_inputs(B, {}, before)
+                for changed in (ci_value + '/changed', ''):
+                    with self.subTest(changed=changed), patch.dict(os.environ, {'LD_LIBRARY_PATH': changed}):
+                        self.assertNotEqual(before['loader_environment_sha256'],
+                                            R.tool_fingerprints(B)['loader_environment_sha256'])
+                        with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
+                            R.check_initial_inputs(B, {}, before)
+                for forbidden in ('CPATH', 'LD_PRELOAD', 'DYLD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES'):
+                    with self.subTest(forbidden=forbidden), patch.dict(os.environ, {forbidden: 'injected'}):
+                        with self.assertRaisesRegex(ValueError, 'unsupported compiler environment: ' + forbidden):
+                            R.tool_fingerprints(B)
+
     def test_installed_headers_missing_changed_and_injected_search_paths(self):
         for name in R.COMPILER_ENV:
             with self.subTest(name=name), patch.dict(os.environ, {name: 'injected'}):

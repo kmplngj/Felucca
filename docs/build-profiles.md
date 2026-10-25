@@ -182,7 +182,7 @@ boundary reallocates the budget rather than increasing it.
 `configuration` contains exact C compiler flags, effective `FELUCCA_*` macros obtained
 by preprocessing with those flags, selective minsize state, compiler version/hash,
 linker/objdump/objcopy hashes, the installed compiler header inventories, build-time
-generator versions/lock hash, logical constants and actual SDK file hashes. The compiler's host-specific
+generator versions/lock hash, loader-environment hashes, logical constants and actual SDK file hashes. The compiler's host-specific
 `InstalledDir` line is omitted. There is no timestamp or absolute workspace path in the
 report. `build_identity` preserves clean/dirty status and revision. `input_sha256` hashes
 the entire tracked source inventory, recursive engine sources, nonignored untracked

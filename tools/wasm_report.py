@@ -235,6 +235,9 @@ def sdk_tools(emcc, root, env, log):
     if configuration is None:
         raise ValueError('SDK provenance missing: no actual configuration file')
     tools['configuration'] = configuration
+    # Retain actual destinations, including executable/configuration symlinks,
+    # so a later re-resolution compares identities as well as equal file bytes.
+    tools = {name: path.resolve() for name, path in tools.items()}
     # Include compiler drivers, sysroot, prebuilt libraries and all configured
     # LLVM/Binaryen inputs. Mutable Python bytecode, Git metadata and lock files
     # are not compiler inputs. Cache sanity receipts are machine-specific only.
@@ -243,6 +246,7 @@ def sdk_tools(emcc, root, env, log):
     # and unrelated cache roots are not inputs to this no-ports recipe.
     roots = {'emscripten': sdk, 'llvm': llvm.parent, 'binaryen': binaryen,
              'sysroot': cache / 'sysroot'}
+    roots = {name: path.resolve() for name, path in roots.items()}
     version = command([emcc, '--version'], root, env, log)
     revision = None
     emsdk = Path(env['EMSDK']) if env.get('EMSDK') else None
@@ -278,6 +282,7 @@ def tool_fingerprint(resolved):
 def snapshot(inputs, profiles, configuration, target):
     return sha({'input_sha256': inputs, 'profile_sha256': profiles,
                 'toolchain': configuration['toolchain'],
+                'loader_environment_sha256': configuration['loader_environment_sha256'],
                 'recipe_sha256': configuration['recipe_sha256'], 'target': target})
 
 
@@ -316,9 +321,16 @@ def verify_receipt(root, receipt, target_report, *, target_report_sha256):
     config = receipt['configuration']
     config_fields = {'producer_path', 'recipe_sha256', 'compile_argv', 'preprocess_argv',
                      'effective_defines', 'logical_mapping_version',
-                     'logical_configuration_sha256', 'preview', 'toolchain'}
+                     'logical_configuration_sha256', 'preview', 'toolchain',
+                     'loader_environment_sha256'}
     if not isinstance(config, dict) or set(config) != config_fields:
         raise ValueError('unsupported runtime configuration fields')
+    loader = config['loader_environment_sha256']
+    if (not isinstance(loader, dict) or set(loader) - set(R.ALLOWED_LOADER_ENV) or
+            any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value)
+                for value in loader.values()) or
+            loader != target_report['configuration']['loader_environment_sha256']):
+        raise ValueError('runtime/native loader environment mismatch')
     toolchain = config['toolchain']
     expected_tools = {'emcc_version', 'emcc_sha256', 'clang_sha256', 'wasm_ld_sha256',
                       'wasm_opt_sha256', 'sdk_release', 'sdk_content_manifest_sha256',
@@ -389,11 +401,14 @@ def build_runtime(root, target_path=None, env=None):
     os.close(descriptor)
     log = Path(name)  # Each failed/successful attempt survives subsequent retries.
     target = None
+    loader_environment = R.loader_environment_fingerprints(env)
     if target_path is not None:
         target_path = Path(target_path).resolve()
         from profile import read_json
         target = read_json(target_path)  # Reject duplicate keys before any compiler/tool work.
         json.dumps(target, allow_nan=False)  # JSON's nonfinite extensions are not evidence.
+        if loader_environment != target['configuration']['loader_environment_sha256']:
+            raise ValueError('runtime/native loader environment mismatch')
         command([sys.executable, 'tools/build_report.py', '--verify', target_path], root, env, log)
         # Frozen cache makes implicit sysroot/library regeneration a hard failure.
         env['EM_FROZEN_CACHE'] = '1'
@@ -404,7 +419,7 @@ def build_runtime(root, target_path=None, env=None):
             'OBJC_INCLUDE_PATH', 'LIBRARY_PATH', 'COMPILER_PATH', 'GCC_EXEC_PREFIX', 'SDKROOT',
             'MACOSX_DEPLOYMENT_TARGET', 'CCC_OVERRIDE_OPTIONS', 'CLANG_CONFIG_FILE_SYSTEM_DIR',
             'CLANG_CONFIG_FILE_USER_DIR', 'CLANG_NO_DEFAULT_CONFIG', 'LD_PRELOAD',
-            'LD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH',
+            'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH',
         }
         forbidden = [k for k in env if env[k] and
                      (k.startswith(('EMCC_', '_EMCC_', 'EMMAKEN_')) or
@@ -453,7 +468,8 @@ def build_runtime(root, target_path=None, env=None):
                   'compile_argv': compile_argv, 'preprocess_argv': preprocess_argv,
                   'effective_defines': {k: v for k, v in definitions.items() if k.startswith('FELUCCA_')},
                   'logical_mapping_version': 1, 'logical_configuration_sha256': sha(mapping),
-                  'preview': env.get('EMU_PREVIEW', '1') != '0', 'toolchain': toolchain}
+                  'preview': env.get('EMU_PREVIEW', '1') != '0', 'toolchain': toolchain,
+                  'loader_environment_sha256': loader_environment}
         before = snapshot(inputs, profiles, config, target_link)
     # Remove only this producer's known outputs; unknown leftovers fail closed.
     for name in FILES:
@@ -473,8 +489,13 @@ def build_runtime(root, target_path=None, env=None):
         print('emu: receipt unavailable: ' + provenance_error)
         print(f'emu: build/emu ({files[0]["bytes"]} B wasm, {identity["version"]})')
         return None
+    # Re-query from the same frozen emcc entry, not PATH and not the old resolved
+    # roots: configuration aliases/cache symlinks can move during compilation.
+    post_resolved_tools = sdk_tools(emcc, root, env, log)
     if (R.input_hashes(root) != inputs or {p: R.digest(root / p) for p in profiles} != profiles
-            or source_identity(root) != source or tool_fingerprint(resolved_tools) != toolchain
+            or source_identity(root) != source or post_resolved_tools != resolved_tools
+            or tool_fingerprint(post_resolved_tools) != toolchain
+            or R.loader_environment_fingerprints(env) != loader_environment
             or output_files(root) != files
             or (target_path is not None and R.digest(target_path) != target_link['report_sha256'])):
         raise ValueError('source/generated/profile/report/tool/SDK inputs changed during runtime build')
