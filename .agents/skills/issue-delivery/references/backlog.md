@@ -41,7 +41,7 @@ write or trusting prior results. Do not commit transient queue snapshots.
 2. Implement and perform focused checks. Delegate only independent work using the
    main skill's model/effort policy and explicit file/region ownership.
 3. Freeze the candidate and complete integrated validation, documentation and PR
-   user-test instructions. Obtain reviews and inspect current-head CI.
+   user-test instructions. Complete required review and inspect current-head CI.
 4. Resolve findings and recheck the updated candidate. Merge only if authorized and
    every gate in the main skill passes. Otherwise retain the exact pending gate and
    a reviewable handoff, then advance another independent package.

@@ -7,6 +7,21 @@ provides Team features without a paid subscription. This differs from the ordina
 Free plan, which provides PR summaries. Configuration cannot upgrade a plan or
 remove the service's [rate limits](https://docs.coderabbit.ai/management/rate-limits).
 
+## Merge policy
+
+Codex Review is the required AI review in the
+[issue-delivery workflow](../.agents/skills/issue-delivery/SKILL.md). CodeRabbit
+provides advisory feedback; automatic reviews remain enabled. Its availability,
+quota reset or completion is not a merge prerequisite.
+
+Inspect available CodeRabbit findings against the code and requirements. Resolve
+confirmed correctness issues before merging and explain inapplicable suggestions
+with evidence. Advisory status does not excuse a known defect. Required Codex
+coverage, CI and physical hardware acceptance still apply.
+
+A successful CodeRabbit status can accompany a skipped or rate-limited review.
+Record that as unperformed review, not as reviewed or approved.
+
 ## Review coverage
 
 Ready PRs targeting the default branch (`main`) receive an automatic review and

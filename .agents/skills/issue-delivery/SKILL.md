@@ -177,26 +177,28 @@ failures must be identified with evidence, not presented as a passing suite.
 
 ## Complete the review loop
 
-For an implementation-ready PR with authorized remote writes, obtain Codex Review
-and CodeRabbit Review where available. Check existing reviews and repository review
-configuration first; reuse current coverage and request deliberately rather than
-posting repeated commands. Follow [the CodeRabbit guide](../../../.github/CODERABBIT.md).
+For an implementation-ready PR with authorized remote writes, obtain Codex Review.
+Automatic CodeRabbit feedback is advisory under
+[the CodeRabbit guide](../../../.github/CODERABBIT.md). Inspect available relevant
+feedback without waiting for CodeRabbit to run or its quota to reset. Check existing
+reviews and repository review configuration first; reuse current coverage and
+request deliberately rather than posting repeated commands.
 Review requests belong to the authorized delivery workflow; ordinary status comments
 must not accidentally address bots or copy their command handles.
 
-Wait for results and inspect all relevant findings and threads against the current
-code and requirement. Apply sound corrections; explain inaccurate or inapplicable
+Wait for required review results and inspect all relevant findings and threads
+against the current code and requirement. Apply sound corrections; explain inaccurate or inapplicable
 suggestions with evidence. Rerun affected checks, verify CI on the new head and
 batch related corrections before requesting fresh review after material changes.
 Retain coverage identity: a review of an earlier head does not automatically cover
 subsequent changes.
 
-When review/CI is unavailable, failing or persistently pending, record the exact
-missing gate and move to independent work. Missing results are not approval;
+When required review/CI is unavailable, failing or persistently pending, record
+the exact missing gate and move to independent work. Missing results are not approval;
 avoid polling or requesting reviews indefinitely without new evidence.
-For autonomous merging, both Codex and CodeRabbit reviews are required unless an
-explicit repository/user policy accepts an alternative. Service unavailability
-leaves that gate pending rather than making the review optional.
+Codex unavailability leaves the required review pending unless an explicit
+repository/user policy accepts an alternative. CodeRabbit availability is not a
+merge prerequisite.
 
 ## Merge gate and hardware handoff
 
