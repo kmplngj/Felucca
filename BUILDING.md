@@ -399,6 +399,15 @@ Logs and the actual bundle are retained under `build/ci/native-bundle/run-*/`.
 The controlled pair uses commit identity without the CI PR display label; it does
 not claim byte equality with the outer PR-labelled firmware or device acceptance.
 
+The optional [offline level audit](docs/loudness-audit.md) uses the `audit`
+dependency group and an isolated native host renderer. Its focused checks run with
+`uv run --locked --group audit python tests/loudness_audit_test.py` and in the
+separate **Host loudness audit** workflow; they need no target SDK or device.
+On this Mac, run them through the storage guard. The audit retains source,
+compiler, sample-rate and capture provenance alongside its measurements and
+bounded audition files. Host levels do not qualify physical DAC/USB levels or
+authorize changing factory sounds.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for

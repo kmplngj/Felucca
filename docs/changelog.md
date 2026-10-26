@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- [Offline factory-level audit tooling](loudness-audit.md) captures selected native
+  sounds, reports stereo loudness/headroom and retains fixed-scale audition WAVs.
+  It changes no factory levels; role assignment, listening decisions and physical
+  DAC/USB qualification remain separate.
+
 - Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
   exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
   Offline verification checks artifact correspondence; full host/browser/device acceptance,
