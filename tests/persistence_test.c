@@ -592,15 +592,15 @@ static int durability_test(void)
  * added to project_t fails project_codec.h's size check until it is listed, and then fails this test until all three
  * handle it (or it is named below). */
 static project_t fl_a, fl_b, fl_c;
-enum { FL_RESTORE = 1, FL_CAPTURE = 2, FL_SIG = 4, FL_ALL = 7 };
+enum { FL_RESTORE = 1, FL_CAPTURE = 2, FL_SIG = 4, FL_ALL = 7, FL_REJECTED = 8 };
 /* restore b, capture it: which of the three carried the change from fl_a (field bytes off..off+n of project_t) */
 static uint32_t fl_carries(uint32_t off, uint32_t n)
 {
     uint32_t sig_a, got = 0;
     fl_a.sum = proj_sum(&fl_a); fl_b.sum = proj_sum(&fl_b);
-    if (project_restore_runtime(&fl_a)) return 0;
+    if (project_restore_runtime(&fl_a)) return FL_REJECTED;
     sig_a = autosave_sig();
-    if (project_restore_runtime(&fl_b)) return 0;
+    if (project_restore_runtime(&fl_b)) return FL_REJECTED;
     project_capture(&fl_c);
     if (!memcmp((const uint8_t *)&fl_c + off, (const uint8_t *)&fl_b + off, n)) got |= FL_RESTORE | FL_CAPTURE;
     if (autosave_sig() != sig_a) got |= FL_SIG;

@@ -112,7 +112,7 @@ int main(int argc, char **argv)
     static union { uint32_t align; uint8_t raw[4096]; project_store_t st; } in;
     static project_store_t st2;
     static const uint32_t LEN[11] = {3840u, 3648u, 3584u, 3388u, 3352u, 2680u, 2584u, 2552u, 688u, 3839u, 3841u};
-    uint32_t iters = argc > 1 ? (uint32_t)atoi(argv[1]) : 20000u, i, j, k, n, decoded = 0, current = 0;
+    uint32_t iters = argc > 1 ? (uint32_t)atoi(argv[1]) : 20000u, i, j, k, n, decoded = 0, current = 0, packed = 0;
     if (argc > 2) rs = (uint32_t)atoi(argv[2]) | 1u;
     for (n = 0; n < 4000u; n++)
         need(proj_accepts_length(n) == (n == 3840u || n == 3648u || n == 3584u || n == 3388u), "proj_accepts_length", n);
@@ -133,6 +133,7 @@ int main(int argc, char **argv)
             a.motion.count = a.motion.count > 64u ? 64u : a.motion.count;
             n = old_pack(in.raw, &a, m, np);
             if (!n) continue;
+            packed++;
         } else {
             if (!proj_encode(&in.st, &a)) { need(0, "a valid project encodes", i); continue; }
             n = PROJ_STORE_SIZE;
@@ -165,7 +166,8 @@ int main(int argc, char **argv)
             need(proj_decode(&d, &st2, sizeof st2) && !memcmp(&c, &d, sizeof c), "encode -> decode: the same project", i);
         }
     }
-    printf("fuzz_proj %s: %u iterations, %u decoded (%u CURRENT), %u failures\n", fails ? "FAILED" : "ok", iters, decoded,
-           current, fails);
+    need(iters < 400u || packed > iters / 8u, "legacy packs must not silently disappear", iters);
+    printf("fuzz_proj %s: %u iterations, %u decoded (%u CURRENT), %u legacy packs, %u failures\n",
+           fails ? "FAILED" : "ok", iters, decoded, current, packed, fails);
     return fails != 0;
 }
