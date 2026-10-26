@@ -8,6 +8,15 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [fm1-dock adoption plan](https://github.com/kmplngj/Felucca/issues/701)
+registers `joakimeriksson/fm1-dock` main as a pending source, repository ID
+`1428799110`, pinned at `e177e83e560483f419baad80511d9dd1acfdeffe` (40 reachable
+commits in its complete non-shallow DAG, zero credited assessments). After ordinary
+review brings this registration to main and the canonical state registry, the existing
+runner must reverify identity, branch, immutable pin and full history before
+initialization. Pending registration is not active tracking or completed review
+coverage; this adds no schedule or automation.
+
 The [Matryoshka adoption review](matryoshka-adoption-plan-2026-10-25.md), tracked in
 [Felucca #672](https://github.com/kmplngj/Felucca/issues/672), proposes a pending
 `glvno/matryoshka` main registration at
