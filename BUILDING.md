@@ -447,6 +447,14 @@ fixtures require incompatible signatures across the UI, settings and browser
 adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
+The native UI tests and their consumers share `tests/ui_harness.h`: the real
+firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
+blank-frame observers, power-on setup and panel/keyboard helpers. Define any
+consumer-specific IRQ, boot or drawing hooks before including it. The UI scenario
+entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
+for its LCD-submission ordering assertions. Consumers include the harness directly;
+they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
+
 The backup and FM6-bank tests share `tests/host_nor.h`, including their sanitizer
 builds. This existing NOR model only clears programmed bits, rejects 256-byte page
 wrapping, and models sticky power cuts during programming or half an erase. Its
