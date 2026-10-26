@@ -92,7 +92,7 @@ recorded in the linked reports, rather than every current build or device.
   support targeted debugging; normal FM-1 builds leave these probes disabled.
   The synthetic reproducer adds a test workload, not an audio fix. See the
   [capability overview and activation requirements](diagnostics.md#diagnostic-capabilities).
-- **Bounded developer chip probes:** default-off `FELUCCA_CHIP_PROBES` builds
+- **Bounded developer chip probes:** default-off `FELUCCA_CHIP_PROBES` standard-profile builds
   expose deterministic control/integer and owned RAM/XIP stride measurements through
   USB SERIAL, with raw timer ticks, checksums and a separate bounded capture client.
   Sampled guards refuse visible busy states such as playback, count-in, active

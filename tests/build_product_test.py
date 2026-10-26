@@ -43,6 +43,16 @@ class Resolve(unittest.TestCase):
             with patch.dict(os.environ, {flag: "0"}):
                 self.assertEqual(B.resolve(["--release", "1.0"])["product"], "FM-1_910")
 
+    def test_chip_probes_supported_profile(self):
+        with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "1", "FELUCCA_PROFILE": "standard"}):
+            self.assertEqual(B.resolve([])["name"], "felucca.fwsc")
+        for profile in ("macro", "reduced-lofi"):
+            with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "1", "FELUCCA_PROFILE": profile}):
+                with self.assertRaisesRegex(SystemExit, "FELUCCA_CHIP_PROBES=1 requires FELUCCA_PROFILE=standard"):
+                    B.resolve([])
+            with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "0", "FELUCCA_PROFILE": profile}):
+                self.assertEqual(B.resolve([])["name"], f"felucca-{profile}.fwsc")
+
     def test_default_unchanged(self):
         c = B.resolve([])
         self.assertEqual((c["product"], c["version"], c["name"], c["explicit"]), ("FM-1_900", None, "felucca.fwsc", False))
@@ -824,6 +834,15 @@ class NoJobs(unittest.TestCase):
             with self.assertRaises(SystemExit): B.main([])
         self.assertEqual(self.started(), [])
         self.assertEqual(self.packed, [])
+
+    def test_unsupported_chip_probe_profile_starts_no_jobs(self):
+        for profile in ("macro", "reduced-lofi"):
+            with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "1", "FELUCCA_PROFILE": profile}):
+                with self.assertRaisesRegex(SystemExit, "FELUCCA_CHIP_PROBES=1 requires FELUCCA_PROFILE=standard"):
+                    B.main([])
+            self.assertEqual(self.started(), [])
+            self.assertEqual(list(self.out.iterdir()), [])
+            self.assertEqual(self.packed, [])
 
     def test_reduced_release_requires_distinct_identity(self):
         with patch.dict("os.environ", {"FELUCCA_PROFILE": "reduced-lofi"}):

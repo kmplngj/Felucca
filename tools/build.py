@@ -155,6 +155,9 @@ def resolve(argv):
     profile_name = os.environ.get("FELUCCA_PROFILE", "standard")
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", profile_name):
         raise SystemExit("invalid FELUCCA_PROFILE name")
+    if "FELUCCA_CHIP_PROBES" in diag and profile_name != "standard":
+        raise SystemExit("FELUCCA_CHIP_PROBES=1 requires FELUCCA_PROFILE=standard; "
+                         "MACRO exceeds the XIP limit and other profiles are unqualified")
     if profile_name != "standard":
         if a.release and (a.product is None or not tag):
             raise SystemExit("non-standard release profile requires a distinct --product identity")

@@ -9,8 +9,15 @@ size, cold-cache state, isolated instruction latency or optimization benefit.
 ## Build and ownership
 
 Use the normal build prerequisites in [BUILDING](../BUILDING.md). Build the exact
-reviewed candidate with `FELUCCA_CHIP_PROBES=1 uv run --locked --group build ./build.sh`.
-`FELUCCA_CDC=1` is required; `--release` refuses the probe flag. The normal default
+reviewed candidate with:
+
+```sh
+FELUCCA_PROFILE=standard FELUCCA_CHIP_PROBES=1 uv run --locked --group build ./build.sh
+```
+
+This slice supports only the standard profile (CPU2 compiled in or out). The build
+refuses the probe flag with MACRO or another nonstandard profile before starting
+generation or compilation. `FELUCCA_CDC=1` is required; `--release` also refuses it. The normal default
 is `0`, compiling out the command, tables, scratch and kernels. No boot/main-loop
 idle/playback hook exists. Keep a normal image to restore after testing.
 
@@ -31,12 +38,34 @@ budget of 2,400,000 ticks checked between kernels; there is no IRQ-off region. T
 fixed iteration bound and existing watchdog remain relevant if the timer stops.
 This is not a verified wall-time bound on unmeasured hardware.
 
-All timing finishes before formatted output. Successful scratch consists of a
+All timing finishes before formatted output. Source declarations reserve a
 1,024-byte RAM table, 216 bytes of sample records and a four-byte completed count;
-there is a matching 1,024-byte const XIP table. Compiler/linker code, stack and total
+there is a matching 1,024-byte const XIP table. These are source sizes, not linked
+allocation deltas; compiler elimination, narrowing and padding can change them. Compiler/linker code, stack and total
 resource deltas must be taken from the matching target artifacts, not these source
 sizes. There is no NOINIT storage or RAMTEXT kernel. The code runs in normal XIP;
 RAM-executed instruction isolation remains future scope.
+
+## Target allocation evidence
+
+Coordinator builds on 2026-10-26 at `82cd7f92645afe5ad724b3eaa87e71889fff7383`,
+using JieLi Clang 4.0.1 and the pinned build inputs, measured the following linked
+allocations. These are build/static results, not physical timing or stack use.
+
+| Profile / flags | App bytes | RAM data+bss bytes | Result |
+| --- | ---: | ---: | --- |
+| Standard, probes off, CPU2 default | 496,148 | 62,392 | Same allocations as the unchanged base |
+| Standard, probes on, CPU2 default | 498,872 | 63,624 | +2,724 app / +1,232 RAM bytes |
+| Standard, probes on, `FELUCCA_CPU2=0` | 493,692 | 57,012 | Build/resource checks passed |
+| MACRO, probes off | 580,204 | 62,392 | Unchanged; build/resource checks passed |
+| MACRO, probes on | — | — | Link refused: XIP overflowed by 1,368 bytes |
+
+The failed MACRO link specifically reported that section `.ram_text` would not fit
+in region `XIP`; this identifies exhausted load-image space, not a probe RAMTEXT
+allocation. No budget was relaxed. The explicit standard-profile guard replaces
+that unsupported attempt with an early configuration refusal. Other profiles remain
+unqualified. Preserve the matching logs, ELF and resource report when reproducing
+these measurements; later code/toolchain/flag changes require fresh evidence.
 
 ## Kernels and protocol
 
