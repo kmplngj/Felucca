@@ -103,7 +103,7 @@ so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is k
 | --- | --- | --- | --- |
 | `0x0000..0x4000` | SPL, `isd_config.ini`, JLFS head | the update loader writes only `[0x4000, 0x93000)` and states the head "is never written" ([ldr_core.c:12-22](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L12-L22)); the package's flash image carries a head for the stock installer ([fm1pkg_make.py:106-127](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/tools/fm1pkg_make.py#L106-L127)) | Never written by the app or the loader |
 | `0x4000..0x93000` | The firmware image (`APP_SLOT` 581,564 B incl. the SDK files); the loader rewrites it on every update | ldr_core.c:15, `LDR_APP_HI` | App-flash spare (111,124 B now) is **not** persistent-data space: every update rewrites the whole area, and the app region is read through the cipher (`fl_plain_window_init` makes only flash above `0x93000` plaintext) |
-| `0x93000..0x97000` | 4 sectors between the image and Felucca's store; the SPL scans for update records here | ldr_core.c:32-36 | Not in `FL_STORE_OK`; contents on stock-flashed devices are **unverified** |
+| `0x93000..0x97000` | 4 sectors between the image and Felucca's store; native loader cleanup scans their tails; external SPL scan rules remain unverified | ldr_core.c:32-36 | Not in `FL_STORE_OK`; contents on stock-flashed devices are **unverified** |
 | `0xE8000..0xFC000` | 20 sectors: the stock firmware's OTA VM backup; its update record at `0xE8F00` | [fm1_flash.h:47](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/hal/fm1_flash.h#L47), [ldr_core.c:34-35](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L34-L35) | Never written. The stock-return path means stock code may read it |
 | `0xFF000..0x100000` | JLFS `key_mac` entry | [fm1pkg_make.py:127](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/tools/fm1pkg_make.py#L127) | Never written (`FL_GLOB_HI`) |
 | `0xE0000..0xE5000` | OTA staging | ota.c | Not data space: any non-blank byte at `0xE0000` or `0xE4F00` is erased at boot as a stale update |
@@ -111,7 +111,7 @@ so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is k
 Two rules follow from the update path. First, the loader protects `0x97000..0xE0000` entirely
 ([ldr_core.c `LDR_DATA_LO`/`LDR_DATA_HI`](../firmware/loader/ldr_core.c),
 and `tests/ldr_test.c` counts any erase there as a bad range), so new objects that stay inside that
-window need **no loader, guard-window or SPL change**. Second, the external SPL has a separate
+window need **no native loader or guard-window change**. Second, the external SPL has a separate
 boot-time update-record scan whose exact bounds, required fields and selection rules remain
 unverified. Felucca's loader cleanup examines `sector + 0xF00` for a nonzero CRC16 over bytes 2..79
 and u16 `0x5441` at +6 ([ldr_core.c `ldr_session`](../firmware/loader/ldr_core.c)). Object payloads
