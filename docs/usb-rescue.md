@@ -135,11 +135,13 @@ keys, paths and raw contents; retain raw dumps privately. See the exact
 [file-only grammar and result limits](https://github.com/kmplngj/m-flasher/blob/f0ff8e8556df7bac85fcff303000e124ed57246b/docs/saved-diagnostics.md).
 
 The saved-file report classifies known boot containers and app/data structures.
-It does not replace #619's exact V15/V16 boot-area survey or #618's live clock
-evidence. The more specific `fm1_bootarea.py` survey remains in unmerged
-[PR #622](https://github.com/kmplngj/Felucca/pull/622); it is not a current-main
-command. V16/cross-bootloader return and the matching WebApp candidate remain
-separate from the accepted loader matrix above.
+For the more specific SPL/header CRCs, chip key and declared clock fields, use
+Felucca's [offline boot-area survey](boot-area-survey.md) on an existing private
+dump or package, with the device disconnected. That utility is extracted from
+PR #622; the donor's installer/runtime changes and #619's backup-first physical
+survey remain separate. Saved bytes do not establish #618's live clock evidence.
+V16/cross-bootloader return and the matching WebApp candidate remain separate
+from the accepted loader matrix above.
 
 ### Enter ROM and preserve a backup
 
