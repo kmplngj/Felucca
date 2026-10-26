@@ -161,6 +161,20 @@ score from 14 to 220. With the boundaries preserved, the default build retains
 the original 344/137/82 total instructions and 14/134/204 scores for those three
 functions, with no budget changes.
 
+The outlined hot USB callees also have independent optional budgets:
+`uac_service` 13, `sie_rd` 5 and `sie_wr` 5. Clean native builds at
+`3015b2bcaa28d458130a962591daef13b2cb4e24`, with JieLi Clang 4.0.1, SDK
+AC79NN 1.2.1 and selective size enabled, measure 11/5/5 for standard and MACRO,
+13/5/5 for CPU2-off, and absent/5/5 for UAC-off. The unchanged listings retain their
+hash-bound profile sidecars. These are loop-span heuristic scores; callers do not
+include callee bodies.
+The fixtures keep the USB/TIMER5 callers fixed and grow only one callee past 10%
+(15/6/6), requiring that callee's failure without rewriting budgets. Absent symbols
+remain permitted for disabled/inlined configurations; straight-line work outside
+backward spans is still outside this metric. No runtime annotation, caller/engine
+budget, loader or device behavior changes. This coverage does not establish USB
+service time, cycles, scan/deadline margins or a physical speedup.
+
 The combined optimization integration calibrates only the optional `mix_part`
 score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
 the same JieLi Clang 4.0.1 default build has 679→684 total instructions and
