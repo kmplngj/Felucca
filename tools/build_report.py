@@ -236,10 +236,12 @@ def artifact_paths(package):
 
 def write(build, evidence, package, inputs, config):
     measured, stacks = resources(build, evidence)
+    from font_resources import linked
+    fonts = linked(build.SRC, build.GEN, evidence[2])
     if input_hashes(build.SRC) != inputs or configuration(build) != config:
         raise ValueError('build inputs/configuration changed during target build')
     artifacts = artifact_paths(package)
-    report = {'schema_version': 1, 'kind': 'felucca-post-link-resource-report',
+    report = {'schema_version': 2, 'kind': 'felucca-post-link-resource-report',
               'validation': 'production build guards passed', 'package': package,
               'build_identity': build.BUILD_IDENTITY,
               'configuration': config, 'input_sha256': inputs,
@@ -247,6 +249,7 @@ def write(build, evidence, package, inputs, config):
               'inputs_sha256': hashlib.sha256(canonical(inputs)).hexdigest(),
               'artifact_sha256': {name: digest(build.SRC / name) for name in artifacts},
               'resources': measured, 'stack_reservations': stacks,
+              'native_font_resources': fonts,
               'limitations': ['Exact linked allocation for these inputs and artifacts only',
                               'No live stack watermark, CPU/deadline measurement or cost prediction',
                               'Shared RAM/POOL split and worker stacks must not be double-counted']}
@@ -254,9 +257,9 @@ def write(build, evidence, package, inputs, config):
     return report
 
 
-def verify(root, report, *, config, measured):
+def verify(root, report, *, config, measured, fonts=None):
     """Reject stale artifacts or source/config evidence; no capacity rules are reimplemented."""
-    if (report.get('schema_version') != 1 or report.get('kind') != 'felucca-post-link-resource-report'
+    if (report.get('schema_version') not in (1, 2) or report.get('kind') != 'felucca-post-link-resource-report'
             or report.get('validation') != 'production build guards passed'):
         raise ValueError('unsupported resource report')
     if not isinstance(report.get('artifact_sha256'), dict):
@@ -284,6 +287,8 @@ def verify(root, report, *, config, measured):
         raise ValueError('stale resource report configuration')
     if (report.get('resources'), report.get('stack_reservations')) != measured:
         raise ValueError('stale resource report resource/stack measurements')
+    if report['schema_version'] == 2 and (fonts is None or report.get('native_font_resources') != fonts):
+        raise ValueError('stale resource report native font measurements')
     if report.get('build_identity') != json.loads((root / 'build/gen/build-identity.json').read_text()):
         raise ValueError('stale resource report build identity')
 
@@ -323,7 +328,11 @@ def main():
         if dis != (build.OUT / 'felucca.dis').read_text():
             raise ValueError('resource report disassembly differs from ELF')
         evidence = ((build.OUT / 'felucca.bin').read_bytes(), hdr, syms, dis, rt)
-        verify(build.SRC, report, config=configuration(build), measured=resources(build, evidence))
+        fonts = None
+        if report.get('schema_version') == 2:
+            from font_resources import linked
+            fonts = linked(build.SRC, build.GEN, syms)
+        verify(build.SRC, report, config=configuration(build), measured=resources(build, evidence), fonts=fonts)
         print('resource report: artifacts, inputs and configuration match')
     except (KeyError, TypeError, OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.error(str(error))

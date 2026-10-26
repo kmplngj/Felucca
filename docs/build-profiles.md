@@ -196,7 +196,7 @@ selection API, per-engine marginal cost estimates, browser builder, new engine p
 GPL collection integration. Those later parts of [#465](https://github.com/kmplngj/Felucca/issues/465)
 remain open. Exporting a recipe does not establish its hardware qualification.
 
-Every successful target build writes schema version 1, kind
+Every successful target build writes schema version 2, kind
 `felucca-post-link-resource-report`, to `build/resource-report.json` and copies the
 canonical contract beside it. `resources` records each region's origin, capacity,
 allocated span, spare bytes, enforced minimum spare and margin after that minimum.
@@ -214,6 +214,15 @@ linked symbols. CPU2 builds also record the worker's user array (including its g
 and exception array; these are already included in RAM and must not be added again.
 Reservations are not live stack watermarks. RAM and POOL share SRAM; changing their
 boundary reallocates the budget rather than increasing it.
+
+`native_font_resources` embeds the deterministic native font manifest and checks
+actual `AF_*` symbol sizes against its reviewed 4,630 B array/descriptor bound.
+Keycap, icon, emitted decoder/ramp code and ramp-cache symbols are grouped separately,
+with section placement. These named-symbol sums exclude padding and are subsets of
+the existing image/region totals. Unlocated optional groups have `bytes: null`;
+inlined decoder work remains in its callers. The [font policy](../BUILDING.md#build)
+pins assets, generator inputs, glyph metrics and shared S/M payloads. Version 1
+reports retain their original verifier contract without this field.
 
 `configuration` contains exact C compiler flags, effective `FELUCCA_*` macros obtained
 by preprocessing with those flags, selective minsize state, compiler version/hash,

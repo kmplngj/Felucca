@@ -144,6 +144,35 @@ class Bundles(unittest.TestCase):
             self.create(runtime_unavailable='build_failed')
         self.assertEqual(M.verify(self.destination), first)
 
+    def test_schema_two_fonts_bound_and_reproduced_with_legacy_support(self):
+        # Existing fixtures above exercise historical v1. These simulated target
+        # reports test bundle binding; real font extraction has its own fixtures.
+        for root, report in ((self.root, self.report), (self.reproduction, self.reproduced)):
+            path = root / 'build/gen/ui-font-manifest.json'
+            font = {'schema_version': 1, 'kind': 'font binding fixture'}
+            path.write_text(json.dumps(font))
+            report.update(schema_version=2, native_font_resources={'manifest': font, 'groups': {}})
+            report['input_sha256']['build/gen/ui-font-manifest.json'] = M.digest(path)
+            report['inputs_sha256'] = hashlib.sha256(R.canonical(report['input_sha256'])).hexdigest()
+            (root / 'build/resource-report.json').write_text(json.dumps(report))
+        self.create()
+        M.verify(self.destination)
+        changed = copy.deepcopy(self.report)
+        changed.pop('native_font_resources')
+        with self.assertRaisesRegex(ValueError, 'native font resources'):
+            M.validate_report(self.root, changed, self.metadata, self.marker_hash)
+        changed = copy.deepcopy(self.report)
+        changed['native_font_resources']['manifest'] = {}
+        with self.assertRaisesRegex(ValueError, 'native font resources'):
+            M.validate_report(self.root, changed, self.metadata, self.marker_hash)
+        path = self.destination / 'reproduction/build/resource-report.json'
+        changed = M.read_json(path)
+        changed['native_font_resources']['groups']['extra'] = {}
+        path.write_bytes(M.canonical(changed))
+        self.reseal(lambda manifest: None)
+        with self.assertRaisesRegex(ValueError, 'reproduction configuration/resources differ'):
+            M.verify(self.destination)
+
     def test_revision_profile_and_dirty_source_refuse_before_external_checks(self):
         for args in [{'allowed_revision': self.revision[:8]}, {'allowed_revision': 'f' * 40}, {'profile_name': 'arbitrary'}]:
             with self.subTest(args=args), self.assertRaises(ValueError): self.create(**args)

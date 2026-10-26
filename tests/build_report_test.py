@@ -28,6 +28,9 @@ class ResourceReport(unittest.TestCase):
         environment = patch.dict(os.environ, {'FELUCCA_CRASH_CTX': '0'})
         environment.start()
         self.addCleanup(environment.stop)
+        fonts = patch('font_resources.linked', return_value={})
+        fonts.start()
+        self.addCleanup(fonts.stop)
         cpu = patch.object(B, 'CPU2', False)
         cpu.start()
         self.addCleanup(cpu.stop)
@@ -133,27 +136,32 @@ class ResourceReport(unittest.TestCase):
                 first = (root / 'build/resource-report.json').read_bytes()
                 R.write(B, self.evidence(), package, inputs, config)
                 self.assertEqual(first, (root / 'build/resource-report.json').read_bytes())
-                R.verify(root, before, config=config, measured=measured)
+                R.verify(root, before, config=config, measured=measured, fonts={})
+                legacy = copy.deepcopy(before)
+                legacy['schema_version'] = 1
+                legacy.pop('native_font_resources')
+                R.verify(root, legacy, config=config, measured=measured)
                 for mutate in (
                         lambda r: r['artifact_sha256'].pop('build/felucca.elf'),
                         lambda r: r['resources']['RAM'].update(used_bytes=-1),
+                        lambda r: r.pop('native_font_resources'),
                         lambda r: r.pop('resources'), lambda r: r.pop('stack_reservations'),
                         lambda r: r.update(build_identity={'revision': 'false'}),
                         lambda r: r['configuration'].update(actual='other')):
                     changed = copy.deepcopy(before)
                     mutate(changed)
                     with self.assertRaises(ValueError):
-                        R.verify(root, changed, config=config, measured=measured)
+                        R.verify(root, changed, config=config, measured=measured, fonts={})
                 with self.assertRaisesRegex(ValueError, 'configuration'):
-                    R.verify(root, before, config={'actual': 'different'}, measured=measured)
+                    R.verify(root, before, config={'actual': 'different'}, measured=measured, fonts={})
                 elf = root / 'build/felucca.elf'
                 elf.write_text('stale')
                 with self.assertRaisesRegex(ValueError, 'felucca.elf'):
-                    R.verify(root, before, config=config, measured=measured)
+                    R.verify(root, before, config=config, measured=measured, fonts={})
                 elf.write_text('build/felucca.elf')
                 source.write_text('changed dirty input')
                 with self.assertRaisesRegex(ValueError, 'source.c'):
-                    R.verify(root, before, config=config, measured=measured)
+                    R.verify(root, before, config=config, measured=measured, fonts={})
 
     def test_initial_source_inventory_excludes_stale_generated_files(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -316,6 +324,7 @@ class ResourceReport(unittest.TestCase):
                 "    return {}\n"
                 "def check_outputs(outputs, path): pass\n"
                 "def contract_json(root): return 'contract\\n'\n")
+            (tools / 'font_resources.py').write_text('def linked(root, gen, syms): return {}\n')
             (tools / 'build_identity.py').write_text('def check(root, gen): pass\n')
             (root / 'firmware/engines').mkdir(parents=True)
             shutil.copyfile(ROOT / 'firmware/app.ld', root / 'firmware/app.ld')

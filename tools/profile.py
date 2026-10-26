@@ -382,6 +382,8 @@ def main():
         outputs=generated(ROOT,args.profile,font_variant)
         if args.check:
             check_outputs(outputs, args.out)
+            from font_resources import check_generated
+            check_generated(ROOT, args.out)
             from build_identity import check as check_identity
             check_identity(ROOT, args.out)
         else:
