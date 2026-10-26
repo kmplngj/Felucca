@@ -103,6 +103,31 @@ class SelectionTest(unittest.TestCase):
     def test_large_diff_is_not_truncated(self):
         self.assertEqual(self.suites(["docs/change.md"] * 4000 + ["firmware/src/audio.c"]), {"full"})
 
+    def test_draft_feedback_is_explicitly_partial_and_ready_requires_full(self):
+        selection = {'suites': changes.select(['firmware/src/ui_draw.c']),
+                     'paths': ['firmware/src/ui_draw.c', 'README.md']}
+        stage, units = changes.feedback('pull_request', {'pull_request': {'draft': True}}, selection)
+        self.assertEqual(stage, 'quick')
+        self.assertIn('ui_render', units)
+        for event, payload, release in (
+                ('pull_request', {'pull_request': {'draft': False}}, False),
+                ('pull_request', {}, False), ('push', {}, False),
+                ('pull_request', {'pull_request': None}, False),
+                ('workflow_dispatch', {}, False),
+                ('pull_request', {'pull_request': {'draft': True}}, True)):
+            self.assertEqual(changes.feedback(event, payload, selection, release), ('full', []))
+
+    def test_high_risk_unknown_and_mixed_draft_changes_keep_full_validation(self):
+        for extra in ('firmware/src/core.h', 'firmware/src/storage.c',
+                      'firmware/src/console.c', 'firmware/src/voice.c',
+                      'firmware/engines', 'firmware/src/eng_macro.c',
+                      'tools/ci_changes.py', 'unknown.c', 'tools/fm1_diagnostics.py'):
+            paths = ['firmware/src/ui_draw.c', extra]
+            with self.subTest(path=extra):
+                self.assertEqual(changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}},
+                    {'suites': changes.select(paths), 'paths': paths}), ('full', []))
+
     def test_manual_release_and_unknown_events_force_full(self):
         for event in ("workflow_dispatch", "schedule", "", "pull_request_target"):
             self.assertTrue(changes.plan(event, {})["suites"]["full"])
@@ -126,7 +151,9 @@ class SelectionTest(unittest.TestCase):
             result = subprocess.run([sys.executable, str(Path(changes.__file__))],
                                     env=env, capture_output=True, text=True, check=True)
             self.assertTrue(json.loads(result.stdout)["suites"]["full"])
-            self.assertEqual(output.read_text(), "full=true\npython=false\nbackup=false\nemulator=false\n")
+            self.assertTrue(output.read_text().startswith("full=true\npython=false\nbackup=false\nemulator=false\n"))
+            self.assertEqual(json.loads(result.stdout)['stage'], 'full')
+            self.assertIn('stage=full\nfocus=\nmatrix=', output.read_text())
             self.assertIn("full: run", summary.read_text())
 
 

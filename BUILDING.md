@@ -386,6 +386,28 @@ This uses the native browser-emulator integration on Linux/macOS and needs no ha
 uv run --locked --group build tests/run_tests.sh
 ```
 
+In upstream GitHub Actions (`kmplngj/Felucca`), the `profiles` unit also runs
+`tests/native_bundle_integration.py`:
+two isolated real target builds (Git control and verified Git-free source), followed
+by native bundle creation/verification and independent stable-key metadata checks.
+It uses `build.sh` and its normal toolchain/SDK defaults; the original CI build and runtime stay untouched.
+Local `profiles` remains a host-only check. To run the native proof explicitly after
+a fresh matching target build in a clean committed checkout, use
+`uv run --locked --group build python tests/native_bundle_integration.py`.
+Stale reports or missing build prerequisites fail.
+Logs and the actual bundle are retained under `build/ci/native-bundle/run-*/`.
+The controlled pair uses commit identity without the CI PR display label; it does
+not claim byte equality with the outer PR-labelled firmware or device acceptance.
+
+The optional [offline level audit](docs/loudness-audit.md) uses the `audit`
+dependency group and an isolated native host renderer. Its focused checks run with
+`uv run --locked --group audit python tests/loudness_audit_test.py` and in the
+separate **Host loudness audit** workflow; they need no target SDK or device.
+The audit retains source,
+compiler, sample-rate and capture provenance alongside its measurements and
+bounded audition files. Host levels do not qualify physical DAC/USB levels or
+authorize changing factory sounds.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for
@@ -404,6 +426,27 @@ suite fail. Interrupting the runner terminates its worker process groups. Run
 simultaneous full suites in separate worktrees: a checkout lock protects shared
 generated outputs. Generate assets before starting a suite, and leave sources,
 assets and build flags unchanged while it runs.
+
+For development feedback, select named units and their prerequisite closure:
+
+```sh
+uv run --locked --group build python tests/test_jobs.py tests/run_tests.sh --preflight --select ui,ui_render --ai-output
+```
+
+This writes an explicitly focused report. It cannot satisfy strict full-suite
+verification. Unknown units fail instead of silently reducing coverage.
+
+CI runs the complete unit plan across two independent runners. Each uses
+`tests/test_jobs.py tests/run_tests.sh --preflight --shard 1/2 --cohort ID`
+(the other uses `2/2`), a fresh individual coverage ID and matching source,
+generated inputs, compilers, profile and flags. Dependency-connected units stay
+on the same runner; every unit has exactly one owner. The final required check
+verifies both complete receipt directories with
+`tools/test_coverage.py verify-shards --cohort ID RECEIPT1 RECEIPT2`.
+Missing or duplicate units/shards, changed inputs, incomplete children and altered
+logs or outputs fail the aggregate. Ordinary full verification rejects individual
+shards. These controls preserve the existing full plan; they do not qualify FM-1
+timing or physical behavior. See [CI stages and receipts](.github/CI.md#feedback-and-merge-stages).
 
 For AI-assisted runs or a short console report, use:
 

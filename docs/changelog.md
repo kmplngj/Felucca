@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- [Offline factory-level audit tooling](loudness-audit.md) captures selected native
+  sounds, reports stereo loudness/headroom and retains fixed-scale audition WAVs.
+  It changes no factory levels; role assignment, listening decisions and physical
+  DAC/USB qualification remain separate.
+
 - Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
   exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
   Offline verification checks artifact correspondence; full host/browser/device acceptance,
@@ -101,6 +106,13 @@ recorded in the linked reports, rather than every current build or device.
   and checksums, and a repository-backed firmware-watch ledger for reviewing other forks.
 
 ### Fixed
+
+- **Native attribution:** ABOUT credits and the retained installer template now
+  distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0
+  dedication. The PHASE source comment agrees; synthesis and generated sounds
+  are unchanged. Native host rendering and scroll checks qualify this text change;
+  no physical display observation is claimed.
+  See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
 
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
@@ -233,6 +245,10 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- Native icons share identical complete 12 px compressed streams while preserving
+  icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
+  [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.
+
 - Docker target builds share one invocation-owned toolchain container across loader,
   application and resource checks, reducing repeated container startup overhead.
   Compiler arguments and firmware behavior are unchanged; the benefit depends on
@@ -252,7 +268,13 @@ recorded in the linked reports, rather than every current build or device.
   these are dated comparisons, not current whole-firmware totals.
 - **Development turnaround:** change-based CI selection, dependency caches,
   parallel independent host tests and reuse of automatic PR firmware artifacts
-  reduce repeated validation/build work. Required checks still gate merges;
-  see [CI scope and artifacts](../.github/CI.md). The host suite's opt-in
+  reduce repeated validation/build work. Classified draft changes use explicit
+  focused feedback; ready candidates retain complete validation. Full host work
+  runs across two runners with a source-derived aggregate rejecting missing,
+  duplicate or stale evidence. Standalone backup fixtures can reuse matching
+  verified receipts; firmware identity and releases stay fresh. Required checks
+  still gate merges; see [CI stages and artifacts](../.github/CI.md#feedback-and-merge-stages).
+  These are CI scheduling changes, not firmware CPU or hardware performance claims.
+  The host suite's opt-in
   [`--ai-output` mode](../BUILDING.md#tests) condenses console output while retaining
   full logs, failure exit codes and warning/skip hints; test coverage is unchanged.
