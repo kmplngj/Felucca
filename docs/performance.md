@@ -199,8 +199,12 @@ Observe the following together:
 - `cpu_pct`: a smoothed render/deadline ratio over roughly 93 ms. `shed_check()` subtracts
   nested TIMER5 ticks first, so this meter excludes that work and the main loop. It is
   **not whole-chip CPU utilization**.
-- `audio_max_us`: maximum render time with nested scan time subtracted. Diagnostics in
-  `.noinit` can survive reset; take a starting snapshot and identify prior maxima.
+- `audio_max_us` / `dbg.max_us`: the same maximum render time with nested scan time
+  subtracted. Current firmware resets it at application startup, then accumulates it
+  for that boot; polling does not reset it. Take starting/ending snapshots, but do
+  not subtract maxima or treat an unchanged value as the measured interval's peak.
+  Other `.noinit` counters and breadcrumbs can survive reset. For older firmware
+  or historical captures, retain the revision and its actual reset semantics.
 - `audio_late`: cumulative DMA deadline misses. Compare end minus start, using a workload
   interval; a low average cannot dismiss new misses.
 - `voices_shed`: overload protection, triggered after two consecutive halves above 85%
