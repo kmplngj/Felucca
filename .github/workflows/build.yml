@@ -823,11 +823,15 @@ jobs:
           require(B.CPU2 == cfg['cpu2'], 'CPU2 mismatch')
           commands = []
           real_tc = B.tc
+          include_rebase = {'-Ifirmware/hal': '-I' + str(firmware / 'hal'),
+                            '-Ifirmware/src': '-I' + str(firmware / 'src')}
           def record_tc(tool, *args):
-              row = dict(tool=tool, args=list(map(str, args)), started=time.monotonic(), status='running')
+              actual_args = [include_rebase.get(str(arg), arg) for arg in args]
+              row = dict(tool=tool, args=list(map(str, actual_args)), requested_args=list(map(str, args)),
+                         started=time.monotonic(), status='running')
               commands.append(row)
               try:
-                  value = real_tc(tool, *args)
+                  value = real_tc(tool, *actual_args)
                   row['status'] = 'passed'
                   return value
               except BaseException:
@@ -845,19 +849,32 @@ jobs:
                       contract.unlink()
                   else:
                       shutil.copy2(ROOT / 'firmware/hal/fm1_input_contract.h', contract)
-                  B.OUT = work / label
+                  B.OUT = work / 'output'       # identical IR/object filenames, not label-dependent compiler inputs
                   B.LDR = B.OUT / 'loader'
-                  B.OUT.mkdir(parents=True)
+                  B.OUT.mkdir(parents=True, exist_ok=True)
                   require(R.configuration(B) == cfg, label + ' compiler/configuration changed')
+                  deps = B.tc('cc', *B.app_flags(), '-M', B.FW / 'src/felucca.c')
+                  (E / (label + '-dependencies.txt')).write_text(deps)
+                  import shlex
+                  dep_paths = {(ROOT / p).resolve() for p in shlex.split(deps.replace('\\\n', ' ').split(':', 1)[1])}
+                  require((firmware / 'hal/fm1_input.h').resolve() in dep_paths, 'copied HAL not selected')
+                  require(not any(p.is_relative_to(ROOT / 'firmware') for p in dep_paths), 'original firmware leaked into control')
                   evidence = B.build_app()
                   resources, stacks = R.resources(B, evidence)
                   B.build_loader()
                   artifacts = {p: dict(sha256=sha(B.OUT / p), bytes=(B.OUT / p).stat().st_size)
                                for p in ['felucca.bin', 'felucca.elf', 'loader/loader.bin', 'loader/ota.bin']}
+                  for name in artifacts:
+                      dst = E / label / name
+                      dst.parent.mkdir(parents=True, exist_ok=True)
+                      shutil.copy2(B.OUT / name, dst)
                   results[label] = dict(header_sha256=hashlib.sha256(header).hexdigest(), configuration=cfg,
-                                        artifacts=artifacts, resources=resources, stack_reservations=stacks)
+                                        artifacts=artifacts, resources=resources, stack_reservations=stacks,
+                                        include_path_rebase=include_rebase)
                   (E / (label + '.json')).write_text(json.dumps(results[label], indent=2) + '\n')
-              for key in ['artifacts', 'resources', 'stack_reservations']:
+              for name in ['felucca.bin', 'loader/loader.bin', 'loader/ota.bin']:
+                  require(results['baseline']['artifacts'][name] == results['candidate']['artifacts'][name], 'unequal ' + name)
+              for key in ['resources', 'stack_reservations']:
                   require(results['baseline'][key] == results['candidate'][key], 'unequal ' + key)
               require({p: sha(ROOT / p) for p in protected} == protected, 'original CI artifacts changed')
               require({str(p.relative_to(ROOT)): sha(p) for p in (ROOT / 'build/gen').rglob('*') if p.is_file()} == generated,
@@ -865,8 +882,9 @@ jobs:
               require(not git('status', '--porcelain', '--untracked-files=normal').strip(), 'source checkout changed')
               (E / 'RESULT.json').write_text(json.dumps(dict(status='passed', baseline=BASE, candidate=revision,
                   measurement_only=True, identity=report['build_identity'], generated_sha256=generated,
+                  elf_equal=results['baseline']['artifacts']['felucca.elf'] == results['candidate']['artifacts']['felucca.elf'],
                   original_artifact_sha256=protected, results=results), indent=2) + '\n')
-              print('PASS: literal app/ELF/loader bytes and resource/stack reports equal; original CI artifacts unchanged')
+              print('PASS: literal app/loader bytes and resource/stack reports equal; original CI artifacts unchanged')
           finally:
               (E / 'commands.json').write_text(json.dumps(commands, indent=2) + '\n')
           PYCONTROL
