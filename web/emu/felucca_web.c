@@ -120,7 +120,9 @@ static uint32_t fm1_input_edges(uint32_t *released)
     web_pressed = web_released = 0;
     return p;
 }
+static fm1_input_note_edges_fn fm1_input_note_edges;
 static uint32_t fm1_input_note_edges(void) { uint32_t n = web_notes_pressed; web_notes_pressed = 0; return n; }
+static fm1_enc_take_fn fm1_enc_take;
 static int32_t fm1_enc_take(uint32_t e) { int32_t s = web_enc_steps[e % 7u]; web_enc_steps[e % 7u] = 0; return s; }
 static void fm1_input_init(void) {}
 static void fm1_input_tick(void) {}

@@ -609,6 +609,7 @@ static inline void fm1__unlock(uint32_t v)
 }
 
 /* detent steps turned since the last call, + = clockwise */
+static fm1_enc_take_fn fm1_enc_take;
 static int32_t fm1_enc_take(uint32_t e)
 {
     uint32_t k = fm1__lock();
@@ -630,6 +631,7 @@ static uint32_t fm1_input_edges(uint32_t *released)
     return p;
 }
 
+static fm1_input_note_edges_fn fm1_input_note_edges;
 static uint32_t fm1_input_note_edges(void)
 {
     uint32_t k = fm1__lock();
