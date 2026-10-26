@@ -108,6 +108,9 @@ A build receipt alone establishes none of those results.
 The browser retains its existing enabled simulated-ISR misuse assertions; the native
 target defaults to disabled assertions. The mapping records this deliberate difference
 and requires browser assertions to stay enabled, without changing compiler arguments.
+The shared audio observer `FELUCCA_RENDER_STAGE` and its header guard must match
+between native and runtime definitions. The normal browser observer is OFF; a
+native observer-enabled package cannot claim a match to that disabled runtime.
 
 ## Seal and verify
 

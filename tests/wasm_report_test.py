@@ -75,6 +75,8 @@ class RuntimeReport(unittest.TestCase):
             'FELUCCA_FLASH': '1', 'FELUCCA_OTA': '1', 'FELUCCA_UAC': '1', 'FELUCCA_UART': '1',
             'FELUCCA_CPU2': '1', 'FELUCCA_CDC': '1', 'FELUCCA_ICONS': '1',
             'FELUCCA_ISR_ASSERT': '0',
+            # Actual audio.c -> render_stage.h -dM defaults, shared by native/browser.
+            'FELUCCA_RENDER_STAGE': '0', 'FELUCCA_RENDER_STAGE_H': '',
             'FELUCCA_UAC_48K': '1', 'FELUCCA_UAC_AS_FIRST': '1',
             'FELUCCA_ENG_TEST14': '0', 'FELUCCA_ENG_OMIT': '(-1)', 'FELUCCA_FM4': '0',
             'FELUCCA_VERSION': '\"v1.6.1\"',
@@ -215,6 +217,37 @@ else:
         for name in ('FELUCCA_CPU2', 'FELUCCA_CDC', 'FELUCCA_ICONS'):
             self.assertIn('-D' + name + '=0', receipt['configuration']['compile_argv'])
             self.assertEqual(receipt['logical_mapping']['defines'][name]['runtime'], '0')
+
+    def test_render_stage_defaults_are_shared_and_receipt_verifiable(self):
+        receipt = self.build()
+        for name, value in (('FELUCCA_RENDER_STAGE', '0'), ('FELUCCA_RENDER_STAGE_H', '')):
+            self.assertEqual(receipt['logical_mapping']['defines'][name],
+                             {'native': value, 'runtime': value, 'rule': 'equal'})
+        W.verify_receipt(self.root, receipt, self.report,
+                         target_report_sha256=W.R.digest(self.target))
+
+    def test_render_stage_mismatch_rejected_before_compile(self):
+        # The default browser has the observer OFF. It cannot represent an ON
+        # target, or omit either macro and still claim equal shared audio code.
+        for name, native_value, runtime_value in (
+                ('FELUCCA_RENDER_STAGE', '1', '0'),
+                ('FELUCCA_RENDER_STAGE', '0', '1'),
+                ('FELUCCA_RENDER_STAGE', '1', None),
+                ('FELUCCA_RENDER_STAGE_H', '', None)):
+            with self.subTest(name=name, native=native_value, runtime=runtime_value):
+                self.native['FELUCCA_RENDER_STAGE'] = '0'
+                self.native[name] = native_value
+                self.prepare()
+                runtime = json.loads((self.sdk / 'macros.json').read_text())
+                if runtime_value is None:
+                    del runtime[name]
+                else:
+                    runtime[name] = runtime_value
+                (self.sdk / 'macros.json').write_text(json.dumps(runtime))
+                with self.assertRaisesRegex(ValueError, 'logical macro mismatch: ' + name):
+                    self.build()
+                self.assertFalse((self.base / 'argv.json').exists())
+                self.assertFalse((self.root / W.RECEIPT).exists())
 
     def test_unpaired_never_invokes_native_verifier(self):
         self.env['FIXTURE_TARGET_EXIT'] = '99'
