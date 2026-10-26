@@ -42,6 +42,40 @@ and the installer verifies the returned application identity. An already-running
 compatible loader resumes directly at the writing phase. A failed/aborted staging
 session remains in rescue; staging may already have been written and cleaned up.
 
+## Standalone RAM-loader screen
+
+The package's RAM loader has its own screen and font, so it can display status
+without an intact application. Its messages describe the native session:
+
+| Screen | Meaning |
+| --- | --- |
+| UPDATE MODE / START INSTALL ON HOST | Waiting for the host to start installation. |
+| CHECKING PACKAGE / KEEP USB CONNECTED | Checking the package, chip key and whole-image integrity before erasing application sectors. |
+| WRITING APP / DO NOT SWITCH OFF | The percentage counts application sectors already matched or programmed and read-back verified. |
+| APP VERIFIED / FINISHING UPDATE | All application sectors are verified; the existing finish handshake and record cleanup still follow. |
+| APP VERIFIED / RESTARTING | The native session returned success and is taking its existing restart path. |
+| UPDATE STOPPED / RETRY INSTALL ON HOST | The native session returned the displayed negative error code and is waiting for another attempt. |
+
+A writing percentage of **100%** means the application sectors are verified;
+it does not establish the finish handshake, record cleanup or successful boot.
+Record cleanup retains its existing best-effort behavior. The host's final
+application identity remains the installation result to check.
+
+After **UPDATE STOPPED**, keep power and USB connected, let the host operation
+return, then start the supported installer again with the same reviewed compatible
+package. Retry re-enters validation in the existing loader; it adds no panel
+button or rescue route. A partially installed application may not boot normally yet.
+Package acceptance, protected storage and official-return policy are unchanged.
+
+The loader bounds each LCD transfer and each complete redraw, feeding the watchdog
+and polling USB while waiting. A failed or unusually slow display stops further
+display work until reset. It retains any in-flight source rather than treating a
+timeout as a safe DMA abort. USB and installer/retry service continue, but the
+image may remain black, partial or stale; rely on the host result and returned
+application identity. The screen does not prove visible LCD acknowledgment or
+recovery from a power interruption. Exact-package FM-1 display, update and retry
+qualification remains pending.
+
 ## Package / loader matrix
 
 | Selected bytes | Actual accepted loader handshake | Installer |

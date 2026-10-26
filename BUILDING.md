@@ -1035,6 +1035,15 @@ File-only checks open no device; live ROM sessions may upload a RAM loader and
 need host permissions. A unit with no reachable USB route can still need
 [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
 
+The standalone RAM loader displays waiting, package validation, verified app-sector
+progress, completion/restart and native-error retry guidance. Its writing percentage
+is verified application work, not confirmation of a complete install. If it reports
+**UPDATE STOPPED**, keep power and USB connected and retry the same reviewed
+compatible package with the supported installer after the host operation returns.
+A display failure may leave a stale image while USB/retry continues. Check the
+host's final application identity; see [loader screen meanings and limits](docs/usb-rescue.md#standalone-ram-loader-screen).
+Physical FM-1 qualification of the new loader screen remains pending.
+
 ### Package validation and file errors
 
 When given a package, the command-line installer validates its identity, UFW structure,
