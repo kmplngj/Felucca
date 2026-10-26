@@ -815,16 +815,23 @@ jobs:
           require(not work.exists(), 'measurement directory must be fresh')
           firmware = work / 'firmware'
           shutil.copytree(ROOT / 'firmware', firmware, ignore=shutil.ignore_patterns('.git'))
+          frozen_gen = work / 'build/gen'
+          shutil.copytree(ROOT / 'build/gen', frozen_gen)
+          require({str(p.relative_to(frozen_gen)): sha(p) for p in frozen_gen.rglob('*') if p.is_file()} ==
+                  {str(p.relative_to(ROOT / 'build/gen')): sha(p) for p in (ROOT / 'build/gen').rglob('*') if p.is_file()},
+                  'frozen generated copy differs')
           sys.path.insert(0, str(ROOT / 'tools'))
           import build as B
           import build_report as R
           B.FW = firmware
+          B.GEN = frozen_gen
           B.PRODUCT, B.VERSION = cfg['product'], cfg['version_override']
           require(B.CPU2 == cfg['cpu2'], 'CPU2 mismatch')
           commands = []
           real_tc = B.tc
           include_rebase = {'-Ifirmware/hal': '-I' + str(firmware / 'hal'),
-                            '-Ifirmware/src': '-I' + str(firmware / 'src')}
+                            '-Ifirmware/src': '-I' + str(firmware / 'src'),
+                            '-Ibuild/gen': '-I' + str(frozen_gen)}
           def record_tc(tool, *args):
               actual_args = [include_rebase.get(str(arg), arg) for arg in args]
               row = dict(tool=tool, args=list(map(str, actual_args)), requested_args=list(map(str, args)),
