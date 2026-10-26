@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: Host loudness audit
+
+on:
+  pull_request:
+    paths: &audit_inputs
+      - '.github/workflows/loudness-audit.yml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'tools/loudness_audit.py'
+      - 'tools/loudness-phrases.json'
+      - 'tests/loudness_probe.c'
+      - 'tests/loudness_audit_test.py'
+      - 'tests/fixtures/loudness_*'
+      - 'tests/hostsim.c'
+      - 'firmware/**'
+      - 'profiles/**'
+      - 'assets/**'
+      - 'tools/profile.py'
+      - 'tools/build_identity.py'
+      - 'tools/gen_*.py'
+      - 'tools/sampleio.py'
+  push:
+    branches: [main]
+    paths: *audit_inputs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loudness-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Meter and native capture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CC: clang
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          python-version: '3.12'
+          enable-cache: false
+      - name: Verify meter and real native capture
+        run: |
+          set -euo pipefail
+          mkdir -p build/loudness-ci
+          uv run --locked --group audit python tests/loudness_audit_test.py 2>&1 | tee build/loudness-ci/tests.log
+      - name: Retain audit evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: loudness-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/loudness-ci/
+            build/audit-run-*/
+          if-no-files-found: error
+          retention-days: 14
