@@ -414,6 +414,13 @@ the actual hardware, UI-test and browser input adapters against the shared
 signature to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
+The backup and FM6-bank tests share `tests/host_nor.h`, including their sanitizer
+builds. This existing NOR model only clears programmed bits, rejects 256-byte page
+wrapping, and models sticky power cuts during programming or half an erase. Its
+program counter counts completed bytes; its erase counter excludes requests
+refused before work. Reads remain available for recovery after a cut. Storage and
+persistence tests retain their different retry and operation-counting models.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for

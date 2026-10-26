@@ -4,7 +4,7 @@
  * CRC before any write, stale runtime copies, USB resets and timeouts, malformed objects, older
  * project formats, settings values and user preset banks kept byte for byte; and (#321) the FM6 voice
  * bank (id 20) and the SLICE records (id 21): LIST 1, round trips, refusals, power cuts. */
-static unsigned char nor[0x100000];                  /* the whole flash; the user sample slots (XIP) are 0xA0000.. of it */
+#include "host_nor.h"                              /* before the user sample slots' XIP mapping */
 #define SMP_USER_XIP(k) (nor + 0xA0000u + (k) * 0x14000u)
 #define main hostsim_main
 #include "hostsim.c"
@@ -25,35 +25,6 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 static void panel_setup(void) {}
 
 static uint8_t flash_ok = 1;
-static int erase_error;
-static uint32_t erases, progs;
-static long cut_bytes = -1, cut_erase = -1;      /* the power goes after that many programmed bytes / at that erase */
-static int dead;                                  /* .. and stays off: nothing more is written */
-static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
-static int st_erase(uint32_t off)
-{
-    if (erase_error || dead) return -8;
-    erases++;
-    if (cut_erase >= 0 && cut_erase-- == 0) {    /* cut during the erase: half of it done */
-        memset(nor + off, 0xFF, 2048);
-        dead = 1;
-        return -8;
-    }
-    memset(nor + off, 0xFF, 4096);
-    return 0;
-}
-static int st_prog(uint32_t off, const void *src, uint32_t n)
-{
-    const uint8_t *s = src;
-    uint32_t i;
-    if ((off & 0xFFu) + n > 256u) { printf("page wrap at %#x\n", off); exit(1); }
-    for (i = 0; i < n; i++) {
-        if (dead || (cut_bytes >= 0 && cut_bytes-- == 0)) { dead = 1; return -9; }
-        nor[off + i] &= s[i];                    /* NOR: bits only go 1 -> 0 */
-        progs++;
-    }
-    return 0;
-}
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
 static uint32_t fl_jedec_ram(void) { return 0; }
