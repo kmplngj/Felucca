@@ -67,9 +67,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang libfribidi0 libraqm0
           uv sync --locked --only-group build --python "$(command -v python3)" --no-python-downloads
           echo "$UV_PROJECT_ENVIRONMENT/bin" >> "$GITHUB_PATH"
-          echo "JIELI_TOOLCHAIN=$JIELI_TOOLCHAIN" >> "$GITHUB_ENV"
-          echo "AC79_SDK=$AC79_SDK" >> "$GITHUB_ENV"
-          echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
+          {
+            echo "JIELI_TOOLCHAIN=$JIELI_TOOLCHAIN"
+            echo "AC79_SDK=$AC79_SDK"
+            echo "EMSDK=$EMSDK"
+          } >> "$GITHUB_ENV"
           sh tools/get_toolchain.sh "$RUNNER_TEMP/jieli"
           python3 tools/ci.py sdk
           git init "$EMSDK"
