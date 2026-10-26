@@ -15,10 +15,13 @@
 #define NVOICE 8u
 static struct { uint8_t playing; } song;
 static struct { uint32_t notes, buttons; } fm1_in;
-static struct { uint32_t uboot_req; } usb;
+static struct { uint32_t uboot_req, ota_req; } usb;
 static struct { uint8_t alt; } uac;
 static struct { struct { uint8_t active; } v[NVOICE]; } trk[NPART];
 static uint32_t mi_w, mi_r, sx_busy, sx_ready, sx_collect, fm1_c1_on;
+static uint8_t transport_req, panic_req;
+static uint32_t cin_left;
+static int seq_counting(void) { return cin_left != 0u; }
 static int screen_live, supported = 1;
 static int scap_live(void) { return screen_live; }
 static uint32_t tick, tick_step = 1, feeds, mul_calls, div_calls, bad_mul;
@@ -37,6 +40,7 @@ static void reset(void)
     memset(&song, 0, sizeof song); memset(&fm1_in, 0, sizeof fm1_in);
     memset(trk, 0, sizeof trk); memset(&usb, 0, sizeof usb); memset(&uac, 0, sizeof uac);
     mi_w = mi_r = sx_busy = sx_ready = sx_collect = fm1_c1_on = screen_live = 0;
+    transport_req = panic_req = 0; cin_left = 0;
     supported = 1; tick = feeds = mul_calls = div_calls = bad_mul = changed_at = 0; tick_step = 1;
 }
 int main(void)
@@ -53,6 +57,16 @@ int main(void)
     }
     /* Each refusal leaves the caller's state intact and runs no kernel. */
     reset(); song.playing = 1; CHECK(cp_run() == 2 && song.playing == 1 && !feeds);
+    reset(); cin_left = 4; CHECK(cp_run() == 2 && cin_left == 4 && !song.playing && !feeds && !cp_done);
+    for (i = 1; i <= 3; i++) {
+        reset(); transport_req = (uint8_t)i;
+        CHECK(cp_run() == 2 && transport_req == i && !song.playing && !feeds && !cp_done);
+    }
+    for (i = 0; i < NPART; i++) {
+        reset(); panic_req = (uint8_t)(1u << i);
+        CHECK(cp_run() == 2 && panic_req == (1u << i) && !feeds && !cp_done);
+    }
+    reset(); usb.ota_req = 1; CHECK(cp_run() == 2 && usb.ota_req == 1 && !feeds && !cp_done);
     reset(); fm1_in.notes = 1; CHECK(cp_run() == 2 && fm1_in.notes == 1 && !feeds);
     reset(); fm1_in.buttons = 1; CHECK(cp_run() == 2 && fm1_in.buttons == 1 && !feeds);
     reset(); mi_w = 1; CHECK(cp_run() == 2 && mi_w == 1 && mi_r == 0 && !feeds);

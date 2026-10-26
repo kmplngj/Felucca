@@ -29,7 +29,8 @@ static uint32_t cp_done;
 static int cp_quiet(void)
 {
     uint32_t p, v;
-    if (song.playing || fm1_in.notes || fm1_in.buttons || mi_w != mi_r || usb.uboot_req)
+    if (song.playing || seq_counting() || transport_req || panic_req ||
+        fm1_in.notes || fm1_in.buttons || mi_w != mi_r || usb.uboot_req || usb.ota_req)
         return 0;
 #if FELUCCA_UAC
     if (uac.alt) return 0;

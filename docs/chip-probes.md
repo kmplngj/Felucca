@@ -15,12 +15,14 @@ is `0`, compiling out the command, tables, scratch and kernels. No boot/main-loo
 idle/playback hook exists. Keep a normal image to restore after testing.
 
 The initial mode accepts only native TIMER4's expected free-running source/divider
-and full period, nominal FS 44100 and HALF_FRAMES 128. It refuses transport playback,
-pressed notes/buttons, queued MIDI, active voices on any part (including release
-tails), an active worker, USB audio streaming, OTA receive/update work or a live
-screen-capture session. Repeat these guards before and after every kernel. An
-incoming event may interrupt a kernel; the next guard refuses that run. Keep all
-external MIDI sources disconnected and leave the panel untouched during a run.
+and full period, nominal FS 44100 and HALF_FRAMES 128. Guards check transport
+playback/count-in, pending transport or panic requests, pressed notes/buttons,
+queued MIDI, active voices on any part (including release tails), an active worker,
+USB audio streaming, pending updater/UBOOT requests, OTA receive/update work and
+a live screen-capture session before and after every kernel. A checked busy state
+refuses the run only when visible at a guard. Transient events and interrupt
+interference may escape these checks. Keep all external MIDI sources disconnected
+and leave the panel untouched during a run.
 
 No interrupt, audio, worker, timer or clock state is acquired or modified. The
 watchdog is fed between finite kernels. Every refusal/exit therefore has no device
