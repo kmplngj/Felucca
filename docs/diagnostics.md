@@ -184,8 +184,14 @@ or changes while it is copied, the reply is `no crash record`; a later request c
 
 `cpu_pct` is the smoothed render/deadline ratio with nested TIMER5 scan time subtracted.
 It excludes the main loop and is not whole-chip CPU utilization. `audio_max_us` and
-`dbg.max_us` are cumulative maxima which can persist across reboot; they are not maxima
-for the measured interval. Compare audio lateness, overload `voices_shed`,
+`dbg.max_us` expose the same cumulative render maximum. Current firmware explicitly
+resets it to zero at application startup (`main.c`, `fm1_main`), even though
+`felucca_dbg` lives in `.noinit`; other retained counters and breadcrumbs have their
+own reset semantics. The maximum accumulates within that boot and is not reset by
+collection. Record its starting and ending values, but do not subtract them or infer
+the measured interval's peak from an unchanged maximum. Older firmware and historical
+reports may have different reset semantics; retain their revision and matching evidence.
+Compare audio lateness, overload `voices_shed`,
 `voices_given_up`, USB audio errors, USB stalls and UART drops together.
 `voices_given_up` counts all `voice_kill()` calls, including overload, allocator
 victims and MIDI All Sound Off. It does not measure rejected or admitted requests;
