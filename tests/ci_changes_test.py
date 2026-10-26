@@ -28,6 +28,25 @@ class SelectionTest(unittest.TestCase):
             "assets/fonts/m8stealth/README.md", "web/EDITOR_PROTOCOL.md",
         ]), set())
 
+    def test_skill_markdown_needs_no_firmware_validation(self):
+        for path in (".agents/skills/issue-delivery/SKILL.md",
+                     ".agents/skills/issue-delivery/references/backlog.md",
+                     ".agents/skills/new-skill/references/guide.md"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), set())
+        self.assertEqual(self.suites([".agents/skills/issue-delivery/SKILL.md",
+                                      "tests/diagnostics_test.py"]), {"python"})
+
+    def test_skill_scripts_assets_and_firmware_mixtures_keep_full_validation(self):
+        for path in (".agents/skills/new-skill/scripts/helper.py",
+                     ".agents/skills/new-skill/assets/sound.wav",
+                     ".agents/skills/new-skill/agents/openai.yaml",
+                     ".agents/skills-other/new.md"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), {"full"})
+        self.assertEqual(self.suites([".agents/skills/issue-delivery/SKILL.md",
+                                      "firmware/src/audio.c"]), {"full"})
+
     def test_independent_suites_and_mixed_changes(self):
         for path in changes.PYTHON_INPUTS:
             with self.subTest(path=path):
@@ -64,12 +83,13 @@ class SelectionTest(unittest.TestCase):
         for path in ("firmware/src/eng_fm6.c", "firmware/hal/regs.h", "firmware/app.ld",
                      "firmware/loader/start.s", "build.sh", "tools/build.py",
                      "tools/gen_bitmap_font.py", "tools/sampleio.py", "tools/fm1_install.py",
-                     "tools/ci.py", "tools/ci_changes.py", "pyproject.toml", "uv.lock", ".python-version",
+                     "tools/ci.py", "tools/test_coverage.py", "tests/test_jobs.py",
+                     "pyproject.toml", "uv.lock", ".python-version",
                      "tools/get_toolchain.sh", "assets/fonts/Control.ttf",
                      "assets/samples-cc0/PIANO/sample.wav", "LICENSE", "LICENSING.md",
                      "LICENSES/Apache-2.0.txt", "web/editor.html", "web/fm1pkg.js",
                      "web/fm1ota.js", "web/package.json", "web/test_web.mjs",
-                     "tests/hostsim.c", "tests/ui_render.py", "tests/cpu_baseline.py",
+                     "tests/hostsim.c", "tests/host_nor.h", "tests/ui_render.py", "tests/cpu_baseline.py",
                      "tests/target_budget.py", "tests/golden.txt", "tests/union_golden.txt",
                      "tests/run_tests.sh", "tests/build_guard_target_test.py",
                      "tools/replay_native.c", "tools/fm1_replay.py", "tests/replay_test.py",
@@ -83,6 +103,109 @@ class SelectionTest(unittest.TestCase):
 
     def test_large_diff_is_not_truncated(self):
         self.assertEqual(self.suites(["docs/change.md"] * 4000 + ["firmware/src/audio.c"]), {"full"})
+
+    def test_selector_and_contract_inputs_use_unconditional_helper_checks(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / '.github/workflows/build.yml').read_text()
+        helper_job = workflow.split('\n  workflow-checks:\n', 1)[1].split('\n  python-checks:\n', 1)[0]
+        for path in changes.WORKFLOW_CHECK_INPUTS:
+            with self.subTest(path=path):
+                self.assertTrue((root / path).is_file())
+                self.assertIn(Path(path).name, helper_job)
+                self.assertEqual(self.suites([path, 'AGENTS.md', '.github/CI.md']), set())
+                self.assertEqual(self.suites([path, 'web/fm1backup.js']), {'backup'})
+                self.assertEqual(self.suites([path, 'firmware/src/audio.c']), {'full'})
+                paths = [path, 'firmware/src/ui_draw.c']
+                self.assertEqual(changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}},
+                    {'suites': changes.select(paths), 'paths': paths}), ('full', []))
+
+    def test_draft_feedback_is_explicitly_partial_and_ready_requires_full(self):
+        selection = {'suites': changes.select(['firmware/src/ui_draw.c']),
+                     'paths': ['firmware/src/ui_draw.c', 'README.md']}
+        stage, units = changes.feedback('pull_request', {'pull_request': {'draft': True}}, selection)
+        self.assertEqual(stage, 'quick')
+        self.assertIn('ui_render', units)
+        for event, payload, release in (
+                ('pull_request', {'pull_request': {'draft': False}}, False),
+                ('pull_request', {}, False), ('push', {}, False),
+                ('pull_request', {'pull_request': None}, False),
+                ('workflow_dispatch', {}, False),
+                ('pull_request', {'pull_request': {'draft': True}}, True)):
+            self.assertEqual(changes.feedback(event, payload, selection, release), ('full', []))
+
+    def test_high_risk_unknown_and_mixed_draft_changes_keep_full_validation(self):
+        for extra in ('firmware/src/core.h', 'firmware/src/storage.c',
+                      'firmware/src/console.c', 'firmware/src/voice.c',
+                      'firmware/engines', 'firmware/src/eng_macro.c',
+                      'firmware/src/ui_new.c', 'firmware/src/eng_new.c',
+                      'tests/ui_test.c', 'tests/ui_harness.h', 'tests/ui_render.c', 'tests/hostsim.c',
+                      'tests/golden.txt', 'tests/target_budget.txt',
+                      'tools/ci_changes.py', '.github/workflows/ci.yml',
+                      'unknown.c', 'tools/fm1_diagnostics.py',
+                      'web/fm1backup.js', 'web/emu/index.html'):
+            paths = ['firmware/src/ui_draw.c', extra]
+            with self.subTest(path=extra):
+                self.assertEqual(changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}},
+                    {'suites': changes.select(paths), 'paths': paths}), ('full', []))
+
+    def test_audited_test_edits_get_focused_draft_feedback(self):
+        paths = ['firmware/src/fx.c', 'tests/chorus_depth_test.py',
+                 'tests/fm6_eff_test.c', 'docs/change.md']
+        selection = {'suites': changes.select(paths), 'paths': paths}
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': True}}, selection),
+            ('quick', sorted(set(changes.FX_FEEDBACK) | {'fm6_effective'})))
+        # A test-only PR also stays partial until it is ready for review.
+        paths = ['tests/fm6_eff_test.c']
+        selection = {'suites': changes.select(paths), 'paths': paths}
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': True}}, selection), ('quick', ['fm6_effective']))
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': False}}, selection), ('full', []))
+        paths = ['tests/fx_rest_test.py']
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': True}},
+            {'suites': changes.select(paths), 'paths': paths}),
+            ('quick', ['chorus', 'fx_rest']))
+
+    def test_graphics_and_engine_helpers_include_specific_regressions(self):
+        for path, required in (
+                ('firmware/src/gfx.c', {'text', 'icon_streams', 'asan_icon_streams'}),
+                ('firmware/src/icons.c', {'screen_capture_ui', 'identity_ui'}),
+                ('firmware/src/fm6_core.c', {'fm6', 'fm6_effective', 'fm6bank'}),
+                ('firmware/src/phys_dsp.c', {'phys', 'phys_ref'}),
+                ('firmware/src/phys_symp.c', {'phys', 'phys_ref'}),
+                ('firmware/src/eng_sample.c', {'regression', 'sample'}),
+                ('firmware/src/eng_digital.c', {'digital', 'fm4', 'fm4_div0'})):
+            with self.subTest(path=path):
+                stage, units = changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}},
+                    {'suites': changes.select([path]), 'paths': [path]})
+                self.assertEqual(stage, 'quick')
+                self.assertTrue(required <= set(units))
+
+    def test_all_draft_mappings_exist_and_resolve_in_real_scheduler_plan(self):
+        root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(root / 'tests'))
+        import test_jobs
+        plan = test_jobs.parse_plan(subprocess.check_output(
+            ['sh', 'tests/run_tests.sh', '--plan'], cwd=root, text=True))
+        for path, units in changes.DRAFT_INPUTS.items():
+            with self.subTest(path=path):
+                self.assertTrue((root / path).is_file(), path)
+                selection = {'suites': changes.select([path]), 'paths': [path]}
+                self.assertEqual(changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}}, selection), ('quick', sorted(units)))
+                selected = test_jobs.coverage.select_plan(plan,
+                    {'kind': 'focused', 'selected': units})
+                self.assertTrue(set(units) <= {u['name'] for u in selected})
+                for event, payload, release in (
+                        ('pull_request', {'pull_request': {'draft': False}}, False),
+                        ('push', {}, False), ('workflow_dispatch', {}, False),
+                        ('pull_request', {'pull_request': {'draft': True}}, True)):
+                    self.assertEqual(changes.feedback(event, payload, selection, release), ('full', []))
 
     def test_manual_release_and_unknown_events_force_full(self):
         for event in ("workflow_dispatch", "schedule", "", "pull_request_target"):
@@ -107,7 +230,9 @@ class SelectionTest(unittest.TestCase):
             result = subprocess.run([sys.executable, str(Path(changes.__file__))],
                                     env=env, capture_output=True, text=True, check=True)
             self.assertTrue(json.loads(result.stdout)["suites"]["full"])
-            self.assertEqual(output.read_text(), "full=true\npython=false\nbackup=false\nemulator=false\n")
+            self.assertTrue(output.read_text().startswith("full=true\npython=false\nbackup=false\nemulator=false\n"))
+            self.assertEqual(json.loads(result.stdout)['stage'], 'full')
+            self.assertIn('stage=full\nfocus=\nmatrix=', output.read_text())
             self.assertIn("full: run", summary.read_text())
 
 
@@ -155,6 +280,40 @@ class DiffTest(unittest.TestCase):
         result = self.pr(self.commit())
         self.assertTrue(result["suites"]["full"])
         self.assertIn("firmware/src/audio.c", result["paths"])
+
+    def test_skill_instruction_only_pr_uses_lightweight_checks(self):
+        self.write(".agents/skills/issue-delivery/SKILL.md")
+        self.commit()
+        self.write(".agents/skills/issue-delivery/references/backlog.md")
+        result = self.pr(self.commit())
+        self.assertEqual(set(result["paths"]), {
+            ".agents/skills/issue-delivery/SKILL.md",
+            ".agents/skills/issue-delivery/references/backlog.md",
+        })
+        self.assertFalse(any(result["suites"].values()))
+
+    def test_selector_only_pr_and_main_push_skip_firmware_but_releases_do_not(self):
+        self.write('tools/ci_changes.py')
+        self.commit()
+        self.write('tests/ci_changes_test.py')
+        head = self.commit()
+        self.assertFalse(any(self.pr(head)['suites'].values()))
+        event = {'ref': 'refs/heads/main', 'before': self.base, 'after': head}
+        self.assertFalse(any(self.plan('push', event)['suites'].values()))
+        self.assertTrue(changes.plan('push', event, release=True)['suites']['full'])
+        self.assertTrue(changes.plan('workflow_dispatch', event)['suites']['full'])
+        payload = self.root / 'event.json'
+        summary = self.root / 'summary.md'
+        output = self.root / 'output.txt'
+        payload.write_text(json.dumps({'pull_request': {
+            'draft': False, 'base': {'sha': self.base}, 'head': {'sha': head}}}))
+        result = subprocess.run([sys.executable, changes.__file__], cwd=self.root,
+            env=dict(os.environ, GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(payload),
+                     GITHUB_STEP_SUMMARY=str(summary), GITHUB_OUTPUT=str(output)),
+            capture_output=True, text=True, check=True)
+        self.assertFalse(any(json.loads(result.stdout)['suites'].values()))
+        self.assertIn('full=false', output.read_text())
+        self.assertIn('workflow/helper checks only', summary.read_text())
 
     def test_pr_excludes_unrelated_base_branch_changes(self):
         self.git("switch", "-c", "feature")
@@ -207,8 +366,9 @@ class RequiredCheckTest(unittest.TestCase):
         # Exercise the script actually used by the preserved required check.
         block = workflow.read_text().split("      - name: Check selected validation results\n", 1)[1]
         script = textwrap.dedent(block.split("        run: |\n", 1)[1].split("      - ", 1)[0])
-        env = dict(os.environ, WORKFLOW_RESULT="success")
-        for suite in ("PYTHON", "BACKUP", "EMULATOR"):
+        env = dict(os.environ, WORKFLOW_RESULT="success", FULL_SELECTED="false",
+                   VALIDATION_RESULT="skipped")
+        for suite in ("PYTHON", "BACKUP", "EMULATOR", "BROWSER"):
             env[suite + "_SELECTED"] = "false"
             env[suite + "_RESULT"] = "skipped"
 
@@ -220,11 +380,18 @@ class RequiredCheckTest(unittest.TestCase):
         for result in ("failure", "cancelled", "skipped"):
             with self.subTest(workflow=result):
                 self.assertNotEqual(run({"WORKFLOW_RESULT": result}), 0)
-            for suite in ("PYTHON", "BACKUP", "EMULATOR"):
+            with self.subTest(validation=result):
+                self.assertNotEqual(run({"FULL_SELECTED": "true", "VALIDATION_RESULT": result,
+                                         "BROWSER_SELECTED": "true", "BROWSER_RESULT": "success"}), 0)
+            for suite in ("PYTHON", "BACKUP", "EMULATOR", "BROWSER"):
                 with self.subTest(suite=suite, result=result):
                     self.assertNotEqual(run({suite + "_SELECTED": "true", suite + "_RESULT": result}), 0)
-        for suite in ("PYTHON", "BACKUP", "EMULATOR"):
+        for suite in ("PYTHON", "BACKUP", "EMULATOR", "BROWSER"):
             self.assertEqual(run({suite + "_SELECTED": "true", suite + "_RESULT": "success"}), 0)
+        self.assertEqual(run({"FULL_SELECTED": "true", "VALIDATION_RESULT": "success",
+                              "BROWSER_SELECTED": "true", "BROWSER_RESULT": "success"}), 0)
+        # Explicit target-only builds still require target validation, not browser work.
+        self.assertEqual(run({"FULL_SELECTED": "true", "VALIDATION_RESULT": "success"}), 0)
 
 
 if __name__ == "__main__":

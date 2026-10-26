@@ -17,6 +17,8 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
 | Rendered-screen screenshots | USB SERIAL `screen` commands; `tools/fm1_screenshot.py` | Development-only `FELUCCA_SCREEN_CAPTURE=1`, default `0`. Stopped static HOME/menu pixels become a verified PNG/JSON. Default capture requires an awake display; explicit `--wake` silently wakes, awaits redraw and holds awake for the bounded session. See [capture setup, bounded memory and failure modes](screen-capture.md); physical LCD colours/backlight are outside its scope. |
+| Voice-retirement/LFO observation | Explicit `tools/retirement_measure.py` host run | Off unless invoked. Exports pinned source and applies guarded instrumentation only to ignored host copies; no device transport, firmware flag or target resource reservation. Observer file IO invalidates timing comparisons. See the [host measurement and reproduction](voice-retirement-measurement.md) and [performance scope](performance.md#host-retirement-observation). |
+| Factory-sound digital levels | Explicit `tools/loudness_audit.py` host run with the optional `audit` dependency group | Off unless invoked. Renders 1–8 selected standard-profile cases with isolated generated inputs; retains pre/post-master stereo raw data, JSON metrics and fixed-scale WAVs under ignored `build/`. No device transport, firmware flag, target resource reservation or automatic level trim. Native arithmetic failures stop capture. See the [bounded workflow and meter/listening limits](loudness-audit.md); host levels do not calibrate physical DAC/USB output. |
 
 The three development-only flags above are refused with `--release`. The four-command
 collector does not run a reproducer, enable instrumentation or capture screenshots;
@@ -235,8 +237,14 @@ or changes while it is copied, the reply is `no crash record`; a later request c
 
 `cpu_pct` is the smoothed render/deadline ratio with nested TIMER5 scan time subtracted.
 It excludes the main loop and is not whole-chip CPU utilization. `audio_max_us` and
-`dbg.max_us` are cumulative maxima which can persist across reboot; they are not maxima
-for the measured interval. Compare audio lateness, overload `voices_shed`,
+`dbg.max_us` expose the same cumulative render maximum. Current firmware explicitly
+resets it to zero at application startup (`main.c`, `fm1_main`), even though
+`felucca_dbg` lives in `.noinit`; other retained counters and breadcrumbs have their
+own reset semantics. The maximum accumulates within that boot and is not reset by
+collection. Record its starting and ending values, but do not subtract them or infer
+the measured interval's peak from an unchanged maximum. Older firmware and historical
+reports may have different reset semantics; retain their revision and matching evidence.
+Compare audio lateness, overload `voices_shed`,
 `voices_given_up`, USB audio errors, USB stalls and UART drops together.
 `voices_given_up` counts all `voice_kill()` calls, including overload, allocator
 victims and MIDI All Sound Off. It does not measure rejected or admitted requests;

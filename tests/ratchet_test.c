@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* RATCH, a step's ratchet (core.h SF_RATCH, seq.c seq_step / seq_ratchet), on the real sequencer, project, user
- * preset and UI sources (with the stubs of tests/ui_test.c):
+ * preset and UI sources (with the stubs of tests/ui_harness.h):
  *   PLAY       x1..x4: that many note-ons in one pass of the step, in equal parts of it, each retriggered after its
  *              gate; chords and the DRUM grid's hits repeat whole; x1 slides and ties out as before, x2..x4 never;
  *              the chance is rolled once per pass for all its parts; swing; STOP and an edit to fewer end them.
@@ -13,8 +13,7 @@
  *              out of one.
  * The editor protocol (STEP_SET / TRACK_STEP, INFO 52 01 04) is in tests/editor_test.c. Built and run by
  * tests/run_tests.sh. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* track 1 alone, a one-step loop: step 0 NOTE 60 (flags), RATCH hits, GATE 64, no swing; the transport started */
 static track_t *one_step(uint32_t hits, uint32_t flags)

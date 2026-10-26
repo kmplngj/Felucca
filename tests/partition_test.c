@@ -28,8 +28,7 @@
  * Negative self-checks mutate the schedule (dropped note-on, reordered pedal/note-off pair, dropped pedal-up) and
  * require a different PCM hash, so a comparison that cannot see such errors fails here.
  * Not covered here: the browser emulator's transport (web/emu), which has its own harness. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>

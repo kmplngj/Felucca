@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "slots": [
+    {
+      "id": 0,
+      "key": "felucca.engine.analog",
+      "status": "active"
+    },
+    {
+      "id": 1,
+      "key": "felucca.engine.digital",
+      "status": "retired"
+    },
+    {
+      "id": 2,
+      "key": "felucca.engine.phase",
+      "status": "active"
+    },
+    {
+      "id": 3,
+      "key": "felucca.engine.lofi",
+      "status": "active"
+    },
+    {
+      "id": 4,
+      "key": "felucca.engine.sample",
+      "status": "active"
+    },
+    {
+      "id": 5,
+      "key": "felucca.engine.voice",
+      "status": "active"
+    },
+    {
+      "id": 6,
+      "key": "felucca.engine.trio",
+      "status": "active"
+    },
+    {
+      "id": 7,
+      "key": "felucca.engine.wheel",
+      "status": "active"
+    },
+    {
+      "id": 8,
+      "key": "felucca.engine.grain",
+      "status": "active"
+    },
+    {
+      "id": 9,
+      "key": "felucca.engine.phys",
+      "status": "active"
+    },
+    {
+      "id": 10,
+      "key": "felucca.engine.drum",
+      "status": "active"
+    },
+    {
+      "id": 11,
+      "key": "felucca.engine.noise",
+      "status": "active"
+    },
+    {
+      "id": 12,
+      "key": "felucca.engine.fm6",
+      "status": "active"
+    },
+    {
+      "id": 13,
+      "key": "felucca.engine.slice",
+      "status": "active"
+    },
+    {
+      "id": 14,
+      "key": "felucca.engine.macro",
+      "status": "active"
+    },
+    {
+      "id": 15,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 16,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 17,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 18,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 19,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 20,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 21,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 22,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 23,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 24,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 25,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 26,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 27,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 28,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 29,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 30,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 31,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 32,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 33,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 34,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 35,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 36,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 37,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 38,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 39,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 40,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 41,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 42,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 43,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 44,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 45,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 46,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 47,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 48,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 49,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 50,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 51,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 52,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 53,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 54,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 55,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 56,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 57,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 58,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 59,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 60,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 61,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 62,
+      "key": null,
+      "status": "reserved"
+    },
+    {
+      "id": 63,
+      "key": null,
+      "status": "reserved"
+    }
+  ]
+}
