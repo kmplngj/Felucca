@@ -685,9 +685,9 @@ static int field_list_test(void)
 }
 
 /* ---- #300: project_used, project_info, project_rename and chain_prepare decode through proj_decode (bounded) ----
- * Before #300 they took the reader's output without proj_bound. The difference shows only for stored values outside
- * their fields or ranges (never in a record this firmware writes); pinned here, one case each (owner question in the
- * PR): */
+ * Before #300 they took the reader's output without proj_bound. Normalization also changes accepted historical
+ * representations (retired kit aliases and FUN5 accent-only steps), as well as out-of-range stored values.
+ * Pin each observable difference for the compatibility review and device workload in the PR. */
 static int decode_callers_test(void)
 {
     static project_t p;
