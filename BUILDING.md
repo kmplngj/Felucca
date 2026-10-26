@@ -393,8 +393,8 @@ by native bundle creation/verification and independent stable-key metadata check
 It uses `build.sh` and its normal toolchain/SDK defaults; the original CI build and runtime stay untouched.
 Local `profiles` remains a host-only check. To run the native proof explicitly after
 a fresh matching target build in a clean committed checkout, use
-`uv run --locked --group build python tests/native_bundle_integration.py` (inside the
-storage guard on this Mac). Stale reports or missing build prerequisites fail.
+`uv run --locked --group build python tests/native_bundle_integration.py`.
+Stale reports or missing build prerequisites fail.
 Logs and the actual bundle are retained under `build/ci/native-bundle/run-*/`.
 The controlled pair uses commit identity without the CI PR display label; it does
 not claim byte equality with the outer PR-labelled firmware or device acceptance.
@@ -403,7 +403,7 @@ The optional [offline level audit](docs/loudness-audit.md) uses the `audit`
 dependency group and an isolated native host renderer. Its focused checks run with
 `uv run --locked --group audit python tests/loudness_audit_test.py` and in the
 separate **Host loudness audit** workflow; they need no target SDK or device.
-On this Mac, run them through the storage guard. The audit retains source,
+The audit retains source,
 compiler, sample-rate and capture provenance alongside its measurements and
 bounded audition files. Host levels do not qualify physical DAC/USB levels or
 authorize changing factory sounds.
