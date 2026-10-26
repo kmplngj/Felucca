@@ -13,14 +13,17 @@ Read [the ledger guide](../../../docs/firmware-watch.md) and current
 
 1. In the original clone, resolve one shared absolute lease directory under its Git
    common directory (see the guide); retain that path before creating a worktree.
-   Fetch `origin/main` and `origin/automation/firmware-watch`. Use an isolated worktree
-   on the latter branch for the canonical ledger. Keep the user's checkout untouched.
-   Merge current main into the state branch before a run when needed; stop on conflicts
-   without overwriting either ledger. Initial ledger files also live on main for bootstrap.
-2. Acquire `lease` with `--lease-dir` set to that shared path and hold it through fetch, assessment and final
-   push. Helper locks protect individual mutations, not an entire review session.
-   Do not overlap runs or steal an active lock. Validate the complete ledger with
-   the helper; inspect its summary and selected records as described below.
+   Acquire `lease` with `--lease-dir` set to that shared path before fetch, inventory
+   or reconciliation and hold it through final push. Helper locks protect individual
+   mutations, not an entire review session. Do not overlap runs or steal an active lock.
+2. Fetch `origin/main` and `origin/automation/firmware-watch`. Use isolated worktrees:
+   current main supplies code/instructions and the state branch supplies only the
+   canonical ledger. Keep the user's checkout untouched. Do not merge main's whole
+   tree into the state branch. Reconcile the registry using the guide's guarded
+   procedure, then validate the candidate; stop on rejected reconciliation without
+   overwriting either ledger. Validate the complete canonical ledger with the helper
+   and inspect its summary and selected records. Main's initial ledger files are a
+   bootstrap snapshot, never current scan evidence.
 3. Record the freshly fetched full `origin/main` SHA as the Felucca comparison revision.
    Fetch registered sources with the helper's `sync` command. Only initialize pending
    registrations after identity, branch, immutable pin and full-DAG checks succeed.
@@ -83,7 +86,7 @@ new coverage or replacement of an earlier decision.
 
 ## Issues and durable recovery
 
-Before any issue write, apply [AGENTS repository ownership](../../../AGENTS.md#choose-the-repository-before-implementation-or-issue-creation)
+Before any issue write, apply [repository ownership](../../../docs/repository-ownership.md)
 to the actual source/dependency/asset licence closure, and check live repository
 access and Issues settings. That section owns collection placement, the WebApp
 fallback and blocked destinations; its requirements apply to scan findings too.
@@ -125,7 +128,7 @@ and fail on an unexpected remote advance. A local checkpoint is not durable acro
 fresh environments until pushed. Verify the remote commit SHA. Retain unpushed work
 and report a blocker if publication fails. No-op runs should not create timestamp-only
 commits. Skill/helper changes and new source registrations use ordinary reviewed PRs
-to main, then merge into the state branch. Preserve all pending registrations.
+to main; execute current-main code against the isolated state ledger. Preserve all pending registrations.
 
 ## Coordinator and workers
 

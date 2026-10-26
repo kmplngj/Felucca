@@ -7,6 +7,7 @@
  * B1..B32 loading the exact records, bank slots without a voice skipped by the knob and refused elsewhere, a new
  * bank leaving a track's voice its own, projects and user presets keeping a bank voice whatever the bank holds later,
  * and the SLOT values stored before 1.4.1 (projects, user presets, motion) loading exactly as before. */
+#include "host_nor.h"
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -26,42 +27,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #include "../firmware/src/menu_items.c"
 static void panel_setup(void) {}
 
-static uint8_t nor[0x100000], flash_ok = 1;
-static long cut_bytes = -1, cut_erase = -1;     /* the power goes after that many programmed bytes / at that erase */
-static int dead;                                 /* .. and stays off: nothing more is written */
-static uint32_t progs, erases;
-static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
-static int st_erase(uint32_t off)
-{
-    if (dead)
-        return -8;
-    erases++;
-    if (cut_erase >= 0 && cut_erase-- == 0) {    /* cut during the erase: half of it done */
-        memset(nor + off, 0xFF, 2048);
-        dead = 1;
-        return -8;
-    }
-    memset(nor + off, 0xFF, 4096);
-    return 0;
-}
-static int st_prog(uint32_t off, const void *src, uint32_t n)
-{
-    const uint8_t *s = src;
-    uint32_t i;
-    if ((off & 0xFFu) + n > 256u) {
-        printf("page wrap at %#x\n", off);
-        exit(1);
-    }
-    for (i = 0; i < n; i++) {
-        if (dead || (cut_bytes >= 0 && cut_bytes-- == 0)) {
-            dead = 1;
-            return -9;
-        }
-        nor[off + i] &= s[i];
-        progs++;
-    }
-    return 0;
-}
+static uint8_t flash_ok = 1;
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
 static uint32_t fl_jedec_ram(void) { return 0; }

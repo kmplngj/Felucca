@@ -48,6 +48,10 @@ import os
 import platform
 import re
 import shutil
+import signal
+import threading
+import uuid
+from contextlib import contextmanager
 import struct
 import subprocess
 import sys
@@ -77,6 +81,16 @@ LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
 CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
 LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$", re.I)
+# Exact exports of the installed generic JieLi Clang 4.0.1 compiler runtime.
+# Integer-only 64-bit and fp32 helpers are deliberately outside this policy.
+SOFT_DOUBLE_HELPERS = frozenset({
+    "__adddf3", "__subdf3", "__muldf3", "__divdf3", "__negdf2", "__powidf2",
+    "__eqdf2", "__nedf2", "__gedf2", "__gtdf2", "__ledf2", "__ltdf2", "__unorddf2",
+    "__extendsfdf2", "__truncdfsf2", "__truncdfhf2",
+    "__fixdfsi", "__fixdfdi", "__fixunsdfsi", "__fixunsdfdi",
+    "__floatsidf", "__floatdidf", "__floatunsidf", "__floatundidf",
+    "__muldc3", "__divdc3",
+})
 
 # SDK files of AC79NN_SDK_V1.2.1_2023-12-13 (the tested version)
 SDK_SHA256 = {
@@ -166,14 +180,221 @@ def use_docker():
     return os.environ.get("JIELI_DOCKER", "0" if native else "1") == "1"
 
 
+_TOOL_SESSION = None
+
+
+def docker_tool_command(tool, args):
+    """Legacy one-shot path for standalone calls and custom-image fallback."""
+    return ["docker", "run", "--rm", "--platform", "linux/amd64", "-v", f"{SRC}:/work",
+            "-v", f"{toolchain()}:/opt/jieli:ro", "-w", "/work", DOCKER_IMAGE,
+            f"/opt/jieli/{tool}", *args]
+
+
+class ToolchainSession:
+    """One main() invocation owns this lazy container; workers share only its startup."""
+    def __init__(self):
+        self.token = uuid.uuid4().hex
+        self.name = f"felucca-build-{os.getpid()}-{self.token}"
+        self.lock = threading.RLock()
+        self.cid = None
+        self.mode = "new"
+        self.attempted = self.closed = self.closing = False
+        self.starting_thread = None
+        self.pending_signal = None
+        self.handlers = {}
+
+    @staticmethod
+    def docker(*args):
+        # Terminal interrupts belong to the Python owner. Keep create/remove clients
+        # alive until their daemon response so deferred cancellation can clean up.
+        return subprocess.run(["docker", *args], cwd=SRC, capture_output=True, text=True,
+                              start_new_session=True)
+
+    @staticmethod
+    def absent(result):
+        return bool(re.search(r"no such (?:container|object)|no container with (?:name|ID)",
+                              result.stderr, re.I))
+
+    def fallback(self, reason):
+        self.mode = "fallback"
+        sys.stderr.write(f"build: using one-shot tool containers ({reason})\n")
+
+    def start(self):
+        self.starting_thread = threading.get_ident()
+        try:
+            inspected = self.docker("image", "inspect", "--platform", "linux/amd64", DOCKER_IMAGE)
+            if inspected.returncode:
+                # Older Docker/Podman CLIs may lack --platform for inspection.
+                inspected = self.docker("image", "inspect", DOCKER_IMAGE)
+            try:
+                images = json.loads(inspected.stdout)
+                if inspected.returncode or not isinstance(images, list) or len(images) != 1:
+                    raise ValueError("image inspect unavailable")
+                image = images[0]
+                if (not re.fullmatch(r"(?:sha256:)?[0-9a-f]{64}", image["Id"])
+                        or image.get("Architecture") != "amd64" or image.get("Os") != "linux"
+                        or not isinstance(image.get("Config"), dict) or not image["Config"]):
+                    raise ValueError("missing linux/amd64 image configuration")
+                # With the containerd image store, the selected platform Id can be a
+                # manifest digest that docker run cannot resolve as an image ID.
+                # Its advertised repository digest remains runnable with --platform.
+                image_ref = next((ref for ref in image.get("RepoDigests", [])
+                                  if isinstance(ref, str) and re.fullmatch(
+                                      r"[a-z0-9]+(?:[._:/-][a-z0-9]+)*@sha256:[0-9a-f]{64}", ref)), None)
+                if image_ref is None:
+                    if image.get("Descriptor"):
+                        self.fallback("image manifest has no runnable immutable reference")
+                        return
+                    image_ref = image["Id"]
+                entrypoint = image["Config"].get("Entrypoint")
+                if entrypoint not in (None, []):
+                    self.fallback("custom image ENTRYPOINT")
+                    return
+            except (ValueError, KeyError, TypeError, AttributeError):
+                self.fallback("image inspect unavailable or malformed")
+                return
+            self.attempted = True
+            result = self.docker("run", "-d", "--name", self.name,
+                                 "--label", "io.felucca.build-session=" + self.token,
+                                 "--platform", "linux/amd64", "-v", f"{SRC}:/work",
+                                 "-v", f"{toolchain()}:/opt/jieli:ro", "-w", "/work",
+                                 image_ref, "sleep", "infinity")
+            if result.stderr.strip():
+                sys.stderr.write(result.stderr)
+            if result.returncode or not re.fullmatch(r"[0-9a-f]{64}", result.stdout.strip()):
+                if result.stdout.strip():
+                    sys.stderr.write(result.stdout)
+                raise SystemExit("build: cannot start owned toolchain container")
+            self.cid = result.stdout.strip()
+            self.mode = "active"
+        except BaseException:
+            try:
+                self.close()
+            except Exception as error:
+                self.cleanup_error(error)
+            raise
+        finally:
+            self.starting_thread = None
+
+    def command(self, tool, args):
+        with self.lock:
+            if self.closed:
+                raise SystemExit("build: toolchain session is closed")
+            if self.mode == "new":
+                self.start()
+            self.raise_pending_signal()
+            if self.mode == "fallback":
+                return docker_tool_command(tool, args)
+            return ["docker", "exec", "-w", "/work", self.cid, f"/opt/jieli/{tool}", *args]
+
+    def partial_id(self):
+        result = self.docker("inspect", "--type", "container", self.name)
+        if result.returncode:
+            if self.absent(result):
+                return None
+            raise RuntimeError("cannot inspect partial startup: " + result.stderr.strip())
+        try:
+            records = json.loads(result.stdout)
+            if not isinstance(records, list) or len(records) != 1:
+                raise ValueError("invalid container inspection")
+            record = records[0]
+            if (record["Name"].lstrip("/") != self.name
+                    or record["Config"]["Labels"].get("io.felucca.build-session") != self.token
+                    or not re.fullmatch(r"[0-9a-f]{64}", record["Id"])):
+                raise ValueError("ownership mismatch")
+            return record["Id"]
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise RuntimeError("refusing cleanup without exact container ownership") from error
+
+    def close(self):
+        with self.lock:
+            if self.closed:
+                return
+            self.closed = self.closing = True
+            try:
+                cid = self.cid or (self.partial_id() if self.attempted else None)
+                if cid:
+                    result = self.docker("rm", "--force", cid)
+                    if result.returncode and not self.absent(result):
+                        raise RuntimeError("container removal failed: " + result.stderr.strip())
+                    if not result.returncode and result.stderr.strip():
+                        sys.stderr.write(result.stderr)
+            finally:
+                self.closing = False
+
+    def cleanup_error(self, error):
+        sys.stderr.write(f"build: cleanup failed for owned container {self.cid or self.name}: {error}\n")
+
+    def raise_pending_signal(self):
+        if self.pending_signal == signal.SIGINT:
+            raise KeyboardInterrupt
+        if self.pending_signal is not None:
+            raise SystemExit(128 + self.pending_signal)
+
+    def interrupted(self, signum, frame):
+        self.pending_signal = signum
+        # Do not interrupt an in-flight create in this thread, or cleanup itself.
+        # A worker's startup holds the lock until its response/partial cleanup.
+        if self.starting_thread == threading.get_ident() or self.closing:
+            return
+        try:
+            self.close()
+        except Exception as error:
+            self.cleanup_error(error)
+        self.raise_pending_signal()
+
+    def install_handlers(self):
+        if threading.current_thread() is threading.main_thread():
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                self.handlers[sig] = signal.signal(sig, self.interrupted)
+
+    def restore_handlers(self):
+        for sig, handler in self.handlers.items():
+            signal.signal(sig, handler)
+
+
+@contextmanager
+def toolchain_session():
+    """Only main(), including imported calls, opts into container reuse."""
+    global _TOOL_SESSION
+    if not use_docker():
+        yield
+        return
+    if _TOOL_SESSION is not None:
+        raise RuntimeError("nested target build session")
+    session = ToolchainSession()
+    _TOOL_SESSION = session
+    primary_error = False
+    try:
+        if threading.current_thread() is not threading.main_thread():
+            session.fallback("target main called outside the Python main thread")
+        session.install_handlers()
+        yield
+    except BaseException:
+        primary_error = True
+        raise
+    finally:
+        try:
+            session.close()
+        except Exception as error:
+            session.cleanup_error(error)
+            session.raise_pending_signal()
+            if not primary_error:
+                raise SystemExit("build: owned toolchain cleanup failed") from error
+        finally:
+            session.restore_handlers()
+            _TOOL_SESSION = None
+        session.raise_pending_signal()
+
+
 def tc(tool, *args):
     """run a toolchain binary (pi32v2/bin/..., common/bin/...) with cwd SRC; paths relative to SRC"""
     rel = [str(Path(a).resolve().relative_to(SRC)) if isinstance(a, Path) else a for a in args]
     if tool == "cc":                # the toolchain's cc wrapper needs python3; call clang directly
         tool, rel = "pi32v2/bin/clang", ["-target", "pi32v2", *rel]
     if use_docker():
-        cmd = ["docker", "run", "--rm", "--platform", "linux/amd64", "-v", f"{SRC}:/work",
-               "-v", f"{toolchain()}:/opt/jieli:ro", "-w", "/work", DOCKER_IMAGE, f"/opt/jieli/{tool}", *rel]
+        cmd = (_TOOL_SESSION.command(tool, rel) if _TOOL_SESSION is not None
+               else docker_tool_command(tool, rel))
     else:
         cmd = [str(toolchain() / tool), *rel]
     r = subprocess.run(cmd, cwd=SRC, capture_output=True, text=True)
@@ -494,8 +715,73 @@ def ram_text_empty(hdr, syms):
     return all(evidence) if evidence else None
 
 
+def soft_double_check(hdr, syms):
+    """Known runtime definitions in allocated CODE output sections, from final objdump -h/-t."""
+    sections = {}
+    section = None
+    native = bool(re.search(r"^\s*Idx\s+Name\s+Size\s+Address\s+Type\s*$", hdr, re.M))
+    for line in hdr.splitlines():
+        p = line.split()
+        if p and p[0].isdigit():
+            section = p[1] if len(p) >= 2 else None
+            if section:
+                sections[section] = None
+            if native:
+                # JieLi's objdump reports TEXT/DATA rather than GNU's ALLOC/CODE.
+                # app.ld's three executable outputs are all allocated; do not
+                # infer allocation for an unknown TEXT section in this format.
+                if (len(p) >= 5 and all(re.fullmatch(r"[0-9a-f]+", v, re.I) for v in p[2:4])
+                        and set(p[4:]) <= {"TEXT", "DATA", "BSS"}):
+                    if "TEXT" not in p[4:]:
+                        sections[section] = set()
+                    elif section in (".text", ".ram_text", ".c1_text"):
+                        sections[section] = {"ALLOC", "CODE"}
+                section = None
+                continue
+            if (len(p) != 7 or not all(re.fullmatch(r"[0-9a-f]+", v, re.I) for v in p[2:6])
+                    or not re.fullmatch(r"2\*\*\d+", p[-1])):
+                section = None
+        elif section:
+            if re.fullmatch(r"\s*[A-Z_]+(?:,\s*[A-Z_]+)*\s*", line):
+                attrs = set(line.replace(",", " ").split())
+                # An unknown word may be a damaged CODE/ALLOC marker, not
+                # evidence that a matching helper lives outside executable code.
+                if attrs <= {"CONTENTS", "ALLOC", "LOAD", "READONLY", "CODE", "DATA", "DEBUGGING"}:
+                    sections[section] = attrs
+            section = None
+
+    found, errors = set(), []
+    for line in syms.splitlines():
+        p = line.split()
+        if not p or p[-1] not in SOFT_DOUBLE_HELPERS:
+            continue
+        # Optional binding/type flags precede the final section, size and name.
+        # Do not let a damaged matching row turn into evidence of absence.
+        if (len(p) < 4 or not re.fullmatch(r"[0-9a-f]+", p[0], re.I)
+                or not re.fullmatch(r"[0-9a-f]+", p[-2], re.I)
+                or not re.fullmatch(r"[lg!uwCvWIiDdFfO ]*", " ".join(p[1:-3]))):
+            errors.append(f"soft-double: malformed symbol row: {line.strip()}")
+            continue
+        flags = "".join(p[1:-3])
+        if p[-3] in ("*UND*", "*ABS*", "*COM*") or "d" in flags or "f" in flags:
+            continue                # undefined, absolute, common, section/debug or file record
+        attrs = sections.get(p[-3])
+        if attrs is None:
+            errors.append(f"soft-double: missing or malformed section evidence for {p[-1]} in {p[-3]}")
+        elif {"ALLOC", "CODE"} <= attrs:
+            found.add(p[-1])         # local/weak and zero-sized aliases still define linked code
+    if found:
+        errors.append("soft-double helpers defined in final executable sections: " + ", ".join(sorted(found)) +
+                      "; use fp32/fixed-point arithmetic or review the unintended double conversion")
+    notes = [] if errors else ["no known soft-double helpers defined in final executable sections"]
+    return errors, notes
+
+
 def check(img, hdr, syms, dis, rt, *, resources=None):
     errors, notes = [], []
+    double_errors, double_notes = soft_double_check(hdr, syms)
+    errors += double_errors
+    notes += double_notes
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
     if not m or int(m.group(1), 16) != APP_XIP:
         errors.append(f"_start is not at {APP_XIP:#x}")
@@ -654,6 +940,11 @@ def mmio_check():
 
 
 def main(argv=None):
+    with toolchain_session():
+        return _main(argv)
+
+
+def _main(argv=None):
     global PRODUCT, VERSION, BUILD_IDENTITY
     try:
         c = resolve(sys.argv[1:] if argv is None else argv)  # validated before any job starts

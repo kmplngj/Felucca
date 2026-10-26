@@ -4,9 +4,8 @@ Felucca is Leo Kuroshita's ([@kurogedelic](https://github.com/kurogedelic), [Hü
 thanks the work below; each keeps its own licence (see [LICENSE](LICENSE), [LICENSING.md](LICENSING.md) and [LICENSES/](LICENSES/)).
 
 - **[Hügelton Instruments](https://hugelton.com)** (Leo Kuroshita, [@kurogedelic](https://github.com/kurogedelic)):
-  Felucca itself; the PHASE engine's waveforms (a C port of the oscillator of
-  [CrispyZebra](https://github.com/hugelton/CrispyZebra), GPL-3.0); the DRUM voices and kits; the Hügelton Sample
-  Pack (the drum samples, GPL-3.0-only, not CC0); the [Fukiai](https://github.com/hugelton/Fukiai) icon
+  Felucca itself; its own PHASE engine and the DRUM voices and kits (GPL-3.0-only);
+  the Hügelton Sample Pack (generator and generated sounds, [CC0 1.0](LICENSES/CC0-1.0.txt)); the [Fukiai](https://github.com/hugelton/Fukiai) icon
   font ([MIT](LICENSES/MIT-Fukiai.txt)); the ANALOG, LOFI, TRIO, WHEEL and NOISE engines
   ([Felucca-Engines](https://github.com/hugelton/Felucca-Engines), [MIT](LICENSES/MIT-Felucca-Engines.txt))
 - Fonts: native UI text: [M8Stealth57/89](assets/fonts/m8stealth/README.md) by Trash80 ([CC BY-SA 3.0](LICENSES/CC-BY-SA-3.0-M8Stealth.txt));

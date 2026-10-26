@@ -13,7 +13,7 @@ open MIDI/USB devices, execute a loader, or write files or firmware.
    address zero, or an already obtained `.fwsc` package. Retain its original
    bytes, source, acquisition date, full SHA-256 and any backup receipt privately.
    This command does not acquire or verify a device backup. See the
-   [FM-1 Transporter recovery project](https://github.com/kurogedelic/FM-1-transporter)
+   [existing recovery procedure](usb-rescue.md#rom-recovery-with-existing-m-flasher)
    for the separate backup/recovery path.
 2. From this checkout's root, select the saved file's actual format explicitly:
 

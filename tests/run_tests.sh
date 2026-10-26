@@ -42,6 +42,9 @@
 #                   screen in FLAT and LINE and every palette, over every value it can show; 1 px off or more fails
 #                   (build/ui_new/align.txt). MENU > LARGE: every screen again (FLAT, LINE, every palette) and the page / value
 #                   sweep with the tall cards, the same lint and alignment; sheet_LARGE_GREY.png, sheet_LARGE_MONO.png.
+# RETIRED SOUNDS (tests/retired_vectors.c + .py, #299): the firmware's own conversions of DIGITAL, PHYS MODEL 2 / 4 and SAMPLE
+#                   PERC (project FUN10 / FUN8 / FUN7, UPB1 record, PER4 / PER6 favourites, fm4_apply) regenerated as JSON and compared
+#                   with tests/fixtures/retired_vectors.json (the WebApp's reference, docs/legacy-formats.md section 4).
 # UI (tests/ui_test.c): the UI sources against stub display / buttons / knobs: sound loads keep the steps and
 #                   the track's ARP / SCL / SLICER, the SAVE > PHRASES loader and its REPLACE? dialog, the
 #                   one-step undo of both (SAVE held), REC on TRACKS / SEQ / ARP, STEP and ARP while recording,
@@ -312,12 +315,16 @@ if [ -f build/gen/felucca_profile.h ] && grep -q '^#define FELUCCA_PROFILE_ENGIN
 fi
 
 u_portable() {
+    run "offline update-record survey: raw coverage, predicate and file boundaries" python3 tests/update_records_test.py
     run "offline boot-area survey: synthetic CRC, extent, clock and format boundaries" python3 tests/bootarea_test.py
     run "structured host coverage: verifier, producer and compiler causal fixtures" python3 tests/coverage_contract_test.py
     run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
     run "64-bit multiply / 16-bit load inventory: parser, window and baseline fixtures (#425)" python3 tests/mul64_hload_check_test.py
     run "supported profile contract (portable fixtures)" python3 tests/profile_contract_test.py
     run "post-link resource reports (portable fixtures)" python3 tests/build_report_test.py
+    run "target entry frames: bounded parser and unresolved-state fixtures" python3 tests/target_frames_test.py
+    run "immutable build bundles (portable fixtures)" python3 tests/build_manifest_test.py
+    run "Wasm build receipts (portable fixtures)" python3 tests/wasm_report_test.py
     run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
     run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py
     run "generated sample inputs: stale/extra WAVs and header cache" python3 tests/gen_samples_test.py
@@ -345,6 +352,7 @@ u_storage() {
 unit storage "" u_storage
 
 u_input() {
+    run "input accessor contract: actual HAL/UI/browser adapters and incompatible UI signature" python3 tests/input_contract_test.py
     $CC -o "$OUT/input_test" tests/input_test.c
     run "keys and buttons: fast press, long release, bouncy contacts (one note each), glitches, encoders" "$OUT/input_test"
 
@@ -354,6 +362,12 @@ u_input() {
 unit input "" u_input
 
 u_usb() {
+    # Real composite poll/control/EP4 paths with a HAL-only finite host model (#101).
+    for cdc in 0 1; do
+        $CC -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function -Wno-missing-field-initializers \
+            -DT_CDC=$cdc -DHALF_FRAMES=$HALF -o "$OUT/usb_service_test_$cdc" tests/usb_service_test.c
+        run "USB composite service: CDC $cdc, bounded saturation, control/reset recovery and nested EP4" "$OUT/usb_service_test_$cdc"
+    done
     $CC -O2 -DT_CDC=1 -DHALF_FRAMES=$HALF -o "$OUT/uac_test" tests/uac_test.c -lm
     run "USB audio input: descriptors (with CDC), ring and packets, 44.1 -> 48 kHz resampler, 48 kHz stream" "$OUT/uac_test"
     $CC -O2 -DT_CDC=0 -DHALF_FRAMES=$HALF -o "$OUT/uac_test_nocdc" tests/uac_test.c -lm
@@ -452,8 +466,23 @@ UNIT_NEEDS=assets
 if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_profiles() {
         run "profiles: isolated host selection, metadata and stored-sound round trips" python3 tests/profile_integration_test.py
+        if [ "${GITHUB_ACTIONS:-false}" = true ] && [ "${GITHUB_REPOSITORY:-}" = kmplngj/Felucca ]; then
+            run "profiles: real native bundle keys and Git-free reproduction" python3 tests/native_bundle_integration.py
+        else
+            echo "profiles: native bundle proof requires upstream CI/source identity; standalone: python3 tests/native_bundle_integration.py"
+        fi
     }
     unit profiles "" u_profiles
+
+    UNIT_NEEDS="assets pillow"
+    u_icon_streams() {
+        run "icons: deterministic export, source alpha, metadata, stream and offset boundaries" \
+            python3 tests/icon_stream_test.py --c-reference "$OUT/icon-stream-reference.h"
+        $CC -O1 -w -Ibuild/gen -I"$OUT" -o "$OUT/icon_stream_test" tests/icon_stream_test.c -lm
+        run "icons: actual C Huffman/raw pixels, palettes, clipping, mirroring, caches and lookahead" "$OUT/icon_stream_test"
+    }
+    unit icon_streams "" u_icon_streams
+    UNIT_NEEDS=assets
 
     u_replay() {
         run "timestamped interaction replay: PCM/LCD determinism and real emulator" python3 tests/replay_test.py NativeReplayTests
@@ -665,6 +694,15 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
             "$OUT/sound_install_test"
     }
     unit sound_install "" u_sound_install
+
+    u_retired_vectors() {
+        run "Retired vector wire identities: independent magic/size/count checks and negative controls" \
+            python3 tests/retired_vectors_test.py
+        $CC -w -o "$OUT/retired_vectors" tests/retired_vectors.c -lm
+        run "Retired-sound reference vectors (#299): DIGITAL, PHYS MODEL 2 / 4, SAMPLE PERC per store (project, user preset record, favourites, fm4_apply), regenerated and compared" \
+            python3 tests/retired_vectors.py --check "$OUT/retired_vectors"
+    }
+    unit retired_vectors "" u_retired_vectors
 
     u_drumfuzz() {
         $CC -DPREEMPT -g -fwrapv -fsanitize=address,undefined -fno-sanitize=shift -fno-sanitize-recover=all -w \
@@ -1200,6 +1238,13 @@ else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    u_asan_icon_streams() {
+        ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ibuild/gen -I"$OUT" \
+            -o "$A/icon_stream_test" tests/icon_stream_test.c -lm
+        run "icons: strict ASan/UBSan renderer and exact-allocation boundaries" "$A/icon_stream_test"
+    }
+    unit asan_icon_streams "icon_streams" u_asan_icon_streams
+
     u_asan_libc() {
         # The libc harness needs none of the DSP sanitizer exclusions above.
         ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined \
@@ -1232,6 +1277,12 @@ else
     unit asan_insert "insert" u_asan_insert
 
     u_asan_usb() {
+        for cdc in 0 1; do
+            ${CC%% *} -std=c11 -O1 -g -Wall -Wextra -Werror -Wno-unused-function -Wno-missing-field-initializers \
+                -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+                -DT_CDC=$cdc -DHALF_FRAMES=$HALF -o "$A/usb_service_test_$cdc" tests/usb_service_test.c
+            run "USB composite service: CDC $cdc (strict ASan/UBSan)" "$A/usb_service_test_$cdc"
+        done
         # Unlike the general DSP harness below, retain every UBSan bounds/pointer/shift check here.
         ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined -fno-sanitize-recover=all \
             -DHALF_FRAMES=$HALF -o "$A/uac_fir_bounds_test" tests/uac_fir_bounds_test.c

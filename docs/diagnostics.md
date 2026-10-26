@@ -17,6 +17,8 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
 | Boot area and declared clock | `tools/fm1_bootarea.py --raw DUMP.bin` | Offline and read-only, any firmware: names a flash dump's or package's boot area (M-VAVE V15/V16, m-bootloader, unknown), checks its record and SPL CRCs, and reads the chip key and `isd_config.ini` clock fields. Needs a dump from FM-1 Transporter or M-Flasher; it does not read live clock registers (#618). See the [offline boot-area survey](boot-area-survey.md) for bounded input checks, formats and interpretation. |
 | Rendered-screen screenshots | USB SERIAL `screen` commands; `tools/fm1_screenshot.py` | Development-only `FELUCCA_SCREEN_CAPTURE=1`, default `0`. Stopped static HOME/menu pixels become a verified PNG/JSON. Default capture requires an awake display; explicit `--wake` silently wakes, awaits redraw and holds awake for the bounded session. See [capture setup, bounded memory and failure modes](screen-capture.md); physical LCD colours/backlight are outside its scope. |
+| Voice-retirement/LFO observation | Explicit `tools/retirement_measure.py` host run | Off unless invoked. Exports pinned source and applies guarded instrumentation only to ignored host copies; no device transport, firmware flag or target resource reservation. Observer file IO invalidates timing comparisons. See the [host measurement and reproduction](voice-retirement-measurement.md) and [performance scope](performance.md#host-retirement-observation). |
+| Factory-sound digital levels | Explicit `tools/loudness_audit.py` host run with the optional `audit` dependency group | Off unless invoked. Renders 1–8 selected standard-profile cases with isolated generated inputs; retains pre/post-master stereo raw data, JSON metrics and fixed-scale WAVs under ignored `build/`. No device transport, firmware flag, target resource reservation or automatic level trim. Native arithmetic failures stop capture. See the [bounded workflow and meter/listening limits](loudness-audit.md); host levels do not calibrate physical DAC/USB output. |
 
 The three development-only flags above are refused with `--release`. The four-command
 collector does not run a reproducer, enable instrumentation or capture screenshots;
@@ -183,13 +185,29 @@ or changes while it is copied, the reply is `no crash record`; a later request c
 
 `cpu_pct` is the smoothed render/deadline ratio with nested TIMER5 scan time subtracted.
 It excludes the main loop and is not whole-chip CPU utilization. `audio_max_us` and
-`dbg.max_us` are cumulative maxima which can persist across reboot; they are not maxima
-for the measured interval. Compare audio lateness, overload `voices_shed`,
+`dbg.max_us` expose the same cumulative render maximum. Current firmware explicitly
+resets it to zero at application startup (`main.c`, `fm1_main`), even though
+`felucca_dbg` lives in `.noinit`; other retained counters and breadcrumbs have their
+own reset semantics. The maximum accumulates within that boot and is not reset by
+collection. Record its starting and ending values, but do not subtract them or infer
+the measured interval's peak from an unchanged maximum. Older firmware and historical
+reports may have different reset semantics; retain their revision and matching evidence.
+Compare audio lateness, overload `voices_shed`,
 `voices_given_up`, USB audio errors, USB stalls and UART drops together.
 `voices_given_up` counts all `voice_kill()` calls, including overload, allocator
 victims and MIDI All Sound Off. It does not measure rejected or admitted requests;
 `voices_shed` is its overload subset. A clean sustain after shedding is a smaller
 workload, so retain actual surviving-voice observations when available.
+
+`status` `cpu2_stack`, when present, scans the worker's 4,096 B user allocation
+for its fill pattern. This allocation includes a 256 B low guard; its usable
+user window is 3,840 B. The separate 256 B worker supervisor stack and both CPU0
+stacks are outside this measurement. The pattern is refilled on each worker
+start attempt, including a failed attempt; starting an already-running worker
+does not refill it. Before the first attempt it reports zero, which does not
+establish that a workload was measured. Holding the worker retains the prior
+pattern until another start attempt. Do not treat this field as a boot-wide or
+collection-interval maximum, subtract samples, or infer CPU0 stack use from it.
 
 `inp` resets scan gaps/histograms, encoder statistics and key latency on read. Its
 `timer_irqs` and `nested` fields are cumulative and receive separate deltas. Later input

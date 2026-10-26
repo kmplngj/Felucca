@@ -34,11 +34,43 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- [Offline update-record survey](update-record-survey.md) reports native-loader
+  CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
+  and changes no storage policy; external SPL behavior remains unverified.
+
+- Optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
+  artifact evidence. Unsupported stack/ASM forms and unresolved calls stay explicit;
+  stack reservations and runtime behavior are unchanged. It is not a live watermark
+  or whole-stack fit result.
+
+- [Offline boot-area survey](boot-area-survey.md) checks saved dump/package
+  boot records, SPL CRCs, chip key and declared clock fields with bounded input
+  parsing. It accesses no device and changes no installer policy; live clocks,
+  bootloader compatibility and backup-first hardware survey remain pending.
+
+- [Offline factory-level audit tooling](loudness-audit.md) captures selected native
+  sounds, reports stereo loudness/headroom and retains fixed-scale audition WAVs.
+  It changes no factory levels; role assignment, listening decisions and physical
+  DAC/USB qualification remain separate.
+
+- Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
+  exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
+  Offline verification checks artifact correspondence; full host/browser/device acceptance,
+  public build service and deployment remain separate.
+  Native target builds now refuse unsupported compiler search/configuration variables
+  such as `CPATH`, `LIBRARY_PATH` and `SDKROOT`; Docker target builds ignore these
+  unforwarded host values. Host loader injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+  `DYLD_LIBRARY_PATH`) is refused for both backends. `LD_LIBRARY_PATH` remains allowed
+  and is recorded only as a value hash; see [build-input identity](build-bundles.md#identity-and-immutability).
+
 - **Build metadata contracts:** canonical supported-profile exports include stable IDs,
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds
   emit artifact-bound resource/stack reports, with stale-evidence verification using the
   existing build guards. This is the first stage of #465; cost prediction and a browser
-  builder remain pending. See [build evidence](build-profiles.md#machine-readable-build-evidence).
+  builder remain pending. A reviewed native font policy pins M8 inputs, metrics and shared
+  bitmap storage; target reports verify the 4,630 B text-font bound and separate named
+  keycap, icon, decoder and cache costs. This changes no font pixels or runtime behavior.
+  See [build evidence](build-profiles.md#machine-readable-build-evidence).
 - **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
   51 factory sounds alongside all thirteen standard engines, using stable engine
   ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.
@@ -91,6 +123,13 @@ recorded in the linked reports, rather than every current build or device.
   and checksums, and a repository-backed firmware-watch ledger for reviewing other forks.
 
 ### Fixed
+
+- **Native attribution:** ABOUT credits and the retained installer template now
+  distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0
+  dedication. The PHASE source comment agrees; synthesis and generated sounds
+  are unchanged. Native host rendering and scroll checks qualify this text change;
+  no physical display observation is claimed.
+  See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
 
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
@@ -235,6 +274,16 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- Native icons share identical complete 12 px compressed streams while preserving
+  icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
+  [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.
+
+- Docker target builds share one invocation-owned toolchain container across loader,
+  application and resource checks, reducing repeated container startup overhead.
+  Compiler arguments and firmware behavior are unchanged; the benefit depends on
+  host load and compiler time. Native Linux builds keep their existing path. See
+  [builder lifetime and fallback](../BUILDING.md#prerequisites-macos) and
+  [the controlled measurements](https://github.com/kmplngj/Felucca/pull/661).
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See
@@ -248,7 +297,19 @@ recorded in the linked reports, rather than every current build or device.
   these are dated comparisons, not current whole-firmware totals.
 - **Development turnaround:** change-based CI selection, dependency caches,
   parallel independent host tests and reuse of automatic PR firmware artifacts
-  reduce repeated validation/build work. Required checks still gate merges;
-  see [CI scope and artifacts](../.github/CI.md). The host suite's opt-in
+  reduce repeated validation/build work. Classified draft changes use explicit
+  focused feedback, including matching test entry points, graphics and selected
+  DSP helpers; shared or unfamiliar files retain full validation. AI guidance uses
+  draft PRs and affected local units during iteration, with complete applicable
+  CI on the final ready candidate before merge and no identical local rerun
+  without a changed input or unresolved concern. Selector/helper-contract-only
+  changes use workflow/coverage checks without firmware or audio builds; workflow
+  YAML and shared test execution changes retain full validation. Full host work
+  runs across two runners with a source-derived aggregate rejecting missing,
+  duplicate or stale evidence. Standalone backup fixtures can reuse matching
+  verified receipts; firmware identity and releases stay fresh. Required checks
+  still gate merges; see [CI stages and artifacts](../.github/CI.md#feedback-and-merge-stages).
+  These are CI scheduling changes, not firmware CPU or hardware performance claims.
+  The host suite's opt-in
   [`--ai-output` mode](../BUILDING.md#tests) condenses console output while retaining
   full logs, failure exit codes and warning/skip hints; test coverage is unchanged.
