@@ -103,6 +103,12 @@ actually tested on an FM-1. Emulator coverage does not validate USB audio/MIDI,
 TRS MIDI, update/recovery, physical panel/LCD behavior or device audio deadlines.
 See [BUILDING's emulator scope](../../../BUILDING.md#browser-emulator).
 
+When a [Sol loop](../sol-loop/SKILL.md) was run, include its actual model/effort,
+round count, reviewed candidate and final reviewer verdict in **Validation
+performed**. Retain unresolved findings, disagreements and later coverage gaps;
+an exhausted review budget is not approval. A local review is separate from
+required PR review and physical hardware acceptance.
+
 For documentation-only changes, state why hardware testing is unnecessary and
 give steps to verify the changed instructions, relative links and resulting PR
 description. For tooling-only changes, provide the appropriate commands, inputs
