@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- [Offline boot-area survey](boot-area-survey.md) checks saved dump/package
+  boot records, SPL CRCs, chip key and declared clock fields with bounded input
+  parsing. It accesses no device and changes no installer policy; live clocks,
+  bootloader compatibility and backup-first hardware survey remain pending.
+
 - [Offline factory-level audit tooling](loudness-audit.md) captures selected native
   sounds, reports stereo loudness/headroom and retains fixed-scale audition WAVs.
   It changes no factory levels; role assignment, listening decisions and physical
