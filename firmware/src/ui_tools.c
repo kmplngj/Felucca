@@ -6,6 +6,7 @@
  *   C4 RANDOM D4 COOK     E4 BEAT (DRUM)  F4 EUCLID      new / a little changed (EUCLID: 1.5.5, below)
  *   G4 CLEAR  A4 REVERSE  B4 FILL  C5 RANDOM             the selected lane (DRUM: ui.lane, black keys 1..8 pick it)
  *   D5 DOUBLE E5 HALF                                    LEN x2 / half (1.5.5, below)
+ *   F5 OCT DN G5 OCT UP                                  stored melodic notes -12 / +12 (#687)
  * Each works on the selected track's steps 1..LEN (the steps past LEN stay) and is one undo: SAVE held swaps back
  * the copy taken just before it (ui.c undo, UNDO_PAT; unlike a load the track's automation stays), so after a few
  * COOKs SAVE held takes back the last one only; the layer's OCT- puts back the track as the layer opened (tl_open).
@@ -13,7 +14,7 @@
  * steps' automation and locks with them. RANDOM and COOK draw from libc.c rng(): no seed is kept, each press
  * differs. A sequence of ties reversed keeps its note first: N T T -> N T T at the mirrored place */
 enum { TL_CLEAR, TL_REV, TL_LEFT, TL_RIGHT, TL_RANDOM, TL_COOK, TL_BEAT, TL_EUCLID, TL_LCLR, TL_LREV, TL_LFILL, TL_LRND,
-       TL_DOUBLE, TL_HALF, TL_N };
+       TL_DOUBLE, TL_HALF, TL_OCTDN, TL_OCTUP, TL_N };
 
 /* the track as the layer opened (OCT-): in the pool (RAM's .bss is tight), taken by layer_opened */
 static struct { step_t step[NSTEP]; motion_store_t mo; } tl_open __attribute__((section(".pool")));
@@ -25,7 +26,17 @@ static uint32_t tl_lane(const step_t *s, uint32_t l) { return (step_lanes(s) >> 
 /* place p's action is there for this track (the lane row and BEAT: DRUM only) */
 static int tl_cell(const track_t *t, uint32_t p)
 {
+    if (p == TL_OCTDN || p == TL_OCTUP)
+        return !chord_kit(t);
     return p < TL_N && (p < TL_BEAT || p == TL_EUCLID || p >= TL_DOUBLE || drum_track(t));
+}
+
+/* Mutation callers hold motion_guard: even a queued PLAY / restart or a MIDI
+ * start cannot begin reading between this check and the last note write.
+ * Drawing/LED callers use it only as an availability hint. */
+static int tl_stopped(void)
+{
+    return !song.playing && !chain_busy() && !seq_counting() && !transport_req;
 }
 
 /* the undo copy of t as it is now (ui.c load_begin, but the automation is copied and stays): one action */
@@ -557,6 +568,51 @@ static uint32_t tl_half(track_t *t, uint32_t len)
     return h;
 }
 
+/* Whole-pattern octave edit, inspired by Loom's pattern_octave at
+ * charlesvestal/fm1-loom@86bf250c073c6bd33dfe472e417f83cb02c5e1f6/app/ui.c.
+ * Native representation/undo/publication: only NOTE's n actual slots, including
+ * MIDI 0; empty NOTE, REST and TIE payloads stay byte-for-byte. Chords move whole,
+ * without scale snap or clamping. A refusal leaves the previous undo intact. */
+static const char *tl_octave(track_t *t, int32_t delta)
+{
+    uint32_t i, k, notes = 0, len = tl_len(t), f = motion_guard();
+    const char *why = 0;
+    if (!tl_stopped())
+        why = "STOP TO EDIT";
+    else if (chord_kit(t))
+        why = "NO OCTAVES ON KIT";
+    for (i = 0; !why && i < len; i++) {
+        const step_t *s = &t->step[i];
+        if (!tl_gate(s))
+            continue;
+        for (k = 0; k < s->n && k < 4u; k++) {
+            int32_t n = (int32_t)s->note[k] + delta;
+            notes++;
+            if (n < 0 || n > 127) {
+                why = "OUT OF RANGE";
+                break;
+            }
+        }
+    }
+    if (!why && !notes)
+        why = "NO NOTES TO TRANSPOSE";
+    if (!why) {
+        tl_undo_take(t);
+        for (i = 0; i < len; i++) {
+            step_t *s = &t->step[i];
+            if (tl_gate(s))
+                for (k = 0; k < s->n && k < 4u; k++)
+                    s->note[k] = (uint8_t)((int32_t)s->note[k] + delta);
+        }
+    }
+    motion_unguard(f);
+    if (why) {
+        ui_message(why);
+        return 0;
+    }
+    return delta > 0 ? "OCTAVE UP" : "OCTAVE DOWN";
+}
+
 /* ------------------------------------------------------------ actions --- */
 /* the action of place p on track t (lane l): its message; 0 = nothing done (said why) */
 static const char *tl_do(track_t *t, uint32_t p, uint32_t l)
@@ -567,6 +623,8 @@ static const char *tl_do(track_t *t, uint32_t p, uint32_t l)
     int drum = drum_track(t);
     const char *msg = 0;
     l %= NLANE;
+    if (p == TL_OCTDN || p == TL_OCTUP)
+        return tl_octave(t, p == TL_OCTUP ? 12 : -12);
     if ((p == TL_DOUBLE || p == TL_HALF) && !tl_resize_ok(t, p, len))
         return 0;
     if (p == TL_COOK) {                                 /* (nothing there: nothing to cook, no undo copy) */

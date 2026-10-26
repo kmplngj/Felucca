@@ -34,6 +34,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Stored-pattern octave tools:** hold SEQ and use F5/G5 to move the selected
+  melodic pattern down/up one octave, with whole-edit MIDI range refusal and the
+  existing one-action undo. Kit/SLICE mappings are exempt; editing requires
+  stopped transport. Track/project changes refresh layer snapshots safely.
+  [Controls and limitations](fork-features.md#stored-pattern-octave-tools);
+  real FM-1 panel and audition checks remain pending.
+
 - [Offline factory-level audit tooling](loudness-audit.md) captures selected native
   sounds, reports stereo loudness/headroom and retains fixed-scale audition WAVs.
   It changes no factory levels; role assignment, listening decisions and physical

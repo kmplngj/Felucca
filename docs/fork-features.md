@@ -92,6 +92,37 @@ remains future work. Cancelling retires the preview's undo entry without clearin
 a later load's undo, and keeps earlier tools available to the layer's OCT− undo.
 An early nudged first step uses the upcoming loop's condition, including at LEN 1.
 
+### Stored-pattern octave tools
+
+Stop playback, hold **SEQ** until **[SEQ] TOOLS** appears, and tap the keyboard's
+**F5** (**OCT DN**, the second-highest white key) or **G5** (**OCT UP**, the highest
+white key). Release SEQ to keep the edit. Each press moves every stored note in
+the selected track's steps **1..LEN** by exactly −12 or +12 semitones. All notes
+of a chord move together; MIDI note 0 is a note. Ties, rests, empty note steps,
+unused chord slots, steps past LEN, step detail, locks and motion stay unchanged.
+This does not change TRN or apply scale quantization.
+
+If any affected note would leave 0..127, **OUT OF RANGE** refuses the entire
+press. An empty pattern says **NO NOTES TO TRANSPOSE**. Neither replaces the
+previous undo. The octave cells are absent for mapped kits and SLICE, including
+user presets of those engines. Pitched SAMPLE user zones remain melodic.
+Playback, count-in, pending transport changes and an armed/running SONG require
+**STOP TO EDIT**. Apply or cancel an open EUCLID preview first.
+
+Hold **SAVE** after releasing SEQ to undo the last successful tool; hold it again
+to redo. While SEQ remains held, **OCT−** retains its existing meaning: restore
+the pattern and controls from entry into this layer. After an octave edit this
+restore also requires stopped transport. A track selection change starts a fresh
+layer snapshot on that track; loading another project discards the old snapshot.
+Saved projects and backups store the edited notes using the existing format.
+Physical panel/LCD, audition and USB/MIDI acceptance remain pending.
+
+The preflight-then-apply behavior follows the design of
+[Loom's pattern octave tool](https://github.com/charlesvestal/fm1-loom/blob/86bf250c073c6bd33dfe472e417f83cb02c5e1f6/app/ui.c#L1877-L1903)
+at `86bf250c073c6bd33dfe472e417f83cb02c5e1f6`. Its MPL-2.0 source and scenario
+were reviewed; this implementation uses Felucca's native step, mapping and undo
+helpers and copies no donor source, assets or radio code.
+
 ## MIDI timing and arithmetic hardening
 
 TRS input is polled at 2 kHz even while audio renders. Packets and timestamps are
