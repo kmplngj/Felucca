@@ -53,7 +53,10 @@ recorded in the linked reports, rather than every current build or device.
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds
   emit artifact-bound resource/stack reports, with stale-evidence verification using the
   existing build guards. This is the first stage of #465; cost prediction and a browser
-  builder remain pending. See [build evidence](build-profiles.md#machine-readable-build-evidence).
+  builder remain pending. A reviewed native font policy pins M8 inputs, metrics and shared
+  bitmap storage; target reports verify the 4,630 B text-font bound and separate named
+  keycap, icon, decoder and cache costs. This changes no font pixels or runtime behavior.
+  See [build evidence](build-profiles.md#machine-readable-build-evidence).
 - **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
   51 factory sounds alongside all thirteen standard engines, using stable engine
   ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.
