@@ -775,6 +775,116 @@ jobs:
           python3 tests/target_budget.py build/felucca.dis tests/target_budget.txt 2>&1 | tee build/ci/target-budget.log
           python3 "$RUNNER_TEMP/felucca-ci-target.py" package --validation "${VALIDATION/quick/target}" 2>&1 | tee build/ci/package.log
           git diff --exit-code
+      - name: Measurement-only input contract target control
+        if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'target'
+        run: |
+          set -o pipefail
+          mkdir -p build/ci/input-contract-control
+          python3 - <<'PYCONTROL' 2>&1 | tee build/ci/input-contract-control/control.log
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+          import time
+          
+          ROOT = Path.cwd()
+          BASE = 'bb82a76d75720d099410160837fc5fe52a83632c'
+          E = ROOT / 'build/ci/input-contract-control'
+          E.mkdir(parents=True, exist_ok=True)
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=ROOT)
+          def sha(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+          def require(ok, message):
+              if not ok:
+                  raise RuntimeError(message)
+          revision = git('rev-parse', 'HEAD').decode().strip()
+          changed = set(git('diff', '--name-only', BASE, revision, '--', 'firmware').decode().splitlines())
+          require(changed == {'firmware/hal/fm1_input.h', 'firmware/hal/fm1_input_contract.h'}, 'unexpected production scope')
+          baseline_header = git('show', BASE + ':firmware/hal/fm1_input.h')
+          candidate_header = (ROOT / 'firmware/hal/fm1_input.h').read_bytes()
+          report = json.loads((ROOT / 'build/resource-report.json').read_text())
+          cfg = report['configuration']
+          protected = {p: sha(ROOT / p) for p in report['artifact_sha256']}
+          protected['build/resource-report.json'] = sha(ROOT / 'build/resource-report.json')
+          generated = {str(p.relative_to(ROOT)): sha(p) for p in (ROOT / 'build/gen').rglob('*') if p.is_file()}
+          work = ROOT / 'build/input-contract-measurement'
+          require(not work.exists(), 'measurement directory must be fresh')
+          firmware = work / 'firmware'
+          shutil.copytree(ROOT / 'firmware', firmware, ignore=shutil.ignore_patterns('.git'))
+          sys.path.insert(0, str(ROOT / 'tools'))
+          import build as B
+          import build_report as R
+          B.FW = firmware
+          B.PRODUCT, B.VERSION = cfg['product'], cfg['version_override']
+          require(B.CPU2 == cfg['cpu2'], 'CPU2 mismatch')
+          commands = []
+          real_tc = B.tc
+          def record_tc(tool, *args):
+              row = dict(tool=tool, args=list(map(str, args)), started=time.monotonic(), status='running')
+              commands.append(row)
+              try:
+                  value = real_tc(tool, *args)
+                  row['status'] = 'passed'
+                  return value
+              except BaseException:
+                  row['status'] = 'failed'
+                  raise
+              finally:
+                  row['ended'] = time.monotonic()
+          B.tc = record_tc
+          results = {}
+          try:
+              for label, header in [('baseline', baseline_header), ('candidate', candidate_header)]:
+                  (firmware / 'hal/fm1_input.h').write_bytes(header)
+                  contract = firmware / 'hal/fm1_input_contract.h'
+                  if label == 'baseline':
+                      contract.unlink()
+                  else:
+                      shutil.copy2(ROOT / 'firmware/hal/fm1_input_contract.h', contract)
+                  B.OUT = work / label
+                  B.LDR = B.OUT / 'loader'
+                  B.OUT.mkdir(parents=True)
+                  require(R.configuration(B) == cfg, label + ' compiler/configuration changed')
+                  evidence = B.build_app()
+                  resources, stacks = R.resources(B, evidence)
+                  B.build_loader()
+                  artifacts = {p: dict(sha256=sha(B.OUT / p), bytes=(B.OUT / p).stat().st_size)
+                               for p in ['felucca.bin', 'felucca.elf', 'loader/loader.bin', 'loader/ota.bin']}
+                  results[label] = dict(header_sha256=hashlib.sha256(header).hexdigest(), configuration=cfg,
+                                        artifacts=artifacts, resources=resources, stack_reservations=stacks)
+                  (E / (label + '.json')).write_text(json.dumps(results[label], indent=2) + '\n')
+              for key in ['artifacts', 'resources', 'stack_reservations']:
+                  require(results['baseline'][key] == results['candidate'][key], 'unequal ' + key)
+              require({p: sha(ROOT / p) for p in protected} == protected, 'original CI artifacts changed')
+              require({str(p.relative_to(ROOT)): sha(p) for p in (ROOT / 'build/gen').rglob('*') if p.is_file()} == generated,
+                      'generated headers changed')
+              require(not git('status', '--porcelain', '--untracked-files=normal').strip(), 'source checkout changed')
+              (E / 'RESULT.json').write_text(json.dumps(dict(status='passed', baseline=BASE, candidate=revision,
+                  measurement_only=True, identity=report['build_identity'], generated_sha256=generated,
+                  original_artifact_sha256=protected, results=results), indent=2) + '\n')
+              print('PASS: literal app/ELF/loader bytes and resource/stack reports equal; original CI artifacts unchanged')
+          finally:
+              (E / 'commands.json').write_text(json.dumps(commands, indent=2) + '\n')
+          PYCONTROL
+      - name: Retain measurement-only target control
+        if: always() && inputs.validation == 'target'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: input-contract-control-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            build/ci/input-contract-control/
+            build/input-contract-measurement/baseline/felucca.bin
+            build/input-contract-measurement/baseline/felucca.elf
+            build/input-contract-measurement/baseline/loader/*.bin
+            build/input-contract-measurement/candidate/felucca.bin
+            build/input-contract-measurement/candidate/felucca.elf
+            build/input-contract-measurement/candidate/loader/*.bin
       - name: Host, sanitizer, web and emulator tests
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
         run: |
