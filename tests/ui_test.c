@@ -71,9 +71,11 @@ static uint32_t fm1_ticks(void) { return host_ticks; }
 /* This UI fake models press edges only; the firmware UI requests no release output. */
 static fm1_input_edges_fn fm1_input_edges;
 static uint32_t fm1_input_edges(uint32_t *x) { uint32_t p = host_pressed; (void)x; host_pressed = 0; return p; }
+static fm1_input_note_edges_fn fm1_input_note_edges;
 static uint32_t fm1_input_note_edges(void) { uint32_t n = host_notes; host_notes = 0; return n; }
 /* host_enc_late: detents the TIMER5 scan counts just after a read (#102: while ui_input runs); the next read has them */
 static int32_t host_enc_late[7];
+static fm1_enc_take_fn fm1_enc_take;
 static int32_t fm1_enc_take(uint32_t e)
 {
     int32_t s = host_enc[e % 7u];

@@ -409,9 +409,10 @@ bounded audition files. Host levels do not qualify physical DAC/USB levels or
 authorize changing factory sounds.
 
 The `input` unit also runs `python3 tests/input_contract_test.py`. It compiles
-the actual hardware, UI-test and browser input adapters against the shared
-`fm1_input_edges` function type, then requires the UI fake's former incompatible
-signature to fail compilation. The UI fake supplies press edges only; this check
+the actual hardware, UI-test, settings-test and browser input adapters against the
+shared button-edge, note-edge and encoder function types they implement. Negative
+fixtures require incompatible signatures across the UI, settings and browser
+adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
 The backup and FM6-bank tests share `tests/host_nor.h`, including their sanitizer
