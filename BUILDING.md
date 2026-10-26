@@ -1028,9 +1028,12 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 On a build with early USB rescue, hold OCT− while powering on to reach the
 MIDI-only updater before settings/projects and audio initialize. Use the same
 reviewed `.fwsc` and supported installer. See [early USB rescue](docs/usb-rescue.md)
-for the loader matrix, exact client versions and pending hardware checks.
-If application rescue cannot start, ROM recovery is a separate path; some faults
-need [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+for the accepted PR #487 entry result, loader matrix and remaining qualification.
+If application rescue cannot start, the [existing M-Flasher ROM path](docs/usb-rescue.md#rom-recovery-with-existing-m-flasher)
+provides saved-file inspection and a separate device backup/recovery procedure.
+File-only checks open no device; live ROM sessions may upload a RAM loader and
+need host permissions. A unit with no reachable USB route can still need
+[FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
 
 ### Package validation and file errors
 
