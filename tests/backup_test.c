@@ -4,6 +4,7 @@
  * CRC before any write, stale runtime copies, USB resets and timeouts, malformed objects, older
  * project formats, settings values and user preset banks kept byte for byte; and (#321) the FM6 voice
  * bank (id 20) and the SLICE records (id 21): LIST 1, round trips, refusals, power cuts. */
+#include "update_record_fixture.h"
 #include "host_nor.h"                              /* before the user sample slots' XIP mapping */
 #define SMP_USER_XIP(k) (nor + 0xA0000u + (k) * 0x14000u)
 #define main hostsim_main
@@ -1182,6 +1183,47 @@ static int raw_tests(void)
     return bad;
 }
 
+/* #438: storage/backup reachability only, never a claim about SPL behavior. */
+static int update_record_backup_tests(void)
+{
+    static upf_t ordinary, crafted, got, exported;
+    uint32_t len, crc, saved_erases, saved_progs;
+    int bad = 0;
+    _Static_assert(sizeof(upf_t) == UPDATE_RECORD_UPFM6_SIZE, "UPF6 fixture layout");
+    reset();
+    upf_empty(); ordinary = upf;
+    update_record_upfm6((uint8_t *)&crafted);
+    bad += check("#438 UPF6 record starts in entry 30 packed byte 84; entry 31 remains unused",
+                 (uint8_t *)&crafted.e[30].pk[84] - (uint8_t *)&crafted == UPDATE_RECORD_PAYLOAD_OFF &&
+                 upf_valid(&crafted) && crafted.used == 0);
+    bad += check("#438 ordinary id 9 restores before crafted input",
+                 put_all(9, &ordinary, sizeof ordinary, st_crc32(&ordinary, sizeof ordinary)) == 0);
+    saved_erases = erases; saved_progs = progs;
+    bad += check("#438 bad outer CRC refuses crafted id 9 before any flash write",
+                 put_all(9, &crafted, sizeof crafted, st_crc32(&crafted, sizeof crafted) ^ 1u) == 2u &&
+                 erases == saved_erases && progs == saved_progs &&
+                 st_load(OBJ_UPFM6, &got, sizeof got) == (int)sizeof got && !memcmp(&got, &ordinary, sizeof got));
+    bad += check("#438 real BACKUP_PUT accepts and commits record-shaped unused UPF6 bytes",
+                 put_all(9, &crafted, sizeof crafted, st_crc32(&crafted, sizeof crafted)) == 0 &&
+                 !memcmp(&upf, &crafted, sizeof upf) &&
+                 st_load(OBJ_UPFM6, &got, sizeof got) == (int)sizeof got && !memcmp(&got, &crafted, sizeof got));
+    bad += check("#438 LIST/GET export every accepted UPF6 byte without sanitizing inactive entries",
+                 list(9, &len, &crc) == 0 && len == sizeof crafted && crc == st_crc32(&crafted, sizeof crafted) &&
+                 get_all(9, len, (uint8_t *)&exported) == 0 && !memcmp(&exported, &crafted, sizeof exported));
+    bad += check("#438 exported id 9 reimports through the real commit path",
+                 put_all(9, &exported, sizeof exported, st_crc32(&exported, sizeof exported)) == 0 &&
+                 st_load(OBJ_UPFM6, &got, sizeof got) == (int)sizeof got && !memcmp(&got, &crafted, sizeof got));
+    for (uint32_t copy = 0; copy < 2u; copy++) {
+        st_hdr_t h;
+        uint32_t base = st_sector(OBJ_UPFM6, copy);
+        bad += check("#438 both valid A/B copies preserve exact 112-byte record at sector+0xF00",
+                     st_head(OBJ_UPFM6, copy, &h) == 0 && h.len == sizeof crafted &&
+                     !memcmp(nor + base + ST_PAYLOAD_OFF, &crafted, sizeof crafted) &&
+                     !memcmp(nor + base + 0xF00u, UPDATE_RECORD_FIXTURE, sizeof UPDATE_RECORD_FIXTURE));
+    }
+    return bad;
+}
+
 int main(void)
 {
     int bad = 0;
@@ -1440,6 +1482,7 @@ int main(void)
     }
     bad += ext_tests();
     bad += raw_tests();
+    bad += update_record_backup_tests();
     printf("backup test %s\n", bad ? "FAILED" : "passed");
     return bad != 0;
 }

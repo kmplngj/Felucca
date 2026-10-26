@@ -40,6 +40,20 @@ recorded in the linked reports, rather than every current build or device.
   Real bootloader/reset-path readings and any correction decision remain pending;
   see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
 
+- [Offline update-record survey](update-record-survey.md) reports native-loader
+  CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
+  and changes no storage policy; external SPL behavior remains unverified.
+
+- Optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
+  artifact evidence. Unsupported stack/ASM forms and unresolved calls stay explicit;
+  stack reservations and runtime behavior are unchanged. It is not a live watermark
+  or whole-stack fit result.
+
+- [Offline boot-area survey](boot-area-survey.md) checks saved dump/package
+  boot records, SPL CRCs, chip key and declared clock fields with bounded input
+  parsing. It accesses no device and changes no installer policy; live clocks,
+  bootloader compatibility and backup-first hardware survey remain pending.
+
 - [Offline factory-level audit tooling](loudness-audit.md) captures selected native
   sounds, reports stereo loudness/headroom and retains fixed-scale audition WAVs.
   It changes no factory levels; role assignment, listening decisions and physical

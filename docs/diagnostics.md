@@ -251,6 +251,16 @@ victims and MIDI All Sound Off. It does not measure rejected or admitted request
 `voices_shed` is its overload subset. A clean sustain after shedding is a smaller
 workload, so retain actual surviving-voice observations when available.
 
+`status` `cpu2_stack`, when present, scans the worker's 4,096 B user allocation
+for its fill pattern. This allocation includes a 256 B low guard; its usable
+user window is 3,840 B. The separate 256 B worker supervisor stack and both CPU0
+stacks are outside this measurement. The pattern is refilled on each worker
+start attempt, including a failed attempt; starting an already-running worker
+does not refill it. Before the first attempt it reports zero, which does not
+establish that a workload was measured. Holding the worker retains the prior
+pattern until another start attempt. Do not treat this field as a boot-wide or
+collection-interval maximum, subtract samples, or infer CPU0 stack use from it.
+
 `inp` resets scan gaps/histograms, encoder statistics and key latency on read. Its
 `timer_irqs` and `nested` fields are cumulative and receive separate deltas. Later input
 windows are checked against the requested equal interval and reported separately as valid

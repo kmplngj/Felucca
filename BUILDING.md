@@ -591,6 +591,17 @@ their floating-point originals; without it that test is skipped. Felucca-Engines
 (`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
 against the same golden renders.
 
+The USB and USB sanitizer units also run
+[the composite-service fixture](tests/usb_service_test.c) with CDC compiled in/out
+at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enabled.
+It executes the actual USB poll/control/audio-service code against a finite HAL-only
+SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recovery,
+control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
+nested EP4 ownership. Matched audio producer/host-token schedules compare packet bytes; negative transcript controls
+reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,
+not physical service time, controller races or host-driver qualification. Existing
+UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
+
 The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
 and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
 N/A tracks, retained project/preset/backup data, and serializers. Engine-memory switches
@@ -755,6 +766,21 @@ differing PCM/state word appear in the output; fixture code is in
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
+
+For an existing private flash dump or `.fwsc` package, the standard-library
+[offline boot-area survey](docs/boot-area-survey.md) checks bounded boot records,
+SPL CRCs, chip key and declared clock fields without opening a device. Use
+`python3 tools/fm1_bootarea.py --raw FILE` or `--package FILE` for the known saved
+format; no firmware build is needed. Format hints are not authentication,
+installer permission, a complete backup or live clock measurements.
+
+For saved raw bytes beginning at flash address zero, the standard-library
+[offline update-record survey](docs/update-record-survey.md) reports native-loader
+record-predicate matches and exact supplied coverage:
+`python3 tools/fm1_update_records.py --raw FILE`. It opens no device and performs
+no decryption or writes. Matches and no-match results do not establish external SPL
+behavior, bootability or safe storage capacity.
+
 For static native HOME/menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
 and standard-library host CLI are described in [screen capture](docs/screen-capture.md).
 Normal builds leave it disabled; release packaging rejects the diagnostic flag.
@@ -1138,6 +1164,11 @@ profile/font/feature environment and toolchain/SDK:
 ```sh
 python3 tools/build_report.py --verify build/resource-report.json
 ```
+
+After successful verification, add `--frame-output build/stack-entry-frames.json`
+to export observed target entry frames. The [frame evidence guide](docs/stack-frame-evidence.md)
+explains unsupported instructions, ASM boundaries and unresolved calls. This optional
+inventory is not a stack-fit or live-watermark result and changes no reservation.
 
 The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`

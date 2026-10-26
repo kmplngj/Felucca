@@ -166,6 +166,20 @@ score from 14 to 220. With the boundaries preserved, the default build retains
 the original 344/137/82 total instructions and 14/134/204 scores for those three
 functions, with no budget changes.
 
+The outlined hot USB callees also have independent optional budgets:
+`uac_service` 13, `sie_rd` 5 and `sie_wr` 5. Clean native builds at
+`3015b2bcaa28d458130a962591daef13b2cb4e24`, with JieLi Clang 4.0.1, SDK
+AC79NN 1.2.1 and selective size enabled, measure 11/5/5 for standard and MACRO,
+13/5/5 for CPU2-off, and absent/5/5 for UAC-off. The unchanged listings retain their
+hash-bound profile sidecars. These are loop-span heuristic scores; callers do not
+include callee bodies.
+The fixtures keep the USB/TIMER5 callers fixed and grow only one callee past 10%
+(15/6/6), requiring that callee's failure without rewriting budgets. Absent symbols
+remain permitted for disabled/inlined configurations; straight-line work outside
+backward spans is still outside this metric. No runtime annotation, caller/engine
+budget, loader or device behavior changes. This coverage does not establish USB
+service time, cycles, scan/deadline margins or a physical speedup.
+
 The combined optimization integration calibrates only the optional `mix_part`
 score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
 the same JieLi Clang 4.0.1 default build has 679→684 total instructions and
@@ -309,8 +323,12 @@ Optimize by proven lifetimes and multiplicative cost. `ENG_MEM_PART` grows once 
 channel. `eng_mem` already shares mutually exclusive engine state; verify every switch
 with `union_test` before claiming further reuse. Keep immutable tables/assets in XIP.
 Large automatic arrays and recursion spend stack even when static section sizes stay flat.
-The hardware guards detect violations, not stack high-water usage; watermark measurement
-would require separate instrumentation and nested-interrupt stress.
+The hardware guards detect violations, not stack high-water usage. CPU0 watermark
+measurement requires separate instrumentation and nested-interrupt stress. Existing
+`status` `cpu2_stack` covers only the worker's user allocation since its latest
+start attempt; see [diagnostic scope](diagnostics.md#interpreting-a-report).
+An optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
+ELF evidence and exposes unsupported cases; it supplies no stack fit or live peak.
 
 Engine-arena owner checks (host only): `-DFELUCCA_ARENA_CHECK=1` turns `ENG_MEM_OF`
 (`engines.c`) into a checked accessor for GRAIN (`gr_of`), PHYS (`phys_slot_of`), DRUM
