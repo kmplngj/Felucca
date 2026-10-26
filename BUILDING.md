@@ -597,7 +597,11 @@ at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enable
 It executes the actual USB poll/control/audio-service code against a finite HAL-only
 SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recovery,
 control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
-nested EP4 ownership. Matched audio producer/host-token schedules compare packet bytes; negative transcript controls
+nested EP4 ownership. Controllable SIE completion checks delayed/failed accesses,
+consecutive-failure shutdown and actual startup/retry/detach paths, including retry
+clock wrap. Suspend/resume, missing SOF and repeated frozen-frame episodes retain
+accepted application data and recover through explicit host events. Matched audio
+producer/host-token schedules compare packet bytes; negative transcript controls
 reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,
 not physical service time, controller races or host-driver qualification. Existing
 UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
