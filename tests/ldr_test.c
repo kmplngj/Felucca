@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "update_record_fixture.h"
 #define __attribute__(x)   /* (the sources' .pool sections: no Mach-O section names) */
 
 #define FELUCCA_ID "ota-FM-1_900"
@@ -186,7 +187,7 @@ static void set_fl_size(uint8_t *lg, uint32_t size)
 static int check(const char *what, int ok) { printf("%-56s %s\n", what, ok ? "ok" : "FAIL"); return ok ? 0 : 1; }
 
 /* ---- #418: the cleanup must not classify or erase the autosave pair and the voice bank ----
- * A record as the loader's cleanup (and the SPL's scan) recognises it: u16 at 0 = nonzero CRC16 of the next 78
+ * A record as the native loader's cleanup recognises it: u16 at 0 = nonzero CRC16 of the next 78
  * bytes, u16 0x5441 at +6. seed makes each one different. */
 static void make_record(uint8_t *r, uint32_t seed)
 {
@@ -383,6 +384,69 @@ static int failure_cases(void)
     return bad;
 }
 
+/* #438: the same accepted UPF6 bytes survive the actual native loader. */
+static int update_record_upfm6_tests(void)
+{
+    static uint8_t payload[UPDATE_RECORD_UPFM6_SIZE], got[UPDATE_RECORD_UPFM6_SIZE], before[2][ST_SECTOR];
+    int bad = 0;
+    update_record_upfm6(payload);
+    bad += check("#438 fixture has production OTA CRC16 and loader marker predicate", looks_like_record(UPDATE_RECORD_FIXTURE) &&
+                 ota_crc16(UPDATE_RECORD_FIXTURE + 2, 78, 0) == 0xB71Du);
+    {
+        uint8_t altered[sizeof UPDATE_RECORD_FIXTURE];
+        memcpy(altered, UPDATE_RECORD_FIXTURE, sizeof altered);
+        altered[20] ^= 1u;
+        bad += check("#438 changed CRC-covered byte fails the production loader predicate", !looks_like_record(altered));
+        memcpy(altered, UPDATE_RECORD_FIXTURE, sizeof altered);
+        altered[6] ^= 1u;
+        ota_wr16(altered, ota_crc16(altered + 2, 78, 0));
+        bad += check("#438 changed marker fails predicate even with matching production CRC", !looks_like_record(altered));
+    }
+    bad += check("#438 production storage commits UPF6 fixture into both copies",
+                 st_save_to(OBJ_UPFM6, payload, sizeof payload, 0) == 0 &&
+                 st_save_to(OBJ_UPFM6, payload, sizeof payload, 1) == 0 &&
+                 st_load(OBJ_UPFM6, got, sizeof got) == (int)sizeof got && !memcmp(got, payload, sizeof got));
+    for (uint32_t copy = 0; copy < 2u; copy++)
+        memcpy(before[copy], nor + st_sector(OBJ_UPFM6, copy), ST_SECTOR);
+    for (uint32_t repeat = 0; repeat < 2u; repeat++) {
+        fixture_protected(V_BOTH_COPIES);
+        arm_outside();
+        reset_counters();
+        bad += check("#438 actual loader session/repeat completes with UPF6 record-shaped bytes", ldr_session() == 0);
+        for (uint32_t copy = 0; copy < 2u; copy++) {
+            uint32_t base = st_sector(OBJ_UPFM6, copy);
+            bad += check("#438 UPF6 whole sector unchanged and never erased by loader",
+                         !memcmp(before[copy], nor + base, ST_SECTOR) && erase_n[base >> 12] == 0 &&
+                         looks_like_record(nor + base + 0xF00u) &&
+                         !memcmp(nor + base + 0xF00u, UPDATE_RECORD_FIXTURE, sizeof UPDATE_RECORD_FIXTURE));
+        }
+        bad += check("#438 UPF6 remains loadable byte for byte after loader cleanup",
+                     st_load(OBJ_UPFM6, got, sizeof got) == (int)sizeof got && !memcmp(got, payload, sizeof got));
+        bad += check("#438 native staging/stock records cleaned; other protected windows unchanged",
+                     outside_cleaned() && erase_n[0xE4] == 1 && erase_n[0xE8] == 1 && bad_range == 0 &&
+                     !memcmp(nor + PROT_LO, prot_ref, sizeof prot_ref) && !protected_erases() && !prot_reads && user_kept());
+    }
+    /* Causal control for the actual cleanup branch, outside every protected
+     * data window. CRC or marker changes alone must change its erase decision. */
+    for (uint32_t variant = 0; variant < 3u; variant++) {
+        uint8_t altered[sizeof UPDATE_RECORD_FIXTURE];
+        memcpy(altered, UPDATE_RECORD_FIXTURE, sizeof altered);
+        if (variant == 1u) altered[20] ^= 1u;
+        if (variant == 2u) {
+            altered[6] ^= 1u;
+            ota_wr16(altered, ota_crc16(altered + 2, 78, 0));
+        }
+        memset(nor + 0x94000u, 0xFF, ST_SECTOR);
+        memcpy(nor + 0x94F00u, altered, sizeof altered);
+        reset_counters();
+        bad += check("#438 native cleanup control session succeeds", ldr_session() == 0);
+        bad += check("#438 actual cleanup erases only CRC-and-marker matching control",
+                     variant == 0u ? sector_blank(0x94000u) && erase_n[0x94] == 1u :
+                     erase_n[0x94] == 0u && !memcmp(nor + 0x94F00u, altered, sizeof altered));
+    }
+    return bad;
+}
+
 int main(int argc, char **argv)
 {
     size_t olen;
@@ -472,6 +536,7 @@ int main(int argc, char **argv)
     bad += cleanup_case("raw", V_RAW_SECTORS);
     bad += cleanup_case("production", V_PRODUCTION_BANK);
     bad += failure_cases();
+    bad += update_record_upfm6_tests();
     bad += check("app area still the new package's flash.bin", !memcmp(nor + 0x4000, logical + nfo + 0x4000, 0x93000 - 0x4000));
     /* a package for another chip key is refused before any erase */
     {
@@ -484,5 +549,7 @@ int main(int argc, char **argv)
         logical[nfo + 0x4000 + 5] = save;
     }
     printf("%s\n", bad ? "LOADER TEST FAILED" : "loader test passed");
+    free(old);
+    free(logical);
     return bad != 0;
 }
