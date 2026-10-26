@@ -186,6 +186,8 @@ class ResolverTests(unittest.TestCase):
     def test_check_uses_recorded_font_without_hiding_explicit_override(self):
         env=dict(os.environ,FELUCCA_FONT='m8stealth',FELUCCA_FM4='0',FELUCCA_SLICE='1')
         with tempfile.TemporaryDirectory() as td:
+            subprocess.run([sys.executable, str(ROOT/'tools/gen_bitmap_font.py'), str(Path(td)/'ui_fonts.h')],
+                           check=True, env=env, capture_output=True)
             cmd=[sys.executable,str(ROOT/'tools/profile.py'),'--out',td,'--profile','standard']
             subprocess.run(cmd,env=env,check=True,capture_output=True)
             default_env=env.copy();default_env.pop('FELUCCA_FONT')
@@ -195,10 +197,19 @@ class ResolverTests(unittest.TestCase):
                 self.assertNotEqual(rejected.returncode,0)
                 self.assertIn(b'm8stealth only',rejected.stderr)
             self.assertEqual(subprocess.run(cmd+['--check'],env=env,capture_output=True).returncode,0)
+            manifest = Path(td)/'ui-font-manifest.json'
+            original = manifest.read_bytes()
+            manifest.write_text('{}')
+            rejected = subprocess.run(cmd+['--check'], env=env, capture_output=True)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn(b'stale native font manifest', rejected.stderr)
+            manifest.write_bytes(original)
 
     def test_determinism_and_stale_generated_selection(self):
         env=dict(os.environ,FELUCCA_FM4='0',FELUCCA_SLICE='1')
         with tempfile.TemporaryDirectory() as td:
+            subprocess.run([sys.executable, str(ROOT/'tools/gen_bitmap_font.py'), str(Path(td)/'ui_fonts.h')],
+                           check=True, env=env, capture_output=True)
             cmd=[sys.executable,str(ROOT/'tools/profile.py'),'--out',td,'--profile','standard']
             subprocess.run(cmd,check=True,env=env,capture_output=True)
             stamp=(Path(td)/'resolved-profile.json').read_bytes()
@@ -211,6 +222,7 @@ class ResolverTests(unittest.TestCase):
             self.assertNotEqual(subprocess.run(cmd[:-1]+['reduced-lofi','--check'],env=env,capture_output=True).returncode,0)
             self.assertNotEqual(subprocess.run(cmd+['--check'],env=dict(env,FELUCCA_SLICE='0'),capture_output=True).returncode,0)
             info=json.loads(stamp)
+            self.assertIn('assets/fonts/m8stealth/resource-policy.json', info['input_sha256'])
             self.assertEqual(len(info['source_pins']['engines_gitlink']),40)
             self.assertIn('firmware/engines/src/eng_lofi.c',info['input_sha256'])
 

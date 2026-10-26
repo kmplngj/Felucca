@@ -109,7 +109,7 @@ def archive_metadata(path):
 
 def validate_report(root, report, metadata, marker_hash):
     require(isinstance(report, dict) and type(report.get('schema_version')) is int and
-            report.get('schema_version') == 1 and report.get('kind') == 'felucca-post-link-resource-report'
+            report.get('schema_version') in (1, 2) and report.get('kind') == 'felucca-post-link-resource-report'
             and report.get('validation') == 'production build guards passed', 'unsupported native report')
     require(metadata['engines'].get('license') == 'MIT' and
             not any(p.startswith('firmware/engines-gpl/') for p in metadata['files']), 'GPL collection is not supported by this bundle schema')
@@ -134,6 +134,9 @@ def validate_report(root, report, metadata, marker_hash):
     require(isinstance(inputs, dict) and inputs and
             hashlib.sha256(build_report.canonical(inputs)).hexdigest() == report.get('inputs_sha256'),
             'native input digest mismatch')
+    require(report['schema_version'] != 1 or ('build/gen/ui-font-manifest.json' not in inputs
+                                            and 'native_font_resources' not in report),
+            'schema 1 cannot include native font evidence')
     expected = {name: item['sha256'] for name, item in metadata['files'].items()}
     generated = {}
     for name, value in inputs.items():
@@ -159,6 +162,13 @@ def validate_report(root, report, metadata, marker_hash):
     for name, value in {**generated, **declared}.items():
         require(isinstance(value, str) and SHA.fullmatch(value) is not None and
                 digest(file_at(root, name)) == value, 'native artifact mismatch: ' + name)
+    if report['schema_version'] == 2:
+        font_path = 'build/gen/ui-font-manifest.json'
+        fonts = report.get('native_font_resources')
+        require(font_path in generated and isinstance(fonts, dict) and
+                isinstance(fonts.get('groups'), dict) and
+                fonts.get('manifest') == read_json(file_at(root, font_path)),
+                'missing or mismatched native font resources')
     require(read_json(file_at(root, 'build/gen/build-identity.json')) == identity, 'native identity artifact mismatch')
     resolved = read_json(file_at(root, 'build/gen/resolved-profile.json'))
     contract = read_json(file_at(root, 'build/profile-contract.json'))
@@ -240,6 +250,8 @@ def verify_reproduction(root, artifacts, metadata, marker_hash, native_report):
     validate_report(root / 'reproduction', reproduced, metadata, marker_hash)
     require(reproduced['build_identity']['source'] == 'verified archive', 'reproduction did not use Git-free sources')
     require(native_report['package'] == reproduced['package'] and
+            native_report['schema_version'] == reproduced['schema_version'] and
+            native_report.get('native_font_resources') == reproduced.get('native_font_resources') and
             native_report['configuration'] == reproduced['configuration'] and
             native_report['resources'] == reproduced['resources'] and
             native_report['stack_reservations'] == reproduced['stack_reservations'], 'reproduction configuration/resources differ')
@@ -408,6 +420,8 @@ def create(root, archive, reproduction_root, destination, *, allowed_revision, p
         reproduced = read_json(file_at(reproduction_root, 'build/resource-report.json'))
         validate_report(reproduction_root, reproduced, metadata, marker_hash)
         require(report['configuration'] == reproduced['configuration'] and
+                report['schema_version'] == reproduced['schema_version'] and
+                report.get('native_font_resources') == reproduced.get('native_font_resources') and
                 report['resources'] == reproduced['resources'] and report['stack_reservations'] == reproduced['stack_reservations'],
                 'source reproduction configuration/resources differ')
         for name in ('build/felucca.bin', 'build/' + report['package']):

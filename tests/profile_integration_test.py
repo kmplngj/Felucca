@@ -44,6 +44,9 @@ def main():
         # Include paths come before common generated assets; each host gets its own selection.
         gen=ROOT/'build'/f'profile-{name}-gen'
         run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,env=selection_env)
+        # Each selection checks the same approved font pair that its host compiles.
+        for asset in ('ui_fonts.h', 'ui-font-manifest.json'):
+            shutil.copyfile(ROOT/'build/gen'/asset, gen/asset)
         run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,'--check',env=selection_env)
         flags=['-O2','-w','-I'+str(gen),'-Ibuild/gen','-Ifirmware/src']
         macros=subprocess.check_output([*cc,*flags,'-dM','-E','tests/profile_roundtrip.c'],text=True,cwd=ROOT)
