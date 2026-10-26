@@ -312,6 +312,7 @@ if [ -f build/gen/felucca_profile.h ] && grep -q '^#define FELUCCA_PROFILE_ENGIN
 fi
 
 u_portable() {
+    run "offline boot-area survey: synthetic CRC, extent, clock and format boundaries" python3 tests/bootarea_test.py
     run "structured host coverage: verifier, producer and compiler causal fixtures" python3 tests/coverage_contract_test.py
     run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
     run "64-bit multiply / 16-bit load inventory: parser, window and baseline fixtures (#425)" python3 tests/mul64_hload_check_test.py
@@ -1348,7 +1349,6 @@ UNIT_PRODUCERS=
 
 u_install() {
     run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
-    run "boot-area survey (fm1_bootarea.py): V15/V16/m-bootloader, SPL CRCs, chip key, clock (#619)" python3 tests/bootarea_test.py
 }
 UNIT_PRODUCERS=tests/install_test.py
 unit install "" u_install

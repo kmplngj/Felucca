@@ -153,11 +153,13 @@ Name a unit's boot area from a flash dump (for example FM-1 Transporter's or
 M-Flasher's 1 MiB read) or a package without touching the device:
 
 ```sh
-python3 tools/fm1_bootarea.py DUMP.bin
+python3 tools/fm1_bootarea.py --raw DUMP.bin
 ```
 
-It reports V15/V16/m-bootloader/unknown, whether the boot records and SPL
-container CRCs are intact, the chip key and the clock fields of `isd_config.ini`.
+The [offline boot-area survey](boot-area-survey.md) reports V15/V16/m-bootloader/unknown,
+checks bounded boot records, SPL/config CRCs, chip key and declared clock fields.
+Use `--package FILE.fwsc` for a known package. Format hints and CRCs are not
+authentication, installer permission, a full backup or live clock measurements.
 A dump of the current boot area is part of every device check below. Record per
 unit: boot area, previous firmware, the transition, and the #618 clock readings.
 

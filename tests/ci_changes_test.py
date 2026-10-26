@@ -45,6 +45,19 @@ class SelectionTest(unittest.TestCase):
                                       "web/fm1backup.js", "web/emu/index.html"]),
                          {"python", "backup", "emulator"})
 
+    def test_offline_bootarea_survey_uses_portable_checks(self):
+        self.assertIn("bootarea_test.py", changes.PORTABLE_TESTS)
+        runner = (Path(__file__).resolve().parents[1] / "tests/run_tests.sh").read_text()
+        portable = runner.split("u_portable() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("python3 tests/bootarea_test.py", portable)
+        self.assertEqual(self.suites(["tools/fm1_bootarea.py", "tests/bootarea_test.py",
+                                      "docs/boot-area-survey.md"]), {"python"})
+        # Imported parser/generator helpers serve installation and builds too.
+        # Editing them or mixing in firmware must keep full validation.
+        for path in ("tools/fm1_install.py", "tools/fm1pkg_make.py", "firmware/src/ota.c"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites(["tools/fm1_bootarea.py", path]), {"full"})
+
     def test_console_parser_contract_inputs(self):
         self.assertEqual(self.suites(["firmware/src/console.c"]), {"full"})
         for path in ("tools/fm1_diagnostics.py", "tests/diagnostics_test.py", "tests/console_diagnostics.c"):

@@ -578,6 +578,14 @@ differing PCM/state word appear in the output; fixture code is in
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
+
+For an existing private flash dump or `.fwsc` package, the standard-library
+[offline boot-area survey](docs/boot-area-survey.md) checks bounded boot records,
+SPL CRCs, chip key and declared clock fields without opening a device. Use
+`python3 tools/fm1_bootarea.py --raw FILE` or `--package FILE` for the known saved
+format; no firmware build is needed. Format hints are not authentication,
+installer permission, a complete backup or live clock measurements.
+
 For static native HOME/menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
 and standard-library host CLI are described in [screen capture](docs/screen-capture.md).
 Normal builds leave it disabled; release packaging rejects the diagnostic flag.
