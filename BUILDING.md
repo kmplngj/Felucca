@@ -1147,6 +1147,11 @@ profile/font/feature environment and toolchain/SDK:
 python3 tools/build_report.py --verify build/resource-report.json
 ```
 
+After successful verification, add `--frame-output build/stack-entry-frames.json`
+to export observed target entry frames. The [frame evidence guide](docs/stack-frame-evidence.md)
+explains unsupported instructions, ASM boundaries and unresolved calls. This optional
+inventory is not a stack-fit or live-watermark result and changes no reservation.
+
 The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
 and `AC79_SDK` values override those defaults; unset or empty values use them.
