@@ -77,18 +77,18 @@ class Frames(unittest.TestCase):
 
     def test_missing_truncated_and_duplicate_evidence_fails_closed(self):
         for syms, dis in ((symbol(), listing('rts')),
-                          (symbol(size=1), listing('rts')),
-                          (symbol(), listing('rts', 'rts') + listing('rts')),
+                          (symbol(size=1), listing('rts'))):
+            with self.subTest(syms=syms, dis=dis):
+                result = F.inventory(syms, dis)
+                self.assertEqual(len(result['functions']), 1)
+                self.assertEqual(result['functions'][0]['status'], 'unsupported')
+                self.assertIsNone(result['functions'][0]['own_entry_bytes'])
+        for syms, dis in ((symbol(), listing('rts', 'rts') + listing('rts')),
                           ('garbage F .text not-a-size f\n', listing('rts')),
                           ('malformed .text alias\n', listing('rts')),
                           (symbol() + symbol(), listing('rts', 'rts'))):
-            with self.subTest(syms=syms, dis=dis):
-                try:
-                    result = F.inventory(syms, dis)
-                except ValueError:
-                    continue
-                self.assertTrue(result['functions'])
-                self.assertTrue(all(f['own_entry_bytes'] is None for f in result['functions']))
+            with self.subTest(syms=syms, dis=dis), self.assertRaises(ValueError):
+                F.inventory(syms, dis)
         with self.assertRaisesRegex(ValueError, 'malformed instruction'):
             F.inventory(symbol(), ' 2000100: not an instruction\n')
         with self.assertRaisesRegex(ValueError, 'no sized functions'):
