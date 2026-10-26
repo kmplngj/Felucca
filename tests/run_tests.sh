@@ -321,6 +321,7 @@ u_portable() {
     run "64-bit multiply / 16-bit load inventory: parser, window and baseline fixtures (#425)" python3 tests/mul64_hload_check_test.py
     run "supported profile contract (portable fixtures)" python3 tests/profile_contract_test.py
     run "post-link resource reports (portable fixtures)" python3 tests/build_report_test.py
+    run "target entry frames: bounded parser and unresolved-state fixtures" python3 tests/target_frames_test.py
     run "immutable build bundles (portable fixtures)" python3 tests/build_manifest_test.py
     run "Wasm build receipts (portable fixtures)" python3 tests/wasm_report_test.py
     run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
