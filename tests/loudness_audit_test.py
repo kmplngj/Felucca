@@ -18,7 +18,6 @@ from unittest import mock
 
 import numpy as np
 import pyloudnorm
-from scipy.signal import freqz
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,15 +33,15 @@ class MeterProof(unittest.TestCase):
                     ([1, -2, 1], [1, -1.99004745483398, .99007225036621])]
         for actual, reference in zip(audit.k_coefficients(48000), expected):
             np.testing.assert_allclose(actual, reference, rtol=0, atol=2e-14)
-        # Same analogue characteristic at 44.1k, not the 48k digital coefficients.
-        gains = []
-        for rate in (44100, 48000):
-            gain = 1
-            for b, a in audit.k_coefficients(rate):
-                _, response = freqz(b, a, worN=[2*math.pi*1000/rate])
-                gain *= abs(response[0])
-            gains.append(20*math.log10(gain))
-        self.assertAlmostEqual(gains[0], gains[1], delta=.002)
+        # Independent DeMan reference coefficients at 44.1k. Bilinear frequency
+        # warping means the response need not be identical across sample rates.
+        expected_44100 = [
+            ([1.5308412300498355, -2.6509799951536985, 1.1690790799210682],
+             [1, -1.6636551132560204, .7125954280732254]),
+            ([1, -2, 1], [1, -1.9891696736297957, .9891990357870394]),
+        ]
+        for actual, reference in zip(audit.k_coefficients(44100), expected_44100):
+            np.testing.assert_allclose(actual, reference, rtol=0, atol=2e-14)
         self.assertFalse(np.array_equal(audit.k_coefficients(44100)[0][0], expected[0][0]))
 
     def test_independent_reference_aligned_complete_windows(self):
