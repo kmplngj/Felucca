@@ -449,6 +449,9 @@ a draft or after every edit. Mark the frozen candidate ready for review to run i
 complete applicable CI plan before merge. Successful matching CI can supply final
 validation evidence without an identical local full-suite rerun; refresh checks
 after code changes or failures. See [the stage policy](.github/CI.md#feedback-and-merge-stages).
+Exact selector/helper-contract-only changes need the unconditional workflow/helper
+checks and skip firmware/audio/browser builds, even when ready or pushed to `main`.
+Workflow YAML and shared scheduler/coverage implementations retain full validation.
 
 CI runs the complete unit plan across two independent runners. Each uses
 `tests/test_jobs.py tests/run_tests.sh --preflight --shard 1/2 --cohort ID`

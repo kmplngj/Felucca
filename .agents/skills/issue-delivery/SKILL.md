@@ -162,6 +162,10 @@ Run affected checks during implementation and create development PRs as drafts.
 Use named host units with prerequisite closure; draft CI uses the exact audited
 map in `tools/ci_changes.py`, falling back to full validation for shared or unknown
 inputs. Do not run the full suite merely to create a draft or after every edit.
+Selector/helper-contract-only changes use the unconditional workflow/helper job
+even when ready; do not run firmware/audio suites for that scope. Workflow YAML,
+shared scheduler/coverage implementations and mixtures with firmware retain full
+validation. Follow the exact selection table in `.github/CI.md`.
 When the package is frozen, mark the PR ready for review and require its complete
 applicable CI plan before merging. New code pushes refresh that validation.
 Obtain the full applicable integrated validation and fresh target build at that

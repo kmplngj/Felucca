@@ -145,6 +145,9 @@ the firmware and relevant host/emulator compilation paths, not merely added to d
 Rebuild the affected harness after source changes; an existing binary is not evidence for
 new code. During development, run affected units with prerequisite closure and keep PRs
 in draft; follow [the validation stages](.github/CI.md#feedback-and-merge-stages).
+Documentation and exact selector/helper-contract-only changes use workflow/helper
+checks; firmware/audio tests are unnecessary for that scope. Workflow YAML and
+shared test-execution implementations retain full validation.
 Do not run the full suite just to create a draft PR or after every edit. Mark a frozen
 candidate ready for review to run the complete applicable CI plan before merging;
 later code pushes must refresh that validation. Finish firmware changes with evidence

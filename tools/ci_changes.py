@@ -25,6 +25,12 @@ PYTHON_INPUTS = {f"tests/{name}" for name in PORTABLE_TESTS} | {
 BACKUP_INPUTS = {"web/fm1backup.js", "web/test_backup.mjs"}
 REVIEW_INPUTS = {"AGENTS.md", ".coderabbit.yaml", ".github/CODERABBIT.md",
                  ".agents/skills/firmware-watch/SKILL.md"}
+# These exact inputs are exercised by the unconditional workflow/helper job.
+# Scheduler/coverage implementations and workflow YAML remain shared inputs.
+WORKFLOW_CHECK_INPUTS = {
+    'tools/ci_changes.py', 'tests/ci_changes_test.py', 'tests/ci_test.py',
+    'tests/coverage_contract_test.py', 'tests/test_jobs_test.py',
+}
 
 # Draft feedback is deliberately narrower than acceptance. Shared contracts,
 # persistence, protocol, build inputs and unfamiliar paths retain full validation.
@@ -77,6 +83,8 @@ def feedback(event_name, event, selection, release=False):
     if (release or event_name != 'pull_request' or not isinstance(pr, dict) or pr.get('draft') is not True
             or not selection['suites']['full']):
         return 'full', []
+    if any(path in WORKFLOW_CHECK_INPUTS for path in selection['paths']):
+        return 'full', []  # Selector/contract edits mixed with firmware need full acceptance.
     units = set()
     for path in selection['paths']:
         suites = select([path])
@@ -102,7 +110,7 @@ def select(paths, force=False):
             selected["backup"] = True
         elif path.startswith("web/emu/"):
             selected["emulator"] = True
-        elif (path in REVIEW_INPUTS or path.startswith(".github/ISSUE_TEMPLATE/")
+        elif (path in WORKFLOW_CHECK_INPUTS or path in REVIEW_INPUTS or path.startswith(".github/ISSUE_TEMPLATE/")
               or (path.startswith(".agents/skills/") and path.endswith(".md"))):
             continue
         elif path.endswith(".md") and (
@@ -181,6 +189,8 @@ def main():
                 if stage == 'quick' else "Complete applicable validation plan.\n\n"))
             if units:
                 stream.write(f"Focused units (plus prerequisites): {', '.join(units)}\n\n")
+            if not any(result['suites'].values()):
+                stream.write("Scope: workflow/helper checks only; firmware, host and browser suites are not needed.\n\n")
             for suite, enabled in result["suites"].items():
                 stream.write(f"- {suite}: {'run' if enabled else 'not needed'}\n")
             stream.write("\nSee selection.json in workflow diagnostics for the comparison and paths.\n")

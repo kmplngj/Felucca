@@ -83,7 +83,8 @@ class SelectionTest(unittest.TestCase):
         for path in ("firmware/src/eng_fm6.c", "firmware/hal/regs.h", "firmware/app.ld",
                      "firmware/loader/start.s", "build.sh", "tools/build.py",
                      "tools/gen_bitmap_font.py", "tools/sampleio.py", "tools/fm1_install.py",
-                     "tools/ci.py", "tools/ci_changes.py", "pyproject.toml", "uv.lock", ".python-version",
+                     "tools/ci.py", "tools/test_coverage.py", "tests/test_jobs.py",
+                     "pyproject.toml", "uv.lock", ".python-version",
                      "tools/get_toolchain.sh", "assets/fonts/Control.ttf",
                      "assets/samples-cc0/PIANO/sample.wav", "LICENSE", "LICENSING.md",
                      "LICENSES/Apache-2.0.txt", "web/editor.html", "web/fm1pkg.js",
@@ -102,6 +103,22 @@ class SelectionTest(unittest.TestCase):
 
     def test_large_diff_is_not_truncated(self):
         self.assertEqual(self.suites(["docs/change.md"] * 4000 + ["firmware/src/audio.c"]), {"full"})
+
+    def test_selector_and_contract_inputs_use_unconditional_helper_checks(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / '.github/workflows/build.yml').read_text()
+        helper_job = workflow.split('\n  workflow-checks:\n', 1)[1].split('\n  python-checks:\n', 1)[0]
+        for path in changes.WORKFLOW_CHECK_INPUTS:
+            with self.subTest(path=path):
+                self.assertTrue((root / path).is_file())
+                self.assertIn(Path(path).name, helper_job)
+                self.assertEqual(self.suites([path, 'AGENTS.md', '.github/CI.md']), set())
+                self.assertEqual(self.suites([path, 'web/fm1backup.js']), {'backup'})
+                self.assertEqual(self.suites([path, 'firmware/src/audio.c']), {'full'})
+                paths = [path, 'firmware/src/ui_draw.c']
+                self.assertEqual(changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}},
+                    {'suites': changes.select(paths), 'paths': paths}), ('full', []))
 
     def test_draft_feedback_is_explicitly_partial_and_ready_requires_full(self):
         selection = {'suites': changes.select(['firmware/src/ui_draw.c']),
@@ -274,6 +291,29 @@ class DiffTest(unittest.TestCase):
             ".agents/skills/issue-delivery/references/backlog.md",
         })
         self.assertFalse(any(result["suites"].values()))
+
+    def test_selector_only_pr_and_main_push_skip_firmware_but_releases_do_not(self):
+        self.write('tools/ci_changes.py')
+        self.commit()
+        self.write('tests/ci_changes_test.py')
+        head = self.commit()
+        self.assertFalse(any(self.pr(head)['suites'].values()))
+        event = {'ref': 'refs/heads/main', 'before': self.base, 'after': head}
+        self.assertFalse(any(self.plan('push', event)['suites'].values()))
+        self.assertTrue(changes.plan('push', event, release=True)['suites']['full'])
+        self.assertTrue(changes.plan('workflow_dispatch', event)['suites']['full'])
+        payload = self.root / 'event.json'
+        summary = self.root / 'summary.md'
+        output = self.root / 'output.txt'
+        payload.write_text(json.dumps({'pull_request': {
+            'draft': False, 'base': {'sha': self.base}, 'head': {'sha': head}}}))
+        result = subprocess.run([sys.executable, changes.__file__], cwd=self.root,
+            env=dict(os.environ, GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(payload),
+                     GITHUB_STEP_SUMMARY=str(summary), GITHUB_OUTPUT=str(output)),
+            capture_output=True, text=True, check=True)
+        self.assertFalse(any(json.loads(result.stdout)['suites'].values()))
+        self.assertIn('full=false', output.read_text())
+        self.assertIn('workflow/helper checks only', summary.read_text())
 
     def test_pr_excludes_unrelated_base_branch_changes(self):
         self.git("switch", "-c", "feature")

@@ -26,11 +26,12 @@ that could leave a required check pending. Existing check names are preserved.
 | Changed inputs | Validation |
 | --- | --- |
 | Known documentation, documentation images, `AGENTS.md`, Markdown under `.agents/skills/`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
+| Exact selector/helper-contract inputs in `WORKFLOW_CHECK_INPUTS` (`tools/ci_changes.py` and the CI/selector/coverage/scheduler contract tests) | Unconditional workflow/helper checks, including the real scheduler plan and failure/coverage contracts; no firmware, audio or browser builds |
 | Portable fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/console_diagnostics.c`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
 | `tools/firmware_watch.py`, its tests and `data/firmware-watch/**` | Portable Python suite, including ledger migration/integrity and offline Git-DAG recovery tests; no firmware build |
 | `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
 | `web/emu/**` | Fresh generated assets, pinned Emscripten build and freshly compiled native/WASM song equality and emulator checks; no target package, DaisySP or unrelated host/sanitizer suites |
-| Firmware, build scripts/generators, package/installer/editor inputs, shared host harnesses, goldens/budgets, assets, licenses, workflow/selector implementation, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
+| Firmware, build scripts/generators, package/installer/editor inputs, shared host/scheduler/coverage implementations, goldens/budgets, assets, licenses, workflow YAML, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
 | Manual CI dispatch, releases, or unavailable change comparison | Complete pipeline regardless of changed paths |
 
 The diagnostics fixture compiles the real `firmware/src/console.c` with bounded
@@ -41,6 +42,14 @@ without generated firmware assets or a connected device. Changes to `console.c`
 continue to select full firmware validation.
 
 Independent selections combine when a PR changes several independent areas.
+Selector/helper-contract-only changes use the same lightweight plan in draft,
+ready PRs and `main` pushes. The existing workflow/helper job always runs and must
+succeed for the required aggregate to pass. Its fixtures exercise selector Git
+diffs, the real unit plan, scheduler behavior and refusal of incomplete coverage;
+running DSP goldens adds no direct coverage of those changes. Combining these
+inputs with firmware retains complete validation, including while draft. Workflow
+YAML and the scheduler/coverage implementations are deliberately outside this
+exception. Manual/release and unavailable-diff fallbacks remain complete.
 Skill scripts, non-Markdown assets and unfamiliar files still require full validation;
 mixing skill instructions with firmware changes also selects full validation.
 Full validation includes the focused suites, so their separate focused jobs are
@@ -81,7 +90,7 @@ harnesses such as `ui_test.c`, `ui_render.c` and `hostsim.c` retain full validat
 The workflow summary records the stage and focused units. This is not an AI choice
 of which tests to omit. Shared contracts, persistence, protocol, build inputs, dependency
 pins, unfamiliar paths and mixed independent suites retain full validation even
-while draft. Documentation and independent-tool selections keep their existing
+while draft. Documentation, exact selector/helper-contract and independent-tool selections keep their existing
 lightweight checks.
 
 Partial runs use the **Draft feedback** caller. They never report the required
