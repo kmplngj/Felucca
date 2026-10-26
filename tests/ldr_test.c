@@ -517,13 +517,13 @@ int main(int argc, char **argv)
     /* Actual native erase/program/verify failures never report a completed sector.
      * The same real entry point retries without a reset or changed flash policy. */
     for (uint32_t fault = 0; fault < 3u; fault++) {
-        nor[LDR_APP_LO + 64u] ^= 1;
-        er_fail_off = fault == 0 ? LDR_APP_LO : 0xFFFFFFFFu;
+        nor[LDR_APP_LO + 4096u + 64u] ^= 1;
+        er_fail_off = fault == 0 ? LDR_APP_LO + 4096u : 0xFFFFFFFFu;
         prog_fail = fault == 1;
         verify_fail = fault == 2;
         rc = ldr_session();
-        bad += check("write failure publishes native error and zero unverified progress", rc == -(int)(9u + fault) &&
-                     ldr_screen_state == LDR_FAILED && ldr_screen_error == rc && progress_seen == 0);
+        bad += check("write failure preserves only the previously verified prefix", rc == -(int)(9u + fault) &&
+                     ldr_screen_state == LDR_FAILED && ldr_screen_error == rc && progress_seen == 1 && progress_last == 4096u);
         er_fail_off = 0xFFFFFFFFu; prog_fail = verify_fail = 0;
         rc = ldr_session();
         bad += check("same loader retries to successful verified completion", rc == 0 && ldr_screen_state == LDR_SUCCESS &&
