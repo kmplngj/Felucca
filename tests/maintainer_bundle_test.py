@@ -9,6 +9,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import py_compile
 import re
 import shutil
 import subprocess
@@ -129,6 +130,34 @@ class MaintainerBundles(unittest.TestCase):
             self.assertEqual(result[name], self.env[name])
         self.assertEqual(result['FELUCCA_PROFILE'], 'macro')
         self.assertEqual(result['GITHUB_ACTIONS'], 'false')
+
+    def test_archive_cli_refuses_before_importing_unverified_cached_helper(self):
+        archive = self.fixture.base / 'unverified-archive'
+        tools = archive / 'tools'; tools.mkdir(parents=True)
+        (archive / 'SOURCE-PINS.json').write_text('{}')
+        entry = tools / 'maintainer_bundle.py'
+        source = Path(B.__file__).read_text(); entry.write_text(source)
+        marker = self.fixture.base / 'unverified-helper-executed'
+        helper = tools / 'build_manifest.py'
+        helper.write_text('from pathlib import Path\nPath(' + repr(str(marker)) + ').write_text("executed")\n')
+        # A sourceless cached module can execute without an untracked .py file.
+        py_compile.compile(str(helper), cfile=str(tools / 'build_manifest.pyc'), doraise=True)
+        helper.unlink()
+        env = dict(self.env, PYTHONPATH=str(ROOT / 'tools'))
+        def cli():
+            return subprocess.run([sys.executable, str(entry), '--help'], cwd=archive, env=env,
+                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+        refused = cli()
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('requires a clean committed Git checkout', refused.stderr)
+        self.assertFalse(marker.exists())
+        # Causal control: bypass only the startup refusal. The same cached helper
+        # now executes before argument processing, proving the fixture sees it.
+        start = source.index('import os as _source_os')
+        end = source.index('\nimport argparse', start)
+        entry.write_text(source[:start] + source[end:])
+        cli()
+        self.assertTrue(marker.exists())
 
     def test_complete_sequence_and_promotion_only_after_offline_verification(self):
         result = self.execute()
