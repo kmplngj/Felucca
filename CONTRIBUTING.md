@@ -25,7 +25,9 @@ work, use the same requirements:
 - make sure you understand the change and can explain it;
 - test hardware-dependent changes on a real FM-1 and report any pending device checks;
 - run the applicable checks in [BUILDING.md](BUILDING.md), including
-  `tests/run_tests.sh` for firmware changes;
+  complete host coverage for final firmware candidates; use focused checks and
+  draft PRs during iteration, then require complete applicable CI before merge
+  ([validation stages](.github/CI.md#feedback-and-merge-stages));
 - new files carry the GPL-3.0-only SPDX header.
 
 Include **User test instructions** in the PR description: setup, how to reach the

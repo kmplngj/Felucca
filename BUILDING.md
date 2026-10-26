@@ -442,6 +442,14 @@ uv run --locked --group build python tests/test_jobs.py tests/run_tests.sh --pre
 This writes an explicitly focused report. It cannot satisfy strict full-suite
 verification. Unknown units fail instead of silently reducing coverage.
 
+Keep development PRs in draft: known source changes and matching test entry points
+use focused CI plus fresh target/resource/package guards. Shared or unknown inputs
+still select complete validation. A full local suite is not required just to open
+a draft or after every edit. Mark the frozen candidate ready for review to run its
+complete applicable CI plan before merge. Successful matching CI can supply final
+validation evidence without an identical local full-suite rerun; refresh checks
+after code changes or failures. See [the stage policy](.github/CI.md#feedback-and-merge-stages).
+
 CI runs the complete unit plan across two independent runners. Each uses
 `tests/test_jobs.py tests/run_tests.sh --preflight --shard 1/2 --cohort ID`
 (the other uses `2/2`), a fresh individual coverage ID and matching source,

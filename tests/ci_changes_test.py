@@ -121,12 +121,74 @@ class SelectionTest(unittest.TestCase):
         for extra in ('firmware/src/core.h', 'firmware/src/storage.c',
                       'firmware/src/console.c', 'firmware/src/voice.c',
                       'firmware/engines', 'firmware/src/eng_macro.c',
-                      'tools/ci_changes.py', 'unknown.c', 'tools/fm1_diagnostics.py'):
+                      'firmware/src/ui_new.c', 'firmware/src/eng_new.c',
+                      'tests/ui_test.c', 'tests/ui_render.c', 'tests/hostsim.c',
+                      'tests/golden.txt', 'tests/target_budget.txt',
+                      'tools/ci_changes.py', '.github/workflows/ci.yml',
+                      'unknown.c', 'tools/fm1_diagnostics.py',
+                      'web/fm1backup.js', 'web/emu/index.html'):
             paths = ['firmware/src/ui_draw.c', extra]
             with self.subTest(path=extra):
                 self.assertEqual(changes.feedback('pull_request',
                     {'pull_request': {'draft': True}},
                     {'suites': changes.select(paths), 'paths': paths}), ('full', []))
+
+    def test_audited_test_edits_get_focused_draft_feedback(self):
+        paths = ['firmware/src/fx.c', 'tests/chorus_depth_test.py',
+                 'tests/fm6_eff_test.c', 'docs/change.md']
+        selection = {'suites': changes.select(paths), 'paths': paths}
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': True}}, selection),
+            ('quick', sorted(set(changes.FX_FEEDBACK) | {'fm6_effective'})))
+        # A test-only PR also stays partial until it is ready for review.
+        paths = ['tests/fm6_eff_test.c']
+        selection = {'suites': changes.select(paths), 'paths': paths}
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': True}}, selection), ('quick', ['fm6_effective']))
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': False}}, selection), ('full', []))
+        paths = ['tests/fx_rest_test.py']
+        self.assertEqual(changes.feedback('pull_request',
+            {'pull_request': {'draft': True}},
+            {'suites': changes.select(paths), 'paths': paths}),
+            ('quick', ['chorus', 'fx_rest']))
+
+    def test_graphics_and_engine_helpers_include_specific_regressions(self):
+        for path, required in (
+                ('firmware/src/gfx.c', {'text', 'icon_streams', 'asan_icon_streams'}),
+                ('firmware/src/icons.c', {'screen_capture_ui', 'identity_ui'}),
+                ('firmware/src/fm6_core.c', {'fm6', 'fm6_effective', 'fm6bank'}),
+                ('firmware/src/phys_dsp.c', {'phys', 'phys_ref'}),
+                ('firmware/src/phys_symp.c', {'phys', 'phys_ref'}),
+                ('firmware/src/eng_sample.c', {'regression', 'sample'}),
+                ('firmware/src/eng_digital.c', {'digital', 'fm4', 'fm4_div0'})):
+            with self.subTest(path=path):
+                stage, units = changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}},
+                    {'suites': changes.select([path]), 'paths': [path]})
+                self.assertEqual(stage, 'quick')
+                self.assertTrue(required <= set(units))
+
+    def test_all_draft_mappings_exist_and_resolve_in_real_scheduler_plan(self):
+        root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(root / 'tests'))
+        import test_jobs
+        plan = test_jobs.parse_plan(subprocess.check_output(
+            ['sh', 'tests/run_tests.sh', '--plan'], cwd=root, text=True))
+        for path, units in changes.DRAFT_INPUTS.items():
+            with self.subTest(path=path):
+                self.assertTrue((root / path).is_file(), path)
+                selection = {'suites': changes.select([path]), 'paths': [path]}
+                self.assertEqual(changes.feedback('pull_request',
+                    {'pull_request': {'draft': True}}, selection), ('quick', sorted(units)))
+                selected = test_jobs.coverage.select_plan(plan,
+                    {'kind': 'focused', 'selected': units})
+                self.assertTrue(set(units) <= {u['name'] for u in selected})
+                for event, payload, release in (
+                        ('pull_request', {'pull_request': {'draft': False}}, False),
+                        ('push', {}, False), ('workflow_dispatch', {}, False),
+                        ('pull_request', {'pull_request': {'draft': True}}, True)):
+                    self.assertEqual(changes.feedback(event, payload, selection, release), ('full', []))
 
     def test_manual_release_and_unknown_events_force_full(self):
         for event in ("workflow_dispatch", "schedule", "", "pull_request_target"):

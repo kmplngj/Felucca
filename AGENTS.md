@@ -143,8 +143,15 @@ the firmware and relevant host/emulator compilation paths, not merely added to d
 ## Build and validate
 
 Rebuild the affected harness after source changes; an existing binary is not evidence for
-new code. Finish firmware changes with the full applicable suite, a fresh target build
-with no new warnings, and the resource checks in `docs/performance.md`. Record every skipped
+new code. During development, run affected units with prerequisite closure and keep PRs
+in draft; follow [the validation stages](.github/CI.md#feedback-and-merge-stages).
+Do not run the full suite just to create a draft PR or after every edit. Mark a frozen
+candidate ready for review to run the complete applicable CI plan before merging;
+later code pushes must refresh that validation. Finish firmware changes with evidence
+for the full applicable suite, a fresh target build with no new warnings, and the
+resource checks in `docs/performance.md`. Successful CI evidence can cover those checks
+when its tested revision, inputs, toolchain, profile and flags match; do not repeat the same full
+suite locally without a changed input, failure or unresolved concern. Record every skipped
 check, especially unavailable host instruction counters, DaisySP or browser tooling.
 For UI changes, inspect the generated `build/ui_new/` images and the actual panel behavior;
 for USB/MIDI changes, exercise the affected host configuration and hardware path.
