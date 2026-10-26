@@ -538,11 +538,62 @@ static void con_screen(const char *p)
 #endif
 }
 
+#if FELUCCA_CHIP_PROBES
+static void con_probe(const char *p)
+{
+    uint32_t rc, kind, pass, i;
+    if (con_word(&p, "caps") && con_screen_end(p)) {
+        con_puts("PROBE CAPS version=1 reps=256 passes=2 kinds=9 footprint=1024 limit_ticks=2400000 irq=enabled clock=unavailable commit=");
+#ifdef FELUCCA_BUILD_COMMIT
+        con_puts(FELUCCA_BUILD_COMMIT);
+#else
+        con_puts("unknown");
+#endif
+        con_puts("\r\n");
+        return;
+    }
+    if (!con_word(&p, "run") || !con_screen_end(p)) {
+        con_puts("PROBE ERROR argument\r\n");
+        return;
+    }
+    rc = cp_run();
+    if (rc) {
+        con_puts("PROBE ERROR "); con_dec((int32_t)rc);
+        con_puts(" samples="); con_dec((int32_t)cp_done);
+        if (cp_done) {
+            i = cp_done - 1u;
+            con_puts(" last_ticks="); con_hex(cp_result[i].ticks, 8);
+            con_puts(" checksum="); con_hex(cp_result[i].checksum, 8);
+            con_puts(" reference="); con_hex(cp_result[i].reference, 8);
+        }
+        con_puts("\r\n");
+        return;
+    }
+    /* All timing and quiet-state checks finished before the first output byte. */
+    con_puts("PROBE BEGIN version=1\r\n");
+    for (kind = 0; kind < CP_KINDS; kind++)
+        for (pass = 0; pass < CP_PASSES; pass++) {
+            i = kind * CP_PASSES + pass;
+            con_puts("PROBE SAMPLE kind="); con_dec((int32_t)kind);
+            con_puts(" pass="); con_dec((int32_t)pass);
+            con_puts(" ticks="); con_hex(cp_result[i].ticks, 8);
+            con_puts(" checksum="); con_hex(cp_result[i].checksum, 8);
+            con_puts(" reference="); con_hex(cp_result[i].reference, 8);
+            con_puts("\r\n");
+        }
+    con_puts("PROBE END complete\r\n");
+}
+#endif
+
 static void con_exec(const char *p)
 {
     FM1_ASSERT_THREAD();                                /* formatted replies: main loop only (#428) */
     if (con_word(&p, "help") || con_word(&p, "?"))
         con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+#if FELUCCA_CHIP_PROBES
+    else if (con_word(&p, "probe"))
+        con_probe(p);
+#endif
     else if (con_word(&p, "screen"))
         con_screen(p);
     else if (con_word(&p, "status"))
