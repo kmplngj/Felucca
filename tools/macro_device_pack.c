@@ -2,7 +2,7 @@
 /* Offline fixture producer: compile the actual firmware serializer, project load,
  * sequencer and sound install against the existing host HAL. Never opens a device. */
 #define UI_TEST_NO_MAIN 1
-#include "../tests/ui_test.c"
+#include "../tests/ui_harness.h"
 #include <assert.h>
 
 static const char *const pack_files[] = {"A-legacy-poly", "B-bank-heavy", "C-mixed", "D-song"};

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* 1.5's sequencer edits (Discussions #178, #173), on the real sequencer and UI sources (with the stubs of tests/ui_test.c):
+/* 1.5's sequencer edits (Discussions #178, #173), on the real sequencer and UI sources (with the stubs of tests/ui_harness.h):
  *   LEN   SEQ > STEP's KNOB 3 on a note (ui.c note_set_len): right writes clean TIE steps after it (a REST or an empty
  *         step; a chord ties whole), stopping at the next step holding notes (NOTE AHEAD; a REST's kept notes too) and
  *         at LEN (END OF PATTERN); left turns its last TIEs back into RESTs, never the note itself; nothing else moves
@@ -13,7 +13,7 @@
  *         untouched plays as before (the golden renders: tests/regress.c).
  * Built and run by tests/run_tests.sh. */
 #define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* track 1 alone (ANALOG, POLY), 16 steps of 1/16, GATE 64, no swing; SEQ > STEP on step `cur` */
 static track_t *roll(uint32_t cur)

@@ -15,7 +15,7 @@
  * 0. ins_lpk (#109): INS_LPK is the original (g << 16) / (4096 + g) on SVF_G, all 128 entries, and the index clamps.
  * 6. demos (DEMO_DIR): each TYPE on a loop (acid line + drums), two bars dry, two bars with the INSERT. */
 #define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 #ifdef __APPLE__
 #include <libproc.h>
 #include <sys/resource.h>

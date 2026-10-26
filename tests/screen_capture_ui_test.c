@@ -2,7 +2,7 @@
 /* Real native UI and capture service; host_screen is an independent LCD sink. */
 #define UI_TEST_NO_MAIN
 #define FELUCCA_SCREEN_CAPTURE 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 static uint32_t capture_checks, capture_frames, capture_scenes, capture_dynamic, capture_advance_ms;
 static void capture_need(int ok, const char *why)

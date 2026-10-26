@@ -66,7 +66,7 @@ static uint32_t host_rx_take(void)
 /* Keep the UI's small diagnostic stub separate from the real timer fields. */
 #define felucca_dbg ui_debug_stub
 #define fm1_delay_ms unused_timer_delay
-#include "ui_test.c"
+#include "ui_harness.h"
 #undef fm1_delay_ms
 #undef felucca_dbg
 #else

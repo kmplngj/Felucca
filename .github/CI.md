@@ -86,7 +86,7 @@ regression alongside its source change does not alone force the full suite.
 adds prerequisite closure. UI and engine filename prefixes do not admit unfamiliar
 new files. Graphics changes include text, icon decoder/sanitizer and rendering
 checks; FM6 and PHYS helpers include their engine-specific fixtures. Shared test
-harnesses such as `ui_test.c`, `ui_render.c` and `hostsim.c` retain full validation.
+harnesses such as `ui_harness.h`, `ui_render.c` and `hostsim.c` retain full validation.
 The workflow summary records the stage and focused units. This is not an AI choice
 of which tests to omit. Shared contracts, persistence, protocol, build inputs, dependency
 pins, unfamiliar paths and mixed independent suites retain full validation even

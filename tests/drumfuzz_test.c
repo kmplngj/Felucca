@@ -30,7 +30,7 @@ static void fm1_icfg_set(uint32_t f) { if (f) host_irq_mask = 1; else fm1_irq_on
 static void fz_boot_probe(void);
 #define UI_POWER_ON_RESET_HOOK fz_boot_probe
 #endif
-#include "ui_test.c"
+#include "ui_harness.h"
 #ifdef PREEMPT
 static volatile int host_in_isr;
 static uint32_t host_isr_n;

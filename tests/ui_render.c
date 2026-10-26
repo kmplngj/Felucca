@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Renders of the firmware UI (firmware/src/ui*.c on tests/ui_test.c's stubs), the layout lint, the GREY and MONO
+/* Renders of the firmware UI (firmware/src/ui*.c on tests/ui_harness.h's stubs), the layout lint, the GREY and MONO
  * checks and the host draw cost.
  *   ui_render OUTDIR [SLOTDIR]   (run by tests/run_tests.sh; tests/ui_render.py makes the PNGs;
  *                                 SLOTDIR: filmstrips of the rolling digits, GREY MONO and GREEN)
@@ -246,7 +246,7 @@ static char lg_val[4][16];                       /* .. and its value */
 static void cs_hook(const char *v, const char *u);
 #define CARD_HOOK(v, u) cs_hook(v, u)
 #define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 static uint8_t large_on;                         /* the LARGE pass: every scene with MENU > LARGE ON */
 /* the card values set in S (ui_draw.c CARD_HOOK: M too wide for the card with its unit), distinct, for the report

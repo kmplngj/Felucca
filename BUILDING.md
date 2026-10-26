@@ -421,6 +421,13 @@ program counter counts completed bytes; its erase counter excludes requests
 refused before work. Reads remain available for recovery after a cut. Storage and
 persistence tests retain their different retry and operation-counting models.
 
+`tests/ui_harness.h` owns the shared native UI platform and driving helpers;
+`tests/ui_test.c` owns the standalone scenarios. Define consumer hooks before
+including the harness. The existing `UI_TEST_NO_MAIN` switch retains its LCD
+trace behavior: standalone UI tests enable tracing and consumers omit it. The
+input-contract mutation check and MACRO fixture source manifest follow this
+shared header. This extraction does not change the firmware UI or its controls.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for

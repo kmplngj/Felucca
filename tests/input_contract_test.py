@@ -10,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / 'tests/ui_test.c'
+HARNESS = ROOT / 'tests/ui_harness.h'
 
 
 class FirmwareInputContract(unittest.TestCase):
@@ -41,10 +42,14 @@ class FirmwareInputContract(unittest.TestCase):
         # negative compile result; missing generated headers must fail this test.
         result = self.compile(UI)
         self.assertEqual(result.returncode, 0, result.stderr)
-        source = UI.read_text()
+        harness = HARNESS.read_text()
         signature = 'static uint32_t fm1_input_edges(uint32_t *x)'
-        self.assertEqual(source.count(signature), 1, 'expected one real UI accessor definition')
-        source = source.replace(signature, 'static uint32_t fm1_input_edges(int x)', 1)
+        self.assertEqual(harness.count(signature), 1, 'expected one real UI accessor definition')
+        harness = harness.replace(signature, 'static uint32_t fm1_input_edges(int x)', 1)
+        source = UI.read_text()
+        include = '#include "ui_harness.h"'
+        self.assertEqual(source.count(include), 1, 'expected one actual shared UI harness include')
+        source = source.replace(include, harness, 1)
         result = self.compile(UI, source)
         self.assertNotEqual(result.returncode, 0, 'the former incompatible UI signature was accepted')
         self.assertIn('fm1_input_edges', result.stderr)

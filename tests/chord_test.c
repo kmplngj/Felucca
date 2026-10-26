@@ -8,7 +8,7 @@
  * SAMPLE PERC) ignores CHRD, MIDI OUT of the keys, and OFF plays exactly as before.
  * Run by tests/run_tests.sh (needs build/gen from one firmware build). */
 #define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 static int gate_note(const track_t *t, uint32_t note)
 {

@@ -7,7 +7,7 @@
  * that the candidate  min + ((value * span + 63) * 33027 >> 22)  with unsigned 32-bit arithmetic equals it for every
  * value 0..127 and every span 0..255 (twice the largest reachable span). It does not change the firmware. */
 #define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 #define CC_SPAN_MAX 255u                        /* the proven domain of the candidate: 2 x the reachable maximum */
 #define CC_MUL 33027u                           /* ceil(2^22 / 127) */

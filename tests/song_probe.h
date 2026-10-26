@@ -4,7 +4,7 @@
  * its sounding notes, LEN / DIV, the automated REV) and the song's row and repeats, every audio block, until the song
  * stops. Rows of one slot each, as every song before lanes (1.2) had: the same source compiles against the firmware of
  * before (src/ of 1.2 before lanes, chain_row_t {slot, repeat}), which gave SONG_PROBE_GOLDEN. Included after the UI
- * sources and ui_test.c's helpers (ui_power_on, project_save) */
+ * sources and ui_harness.h's helpers (ui_power_on, project_save) */
 #ifdef CHAIN_SILENT
 #define PROBE_ROW(s, r) chain_row_of(s, r)
 #else

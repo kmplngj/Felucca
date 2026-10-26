@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* 1.5.6, on the real sources (with the stubs of tests/ui_test.c):
+/* 1.5.6, on the real sources (with the stubs of tests/ui_harness.h):
  *   HUMANIZE  (#213) the matrix's VEL and TIME destinations, appended after DEPTH: VEL moves a note-on's velocity
  *             (every note-on, RAND its own per note, the matrix's VEL source sees the new one, clamped 1..127), TIME
  *             plays a sequencer step late (0..30 ms, at most 7/16 of the step; QUANTIZE ON and OFF with NUDGE; a
@@ -13,7 +13,7 @@
  *             the keys' velocity (sounding, sent); GLO + SELECT the tempo; PAGE's bit as 1.5.5, saved; CLOCK's hint
  * Built and run by tests/run_tests.sh. */
 #define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* ---------------------------------------------------------- HUMANIZE --- */
 static void mslot(track_t *t, uint32_t k, int32_t s, int32_t d, int32_t a)

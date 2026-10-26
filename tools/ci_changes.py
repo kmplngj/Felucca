@@ -59,8 +59,8 @@ DRAFT_INPUTS = {
     'firmware/src/phys_dsp.c': DSP_FEEDBACK + ('phys', 'phys_ref'),
     'firmware/src/phys_symp.c': DSP_FEEDBACK + ('phys', 'phys_ref'),
     'firmware/src/fx.c': FX_FEEDBACK,
-    # Direct test entry points only. ui_test.c, ui_render.c and hostsim.c are
-    # shared by other harnesses and deliberately retain complete validation.
+    # Direct audited test entry points only. ui_harness.h, ui_render.c and
+    # hostsim.c are shared and deliberately retain complete validation.
     **{f'tests/{name}_test.c': (unit,) for name, unit in (
         ('theme', 'text'), ('text_ref', 'text'),
         ('lcd_typography', 'ui'), ('lcd_readability', 'ui'), ('track_badge', 'ui'),

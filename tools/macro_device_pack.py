@@ -132,7 +132,8 @@ def generate(out, gen, candidate=None):
     inputs = [p for folder in ("firmware/src", "firmware/engines/src", "assets/braids")
               for p in sorted((ROOT / folder).rglob("*")) if p.is_file()]
     inputs += [ROOT / p for p in ("tools/macro_device_pack.c", "tools/macro_device_pack.py",
-               "tools/profile.py", "tests/hostsim.c", "tests/ui_test.c", "profiles/macro.json", "profiles/catalog.json")]
+               "tools/profile.py", "tests/hostsim.c", "tests/ui_harness.h", "firmware/hal/fm1_input_contract.h",
+               "profiles/macro.json", "profiles/catalog.json")]
     source_hashes = {str(p.relative_to(ROOT)): sha256(p) for p in sorted(set(inputs))}
     generated = {p.name: sha256(p) for p in sorted(gen.iterdir()) if p.suffix in (".h", ".inc")}
     manifest = {

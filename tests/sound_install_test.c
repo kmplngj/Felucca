@@ -40,7 +40,7 @@ static void fm1_icfg_set(uint32_t f)
     else
         fm1_irq_on();
 }
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* what the audio side would read of a track: engine id, preset number, every value of the sound */
 typedef struct {
