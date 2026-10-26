@@ -324,6 +324,7 @@ u_portable() {
     run "post-link resource reports (portable fixtures)" python3 tests/build_report_test.py
     run "target entry frames: bounded parser and unresolved-state fixtures" python3 tests/target_frames_test.py
     run "immutable build bundles (portable fixtures)" python3 tests/build_manifest_test.py
+    run "maintainer build orchestration: admission, staged failures and verified promotion" python3 tests/maintainer_bundle_test.py
     run "Wasm build receipts (portable fixtures)" python3 tests/wasm_report_test.py
     run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
     run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py

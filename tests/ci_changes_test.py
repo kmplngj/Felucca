@@ -88,6 +88,17 @@ class SelectionTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.suites(["tools/fm1_update_records.py", path]), {"full"})
 
+    def test_maintainer_orchestration_fixtures_keep_source_validation_full(self):
+        self.assertIn("maintainer_bundle_test.py", changes.PORTABLE_TESTS)
+        runner = (Path(__file__).resolve().parents[1] / "tests/run_tests.sh").read_text()
+        portable = runner.split("u_portable() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("python3 tests/maintainer_bundle_test.py", portable)
+        self.assertEqual(self.suites(["tests/maintainer_bundle_test.py"]), {"python"})
+        for path in ("tools/maintainer_bundle.py", ".github/workflows/maintainer-bundle.yml"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), {"full"})
+                self.assertEqual(self.suites(["tests/maintainer_bundle_test.py", path]), {"full"})
+
     def test_console_parser_contract_inputs(self):
         self.assertEqual(self.suites(["firmware/src/console.c"]), {"full"})
         for path in ("tools/fm1_diagnostics.py", "tests/diagnostics_test.py", "tests/console_diagnostics.c"):
