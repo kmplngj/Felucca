@@ -4,8 +4,10 @@
 #define PERSISTENCE_FIXTURE
 #include "persistence_test.c"
 
-static uint32_t audio_frame, audio_start, last_loud, first_save, erase_peak;
-static uint32_t audible_blocks, late_blocks, unsafe_erases, test_phase;
+static uint32_t audio_frame, audio_start, last_loud, first_save, write_peak;
+static uint32_t audible_blocks, late_blocks, unsafe_writes, test_phase;
+static uint32_t dirty_start;
+enum { AUTO_PROGRAMS = (PROJ_STORE_SIZE + 255u) / 256u + 1u }; /* payload pages plus commit */
 static int32_t rendered[2u * CTL];
 
 static uint32_t channel_peak(const int32_t *out, uint32_t ch)
@@ -38,10 +40,11 @@ static void audio_fresh(uint32_t start)
     ui_prefs = fx_usb_fixed = fx_lowcut = scope_mix = 0;
     dc_l = dc_r = dce_l = dce_r = 0;
     lim_env = LIM_T;
-    audio_frame = last_loud = first_save = erase_peak = 0;
-    audible_blocks = late_blocks = unsafe_erases = test_phase = 0;
+    audio_frame = last_loud = first_save = write_peak = 0;
+    audible_blocks = late_blocks = unsafe_writes = test_phase = 0;
     audio_start = fm1_ms = start;
-    as_erases = 0;
+    as_erases = as_programs = as_commits = as_mutations = 0;
+    if (dirty_start) nor[0xE5FFFu] = 0;   /* blank header, dirty tail: exercise the erase path too */
 }
 
 static void audio_begin(void)
@@ -53,7 +56,7 @@ static void audio_begin(void)
 /* The independent oracle observes final stereo Q15 PCM, not the activity publication. */
 static void audio_poll(void)
 {
-    uint32_t l = channel_peak(rendered, 0), r = channel_peak(rendered, 1), before = as_erases;
+    uint32_t l = channel_peak(rendered, 0), r = channel_peak(rendered, 1), before = as_mutations;
     uint32_t peak = l > r ? l : r, elapsed;
     audio_frame += CTL;
     elapsed = (uint32_t)((uint64_t)audio_frame * 1000u / FS);
@@ -71,10 +74,10 @@ static void audio_poll(void)
         late_blocks += elapsed >= AS_IDLE_MS;
     }
     autosave_poll();
-    if (as_erases != before) {
+    if (as_mutations != before) {
         if (!first_save) first_save = elapsed;
-        erase_peak = peak;
-        unsafe_erases += loud || elapsed - last_loud < AS_IDLE_MS;
+        write_peak = peak;
+        unsafe_writes += loud || elapsed - last_loud < AS_IDLE_MS;
     }
 }
 
@@ -119,7 +122,7 @@ static int tail_case(const char *name, uint32_t kind, uint32_t fixed, uint32_t p
     note = trk[0].step[0].note[0];
     for (b = 0; b < 200u * FS / CTL; b++) {
         if (kind == T_ROOM_SWITCH && b == 150u * FS / CTL) {
-            bad += check("ROOM127 varying residual still holds automatic saves", !as_erases && last_loud > 149000u);
+            bad += check("ROOM127 varying residual still holds automatic saves", !as_mutations && last_loud > 149000u);
             song.g[G_RTYPE] = 2;                    /* real model switch clears the old resonator */
             sig = autosave_sig();
         }
@@ -149,9 +152,9 @@ static int tail_case(const char *name, uint32_t kind, uint32_t fixed, uint32_t p
             printf("residual ch%u: samples=%u min=%d max=%d mean=%.6f rms=%.6f ac_rms=%.6f\n",
                    ch, samples, lo[ch], hi[ch], mean, sqrt(sq[ch] / samples), sqrt(sq[ch] / samples - mean * mean));
         }
-    printf("autosave audio: %s: last loud %u ms, first erase %u ms, erase peak %u, erases %u, late blocks %u\n",
-           name, last_loud, first_save, erase_peak, as_erases, late_blocks);
-    bad += check(name, !unsafe_erases && first_save && as.writes == 1u && as_erases == 1u &&
+    printf("autosave audio: %s: last loud %u ms, first write %u ms, write peak %u, erases %u, commits %u, late blocks %u\n",
+           name, last_loud, first_save, write_peak, as_erases, as_commits, late_blocks);
+    bad += check(name, !unsafe_writes && first_save && as.writes == 1u && as_commits == 1u && as_programs == AUTO_PROGRAMS && as_erases == dirty_start &&
                  as.saved == sig && (kind == T_SILENCE || audible_blocks) &&
                  (kind != T_DELAY || late_blocks) && (!fixed || !dac_peak));
     /* Delayed writes keep the edited project, not merely an acknowledged signature. */
@@ -186,7 +189,7 @@ static int burst_case(uint32_t wrap)
     }
     bad += check(wrap ? "generation wrap retains an isolated right-channel pulse between polls" :
                  "right-only burst between polls restarts the full quiet window",
-                 !l && r > 32u && !unsafe_erases && as_erases == 1u && first_save >= 19750u);
+                 !l && r > 32u && !unsafe_writes && as_commits == 1u && as_erases == dirty_start && first_save >= 19750u);
     return bad;
 }
 
@@ -215,7 +218,7 @@ static int threshold_case(int32_t input, uint32_t audible)
     printf("threshold: input +/- %d -> final abs %u..%u Q15, erases %u\n", input, low, high, as_erases);
     bad = check(audible ? "+/-33 final PCM continually defers autosave" : "+/-32 final residual saves once",
                 low == (audible ? 33u : 32u) && high == low &&
-                (audible ? !as_erases : as_erases == 1u && !unsafe_erases));
+                (audible ? !as_mutations : as_commits == 1u && as_erases == dirty_start && !unsafe_writes));
     return bad;
 }
 
@@ -225,40 +228,43 @@ static int retry_case(void)
     uint32_t before;
     audio_fresh(UINT32_MAX - 5000u);
     audio_begin();
-    erase_error = 1;
+    fail_after = 0;
     as_run(10500u);
-    bad += check("failed automatic save preserves dirty data", as.err && !as.writes && as.saved != as.seen && as_erases == 1u);
+    bad += check("failed automatic save preserves dirty data", as.err && !as.writes && as.saved != as.seen && !as_commits && as_programs == 1u && as_erases == dirty_start);
     before = fm1_ms;
     as_run(29000u);
-    bad += check("failed save retries wait thirty seconds across timer wrap", as_erases == 1u);
-    erase_error = 0;
+    bad += check("failed save retries wait thirty seconds across timer wrap", !as_commits && as_programs == 1u && as_erases == dirty_start);
+    fail_after = -1;
     as_run(1500u);
-    bad += check("retry commits once, then respects the wear gap", !as.err && as.writes == 1u && as_erases == 2u &&
+    bad += check("retry commits once, then respects the wear gap", !as.err && as.writes == 1u && as_commits == 1u && as_programs == 1u + AUTO_PROGRAMS && as_erases == dirty_start &&
                  fm1_ms - before >= AS_RETRY_MS);
     as_edit(1);
     as_run(59000u);
-    bad += check("next dirty edit still waits sixty seconds", as.writes == 1u);
+    bad += check("next dirty edit still waits sixty seconds", as.writes == 1u && as_commits == 1u && as_programs == 1u + AUTO_PROGRAMS && as_erases == dirty_start);
     as_run(1500u);
-    bad += check("dirty edit commits once after wear gap", as.writes == 2u && as_erases == 3u);
+    bad += check("dirty edit commits once after wear gap", as.writes == 2u && as_commits == 2u && as_programs == 1u + 2u * AUTO_PROGRAMS && as_erases == dirty_start);
     return bad;
 }
 
 int main(void)
 {
     int bad = 0;
-    bad += tail_case("silence: one save after idle", T_SILENCE, 0, 0, 0);
-    bad += tail_case("long delay: no erase through audible tail", T_DELAY, 0, 0, 0);
-    bad += tail_case("ROOM minimum-size tail", T_ROOM, 0, 0, 0);
-    bad += tail_case("SPRING tail", T_SPRING, 0, 0, 0);
-    bad += tail_case("stereo HALL tail", T_HALL, 0, 0, 0);
-    bad += tail_case("ROOM127 residual, then model switch", T_ROOM_SWITCH, 0, 0, 0);
-    bad += tail_case("chorus tail", T_CHORUS, 0, 0, 0);
-    bad += tail_case("USB FIXED: full USB tail with silent DAC", T_DELAY, 1, 0, 0);
-    bad += tail_case("performance master and millisecond wrap", T_DELAY, 0, 1, UINT32_MAX - 5000u);
-    bad += burst_case(0);
-    bad += burst_case(1);
-    bad += threshold_case(132, 0);
-    bad += threshold_case(136, 1);
-    bad += retry_case();
+    for (dirty_start = 0; dirty_start < 2u; dirty_start++) {
+        printf("autosave destination: %s\n", dirty_start ? "dirty tail" : "blank");
+        bad += tail_case("silence: one save after idle", T_SILENCE, 0, 0, 0);
+        bad += tail_case("long delay: no write through audible tail", T_DELAY, 0, 0, 0);
+        bad += tail_case("ROOM minimum-size tail", T_ROOM, 0, 0, 0);
+        bad += tail_case("SPRING tail", T_SPRING, 0, 0, 0);
+        bad += tail_case("stereo HALL tail", T_HALL, 0, 0, 0);
+        bad += tail_case("ROOM127 residual, then model switch", T_ROOM_SWITCH, 0, 0, 0);
+        bad += tail_case("chorus tail", T_CHORUS, 0, 0, 0);
+        bad += tail_case("USB FIXED: full USB tail with silent DAC", T_DELAY, 1, 0, 0);
+        bad += tail_case("performance master and millisecond wrap", T_DELAY, 0, 1, UINT32_MAX - 5000u);
+        bad += burst_case(0);
+        bad += burst_case(1);
+        bad += threshold_case(132, 0);
+        bad += threshold_case(136, 1);
+        bad += retry_case();
+    }
     return bad != 0;
 }
