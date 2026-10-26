@@ -273,7 +273,9 @@ recorded in the linked reports, rather than every current build or device.
   DSP helpers; shared or unfamiliar files retain full validation. AI guidance uses
   draft PRs and affected local units during iteration, with complete applicable
   CI on the final ready candidate before merge and no identical local rerun
-  without a changed input or unresolved concern. Full host work
+  without a changed input or unresolved concern. Selector/helper-contract-only
+  changes use workflow/coverage checks without firmware or audio builds; workflow
+  YAML and shared test execution changes retain full validation. Full host work
   runs across two runners with a source-derived aggregate rejecting missing,
   duplicate or stale evidence. Standalone backup fixtures can reuse matching
   verified receipts; firmware identity and releases stay fresh. Required checks

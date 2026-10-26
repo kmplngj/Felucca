@@ -43,8 +43,11 @@ Freeze the package, mark it ready for review and require complete applicable CI
 before merging. Further code pushes refresh that candidate's validation. Successful
 CI can supply the final host/target/browser evidence when revision, inputs, profile
 and flags match; repeat only for changed inputs, failures or unresolved concerns.
-Hardware acceptance still requires the relevant device checks. Documentation and
-independent tools retain their lightweight plans even when ready. See
+Hardware acceptance still requires the relevant device checks. Documentation,
+exact selector/helper-contract inputs and independent tools use their lightweight
+plans even when ready. Selector-only changes need workflow/helper contracts, not
+a firmware/audio build; workflow YAML and shared scheduler/coverage implementations
+still require full validation. See
 [CI stages](../.github/CI.md#feedback-and-merge-stages) for the selection boundary.
 
 ## Read results before opening raw evidence
