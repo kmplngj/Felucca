@@ -207,6 +207,8 @@ def describe(path, file_type="auto"):
     problem, payload = spl(head, recs[0])
     blid = payload[0x40:0x48] == b"AC79BLID"
     if blid:
+        if len(payload) < 0x58:
+            problem = problem or "AC79BLID board field cut off"
         board = I.printable(payload[0x48:0x58].split(b"\0")[0])
         name = f"m-bootloader (AC79BLID, board {board!r})"
         ok = board == "fm1"

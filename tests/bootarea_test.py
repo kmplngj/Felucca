@@ -87,6 +87,12 @@ payload[0x48:0x50] = b"smk37\0\0\0"
 rc, out, err = run(put("mboot-smk.bin", boot_area(payload)))
 ok(rc == 1 and "'smk37'" in out, "m-bootloader for another board -> not ok")
 
+short_id = bytearray(0x50)
+short_id[0x40:0x50] = b"AC79BLIDfm1\0\0\0\0\0"
+rc, out, err = run(put("mboot-short-board.bin", boot_area(short_id)))
+ok(rc == 1 and "AC79BLID board field cut off" in out,
+   "m-bootloader marker with incomplete board field is not intact")
+
 bad = bytearray(head)
 bad[B.SPL_OFF + 0x200] ^= 1
 rc, out, err = run(put("spl-bad.bin", bytes(bad)))
