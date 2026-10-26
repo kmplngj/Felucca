@@ -422,7 +422,14 @@ static int stage_equivalence(const char *path)
         for (p = 0; p < NPART; p++)
             if (fwrite(trk[p].v, sizeof trk[p].v, 1, f) != 1) return 2;
     }
-    return fclose(f) != 0;
+    if (fclose(f)) return 2;
+#ifdef C1_HOST
+    if (!c1h_taken || !c1h_blocks) {
+        fputs("audio: threaded fixture dispatched no worker blocks\n", stderr);
+        return 2;
+    }
+#endif
+    return 0;
 }
 
 int main(void)
