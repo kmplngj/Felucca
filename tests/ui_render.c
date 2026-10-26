@@ -797,7 +797,10 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_MACRO_WAVE, S_MACRO_FOLD, S_MACRO_FBFM, S_MACRO_HOME, S_MACRO_TONE, S_MACRO_MOD, S_MACRO_AUTO,
        S_MACRO_SYNC, S_MACRO_TRIPLE, S_MACRO_QUESTION,
 #endif
-       S_SEQ_TOOLS_STOPPED, S_SEQ_OCTUP, S_SEQ_OCT_RANGE, S_SEQ_TOOLS_SLICE,
+       S_SEQ_TOOLS_STOPPED, S_SEQ_OCTUP, S_SEQ_OCT_RANGE,
+#if FELUCCA_SLICE
+       S_SEQ_TOOLS_SLICE,
+#endif
        S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "phrases", "project", "tools", "song_empty", "song", "step", "auto_steps", "auto_add_chance", "automation", "drum",
@@ -837,7 +840,10 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "macro_wave", "macro_fold", "macro_fbfm", "macro_home", "macro_tone", "macro_mod", "macro_auto",
     "macro_sync", "macro_triple", "macro_question",
 #endif
-    "layer_seq_tools_stopped", "layer_seq_octave_up", "layer_seq_octave_range", "layer_seq_tools_slice",
+    "layer_seq_tools_stopped", "layer_seq_octave_up", "layer_seq_octave_range",
+#if FELUCCA_SLICE
+    "layer_seq_tools_slice",
+#endif
 };
 
 /* the STEP page's piano roll (ui_graph.c graph_roll) on track 1, stopped unless said: an empty pattern; ACID in
@@ -1473,8 +1479,10 @@ static void setup(int s)
         }
         if (s != S_SEQ_TOOLS_STOPPED) tools_key(TL_OCTUP);
         break;
+#if FELUCCA_SLICE
     case S_SEQ_TOOLS_SLICE:
         song.playing = 0; eng(ENGI_SLICE); go_page(GR_ROLL); ui.layer = LAYER_SEQ; break;
+#endif
     case S_SEQ_TOOLS_DRUM: drum(0); go_page(GR_ROLL); ui.lane = 2; ui.layer = LAYER_SEQ; break;
     case S_SEQ_TOOLS_SONG: drum(1); go_page(GR_ROLL); ui.lane = 5; chain.running = 1; ui.layer = LAYER_SEQ; break;
     /* 1.4.1 ENGINE QUICK ACTIONS: the EDIT layer on a DRUM track, KICK and HATOP muted (the black keys' row); on KIT 77

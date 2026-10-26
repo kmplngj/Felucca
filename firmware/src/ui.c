@@ -224,7 +224,6 @@ static struct {
     uint8_t lock;                /* #83: the layer locked open by a double tap (LAYER_*), 0 = none (ui_layer.c) */
     uint16_t pg_down;            /* page buttons down (panel ids) that act when let go */
     uint32_t layer_sig;          /* drawn-state cache of the map */
-    uint32_t project_epoch;      /* main loop: successful project replacements invalidate layer snapshots */
     char msg[24];
     char msg2[24];               /* a second message, shown when the first is over */
     uint32_t enc_t[NE];
@@ -252,6 +251,7 @@ static struct {
     } ml;
     volatile uint8_t mpc[NTRK];  /* MIDI Program Change per track, 0x80 | program, 0 none (midi_control.c mpc_io: here
                                   * for the same reason as ml.io; midi_pc_poll) */
+    uint32_t project_epoch;      /* main loop: successful project replacements invalidate layer snapshots */
 } ui;
 
 enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PAT,

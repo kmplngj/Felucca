@@ -5019,7 +5019,11 @@ static int test_fm4_retired(void)
                  eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == eng_vis(NENG_SHOWN - 1u));
     {   /* the display order (engines.c ENGINE_ORDER): every engine one can pick once; the PRESETS list follows it */
         static const char *const ORDER[] = {"ANALOG", "FM6", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN",
-                                            "PHYS", "NOISE", "SLICE", "DRUM",
+                                            "PHYS", "NOISE",
+#if FELUCCA_SLICE
+                                            "SLICE",
+#endif
+                                            "DRUM",
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
                                             "MACRO",
 #endif
@@ -7767,6 +7771,8 @@ static int test_pattern_octave(void)
      * of a kit and SLICE with a user source. Pitched SAMPLE remains eligible. */
     ok = 1;
     for (k = 0; k < 4u; k++) {
+        if (k >= 2u && !eng_ok(ENGI_SLICE))
+            continue;
         ui_power_on(); tl_melody();
         if (k < 2u) {
             set_engine_of(TSEL, ENGI_DRUM);
@@ -7781,7 +7787,8 @@ static int test_pattern_octave(void)
               sig == track_sig(TSEL) && !memcmp(history, &undo, sizeof history) && !lys.loaded;
         btn_up(B_SEQ); frame();
     }
-    bad += check("  DRUM, user DRUM kit, SLICE PIANO and user SLICE: no octave cells, mutation or history", ok);
+    bad += check(eng_ok(ENGI_SLICE) ? "  DRUM, user DRUM kit, SLICE PIANO and user SLICE: no octave cells, mutation or history" :
+                 "  DRUM and user DRUM kit: no octave cells, mutation or history (SLICE unavailable)", ok);
     ui_power_on(); tl_melody(); set_engine_of(TSEL, ENGI_SAMPLE); TSEL->p[P_E0] = SMP_NSETS;
     btn_down(B_SEQ); frame(); tl_key(TL_OCTUP);
     ok = !chord_kit(TSEL) && tl_cell(TSEL, TL_OCTUP) && TSEL->step[0].note[0] == 72;
