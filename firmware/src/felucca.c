@@ -22,6 +22,9 @@
 #ifndef FELUCCA_SCREEN_CAPTURE
 #define FELUCCA_SCREEN_CAPTURE 0 /* opt-in stopped/static LCD diagnostic capture (#562) */
 #endif
+#ifndef FELUCCA_MIDI_QUEUE
+#define FELUCCA_MIDI_QUEUE 0     /* opt-in consumer queue age/drain evidence (#551) */
+#endif
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1            /* USB audio input: the master output, 16-bit stereo 44.1 kHz (usb.c) */
 #endif

@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Default-off [MIDI consumer queue evidence](midi-queue-evidence.md) reports
+  conservation, enqueue-age maxima and inclusive raw drain ticks through existing
+  diagnostics. This partially delivers #551 without changing MIDI service policy;
+  physical timing and observer-overhead qualification remain pending.
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.

@@ -39,7 +39,22 @@ static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #include "../firmware/src/usb.c"
 #include "../firmware/src/midi_uart.c"                /* TRS MIDI IN: its parser (um_byte) feeds midi_in_q */
 #include "../firmware/src/song_chain.c"
+#if FELUCCA_MIDI_QUEUE
+/* Synthetic observer clock only, never a host/target timing measurement. The
+ * hook models a nested producer at the drain boundaries in midi_control_test. */
+static uint32_t host_midi_queue_ticks;
+static void (*host_midi_queue_tick_hook)(void);
+static uint32_t host_midi_queue_tick(void)
+{
+    if (host_midi_queue_tick_hook) host_midi_queue_tick_hook();
+    return host_midi_queue_ticks++;
+}
+#define fm1_ticks() host_midi_queue_tick()
+#endif
 #include "../firmware/src/seq.c"
+#if FELUCCA_MIDI_QUEUE
+#undef fm1_ticks
+#endif
 #include "../firmware/src/sound.c"              /* the production sound install (#298): host_preset below */
 #define inst (trk[0])                   /* the single-part renders below: part 1 */
 

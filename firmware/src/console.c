@@ -193,6 +193,42 @@ static void con_uac(void)                              /* USB audio input: strea
 }
 #endif
 
+#include "midi_queue.h"
+#if FELUCCA_MIDI_QUEUE
+static void con_midi_queue(void)
+{
+    midi_queue_t s;
+    uint32_t i;
+    static const char *const age_names[] = {
+        "mq_usb_on_ms", "mq_usb_release_ms", "mq_usb_cc_ms", "mq_usb_rt_ms", "mq_usb_other_ms",
+        "mq_trs_on_ms", "mq_trs_release_ms", "mq_trs_cc_ms", "mq_trs_rt_ms", "mq_trs_other_ms"
+    };
+    con_kv("mq_schema", 1);
+    i = (uint32_t)midi_queue_read(&s);
+    con_kv("mq_readable", (int32_t)i);
+    if (!i) return;
+    con_kx("mq_error", s.error);
+    con_kv("mq_available", s.calls && !s.error);
+    if (!s.calls || s.error) return;
+    con_kx("mq_calls", s.calls);
+    con_kx("mq_events", s.events);
+    con_kx("mq_recoveries", s.recoveries);
+    con_kx("mq_flushed", s.flushed);
+    con_kx("mq_entry_peak", s.entry_peak);
+    con_kx("mq_events_peak", s.events_peak);
+    con_kx("mq_entry", s.entry);
+    con_kx("mq_arrivals", s.arrivals);
+    con_kx("mq_dispatched", s.dispatched);
+    con_kx("mq_flush", s.flush);
+    con_kx("mq_residual", s.residual);
+    con_kx("mq_drain_last_t4", s.drain_last);
+    con_kx("mq_drain_max_t4", s.drain_max);
+    con_kx("mq_age_seen", s.age_seen);
+    for (i = 0; i < 10u; i++)
+        if (s.age_seen & (1u << i)) con_kx(age_names[i], s.age_max[i]);
+}
+#endif
+
 static void con_status(void)
 {
     const engine_t *e = eng_of(TSEL->eng_req);
@@ -221,6 +257,9 @@ static void con_status(void)
     con_kv("cpu2_stack", (int32_t)fm1_cpu1_stack_used());
 #endif
     con_kv("voices_given_up", (int32_t)voice_kills);
+#if FELUCCA_MIDI_QUEUE
+    con_midi_queue();
+#endif
 #if FM1_ISR_ASSERT_TARGET
     con_kv("isr_misuse", (int32_t)fm1_isr_misuse_n);    /* FELUCCA_ISR_ASSERT=1 builds (isr_assert.h) */
     con_kv("isr_misuse_pc", (int32_t)fm1_isr_misuse_pc);

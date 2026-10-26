@@ -1044,6 +1044,17 @@ else:
         with self.assertRaisesRegex(ValueError, 'unmapped FELUCCA macro: FELUCCA_NEW_DSP'):
             W.logical_mapping(native, unknown, native_constants, runtime_constants)
 
+    def test_midi_queue_observer_requires_matching_runtime_flag(self):
+        native = dict(self.native, FELUCCA_MIDI_QUEUE='0')
+        runtime = dict(native, **W.ADAPTER, FELUCCA_ISR_ASSERT='1')
+        result = W.logical_mapping(native, runtime, self.constants, self.constants)
+        self.assertEqual(result['defines']['FELUCCA_MIDI_QUEUE'],
+                         {'native': '0', 'runtime': '0', 'rule': 'equal'})
+        for target, browser in (('1', '0'), ('0', '1')):
+            with self.assertRaisesRegex(ValueError, 'logical macro mismatch: FELUCCA_MIDI_QUEUE'):
+                W.logical_mapping(dict(native, FELUCCA_MIDI_QUEUE=target),
+                                  dict(runtime, FELUCCA_MIDI_QUEUE=browser), self.constants, self.constants)
+
     def test_paired_unknown_compiler_environment_fails_before_compile(self):
         for name in ('EMCC_CFLAGS', 'EM_COMPILER_WRAPPER', 'CPATH', 'C_INCLUDE_PATH', 'LIBRARY_PATH', 'COMPILER_PATH',
                      'SDKROOT', 'CCC_OVERRIDE_OPTIONS', 'CLANG_CONFIG_FILE_USER_DIR', 'LD_PRELOAD'):

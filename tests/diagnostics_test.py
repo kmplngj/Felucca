@@ -191,6 +191,12 @@ class ConsoleContractTests(unittest.TestCase):
             "-DFELUCCA_CRASH_CTX=1", "-DFELUCCA_MUL64_REPRO=1",
             str(root / "tests/console_diagnostics.c"), "-o", str(binary)], check=True, timeout=30)
         cls.binaries["diag"] = binary
+        binary = Path(cls.directory.name) / "console-queue"
+        subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
+            "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+            "-DFELUCCA_MIDI_QUEUE=1", str(root / "tests/console_diagnostics.c"),
+            "-o", str(binary)], check=True, timeout=30)
+        cls.binaries["queue"] = binary
 
     def response(self, command, features=True, *arguments):
         raw = subprocess.check_output([str(self.binaries[features]), command, *arguments], timeout=5)
@@ -203,6 +209,27 @@ class ConsoleContractTests(unittest.TestCase):
     def test_counter_membership(self):
         self.assertEqual(set(diag.COMMANDS), set(EXPECTED_COUNTERS))
         self.assertEqual({command: set(names) for command, names in diag.COUNTERS.items()}, EXPECTED_COUNTERS)
+
+    def test_queue_observer_optional_unsigned_and_unavailable(self):
+        for features in (True, False, "diag"):
+            self.assertFalse(any(k.startswith("mq_") for k in self.response("status", features)))
+        fields = self.response("status", "queue")
+        self.assertEqual((fields["mq_schema"], fields["mq_readable"], fields["mq_available"]), (1, 1, 1))
+        self.assertEqual((fields["mq_entry"], fields["mq_arrivals"], fields["mq_dispatched"], fields["mq_residual"]), (63, 2, 64, 1))
+        self.assertEqual((fields["mq_age_seen"], fields["mq_usb_on_ms"], fields["mq_trs_release_ms"]), (65, 0, 0x70000000))
+        self.assertEqual(fields["mq_drain_last_t4"], 0x70000001)
+        self.assertNotIn("mq_usb_release_ms", fields)  # unseen is absent, not zero
+        for mode in ("mq-error", "mq-unsampled"):
+            unavailable = self.response("status", "queue", mode)
+            self.assertEqual(unavailable["mq_available"], 0)
+            self.assertNotIn("mq_drain_last_t4", unavailable)
+            self.assertNotIn("mq_events", unavailable)
+        active = self.response("status", "queue", "mq-active")
+        self.assertEqual(active["mq_readable"], 0)
+        self.assertEqual({k for k in active if k.startswith("mq_")}, {"mq_schema", "mq_readable"})
+        for mode in ("mq-interrupt1", "mq-interrupt2"):
+            recovered = self.response("status", "queue", mode)
+            self.assertEqual((recovered["mq_available"], recovered["mq_calls"], recovered["mq_entry"]), (1, 2, 0))
 
     def test_real_console_counters(self):
         for command, names in EXPECTED_COUNTERS.items():
