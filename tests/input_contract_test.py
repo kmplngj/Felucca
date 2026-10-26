@@ -9,7 +9,8 @@ import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-UI = ROOT / 'tests/ui_test.c'
+UI = ROOT / 'tests/ui_harness.h'
+UI_ENTRY = ROOT / 'tests/ui_test.c'
 SETTINGS = ROOT / 'tests/settings_test.c'
 BROWSER = ROOT / 'web/emu/felucca_web.c'
 
@@ -31,7 +32,7 @@ class FirmwareInputContract(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_ui_adapter(self):
-        result = self.compile(UI)
+        result = self.compile(UI_ENTRY)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_settings_adapter(self):

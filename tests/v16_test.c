@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* 1.6, on the real UI sources (with the stubs of tests/ui_test.c):
+/* 1.6, on the real UI sources (with the stubs of tests/ui_harness.h):
  * CUSTOM (#244, Discussion #239): the palette of the user's as COLOR's 11th value (the menu steps it, a built-in palette leaves
  *   it stored, none stored = 10 values), every screen drawn in a light, a dark and an edge-of-the-rule palette, nothing else
  *   of the settings touched (the built-in palette stays settings.palette). The editor's side: editor_test.c custom_palette
@@ -13,8 +13,7 @@
  *   resumes    after 3 s without that, or once the playhead has gone one pass round the pattern, whichever is first
  *   resets     the transport stopped, another track
  * Built and run by tests/run_tests.sh. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* track 1 alone, `len` steps of 1/16, a note on every fourth step; the transport "playing" with the playhead at idx
  * (the sequencer itself is not run: only the UI's view of it), SEQ > STEP, the cursor on step `cur` */
