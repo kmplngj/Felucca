@@ -47,7 +47,8 @@ The JSON contains:
   tails. Paths and timestamps are omitted so identical bytes produce identical
   output.
 - `coverage`: start zero, exclusive end, byte count, 4,096-byte sector size,
-  complete-sector count and `not_supplied` ranges up to the 1 MiB flash extent.
+  complete-sector count and `not_supplied` ranges up to the parser's 1 MiB limit
+  (the existing native flash map, not a measurement of physical chip capacity).
   All offsets and field integers in the JSON are decimal.
 - `predicate`: at each sector's `+0xF00`, little-endian u16 at `+0` is nonzero,
   equals CRC16-XMODEM (initial value zero) over bytes `2..79`, and u16 at `+6`
