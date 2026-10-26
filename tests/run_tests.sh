@@ -360,6 +360,12 @@ u_input() {
 unit input "" u_input
 
 u_usb() {
+    # Real composite poll/control/EP4 paths with a HAL-only finite host model (#101).
+    for cdc in 0 1; do
+        $CC -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function -Wno-missing-field-initializers \
+            -DT_CDC=$cdc -DHALF_FRAMES=$HALF -o "$OUT/usb_service_test_$cdc" tests/usb_service_test.c
+        run "USB composite service: CDC $cdc, bounded saturation, control/reset recovery and nested EP4" "$OUT/usb_service_test_$cdc"
+    done
     $CC -O2 -DT_CDC=1 -DHALF_FRAMES=$HALF -o "$OUT/uac_test" tests/uac_test.c -lm
     run "USB audio input: descriptors (with CDC), ring and packets, 44.1 -> 48 kHz resampler, 48 kHz stream" "$OUT/uac_test"
     $CC -O2 -DT_CDC=0 -DHALF_FRAMES=$HALF -o "$OUT/uac_test_nocdc" tests/uac_test.c -lm
@@ -1268,6 +1274,12 @@ else
     unit asan_insert "insert" u_asan_insert
 
     u_asan_usb() {
+        for cdc in 0 1; do
+            ${CC%% *} -std=c11 -O1 -g -Wall -Wextra -Werror -Wno-unused-function -Wno-missing-field-initializers \
+                -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+                -DT_CDC=$cdc -DHALF_FRAMES=$HALF -o "$A/usb_service_test_$cdc" tests/usb_service_test.c
+            run "USB composite service: CDC $cdc (strict ASan/UBSan)" "$A/usb_service_test_$cdc"
+        done
         # Unlike the general DSP harness below, retain every UBSan bounds/pointer/shift check here.
         ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined -fno-sanitize-recover=all \
             -DHALF_FRAMES=$HALF -o "$A/uac_fir_bounds_test" tests/uac_fir_bounds_test.c

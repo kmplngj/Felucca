@@ -591,6 +591,17 @@ their floating-point originals; without it that test is skipped. Felucca-Engines
 (`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
 against the same golden renders.
 
+The USB and USB sanitizer units also run
+[the composite-service fixture](tests/usb_service_test.c) with CDC compiled in/out
+at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enabled.
+It executes the actual USB poll/control/audio-service code against a finite HAL-only
+SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recovery,
+control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
+nested EP4 ownership. Matched audio producer/host-token schedules compare packet bytes; negative transcript controls
+reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,
+not physical service time, controller races or host-driver qualification. Existing
+UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
+
 The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
 and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
 N/A tracks, retained project/preset/backup data, and serializers. Engine-memory switches
