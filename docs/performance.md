@@ -304,8 +304,12 @@ Optimize by proven lifetimes and multiplicative cost. `ENG_MEM_PART` grows once 
 channel. `eng_mem` already shares mutually exclusive engine state; verify every switch
 with `union_test` before claiming further reuse. Keep immutable tables/assets in XIP.
 Large automatic arrays and recursion spend stack even when static section sizes stay flat.
-The hardware guards detect violations, not stack high-water usage; watermark measurement
-would require separate instrumentation and nested-interrupt stress.
+The hardware guards detect violations, not stack high-water usage. CPU0 watermark
+measurement requires separate instrumentation and nested-interrupt stress. Existing
+`status` `cpu2_stack` covers only the worker's user allocation since its latest
+start attempt; see [diagnostic scope](diagnostics.md#interpreting-a-report).
+An optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
+ELF evidence and exposes unsupported cases; it supplies no stack fit or live peak.
 
 Engine-arena owner checks (host only): `-DFELUCCA_ARENA_CHECK=1` turns `ENG_MEM_OF`
 (`engines.c`) into a checked accessor for GRAIN (`gr_of`), PHYS (`phys_slot_of`), DRUM
