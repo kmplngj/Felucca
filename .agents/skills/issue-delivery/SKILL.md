@@ -158,9 +158,16 @@ same toolchain, profile, flags and workload. Follow
 [performance requirements](../../../docs/performance.md); retain exact revision
 and resource provenance, including integrated deltas for a batch.
 
-Run affected checks during implementation, then the full applicable integrated
-validation and fresh target build at the frozen firmware candidate, following the
-batch procedure. Rebuild affected harnesses after source edits. One coordinator
+Run affected checks during implementation and create development PRs as drafts.
+Use named host units with prerequisite closure; draft CI uses the exact audited
+map in `tools/ci_changes.py`, falling back to full validation for shared or unknown
+inputs. Do not run the full suite merely to create a draft or after every edit.
+When the package is frozen, mark the PR ready for review and require its complete
+applicable CI plan before merging. New code pushes refresh that validation.
+Obtain the full applicable integrated validation and fresh target build at that
+candidate, following the batch procedure; successful matching CI can supply this
+evidence without repeating the same suite locally. Rebuild affected harnesses
+after source edits. One coordinator
 owns integrated builds; workers use focused checks and isolated outputs. Reuse
 successful evidence only when its revision, inputs, toolchain, profile and flags
 match the candidate and it covers the required checks. Repeat checks for changed
