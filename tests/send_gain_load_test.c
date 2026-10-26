@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Real project/preset/user-preset/undo routes retain heard gains while sounding; idle restarts snap. */
-#define UI_TEST_NO_MAIN
-#include "ui_test.c"
+#include "ui_harness.h"
 #include <assert.h>
 
 static int32_t out[2 * CTL];

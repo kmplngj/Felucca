@@ -139,7 +139,7 @@ class SelectionTest(unittest.TestCase):
                       'firmware/src/console.c', 'firmware/src/voice.c',
                       'firmware/engines', 'firmware/src/eng_macro.c',
                       'firmware/src/ui_new.c', 'firmware/src/eng_new.c',
-                      'tests/ui_test.c', 'tests/ui_render.c', 'tests/hostsim.c',
+                      'tests/ui_test.c', 'tests/ui_harness.h', 'tests/ui_render.c', 'tests/hostsim.c',
                       'tests/golden.txt', 'tests/target_budget.txt',
                       'tools/ci_changes.py', '.github/workflows/ci.yml',
                       'unknown.c', 'tools/fm1_diagnostics.py',

@@ -240,6 +240,38 @@ redraw behavior remain pending. The dated [font experiment](docs/font-experiment
 retains the historical comparisons; removing alternate build options does not
 itself save bytes in a build that already selected M8Stealth.
 
+`assets/fonts/m8stealth/resource-policy.json` pins the native font inputs, generated
+header hash, glyph coverage/metrics and shared payloads. Generation writes
+`build/gen/ui-font-manifest.json` and rejects an unreviewed change before writing
+the font header. Host/emulator profile freshness checks reject a stale header or
+manifest. The approved current pi32v2 array/descriptor bound is **4,630 B**:
+1,164 B S/M bitmap payload, 3,176 B glyph records, 110 B extra-code arrays and
+180 B descriptors. L/N/X reference M's payload. This excludes inter-object alignment
+padding and supersedes the historical 3,340 B S/M/L-only figure for this gate.
+
+For an intentional font change, review the generator/assets and reproduce its output
+in an isolated directory. Use `font_resources.inventory(root, header_text)` to inspect
+the proposed contract, then review the policy's `expected` and bound changes together.
+There is no automatic budget update option. Confirm the target's actual `AF_*`
+symbol sizes with JieLi Clang 4.0.1; the policy models 8 B glyph records and 36 B
+descriptors with 4 B pointers. A successful target build checks those exact linked
+sizes and records separate named keycap, icon, decoder/ramp and cache groups in
+the existing resource report. Missing optional groups are marked unlocated, and
+inlined code remains in its callers. Whole-image/RAM/POOL/stack accounting stays
+in that report; these groups are subsets, not additional allocation.
+
+To check the generator and causal rejection fixtures without hardware:
+
+```sh
+mkdir -p build/font-check
+uv run --locked --group build python tools/gen_bitmap_font.py build/font-check/ui_fonts.h
+python3 tests/bitmap_font_test.py
+```
+
+Expected: the approved configuration passes; fixtures reject extra faces, duplicated
+scaled payloads, glyph/asset growth, stale inputs/configuration and incorrect linked
+sizes. These checks change no runtime bytes or physical readability acceptance.
+
 `uv run --locked --group build ./build.sh --release 1.0` makes a release build:
 the package identity becomes `FM-1_910`
 and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
@@ -414,6 +446,14 @@ shared button-edge, note-edge and encoder function types they implement. Negativ
 fixtures require incompatible signatures across the UI, settings and browser
 adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
+
+The native UI tests and their consumers share `tests/ui_harness.h`: the real
+firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
+blank-frame observers, power-on setup and panel/keyboard helpers. Define any
+consumer-specific IRQ, boot or drawing hooks before including it. The UI scenario
+entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
+for its LCD-submission ordering assertions. Consumers include the harness directly;
+they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
 The backup and FM6-bank tests share `tests/host_nor.h`, including their sanitizer
 builds. This existing NOR model only clears programmed bits, rejects 256-byte page
@@ -1086,6 +1126,8 @@ Every successful target build also writes `build/resource-report.json`, bound to
 actual source/generated inputs, effective configuration and output artifacts. It records
 app, RAM, POOL, RAMTEXT and NOINIT used/spare bytes, enforced minimum spare and remaining
 margin, plus static stack reservations. Existing build/linker guards remain authoritative.
+Schema version 2 adds the checked native font manifest and separate named UI resource
+groups; verification retains support for schema version 1 reports without those fields.
 The report is removed at the start of the next attempted build, including failed attempts.
 To recheck matching artifacts and sources, retain the build directory and use the same
 profile/font/feature environment and toolchain/SDK:

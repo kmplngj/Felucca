@@ -443,6 +443,7 @@
         "tools/gen_fm6_patches.py",
         "tools/gen_samples.py",
         "tools/gen_bitmap_font.py",
+        "tools/font_resources.py",
         "tools/ui_font_data.py",
         "tools/gen_aa_icons.py",
         "tools/gen_aa_keycaps.py",
