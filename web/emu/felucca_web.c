@@ -19,6 +19,7 @@
  * crash / UBOOT paths. Nothing of the firmware changes for this file.
  *   web/emu/build.sh  ->  build/emu/{felucca.wasm, worklet.js, index.html} */
 #include <stdint.h>
+#include "../../firmware/hal/fm1_input_contract.h"
 
 #define FELUCCA_WEB 1
 #ifndef FELUCCA_CDC
@@ -110,6 +111,7 @@ static int fm1_led_idle_on(void) { return fm1_led_anim_on() && web_anim_idle; }
 static void fm1_led_anim_stop(void) { web_anim_run = 0; }
 static uint32_t web_pressed, web_released, web_notes_pressed;
 static int32_t web_enc_steps[7];
+static fm1_input_edges_fn fm1_input_edges;
 static uint32_t fm1_input_edges(uint32_t *released)
 {
     uint32_t p = web_pressed;

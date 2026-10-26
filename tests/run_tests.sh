@@ -349,6 +349,7 @@ u_storage() {
 unit storage "" u_storage
 
 u_input() {
+    run "input accessor contract: actual HAL/UI/browser adapters and incompatible UI signature" python3 tests/input_contract_test.py
     $CC -o "$OUT/input_test" tests/input_test.c
     run "keys and buttons: fast press, long release, bouncy contacts (one note each), glitches, encoders" "$OUT/input_test"
 
