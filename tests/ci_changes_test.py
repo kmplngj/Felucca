@@ -89,7 +89,7 @@ class SelectionTest(unittest.TestCase):
                      "assets/samples-cc0/PIANO/sample.wav", "LICENSE", "LICENSING.md",
                      "LICENSES/Apache-2.0.txt", "web/editor.html", "web/fm1pkg.js",
                      "web/fm1ota.js", "web/package.json", "web/test_web.mjs",
-                     "tests/hostsim.c", "tests/ui_render.py", "tests/cpu_baseline.py",
+                     "tests/hostsim.c", "tests/host_nor.h", "tests/ui_render.py", "tests/cpu_baseline.py",
                      "tests/target_budget.py", "tests/golden.txt", "tests/union_golden.txt",
                      "tests/run_tests.sh", "tests/build_guard_target_test.py",
                      "tools/replay_native.c", "tools/fm1_replay.py", "tests/replay_test.py",
