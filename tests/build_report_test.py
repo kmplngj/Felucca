@@ -141,6 +141,35 @@ class ResourceReport(unittest.TestCase):
                 legacy['schema_version'] = 1
                 legacy.pop('native_font_resources')
                 R.verify(root, legacy, config=config, measured=measured)
+                for version in (True, 1.0, 2.0):
+                    changed = copy.deepcopy(before)
+                    changed['schema_version'] = version
+                    with self.subTest(version=repr(version)), self.assertRaisesRegex(ValueError, 'unsupported resource report'):
+                        R.verify(root, changed, config=config, measured=measured, fonts={})
+                reserved = copy.deepcopy(legacy)
+                reserved['native_font_resources'] = {'false': 'claim'}
+                with self.subTest(reserved_field=True), self.assertRaisesRegex(ValueError, 'schema 1 cannot include native font'):
+                    R.verify(root, reserved, config=config, measured=measured)
+                manifest_name = 'build/gen/ui-font-manifest.json'
+                manifest = root / manifest_name
+                manifest.write_text('{}')
+                inventory = dict(inputs, **{manifest_name: R.digest(manifest)})
+                current = copy.deepcopy(before)
+                current['input_sha256'] = inventory
+                current['inputs_sha256'] = hashlib.sha256(R.canonical(inventory)).hexdigest()
+                with patch.object(R, 'input_hashes', return_value=inventory):
+                    R.verify(root, current, config=config, measured=measured, fonts={})
+                for retain_claim in (False, True):
+                    downgraded = copy.deepcopy(current)
+                    downgraded['schema_version'] = 1
+                    if retain_claim:
+                        downgraded['native_font_resources'] = {'false': 'claim'}
+                    else:
+                        downgraded.pop('native_font_resources')
+                    with self.subTest(retain_claim=retain_claim), \
+                            patch.object(R, 'input_hashes', return_value=inventory), \
+                            self.assertRaisesRegex(ValueError, 'schema 1 cannot include native font'):
+                        R.verify(root, downgraded, config=config, measured=measured)
                 for mutate in (
                         lambda r: r['artifact_sha256'].pop('build/felucca.elf'),
                         lambda r: r['resources']['RAM'].update(used_bytes=-1),

@@ -259,7 +259,8 @@ def write(build, evidence, package, inputs, config):
 
 def verify(root, report, *, config, measured, fonts=None):
     """Reject stale artifacts or source/config evidence; no capacity rules are reimplemented."""
-    if (report.get('schema_version') not in (1, 2) or report.get('kind') != 'felucca-post-link-resource-report'
+    if (type(report.get('schema_version')) is not int or report.get('schema_version') not in (1, 2)
+            or report.get('kind') != 'felucca-post-link-resource-report'
             or report.get('validation') != 'production build guards passed'):
         raise ValueError('unsupported resource report')
     if not isinstance(report.get('artifact_sha256'), dict):
@@ -282,6 +283,9 @@ def verify(root, report, *, config, measured, fonts=None):
     if (hashlib.sha256(canonical(report['input_sha256'])).hexdigest() != report.get('inputs_sha256')
             or input_hashes(root) != report['input_sha256']):
         raise ValueError('stale resource report input inventory')
+    if report['schema_version'] == 1 and ('build/gen/ui-font-manifest.json' in report['input_sha256']
+                                       or 'native_font_resources' in report):
+        raise ValueError('schema 1 cannot include native font evidence')
     if (hashlib.sha256(canonical(report['configuration'])).hexdigest() != report.get('configuration_sha256')
             or config != report['configuration']):
         raise ValueError('stale resource report configuration')

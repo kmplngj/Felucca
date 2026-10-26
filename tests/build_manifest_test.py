@@ -147,6 +147,10 @@ class Bundles(unittest.TestCase):
     def test_schema_two_fonts_bound_and_reproduced_with_legacy_support(self):
         # Existing fixtures above exercise historical v1. These simulated target
         # reports test bundle binding; real font extraction has its own fixtures.
+        reserved = copy.deepcopy(self.report)
+        reserved['native_font_resources'] = {'false': 'claim'}
+        with self.subTest(reserved_field=True), self.assertRaisesRegex(ValueError, 'schema 1 cannot include native font'):
+            M.validate_report(self.root, reserved, self.metadata, self.marker_hash)
         for root, report in ((self.root, self.report), (self.reproduction, self.reproduced)):
             path = root / 'build/gen/ui-font-manifest.json'
             font = {'schema_version': 1, 'kind': 'font binding fixture'}
@@ -157,6 +161,15 @@ class Bundles(unittest.TestCase):
             (root / 'build/resource-report.json').write_text(json.dumps(report))
         self.create()
         M.verify(self.destination)
+        for retain_claim in (False, True):
+            downgraded = copy.deepcopy(self.report)
+            downgraded['schema_version'] = 1
+            if retain_claim:
+                downgraded['native_font_resources'] = {'false': 'claim'}
+            else:
+                downgraded.pop('native_font_resources')
+            with self.subTest(retain_claim=retain_claim), self.assertRaisesRegex(ValueError, 'schema 1 cannot include native font'):
+                M.validate_report(self.root, downgraded, self.metadata, self.marker_hash)
         changed = copy.deepcopy(self.report)
         changed.pop('native_font_resources')
         with self.assertRaisesRegex(ValueError, 'native font resources'):

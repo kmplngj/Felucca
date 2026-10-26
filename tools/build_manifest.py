@@ -134,6 +134,9 @@ def validate_report(root, report, metadata, marker_hash):
     require(isinstance(inputs, dict) and inputs and
             hashlib.sha256(build_report.canonical(inputs)).hexdigest() == report.get('inputs_sha256'),
             'native input digest mismatch')
+    require(report['schema_version'] != 1 or ('build/gen/ui-font-manifest.json' not in inputs
+                                            and 'native_font_resources' not in report),
+            'schema 1 cannot include native font evidence')
     expected = {name: item['sha256'] for name, item in metadata['files'].items()}
     generated = {}
     for name, value in inputs.items():
