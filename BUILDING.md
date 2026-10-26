@@ -408,6 +408,12 @@ compiler, sample-rate and capture provenance alongside its measurements and
 bounded audition files. Host levels do not qualify physical DAC/USB levels or
 authorize changing factory sounds.
 
+The `input` unit also runs `python3 tests/input_contract_test.py`. It compiles
+the actual hardware, UI-test and browser input adapters against the shared
+`fm1_input_edges` function type, then requires the UI fake's former incompatible
+signature to fail compilation. The UI fake supplies press edges only; this check
+does not add release simulation or qualify physical input timing.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for

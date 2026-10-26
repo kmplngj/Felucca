@@ -91,6 +91,7 @@
  */
 #pragma once
 #include <stdint.h>
+#include "fm1_input_contract.h"
 #include "fm1_time.h"
 #include "fm1_gpio.h"
 #include "fm1_led_anim.h"
@@ -617,6 +618,7 @@ static int32_t fm1_enc_take(uint32_t e)
     return s;
 }
 
+static fm1_input_edges_fn fm1_input_edges;
 static uint32_t fm1_input_edges(uint32_t *released)
 {
     uint32_t k = fm1__lock();
