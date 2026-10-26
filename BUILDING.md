@@ -775,6 +775,13 @@ SPL CRCs, chip key and declared clock fields without opening a device. Use
 format; no firmware build is needed. Format hints are not authentication,
 installer permission, a complete backup or live clock measurements.
 
+For saved raw bytes beginning at flash address zero, the standard-library
+[offline update-record survey](docs/update-record-survey.md) reports native-loader
+record-predicate matches and exact supplied coverage:
+`python3 tools/fm1_update_records.py --raw FILE`. It opens no device and performs
+no decryption or writes. Matches and no-match results do not establish external SPL
+behavior, bootability or safe storage capacity.
+
 For static native HOME/menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
 and standard-library host CLI are described in [screen capture](docs/screen-capture.md).
 Normal builds leave it disabled; release packaging rejects the diagnostic flag.

@@ -183,6 +183,10 @@ path uncovered: sample upload/restore writes raw data through `SMP_BEGIN/WRITE/E
 `st_save`. No device access, crafted-data upload or destructive interruption establishes SPL
 behavior in these host fixtures; that qualification remains pending.
 
+An [offline saved-raw-file survey](update-record-survey.md) reports byte coverage,
+input SHA-256 and matches of this native-loader predicate without accessing hardware.
+Its observations do not establish the external SPL scan or justify a runtime save refusal.
+
 ### 2.3 Retained RAM and the RAM mirrors
 
 `.noinit` is the only region that survives a warm reset and UBOOT entry

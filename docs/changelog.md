@@ -40,6 +40,10 @@ recorded in the linked reports, rather than every current build or device.
   diagnostic flag; target cost accounting and matched FM-1 acceptance remain
   pending. This delivers instrumentation, without a DSP speedup claim.
 
+- [Offline update-record survey](update-record-survey.md) reports native-loader
+  CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
+  and changes no storage policy; external SPL behavior remains unverified.
+
 - Optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
   artifact evidence. Unsupported stack/ASM forms and unresolved calls stay explicit;
   stack reservations and runtime behavior are unchanged. It is not a live watermark
