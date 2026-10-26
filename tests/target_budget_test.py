@@ -294,6 +294,53 @@ class CommandLineFixtures(unittest.TestCase):
                 self.assertIn(f"(budget {limit}) OVER BUDGET", row)
                 self.assertEqual(self.budget.read_bytes(), before)
 
+    def test_hot_usb_callees_fail_independently_of_unchanged_callers(self):
+        callees = {"uac_service": 13, "sie_rd": 5, "sie_wr": 5}
+        extra = ("usb_poll", *callees)
+        self.write_dis(extra=extra, loops=callees)
+        baseline = self.cli()
+        self.assert_status(baseline, 0)
+        before = self.budget.read_bytes()
+        def rows(result):
+            return {line.split()[1]: line for line in result.stdout.splitlines()
+                    if line.split()[:1] == ["target:"]}
+        original = rows(baseline)
+        for name, limit in callees.items():
+            with self.subTest(callee=name):
+                self.assertIn(name, FUNCS)
+                self.assertEqual(OPTIONAL[name], limit)
+                # Exercise the ordinary +10% policy, retaining every other body.
+                self.write_dis(extra=extra, loops={**callees, name: limit * 11 // 10})
+                self.assert_status(self.cli(), 0)
+                self.write_dis(extra=extra, loops={**callees, name: limit * 11 // 10 + 1})
+                grown = self.cli()
+                self.assert_status(grown, 1)
+                changed = rows(grown)
+                self.assertIn(f"(budget {limit}) OVER BUDGET", changed[name])
+                self.assertEqual([key for key, row in changed.items() if "OVER BUDGET" in row], [name])
+                # The parent rows (and the unrelated callees) cannot mask growth.
+                for other in original.keys() - {name}:
+                    self.assertEqual(changed[other], original[other])
+                self.assertEqual(changed["usb_poll"], original["usb_poll"])
+                self.assertEqual(changed["fm1_timer5_irq"], original["fm1_timer5_irq"])
+                self.assertEqual(self.budget.read_bytes(), before)
+
+    def test_hot_usb_callees_may_be_absent_or_at_their_optional_baselines(self):
+        callees = {"uac_service": 13, "sie_rd": 5, "sie_wr": 5}
+        before = self.budget.read_bytes()
+        self.write_dis(extra=("usb_poll",))
+        absent = self.cli()
+        self.assert_status(absent, 0)  # disabled/inlined bodies have no separate symbol
+        for name in callees:
+            self.assertNotIn(name, absent.stdout)
+        self.write_dis(extra=("usb_poll", *callees), loops=callees)
+        present = self.cli()
+        self.assert_status(present, 0)
+        for name, limit in callees.items():
+            row = next(line for line in present.stdout.splitlines() if line.split()[:2] == ["target:", name])
+            self.assertIn(f"(budget {limit}) ok", row)
+        self.assertEqual(self.budget.read_bytes(), before)
+
     def test_update_rewrites_required_only_then_checks(self):
         self.budget.unlink()
         self.write_dis(extra=("uac_tap48",), loops={"analog_render": 12})
