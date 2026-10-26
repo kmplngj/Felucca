@@ -108,7 +108,9 @@ class MaintainerBundles(unittest.TestCase):
         (engine / 'extra').write_text('untracked')
         with self.assertRaisesRegex(ValueError, 'dirty'): self.request()
         (engine / 'extra').unlink()
-        self.fixture.git(engine, 'commit', '--allow-empty', '-qm', 'different pin')
+        self.fixture.git(engine, '-c', 'user.name=Source fixture',
+                         '-c', 'user.email=fixture@example.invalid',
+                         'commit', '--allow-empty', '-qm', 'different pin')
         with self.assertRaises(ValueError): self.request()
 
     def test_new_output_and_no_output_alias(self):
