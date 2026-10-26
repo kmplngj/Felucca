@@ -617,14 +617,14 @@ static const char *tl_octave(track_t *t, int32_t delta)
 /* the action of place p on track t (lane l): its message; 0 = nothing done (said why) */
 static const char *tl_do(track_t *t, uint32_t p, uint32_t l)
 {
+    if (p == TL_OCTDN || p == TL_OCTUP)
+        return tl_octave(t, p == TL_OCTUP ? 12 : -12);
     static char b[24];
     uint32_t len = tl_len(t), i, n = 0;
     uint64_t was = tl_used(t, len);
     int drum = drum_track(t);
     const char *msg = 0;
     l %= NLANE;
-    if (p == TL_OCTDN || p == TL_OCTUP)
-        return tl_octave(t, p == TL_OCTUP ? 12 : -12);
     if ((p == TL_DOUBLE || p == TL_HALF) && !tl_resize_ok(t, p, len))
         return 0;
     if (p == TL_COOK) {                                 /* (nothing there: nothing to cook, no undo copy) */
