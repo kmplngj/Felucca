@@ -30,6 +30,46 @@ REVIEW_INPUTS = {"AGENTS.md", ".coderabbit.yaml", ".github/CODERABBIT.md",
 # persistence, protocol, build inputs and unfamiliar paths retain full validation.
 UI_FEEDBACK = ('ui', 'ui_render', 'ui_compare', 'settings', 'boot_splash', 'frame')
 DSP_FEEDBACK = ('regression', 'sound_install', 'engines', 'union', 'arena')
+FX_FEEDBACK = ('regression', 'fx_rest', 'audio_transitions', 'insert', 'chorus', 'sends')
+
+# Exact audited paths: a new ui_*/eng_* file must not silently inherit a partial
+# plan. The scheduler expands prerequisites; ready candidates still use select().
+DRAFT_INPUTS = {
+    **{f'firmware/src/{name}.c': UI_FEEDBACK for name in (
+        'ui', 'ui_bank', 'ui_draw', 'ui_events', 'ui_fm6op', 'ui_graph',
+        'ui_help', 'ui_input', 'ui_knob', 'ui_layer', 'ui_menu',
+        'ui_menu_reading', 'ui_name', 'ui_slice', 'ui_tools')},
+    **{f'firmware/src/{name}.c': UI_FEEDBACK + (
+        'text', 'icon_streams', 'asan_icon_streams', 'screen_capture_ui',
+        'identity_ui', 'settings_identity', 'ui_fm4') for name in ('gfx', 'icons')},
+    **{f'firmware/src/eng_{name}.c': DSP_FEEDBACK + extra for name, extra in (
+        ('digital', ('digital', 'fm4', 'fm4_div0')),
+        ('drum', ('drum', 'tom_tail')),
+        ('fm6', ('fm6', 'fm6_effective', 'fm6bank')),
+        ('formant', ()), ('grain', ()), ('phase', ()),
+        ('phys', ('phys', 'phys_ref')),
+        ('sample', ('sample',)), ('slice', ('slice',)))},
+    'firmware/src/fm6_core.c': DSP_FEEDBACK + ('fm6', 'fm6_effective', 'fm6bank'),
+    'firmware/src/phys_dsp.c': DSP_FEEDBACK + ('phys', 'phys_ref'),
+    'firmware/src/phys_symp.c': DSP_FEEDBACK + ('phys', 'phys_ref'),
+    'firmware/src/fx.c': FX_FEEDBACK,
+    # Direct test entry points only. ui_test.c, ui_render.c and hostsim.c are
+    # shared by other harnesses and deliberately retain complete validation.
+    **{f'tests/{name}_test.c': (unit,) for name, unit in (
+        ('theme', 'text'), ('text_ref', 'text'),
+        ('lcd_typography', 'ui'), ('lcd_readability', 'ui'), ('track_badge', 'ui'),
+        ('boot_splash', 'boot_splash'), ('frame', 'frame'),
+        ('sound_install', 'sound_install'), ('phys', 'phys'), ('drum', 'drum'),
+        ('noise', 'noise'), ('fm6', 'fm6'), ('fm6_eff', 'fm6_effective'),
+        ('slice', 'slice'), ('tom_tail', 'tom_tail'))},
+    'tests/frame_source_test.py': ('frame',),
+    'tests/fx_rest_parser_test.py': ('fx_rest',),
+    # The chorus fixture imports mutation helpers from fx_rest_test.py.
+    'tests/fx_rest_test.py': ('fx_rest', 'chorus'),
+    'tests/audio_transition_test.py': ('audio_transitions',),
+    'tests/chorus_depth_test.py': ('chorus',),
+    'tests/send_gain_test.py': ('sends',),
+}
 
 
 def feedback(event_name, event, selection, release=False):
@@ -44,18 +84,9 @@ def feedback(event_name, event, selection, release=False):
             continue
         if not suites['full']:
             return 'full', []  # Mixed independent suites need their normal gates.
-        if path.startswith('firmware/src/ui') and path.endswith('.c'):
-            units.update(UI_FEEDBACK)
-        elif (path.startswith('firmware/src/eng_') and path.endswith('.c')
-              and path != 'firmware/src/eng_macro.c'):
-            units.update(DSP_FEEDBACK)
-            engine = Path(path).stem.removeprefix('eng_')
-            if engine in {'phys', 'drum', 'noise', 'fm6', 'slice'}:
-                units.add(engine)
-        elif path == 'firmware/src/fx.c':
-            units.update(('regression', 'fx_rest', 'audio_transitions', 'insert', 'chorus', 'sends'))
-        else:
+        if path not in DRAFT_INPUTS:
             return 'full', []
+        units.update(DRAFT_INPUTS[path])
     return ('quick', sorted(units)) if units else ('full', [])
 
 
@@ -145,6 +176,11 @@ def main():
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as stream:
             stream.write("### CI selection\n\n")
+            stream.write(f"Stage: {stage}. " + (
+                "Focused draft feedback; full validation is required before merge.\n\n"
+                if stage == 'quick' else "Complete applicable validation plan.\n\n"))
+            if units:
+                stream.write(f"Focused units (plus prerequisites): {', '.join(units)}\n\n")
             for suite, enabled in result["suites"].items():
                 stream.write(f"- {suite}: {'run' if enabled else 'not needed'}\n")
             stream.write("\nSee selection.json in workflow diagnostics for the comparison and paths.\n")

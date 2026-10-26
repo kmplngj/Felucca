@@ -31,10 +31,27 @@ If output is truncated, narrow or page the query until all required evidence is
 read. A smaller context must still include the complete relevant diff, callers
 and compatibility contracts.
 
+## Match validation to the development stage
+
+Create development PRs as drafts and run affected named units with prerequisite
+closure during edits; [BUILDING](../BUILDING.md#tests) has the focused runner command.
+CI uses an exact source/test map for focused draft feedback, with full fallback for
+shared contracts, build inputs and unknown paths. A focused pass remains partial.
+Do not start a full local suite simply to create a draft PR or after each edit.
+
+Freeze the package, mark it ready for review and require complete applicable CI
+before merging. Further code pushes refresh that candidate's validation. Successful
+CI can supply the final host/target/browser evidence when revision, inputs, profile
+and flags match; repeat only for changed inputs, failures or unresolved concerns.
+Hardware acceptance still requires the relevant device checks. Documentation and
+independent tools retain their lightweight plans even when ready. See
+[CI stages](../.github/CI.md#feedback-and-merge-stages) for the selection boundary.
+
 ## Read results before opening raw evidence
 
-Use `uv run --locked --group build tests/run_tests.sh --ai-output` for local
-AI-run host suites, including runs from skills and scheduled tasks. It retains
+When a full local suite is needed, use
+`uv run --locked --group build tests/run_tests.sh --ai-output`, including runs from
+skills and scheduled tasks. Focused local runs also use `--ai-output`. It retains
 complete logs and unchanged test selection and failure exit codes, including
 preflight. The final line names the report and unit/diagnostic counts; inspect
 failed, skipped, blocked or cancelled paths before claiming acceptance.

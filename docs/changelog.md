@@ -269,7 +269,11 @@ recorded in the linked reports, rather than every current build or device.
 - **Development turnaround:** change-based CI selection, dependency caches,
   parallel independent host tests and reuse of automatic PR firmware artifacts
   reduce repeated validation/build work. Classified draft changes use explicit
-  focused feedback; ready candidates retain complete validation. Full host work
+  focused feedback, including matching test entry points, graphics and selected
+  DSP helpers; shared or unfamiliar files retain full validation. AI guidance uses
+  draft PRs and affected local units during iteration, with complete applicable
+  CI on the final ready candidate before merge and no identical local rerun
+  without a changed input or unresolved concern. Full host work
   runs across two runners with a source-derived aggregate rejecting missing,
   duplicate or stale evidence. Standalone backup fixtures can reuse matching
   verified receipts; firmware identity and releases stay fresh. Required checks

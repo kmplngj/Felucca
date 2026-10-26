@@ -64,10 +64,22 @@ Full history is fetched only for selection and builds that need it.
 
 ## Feedback and merge stages
 
-Known firmware UI, native engine and effect changes in a draft PR can run focused
-host regressions with fresh target/resource/package guards. The selection map in
-`tools/ci_changes.py` includes prerequisite closure; it is not an AI choice of which
-tests to omit. Shared contracts, persistence, protocol, build inputs, dependency
+Create development PRs as **drafts**. Run affected local units during edits rather
+than the full host suite on every change or merely to open the PR. When the package
+is frozen, mark it **ready for review**; complete applicable validation must pass
+before merge. Testing only after merge would allow a broken candidate onto `main`.
+
+Known firmware UI, graphics/icons, native engine/effect and selected DSP-helper
+changes in a draft PR can run focused host regressions with fresh target/resource/package
+guards. Exact matching test entry points also get focused feedback, so adding a
+regression alongside its source change does not alone force the full suite.
+`tools/ci_changes.py` records the audited source/test paths and units; the scheduler
+adds prerequisite closure. UI and engine filename prefixes do not admit unfamiliar
+new files. Graphics changes include text, icon decoder/sanitizer and rendering
+checks; FM6 and PHYS helpers include their engine-specific fixtures. Shared test
+harnesses such as `ui_test.c`, `ui_render.c` and `hostsim.c` retain full validation.
+The workflow summary records the stage and focused units. This is not an AI choice
+of which tests to omit. Shared contracts, persistence, protocol, build inputs, dependency
 pins, unfamiliar paths and mixed independent suites retain full validation even
 while draft. Documentation and independent-tool selections keep their existing
 lightweight checks.
@@ -79,6 +91,14 @@ Both ready-for-review and converted-to-draft transitions trigger classification;
 ready PRs always run their complete applicable plan. Later code pushes refresh
 that candidate. Manual target-only builds remain explicit, and releases always
 run full validation.
+
+Successful CI can supply final host/target/browser evidence without an identical
+local rerun when revision, inputs, toolchain, profile and flags match. New code
+pushes require refreshed validation; failed or incomplete runs remain incomplete.
+Early device iteration can explicitly request a target-only exact-PR build; final
+standard-profile testing can reuse an automatic PR merge artifact with
+`tools/fm1_pr.py NUMBER --automatic` when that merge revision is intended. Neither
+a focused run nor a target-only package replaces complete pre-merge validation.
 
 Full host validation partitions the source-derived dependency graph across two
 independent target/host runners. It retains every existing golden, sanitizer,
