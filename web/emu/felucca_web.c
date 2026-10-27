@@ -221,11 +221,8 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)       /* NOR: a wr
         web_flash_writes++;
     return rc;
 }
-static uint32_t irq_save(void) { return 0; }
-static void irq_restore(uint32_t f) { (void)f; }
-static uint32_t fl_jedec_ram(void) { return 0x856014u; }             /* the FM-1's part (project.c) */
-static void fl_plain_window_init(void) {}
-#define FL_FAR(fn) (fn)
+#define HOST_FLASH_JEDEC 0x856014u                /* the FM-1's part (project.c persist_boot) */
+#include "../../tests/host_flash_context.h"
 #include "../../firmware/src/storage.c"
 #include "../../firmware/src/upreset.c"
 #include "../../firmware/src/project.c"
