@@ -737,6 +737,11 @@ For the optional external emulator trace prerequisite, use the
 It needs a separate Rust toolchain; its portable refusal tests run in the normal
 host suite without Rust. Native hotspot attribution remains a follow-up.
 
+With an existing verified native build and corrected emulator receipt, the
+[native replay evidence guide](docs/native-emulator-replay.md) covers repeated
+held-key and modeled-UART captures, silent controls and bounded trace/PCM checks.
+It builds no firmware and makes no device-timing or hotspot claim.
+
 ### Emulator partition regression
 
 With Node and generated assets, the runner rebuilds the real browser bridge natively;
