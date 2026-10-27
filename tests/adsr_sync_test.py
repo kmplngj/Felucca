@@ -26,7 +26,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def prepare(source, out, force_graph=False, mutation=None):
     out.mkdir(parents=True, exist_ok=True)
-    original = (source / 'tests/ui_test.c').read_text()
+    # The shared native UI harness (#708) holds the LCD stubs, power-on and input helpers.
+    original = (source / 'tests/ui_harness.h').read_text()
     prefix = original[:original.index('static int check(')]
     start = prefix.index('static void lcd_fill(')
     end = prefix.index('#define FELUCCA_FLASH 0', start)
@@ -35,8 +36,8 @@ def prepare(source, out, force_graph=False, mutation=None):
         assert backend.count('memcpy(wire_copy,p,n);') == 1
         backend = backend.replace('memcpy(wire_copy,p,n);', 'memcpy(wire_copy,p,n);wire_copy[0]^=1;')
     prefix = prefix[:start] + backend + prefix[end:]
-    init = original[original.index('static void ui_power_on('):original.index('/* card slot drawn with MOTION')]
-    helpers = original[original.index('static void frame(void)'):original.index('static int16_t stored_param(')]
+    helpers = original[original.index('static void ui_power_on('):]   # power-on, frame and input helpers
+    init = ''
     assert helpers.count('    ui_input();') == 1
     helpers = helpers.replace('    ui_input();', '    felucca_dbg.stage = 0;\n    ui_input();')
     # Stage is an execution tag, reset as in main.c; an overlay must not inherit
