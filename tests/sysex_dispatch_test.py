@@ -195,7 +195,7 @@ class SysexDispatch(unittest.TestCase):
                       .replace("@MAIN_SERVICES@", services))
         (cls.out / "actual-main-services.c.txt").write_text(services)
         cls.exe, cmd, cc = cls.compile_source(cls.source, "dispatch")
-        inputs = ["tests/editor_test.c", "firmware/src/main.c", "firmware/src/editor.c",
+        inputs = ["tests/editor_test.c", "tests/host_nor.h", "firmware/src/main.c", "firmware/src/editor.c",
                   "firmware/src/usb.c", "firmware/src/ota.c"]
         metadata = {"compiler": subprocess.check_output([*cc, "--version"], text=True), "command": cmd,
                     "source_sha256": {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in inputs}}
