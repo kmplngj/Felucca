@@ -1021,7 +1021,7 @@ submodule repositories that recursive working-tree checks cannot inspect. Restor
 and initialize tracked submodules explicitly, inspect and preserve their history,
 then retry. Preserve and resolve orphan repositories manually; an external backup
 alone does not make the helper remove their metadata. Cleanup never initializes
-submodules or repairs/deletes private repositories automatically.
+submodules or resolves inactive/orphan metadata automatically.
 Returning to your original directory or removing PR sources does **not** revert
 the FM-1: reinstall the previously saved firmware package to restore that build.
 
