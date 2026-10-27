@@ -113,8 +113,18 @@ static void store_readback_tests(void)
             slc_man_save = (uint8_t)(1u << k);
             host_msg[0] = 0;
             slc_store_poll();
-            ok &= str_eq(host_msg, "SAVE ERROR") && !slc_man_save &&
+            ok &= str_eq(host_msg, "SAVE ERROR") && slc_man_save == (uint8_t)(1u << k) &&   /* the bit stays: retried */
                   memcmp((uint8_t *)host_slots + off, &wanted, sizeof wanted) != 0;
+            for (j = 0; j < 2u; j++) {                       /* the fault persists: two retries, the bit stays between */
+                host_msg[0] = 0;
+                ok &= slc_man_save == (uint8_t)(1u << k);
+                slc_store_poll();
+                ok &= str_eq(host_msg, "SAVE ERROR");
+            }
+            ok &= !slc_man_save;                             /* exhausted: cleared, SAVE ERROR was shown */
+            host_msg[0] = 0;
+            slc_store_poll();                                /* nothing left to retry */
+            ok &= !host_msg[0] && !slc_man_save;
             ok &= !memcmp(host_slots, before, off) &&
                   !memcmp((uint8_t *)host_slots + off + ST_SECTOR, before + off + ST_SECTOR,
                           sizeof before - off - ST_SECTOR);

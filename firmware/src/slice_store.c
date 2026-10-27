@@ -97,9 +97,13 @@ static int slc_store_write(uint32_t k)
     return slc_store_put(k, &r);
 }
 
-/* main loop: the slices asked for, once the transport stops */
+/* main loop: the slices asked for, once the transport stops. A flash error (2, e.g. a readback mismatch: the sector is
+ * already erased, the slices then exist only in RAM) keeps the slot's bit, so the next stopped poll tries again, at most
+ * SLC_SAVE_RETRIES times per slot; then the bit is cleared and SAVE ERROR stays the last word. */
+#define SLC_SAVE_RETRIES 2u
 static void slc_store_poll(void)
 {
+    static uint8_t retries[SMP_USER_SLOTS];
     uint32_t k;
     int rc = 0, w = 0;
     if (!slc_man_save || transport_busy() || slice_page_on())   /* (written once the page is left) */
@@ -109,8 +113,13 @@ static void slc_store_poll(void)
             int r = flash_ok ? slc_store_write(k) : 0;
             w |= r == 3;
             rc = r != 3 && r > rc ? r : rc;
+            if (r == 2 && retries[k] < SLC_SAVE_RETRIES) {
+                retries[k]++;                        /* keep the bit: retried at the next poll */
+                continue;
+            }
+            retries[k] = 0;
+            slc_man_save &= (uint8_t)~(1u << k);
         }
-    slc_man_save = 0;
     if (rc)
         ui_message(rc == 1 ? "TOO LONG TO SAVE" : "SAVE ERROR");
     else if (w)
