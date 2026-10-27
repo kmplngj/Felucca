@@ -38,12 +38,16 @@ static int transport_busy(void) { return host_busy; }
 static int slice_page_on(void) { return host_page; }
 static void ui_message(const char *s) { snprintf(host_msg, sizeof host_msg, "%s", s); }
 static uint32_t host_erases;
+/* Successful command replies need not mean that NOR contents changed. */
+enum { HOST_IGNORE_WRITE = 1, HOST_IGNORE_ERASE, HOST_IGNORE_PROGRAM, HOST_CORRUPT_PROGRAM };
+static uint32_t host_write_fault, host_fault_off;
 static int st_read(uint32_t off, void *dst, uint32_t n) { (void)off; (void)dst; (void)n; return -1; }
 static int st_erase(uint32_t off)
 {
     if (off < SMP_USER_BASE || off + 0x1000u > SMP_USER_BASE + sizeof host_slots || (off & 0xFFFu))
         return -8;
-    memset((uint8_t *)host_slots + (off - SMP_USER_BASE), 0xFF, 0x1000u);
+    if (off != host_fault_off || (host_write_fault != HOST_IGNORE_WRITE && host_write_fault != HOST_IGNORE_ERASE))
+        memset((uint8_t *)host_slots + (off - SMP_USER_BASE), 0xFF, 0x1000u);
     host_erases++;
     return 0;
 }
@@ -54,8 +58,12 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)
         return -8;
     if (host_torn)
         return -1;                                       /* power gone after the erase */
+    if (off == host_fault_off && (host_write_fault == HOST_IGNORE_WRITE || host_write_fault == HOST_IGNORE_PROGRAM))
+        return 0;
     for (i = 0; i < n; i++)                              /* NOR: bits only go 1 -> 0 */
         ((uint8_t *)host_slots)[off - SMP_USER_BASE + i] &= ((const uint8_t *)src)[i];
+    if (off == host_fault_off && host_write_fault == HOST_CORRUPT_PROGRAM)
+        ((uint8_t *)host_slots)[off - SMP_USER_BASE] &= 0xFEu;
     return 0;
 }
 #include "../firmware/src/storage.c"
@@ -75,6 +83,64 @@ static void check(const char *what, int ok, const char *fmt, ...)
     }
     printf("\n");
     fails += !ok;
+}
+
+/* Through the panel's deferred-save owner, not just the low-level return code. */
+static void store_readback_tests(void)
+{
+    static uint8_t original[sizeof host_slots], before[sizeof host_slots];
+    static const uint32_t pos[] = {0, 1000};
+    void (*load)(uint32_t) = slc_man_load;
+    uint32_t k, mode, j;
+    memcpy(original, host_slots, sizeof original);
+    slc_store_boot();
+    host_busy = host_page = 0;
+    for (k = 0; k < SMP_USER_SLOTS; k++)
+        for (mode = HOST_IGNORE_WRITE; mode <= HOST_CORRUPT_PROGRAM; mode++) {
+            slc_rec_t wanted;
+            uint32_t off = k * SMP_USER_SIZE + SLC_REC_OFF, e0;
+            int ok;
+            memcpy(host_slots, original, sizeof original);
+            /* Use the same valid loop in every physical slot. */
+            memcpy((uint8_t *)host_slots + k * SMP_USER_SIZE, original, SMP_USER_SIZE);
+            memset((uint8_t *)host_slots + off, mode <= HOST_IGNORE_ERASE ? 0 : 0xFF, ST_SECTOR);
+            smp_user_scan(k);
+            ok = slc_man_restore(k, 2, 0, pos) == 0;
+            slc_rec_make(k, &wanted);
+            memcpy(before, host_slots, sizeof before);
+            host_write_fault = mode;
+            host_fault_off = SMP_USER_BASE + off;
+            slc_man_save = (uint8_t)(1u << k);
+            host_msg[0] = 0;
+            slc_store_poll();
+            ok &= str_eq(host_msg, "SAVE ERROR") && !slc_man_save &&
+                  memcmp((uint8_t *)host_slots + off, &wanted, sizeof wanted) != 0;
+            ok &= !memcmp(host_slots, before, off) &&
+                  !memcmp((uint8_t *)host_slots + off + ST_SECTOR, before + off + ST_SECTOR,
+                          sizeof before - off - ST_SECTOR);
+            check("store: acknowledged ineffective/corrupt write reports SAVE ERROR", ok, "slot %u fault %u msg '%s'",
+                  k + 1u, mode, host_msg);
+            host_write_fault = 0;
+            slc_man_save = (uint8_t)(1u << k);              /* a fresh user request after the fault clears */
+            slc_store_poll();
+            ok = str_eq(host_msg, "SLICES SAVED") &&
+                 !memcmp((uint8_t *)host_slots + off, &wanted, sizeof wanted);
+            e0 = host_erases;
+            host_msg[0] = 0;
+            slc_man_save = (uint8_t)(1u << k);
+            slc_store_poll();
+            ok &= host_erases == e0 && !host_msg[0];
+            smp_user_scan(k);
+            {
+                const slc_man_t *m = slc_man_of(slc_get(k + 1u));
+                ok &= m && m->n == 2u && !memcmp(m->pos, pos, sizeof pos);
+            }
+            check("store: fresh save recovers, unchanged save skips erase, rescan restores", ok,
+                  "slot %u fault %u", k + 1u, mode);
+        }
+    memcpy(host_slots, original, sizeof original);
+    slc_man_load = load;
+    for (j = 0; j < SMP_USER_SLOTS; j++) smp_user_scan(j);
 }
 
 /* 1: every stored state == the decoder's state there; returns the mismatches */
@@ -797,6 +863,8 @@ int main(int argc, char **argv)
         slc_man_load = 0;
         smp_user_scan(0);                                  /* (the demos: no MAN slices) */
     }
+
+    store_readback_tests();
 
     /* 5 */
     {

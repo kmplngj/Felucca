@@ -78,6 +78,10 @@ static int slc_store_put(uint32_t k, const slc_rec_t *r)
         return 0;                                    /* unchanged: no erase cycle */
     if (st_erase(off) || st_prog(off, r, sizeof *r))
         return 2;
+    /* Command completion alone cannot detect an ineffective/corrupt write.
+     * The HAL invalidates this XIP range after programming. */
+    if (memcmp(r, smp_user_xip(k) + SLC_REC_OFF, sizeof *r))
+        return 2;
     return 3;
 }
 

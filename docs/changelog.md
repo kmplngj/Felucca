@@ -127,6 +127,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **SLICE persistence:** MAN-slice saves and backup restores verify the stored
+  record before reporting success. Ineffective or corrupt writes take the existing
+  save/restore error paths. Records remain single-copy; interrupted saves can still
+  lose that slot's slices. FM-1 save/restart/restore qualification remains pending.
+
 - **Native attribution:** ABOUT credits and the retained installer template now
   distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0
   dedication. The PHASE source comment agrees; synthesis and generated sounds
