@@ -145,8 +145,9 @@ success does not qualify other peripheral interactions.
 
 No native optimization, firmware/RAM saving, hardware timing, physical keyboard
 velocity, USB/TRS hardware behavior or browser/device timeline equivalence is
-established. ELF aliases, symbol/range boundaries and execution-count aggregation
-remain later work under #662. No device test is required for these tooling contracts.
+established. The separate reporter below handles bounded symbol/range attribution;
+broader profiling remains under #662. No device test is required for these tooling
+contracts.
 
 ## Attribute the retained guest windows
 
