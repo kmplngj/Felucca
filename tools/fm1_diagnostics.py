@@ -128,8 +128,13 @@ def scalar(value):
 def parse_response(command, raw):
     """Keep extensible fields and verbatim unknown lines; never invent missing zeros."""
     fields, extra, duplicates = {}, [], []
-    scalar_fields = INPUT_LATENCY_FIELDS if command == "inp" else (
-        ("uac_rate_sets",) if command == "status" else ())
+    numeric = set(COUNTERS.get(command, ()))
+    if command in ("status", "dbg"):
+        numeric.add("boots")
+    numeric |= {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
+                "crash": {"uptime_ms"}}[command]
+    if command == "inp":
+        numeric.update(INPUT_LATENCY_FIELDS)
     for line in raw.decode("utf-8", errors="replace").replace("\r", "").split("\n"):
         line = line.strip()
         if not line or line in (command, ">", "> " + command):
@@ -141,7 +146,7 @@ def parse_response(command, raw):
             fields["record_present"] = False
             continue
         words = line.split(None, 1)
-        if len(words) == 2 and words[0] in scalar_fields:
+        if len(words) == 2 and words[0] in numeric:
             # Recognize known scalar fields before colon records: a malformed
             # value such as "1:2" must not disguise the field as an unknown key.
             key, value = words[0], scalar(words[1])
@@ -155,7 +160,7 @@ def parse_response(command, raw):
             match = re.fullmatch(r"([A-Za-z_][A-Za-z_0-9]*) (.+)", line)
             if not match:
                 extra.append(line)
-                if line not in scalar_fields:
+                if line not in numeric:
                     continue
                 # A known field with no value is malformed evidence, not a
                 # legacy reply that omits the field. Retain the original line.
@@ -183,13 +188,6 @@ def parse_response(command, raw):
     required = {"status": ("felucca", "uptime_ms"), "dbg": ("magic",),
                 "inp": ("window_ms",), "crash": ("record_present",)}[command]
     issues = ["missing " + key for key in required if key not in fields]
-    numeric = set(COUNTERS.get(command, ()))
-    if command in ("status", "dbg"):
-        numeric.add("boots")
-    numeric |= {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
-                "crash": {"uptime_ms"}}[command]
-    if command == "inp":
-        numeric.update(INPUT_LATENCY_FIELDS)
     for key in numeric & fields.keys():
         value = fields[key]
         if not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:

@@ -116,13 +116,14 @@ class FakeTransport:
 
 class SessionTransport(FakeTransport):
     def __init__(self, clock, interrupt_at=None, reboot_at=None, unequal_at=None, malformed_at=None,
-                 input_at=None, input_text=None, status_texts=None):
+                 input_at=None, input_text=None, status_texts=None, command_texts=None):
         super().__init__(clock, chunks=[b"\r\nFelucca v1.6 console - 'help'\r\n> "])
         self.index = -1
         self.interrupt_at, self.reboot_at, self.unequal_at = interrupt_at, reboot_at, unequal_at
         self.malformed_at = malformed_at
         self.input_at, self.input_text = input_at, input_text
         self.status_texts = status_texts
+        self.command_texts = command_texts or {}
 
     def write(self, data, timeout):
         self.writes.append(data)
@@ -148,6 +149,7 @@ class SessionTransport(FakeTransport):
             text = text.replace("window_ms 1000", "window_ms 1600")
         if command == "inp" and i == self.input_at:
             text = self.input_text
+        text = self.command_texts.get((i, command), text)
         raw = text.encode() if command == "status" and text.startswith("status\r\n") else reply(command, text)
         self.pending.extend([raw[:2], raw[2:10], raw[10:-1], raw[-1:]])
 
@@ -171,6 +173,13 @@ EXPECTED_COUNTERS = {
     "inp": {"timer_irqs", "nested"},
     "crash": {"count"},
 }
+# The parser's existing numeric contract, including optional legacy fields.
+EXPECTED_NUMERIC = {command: names | additional for command, names, additional in (
+    ("status", EXPECTED_COUNTERS["status"], {"boots", "uptime_ms"}),
+    ("dbg", EXPECTED_COUNTERS["dbg"], {"boots", "magic"}),
+    ("inp", EXPECTED_COUNTERS["inp"], {"window_ms", *LATENCY_FIELDS}),
+    ("crash", EXPECTED_COUNTERS["crash"], {"uptime_ms"}),
+)}
 OPTIONAL_COUNTERS = {name for name in EXPECTED_COUNTERS["status"]
                      if name.startswith(("uart_", "uac_")) or name == "isr_misuse"}
 # isr_misuse/isr_misuse_pc are `status` keys of FELUCCA_ISR_ASSERT=1 FM-1 builds only
@@ -340,6 +349,55 @@ class ConsoleContractTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_all_known_numeric_fields_reject_disguised_or_empty_values(self):
+        texts = {"status": STATUS, "dbg": DBG, "inp": INP, "crash": CRASH}
+        for command, names in EXPECTED_NUMERIC.items():
+            for key in sorted(names):
+                # Some optional counters are absent from the legacy fixture.
+                base = re.sub(r"(?m)^" + key + r" .*\n?", "", texts[command])
+                for suffix in ("", " ", "\t", " 1:2", "\t1:2", " : 1", " 1:", " 1 : 2", ": 1:2"):
+                    with self.subTest(command=command, key=key, suffix=suffix):
+                        parsed = diag.parse_response(command, reply(command, base + key + suffix + "\n"))
+                        self.assertIn("invalid uint32 " + key, parsed["issues"])
+                        self.assertIn(key, parsed["fields"])
+                        self.assertNotIn(key + " 1", parsed["fields"])
+                        if not suffix.strip():
+                            self.assertEqual(parsed["fields"][key], "")
+                            self.assertIn(key, parsed["unknown_lines"])
+                        # A preceding valid record cannot hide malformed evidence.
+                        duplicate = diag.parse_response(command, reply(command,
+                            base + key + " 1\n" + key + suffix + "\n"))
+                        self.assertIn("duplicate " + key, duplicate["issues"])
+                        self.assertIn("invalid uint32 " + key, duplicate["issues"])
+
+    def test_numeric_recognition_preserves_normalization_and_legacy_omissions(self):
+        texts = {"status": STATUS, "dbg": DBG, "inp": INP, "crash": CRASH}
+        required = {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
+                    "crash": {"count"}}
+        for command, names in EXPECTED_NUMERIC.items():
+            for key in sorted(names):
+                base = re.sub(r"(?m)^" + key + r" .*\n?", "", texts[command])
+                with self.subTest(command=command, key=key):
+                    if key not in required[command]:
+                        omitted = diag.parse_response(command, reply(command, base))
+                        self.assertEqual(omitted["issues"], [])
+                        self.assertNotIn(key, omitted["fields"])
+                    signed = (key in EXPECTED_COUNTERS[command]
+                              or command in ("status", "dbg") and key == "boots"
+                              or command in ("status", "crash") and key == "uptime_ms")
+                    for value in ("-2147483648", "-2147483649", "4294967295", "4294967296"):
+                        parsed = diag.parse_response(command, reply(command, base + key + " " + value + "\n"))
+                        valid = value == "4294967295" or signed and value == "-2147483648"
+                        self.assertEqual("invalid uint32 " + key not in parsed["issues"], valid)
+                        expected = 1 << 31 if signed and value == "-2147483648" else int(value)
+                        self.assertEqual(parsed["fields"][key], expected)
+            parsed = diag.parse_response(command, reply(command, texts[command]
+                + "future_record: 1 2\nfuture_metric 1:2\nfuture_empty\n"))
+            self.assertEqual(parsed["issues"], [])
+            self.assertEqual(parsed["fields"]["future_record"], [1, 2])
+            self.assertEqual(parsed["fields"]["future_metric 1"], [2])
+            self.assertIn("future_empty", parsed["unknown_lines"])
+
     def test_packet_delta_requires_supported_unchanged_epoch_markers(self):
         for markers in ("", "uac_hz 44100\n", "uac_rate_sets 1\n",
                         "uac_hz 96000\nuac_rate_sets 1\n",
@@ -658,6 +716,47 @@ class SessionTests(unittest.TestCase):
         summary = diag.collect(console, 2, 1, {"scenario": "simulated", "input_latency": input_latency},
                                events.append, clock=clock, sleep=clock.sleep)
         return summary, events, transport
+
+    def test_malformed_known_scalars_stop_and_persist_invalid_session(self):
+        cases = (("status", "audio_late", STATUS), ("status", "boots", STATUS),
+                 ("status", "uptime_ms", STATUS), ("dbg", "halves", DBG),
+                 ("dbg", "magic", DBG), ("inp", "timer_irqs", INP),
+                 ("inp", "window_ms", INP), ("crash", "count", CRASH),
+                 ("crash", "uptime_ms", CRASH))
+        for command, key, text in cases:
+            for index in (1, 2):
+                for suffix in (" 1:2", ""):
+                    with self.subTest(command=command, key=key, index=index, suffix=suffix):
+                        line = key + suffix
+                        bad = re.sub(r"(?m)^" + key + r" .*$", line, text)
+                        summary, events, transport = self.run_session(
+                            command_texts={(index, command): bad})
+                        self.assertEqual(summary["validity"], "INVALID")
+                        self.assertFalse(summary["end_snapshot"]["complete"])
+                        self.assertTrue(all(value is None for group in summary["deltas"].values()
+                                            for value in group.values()))
+                        self.assertEqual(len(transport.writes), index * 4 + diag.COMMANDS.index(command) + 1)
+                        response = [e for e in events if e["type"] == "response"][-1]
+                        self.assertIn("invalid uint32 " + key, response["issues"])
+                        malformed_bytes = (line + "\r\n").encode()
+                        self.assertIn(malformed_bytes, base64.b64decode(response["raw_b64"]))
+                        intervals = [e for e in events if e["type"] == "interval"]
+                        self.assertEqual(intervals[-1]["validity"], "INVALID")
+                        with tempfile.TemporaryDirectory() as tmp:
+                            capture = diag.Capture(Path(tmp) / "capture")
+                            for event in events:
+                                capture.emit(event)
+                            capture.close()
+                            raw = (capture.directory / "console.raw").read_bytes()
+                            self.assertIn(malformed_bytes, raw)
+                            saved = json.loads((capture.directory / "summary.json").read_text())
+                            self.assertEqual(saved, summary)
+                            samples = [json.loads(item) for item in
+                                       (capture.directory / "samples.jsonl").read_text().splitlines()]
+                            saved_response = [e for e in samples if e["type"] == "response"][-1]
+                            offset, length = saved_response["raw_offset"], saved_response["raw_length"]
+                            self.assertEqual(raw[offset:offset + length], base64.b64decode(response["raw_b64"]))
+                            self.assertEqual(saved_response["fields"][key], "1:2" if suffix else "")
 
     def test_invalid_latency_invalidates_session_and_preserves_evidence(self):
         for instrumentation in ("enabled", "unknown", "disabled"):
