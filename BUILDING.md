@@ -447,6 +447,13 @@ fixtures require incompatible signatures across the UI, settings and browser
 adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
+The `lcd_power` unit also runs `python3 tests/lcd_contract_test.py`. The real LCD
+driver and UI, browser and rescue fakes declare the shared `lcd_fill_fn` type:
+unsigned 32-bit coordinates and a 16-bit RGB565 colour. Actual-adapter compile
+checks reject incompatible definitions, including the rescue fakes' former types.
+This checks the C contract; delayed DMA, pixel output and physical LCD behavior
+remain separate checks.
+
 The native UI tests and their consumers share `tests/ui_harness.h`: the real
 firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
 blank-frame observers, power-on setup and panel/keyboard helpers. Define any

@@ -431,6 +431,7 @@ u_cc_scale() {
 unit cc_scale "" u_cc_scale
 
 u_lcd_power() {
+    run "LCD fill contract: real driver, UI/browser/rescue adapters and incompatible signatures" python3 tests/lcd_contract_test.py
     $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_power_test" tests/lcd_power_test.c
     run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
 }
