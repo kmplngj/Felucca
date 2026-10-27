@@ -1092,6 +1092,11 @@ found (check the USB data cable and other apps using MIDI), 4 means the connecti
 or the device stopped, 5 means a timeout, and 6 means a model or installed-identity mismatch.
 Run `uv run --locked --group midi tools/fm1_install.py --help` for the options and complete exit-code list.
 
+The Python installer allows 8 seconds without a valid update request during package staging
+and 180 seconds during writing. Unrelated or malformed SysEx does not reset that idle budget.
+Valid requests renew it, so a progressing transfer may take longer than the idle interval.
+A stalled transfer still reports exit code 4; follow the installer's phase-specific retry guidance.
+
 If package generation reports `app area is ... B, available ... B`, the app region plus
 the SDK configuration files and headers exceeds the flash boundary. The app fitting its
 own slot is not enough: use the supported SDK files and review the reported sizes under
