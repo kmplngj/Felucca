@@ -488,6 +488,7 @@ static void uac_rate_set(uint32_t hz)
 static void usb_reset_state(void)
 {
     usb.config = 0;
+    RING_PUBLISH();                                     /* the audio ISR reads usb.config (uac_render_start): store it first */
     usb.suspended = 0;
     usb.sx_on = 0;
 #if FELUCCA_OTA
