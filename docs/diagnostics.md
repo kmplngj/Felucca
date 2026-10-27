@@ -221,6 +221,8 @@ known latency field must be a nonnegative 32-bit integer; malformed, negative or
 out-of-range values invalidate the response and session while retaining the raw
 reply. Unknown future fields are preserved. Zero press/note counts mean no samples
 and remain `UNMEASURED`; valid sampled times may round to zero microseconds.
+Malformed colon values such as `key_press_max_us 1:2` also invalidate collection;
+they cannot disguise a known latency scalar as an unknown colon record.
 
 ## Interrupt-context assertion (`FELUCCA_ISR_ASSERT`)
 
