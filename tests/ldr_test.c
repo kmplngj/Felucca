@@ -24,7 +24,8 @@ static uint32_t prog_fail, verify_fail, expected_flash_off;
 static uint32_t page_calls[0x100], sector_reads[0x100];
 static uint32_t fault_sector = 0xFFFFFFFFu, partial_page = 0xFFFFFFFFu, bad_readbacks;
 static uint32_t erase_n[0x100], prot_reads, rd_fail_off = 0xFFFFFFFFu, er_fail_off = 0xFFFFFFFFu;   /* per 4K sector; fault injection */
-static uint32_t flip_addr = 0xFFFFFFFFu, flip_seen, flip_on;   /* serve addr's flip_on-th reply with a byte changed */
+static uint32_t flip_addr = 0xFFFFFFFFu, flip_seen, flip_on, flip_persist;   /* serve addr's flip_on-th reply with a byte changed
+                                                                              * (flip_persist: that one and every later reply) */
 
 static uint32_t pack7(const uint8_t *in, uint32_t n, uint8_t *out)
 {
@@ -68,7 +69,7 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)
     } else {
         if (addr + len > logical_len) { printf("read past the package %#x\n", addr); exit(1); }
         memcpy(m + 14, logical + addr, len);
-        if (addr == flip_addr && ++flip_seen == flip_on)
+        if (addr == flip_addr && (++flip_seen == flip_on || (flip_persist && flip_seen > flip_on)))
             m[14 + len / 2u] ^= 0x10;                /* a transfer error the frame checksum does not see */
     }
     for (i = 6; i < 14 + len; i++) s += m[i];
@@ -657,6 +658,23 @@ int main(int argc, char **argv)
     }
     bad += check("validation failures publish failure before any verified progress", ldr_screen_state == LDR_FAILED &&
                  ldr_screen_error == -12 && progress_seen == 0 && status_seen[LDR_WRITING] == 0);
+    /* the transfer re-read bound (ldr_core.c, again == 2u): a sector that stays damaged in transfer after the check
+     * (every read of it from the second on, so ldr_check's own read passed) is read exactly 3 times, then -13 and
+     * no erase or program of it or of any sector after it. Mutants again == 1u / 3u read it 2 / 4 times. */
+    {
+        uint32_t k, touched = 0;
+        flip_addr = nfo + 0x20000u; flip_on = 2; flip_seen = 0; flip_persist = 1;
+        memset(erase_n, 0, sizeof erase_n); memset(page_calls, 0, sizeof page_calls);
+        rc = ldr_session();
+        flip_addr = 0xFFFFFFFFu; flip_persist = 0;
+        for (k = 0x20000u >> 12; k < LDR_APP_HI >> 12; k++)
+            touched += erase_n[k] + page_calls[k];
+        bad += check("a sector that stays damaged in transfer: -13 after exactly 3 reads of it (plus the check's)",
+                     rc == -13 && flip_seen == 1u + 3u && ldr_screen_state == LDR_FAILED && ldr_screen_error == -13);
+        bad += check("... and neither it nor any sector after it was erased or programmed",
+                     touched == 0 && !memcmp(nor + 0x20000, old + ofo + 0x20000, 0x93000 - 0x20000));
+        requests = 0; erases = 0;
+    }
     /* a sector that comes in different the second time (a transfer error after the check) is read again */
     flip_addr = nfo + 0x20000u; flip_on = 2; flip_seen = 0;
     rc = ldr_session();
