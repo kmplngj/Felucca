@@ -34,6 +34,7 @@ build/host/union_test tests/union_golden.txt  # engine-memory changes
 | Before you… | Read |
 | --- | --- |
 | Work on an issue, handle a PR, or autonomously process a requested backlog | [Issue delivery skill](.agents/skills/issue-delivery/SKILL.md); apply the mode and permissions matching the current request |
+| Explicitly request full stop, full send or a Sol loop | [Full stop](.agents/skills/full-stop/SKILL.md), [full send](.agents/skills/full-send/SKILL.md) or [Sol loop](.agents/skills/sol-loop/SKILL.md); quoted phrases and discussion do not invoke these modes |
 | Build, generate assets, or run tests | [BUILDING.md](BUILDING.md) |
 | Collect diagnostics from a connected FM-1 | [docs/diagnostics.md](docs/diagnostics.md), including [idle setup](docs/diagnostics.md#idle-baseline-setup) and [interpretation](docs/diagnostics.md#interpreting-a-report); [docs/performance.md](docs/performance.md) |
 | Add or change diagnostic commands, fields, build flags or host tools | [Diagnostic capabilities](docs/diagnostics.md#diagnostic-capabilities), [BUILDING.md](BUILDING.md), and the affected usage/protocol guide |
@@ -58,6 +59,12 @@ context or reporting changes to AI tooling. Read task-specific references once
 per revision, and inspect summaries before raw logs or media. Keep large outputs
 under ignored `build/`; page required evidence rather than accepting truncation.
 Preserve complete relevant diffs, callers, invariants and validation coverage.
+
+For complex tasks, deepen the investigation and verification within the requested
+goal; do not add deliverables or silently raise acceptance targets. Follow the
+[depth check](.agents/skills/issue-delivery/SKILL.md#deepen-the-method-within-scope)
+when needed. Complete simple, clear requests directly without an extra planning
+or confirmation step; preserve explicit limits and previously granted authority.
 
 ## Every change considers
 
@@ -144,8 +151,18 @@ the firmware and relevant host/emulator compilation paths, not merely added to d
 ## Build and validate
 
 Rebuild the affected harness after source changes; an existing binary is not evidence for
-new code. Finish firmware changes with the full applicable suite, a fresh target build
-with no new warnings, and the resource checks in `docs/performance.md`. Record every skipped
+new code. During development, run affected units with prerequisite closure and keep PRs
+in draft; follow [the validation stages](.github/CI.md#feedback-and-merge-stages).
+Documentation and exact selector/helper-contract-only changes use workflow/helper
+checks; firmware/audio tests are unnecessary for that scope. Workflow YAML and
+shared test-execution implementations retain full validation.
+Do not run the full suite just to create a draft PR or after every edit. Mark a frozen
+candidate ready for review to run the complete applicable CI plan before merging;
+later code pushes must refresh that validation. Finish firmware changes with evidence
+for the full applicable suite, a fresh target build with no new warnings, and the
+resource checks in `docs/performance.md`. Successful CI evidence can cover those checks
+when its tested revision, inputs, toolchain, profile and flags match; do not repeat the same full
+suite locally without a changed input, failure or unresolved concern. Record every skipped
 check, especially unavailable host instruction counters, DaisySP or browser tooling.
 For UI changes, inspect the generated `build/ui_new/` images and the actual panel behavior;
 for USB/MIDI changes, exercise the affected host configuration and hardware path.

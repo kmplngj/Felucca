@@ -8,6 +8,50 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [fm1-dock adoption plan](https://github.com/kmplngj/Felucca/issues/701)
+registers `joakimeriksson/fm1-dock` main as a pending source, repository ID
+`1428799110`, pinned at `e177e83e560483f419baad80511d9dd1acfdeffe` (40 reachable
+commits in its complete non-shallow DAG, zero credited assessments). After ordinary
+review brings this registration to main and the canonical state registry, the existing
+runner must reverify identity, branch, immutable pin and full history before
+initialization. Pending registration is not active tracking or completed review
+coverage; this adds no schedule or automation.
+
+The [Matryoshka adoption review](matryoshka-adoption-plan-2026-10-25.md), tracked in
+[Felucca #672](https://github.com/kmplngj/Felucca/issues/672), proposes a pending
+`glvno/matryoshka` main registration at
+`99f1149d55fa549c4202e6f5080610770399c832` (841 reachable commits, zero individually
+reviewed). The complete non-shallow main graph was fetched and integrity checked.
+The local registration requires ordinary review to main and state-branch integration
+before the existing runner verifies identity, branch, immutable pin and full history
+and initializes it. This snapshot creates no per-commit credit or new schedule.
+
+[Registration #446](https://github.com/kmplngj/Felucca/issues/446) adds two pending
+sources on `main`: `okumurari2/maku` (repository ID `1411236607`), retaining
+historical target `2aea69253110233f0934da0444381177a2bbd7d5`, and
+`Rastapopolix/tessera` (repository ID `1414783836`), retaining
+`4ac494e51ee73abdbbf70f2979184e2a147a5e53`. The latter is the verified canonical
+name of the former `Rastapopolix/melodee-tess`; using the old redirect would fail
+the helper's canonical-name check. Both track the verified `main` branch.
+
+These entries are pending registrations, not active tracking or completed history
+review. Full-DAG counts have not been collected; no snapshot receives per-commit
+review credit. After registration reaches main and the canonical state registry,
+the next audit must independently reverify each ID, canonical name, branch and
+immutable object; fetch its complete non-shallow DAG and fresh tip; preserve
+existing journals and frozen intervals; calculate queues from complete DAGs and
+confirmed records; and remove each pending entry only after successful
+initialization. An unavailable source remains an explicit blocker. Issue #446
+stays open until initialization and remote state evidence satisfy its acceptance
+checks. Reuse MAKU owners [#200](https://github.com/kmplngj/Felucca/issues/200)/
+[#202](https://github.com/kmplngj/Felucca/issues/202) and portable sound recipes
+[Engines-GPL #18](https://github.com/kmplngj/Felucca-Engines-GPL/issues/18), Tessera
+owners [#162](https://github.com/kmplngj/Felucca/issues/162)/
+[#167](https://github.com/kmplngj/Felucca/issues/167), and shared generator/workflow
+owners [#214](https://github.com/kmplngj/Felucca/issues/214)/
+[#208](https://github.com/kmplngj/Felucca/issues/208). This changes no runner,
+schedule, firmware or musical features.
+
 The [FM Lab adoption review](fm-lab-adoption-2026-10-21.md) registers
 `jsmith13/fm_lab` main as a pending source at
 `cf35dc26709ede9c974654dfc2135f8c25a00082` (37 reachable commits, zero individually
@@ -43,8 +87,10 @@ Routine scan state lives on the repository's
 [`automation/firmware-watch` branch](https://github.com/kmplngj/Felucca/tree/automation/firmware-watch/data/firmware-watch).
 The initial migration also lives on main. Read the state branch for current progress;
 do not treat main's bootstrap snapshot as the latest scan. Changes to the skill,
-helper, schema or registered scope use ordinary PRs to main. The runner merges
-main into its isolated state worktree before scanning and stops on conflicts.
+helper, schema or registered scope use ordinary PRs to main. The runner reads code/instructions from an isolated current-main checkout and
+keeps only ledger changes on the isolated state branch. It reconciles registration
+changes using the guarded procedure below; it does not merge main's whole tree
+into the state branch. Rejected reconciliation stops the run.
 
 | File under `data/firmware-watch/` | Purpose |
 | --- | --- |
@@ -112,21 +158,35 @@ Use Python 3.10+, Git and an authenticated `gh` CLI for source synchronization.
 Validation, summaries and queries need no GitHub credentials or device access.
 No third-party Python package is required.
 
+Set absolute paths for the freshly fetched code checkout, isolated state ledger,
+ignored cache and shared lease directory. Use the current-main helper for real
+runs as well as fixture copies; never run the state tree's potentially old helper
+or write to main's bootstrap ledger.
+
 ```sh
-python3 tools/firmware_watch.py validate
-python3 tools/firmware_watch.py summary
-python3 tools/firmware_watch.py sync
-python3 tools/firmware_watch.py queue --limit 50 > build/firmware-watch-batch.json
-python3 tools/firmware_watch.py record --input build/firmware-watch-assessment.json
-python3 tools/firmware_watch.py checkpoint
-python3 tests/firmware_watch_test.py
+watch_code_dir=/absolute/path/to/current-main
+watch_data_dir=/absolute/path/to/state/data/firmware-watch
+watch_cache_dir=/absolute/path/to/state/build/firmware-watch
+watch_lease_dir=/absolute/path/to/original-clone/.git/firmware-watch
+firmware_watch() {
+  python3 "$watch_code_dir/tools/firmware_watch.py" \
+    --data-dir "$watch_data_dir" --cache-dir "$watch_cache_dir" \
+    --lease-dir "$watch_lease_dir" "$@"
+}
+firmware_watch validate
+firmware_watch summary
+firmware_watch sync
+firmware_watch queue --limit 50 > "$watch_cache_dir/batch.json"
+firmware_watch record --input "$watch_cache_dir/assessment.json"
+firmware_watch checkpoint
+python3 "$watch_code_dir/tests/firmware_watch_test.py"
 ```
 
 The assessment file holds a structured proposed review from the skill's process;
 the helper does not generate a reasoned review from commit messages. Source bare
 caches and temporary analysis live under ignored `build/firmware-watch/`. To select
-one configured source, use `sync --repository owner/name`. Global `--data-dir` and
-`--cache-dir` options go before the command when working with fixture copies.
+one configured source, use `sync --repository owner/name`. Global `--data-dir`, `--cache-dir` and `--lease-dir` options go before the command;
+absolute paths keep current code and the canonical ledger separate.
 Unknown repositories and unregistered branches are not implicitly added to scope.
 
 ```sh
@@ -193,11 +253,11 @@ multi-command session (replace the example ID for each run):
 ```sh
 # Resolve this in the original clone before creating an isolated worktree.
 watch_lease_dir="$(git rev-parse --path-format=absolute --git-common-dir)/firmware-watch"
-python3 tools/firmware_watch.py --lease-dir "$watch_lease_dir" \
-  lease acquire --owner run-2026-10-18-example
+python3 tools/firmware_watch.py --data-dir build/firmware-watch-lease-data \
+  --lease-dir "$watch_lease_dir" lease acquire --owner run-2026-10-18-example
+# Create isolated worktrees and define firmware_watch as above after acquisition.
 # Inventory, sync, review, checkpoint and verified Git publication happen here.
-python3 tools/firmware_watch.py --lease-dir "$watch_lease_dir" \
-  lease release --owner run-2026-10-18-example
+firmware_watch lease release --owner run-2026-10-18-example
 ```
 
 The shared lease cannot be released with another owner ID. A worktree-relative
@@ -206,6 +266,57 @@ worktrees from acquiring separate run leases. A standalone helper defaults to it
 cache directory. Independent clones/machines require a single serialized scheduled
 runner; a local lease does not claim distributed locking. A stale lease requires confirming its previous run has stopped before
 explicit operator cleanup. Helpers also acquire a short per-command writer lock.
+
+## Registry reconciliation and recovery
+
+Main retains bootstrap pending registrations after the state branch initializes
+those sources. A later main registration can therefore conflict with the state
+registry. Taking either whole file loses new registrations or resurrects sources.
+Merging all of main also publishes unrelated firmware files to the state branch.
+Keep code and ledger worktrees separate instead.
+
+Hold the shared whole-run lease. From the clean state worktree, save valid registry
+versions under ignored build storage. `watch_code_dir` above is the absolute path of the
+isolated freshly fetched main checkout. Use a unique Git merge base and stop if
+there are multiple bases. Do not change any Git ancestry to manufacture a base.
+
+```sh
+mkdir -p build/firmware-watch-merge
+git merge-base --all HEAD origin/main > build/firmware-watch-merge/bases.txt
+# Continue only if bases.txt contains exactly one full commit SHA.
+git show "$(cat build/firmware-watch-merge/bases.txt):data/firmware-watch/sources.json" > build/firmware-watch-merge/base.json
+git show HEAD:data/firmware-watch/sources.json > build/firmware-watch-merge/ours.json
+git show origin/main:data/firmware-watch/sources.json > build/firmware-watch-merge/theirs.json
+python3 "$watch_code_dir/tools/firmware_watch.py" reconcile-sources \
+  --base build/firmware-watch-merge/base.json \
+  --ours build/firmware-watch-merge/ours.json \
+  --theirs build/firmware-watch-merge/theirs.json \
+  --state data/firmware-watch/state.json \
+  --output build/firmware-watch-merge/candidate.json
+```
+
+The command only writes a separate candidate. It preserves the state branch's
+active order and verified promotions and appends new main-only pending sources.
+It rejects changed source definitions, identities or immutable pins, removals,
+duplicates, unverified promotions and conflicting configuration changes. It does
+not fetch, initialize sources, modify runtime state or grant review coverage.
+Other metadata changes require manual reconciliation rather than guessing.
+
+Copy the complete ledger to an ignored candidate directory, substitute only its
+`sources.json`, then use the current-main helper's `--data-dir CANDIDATE_DIR validate`.
+Check that runtime state, journal and migration files match the pre-reconciliation
+state branch byte-for-byte. Only after success, copy the candidate to the tracked
+`sources.json` and validate again. Preserve failed inputs for operator inspection.
+If recovering an older interrupted merge, preserve its worktree and create a clean
+state worktree from the fetched canonical branch; do not publish its whole-tree merge.
+
+Run all subsequent commands using the current-main helper with absolute
+`--data-dir` and `--cache-dir` paths into the state worktree. Keep `--lease-dir`
+pointing at the original clone's shared Git common directory. Source sync still
+performs live identity/pin/full-DAG checks; reconciliation initializes nothing.
+Commit/push only ledger paths using the normal remote-advance check. A repeated
+unchanged reconciliation creates no commit. Never merge helper/skill changes
+onto the state branch; they use an ordinary reviewed PR to main.
 
 ## Scheduled Codex task
 

@@ -11,7 +11,6 @@
  *      -Ibuild/gen -Ifirmware/src -o build/host/drumfuzz tests/drumfuzz_test.c -lm
  *   build/host/drumfuzz SEED0 NSEEDS STEPS [song]
  * run_tests.sh runs a short one; #211 (1.5.5 and v1.5-src): 200 seeds x 4000 steps each way, nothing found. */
-#define UI_TEST_NO_MAIN 1
 #include <stdint.h>
 #include <signal.h>
 #include <unistd.h>
@@ -30,7 +29,7 @@ static void fm1_icfg_set(uint32_t f) { if (f) host_irq_mask = 1; else fm1_irq_on
 static void fz_boot_probe(void);
 #define UI_POWER_ON_RESET_HOOK fz_boot_probe
 #endif
-#include "ui_test.c"
+#include "ui_harness.h"
 #ifdef PREEMPT
 static volatile int host_in_isr;
 static uint32_t host_isr_n;

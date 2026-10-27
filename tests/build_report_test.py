@@ -28,6 +28,9 @@ class ResourceReport(unittest.TestCase):
         environment = patch.dict(os.environ, {'FELUCCA_CRASH_CTX': '0'})
         environment.start()
         self.addCleanup(environment.stop)
+        fonts = patch('font_resources.linked', return_value={})
+        fonts.start()
+        self.addCleanup(fonts.stop)
         cpu = patch.object(B, 'CPU2', False)
         cpu.start()
         self.addCleanup(cpu.stop)
@@ -133,27 +136,61 @@ class ResourceReport(unittest.TestCase):
                 first = (root / 'build/resource-report.json').read_bytes()
                 R.write(B, self.evidence(), package, inputs, config)
                 self.assertEqual(first, (root / 'build/resource-report.json').read_bytes())
-                R.verify(root, before, config=config, measured=measured)
+                R.verify(root, before, config=config, measured=measured, fonts={})
+                legacy = copy.deepcopy(before)
+                legacy['schema_version'] = 1
+                legacy.pop('native_font_resources')
+                R.verify(root, legacy, config=config, measured=measured)
+                for version in (True, 1.0, 2.0):
+                    changed = copy.deepcopy(before)
+                    changed['schema_version'] = version
+                    with self.subTest(version=repr(version)), self.assertRaisesRegex(ValueError, 'unsupported resource report'):
+                        R.verify(root, changed, config=config, measured=measured, fonts={})
+                reserved = copy.deepcopy(legacy)
+                reserved['native_font_resources'] = {'false': 'claim'}
+                with self.subTest(reserved_field=True), self.assertRaisesRegex(ValueError, 'schema 1 cannot include native font'):
+                    R.verify(root, reserved, config=config, measured=measured)
+                manifest_name = 'build/gen/ui-font-manifest.json'
+                manifest = root / manifest_name
+                manifest.write_text('{}')
+                inventory = dict(inputs, **{manifest_name: R.digest(manifest)})
+                current = copy.deepcopy(before)
+                current['input_sha256'] = inventory
+                current['inputs_sha256'] = hashlib.sha256(R.canonical(inventory)).hexdigest()
+                with patch.object(R, 'input_hashes', return_value=inventory):
+                    R.verify(root, current, config=config, measured=measured, fonts={})
+                for retain_claim in (False, True):
+                    downgraded = copy.deepcopy(current)
+                    downgraded['schema_version'] = 1
+                    if retain_claim:
+                        downgraded['native_font_resources'] = {'false': 'claim'}
+                    else:
+                        downgraded.pop('native_font_resources')
+                    with self.subTest(retain_claim=retain_claim), \
+                            patch.object(R, 'input_hashes', return_value=inventory), \
+                            self.assertRaisesRegex(ValueError, 'schema 1 cannot include native font'):
+                        R.verify(root, downgraded, config=config, measured=measured)
                 for mutate in (
                         lambda r: r['artifact_sha256'].pop('build/felucca.elf'),
                         lambda r: r['resources']['RAM'].update(used_bytes=-1),
+                        lambda r: r.pop('native_font_resources'),
                         lambda r: r.pop('resources'), lambda r: r.pop('stack_reservations'),
                         lambda r: r.update(build_identity={'revision': 'false'}),
                         lambda r: r['configuration'].update(actual='other')):
                     changed = copy.deepcopy(before)
                     mutate(changed)
                     with self.assertRaises(ValueError):
-                        R.verify(root, changed, config=config, measured=measured)
+                        R.verify(root, changed, config=config, measured=measured, fonts={})
                 with self.assertRaisesRegex(ValueError, 'configuration'):
-                    R.verify(root, before, config={'actual': 'different'}, measured=measured)
+                    R.verify(root, before, config={'actual': 'different'}, measured=measured, fonts={})
                 elf = root / 'build/felucca.elf'
                 elf.write_text('stale')
                 with self.assertRaisesRegex(ValueError, 'felucca.elf'):
-                    R.verify(root, before, config=config, measured=measured)
+                    R.verify(root, before, config=config, measured=measured, fonts={})
                 elf.write_text('build/felucca.elf')
                 source.write_text('changed dirty input')
                 with self.assertRaisesRegex(ValueError, 'source.c'):
-                    R.verify(root, before, config=config, measured=measured)
+                    R.verify(root, before, config=config, measured=measured, fonts={})
 
     def test_initial_source_inventory_excludes_stale_generated_files(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -181,6 +218,8 @@ class ResourceReport(unittest.TestCase):
                 path = tc / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(name)
+            for name in R.HEADER_ROOTS:
+                path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
             def command(tool, *args):
                 if tool == 'cc':
                     self.assertIn('-E', args)
@@ -188,7 +227,8 @@ class ResourceReport(unittest.TestCase):
                     self.assertNotIn('-c', args)
                     self.assertIn('-Os', args)
                     return ('#define FELUCCA_ENGINE_H\n#define FELUCCA_CPU2 1\n'
-                            '#define FELUCCA_ID "FM-1_900"\n#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n')
+                            '#define FELUCCA_ID "FM-1_900"\n#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n'
+                            '#define NPART 4\n#define NTRK NPART\n#define NSTEP 64\n')
                 return 'clang version 4.0.1\nInstalledDir: /different/workspace\n'
             with patch.object(B, 'tc', side_effect=command), patch.object(B, 'toolchain', return_value=tc), \
                     patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'):
@@ -196,6 +236,105 @@ class ResourceReport(unittest.TestCase):
             self.assertEqual(result['effective_defines']['FELUCCA_CPU2'], '1')
             self.assertEqual(result['effective_defines']['FELUCCA_ENGINE_H'], '')
             self.assertNotIn('InstalledDir', result['compiler']['version'])
+            self.assertEqual(result['logical_constants'], {'NPART': '4', 'NTRK': 'NPART', 'NSTEP': '64'})
+            self.assertEqual(result['generator_runtime'], R.generator_runtime(B.SRC))
+
+    def test_generator_environment_is_bound_before_asset_generation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'uv.lock').write_text('locked generator inputs\n')
+            before = R.generator_runtime(root)
+            self.assertEqual(before['lock_sha256'], R.digest(root / 'uv.lock'))
+            self.assertNotIn(str(root), json.dumps(before))
+            tools = {'generator_runtime': before}
+            (root / 'uv.lock').write_text('different lock\n')
+            with patch.object(R, 'input_hashes', return_value={}), \
+                    patch.object(R, 'tool_fingerprints', return_value={'generator_runtime': R.generator_runtime(root)}):
+                with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
+                    R.check_initial_inputs(B, {}, tools)
+
+    def test_ci_python_loader_environment_is_bound_and_changes_refused(self):
+        self.enterContext(patch.object(B, 'use_docker', return_value=False))
+        ci_value = '/opt/hostedtoolcache/Python/3.12.15/x64/lib'
+        expected = {'LD_LIBRARY_PATH': hashlib.sha256(ci_value.encode('utf-8')).hexdigest()}
+        with tempfile.TemporaryDirectory() as folder:
+            tc = Path(folder)
+            for name in ('pi32v2/bin/clang', 'pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy'):
+                path = tc / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture tool')
+            for name in R.HEADER_ROOTS:
+                path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
+            macros = ('#define FELUCCA_CPU2 0\n#define FELUCCA_ID "FM-1_900"\n'
+                      '#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n')
+            with patch.object(B, 'toolchain', return_value=tc), \
+                    patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'), \
+                    patch.object(B, 'tc', side_effect=lambda tool, *args: macros if tool == 'cc' else 'clang fixture'), \
+                    patch.object(R, 'input_hashes', return_value={}), \
+                    patch.dict(os.environ, {'LD_LIBRARY_PATH': ci_value}):
+                before = R.tool_fingerprints(B)
+                self.assertEqual(R.ALLOWED_LOADER_ENV, ('LD_LIBRARY_PATH',))
+                self.assertEqual(R.loader_environment_fingerprints({}), {})
+                self.assertEqual(R.loader_environment_fingerprints({'LD_LIBRARY_PATH': ''}), {})
+                self.assertEqual(R.loader_environment_fingerprints({'LD_LIBRARY_PATH': ci_value}), expected)
+                self.assertNotIn(ci_value, json.dumps(expected))
+                self.assertEqual(before['loader_environment_sha256'], expected)
+                self.assertEqual(R.configuration(B)['loader_environment_sha256'], expected)
+                R.check_initial_inputs(B, {}, before)
+                for changed in (ci_value + '/changed', ''):
+                    with self.subTest(changed=changed), patch.dict(os.environ, {'LD_LIBRARY_PATH': changed}):
+                        self.assertNotEqual(before['loader_environment_sha256'],
+                                            R.tool_fingerprints(B)['loader_environment_sha256'])
+                        with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
+                            R.check_initial_inputs(B, {}, before)
+                for forbidden in ('CPATH', 'LD_PRELOAD', 'DYLD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES'):
+                    with self.subTest(forbidden=forbidden), patch.dict(os.environ, {forbidden: 'injected'}):
+                        with self.assertRaisesRegex(ValueError, 'unsupported compiler environment: ' + forbidden):
+                            R.tool_fingerprints(B)
+
+    def test_installed_headers_missing_changed_and_injected_search_paths(self):
+        self.enterContext(patch.object(B, 'use_docker', return_value=False))
+        for name in R.COMPILER_ENV:
+            with self.subTest(name=name), patch.dict(os.environ, {name: 'injected'}):
+                with self.assertRaisesRegex(ValueError, 'unsupported compiler environment: ' + name):
+                    R.tool_fingerprints(B)
+        with tempfile.TemporaryDirectory() as folder:
+            tc = Path(folder)
+            for name in ('pi32v2/bin/clang', 'pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy'):
+                path = tc / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture tool')
+            with patch.object(B, 'toolchain', return_value=tc), patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'):
+                with self.assertRaisesRegex(ValueError, 'missing compiler include root'):
+                    R.tool_fingerprints(B)
+                for name in R.HEADER_ROOTS:
+                    path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
+                before = R.tool_fingerprints(B)
+                header = tc / R.HEADER_ROOTS[0] / 'stdint.h'; header.write_text('changed header')
+                self.assertNotEqual(before['compiler_headers_sha256'], R.tool_fingerprints(B)['compiler_headers_sha256'])
+                with patch.object(R, 'input_hashes', return_value={}):
+                    with self.assertRaisesRegex(ValueError, 'source/tool/SDK inputs changed'):
+                        R.check_initial_inputs(B, {}, before)
+
+    def test_docker_ignores_unforwarded_compiler_search_but_refuses_host_injection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            tc = Path(folder)
+            for name in ('pi32v2/bin/clang', 'pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy'):
+                path = tc / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture tool')
+            for name in R.HEADER_ROOTS:
+                path = tc / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
+            with patch.object(B, 'use_docker', return_value=True), \
+                    patch.object(B, 'toolchain', return_value=tc), \
+                    patch.object(B.fm1pkg_make, 'sdk_file', return_value=b'sdk'), \
+                    patch.object(B, 'tc', side_effect=AssertionError('capture must not compile')), \
+                    patch.object(R, 'input_hashes', return_value={}), \
+                    patch.dict(os.environ, {name: '' for name in R.COMPILER_ENV}):
+                before = R.tool_fingerprints(B)
+                self.assertEqual(before['execution_environment']['backend'], 'docker')
+                for name in ('CPATH', 'LIBRARY_PATH', 'SDKROOT', 'CCC_OVERRIDE_OPTIONS'):
+                    with self.subTest(name=name), patch.dict(os.environ, {name: 'host-only-search'}):
+                        self.assertEqual(R.tool_fingerprints(B), before)
+                        R.check_initial_inputs(B, {}, before)
+                for name in ('LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH'):
+                    with self.subTest(name=name), patch.dict(os.environ, {name: 'host-injection'}):
+                        with self.assertRaisesRegex(ValueError, 'unsupported compiler environment: ' + name):
+                            R.tool_fingerprints(B)
 
     def test_cli_default_empty_and_explicit_tool_sdk_paths(self):
         # Run the actual CLI and build helpers in an isolated source tree. Only
@@ -206,7 +345,7 @@ class ResourceReport(unittest.TestCase):
             root = base / 'source'
             tools = root / 'tools'
             tools.mkdir(parents=True)
-            for name in ('build_report.py', 'build.py', 'fm1pkg_make.py', 'lz4blk.py'):
+            for name in ('build_report.py', 'build.py', 'fm1pkg_make.py', 'lz4blk.py', 'target_frames.py'):
                 shutil.copyfile(ROOT / 'tools' / name, tools / name)
             (tools / 'profile.py').write_text(
                 "def generated(root, name):\n"
@@ -214,6 +353,7 @@ class ResourceReport(unittest.TestCase):
                 "    return {}\n"
                 "def check_outputs(outputs, path): pass\n"
                 "def contract_json(root): return 'contract\\n'\n")
+            (tools / 'font_resources.py').write_text('def linked(root, gen, syms): return {}\n')
             (tools / 'build_identity.py').write_text('def check(root, gen): pass\n')
             (root / 'firmware/engines').mkdir(parents=True)
             shutil.copyfile(ROOT / 'firmware/app.ld', root / 'firmware/app.ld')
@@ -223,7 +363,9 @@ class ResourceReport(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('{}\n' if 'build-identity' in name else name)
-            evidence = self.evidence()
+            evidence = list(self.evidence())
+            evidence[2] += '02000120 l F .text 00000004 frame_fixture\n'
+            evidence[3] = ' 2000120: e2 9e \tsp += -8\n 2000122: 80 00 \trts\n'
             (root / 'build/felucca.bin').write_bytes(evidence[0])
             (root / 'build/felucca.dis').write_text(evidence[3])
             (root / 'build/profile-contract.json').write_text('contract\n')
@@ -245,6 +387,8 @@ class ResourceReport(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content)
                 path.chmod(0o755)
+            for name in R.HEADER_ROOTS:
+                path = toolchain / name / 'stdint.h'; path.parent.mkdir(parents=True); path.write_text('fixture header')
             for name in B.SDK_SHA256:
                 path = sdk / 'cpu/wl82/tools' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -274,6 +418,30 @@ class ResourceReport(unittest.TestCase):
                                             text=True, capture_output=True)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn('artifacts, inputs and configuration match', result.stdout)
+            frames_path = root / 'build/frames.json'
+            frame_command = command + ['--frame-output', str(frames_path)]
+            result = subprocess.run(frame_command, cwd=root, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            frames = json.loads(frames_path.read_text())
+            self.assertEqual(frames['functions'][0]['own_entry_bytes'], 8)
+            self.assertNotIn('worker_supervisor', frames['stack_reservations'])
+            self.assertEqual(frames['binding']['elf_sha256'], R.digest(root/'build/felucca.elf'))
+            for protected in (root/'build/resource-report.json', root/'build/felucca.elf'):
+                original = protected.read_bytes()
+                refused = subprocess.run(command + ['--frame-output', str(protected)], cwd=root,
+                                         env=env, text=True, capture_output=True)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn('overwrite verified evidence', refused.stderr)
+                self.assertEqual(protected.read_bytes(), original)
+            source = root/'firmware/app.ld'
+            original = source.read_bytes()
+            source.write_bytes(original + b'\n/* stale input */\n')
+            frames_path.unlink()
+            refused = subprocess.run(frame_command, cwd=root, env=env, text=True, capture_output=True)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn('stale resource report', refused.stderr)
+            self.assertFalse(frames_path.exists())
+            source.write_bytes(original)
             # Existing overrides with different bytes must still invalidate evidence.
             (custom_tc / 'pi32v2/bin/clang').write_text(compiler + '# different toolchain\n')
             (custom_sdk / 'cpu/wl82/tools/cfg_tool.bin').write_bytes(b'different SDK')

@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Joakim Eriksson
+# Trace-only adaptation for Felucca; upstream eef6d957aa94d3dfa74551688d707b984b792922.
+# Donor context and this patch retain MIT; see LICENSE-MIT-fm1-emu.txt.
+
+diff --git a/crates/fm1-emu/src/main.rs b/crates/fm1-emu/src/main.rs
+index 2bbba86bdb8f2fbe26017723410528e3722e133a..5755460c1ffb1f6f1e468ba31564d69a923157cb 100644
+--- a/crates/fm1-emu/src/main.rs
++++ b/crates/fm1-emu/src/main.rs
+@@ -540,22 +540,6 @@ fn main() -> ExitCode {
+             }
+             last_pc = cpu.pc;
+             let tail_name = soc_instruction_name(&soc, &cpu, last_pc).unwrap_or("?");
+-            if let Some((a, b)) = trace_range {
+-                if (a..b).contains(&total_steps) {
+-                    println!("T {total_steps} c{} {last_pc:#010x} {tail_name} irq={:?} ie={} r0={:#x} r1={:#x}", cpu.core_id, cpu.irq_levels, cpu.ie, cpu.regs[0], cpu.regs[1]);
+-                }
+-            }
+-            if tail.len() >= 80 {
+-                tail.pop_front();
+-            }
+-            tail.push_back((last_pc, tail_name, cpu.sp));
+-            if tail_name != "nop" && tail_name != "?" {
+-                let t = &mut tails[(cpu.core_id as usize).min(1)];
+-                if t.len() >= 60 {
+-                    t.pop_front();
+-                }
+-                t.push_back((last_pc, tail_name, cpu.sp));
+-            }
+             // a pc outside every code region: a wild jump (report where it came from)
+             let pc = cpu.pc;
+             let mapped = (RAM_BASE..RAM_BASE + 0x0010_0000).contains(&pc)
+@@ -603,6 +587,13 @@ fn main() -> ExitCode {
+             if ci == 0 {
+                 if cpu.irq_levels.is_empty() { busy[0] += 1 } else { busy[cpu.irq_levels.len().min(2)] += 1 }
+             }
++            // IRQ dispatch can replace the interrupted PC. Capture the actual instruction
++            // and its entry state now; publish a row only if Cpu::step retires it.
++            last_pc = cpu.pc;
++            let tail_name = soc_instruction_name(&soc, &cpu, last_pc).unwrap_or("?");
++            let tail_sp = cpu.sp;
++            let trace_row = trace_range.filter(|&(a, b)| (a..b).contains(&total_steps))
++                .map(|_| format!("T {total_steps} c{} {last_pc:#010x} {tail_name} irq={:?} ie={} r0={:#x} r1={:#x}", cpu.core_id, cpu.irq_levels, cpu.ie, cpu.regs[0], cpu.regs[1]));
+             let stepped = if cpu.core_id == 1 && soc.flaky_core1.is_some() {
+                 cpu.step(&mut fm1_soc::machine::Core1Loads(&mut soc))
+             } else {
+@@ -610,6 +601,20 @@ fn main() -> ExitCode {
+             };
+             match stepped {
+                 Ok(()) => {
++                    if let Some(row) = trace_row {
++                        println!("{row}");
++                    }
++                    if tail.len() >= 80 {
++                        tail.pop_front();
++                    }
++                    tail.push_back((last_pc, tail_name, tail_sp));
++                    if tail_name != "nop" && tail_name != "?" {
++                        let t = &mut tails[(cpu.core_id as usize).min(1)];
++                        if t.len() >= 60 {
++                            t.pop_front();
++                        }
++                        t.push_back((last_pc, tail_name, tail_sp));
++                    }
+                     if let (Some(a), Some(old)) = (args.watch, watch_val) {
+                         let now = soc.read32(a);
+                         if now != old {
+@@ -634,8 +639,7 @@ fn main() -> ExitCode {
+                                 count = cpu.insn_count,
+                                 pc = last_pc,
+                                 sp = cpu.sp,
+-                                insn = soc_instruction_name(&soc, &cpu, last_pc)
+-                                    .unwrap_or("?"),
++                                insn = tail_name,
+                                 r0 = cpu.regs[0],
+                             );
+                         }
+@@ -809,7 +813,7 @@ fn main() -> ExitCode {
+             println!("  {:#010x}: {}", addr + 4 * row, words.join(" "));
+         }
+     }
+-    ExitCode::SUCCESS
++    if halt.is_some() { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+ }
+
+ /// The SoC doesn't track names; recover the executed class name by decoding
+@@ -817,9 +821,10 @@ fn main() -> ExitCode {
+ /// tracing).
+ fn soc_instruction_name(_soc: &Soc, cpu: &Cpu, pc: u32) -> Option<&'static str> {
+     if let Ok(win) = fetch_window(_soc, pc) {
+-        if let Ok(insn) = fm1_isa::decode_win_cached(win, pc) {
++        // Use the CPU's decoder, including its raw-family overrides.
++        if let Some((_, name)) = fm1_core::decode_info(win, pc) {
+             let _ = cpu;
+-            return Some(insn.entry.name);
++            return Some(name);
+         }
+     }
+     None

@@ -14,8 +14,7 @@ static void read_text(const char *s, uint32_t flags);
 #define GFX_HOOK_BEGIN() ((void)0)
 #define GFX_HOOK_BLIT(x, y, r0) ((void)0)
 #define GFX_HOOK_PIXELS(n) ((void)0)
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 static double read_luma(uint16_t color)
 {

@@ -89,8 +89,9 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - [uv](https://docs.astral.sh/uv/) and Python 3 (the UI font and icons are rasterised
   at build time). On macOS, install uv with `brew install uv`. The locked `build`
   dependency group provides Pillow, fontTools and Brotli.
-- Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
-  `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
+- Docker Desktop. The JieLi toolchain is Linux x86-64 only; target builds use a
+  `linux/amd64` `debian:bookworm-slim` container using Docker's x86 emulation on Apple silicon.
+  Rosetta is optional and is not required for a successful build. Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
 - The JieLi Linux toolchain (clang 4.0.1 for pi32v2, from JieLi's package server):
 
@@ -110,6 +111,32 @@ contract; run `python3 tests/engine_contract_test.py` and the Engines standalone
 - Emscripten (optional, `emcc`: the browser emulator, `web/emu/`).
 
 On Linux x86-64 the toolchain runs natively and Docker is not needed.
+
+A target-builder invocation owns one lazily started container: loader/app workers and
+resource-report tool calls share it, with the toolchain mounted read-only. It is removed
+on success, build failure, SIGINT or SIGTERM. Lifecycle Docker clients run in separate
+sessions so terminal interrupts reach the Python owner, which waits for an in-flight
+startup response before removing its container. No container or compiled-output cache is
+reused across builds. Independent builds have different container identities. Linux-native
+execution is unchanged. Standalone imported tool calls, including resource-report CLI
+verification, continue to use temporary one-shot containers. A target builder called
+outside Python's main thread also uses the one-shot path, because it cannot install
+process signal handlers for persistent-container cleanup.
+
+Before reuse, the builder inspects the selected `linux/amd64` image configuration.
+It starts an advertised immutable repository digest when available, or the image ID
+for older image stores. A manifest/index without a usable repository digest uses
+the one-shot path rather than assuming its selected manifest ID is runnable.
+Custom images with an `ENTRYPOINT`, or images whose selected configuration cannot be
+verified, use the existing one-shot path with a visible note. The default image must
+support `sleep infinity` and direct tool execution. Docker-compatible Podman clients may
+use plain image inspection only when it proves the same Linux/amd64 configuration.
+No TTY or shell wraps compiler arguments. Cleanup cannot be guaranteed after SIGKILL,
+a host crash or loss of the container engine; a cleanup failure reports the exact owned
+container name/ID and never removes another build's container. Do not treat that failure
+as a clean successful lifecycle. This changes build overhead, not firmware arithmetic,
+compiler flags or audio CPU use.
+
 Install uv using its [installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
 ### Python environments
@@ -151,6 +178,49 @@ uv run --locked --group build ./build.sh
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
+### Final-image soft-double policy
+
+Every target application build checks the final linked ELF symbol table against
+26 exact double-precision helper names exported by the generic JieLi Clang 4.0.1
+compiler runtime (`SOFT_DOUBLE_HELPERS` in `tools/build.py`). The check covers double
+arithmetic/comparisons, fp32/double and double/half conversions, signed/unsigned
+32/64-bit integer/double conversions, and complex-double multiply/divide. A helper
+defined in an allocated `CODE` output section fails the build, including local,
+weak and zero-sized aliases. The diagnostic lists the names: inspect the expressions
+that introduced them and use intentional fp32/fixed-point operations. There is no
+profile or radio exemption and no override flag.
+
+GNU-style section headers must show `ALLOC` and `CODE`. Their attribute lists use
+only the reviewed words `CONTENTS`, `ALLOC`, `LOAD`, `READONLY`, `CODE`, `DATA` and
+`DEBUGGING`; an unknown word or malformed list cannot establish nonexecution for a
+matching helper and fails with a section-evidence diagnostic. The installed JieLi
+objdump instead reports `TEXT`/`DATA`; for that format, the detector requires `TEXT`
+in one of `app.ld`'s allocated executable outputs (`.text`, `.ram_text`, `.c1_text`).
+An unfamiliar `TEXT` output containing a matching helper fails with a section-evidence
+diagnostic until its allocation is reviewed.
+
+Undefined, absolute, common, file/section/debug records and symbols in nonallocated
+or nonexecutable sections do not establish linked code. Integer-only 64-bit helpers,
+fp32 helpers and ordinary names containing `double` remain outside this policy.
+Matching helper rows with malformed symbol/section evidence fail the check rather
+than establishing absence. A successful check means only that no known helper is
+defined in final executable sections; it does not prove hardware FPU use, absence
+of every double expression or improved CPU time. New toolchain/ABI spellings need
+a reviewed policy and fixture update. See [performance guidance](docs/performance.md#soft-double-link-guard).
+
+Portable coverage is in `python3 tests/build_guard_test.py` (also run with `python3 -O`).
+The separate `python3 tests/build_guard_target_test.py` compiles dynamic double
+arithmetic/conversions and an fp32 control with the production generic flags. Only
+these tiny probes link the installed generic `pi32v2/lib/libcompiler_rt.a` to prove
+the final-image detector; the firmware's explicit-object link remains unchanged.
+The fixture retains sources, objects, undefined object symbols, final ELF symbols,
+section headers, disassembly, link logs and tool/runtime hashes in a fresh directory
+under `build/host/build_guard_target/`. It also preserves the existing integer-64
+compile/link cases. An absent default toolchain produces an explicit skip; an
+explicitly configured missing toolchain, a missing runtime archive or a failed
+probe fails the fixture. A skip is not target evidence. No FM-1 execution is needed
+to validate this build-only policy.
+
 Native firmware uses M8Stealth only. `FELUCCA_FONT` may be unset or explicitly
 `m8stealth`; retired `tamzen` and `inter-tight` values fail before generation.
 After updating from an older font build, rebuild assets and firmware before
@@ -169,6 +239,38 @@ Real FM-1 readability and
 redraw behavior remain pending. The dated [font experiment](docs/font-experiment.md)
 retains the historical comparisons; removing alternate build options does not
 itself save bytes in a build that already selected M8Stealth.
+
+`assets/fonts/m8stealth/resource-policy.json` pins the native font inputs, generated
+header hash, glyph coverage/metrics and shared payloads. Generation writes
+`build/gen/ui-font-manifest.json` and rejects an unreviewed change before writing
+the font header. Host/emulator profile freshness checks reject a stale header or
+manifest. The approved current pi32v2 array/descriptor bound is **4,630 B**:
+1,164 B S/M bitmap payload, 3,176 B glyph records, 110 B extra-code arrays and
+180 B descriptors. L/N/X reference M's payload. This excludes inter-object alignment
+padding and supersedes the historical 3,340 B S/M/L-only figure for this gate.
+
+For an intentional font change, review the generator/assets and reproduce its output
+in an isolated directory. Use `font_resources.inventory(root, header_text)` to inspect
+the proposed contract, then review the policy's `expected` and bound changes together.
+There is no automatic budget update option. Confirm the target's actual `AF_*`
+symbol sizes with JieLi Clang 4.0.1; the policy models 8 B glyph records and 36 B
+descriptors with 4 B pointers. A successful target build checks those exact linked
+sizes and records separate named keycap, icon, decoder/ramp and cache groups in
+the existing resource report. Missing optional groups are marked unlocated, and
+inlined code remains in its callers. Whole-image/RAM/POOL/stack accounting stays
+in that report; these groups are subsets, not additional allocation.
+
+To check the generator and causal rejection fixtures without hardware:
+
+```sh
+mkdir -p build/font-check
+uv run --locked --group build python tools/gen_bitmap_font.py build/font-check/ui_fonts.h
+python3 tests/bitmap_font_test.py
+```
+
+Expected: the approved configuration passes; fixtures reject extra faces, duplicated
+scaled payloads, glyph/asset growth, stale inputs/configuration and incorrect linked
+sizes. These checks change no runtime bytes or physical readability acceptance.
 
 `uv run --locked --group build ./build.sh --release 1.0` makes a release build:
 the package identity becomes `FM-1_910`
@@ -316,6 +418,53 @@ This uses the native browser-emulator integration on Linux/macOS and needs no ha
 uv run --locked --group build tests/run_tests.sh
 ```
 
+In upstream GitHub Actions (`kmplngj/Felucca`), the `profiles` unit also runs
+`tests/native_bundle_integration.py`:
+two isolated real target builds (Git control and verified Git-free source), followed
+by native bundle creation/verification and independent stable-key metadata checks.
+It uses `build.sh` and its normal toolchain/SDK defaults; the original CI build and runtime stay untouched.
+Local `profiles` remains a host-only check. To run the native proof explicitly after
+a fresh matching target build in a clean committed checkout, use
+`uv run --locked --group build python tests/native_bundle_integration.py`.
+Stale reports or missing build prerequisites fail.
+Logs and the actual bundle are retained under `build/ci/native-bundle/run-*/`.
+The controlled pair uses commit identity without the CI PR display label; it does
+not claim byte equality with the outer PR-labelled firmware or device acceptance.
+
+The optional [offline level audit](docs/loudness-audit.md) uses the `audit`
+dependency group and an isolated native host renderer. Its focused checks run with
+`uv run --locked --group audit python tests/loudness_audit_test.py` and in the
+separate **Host loudness audit** workflow; they need no target SDK or device.
+The audit retains source,
+compiler, sample-rate and capture provenance alongside its measurements and
+bounded audition files. Host levels do not qualify physical DAC/USB levels or
+authorize changing factory sounds.
+
+The `input` unit also runs `python3 tests/input_contract_test.py`. It compiles
+the actual hardware, UI-test, settings-test and browser input adapters against the
+shared button-edge, note-edge and encoder function types they implement. Negative
+fixtures require incompatible signatures across the UI, settings and browser
+adapters to fail compilation. The UI fake supplies press edges only; this check
+does not add release simulation or qualify physical input timing.
+
+The native UI tests and their consumers share `tests/ui_harness.h`: the real
+firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
+blank-frame observers, power-on setup and panel/keyboard helpers. Define any
+consumer-specific IRQ, boot or drawing hooks before including it. The UI scenario
+entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
+for its LCD-submission ordering assertions. Consumers include the harness directly;
+they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
+
+The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
+their sanitizer builds. This existing NOR model only clears programmed bits, rejects
+256-byte page wrapping, and models sticky power cuts during programming or half an
+erase. Its program counter counts completed bytes; its erase counter excludes requests
+refused before work. Reads remain available for recovery after a cut. The user-preset
+fixture checks every payload/header byte-cut boundary, interrupted/refused erases
+and restored-power retries through the production bank/storage code; it does not exercise runtime
+`up_put` mirror rollback. Storage and persistence tests retain their different retry
+and operation-counting models.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for
@@ -334,6 +483,38 @@ suite fail. Interrupting the runner terminates its worker process groups. Run
 simultaneous full suites in separate worktrees: a checkout lock protects shared
 generated outputs. Generate assets before starting a suite, and leave sources,
 assets and build flags unchanged while it runs.
+
+For development feedback, select named units and their prerequisite closure:
+
+```sh
+uv run --locked --group build python tests/test_jobs.py tests/run_tests.sh --preflight --select ui,ui_render --ai-output
+```
+
+This writes an explicitly focused report. It cannot satisfy strict full-suite
+verification. Unknown units fail instead of silently reducing coverage.
+
+Keep development PRs in draft: known source changes and matching test entry points
+use focused CI plus fresh target/resource/package guards. Shared or unknown inputs
+still select complete validation. A full local suite is not required just to open
+a draft or after every edit. Mark the frozen candidate ready for review to run its
+complete applicable CI plan before merge. Successful matching CI can supply final
+validation evidence without an identical local full-suite rerun; refresh checks
+after code changes or failures. See [the stage policy](.github/CI.md#feedback-and-merge-stages).
+Exact selector/helper-contract-only changes need the unconditional workflow/helper
+checks and skip firmware/audio/browser builds, even when ready or pushed to `main`.
+Workflow YAML and shared scheduler/coverage implementations retain full validation.
+
+CI runs the complete unit plan across two independent runners. Each uses
+`tests/test_jobs.py tests/run_tests.sh --preflight --shard 1/2 --cohort ID`
+(the other uses `2/2`), a fresh individual coverage ID and matching source,
+generated inputs, compilers, profile and flags. Dependency-connected units stay
+on the same runner; every unit has exactly one owner. The final required check
+verifies both complete receipt directories with
+`tools/test_coverage.py verify-shards --cohort ID RECEIPT1 RECEIPT2`.
+Missing or duplicate units/shards, changed inputs, incomplete children and altered
+logs or outputs fail the aggregate. Ordinary full verification rejects individual
+shards. These controls preserve the existing full plan; they do not qualify FM-1
+timing or physical behavior. See [CI stages and receipts](.github/CI.md#feedback-and-merge-stages).
 
 For AI-assisted runs or a short console report, use:
 
@@ -412,6 +593,21 @@ and swing. With `DAISYSP` pointing at a DaisySP checkout, the PHYS models are al
 their floating-point originals; without it that test is skipped. Felucca-Engines' own test
 (`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
 against the same golden renders.
+
+The USB and USB sanitizer units also run
+[the composite-service fixture](tests/usb_service_test.c) with CDC compiled in/out
+at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enabled.
+It executes the actual USB poll/control/audio-service code against a finite HAL-only
+SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recovery,
+control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
+nested EP4 ownership. Controllable SIE completion checks delayed/failed accesses,
+consecutive-failure shutdown and actual startup/retry/detach paths, including retry
+clock wrap. Suspend/resume, missing SOF and repeated frozen-frame episodes retain
+accepted application data and recover through explicit host events. Matched audio
+producer/host-token schedules compare packet bytes; negative transcript controls
+reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,
+not physical service time, controller races or host-driver qualification. Existing
+UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
 
 The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
 and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
@@ -536,6 +732,11 @@ data-driven scenarios, exact repeat checks and retained WAV/JSON evidence under
 `build/stress/`. This first increment uses direct host musical input; emulator/device
 adapters and instruction counts remain follow-ups. The full host runner includes it.
 
+For the optional external emulator trace prerequisite, use the
+[pinned source/build and executable controls](docs/emulator-trace-prerequisite.md).
+It needs a separate Rust toolchain; its portable refusal tests run in the normal
+host suite without Rust. Native hotspot attribution remains a follow-up.
+
 ### Emulator partition regression
 
 With Node and generated assets, the runner rebuilds the real browser bridge natively;
@@ -577,6 +778,21 @@ differing PCM/state word appear in the output; fixture code is in
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
+
+For an existing private flash dump or `.fwsc` package, the standard-library
+[offline boot-area survey](docs/boot-area-survey.md) checks bounded boot records,
+SPL CRCs, chip key and declared clock fields without opening a device. Use
+`python3 tools/fm1_bootarea.py --raw FILE` or `--package FILE` for the known saved
+format; no firmware build is needed. Format hints are not authentication,
+installer permission, a complete backup or live clock measurements.
+
+For saved raw bytes beginning at flash address zero, the standard-library
+[offline update-record survey](docs/update-record-survey.md) reports native-loader
+record-predicate matches and exact supplied coverage:
+`python3 tools/fm1_update_records.py --raw FILE`. It opens no device and performs
+no decryption or writes. Matches and no-match results do not establish external SPL
+behavior, bootability or safe storage capacity.
+
 For static native HOME/menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
 and standard-library host CLI are described in [screen capture](docs/screen-capture.md).
 Normal builds leave it disabled; release packaging rejects the diagnostic flag.
@@ -850,9 +1066,12 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 On a build with early USB rescue, hold OCT− while powering on to reach the
 MIDI-only updater before settings/projects and audio initialize. Use the same
 reviewed `.fwsc` and supported installer. See [early USB rescue](docs/usb-rescue.md)
-for the loader matrix, exact client versions and pending hardware checks.
-If application rescue cannot start, ROM recovery is a separate path; some faults
-need [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+for the accepted PR #487 entry result, loader matrix and remaining qualification.
+If application rescue cannot start, the [existing M-Flasher ROM path](docs/usb-rescue.md#rom-recovery-with-existing-m-flasher)
+provides saved-file inspection and a separate device backup/recovery procedure.
+File-only checks open no device; live ROM sessions may upload a RAM loader and
+need host permissions. A unit with no reachable USB route can still need
+[FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
 
 ### Package validation and file errors
 
@@ -877,6 +1096,11 @@ Device discovery and connection errors occur later: exit code 3 means the FM-1 w
 found (check the USB data cable and other apps using MIDI), 4 means the connection was lost
 or the device stopped, 5 means a timeout, and 6 means a model or installed-identity mismatch.
 Run `uv run --locked --group midi tools/fm1_install.py --help` for the options and complete exit-code list.
+
+The Python installer allows 8 seconds without a valid update request during package staging
+and 180 seconds during writing. Unrelated or malformed SysEx does not reset that idle budget.
+Valid requests renew it, so a progressing transfer may take longer than the idle interval.
+A stalled transfer still reports exit code 4; follow the installer's phase-specific retry guidance.
 
 If package generation reports `app area is ... B, available ... B`, the app region plus
 the SDK configuration files and headers exceeds the flash boundary. The app fitting its
@@ -948,6 +1172,8 @@ Every successful target build also writes `build/resource-report.json`, bound to
 actual source/generated inputs, effective configuration and output artifacts. It records
 app, RAM, POOL, RAMTEXT and NOINIT used/spare bytes, enforced minimum spare and remaining
 margin, plus static stack reservations. Existing build/linker guards remain authoritative.
+Schema version 2 adds the checked native font manifest and separate named UI resource
+groups; verification retains support for schema version 1 reports without those fields.
 The report is removed at the start of the next attempted build, including failed attempts.
 To recheck matching artifacts and sources, retain the build directory and use the same
 profile/font/feature environment and toolchain/SDK:
@@ -956,9 +1182,23 @@ profile/font/feature environment and toolchain/SDK:
 python3 tools/build_report.py --verify build/resource-report.json
 ```
 
+After successful verification, add `--frame-output build/stack-entry-frames.json`
+to export observed target entry frames. The [frame evidence guide](docs/stack-frame-evidence.md)
+explains unsupported instructions, ASM boundaries and unresolved calls. This optional
+inventory is not a stack-fit or live-watermark result and changes no reservation.
+
 The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`
 and `AC79_SDK` values override those defaults; unset or empty values use them.
+
+Initial input capture refuses unsupported compiler search/configuration variables
+for native target builds, including `CPATH`, `LIBRARY_PATH` and `SDKROOT`. Docker
+does not forward these host values, so Docker target builds ignore them. Host loader
+injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`) remains refused
+with either backend because generators still run on the host. `LD_LIBRARY_PATH`
+is allowed and bound only by a value hash, not by the selected library contents.
+The optional paired Wasm build runs on the host and still refuses compiler-search
+overrides even when its target used Docker. See [build-input identity and limits](docs/build-bundles.md#identity-and-immutability).
 
 Verification hashes all required artifacts and input files, recomputes effective compiler
 macros and resource/stack figures from the ELF, and rejects stale or mismatched evidence.

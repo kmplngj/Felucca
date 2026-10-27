@@ -142,7 +142,7 @@ def stop(processes):
         process.wait()
 
 
-def execute(script, output, env, ai_output=False, preflight=False):
+def execute(script, output, env, ai_output=False, preflight=False, scope=None):
     # Generic scheduler fixtures also copy this CLI outside a firmware checkout.
     # They have no firmware evidence contract and can never satisfy verify-tests.
     production = (script.resolve() == Path(__file__).with_name('run_tests.sh').resolve()
@@ -158,10 +158,10 @@ def execute(script, output, env, ai_output=False, preflight=False):
         except BlockingIOError:
             raise ValueError("another host suite is using this checkout; use a separate worktree")
         contract = coverage.Coverage(script.parent.parent, contract_env) if production else None
-        return run_locked(script, output, env, count, ai_output, preflight, contract, logs)
+        return run_locked(script, output, env, count, ai_output, preflight, contract, logs, scope)
 
 
-def run_locked(script, output, env, count, ai_output=False, preflight=False, contract=None, logs=None):
+def run_locked(script, output, env, count, ai_output=False, preflight=False, contract=None, logs=None, scope=None):
     worker_env = dict(contract.worker_env if contract else env)
     if count > 1:
         # Bound inner render fan-out, while preflight keeps the caller's environment.
@@ -178,7 +178,7 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False, con
     flushed = 0
     start = time.monotonic()
     summary = dict(jobs=count, inner_jobs=worker_env.get("JOBS", "default"), status="failed", units=plan,
-                   output_mode="ai" if ai_output else "full")
+                   output_mode="ai" if ai_output else "full", scope=scope or dict(kind="full"))
     if ai_output:
         print(f"host: running; logs={logs}", flush=True)
 
@@ -236,7 +236,7 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False, con
         if stderr and not ai_output:
             print(stderr, file=sys.stderr, end="")
         try:
-            plan.extend(parse_plan(stdout))
+            plan.extend(coverage.select_plan(parse_plan(stdout), summary["scope"]))
         except ValueError as error:
             planner["status"] = "failed"
             planner["error"] = "invalid host-test plan"
@@ -352,14 +352,28 @@ def main():
     parser.add_argument("script", type=Path)
     parser.add_argument("--ai-output", action="store_true", help="compact results; retain complete logs")
     parser.add_argument("--preflight", action="store_true", help=argparse.SUPPRESS)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument('--shard', help='dependency-preserving shard, 1/2 or 2/2')
+    selection.add_argument('--select', help='comma-separated units plus prerequisite closure; partial coverage')
+    parser.add_argument('--cohort', help='shared fresh CI invocation identity for both shards')
     args = parser.parse_args()
+    scope = dict(kind='full')
+    if args.shard:
+        if args.shard not in ('1/2', '2/2') or not args.cohort:
+            parser.error('--shard requires 1/2 or 2/2 and --cohort')
+        scope = dict(kind='shard', index=int(args.shard[0]), count=2, cohort=args.cohort)
+    elif args.select is not None:
+        scope = dict(kind='focused', selected=args.select.split(','))
+    elif args.cohort:
+        parser.error('--cohort requires --shard')
     try:
-        code = execute(args.script.resolve(), Path("build/host"), os.environ, args.ai_output, args.preflight)
+        code = execute(args.script.resolve(), Path("build/host"), os.environ, args.ai_output, args.preflight, scope)
     except (ValueError, OSError) as error:
         print(f"host runner: {error}", file=sys.stderr)
         code = 1
     if not args.ai_output:
-        print("ALL HOST TESTS PASSED" if code == 0 else "HOST TESTS FAILED", flush=True)
+        print(("ALL HOST TESTS PASSED" if scope["kind"] == "full" else "SELECTED HOST TESTS PASSED")
+              if code == 0 else "HOST TESTS FAILED", flush=True)
     return code
 
 

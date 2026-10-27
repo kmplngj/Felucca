@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Host test of the user preset record (firmware/src/upreset.c, -DUP_HOST part):
- * UP_PUT parsing, a bank round trip through storage.c on a simulated NOR,
+ * UP_PUT parsing, bank round trips and power-cut recovery through storage.c on the shared NOR,
  * bank / record version checks, map-by-count, pattern <-> steps, PHYS MODEL DRUM records -> the DRUM engine,
  * drum grid records (version 3: UP_PUT's kind 1 and its high bits, a round trip). */
 #include <stdint.h>
@@ -14,17 +14,7 @@
 #define CTL 32
 #include "../firmware/src/core.h"
 
-static uint8_t nor[0x100000];
-static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
-static int st_erase(uint32_t off) { memset(nor + off, 0xFF, 4096); return 0; }
-static int st_prog(uint32_t off, const void *src, uint32_t n)
-{
-    const uint8_t *s = src;
-    uint32_t i;
-    for (i = 0; i < n; i++)
-        nor[off + i] &= s[i];
-    return 0;
-}
+#include "host_nor.h"
 #include "../firmware/src/storage.c"
 #include "../firmware/src/upreset.c"
 
@@ -52,6 +42,134 @@ static uint32_t put_frame(uint8_t *a, uint32_t slot, uint32_t eng, const char *n
         a[n++] = (uint8_t)(i == 3u ? 4u : i % 3u ? 1u : 2u);   /* step 3: tie; slide on a rest drops */
     }
     return n;
+}
+
+/* UP_HOST deliberately excludes up_put and its runtime mirror/rollback policy.
+ * Exercise the real bank record loader and storage transaction instead. */
+static void nor_power_on(void)
+{
+    erase_error = dead = 0;
+    cut_bytes = cut_erase = -1;
+    erases = progs = 0;
+}
+
+static int bank_fixture(up_bank_t *bank, uint32_t b, int newer)
+{
+    uint8_t frame[640];
+    uint32_t i, slot, n;
+    memset(bank, 0, sizeof *bank);
+    bank->magic = UP_BANK_MAGIC;
+    bank->rsize = sizeof(up_rec_t);
+    bank->nslot = UP_PER_BANK;
+    for (i = 0; i < UP_PER_BANK; i++) {
+        n = put_frame(frame, b * UP_PER_BANK + i, 0, newer ? "New bank" : "Old bank", (int32_t)i + newer);
+        if (up_parse(frame, n, &bank->r[i], &slot) || slot != b * UP_PER_BANK + i)
+            return 0;
+        up_set_cat(&bank->r[i], newer ? CAT_FX : CAT_KEYS);
+        bank->r[i].note[0] = (uint8_t)(40u + i + (uint32_t)newer);
+    }
+    return 1;
+}
+
+static int bank_is(uint32_t b, const up_bank_t *expected)
+{
+    int len;
+    memset(&up_bank[b], 0xA5, sizeof up_bank[b]);
+    len = st_load(OBJ_UPRESET0 + b, &up_bank[b], sizeof up_bank[b]);
+    up_bank_check(b, len);
+    return len == (int)sizeof *expected && !memcmp(&up_bank[b], expected, sizeof *expected);
+}
+
+static int outside_is(uint32_t base, const uint8_t *before)
+{
+    return !memcmp(nor, before, base) &&
+           !memcmp(nor + base + ST_SECTOR, before + base + ST_SECTOR, sizeof nor - base - ST_SECTOR);
+}
+
+static int bank_transactions(void)
+{
+    static uint8_t before[sizeof nor];
+    up_bank_t old, next, neighbor;
+    uint8_t torn[ST_SECTOR];
+    uint32_t b, to, cut, k, base, total = sizeof(next) + sizeof(st_hdr_t), trials = 0;
+    int bad = 0, ok, rc;
+    for (b = 0; b < 2u; b++) {
+        for (to = 0; to < 2u; to++) {
+            nor_power_on();
+            /* Guard all unrelated flash, including the adjacent sample/staging
+             * regions. Seed both banks through the real transaction owner. */
+            memset(nor, 0x5A, sizeof nor);
+            memset(nor + st_sector(OBJ_UPRESET0, 0), 0xFF, 4u * ST_SECTOR);
+            ok = bank_fixture(&old, b, 0) && bank_fixture(&next, b, 1) && bank_fixture(&neighbor, 1u - b, 2);
+            ok &= !st_save(OBJ_UPRESET0 + (1u - b), &neighbor, sizeof neighbor);
+            /* Both destination choices contain an older committed record; the
+             * third save puts the current copy back in A when testing B. */
+            for (k = 0; k < 2u + to; k++)
+                ok &= !st_save(OBJ_UPRESET0 + b, &old, sizeof old);
+            base = st_sector(OBJ_UPRESET0 + b, to);
+            ok &= bank_is(b, &old) && bank_is(1u - b, &neighbor);
+            bad += check("transaction fixtures: two committed user banks", ok);
+            if (!ok) return bad;
+            memcpy(before, nor, sizeof nor);
+            ok = 1;
+            /* A cut before byte zero, every payload/header byte, and the exact
+             * complete-commit boundary. No absent/partial bank is acceptable. */
+            for (cut = 0; cut <= total; cut++) {
+                memcpy(nor, before, sizeof nor);
+                nor_power_on();
+                cut_bytes = (long)cut;
+                rc = st_save(OBJ_UPRESET0 + b, &next, sizeof next);
+                ok &= erases == 1u && progs == cut && outside_is(base, before);
+                if (cut < total) {
+                    ok &= rc == -9 && dead && bank_is(b, &old);
+                    memcpy(torn, nor + base, sizeof torn);
+                    /* Power loss is sticky: retries cannot erase/program more. */
+                    ok &= st_save(OBJ_UPRESET0 + b, &next, sizeof next) == -8 &&
+                          erases == 1u && progs == cut && !memcmp(torn, nor + base, sizeof torn);
+                    nor_power_on();
+                    ok &= !st_save(OBJ_UPRESET0 + b, &next, sizeof next) &&
+                          erases == 1u && progs == total && bank_is(b, &next);
+                } else {
+                    ok &= !rc && !dead && bank_is(b, &next);
+                }
+                ok &= outside_is(base, before) && bank_is(1u - b, &neighbor);
+                trials++;
+                if (!ok) {
+                    printf("bank transaction failed: bank %u destination %u cut %u/%u\n", b, to, cut, total);
+                    break;
+                }
+            }
+            bad += check("every bank payload/header cut: old or complete new, retry and neighbors", ok);
+
+            memcpy(nor, before, sizeof nor);
+            nor_power_on();
+            cut_erase = 0;
+            rc = st_save(OBJ_UPRESET0 + b, &next, sizeof next);
+            ok = rc == -8 && dead && erases == 1u && !progs && bank_is(b, &old) && outside_is(base, before);
+            for (k = 0; k < ST_SECTOR / 2u; k++) ok &= nor[base + k] == 0xFF;
+            ok &= !memcmp(nor + base + ST_SECTOR / 2u, before + base + ST_SECTOR / 2u, ST_SECTOR / 2u);
+            memcpy(torn, nor + base, sizeof torn);
+            ok &= st_save(OBJ_UPRESET0 + b, &next, sizeof next) == -8 && erases == 1u && !progs &&
+                  !memcmp(torn, nor + base, sizeof torn);
+            nor_power_on();
+            ok &= !st_save(OBJ_UPRESET0 + b, &next, sizeof next) && erases == 1u && progs == total &&
+                  bank_is(b, &next) && bank_is(1u - b, &neighbor) && outside_is(base, before);
+            bad += check("half erase: old bank, sticky cut, restored-power retry", ok);
+
+            memcpy(nor, before, sizeof nor);
+            nor_power_on();
+            erase_error = 1;
+            rc = st_save(OBJ_UPRESET0 + b, &next, sizeof next);
+            ok = rc == -8 && !dead && !erases && !progs && !memcmp(nor, before, sizeof nor) && bank_is(b, &old);
+            nor_power_on();
+            ok &= !st_save(OBJ_UPRESET0 + b, &next, sizeof next) && erases == 1u && progs == total &&
+                  bank_is(b, &next) && bank_is(1u - b, &neighbor) && outside_is(base, before);
+            bad += check("refused erase: no work or damage, restored-power retry", ok);
+        }
+    }
+    printf("bank transactions: %u programmed-byte boundaries across both banks/copies\n", trials);
+    nor_power_on();
+    return bad;
 }
 
 int main(void)
@@ -404,6 +522,7 @@ int main(void)
         bad += check("category: a version 3 grid -> 5 with it, values kept; one that cannot be packed keeps none",
                      ok && got.ver == 3u && up_cat_of(&got) == CAT_DRUM && !memcmp(&got, &r, sizeof r));
     }
+    bad += bank_transactions();
     printf("%s\n", bad ? "USER PRESET TEST FAILED" : "user preset test passed");
     return bad != 0;
 }
