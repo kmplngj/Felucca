@@ -381,12 +381,14 @@ class ParserTests(unittest.TestCase):
                 parsed = diag.parse_response("inp", text.encode())
                 self.assertEqual(parsed["issues"], [])
                 self.assertEqual(parsed["fields"][key], diag.scalar(value))
-            for bad in ("not-a-number", "1.5", "-1", "-2147483648", "4294967296", "0x100000000", "9" * 5000):
+            for bad in ("", "not-a-number", "1.5", "-1", "-2147483648", "4294967296", "0x100000000", "9" * 5000):
                 with self.subTest(key=key, bad=bad[:20]):
                     text = re.sub(r"(?m)^" + key + r" .*", key + " " + bad, INP)
                     parsed = diag.parse_response("inp", text.encode())
                     self.assertIn("invalid uint32 " + key, parsed["issues"])
                     self.assertEqual(parsed["fields"][key], diag.scalar(bad))
+                    if bad == "":
+                        self.assertIn(key, parsed["unknown_lines"])
                     window = diag.input_window({"commands": {"inp": parsed}}, 1, False, True, "enabled")
                     self.assertEqual(window["validity"], "INVALID")
                     self.assertEqual(window["latency"], "UNMEASURED")
@@ -551,6 +553,24 @@ class SessionTests(unittest.TestCase):
                 saved = json.loads((capture.directory / "summary.json").read_text())
                 self.assertEqual(saved["validity"], "INVALID")
                 self.assertEqual(saved["end_snapshot"]["commands"]["inp"]["fields"]["key_noteon_avg_us"], "not-a-number")
+
+    def test_empty_latency_value_invalidates_session_not_legacy_absence(self):
+        for suffix in ("", " ", "\t"):
+            bad = INP.replace("key_press_max_us 1300", "key_press_max_us" + suffix)
+            summary, events, transport = self.run_session(input_at=1, input_text=bad, input_latency="enabled")
+            self.assertEqual(summary["validity"], "INVALID")
+            self.assertIsNone(summary["deltas"]["status"]["audio_late"])
+            self.assertFalse(summary["end_snapshot"]["complete"])
+            self.assertEqual(summary["end_snapshot"]["input_window"]["latency"], "UNMEASURED")
+            self.assertEqual(len(transport.writes), 7)
+            response = [e for e in events if e["type"] == "response"][-1]
+            self.assertIn("invalid uint32 key_press_max_us", response["issues"])
+            self.assertEqual(response["fields"]["key_press_max_us"], "")
+            self.assertIn("key_press_max_us", response["unknown_lines"])
+            self.assertIn(("key_press_max_us" + suffix + "\r\n").encode(), base64.b64decode(response["raw_b64"]))
+        parsed = diag.parse_response("inp", (INP + "key_future_empty\n").encode())
+        self.assertEqual(parsed["issues"], [])
+        self.assertIn("key_future_empty", parsed["unknown_lines"])
 
     def test_partial_legacy_latency_keeps_continuous_session_unmeasured(self):
         old = "\n".join(line for line in INP.splitlines()

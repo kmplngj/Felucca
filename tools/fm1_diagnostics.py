@@ -145,9 +145,14 @@ def parse_response(command, raw):
             match = re.fullmatch(r"([A-Za-z_][A-Za-z_0-9]*) (.+)", line)
             if not match:
                 extra.append(line)
-                continue
-            key, value = match.groups()
-            value = scalar(value)
+                if command != "inp" or line not in INPUT_LATENCY_FIELDS:
+                    continue
+                # A known field with no value is malformed evidence, not a
+                # legacy reply that omits the field. Retain the original line.
+                key, value = line, ""
+            else:
+                key, value = match.groups()
+                value = scalar(value)
         if key in fields:
             duplicates.append(key)
         fields[key] = value
