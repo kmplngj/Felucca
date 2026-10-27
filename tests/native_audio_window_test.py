@@ -177,7 +177,7 @@ class AudioWindow(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 self.execute_fixture(change=change)
 
-    def capture_fixture(self, *, wrong_revision=False, change_at_end=None):
+    def capture_fixture(self, *, wrong_revision=False, change_at_end=None, change_before_reread=None):
         replay=self.root/'replay'; replay.mkdir()
         proof=replay/'build/proof'; proof.mkdir(parents=True)
         receipt_path=replay/'build/receipt.json'; receipt={'binary':'/trusted/emulator','binary_sha256':'a'*64}
@@ -191,11 +191,16 @@ class AudioWindow(unittest.TestCase):
             {'directory':'held-key-control-trace-1',**basis_row,'audio':{'peak_pcm16':0}}]}
         (proof/'summary.json').write_text(json.dumps(summary))
         (native_root/'build/felucca.dis').write_text('fixture listing')
-        calls=[]; changed=[False]; actual_digest=A.R.digest
+        calls=[]; self.child_calls=calls; changed=[False]; actual_digest=A.R.digest
         def basis(*args):
             out=args[-1]; out.mkdir(); symbols=out/'symbols.stdout'; symbols.write_text('fixture symbols')
-            path=out/'hotspots.json'; path.write_text(json.dumps({'status':'complete','input_sha256':{},
-                'symbol_table_sha256':A.R.digest(symbols)})); return path
+            path=out/'hotspots.json'; path.write_text(json.dumps({'status':'complete','input_sha256':{
+                str(proof/'summary.json'):A.R.digest(proof/'summary.json'),str(receipt_path):A.R.digest(receipt_path)},
+                'symbol_table_sha256':A.R.digest(symbols)}))
+            if change_before_reread:
+                target=proof/'summary.json' if change_before_reread == 'summary' else receipt_path
+                target.write_bytes(target.read_bytes()+b' ')
+            return path
         def execute(native,receipt,directory,**kw):
             calls.append((directory.name,kw))
             row={'control':kw['control'],'traced':kw.get('traced',False),'audio':kw['basis_audio'],
@@ -229,6 +234,17 @@ class AudioWindow(unittest.TestCase):
         self.assertEqual(len(result['comparisons']),2)
         self.assertEqual(calls[1][1]['window'],list(WINDOW))
         self.assertEqual(calls[-1][1]['window'],list(WINDOW))
+
+    def test_verified_basis_digest_cannot_be_refreshed_by_a_changed_reread(self):
+        for name in ('summary','receipt'):
+            with self.subTest(name=name):
+                other=AudioWindow(); other.setUp()
+                try:
+                    with self.assertRaisesRegex(ValueError,'verified basis changed before capture'):
+                        other.capture_fixture(change_before_reread=name)
+                    self.assertEqual(other.child_calls,[])
+                    self.assertEqual(json.loads((other.root/'capture/summary.json').read_text())['status'],'incomplete')
+                finally: other.doCleanups()
 
     def test_unsupported_source_and_final_changed_inputs_leave_incomplete(self):
         with self.assertRaisesRegex(ValueError,'audited ce5'):

@@ -39,7 +39,9 @@ inventory. It reads those saved artifacts; it does not rerun those twelve childr
 The original replay verifier must remain clean at the exact supported revision,
 with matching helper bytes and capture-driver hash. Its original
 `emulator_trace.py verify` runs in that checkout, preserving the existing receipt
-path contract. The native resource and package validators remain authoritative.
+path contract. The native resource and package validators remain authoritative. Summary/receipt
+rereads must match the original verified hashes before a new child can start;
+rereading a changed file cannot refresh that expected digest.
 
 ## Fixed finite recipe and acceptance
 

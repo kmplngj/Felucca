@@ -171,6 +171,14 @@ def validate_output(directory, row, native, window, functions, unsized, instruct
     return bindings
 
 
+def verified_basis_json(root, name, bindings):
+    observed = {}
+    value = H.read_json(root, name, observed)
+    require(all(bindings.get(path) == sha for path, sha in observed.items()),
+            'verified basis changed before capture: ' + name)
+    return value
+
+
 def capture(proof, replay_root, native_root, out):
     out = emulator_trace.ignored_path(out)
     require(out != ROOT / 'build' and not out.exists(), 'output must be a new ignored build subdirectory')
@@ -192,12 +200,12 @@ def capture(proof, replay_root, native_root, out):
         basis = json.loads(basis_path.read_text())
         require(basis['status'] == 'complete', 'original basis attribution is unavailable')
         bindings = dict(basis['input_sha256'])
-        original = H.read_json(proof, 'summary.json', bindings)
+        original = verified_basis_json(proof, 'summary.json', bindings)
         native = original['native']
         require(native['report']['build_identity']['revision'] == NATIVE_REVISION,
                 'audio recipe is qualified only for the audited ce5 native baseline')
         receipt_path = Path(original['emulator_receipt'])
-        receipt = H.read_json(replay_root, str(receipt_path.relative_to(replay_root)), bindings)
+        receipt = verified_basis_json(replay_root, str(receipt_path.relative_to(replay_root)), bindings)
         symbols = (basis_path.parent / 'symbols.stdout').read_text()
         require(R.digest(basis_path.parent / 'symbols.stdout') == basis['symbol_table_sha256'],
                 'basis symbol output changed')
