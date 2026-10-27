@@ -10,9 +10,7 @@
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }
 static void lcd_wake_now(void) {}
-static lcd_blit_fn lcd_blit;
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #include "../firmware/src/gfx.c"
 #include "ui_icons.h"
 #include "icon-stream-reference.h"

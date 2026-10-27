@@ -19,6 +19,8 @@ BLIT_NOOPS = tuple(ROOT / f'tests/{name}_test.c' for name in (
     'backup', 'editor', 'engid', 'fm6_eff', 'fm6bank', 'icon_stream',
     'persistence', 'settings', 'text_ref', 'theme', 'track_badge'))
 BLIT_ADAPTERS = (DRIVER, UI, BROWSER, *BLIT_NOOPS)
+BLIT_NOOP = ROOT / 'tests/host_lcd_blit_noop.h'
+BLIT_OWNERS = (DRIVER, UI, BROWSER, BLIT_NOOP)
 SIGNATURE = 'static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)'
 
 
@@ -58,9 +60,9 @@ class FirmwareLcdContract(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_mutable_blit_sources_are_rejected(self):
-        for path in BLIT_ADAPTERS:
+        for path in BLIT_OWNERS:
             with self.subTest(adapter=path.name):
-                entry = REAL if path == DRIVER else path
+                entry = {DRIVER: REAL, BLIT_NOOP: BLIT_NOOPS[0]}.get(path, path)
                 result = self.compile(entry)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 source = path.read_text()
@@ -80,6 +82,14 @@ class FirmwareLcdContract(unittest.TestCase):
                     source = wrapper.replace('#include LCD_DRIVER_SOURCE', source, 1)
                     control = wrapper.replace('#include LCD_DRIVER_SOURCE', control, 1)
                     entry = DRIVER
+                elif path == BLIT_NOOP:
+                    # Mutate the shared definition through a real consumer. Both
+                    # probes keep its original prerequisites and include directory.
+                    wrapper = entry.read_text()
+                    include = '#include "host_lcd_blit_noop.h"'
+                    self.assertEqual(wrapper.count(include), 1)
+                    source = wrapper.replace(include, source, 1)
+                    control = wrapper.replace(include, control, 1)
                 result = self.compile(entry, source)
                 self.assertNotEqual(result.returncode, 0, 'mutable blit source signature was accepted')
                 self.assertIn('lcd_blit', result.stderr)

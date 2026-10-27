@@ -17,9 +17,7 @@ typedef struct page page_t;
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }
 static void lcd_wake_now(void) {}
-static lcd_blit_fn lcd_blit;
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 static int32_t hook_box[4];
 #define GFX_HOOK_ALIGN(x0, y0, x1, y1, mode, tag) \
     (hook_box[0] = (x0), hook_box[1] = (y0), hook_box[2] = (x1), hook_box[3] = (y1))
