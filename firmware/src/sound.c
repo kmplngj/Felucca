@@ -89,7 +89,7 @@ void sound_preset_values(int16_t *p, const preset_t *pr)
     p[P_ED_FLT] = pr->fenv;
     p[P_VOICE] = pr->mono ? V_LEGATO : V_POLY;
     for (i = 0; i < 4u; i++)
-        p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
+        p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : sound_port_fx_default(i));
 }
 
 /* track t's sound = engine id eng, preset number preset, values p (the track's own ones only with SND_ALL), with an

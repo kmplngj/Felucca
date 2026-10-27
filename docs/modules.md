@@ -195,7 +195,8 @@ Breakdown of the default +424 B, from per-symbol sizes:
 - `sound_load_factory` is now out of line: +128 B. Its former caller `factory_load` shrank by 104 B.
 - `sound_install` is smaller (294 → 200 B) because its FM6, guard and panic code moved into calls.
   `preset_orig` is now a 4-byte tail call.
-- `FX_DEF` is duplicated (+4 B): `fm4_convert.c` and `sound.c` no longer share the constant.
+- `FX_DEF` was duplicated (+4 B) at that measurement. Since #299 it has one definition in `core.h`, which
+  `sound.c` reads through `sound_port_fx_default()`.
 - Inlining changed in unrelated main-loop code: `ui_input` +354 B, `ui_draw_page` −38 B and smaller changes.
 - Four interrupt functions grew by +46 B (below).
 

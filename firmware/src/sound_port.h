@@ -29,3 +29,4 @@ SND_PORT void sound_port_fm6_slot_loaded(uint32_t tr, uint32_t slot);        /* 
 SND_PORT void sound_port_fm6_adopt(uint32_t tr);                /* eng_fm6.c fm6_adopt: SLOT = the factory patch it equals */
 SND_PORT void sound_port_fm6_track_loaded(const track_t *t);    /* eng_fm6.c fm6_track_loaded: the patch of the SLOT */
 SND_PORT void sound_port_assert_thread(void);                   /* FM1_ASSERT_THREAD, in the unit that owns its state */
+SND_PORT uint32_t sound_port_fx_default(uint32_t i);           /* core.h FX_DEF (#299): a preset's default send i */

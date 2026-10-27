@@ -55,3 +55,4 @@ SND_PORT void sound_port_fm6_track_loaded(const track_t *t) { fm6_track_loaded(t
  * copy per translation unit, so sound.c must not expand FM1_ASSERT_THREAD itself (its copy would never count, never
  * see a simulated interrupt). Empty without FELUCCA_ISR_ASSERT */
 SND_PORT void sound_port_assert_thread(void) { FM1_ASSERT_THREAD(); }
+SND_PORT uint32_t sound_port_fx_default(uint32_t i) { return FX_DEF[i]; }
