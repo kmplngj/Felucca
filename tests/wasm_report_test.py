@@ -840,6 +840,23 @@ else:
         with self.assertRaisesRegex(ValueError, 'FLASH=1'):
             W.arguments('v1.6.1', {}, self.root, self.report)
 
+    def test_browser_shared_nor_guard_is_explicit_and_has_no_configuration_value(self):
+        name = 'FELUCCA_TESTS_HOST_NOR_H'
+        runtime = dict(self.native, **W.ADAPTER, FELUCCA_ISR_ASSERT='1', **{name: ''})
+        mapping = W.logical_mapping(self.native, runtime, self.constants, self.constants)
+        self.assertEqual(mapping['defines'][name], {
+            'native': None, 'runtime': '',
+            'rule': 'browser-only shared NOR header guard; no configuration value',
+        })
+        for value in ('0', '1', None):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'invalid browser NOR include guard'):
+                W.logical_mapping(self.native, dict(runtime, **{name: value}), self.constants, self.constants)
+        with self.assertRaisesRegex(ValueError, 'invalid browser NOR include guard'):
+            W.logical_mapping(dict(self.native, **{name: ''}), runtime, self.constants, self.constants)
+        with self.assertRaisesRegex(ValueError, 'unmapped FELUCCA macro'):
+            W.logical_mapping(self.native, dict(runtime, FELUCCA_TESTS_HOST_NOR_OTHER=''),
+                              self.constants, self.constants)
+
     def test_unknown_macro_test_engine_and_constant_mismatch_rejected(self):
         for key, value in (('FELUCCA_NEW_DSP', '1'), ('FELUCCA_ENG_TEST14', '1'),
                            ('FELUCCA_ENG_OMIT', '3'), ('NPART', '5')):
