@@ -212,8 +212,15 @@ collection-interval maximum, subtract samples, or infer CPU0 stack use from it.
 `timer_irqs` and `nested` fields are cumulative and receive separate deltas. Later input
 windows are checked against the requested equal interval and reported separately as valid
 or invalid; an invalid later window also invalidates the session. Key latency remains
-`UNMEASURED` without confirmed instrumentation, a valid window and observed presses/notes.
-Raw zeros are retained without being presented as measured latency.
+`UNMEASURED` without confirmed instrumentation, a valid window, observed presses/notes
+and the complete key-latency group: `key_presses`, `key_press_avg_us`,
+`key_press_max_us`, `key_notes`, `key_noteon_avg_us`, `key_noteon_max_us`,
+`key_dac_avg_us` and `key_dac_max_us`. Older replies missing some or all of these
+fields still provide continuity evidence, but no measured latency. Every present
+known latency field must be a nonnegative 32-bit integer; malformed, negative or
+out-of-range values invalidate the response and session while retaining the raw
+reply. Unknown future fields are preserved. Zero press/note counts mean no samples
+and remain `UNMEASURED`; valid sampled times may round to zero microseconds.
 
 ## Interrupt-context assertion (`FELUCCA_ISR_ASSERT`)
 

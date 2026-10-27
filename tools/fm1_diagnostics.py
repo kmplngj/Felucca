@@ -17,6 +17,9 @@ import time
 
 COMMANDS = ("status", "dbg", "inp", "crash")
 MAX_RESPONSE = 65536
+# con_inp's optional reset-on-read latency group, not cumulative counters.
+INPUT_LATENCY_FIELDS = ("key_presses", "key_press_avg_us", "key_press_max_us", "key_notes",
+                        "key_noteon_avg_us", "key_noteon_max_us", "key_dac_avg_us", "key_dac_max_us")
 PROMPT = re.compile(rb"(?:^|\n)> $")
 COUNTERS = {
     "status": ("audio_late", "voices_shed", "voices_given_up", "usb_resets", "usb_sof",
@@ -34,7 +37,8 @@ SEMANTICS = {
     "maxima": "audio_max_us / dbg.max_us share a cumulative maximum reset at startup in current firmware; "
               "never interval maxima. Older firmware may differ; retain its revision and reset semantics.",
     "inp": "Reset on read except timer_irqs/nested; first window discarded; later windows checked against interval.",
-    "latency": "Requires explicit confirmation of FM1_INPUT_LAT and observed key samples; otherwise UNMEASURED.",
+    "latency": "Requires explicit confirmation of FM1_INPUT_LAT, complete valid key-latency fields and "
+               "observed press/note samples; otherwise UNMEASURED.",
     "snapshots": "Commands and fields are read sequentially, not an atomic device snapshot.",
 }
 
@@ -169,6 +173,8 @@ def parse_response(command, raw):
         numeric.add("boots")
     numeric |= {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
                 "crash": {"uptime_ms"}}[command]
+    if command == "inp":
+        numeric.update(INPUT_LATENCY_FIELDS)
     for key in numeric & fields.keys():
         value = fields[key]
         if not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
@@ -278,7 +284,11 @@ def input_window(snapshot, interval, first, continuous, latency):
     if not isinstance(window, int) or abs(window - interval * 1000) > max(20, interval * 50):
         reasons.append("unequal input window")
     presses, notes = values.get("key_presses"), values.get("key_notes")
-    measured = latency == "enabled" and isinstance(presses, int) and presses > 0 and isinstance(notes, int) and notes > 0
+    # Legacy firmware may omit some or all latency metrics. Keep the window's
+    # continuity evidence, but never turn a partial group into measured latency.
+    complete = all(key in values for key in INPUT_LATENCY_FIELDS)
+    measured = (latency == "enabled" and complete and isinstance(presses, int) and presses > 0
+                and isinstance(notes, int) and notes > 0)
     return {"validity": "INVALID" if reasons else "VALID", "reasons": reasons,
             "latency": "MEASURED" if measured and not reasons else "UNMEASURED",
             "instrumentation_supplied": latency, "fields": values}
