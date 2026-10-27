@@ -2,6 +2,7 @@
 /* Real rescue loop, OTA protocol and hardware adapter against fake HAL/USB.
  * No normal settings, project, audio or CPU1 initialization exists in this harness. */
 #include <stdint.h>
+#include "../firmware/hal/fm1_flash_context_contract.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t c)
 static void draw_text_box(uint32_t x, uint32_t y, uint32_t w, const int *font, const char *s, uint32_t c, int a)
 { (void)x; (void)y; (void)w; (void)font; (void)s; (void)c; (void)a; }
 static void str_cpy(char *dst, const char *src, uint32_t n) { snprintf(dst, n, "%s", src); }
+static fl_jedec_ram_fn fl_jedec_ram;
 static uint32_t fl_jedec_ram(void) { return chip; }
 static int fl_erase4k_ram(uint32_t off, uint32_t *took)
 {
