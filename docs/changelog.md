@@ -128,7 +128,7 @@ recorded in the linked reports, rather than every current build or device.
 ### Fixed
 
 - **USB controller retry:** local restart clears stale configuration and pending
-  control/stream state before reattachment, so endpoints wait for fresh host
+  control/stream state before reattachment, so bulk/audio endpoints wait for fresh host
   configuration. Existing host-reset queue policy is preserved. Software-model
   checks pass; physical USB recovery qualification remains pending. See
   [test scope](../BUILDING.md#tests) and [counter interpretation](diagnostics.md#interpreting-a-report).
