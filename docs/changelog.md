@@ -132,6 +132,11 @@ recorded in the linked reports, rather than every current build or device.
   save/restore error paths. Records remain single-copy; interrupted saves can still
   lose that slot's slices. FM-1 save/restart/restore qualification remains pending.
 
+- **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
+  stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
+  update requests still renew the existing staging and writing idle budgets.
+  See [installer errors](../BUILDING.md#package-validation-and-file-errors).
+
 - **Native attribution:** ABOUT credits and the retained installer template now
   distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0
   dedication. The PHASE source comment agrees; synthesis and generated sounds
