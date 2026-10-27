@@ -167,6 +167,8 @@ knowledge_base:
       - "CONTRIBUTING.md"
       - "BUILDING.md"
       - "LICENSING.md"
+      - "docs/documentation-policy.md"
+      - "docs/repository-ownership.md"
       - files: "web/EDITOR_PROTOCOL.md"
         applyTo: "firmware/src/**,web/**"
   learnings:

@@ -78,7 +78,6 @@ static void sound_defaults(int16_t *p)
  * the sends (a preset without its own: the defaults below). The track's own values in p are the caller's */
 static void sound_preset_values(int16_t *p, const preset_t *pr)
 {
-    static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
     uint32_t i;
     sound_defaults(p);
     for (i = 0; i < 8u; i++)

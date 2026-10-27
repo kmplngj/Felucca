@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Actual driver, canvas, native UI and capture against independent SPI ownership. */
-#define UI_TEST_NO_MAIN
 #define UI_LCD_SOURCE "lcd_fault_model.h"
 #define FELUCCA_SCREEN_CAPTURE 1
 #include <stdint.h>
@@ -9,7 +8,7 @@ static uint32_t fault_page_calls, fault_drop_force;
     fault_page_calls++; \
     if (fault_drop_force && scrn.recovering && scrn.st == SCR_SHOW) ui.force = 0; \
 } while (0)
-#include "ui_test.c"
+#include "ui_harness.h"
 
 static uint32_t fault_checks;
 static uint16_t expected[240u * 240u], native_expected[240u * 240u], held_canvas[CV_MAX];

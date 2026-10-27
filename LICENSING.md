@@ -1,9 +1,9 @@
 # Felucca licensing
 
 Felucca is free software, licensed under the GNU General Public License, version 3 only
-(`GPL-3.0-only`, full text in `LICENSE`). That covers the code and its own assets. A few
-bundled or ported parts keep their own licences; they are listed below, and their licence
-texts are in `LICENSES/`.
+(`GPL-3.0-only`, full text in `LICENSE`) as a whole. Individual components and assets
+keep their own terms below, including the CC0 Hügelton Sample Pack. Their licence
+texts are in `LICENSES/` and the component paths listed below.
 
 Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 
@@ -12,7 +12,7 @@ Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header:
 
 - the firmware: `firmware/` (app, HAL, update loader; not `firmware/engines/`, MIT: below)
-- the build script and tools: `build.sh`, `tools/`
+- the build script and tools: `build.sh`, `tools/` (except the CC0 `tools/gen_waves.py` generator and MIT external-emulator patch below)
 - the web pages (installer, editor, the browser emulator `web/emu/`) and their tests: `web/` (not the Fukiai and DotGothic16 fonts, below)
 - the host tests: `tests/`
 
@@ -51,18 +51,39 @@ All by Hügelton Instruments (Leo Kuroshita), in this tree:
 
 | What | Licence | Where |
 | --- | --- | --- |
-| Felucca: firmware, tools, web pages, tests | GPL-3.0-only | `LICENSE` |
-| The PHASE engine's waveforms: a C port of the oscillator of CrispyZebra (<https://github.com/hugelton/CrispyZebra>) | GPL-3.0 | `firmware/src/eng_phase.c` |
+| Felucca: firmware, tools (except the Sample Pack generator), web pages, tests | GPL-3.0-only | `LICENSE` |
+| The PHASE engine, Felucca's own design | GPL-3.0-only | `firmware/src/eng_phase.c` |
 | The DRUM voices and kit | GPL-3.0-only | `firmware/src/drum_voice.c`, `firmware/src/eng_drum.c` |
-| The Hügelton Sample Pack: Felucca's drum sounds, made by `tools/gen_waves.py`, from which the SLICE engine's BREAK is built (not CC0) | GPL-3.0-only | `tools/gen_waves.py` |
+| The Hügelton Sample Pack: the `tools/gen_waves.py` generator and its synthesized single-cycle waves, drum sounds and plucks; its drums also supply SLICE's BREAK | CC0 1.0 | `tools/gen_waves.py`, `LICENSES/CC0-1.0.txt` |
 | The controls picture | GPL-3.0-only | `docs/controls.jpg` |
 | The Fukiai icon font (<https://github.com/hugelton/Fukiai>): the firmware's icons (rasterised at build time by `tools/gen_aa_icons.py`) and the web editor's | MIT | `web/fukiai.ttf`, `LICENSES/MIT-Fukiai.txt`, `web/FUKIAI-LICENSE.txt` |
 | The ANALOG, LOFI, TRIO, WHEEL and NOISE engines, the engine interface and the shared DSP helpers: Felucca-Engines (<https://github.com/hugelton/Felucca-Engines>) | MIT | `firmware/engines/`, `LICENSES/MIT-Felucca-Engines.txt` |
+
+### Sample Pack dedication and scope
+
+The author explicitly clarified PHASE as Felucca's own GPL engine and dedicated
+`tools/gen_waves.py` **and every sound it makes** to CC0 1.0 in
+[upstream commit `5738617968a22b5d4c0d3470cfcc95559052f446`](https://github.com/hugelton/Felucca/commit/5738617968a22b5d4c0d3470cfcc95559052f446).
+The script's body, from its module docstring onward, matches that pinned declaration
+byte for byte (SHA-256 `de661a4edd42181372c8363b257386e85803efaea433242b00100a702656c108`).
+Only its attribution header changes; the generated sounds are unchanged. This
+self-contained generator uses standard-library synthesis and embedded parameters,
+not external sample banks.
+
+The [CC0 1.0 legal text](LICENSES/CC0-1.0.txt) is included alongside the other
+notices ([official reference](https://creativecommons.org/publicdomain/zero/1.0/)).
+The dedication is limited to this generator and its sounds. PHASE and DRUM code,
+`tools/gen_samples.py`, the sample codecs/build tools and the combined firmware
+remain GPL-3.0-only; the CC0 sound data does not relicense those implementations.
+Existing Versilian CC0 samples, fonts, MIT engines, ported DSP and SDK files retain
+their separate notices. Complete source archives include the generator and CC0 text;
+release/site packaging includes every `LICENSES/*.txt` notice with the package.
 
 ## Third-party material
 
 | What | Licence | Where |
 | --- | --- | --- |
+| External fm1-emu trace patch after Joakim Eriksson (2026); optional externally built CLI also includes its GPL-3.0-only USB source | MIT patch; combined CLI includes MIT and GPL-3.0-only | `tools/emulator_trace/retired-trace.patch`, `tools/emulator_trace/LICENSE-MIT-fm1-emu.txt`; source/build boundary in `docs/emulator-trace-prerequisite.md` |
 | Inter Tight font by The Inter Project Authors: documentation panel-diagram outlines only, outside the firmware asset closure; the font declares no Reserved Font Name | SIL OFL 1.1 | `docs/manual/fonts/InterTight[wght].ttf`, `docs/manual/fonts/OFL.txt`, `LICENSES/OFL-InterTight.txt` |
 | M8Stealth57 / M8Stealth89 by Trash80, with embedded ancestry credits including Matthias Tellen: native UI text and keycap/badge legend ink, rasterised and packed at build time; ten additional bitmap marks are local adaptations | CC BY-SA 3.0; font data and adaptations retain these terms | `assets/fonts/m8stealth/README.md`, `LICENSES/CC-BY-SA-3.0-M8Stealth.txt` |
 | Instrument samples (Versilian Studios VSCO-2 Community Edition, VCSL): the SAMPLE sets, also the SLICE engine's PIANO (the PIANO set's middle C) | CC0 1.0 | `assets/samples-cc0/`, provenance in `ATTRIBUTION.txt` there |
@@ -79,7 +100,8 @@ All by Hügelton Instruments (Leo Kuroshita), in this tree:
 Tamzen/Tamsyn is no longer a build input. Its notice remains in
 `LICENSES/Tamzen.txt` for historical distributions and the dated font comparison.
 
-On the device, HOME held > ABOUT opens the information screen; turning PRESETS scrolls on into
+On the device, hold HOME, select SYSTEM with ALGORITHM and ABOUT with PRESETS, then tap
+OCT+ to open the information screen; turning PRESETS scrolls on into
 CREDITS, a short list of these authors, licences and source URLs.
 
 ## JieLi SDK files in the packages (Apache-2.0)

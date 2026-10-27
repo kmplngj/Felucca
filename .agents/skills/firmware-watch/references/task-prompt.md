@@ -7,7 +7,12 @@ instructions before acting; they own scope, authority, lease/recovery rules,
 repository routing, model/worker preferences and notification policy.
 
 Resolve the shared lease path in the original clone before creating the isolated
-state worktree. Stop at 60 minutes or 50 completed assessments; preserve the
+state worktree. Read helper/code/instructions from a separate freshly fetched main
+checkout. Keep state-branch commits ledger-only; do not merge main's whole tree.
+Acquire the lease before inventory and hold it through final push. Reconcile main
+registrations with the state ledger using the guide's guarded procedure; stop on
+rejected reconciliation. Never resurrect initialized registrations or drop newly
+pending sources. Stop at 60 minutes or 50 completed assessments; preserve the
 60/40 recent/history allocation when both queues exist. Validate the complete
 ledger with the helper, inspect summaries and selected records, and read full
 source/native evidence for each assessment. Verify durable ledger publication
