@@ -112,3 +112,12 @@ factory routing, one-core restrictions and unsupported host sample timelines sta
 as documented in the replay guide. No firmware/RAM delta, device observation,
 optimization or hardware acceptance is claimed. Broader profiling and any later
 optimization qualification remain under [#662](https://github.com/kmplngj/Felucca/issues/662).
+
+## Additional audio/DSP windows
+
+The original four PR733 windows remain fixed and can be UI/control dominated.
+The additive [native analog/audio window guide](native-audio-window.md) describes
+one source-qualified seven-child capture that discovers a render entry, requires
+actual post-dispatch DSP coverage and reuses these attribution rules. It preserves
+the original saved-proof and receipt contracts; it does not expand this offline
+reporter's accepted PR733 schema or reinterpret historical captures.
