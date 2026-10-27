@@ -455,15 +455,21 @@ entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
 for its LCD-submission ordering assertions. Consumers include the harness directly;
 they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
-The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
+The backup, FM6-bank, user-preset and SLICE tests share `tests/host_nor.h`, including
 their sanitizer builds. This existing NOR model only clears programmed bits, rejects
 256-byte page wrapping, and models sticky power cuts during programming or half an
 erase. Its program counter counts completed bytes; its erase counter excludes requests
 refused before work. Reads remain available for recovery after a cut. The user-preset
 fixture checks every payload/header byte-cut boundary, interrupted/refused erases
 and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. Storage and persistence tests retain their different retry
-and operation-counting models.
+`up_put` mirror rollback. SLICE maps its slot/XIP view onto this model and retains
+its existing read refusal, bounds, non-sticky torn-program fault and logical erase
+counter. Its record tests cover all three slots, every record byte-cut boundary,
+interrupted/refused erases, sticky failures, fresh-request retries and every flash
+byte outside the record sector. The record has a single copy: an erase can lose
+the old table; recovery must yield a complete valid table or no manual table.
+Storage and persistence tests retain their different retry and operation-counting
+models.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
