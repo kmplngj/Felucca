@@ -10,8 +10,8 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 7338,
-  "known_remaining_recent": 562,
+  "known_remaining_history": 8553,
+  "known_remaining_recent": 1759,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
@@ -23,9 +23,9 @@
         "total": 38
       },
       "recent": {
-        "remaining": 0,
+        "remaining": 5,
         "reviewed": 0,
-        "total": 0
+        "total": 5
       },
       "repository": "hugelton/Felucca",
       "terminal_pairs": 20
@@ -449,6 +449,62 @@
       },
       "repository": "isod89/clipper-fm1",
       "terminal_pairs": 2
+    },
+    {
+      "history": {
+        "remaining": 261,
+        "reviewed": 0,
+        "total": 261
+      },
+      "recent": {
+        "remaining": 2,
+        "reviewed": 0,
+        "total": 2
+      },
+      "repository": "okumurari2/maku",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 73,
+        "reviewed": 0,
+        "total": 73
+      },
+      "recent": {
+        "remaining": 1046,
+        "reviewed": 0,
+        "total": 1046
+      },
+      "repository": "Rastapopolix/tessera",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 841,
+        "reviewed": 0,
+        "total": 841
+      },
+      "recent": {
+        "remaining": 123,
+        "reviewed": 0,
+        "total": 123
+      },
+      "repository": "glvno/matryoshka",
+      "terminal_pairs": 0
+    },
+    {
+      "history": {
+        "remaining": 40,
+        "reviewed": 0,
+        "total": 40
+      },
+      "recent": {
+        "remaining": 21,
+        "reviewed": 0,
+        "total": 21
+      },
+      "repository": "joakimeriksson/fm1-dock",
+      "terminal_pairs": 0
     }
   ],
   "schema_version": 1,

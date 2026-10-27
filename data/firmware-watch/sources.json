@@ -565,6 +565,103 @@
       "requested_at": "2026-10-19",
       "source_name": "Clipper (SLOOP/Felucca-derived synth; VPS, TERRAIN, VECTOR, WSEQ, HYBRID, FMX and synth workflow experiments)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/202",
+      "authorization": "Register the two firmware-watch sources requested in Felucca issue #446; musical feature implementation remains with the existing adoption owners.",
+      "branches": [
+        "main"
+      ],
+      "historical_targets": {
+        "main": "2aea69253110233f0934da0444381177a2bbd7d5"
+      },
+      "initialization_policy": "After this registration reaches main and the canonical state registry, initialize independently at the start of the next audit. Reverify stable repository identity and canonical name/main/pin, fetch the complete non-shallow DAG and fresh tip, preserve existing intervals and journal, calculate queues from complete DAGs and confirmed records, then remove this pending entry only after successful initialization. Full-DAG counts have not been collected for this registration; snapshot review grants no per-commit coverage. Retain an explicit blocker on failure.",
+      "registration_issue": "https://github.com/kmplngj/Felucca/issues/446",
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/200",
+        "https://github.com/kmplngj/Felucca/issues/202",
+        "https://github.com/kmplngj/Felucca/issues/208",
+        "https://github.com/kmplngj/Felucca/issues/214",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/18"
+      ],
+      "repository": "okumurari2/maku",
+      "repository_id": 1411236607,
+      "requested_at": "2026-10-18",
+      "source_name": "MAKU",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/167",
+      "authorization": "Register the two firmware-watch sources requested in Felucca issue #446; musical feature implementation remains with the existing adoption owners.",
+      "branches": [
+        "main"
+      ],
+      "historical_targets": {
+        "main": "4ac494e51ee73abdbbf70f2979184e2a147a5e53"
+      },
+      "initialization_policy": "After this registration reaches main and the canonical state registry, initialize independently at the start of the next audit. Reverify stable repository identity and canonical name/main/pin, fetch the complete non-shallow DAG and fresh tip, preserve existing intervals and journal, calculate queues from complete DAGs and confirmed records, then remove this pending entry only after successful initialization. Full-DAG counts have not been collected for this registration; snapshot review grants no per-commit coverage. Retain an explicit blocker on failure.",
+      "previous_repository": "Rastapopolix/melodee-tess",
+      "registration_issue": "https://github.com/kmplngj/Felucca/issues/446",
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/162",
+        "https://github.com/kmplngj/Felucca/issues/167",
+        "https://github.com/kmplngj/Felucca/issues/208",
+        "https://github.com/kmplngj/Felucca/issues/214"
+      ],
+      "repository": "Rastapopolix/tessera",
+      "repository_id": 1414783836,
+      "requested_at": "2026-10-18",
+      "source_name": "Tessera (formerly Melodee-Tess)",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/672",
+      "authorization": "User requested on 2026-10-25: analyse glvno/matryoshka firmware and optimizations, create justified adoption issues and consider adding it to the firmware watcher. Source review recommends registration.",
+      "branches": [
+        "main"
+      ],
+      "historical_targets": {
+        "main": "99f1149d55fa549c4202e6f5080610770399c832"
+      },
+      "historical_total_at_setup": 841,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; verify repository identity/main/pin, fetch complete non-shallow DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. This source snapshot grants no per-commit coverage.",
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/672",
+        "https://github.com/kmplngj/Felucca/issues/179",
+        "https://github.com/kmplngj/Felucca/issues/180",
+        "https://github.com/kmplngj/Felucca/issues/59",
+        "https://github.com/kmplngj/Felucca/issues/32",
+        "https://github.com/kmplngj/Felucca/issues/33"
+      ],
+      "repository": "glvno/matryoshka",
+      "repository_id": 1416374163,
+      "requested_at": "2026-10-25",
+      "source_name": "Matryoshka (Modular-1-derived nested modular synth; exact coefficient caches, partial LCD updates, A/B morphs and macro ranges)",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/701",
+      "authorization": "User requested on 2026-10-26: analyse joakimeriksson/fm1-dock features and optimizations, create justified adoption issues and consider adding it to the firmware watcher. Source review recommends registration.",
+      "branches": [
+        "main"
+      ],
+      "historical_targets": {
+        "main": "e177e83e560483f419baad80511d9dd1acfdeffe"
+      },
+      "historical_total_at_setup": 40,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; verify repository identity/main/pin, fetch complete non-shallow DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. This source snapshot grants no per-commit coverage.",
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/699",
+        "https://github.com/kmplngj/Felucca/issues/700",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/38"
+      ],
+      "repository": "joakimeriksson/fm1-dock",
+      "repository_id": 1428799110,
+      "requested_at": "2026-10-26",
+      "source_name": "FM1 Dock (FM-1 firmware)",
+      "status": "pending_initialization"
     }
   ],
   "schema_version": 1
