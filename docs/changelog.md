@@ -32,6 +32,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ## Fork development
 
+### Fixed
+
+- The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
+  complete, valid key-latency group before reporting measured latency. Missing
+  older-firmware metrics remain unmeasured; malformed known metrics invalidate
+  collection while retaining raw evidence. No firmware or protocol change.
+
 ### Added
 
 - [Offline update-record survey](update-record-survey.md) reports native-loader
