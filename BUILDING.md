@@ -732,6 +732,11 @@ data-driven scenarios, exact repeat checks and retained WAV/JSON evidence under
 `build/stress/`. This first increment uses direct host musical input; emulator/device
 adapters and instruction counts remain follow-ups. The full host runner includes it.
 
+For the optional external emulator trace prerequisite, use the
+[pinned source/build and executable controls](docs/emulator-trace-prerequisite.md).
+It needs a separate Rust toolchain; its portable refusal tests run in the normal
+host suite without Rust. Native hotspot attribution remains a follow-up.
+
 ### Emulator partition regression
 
 With Node and generated assets, the runner rebuilds the real browser bridge natively;
