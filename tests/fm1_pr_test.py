@@ -571,6 +571,79 @@ class Worktrees(unittest.TestCase):
         self.assertFalse(private.exists())
         self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "detached local work")
 
+    def check_deinitialized_submodule_cleanup(self, target):
+        self.prepare()
+        nested = self.path / "engine/nested"
+        self.assertEqual(self.git(nested, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
+        (nested / "tracked").write_text("deinitialized detached work\n")
+        self.commit(nested)
+        local = self.git(nested, "rev-parse", "HEAD")
+        private = Path(self.git(nested, "rev-parse", "--absolute-git-dir"))
+        target = Path(target)
+        self.git(self.path / target.parent, "submodule", "deinit", "--force", "--", target.name)
+        # Deinitialization hides this repository from recursive foreach/status,
+        # including when an ancestor submodule is the one deinitialized.
+        retained = {file: file.read_bytes() for file in
+                    (private / "HEAD", private / "logs/HEAD", self.path / "tracked")}
+        with self.assertRaisesRegex(ValueError, "uninitialized submodules"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        self.assertTrue(private.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+        self.assertEqual(self.git(self.path, "--git-dir", str(private), "--work-tree", str(self.path),
+                                  "show", f"{local}:tracked"),
+                         "deinitialized detached work")
+
+        # The helper never initializes on removal. Explicitly restore the fixture
+        # and back up its detached commit outside the disposable worktree.
+        self.git(self.path, "submodule", "update", "--init", "--recursive", "--checkout")
+        with self.assertRaisesRegex(ValueError, "local submodule commits"):
+            self.remove()
+        backup = self.preserve_commit(nested, local)
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "deinitialized detached work")
+
+    def test_cleanup_preserves_deinitialized_nested_submodule_work(self):
+        self.check_deinitialized_submodule_cleanup("engine/nested")
+
+    def test_cleanup_preserves_nested_work_under_deinitialized_ancestor(self):
+        self.check_deinitialized_submodule_cleanup("engine")
+
+    def test_cleanup_preserves_orphaned_submodule_repository(self):
+        self.prepare()
+        parent = self.path / "engine"
+        self.git(parent, "submodule", "add", str(self.base / "leaf"), "temporary")
+        orphan = parent / "temporary"
+        self.git(orphan, "checkout", "--detach")
+        (orphan / "tracked").write_text("orphan detached work\n")
+        self.commit(orphan)
+        local = self.git(orphan, "rev-parse", "HEAD")
+        private = Path(self.git(orphan, "rev-parse", "--absolute-git-dir"))
+        self.git(parent, "submodule", "deinit", "--force", "--", "temporary")
+        self.git(parent, "rm", "--cached", "temporary")
+        self.git(parent, "restore", "--source", "HEAD", "--staged", "--worktree", ".gitmodules")
+        orphan.rmdir()
+        self.assertFalse(any(line.startswith("-") for line in
+                             self.git(self.path, "submodule", "status", "--recursive").splitlines()))
+        self.assertEqual(self.git(self.path, "status", "--porcelain"), "")
+        retained = {file: file.read_bytes() for file in (private / "HEAD", private / "logs/HEAD")}
+        with self.assertRaisesRegex(ValueError, "orphaned submodule repositories"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+
+        backup = self.base / "preserved.git"
+        self.git(self.base, "init", "--bare", str(backup))
+        self.git(backup, "fetch", str(private), f"{local}:refs/heads/kept")
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "orphan detached work")
+        # Cleanup cannot resolve an orphan automatically, even after a backup.
+        with self.assertRaisesRegex(ValueError, "orphaned submodule repositories"):
+            self.remove()
+        self.assertTrue(private.is_dir())
+
     def test_wrong_pr_and_force_push_do_not_reuse_unrelated_sources(self):
         self.prepare()
         with self.assertRaisesRegex(ValueError, "another"):

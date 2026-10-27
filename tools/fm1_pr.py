@@ -58,6 +58,30 @@ def check_worktree(source, path, repository, number, revision=None, removing=Fal
         raise ValueError("Worktree HEAD changed; keep or move your commits before cleanup/reuse")
     status = ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]
     if removing:
+        # foreach skips deinitialized repositories, whose private Git directories
+        # (and local history) would still be deleted with the worktree.
+        if any(line.startswith("-") for line in
+               git(path, "submodule", "status", "--recursive").splitlines()):
+            raise ValueError("Worktree has uninitialized submodules; restore/initialize the tracked submodules "
+                             "and preserve local work outside this worktree before retrying cleanup")
+        initialized = {Path(line).resolve() for line in git(
+            path, "submodule", "foreach", "--quiet", "--recursive",
+            "git rev-parse --absolute-git-dir").splitlines()}
+        # Removed gitlinks can leave orphan repositories invisible to status.
+        # Visit module-name directories and nested modules, never refs/objects/logs.
+        pending = [record.parent / "modules"]
+        while pending:
+            module = pending.pop()
+            if not module.is_dir():
+                continue
+            if (module / "config").is_file() and (module / "HEAD").is_file():
+                if module.resolve() not in initialized:
+                    raise ValueError("Worktree has inactive or orphaned submodule repositories; "
+                                     "preserve their history outside this worktree and resolve them before cleanup")
+                pending.append(module / "modules")
+            else:
+                pending.extend(child for child in module.iterdir()
+                               if child.is_dir() and not child.is_symlink())
         status.append("--ignored=matching")
         # Status deliberately hides files flagged assume-unchanged/skip-worktree.
         # Refuse such indexes, and submodule commits/stashes (including reflog-only
