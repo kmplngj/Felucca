@@ -363,6 +363,13 @@ u_input() {
 }
 unit input "" u_input
 
+UNIT_NEEDS=assets
+u_clock_contract() {
+    run "clock contract: actual HAL/UI/browser signatures and passive wrap/scheduling behavior" python3 tests/clock_contract_test.py
+}
+unit clock_contract "" u_clock_contract
+UNIT_NEEDS=
+
 u_usb() {
     # Real composite poll/control/EP4 paths with a HAL-only finite host model (#101).
     for cdc in 0 1; do
