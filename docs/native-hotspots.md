@@ -5,8 +5,8 @@
 replay windows to target function ranges and emulator instruction classes. It does
 not execute firmware, rebuild an image or collect a new trace. It consumes the
 [held-key/mixed-UART replay evidence](native-emulator-replay.md), including its
-silent controls and repeated windows. This stage is stacked on the unmerged PR733
-head `4ffca0afc71c0f347475370a5adb2c52441e47a2`; it grants no merge authority.
+silent controls and repeated windows. The supported replay verifier is commit
+`4ffca0afc71c0f347475370a5adb2c52441e47a2` from PR733.
 
 ## Reproduce with existing evidence
 

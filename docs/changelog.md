@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Native guest hotspot attribution:** optional developer tooling revalidates
+  saved replay evidence and counts bounded windows by target function range and
+  emulator instruction class. See the [report guide](native-hotspots.md); no
+  firmware execution, physical timing or optimization result is supplied.
+
 - **Native emulator replay evidence:** optional developer tooling verifies matched
   artifacts, repeated held-key/modeled-UART traces and PCM, and silent controls.
   See the [bounded replay guide](native-emulator-replay.md); this supplies no

@@ -4,8 +4,9 @@
 `tools/native_emulator_replay.py` runs an existing, unchanged native Felucca
 package through the [corrected pinned external CLI](emulator-trace-prerequisite.md).
 It checks repeated guest traces, PCM, modeled input delivery and terminal counts.
-It produces **replay evidence**, not a symbol hotspot report. [Issue #662](https://github.com/kmplngj/Felucca/issues/662)
-remains open for symbol/range attribution and the remaining profiling acceptance.
+It produces **replay evidence** for the separate [native hotspot reporter](native-hotspots.md).
+[Issue #662](https://github.com/kmplngj/Felucca/issues/662) remains open for broader
+profiling coverage and acceptance.
 
 This is an opt-in host developer tool. It builds no firmware, changes no firmware
 input, opens no device and downloads nothing. It requires an already built native
