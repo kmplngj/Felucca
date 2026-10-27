@@ -135,7 +135,12 @@ def parse_response(command, raw):
         if line == "no crash record":
             fields["record_present"] = False
             continue
-        if ":" in line:
+        words = line.split(None, 1)
+        if command == "inp" and len(words) == 2 and words[0] in INPUT_LATENCY_FIELDS:
+            # Recognize known scalar fields before colon records: a malformed
+            # value such as "1:2" must not disguise the field as an unknown key.
+            key, value = words[0], scalar(words[1])
+        elif ":" in line:
             key, value = line.split(":", 1)
             if key == "enc moves/lost/detent state":
                 value = [[scalar(v) for v in item.split("/")] for item in value.split()]

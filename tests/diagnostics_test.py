@@ -409,6 +409,24 @@ class ParserTests(unittest.TestCase):
         window = diag.input_window(snapshot(inp=legacy), 1, False, True, "enabled")
         self.assertEqual((window["validity"], window["latency"]), ("VALID", "UNMEASURED"))
 
+    def test_latency_colon_values_cannot_hide_known_fields(self):
+        for key in LATENCY_FIELDS:
+            for suffix in (" 1:2", "\t1:2", " : 1", " 1:", " 1 : 2", ": 1:2"):
+                with self.subTest(key=key, suffix=suffix):
+                    text = "\n".join(key + suffix if line.startswith(key + " ") else line
+                                     for line in INP.splitlines())
+                    parsed = diag.parse_response("inp", reply("inp", text + "\n"))
+                    self.assertIn("invalid uint32 " + key, parsed["issues"])
+                    window = diag.input_window({"commands": {"inp": parsed}}, 1, False, True, "enabled")
+                    self.assertEqual((window["validity"], window["latency"]), ("INVALID", "UNMEASURED"))
+        # Existing multi-value colon records and future unknown names retain their shape.
+        parsed = diag.parse_response("inp", reply("inp", INP + "key_future_metric 1:2\nfuture_record: 1 2\n"))
+        self.assertEqual(parsed["issues"], [])
+        self.assertEqual(parsed["fields"]["key_future_metric 1"], [2])
+        self.assertEqual(parsed["fields"]["future_record"], [1, 2])
+        self.assertEqual(parsed["fields"]["led_on_permille"], [90, 90, 90])
+        self.assertEqual(parsed["fields"]["enc moves/lost/detent state"], [[4, 1, 0], [0, 0, 2]])
+
     def test_latency_zero_samples_are_unmeasured_not_invalid(self):
         for key in ("key_presses", "key_notes"):
             text = re.sub(r"(?m)^" + key + r" .*", key + " 0", INP)
@@ -571,6 +589,21 @@ class SessionTests(unittest.TestCase):
         parsed = diag.parse_response("inp", (INP + "key_future_empty\n").encode())
         self.assertEqual(parsed["issues"], [])
         self.assertIn("key_future_empty", parsed["unknown_lines"])
+
+    def test_colon_latency_value_invalidates_session_and_preserves_raw(self):
+        for suffix in (" 1:2", "\t1:2", " : 1", " 1:", " 1 : 2", ": 1:2"):
+            with self.subTest(suffix=suffix):
+                line = "key_press_max_us" + suffix
+                bad = INP.replace("key_press_max_us 1300", line)
+                summary, events, transport = self.run_session(input_at=1, input_text=bad, input_latency="enabled")
+                self.assertEqual(summary["validity"], "INVALID")
+                self.assertTrue(all(value is None for group in summary["deltas"].values() for value in group.values()))
+                self.assertFalse(summary["end_snapshot"]["complete"])
+                self.assertEqual(summary["end_snapshot"]["input_window"]["latency"], "UNMEASURED")
+                self.assertEqual(len(transport.writes), 7)
+                response = [e for e in events if e["type"] == "response"][-1]
+                self.assertIn("invalid uint32 key_press_max_us", response["issues"])
+                self.assertIn((line + "\r\n").encode(), base64.b64decode(response["raw_b64"]))
 
     def test_partial_legacy_latency_keeps_continuous_session_unmeasured(self):
         old = "\n".join(line for line in INP.splitlines()
