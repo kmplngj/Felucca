@@ -97,9 +97,12 @@ replay solely by returning zero.
 
 Traced runs must contain every slot in `[200000000,200004096)` exactly once,
 in order: 4,096 rows, only core 0, no unknown class, and supported XIP/RAM code
-windows. The row number is a scheduling slot, not a general retired count. This
-one-core, unpaused recipe additionally requires its successful terminal retirement
-count to equal the requested slots. Missing/malformed/extra terminal fields, halt,
+windows. The row number is a scheduling slot, not a general retired count. JSON
+`retired_instructions` records the upstream terminal emulated instruction count
+(`cpu.insn_count`, incremented by the CPU's `finish` path). This fixed one-core,
+unpaused recipe requires that count to equal the requested slots. Idle instructions
+may advance modeled peripheral time while counting once; these are not physical
+retirement or cycle measurements. Missing/malformed/extra terminal fields, halt,
 empty/partial trace or WAV, inconsistent frame/IRQ counts, image mismatch, child
 failure/timeout and stale emulator/native evidence fail the run. Plain children
 have no T rows but must have the same complete native terminal/audio evidence.
