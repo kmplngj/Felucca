@@ -165,6 +165,18 @@ invalid. Crash-record uptime is historic and is never compared with current upti
 Older firmware without boot-count evidence cannot establish continuity. Unknown future
 fields are preserved but do not acquire guessed counter/delta semantics.
 
+`status.uac_pkts` is local to a USB audio sample-rate epoch: firmware resets it on
+an effective rate change. With packet counts at both endpoints, an observed rate
+or `uac_rate_sets` change invalidates the interval, even if a reset count has
+already overtaken its previous value. `uac_rate_sets` counts SET_CUR requests,
+including harmless same-rate requests; the collector conservatively rejects those
+ambiguous boundaries too. A packet delta requires unchanged 44100/48000 Hz and an
+unchanged valid setter count. Missing packet endpoints or missing/unsupported rate
+markers leave that delta `null`; other continuous legacy evidence remains usable.
+The status fields are read sequentially, so this rejects observed boundaries rather
+than proving that no rate reset occurred between individual field reads. Keep the
+rate fixed for a workload capture and retain the raw replies.
+
 In builds with second-core support (`FELUCCA_CPU2=1`), `crash` includes `core 0` for
 the main core or `core 1` for the worker. This identifies the retained crash's origin,
 even after the device falls back to one core; current `status` worker state describes

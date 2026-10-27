@@ -37,7 +37,11 @@ recorded in the linked reports, rather than every current build or device.
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed known metrics invalidate
-  collection while retaining raw evidence. No firmware or protocol change.
+  collection while retaining raw evidence. USB audio packet deltas also require
+  unchanged supported sample-rate and setter evidence: observed rate boundaries
+  invalidate collection even when a reset count overtakes its old value. Missing
+  legacy rate evidence leaves packet deltas unavailable. No firmware or protocol
+  change.
 
 ### Added
 
