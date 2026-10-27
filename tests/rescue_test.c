@@ -2,6 +2,7 @@
 /* Real rescue loop, OTA protocol and hardware adapter against fake HAL/USB.
  * No normal settings, project, audio or CPU1 initialization exists in this harness. */
 #include <stdint.h>
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,7 +41,8 @@ static void usb_detach(void) { usb.up = 0; usb.detached = 1; }
 static void fm1_enter_uboot(void) { rom++; }
 static void fm1_enter_update(const uint8_t *p) { (void)p; commits++; }
 static void lcd_init(void) { screens++; }
-static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t c)
+static lcd_fill_fn lcd_fill;
+static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 { (void)x; (void)y; (void)w; (void)h; (void)c; }
 static void draw_text_box(uint32_t x, uint32_t y, uint32_t w, const int *font, const char *s, uint32_t c, int a)
 { (void)x; (void)y; (void)w; (void)font; (void)s; (void)c; (void)a; }

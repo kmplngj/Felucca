@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "../firmware/hal/fm1_input_contract.h"
+#include "../firmware/hal/fm1_lcd_contract.h"
 static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty), as the flash at 0xA0000 */
 #define SMP_USER_XIP(k) ((const uint8_t *)host_slots + (k) * SMP_USER_SIZE)
 #if FELUCCA_CPU2 || !defined(FELUCCA_CPU2)
@@ -92,6 +93,7 @@ static uint32_t host_fl_end(uint32_t y0, uint32_t y1)   /* the rows y0..y1-1: pi
         n += host_fl_n[k] == 2u && host_fl_mid[k] != host_screen[k];
     return n;
 }
+static lcd_fill_fn lcd_fill;
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;
