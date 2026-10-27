@@ -60,11 +60,12 @@ def check_worktree(source, path, repository, number, revision=None, removing=Fal
     if removing:
         status.append("--ignored=matching")
         # Status deliberately hides files flagged assume-unchanged/skip-worktree.
-        # Refuse such indexes, and submodule-only refs/stashes that removal would lose.
+        # Refuse such indexes, and submodule commits/stashes (including reflog-only
+        # detached work) whose only repository copy removal would destroy.
         indexes = git(path, "ls-files", "-v") + "\n" + git(
             path, "submodule", "foreach", "--quiet", "--recursive", "git ls-files -v")
         local_refs = git(path, "submodule", "foreach", "--quiet", "--recursive",
-                         "git rev-list --all --not --remotes HEAD")
+                         "git rev-list --reflog --all --not --remotes HEAD")
         if any(line and (line[0].islower() or line[0] == "S") for line in indexes.splitlines()) or local_refs:
             raise ValueError("Worktree has hidden index entries or local submodule commits/stashes; preserve them first")
     # The parent status omits ignored files inside submodules. Inspect those too.
