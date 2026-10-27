@@ -127,8 +127,9 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
-- PR-source cleanup preserves detached submodule commits retained only in reflogs,
-  including nested submodules after returning to the pinned revision. See the
+- PR-source cleanup protects reflog-only detached commits and refuses removal with
+  deinitialized or orphan private submodule repositories. It preserves history
+  without automatic metadata repair. See the
   [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
 
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a

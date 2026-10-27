@@ -1016,6 +1016,12 @@ remove that protection. Push the work to an independent repository, or export an
 verify it outside the disposable worktree, before resolving the local history and
 retrying; a branch inside its private submodule Git directory is not an external
 backup. The helper does not expire reflogs or discard commits for you.
+Removal also refuses deinitialized tracked submodules and inactive/orphan private
+submodule repositories that recursive working-tree checks cannot inspect. Restore
+and initialize tracked submodules explicitly, inspect and preserve their history,
+then retry. Preserve and resolve orphan repositories manually; an external backup
+alone does not make the helper remove their metadata. Cleanup never initializes
+submodules or repairs/deletes private repositories automatically.
 Returning to your original directory or removing PR sources does **not** revert
 the FM-1: reinstall the previously saved firmware package to restore that build.
 
