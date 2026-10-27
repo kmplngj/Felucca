@@ -72,6 +72,20 @@ static void reset_counts(void)
     read_calls = read_bytes = erase_calls = prog_calls = 0;
 }
 
+/* a power cycle: RAM state (st_tried, st_buf) is gone, the flash stays */
+static void reboot(void)
+{
+    st_tried = 0;
+    memset(st_buf, 0, sizeof st_buf);
+}
+
+/* a fresh device: blank flash, nothing tried since boot */
+static void fresh(void)
+{
+    memset(nor, 0xFF, sizeof nor);
+    reboot();
+}
+
 static int blank_sector_tests(void)
 {
     static uint8_t payload[ST_PAYLOAD_MAX], got[ST_PAYLOAD_MAX];
@@ -79,19 +93,26 @@ static int blank_sector_tests(void)
     int bad = 0, ok = 1;
     for (i = 0; i < sizeof payload; i++) payload[i] = (uint8_t)(i * 7u + 3u);
     for (len = 0; len <= ST_PAYLOAD_MAX; len++) {
-        memset(nor, 0xFF, sizeof nor);
+        fresh();
         reset_counts();
-        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 0u;
+        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 0u;      /* fresh: blank A skips */
         ok &= st_load(OBJ_PROJECT0, got, sizeof got) == (int)len && !memcmp(got, payload, len);
-        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 0u; /* blank B */
-        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 1u; /* reused A */
+        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 1u;      /* blank B, valid A: erases */
+        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 2u;      /* reused A */
         ok &= st_load(OBJ_PROJECT0, got, sizeof got) == (int)len && !memcmp(got, payload, len);
     }
-    bad += check("all lengths: blank A/B skip, reused A erases", ok);
+    bad += check("all lengths: only a fresh copy skips, A/B reuse erases", ok);
+
+    fresh();
+    reset_counts();
+    ok = st_save(OBJ_PROJECT0, payload, 600) == 0 && erase_calls == 0u && prog_calls == 4u;
+    reboot();                                                   /* B blank, A valid: not fresh after a reboot */
+    ok &= st_save(OBJ_PROJECT0, payload + 1, 600) == 0 && erase_calls == 1u;
+    bad += check("fresh first use skips; a later boot's blank B erases", ok);
 
     ok = 1;
     for (i = 0; i < ST_SECTOR; i++) {
-        memset(nor, 0xFF, sizeof nor);
+        fresh();
         nor[base + i] = 0;                        /* includes padding and unused tail, not just payload */
         reset_counts();
         ok &= st_save(OBJ_PROJECT0, payload, 1) == 0 && erase_calls == 1u;
@@ -99,23 +120,38 @@ static int blank_sector_tests(void)
     }
     bad += check("one dirty byte at every offset forces erase", ok);
 
+    {   /* a commit record of any type in either copy: the pair has been used (the FM6 bank's, the voice bank's) */
+        st_hdr_t h;
+        ok = 1;
+        for (i = 0; i < 2u; i++) {
+            fresh();
+            memset(&h, 0, sizeof h);
+            h.magic = ST_MAGIC;
+            h.type = (uint16_t)OBJ_FM6VB;
+            h.hcrc = st_crc32(&h, sizeof h - 4u);
+            memcpy(nor + st_sector(OBJ_AUTOSAVE, i), &h, sizeof h);   /* the other copy; the destination blank */
+            reset_counts();
+            ok &= st_save_to(OBJ_AUTOSAVE, payload, 600, (int)(1u - i)) == 0 && erase_calls == 1u;
+        }
+        bad += check("another type's commit record in the pair: erase", ok);
+    }
+
     ok = 1;
     for (i = 0; i < ST_SECTOR; i += 256u) {
-        memset(nor, 0xFF, sizeof nor);
-        ok &= st_save(OBJ_PROJECT0, payload, sizeof payload) == 0;
+        fresh();
         reset_counts();
-        read_fail_off = other + i;
+        read_fail_off = base + i;
         read_fail_n = 256u;
         read_fail_after_program = 0;
         ok &= st_save(OBJ_PROJECT0, payload, 1) == -8 && erase_calls == 0u && prog_calls == 0u;
         read_fail_off = UINT32_MAX;
-        memset(st_buf, 0, sizeof st_buf);          /* no RAM payload survives a reboot */
-        ok &= st_load(OBJ_PROJECT0, got, sizeof got) == (int)sizeof payload && !memcmp(got, payload, sizeof payload);
+        ok &= st_load(OBJ_PROJECT0, got, sizeof got) < 0;
+        ok &= st_save(OBJ_PROJECT0, payload, 1) == 0 && erase_calls == 1u;   /* the retry: no scan, an erase */
     }
-    bad += check("every scan read error refuses all writes", ok);
+    bad += check("every scan read error refuses all writes; retry erases", ok);
 
     /* A blank header after an interrupted first write still has dirty payload bytes. */
-    memset(nor, 0xFF, sizeof nor);
+    fresh();
     fail_after = 1;
     ok = st_save(OBJ_PROJECT0, payload, sizeof payload) == -9;
     fail_after = -1;
@@ -123,43 +159,94 @@ static int blank_sector_tests(void)
     ok &= st_save(OBJ_PROJECT0, payload, sizeof payload) == 0 && erase_calls == 1u;
     bad += check("retry erases an uncommitted payload", ok);
 
-    {   /* The new no-erase path must retain the previous copy at every write boundary too. */
+    {   /* #721: a first program cut before any byte changed (or one whose cells read 0xFF with too little
+         * margin): the sector reads blank, but it saw a write attempt; the retry must erase */
+        ok = 1;
+        for (i = 0; i < 2u; i++) {
+            fresh();
+            fail_bytes = (int)i;
+            ok &= st_save(OBJ_PROJECT0, payload, 600) == -9;
+            fail_bytes = -1;
+            if (!i)
+                for (len = 0; len < ST_SECTOR; len++) ok &= nor[base + len] == 0xFFu;
+            reset_counts();
+            ok &= st_save(OBJ_PROJECT0, payload, 600) == 0 && erase_calls == 1u;
+            ok &= st_load(OBJ_PROJECT0, got, sizeof got) == 600 && !memcmp(got, payload, 600);
+        }
+        bad += check("blank-looking copy after a failed first save: erase", ok);
+    }
+
+    {   /* #721: a half erase of B (old A valid) leaves B reading all 0xFF; the power latch then refuses
+         * every write. The retry, in the same boot or after it, must erase B again, never trust it. */
+        uint32_t boot;
+        ok = 1;
+        for (boot = 0; boot < 2u; boot++) {
+            fresh();
+            ok &= st_save(OBJ_PROJECT0, payload, 600) == 0;
+            reboot();
+            write_protected = 1;                            /* the latch: the erase "half" ran ... */
+            erase_error = 1;
+            memset(nor + other, 0xFF, ST_SECTOR);           /* ... and left B reading blank */
+            reset_counts();
+            ok &= st_save(OBJ_PROJECT0, payload + 1, 600) == -8 && erase_calls == 1u && prog_calls == 0u;
+            write_protected = 0;
+            erase_error = 0;
+            ok &= st_load(OBJ_PROJECT0, got, sizeof got) == 600 && !memcmp(got, payload, 600);   /* old copy kept */
+            if (boot)
+                reboot();
+            reset_counts();
+            ok &= st_save(OBJ_PROJECT0, payload + 1, 600) == 0 && erase_calls == 1u;
+            ok &= st_load(OBJ_PROJECT0, got, sizeof got) == 600 && !memcmp(got, payload + 1, 600);
+        }
+        bad += check("half erase keeps old copy, latch dead, retry erases", ok);
+    }
+
+    {   /* The previous copy survives a cut at every write boundary of the following (erasing) save. */
         uint8_t copies[2 * ST_SECTOR];
-        memset(nor, 0xFF, sizeof nor);
+        fresh();
         ok = st_save(OBJ_PROJECT0, payload, 600) == 0;
         memcpy(copies, nor + base, sizeof copies);
         for (i = 0; i < 600u + sizeof(st_hdr_t); i++) {
             memcpy(nor + base, copies, sizeof copies);
+            reboot();
             reset_counts();
             fail_bytes = (int)i;
-            ok &= st_save(OBJ_PROJECT0, payload + 1, 600) == -9 && erase_calls == 0u;
+            ok &= st_save(OBJ_PROJECT0, payload + 1, 600) == -9 && erase_calls == 1u;
             fail_bytes = -1;
             memset(st_buf, 0, sizeof st_buf);
             ok &= st_load(OBJ_PROJECT0, got, sizeof got) == 600 && !memcmp(got, payload, 600);
         }
-        bad += check("every blank-target write cut keeps old data", ok);
+        bad += check("every blank-B write cut keeps old data (B erased)", ok);
     }
 
-    memset(nor, 0xFF, sizeof nor);
+    fresh();
     reset_counts();
     write_protected = 1;
     ok = st_save(OBJ_PROJECT0, payload, 600) == -7 && erase_calls == 0u;
     write_protected = 0;
     bad += check("blank write-protected flash never reports saved", ok);
 
-    /* Explicit-copy migration may source the retired object's bytes from shared scratch. */
-    memset(nor, 0xFF, sizeof nor);
-    ok = st_save(OBJ_FM6BANK, payload, sizeof payload) == 0;
+    /* The scan's scratch is not st_buf: an explicit-copy save may source its bytes from st_buf. */
+    fresh();
+    memcpy(st_buf, payload, sizeof payload);
     reset_counts();
-    ok &= st_save_to(OBJ_UPFM6, st_buf, sizeof payload, 1) == 0 && erase_calls == 0u;
+    ok = st_save_to(OBJ_UPFM6, st_buf, sizeof payload, 1) == 0 && erase_calls == 0u;
+    ok &= st_load(OBJ_UPFM6, got, sizeof got) == (int)sizeof payload && !memcmp(got, payload, sizeof payload);
+    /* migration: a bank copy in A, the patches into B: the pair was used, B is erased */
+    fresh();
+    ok &= st_save(OBJ_FM6BANK, payload, sizeof payload) == 0;
+    reboot();
+    reset_counts();
+    ok &= st_load(OBJ_FM6BANK, got, sizeof got) == (int)sizeof payload;     /* the bank in st_buf, as upf_boot */
+    ok &= st_save_to(OBJ_UPFM6, st_buf, sizeof payload, 1) == 0 && erase_calls == 1u;
     ok &= st_load(OBJ_UPFM6, got, sizeof got) == (int)sizeof payload && !memcmp(got, payload, sizeof payload);
     ok &= st_load(OBJ_FM6BANK, got, sizeof got) == (int)sizeof payload && !memcmp(got, payload, sizeof payload);
-    bad += check("blank explicit-copy save preserves st_buf source", ok);
+    bad += check("explicit-copy saves preserve their st_buf source", ok);
 
     /* Readback must still report a failure even if the blank scan and programs succeeded. */
     ok = 1;
     for (i = 0; i < 2u; i++) {
-        memset(nor, 0xFF, sizeof nor);
+        fresh();
         reset_counts();
         read_fail_off = base + (i ? ST_PAYLOAD_OFF : 0u);
         read_fail_n = i ? 1u : sizeof(st_hdr_t);
@@ -169,20 +256,25 @@ static int blank_sector_tests(void)
     }
     bad += check("blank saves retain header/payload readback", ok);
 
-    memset(nor, 0xFF, sizeof nor);
+    fresh();
     reset_counts();
     ok = st_save(OBJ_PROJECT0, payload, 600) == 0;
-    printf("blank 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
-    ok &= read_calls == 20u && read_bytes == 4792u && erase_calls == 0u && prog_calls == 4u;
+    printf("fresh A 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
+    ok &= read_calls == 22u && read_bytes == 4856u && erase_calls == 0u && prog_calls == 4u;
     reset_counts();
     ok &= st_save(OBJ_PROJECT0, payload, 600) == 0;
     printf("blank B 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
-    ok &= read_calls == 21u && read_bytes == 5392u && erase_calls == 0u && prog_calls == 4u;
+    ok &= read_calls == 5u && read_bytes == 1296u && erase_calls == 1u && prog_calls == 4u;
     reset_counts();
     ok &= st_save(OBJ_PROJECT0, payload, 600) == 0;
     printf("reused A 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
-    ok &= read_calls == 6u && read_bytes == 1552u && erase_calls == 1u && prog_calls == 4u;
-    bad += check("complete save I/O cost and early dirty exit", ok);
+    ok &= read_calls == 5u && read_bytes == 1296u && erase_calls == 1u && prog_calls == 4u;
+    reboot();
+    reset_counts();
+    ok &= st_save(OBJ_PROJECT0, payload, 600) == 0;
+    printf("after a reboot 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
+    ok &= read_calls == 6u && read_bytes == 1328u && erase_calls == 1u && prog_calls == 4u;
+    bad += check("complete save I/O cost", ok);
     return bad;
 }
 

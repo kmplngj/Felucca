@@ -22,9 +22,10 @@ counts. Every scenario runs with both a blank destination and a blank header wit
 a dirty tail. A failed assertion exits nonzero. The independent PCM oracle observes
 every erase and attempted program, requiring no mutation during an audible block or within
 ten seconds afterward, exactly one eventual save, no repeated unchanged write,
-and restoration of the deferred edit. Program-failure injection on the first blank
-save preserves retry/wear checks even when no erase is needed; the persistence
-fixture retains separate failures of actual erases on reused destinations.
+and restoration of the deferred edit. Program-failure injection on the first save
+of a fresh (blank, never tried) autosave preserves retry/wear checks even when that
+save needs no erase; the retry, and every later save, erases its destination (#721).
+The persistence fixture retains separate failures of actual erases.
 
 ## Exact threshold and target ISR cost
 
