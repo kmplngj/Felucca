@@ -548,8 +548,12 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_motion() {
         $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/motion_test" tests/motion_test.c -lm
         run "motion, whole-step chance, FUN7 migration, song restore, ARP repeat and the 1.2 ARP modes" "$OUT/motion_test"
+        run "motion sparse masks: pinned original scan versus actual PCM, ordered events and explicit state; causal controls" \
+            python3 tests/motion_sparse_test.py
     }
+    UNIT_PRODUCERS=tests/motion_sparse_test.py
     unit motion "" u_motion
+    UNIT_PRODUCERS=
 
     u_ratchet() {
         $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/ratchet_test" tests/ratchet_test.c -lm

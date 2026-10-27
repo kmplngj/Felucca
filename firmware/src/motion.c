@@ -112,9 +112,17 @@ static int16_t motion_base_value(const track_t *t, uint32_t id)
 }
 static void motion_restore(track_t *t)
 {
-    uint32_t k = trk_index(t), id, f = motion_guard();
-    for (id = 0; id < P_COUNT; id++)
-        if ((motion_active[k][id / 32u] >> (id % 32u)) & 1u) t->p[id] = motion_base[k][id];
+    uint32_t k = trk_index(t), w, f = motion_guard();
+    for (w = 0; w < (P_COUNT + 31u) / 32u; w++) {
+        uint32_t bits = motion_active[k][w];
+        if (w == P_COUNT / 32u)
+            bits &= (1u << (P_COUNT & 31u)) - 1u;
+        while (bits) {
+            uint32_t id = w * 32u + (uint32_t)__builtin_ctz(bits);
+            t->p[id] = motion_base[k][id];
+            bits &= bits - 1u;
+        }
+    }
     memset(motion_active[k], 0, sizeof motion_active[k]);
     memset(motion_locked[k], 0, sizeof motion_locked[k]);
     motion_unguard(f);
@@ -244,22 +252,26 @@ static int motion_capture(track_t *t, uint32_t id, int16_t value)
  * own value */
 static __attribute__((noinline)) void motion_unlock(track_t *t, uint32_t step, const motion_store_t *m)
 {
-    uint32_t k = trk_index(t), id, i;
-    for (id = 0; id < P_COUNT; id++) {
-        int32_t best = -1;
-        int16_t v;
-        if (!((motion_locked[k][id / 32u] >> (id % 32u)) & 1u))
-            continue;
-        v = motion_base[k][id];
-        for (i = 0; i < m->count; i++) {
-            const motion_event_t *e = &m->event[i];
-            int32_t s = (int32_t)(e->place & 63u);
-            if ((e->place >> 6) != k || e->param != id || s > (int32_t)step || s <= best)
-                continue;                               /* (e->param == id: automation only, no MOTION_LOCK) */
-            best = s;
-            v = (int16_t)param_fit(param_desc_of(eng_idx(t->eng_req), id), e->value);
+    uint32_t k = trk_index(t), w, i;
+    for (w = 0; w < (P_COUNT + 31u) / 32u; w++) {
+        uint32_t bits = motion_locked[k][w];
+        if (w == P_COUNT / 32u)
+            bits &= (1u << (P_COUNT & 31u)) - 1u;
+        while (bits) {
+            uint32_t id = w * 32u + (uint32_t)__builtin_ctz(bits);
+            int32_t best = -1;
+            int16_t v = motion_base[k][id];
+            for (i = 0; i < m->count; i++) {
+                const motion_event_t *e = &m->event[i];
+                int32_t s = (int32_t)(e->place & 63u);
+                if ((e->place >> 6) != k || e->param != id || s > (int32_t)step || s <= best)
+                    continue;                           /* (e->param == id: automation only, no MOTION_LOCK) */
+                best = s;
+                v = (int16_t)param_fit(param_desc_of(eng_idx(t->eng_req), id), e->value);
+            }
+            t->p[id] = v;
+            bits &= bits - 1u;
         }
-        t->p[id] = v;
     }
     memset(motion_locked[k], 0, sizeof motion_locked[k]);
 }
