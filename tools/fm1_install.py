@@ -455,14 +455,14 @@ class Updater:
         served, last = 0, time.monotonic()
         while True:
             pkt = link.read(DELAY["poll"])
-            if pkt is None:
+            r = parse_request(pkt) if pkt is not None else None
+            # Unrelated/malformed SysEx is not progress and must not hide a
+            # stopped or disconnected updater while the receive queue stays busy.
+            if r is None:
                 if link.lost:
                     return served, False, True
                 if time.monotonic() - last > idle:
                     return served, False, False
-                continue
-            r = parse_request(pkt)
-            if not r:
                 continue
             fl, addr, n = r
             last = time.monotonic()
