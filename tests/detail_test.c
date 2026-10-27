@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* 1.5.1, Discussion #199: SEQ > DETAIL, the step page between STEP and AUTOMATION, on the real sequencer and UI
- * sources (with the stubs of tests/ui_test.c):
+ * sources (with the stubs of tests/ui_harness.h):
  *   the page   SEQ goes STEP -> DETAIL -> AUTOMATION -> STEP; the cursor is STEP's
  *   knobs      KNOB 1 CHANCE, 2 RATCH, 3 NUDGE, 4 VEL of the cursor step, PRESETS walks the cursor (KNOB 1 does not),
  *              nothing else of the step changes; a REST / an empty step takes none (NO NOTE), a TIE its CHANCE only
@@ -14,8 +14,7 @@
  *   playback   the sequencer plays them (RATCH parts, CHANCE 0 silent, VEL), a pattern untouched plays as before
  *   STEP       unchanged: KNOB 1 the cursor; modified steps marked over the roll
  * Built and run by tests/run_tests.sh. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* track 1 alone (ANALOG, POLY), 16 steps of 1/16, GATE 64, no swing: C4 on 0, a REST on 1, E4 on 2 with a TIE on 3,
  * a chord C E G on 4, step 5 empty (a REST), A4 on 6; SEQ > STEP on step `cur` */

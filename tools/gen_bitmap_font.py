@@ -170,7 +170,11 @@ def main():
     x, _, _, xc = emit('X', *medium, [ord(c) for c in L_CHARS], 50, 40, 3, data, offsets,
                        label='M8Stealth89 x3, 26px advance (shared M)', tracking=-1)
     parts += [s, m, l, n, x]
-    Path(args.out).write_text('\n\n'.join(parts) + '\n')
+    from font_resources import MANIFEST, checked, serialize
+    header = '\n\n'.join(parts) + '\n'
+    manifest = checked(Path(__file__).resolve().parents[1], header)
+    Path(args.out).write_text(header)
+    Path(args.out).with_name(MANIFEST).write_text(serialize(manifest))
     print(f'fonts total {sc + mc + lc + nc + xc} B tables + 180 B descriptors -> {args.out}')
 
 

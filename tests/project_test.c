@@ -704,8 +704,9 @@ int main(void)
 #undef PERC_OK
     }
     {   /* #418: can a VALID current project (the autosave's FUN10) hold the update-record shape at sector + 0xF00?
-         * The loader cleanup (ldr_core.c) and the SPL classify the 80 bytes at 4K boundary - 256 as a record when
-         * u16 at +6 is 0x5441 and the nonzero u16 at +0 is the CRC16 (poly 0x1021, init 0) of bytes 2..79. The
+         * The loader cleanup (ldr_core.c) classifies the 80 bytes at 4K boundary - 256 as a record when u16 at
+         * +6 is 0x5441 and the nonzero u16 at +0 is the CRC16 (poly 0x1021, init 0) of bytes 2..79. This tests that
+         * loader predicate; the external SPL's required fields and record selection remain unknown. The
          * autosave payload starts at sector + 0x100 (storage.c ST_PAYLOAD_OFF), so the record is payload bytes
          * 3584..3663 = PROJ_FM6_OFF + 2 * 128 + 16 .. + 95: inside TRACK 3's packed FM6 patch (bytes 16..95 of its
          * 17-byte operator records: byte 16 is operator 0's FF, 17 operator 1's R1, 22/23 its L2/L3). Everything in

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* 1.5.5 sequencer (#209 #186 #85), on the real sequencer and UI sources (with the stubs of tests/ui_test.c):
+/* 1.5.5 sequencer (#209 #186 #85), on the real sequencer and UI sources (with the stubs of tests/ui_harness.h):
  *   CONDITIONS  a step's 1:2 .. 4:4 by the track's loops (each track its own LEN), counted from PLAY, RESTART, each SONG
  *               section; FILL / !FILL with GLO + E4 held (and the GLO lock); a NUDGE early step 1 the next loop's; a
  *               failed condition applies no lock; a step without one rolls its chance as before (the same draws)
@@ -13,8 +13,7 @@
  *               preview, OCT+ applies, OCT- cancels, one undo
  *   DOUBLE HALF (SEQ TOOLS D5 E5) LEN x2 (up to 64) / half, ties, locks and the steps' own fields with them, one undo
  * Built and run by tests/run_tests.sh. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* track 1 alone, LEN 16 of 1/16, GATE 64, no swing; notes 60 + i on step i where on bit i; the rest REST */
 static track_t *melody(uint32_t on)

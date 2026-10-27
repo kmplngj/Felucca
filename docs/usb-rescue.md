@@ -1,6 +1,11 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Early USB rescue and compatible update loaders
 
+Use the recovery route the unit can actually reach: the ordinary MIDI installer
+while Felucca runs, early MIDI-only rescue before normal startup, then the existing
+[ROM recovery tool](#rom-recovery-with-existing-m-flasher) if application rescue
+cannot run. A saved dump alone cannot establish a live USB route.
+
 Hold **OCT−** while powering on to select early USB rescue. On an ordinary boot,
 holding **OCT− and OCT+** retains panel calibration. Two incomplete warm boots
 select rescue; another warm reset while rescue is active escalates to ROM USB.
@@ -61,6 +66,96 @@ installation prompt; the flag cannot override the classifier, CRCs or final iden
 Original V15 return remains a separately validated Python/browser path. Its loader can write beyond the custom app-only
 region; package acceptance does not prove stored-data preservation.
 
+## ROM recovery with existing M-Flasher
+
+[M-Flasher at `f0ff8e8556df7bac85fcff303000e124ed57246b`](https://github.com/kmplngj/m-flasher/tree/f0ff8e8556df7bac85fcff303000e124ed57246b)
+already provides the chip-ROM backup/restore/firmware-install path for Windows,
+macOS and Linux. Use it for the ROM path and Felucca's Python installer for MIDI
+OTA. Follow its pinned
+[build instructions](https://github.com/kmplngj/m-flasher/blob/f0ff8e8556df7bac85fcff303000e124ed57246b/docs/development.md#building)
+and [host setup and usage](https://github.com/kmplngj/m-flasher/blob/f0ff8e8556df7bac85fcff303000e124ed57246b/docs/usage.md).
+Below, `m-flasher` means that build's executable; an older release may lack the
+file-only commands. Felucca does not download or select this tool automatically.
+
+### Inspect saved files first
+
+Leave the unit disconnected. These commands dispatch before device discovery,
+device opening or a RAM-loader session, and need no administrator rights:
+
+```sh
+m-flasher inspect /private/raw-flash.bin --support
+m-flasher verify /private/raw-flash.bin --sha256 EXPECTED_64_HEX_DIGEST --expected-size 1048576 --support
+m-flasher inspect /private/official.fwsc --package --support
+m-flasher dry-plan /private/raw-flash.bin /private/official.fwsc --support
+```
+
+Replace paths and the digest with the saved files and their retained reference.
+`--package` explicitly selects package parsing; a filename does not. `verify`
+checks saved bytes against the reference and exits 1 on a mismatch; a corrupt
+application can still match its saved digest. The 1 MiB size is a historical
+layout check, not a measurement of the connected chip. `dry-plan` reports an
+advisory sector count or a blocked layout/compatibility result; it cannot execute
+a write or establish bootability. These commands create no output files unless
+the shell redirects their output. `--support` omits private hashes, identities,
+keys, paths and raw contents; retain raw dumps privately. See the exact
+[file-only grammar and result limits](https://github.com/kmplngj/m-flasher/blob/f0ff8e8556df7bac85fcff303000e124ed57246b/docs/saved-diagnostics.md).
+
+The saved-file report classifies known boot containers and app/data structures.
+For the more specific SPL/header CRCs, chip key and declared clock fields, use
+Felucca's [offline boot-area survey](boot-area-survey.md) on an existing private
+dump or package, with the device disconnected. That utility is extracted from
+PR #622; the donor's installer/runtime changes and #619's backup-first physical
+survey remain separate. Saved bytes do not establish #618's live clock evidence.
+V16/cross-bootloader return and the matching WebApp candidate remain separate
+from the accepted loader matrix above.
+
+### Enter ROM and preserve a backup
+
+These are device operations, separate from the disconnected checks:
+
+1. If Felucca runs, stop playback and release notes. Hold both physical OCT
+   buttons for more than five seconds until the update-mode countdown completes,
+   or use M-Flasher's `download-mode` command on the sole connected unit. This
+   restarts the unit. Holding both buttons **at power-on** instead selects panel
+   calibration on an ordinary Felucca boot. With m-bootloader, its documented
+   REC-at-power-on route enters download mode. A broken application may already
+   expose ROM USB; stock-bootloader key gestures cannot guarantee entry. If no
+   usable USB route remains, use the separately prepared
+   [FM-1 Transporter](https://github.com/kurogedelic/FM-1-transporter) hardware
+   procedure rather than assuming another software retry will reach it.
+2. Connect one FM-1 directly with a USB data cable. ROM download mode identifies
+   as **WL82 UBOOT1.00**, not Felucca's MIDI-only rescue. Follow the pinned host
+   setup: Windows needs administrator access; macOS needs the system permission
+   dialogs for USB/disk-driver access; Linux needs its udev rule and SCSI generic
+   driver (the desktop app runs as the user). On macOS the removable-volume
+   permission requires the local screen, not an SSH-only session.
+3. Use `m-flasher find`, then `m-flasher info --device SELECTED_PATH` and
+   `m-flasher backup /private/new-backup --device SELECTED_PATH`, substituting the
+   exact path reported for the intended unit. Unlike file-only inspection,
+   `info` and `backup` can upload and execute M-Flasher's RAM loader and read the
+   flash; they can also change the device's display. Preserve the resulting raw
+   `.bin` and companion `.json`, then verify private saved copies while
+   disconnected. The ordinary backup JSON is not the experimental FMR1 receipt
+   accepted by `verify --receipt`.
+4. For a restore or installation, follow the pinned
+   [operation and confirmation procedure](https://github.com/kmplngj/m-flasher/blob/f0ff8e8556df7bac85fcff303000e124ed57246b/docs/usage.md#the-actions).
+   Review the selected model, package, affected sectors and backup first. A ROM
+   write has its own policy; it does not extend Felucca's MIDI loader allowlist.
+   Do not add bootloader replacement, settings erasure or unattended `--yes` to
+   an application-only recovery. Stop on an uncertain model, failed backup,
+   verification error or lost connection. After recovery, power-cycle normally
+   and check the actual firmware identity and preserved data before continuing.
+
+The [recorded 2026-10-16 raw-backup observation](https://github.com/kmplngj/m-flasher/blob/f0ff8e8556df7bac85fcff303000e124ed57246b/docs/fm1-raw-backup.md)
+covers two equal 1 MiB reads, protected reopened copies and manual cold return to
+Stock V15 on one macOS/FM-1 setup. It uses the separate experimental FMR1 reader;
+both destinations were on one filesystem, so independent media remain unverified.
+It does not qualify this ROM writer, other hosts, rollback or an interrupted
+flash. Current-fork writer/failure and exact bootloader-transition qualification
+remain open in the
+[legacy roadmap](https://github.com/kmplngj/m-flasher/blob/f0ff8e8556df7bac85fcff303000e124ed57246b/docs/repository-migration.md).
+No new device or flashing result is claimed by this guide correction.
+
 ## Boot and service ownership
 
 `boot_policy.h` reuses the existing twelve retained bytes. Only unambiguous power-on
@@ -113,11 +208,17 @@ input scanner. `tests/rescue_input_test.c` compiles both actual HAL helpers and
 the rescue-entry function against a shift-register/row model with an initially
 unpowered rail, rail startup delay, row settling and timer wrap. This catches the
 original omission; simulated timing is not a measured FM-1 rail-rise bound.
-The corrected Felucca entry still needs the device check below.
+The maintainer subsequently confirmed the corrected entry worked and authorized
+merge of [PR #487](https://github.com/kmplngj/Felucca/pull/487), tested head
+`9907643c2e049d4414c5f0151bfd4317b72c8995`; [#116](https://github.com/kmplngj/Felucca/issues/116)
+records that acceptance. It does not establish every transition below on the
+current firmware and host combination.
 
 ## One combined FM-1 handoff
 
-**Hardware validation is pending.** Fake-HAL tests compile the actual policy,
+**Detailed qualification remains pending where not individually recorded.** The
+accepted PR #487 entry result above remains valid for its reported candidate.
+Fake-HAL tests compile the actual policy,
 rescue loop, OTA adapter/core and USB parser/descriptors. They cover idle writes,
 unknown flash, abort/erase/program failures, deliberate resets, wrap, reconnect and
 the MIDI-only persona. They do not prove real SIE/host enumeration or flash hardware.
@@ -150,8 +251,9 @@ Report scenario, exact commits/hashes, host setup and observed versus expected
 results. Use one combined candidate rather than separate firmware installations
 per issue, except where the install/resume/return scenario requires a transition.
 
-Application rescue needs intact startup/HAL/USB/RAM-flash code. ROM recovery remains
-#429; SPL interpretation of record-shaped user data remains #438. Full raw-backup,
+Application rescue needs intact startup/HAL/USB/RAM-flash code. The existing ROM
+tool above supplies #429's host path; current-device recovery qualification is
+still separate. SPL interpretation of record-shaped user data remains #438. Full raw-backup,
 readback, rollback and writer-failure qualification remain [legacy m-flasher #13](https://github.com/kmplngj/m-flasher-legacy/issues/13),
 [#15](https://github.com/kmplngj/m-flasher-legacy/issues/15) and
 [#16](https://github.com/kmplngj/m-flasher-legacy/issues/16).
