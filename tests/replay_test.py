@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import wave
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,19 @@ BASE = json.loads((ROOT / "tests/scenarios/interaction.json").read_text())
 
 
 class ValidationTests(unittest.TestCase):
+    def test_shared_nor_changes_native_replay_inputs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            header = root / "tests/host_nor.h"
+            header.parent.mkdir()
+            header.write_text("/* first NOR implementation */\n")
+            with mock.patch.object(replay, "ROOT", root):
+                first = replay.source_inputs()
+                self.assertIn("tests/host_nor.h", first)
+                header.write_text("/* changed NOR implementation */\n")
+                second = replay.source_inputs()
+            self.assertNotEqual(first["tests/host_nor.h"], second["tests/host_nor.h"])
+
     def setUp(self):
         build = ROOT / "build"
         build.mkdir(exist_ok=True)

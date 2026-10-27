@@ -462,8 +462,15 @@ erase. Its program counter counts completed bytes; its erase counter excludes re
 refused before work. Reads remain available for recovery after a cut. The user-preset
 fixture checks every payload/header byte-cut boundary, interrupted/refused erases
 and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. Storage and persistence tests retain their different retry
-and operation-counting models.
+`up_put` mirror rollback. The browser emulator also uses this model behind its
+existing bounds, sector-rounding and successful-operation counters. It exports no
+fault controls. A page-contract violation terminates the native adapter and traps
+in standalone Wasm without adding host imports. Native replay fingerprints include
+the shared NOR header so changes invalidate cached adapters and capture provenance.
+The `emulator_partitions` unit checks bounds, page failures and a panel save restored
+in a fresh process; with Emscripten it also checks the actual Wasm trap and empty
+import list. Storage and persistence tests retain their different retry and
+operation-counting models.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set

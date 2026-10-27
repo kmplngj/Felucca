@@ -1428,6 +1428,19 @@ fi
 UNIT_NEEDS=
 u_emulator_partitions() {
     if command -v node >/dev/null 2>&1 && [ -f build/gen/felucca_tables.h ]; then
+        $CC -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
+            tests/emulator_nor_test.c -lm -o "$OUT/emulator_nor"
+        set -- "$OUT/emulator_nor"
+        if command -v emcc >/dev/null 2>&1; then
+            emcc -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
+                --no-entry -sSTANDALONE_WASM -sSTACK_SIZE=1048576 -sINITIAL_MEMORY=33554432 -sFILESYSTEM=0 \
+                -o "$OUT/emulator_nor.wasm" tests/emulator_nor_test.c
+            set -- "$@" --wasm "$OUT/emulator_nor.wasm"
+        else
+            echo "== emulator NOR: WebAssembly guard unavailable (no emcc)"
+        fi
+        run "emulator NOR: bounds, shared page guard and panel save across fresh instances" \
+            python3 tests/emulator_nor_test.py "$@"
         run "emulator partitions: exact PCM/state/publication, native and optional WebAssembly, negative fixtures" \
             sh web/emu/partition_test.sh
     else
