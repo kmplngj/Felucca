@@ -132,6 +132,13 @@ CPU_FILE `-` means CPU budgets are not checked. PCM/state observations do not
 establish a retirement policy, target timing or device behavior. Use the focused
 guide's pinned inputs, prerequisites and reproduction steps.
 
+### External guest trace prerequisite
+
+The optional [pinned guest-trace check](emulator-trace-prerequisite.md) corrects
+external emulator IRQ attribution, retirement rows and halt status before a native
+hotspot adapter can consume them. It verifies synthetic guest workloads and build
+receipts; native hotspot reports, physical timing and trace overhead remain pending.
+
 ### Target regression
 
 ```sh
