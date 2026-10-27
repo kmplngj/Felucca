@@ -20,8 +20,8 @@ static unsigned char host_samples[3][0x14000];
 #define FELUCCA_FLASH 0
 #define FELUCCA_VERSION "TEST"
 #define FELUCCA_CDC 1
-#if !defined(FELUCCA_CPU2) || FELUCCA_CPU2
 #include "../firmware/hal/fm1_lcd_contract.h"
+#if !defined(FELUCCA_CPU2) || FELUCCA_CPU2
 #include "c1_host.h"
 #endif
 #define main hostsim_main

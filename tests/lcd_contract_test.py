@@ -28,8 +28,8 @@ class FirmwareLcdContract(unittest.TestCase):
         if not self.cc or shutil.which(self.cc[0]) is None:
             self.fail('configured host C compiler unavailable')
 
-    def compile(self, path, source=None):
-        return subprocess.run([*self.cc, '-w', '-fsyntax-only', '-x', 'c',
+    def compile(self, path, source=None, defines=()):
+        return subprocess.run([*self.cc, '-w', '-fsyntax-only', '-x', 'c', *defines,
                                '-I', str(ROOT / 'firmware/src'), '-I', str(ROOT / 'build/gen'),
                                '-I', str(ROOT / 'build/host'),
                                '-iquote', str(path.parent),
@@ -47,6 +47,14 @@ class FirmwareLcdContract(unittest.TestCase):
         for path in BLIT_NOOPS:
             with self.subTest(adapter=path.name):
                 result = self.compile(path)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cpu2_off_blit_adapters(self):
+        entries = {DRIVER: REAL, UI: ROOT / 'tests/ui_test.c',
+                   BROWSER: ROOT / 'web/emu/native_check.c'}
+        for path in BLIT_ADAPTERS:
+            with self.subTest(adapter=path.name):
+                result = self.compile(entries.get(path, path), defines=('-DFELUCCA_CPU2=0',))
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_mutable_blit_sources_are_rejected(self):
