@@ -1010,6 +1010,12 @@ worktrees, changed HEADs, local edits, and additional files, including ignored
 build output and files inside nested submodules. Preserve or remove those files
 yourself before retrying; it does not automatically clean or stash them. Keep
 firmware artifacts outside the disposable worktree if you need them later.
+Submodule commits retained only in a reflog are protected too, including detached
+work followed by a return to the pinned commit. Deleting a local branch does not
+remove that protection. Push the work to an independent repository, or export and
+verify it outside the disposable worktree, before resolving the local history and
+retrying; a branch inside its private submodule Git directory is not an external
+backup. The helper does not expire reflogs or discard commits for you.
 Returning to your original directory or removing PR sources does **not** revert
 the FM-1: reinstall the previously saved firmware package to restore that build.
 

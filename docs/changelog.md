@@ -127,6 +127,10 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- PR-source cleanup preserves detached submodule commits retained only in reflogs,
+  including nested submodules after returning to the pinned revision. See the
+  [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
+
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
   update requests still renew the existing staging and writing idle budgets.
