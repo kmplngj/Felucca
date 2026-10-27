@@ -19,6 +19,10 @@ static size_t logical_len;
 static uint8_t rx[1024];
 static uint32_t rx_len, rx_full, now_ms, requests, erases, bad_range, record_cleared, f0_asked;
 static uint32_t prog_fail, verify_fail, expected_flash_off;
+/* Count real hook calls and inject only the selected app-sector fault. Readback
+ * corruption changes the reported bytes, not NOR; partial programming obeys 1->0. */
+static uint32_t page_calls[0x100], sector_reads[0x100];
+static uint32_t fault_sector = 0xFFFFFFFFu, partial_page = 0xFFFFFFFFu, bad_readbacks;
 static uint32_t erase_n[0x100], prot_reads, rd_fail_off = 0xFFFFFFFFu, er_fail_off = 0xFFFFFFFFu;   /* per 4K sector; fault injection */
 static uint32_t flip_addr = 0xFFFFFFFFu, flip_seen, flip_on;   /* serve addr's flip_on-th reply with a byte changed */
 
@@ -95,6 +99,13 @@ static int ldr_fread(uint32_t off, void *p, uint32_t n)
     if (off < PROT_HI && off + n > PROT_LO) prot_reads++;
     if (rd_fail_off >= off && rd_fail_off < off + n) return -1;
     memcpy(p, nor + off, n);
+    if (off >= 0x4000u && off < 0x93000u && n == 0x1000u) {
+        sector_reads[off >> 12]++;
+        if (off == fault_sector && page_calls[off >> 12] && bad_readbacks) {
+            ((uint8_t *)p)[0] ^= 1;
+            bad_readbacks--;
+        }
+    }
     return 0;
 }
 static int ldr_erase(uint32_t off)
@@ -113,7 +124,12 @@ static int ldr_prog(uint32_t off, const void *p, uint32_t n)
     const uint8_t *s = p;
     uint32_t i;
     if (off < 0x4000u || off + n > 0x93000u || ((off & 0xFFu) + n) > 256u) bad_range++;
+    page_calls[off >> 12]++;
     if (prog_fail) return -1;
+    if (off == partial_page) {
+        for (i = 0; i < n / 2u; i++) nor[off + i] &= s[i];
+        return -1;
+    }
     for (i = 0; i < n; i++) nor[off + i] &= s[i];
     if (verify_fail && (off & 0xFFFu) == 0xF00u) nor[off] ^= 1;
     return 0;
@@ -348,6 +364,10 @@ static void reset_counters(void)
     memset(erase_n, 0, sizeof erase_n);
     prot_reads = 0; bad_range = 0; erases = 0; requests = 0;
     rd_fail_off = er_fail_off = 0xFFFFFFFFu;
+    memset(page_calls, 0, sizeof page_calls);
+    memset(sector_reads, 0, sizeof sector_reads);
+    fault_sector = partial_page = 0xFFFFFFFFu;
+    bad_readbacks = 0;
 }
 
 static int cleanup_case(const char *name, int v)
@@ -481,6 +501,95 @@ static int update_record_upfm6_tests(void)
     return bad;
 }
 
+/* PR #713 covers permanent write errors and verified display progress. These
+ * cases additionally bind retry counts, partial-page NOR and record retention to
+ * the actual core, without claiming that a real SPL can resume after power loss. */
+static int write_retry_cases(void)
+{
+    enum { TARGET = 0x20000, PREFIX = TARGET - 0x1000, PAGE = TARGET + 0x600 };
+    static uint8_t before[sizeof nor], partial[0x1000];
+    const uint8_t *target = logical + expected_flash_off + TARGET;
+    uint32_t kind, i, cleared, finished, pages, app_erases;
+    int bad = 0, rc;
+    for (kind = 0; kind < 3u; kind++) {
+        /* Only two changed app sectors: everything earlier/later is already
+         * verified package data, so any extra erase/program is observable. */
+        memcpy(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, LDR_APP_HI - LDR_APP_LO);
+        for (i = PREFIX; i < TARGET + 0x1000u; i++) nor[i] ^= 0x5A;
+        fixture_protected(V_BOTH_COPIES);
+        arm_outside();
+        memcpy(before, nor, sizeof before);
+        reset_counters();
+        fault_sector = TARGET;
+        if (kind == 2u) partial_page = PAGE;
+        else bad_readbacks = kind + 1u;             /* transient once, persistent across both attempts */
+        cleared = record_cleared; finished = f0_asked;
+        bad += check("retry fixture: armed records and two changed app sectors",
+                     looks_like_record(nor + 0xE4F00u) && looks_like_record(nor + 0xE8F00u) &&
+                     memcmp(nor + TARGET, target, 0x1000u) && memcmp(nor + PREFIX, target - 0x1000u, 0x1000u));
+        rc = ldr_session();
+        pages = app_erases = 0;
+        for (i = 0; i < sizeof page_calls / sizeof *page_calls; i++) {
+            pages += page_calls[i];
+            if (i >= LDR_APP_LO >> 12 && i < LDR_APP_HI >> 12) app_erases += erase_n[i];
+        }
+        bad += check("retry prefix is written once; no unrelated app pages programmed",
+                     erase_n[PREFIX >> 12] == 1u && page_calls[PREFIX >> 12] == 16u &&
+                     pages == 16u + page_calls[TARGET >> 12] && app_erases == (kind == 2u ? 2u : 3u) &&
+                     !bad_range && !prot_reads);
+        if (kind == 0u) {
+            bad += check("one bad readback succeeds on exactly the second sector attempt",
+                         rc == 0 && erase_n[TARGET >> 12] == 2u && page_calls[TARGET >> 12] == 32u &&
+                         sector_reads[TARGET >> 12] == 3u && !bad_readbacks);
+            bad += check("transient readback success finishes once with exact app and protected bytes",
+                         record_cleared == cleared + 1u && f0_asked == finished + 1u &&
+                         !memcmp(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, LDR_APP_HI - LDR_APP_LO) &&
+                         !memcmp(nor, before, LDR_APP_LO) && !memcmp(nor + PROT_LO, prot_ref, sizeof prot_ref) &&
+                         user_kept() && outside_cleaned() && !progress_bad);
+            continue;
+        }
+        if (kind == 1u) {
+            bad += check("two bad readbacks stop at -11 after exactly two erase/program attempts",
+                         rc == -11 && erase_n[TARGET >> 12] == 2u && page_calls[TARGET >> 12] == 32u &&
+                         sector_reads[TARGET >> 12] == 3u && !bad_readbacks);
+        } else {
+            memset(partial, 0xFF, sizeof partial);
+            memcpy(partial, target, 0x680u);         /* six full pages, then half of the seventh */
+            bad += check("partial seventh page stops at -10 without readback or further pages",
+                         rc == -10 && erase_n[TARGET >> 12] == 1u && page_calls[TARGET >> 12] == 7u &&
+                         sector_reads[TARGET >> 12] == 1u && !memcmp(nor + TARGET, partial, sizeof partial) &&
+                         memcmp(nor + TARGET, target, sizeof partial));
+        }
+        bad += check("failed sector never finishes, clears a record or changes non-app NOR",
+                     record_cleared == cleared && f0_asked == finished &&
+                     !memcmp(nor, before, LDR_APP_LO) &&
+                     !memcmp(nor + LDR_APP_HI, before + LDR_APP_HI, sizeof nor - LDR_APP_HI) &&
+                     !memcmp(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, TARGET - LDR_APP_LO) &&
+                     !memcmp(nor + TARGET + 0x1000u, before + TARGET + 0x1000u, LDR_APP_HI - TARGET - 0x1000u) &&
+                     progress_last == TARGET - LDR_APP_LO && !progress_bad);
+        /* Keep the same partially installed NOR and records. Only clear fault
+         * controls/counters; do not rearm, restore, or reset the simulated device. */
+        reset_counters();
+        rc = ldr_session();
+        pages = app_erases = 0;
+        for (i = 0; i < sizeof page_calls / sizeof *page_calls; i++) {
+            pages += page_calls[i];
+            if (i >= LDR_APP_LO >> 12 && i < LDR_APP_HI >> 12) app_erases += erase_n[i];
+        }
+        bad += check("same NOR retry skips verified prefix and writes only an incomplete sector",
+                     rc == 0 && !erase_n[PREFIX >> 12] && !page_calls[PREFIX >> 12] &&
+                     erase_n[TARGET >> 12] == (kind == 2u ? 1u : 0u) &&
+                     pages == (kind == 2u ? 16u : 0u) && pages == page_calls[TARGET >> 12] &&
+                     app_erases == (kind == 2u ? 1u : 0u) && sector_reads[TARGET >> 12] == (kind == 2u ? 2u : 1u));
+        bad += check("same NOR retry converges, finishes once and preserves head/user/protected data",
+                     record_cleared == cleared + 1u && f0_asked == finished + 1u &&
+                     !memcmp(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, LDR_APP_HI - LDR_APP_LO) &&
+                     !memcmp(nor, before, LDR_APP_LO) && !memcmp(nor + PROT_LO, prot_ref, sizeof prot_ref) &&
+                     user_kept() && outside_cleaned() && !bad_range && !prot_reads && !progress_bad);
+    }
+    return bad;
+}
+
 int main(int argc, char **argv)
 {
     size_t olen;
@@ -594,6 +703,7 @@ int main(int argc, char **argv)
         bad += check("same loader retries to successful verified completion", rc == 0 && ldr_screen_state == LDR_SUCCESS &&
                      progress_seen == LDR_NSEC && progress_bad == 0);
     }
+    bad += write_retry_cases();
     /* Display failure during validation must leave USB/session/retry functional,
      * retaining the exact borrowed source across all flash operations. */
     display_reset();
