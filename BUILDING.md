@@ -484,6 +484,16 @@ types only; it does not model physical interrupt/flash timing or change the NOR
 program/read/erase adapters. Replay fingerprints include the shared host header;
 the HAL contract is covered by the existing HAL input inventory.
 
+The `flash_data_contract` unit checks the real HAL and partial rescue, editor,
+FM6-effective-patch and engine-ID adapters against
+`firmware/hal/fm1_flash_data_contract.h`. It covers RAM erase/program/read and the
+erase/write wrappers, including byte-buffer types and `FL_FAR` calls. The six
+former generic-pointer fake signatures now match the HAL; their bodies and error
+models are unchanged. Object-buffer `st_*` hooks remain owned by `storage.c`,
+with `storage_hw.c` bridging to the byte-oriented HAL. This is compile/host
+coverage, not physical flash timing or power-loss qualification. The existing HAL
+replay input inventory covers this header.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for

@@ -368,6 +368,11 @@ u_flash_context_contract() {
     run "flash-context contract: actual HAL/host/rescue adapters and incompatible definitions/calls" python3 tests/flash_context_contract_test.py
 }
 unit flash_context_contract "" u_flash_context_contract
+
+u_flash_data_contract() {
+    run "flash data contract: actual HAL/partial adapters, buffer types and RAM call signatures" python3 tests/flash_data_contract_test.py
+}
+unit flash_data_contract "" u_flash_data_contract
 UNIT_NEEDS=
 
 u_usb() {
