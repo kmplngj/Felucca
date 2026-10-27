@@ -431,7 +431,6 @@ u_cc_scale() {
 unit cc_scale "" u_cc_scale
 
 u_lcd_power() {
-    run "LCD fill contract: real driver, UI/browser/rescue adapters and incompatible signatures" python3 tests/lcd_contract_test.py
     $CC -std=c11 -Wextra -Werror -o "$OUT/lcd_power_test" tests/lcd_power_test.c
     run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
 }
@@ -485,6 +484,11 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     }
     unit icon_streams "" u_icon_streams
     UNIT_NEEDS=assets
+
+    u_lcd_contract() {
+        run "LCD contracts: actual fill/blit adapters, CPU2-off variants and incompatible signatures" python3 tests/lcd_contract_test.py
+    }
+    unit lcd_contract "icon_streams" u_lcd_contract
 
     u_replay() {
         run "timestamped interaction replay: PCM/LCD determinism and real emulator" python3 tests/replay_test.py NativeReplayTests
