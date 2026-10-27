@@ -3,9 +3,11 @@
 
 This optional developer check corrects the external `fm1-emu` CLI's executed-PC
 trace before a native hotspot adapter can use it. It does not produce a hotspot
-report. [Issue #662](https://github.com/kmplngj/Felucca/issues/662) remains open:
-ELF symbol attribution, native workload replay, image matching, strict report
-validation and trace-overhead measurements still need implementation.
+report. [Bounded native replay evidence](native-emulator-replay.md) adds matched
+held-key/UART captures, repeat/control checks and limited wall-time observations.
+[Issue #662](https://github.com/kmplngj/Felucca/issues/662) remains open for ELF
+symbol attribution, broader scenario coverage, strict profiling reports and
+general trace-overhead/multicore evidence.
 
 The donor is [joakimeriksson/fm1-emu at
 `eef6d957aa94d3dfa74551688d707b984b792922`](https://github.com/joakimeriksson/fm1-emu/tree/eef6d957aa94d3dfa74551688d707b984b792922).

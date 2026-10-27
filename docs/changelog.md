@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Native emulator replay evidence:** optional developer tooling verifies matched
+  artifacts, repeated held-key/modeled-UART traces and PCM, and silent controls.
+  See the [bounded replay guide](native-emulator-replay.md); this supplies no
+  hotspot attribution, physical timing result or device qualification.
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.
