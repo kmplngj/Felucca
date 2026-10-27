@@ -472,6 +472,14 @@ in a fresh process; with Emscripten it also checks the actual Wasm trap and empt
 import list. Storage and persistence tests retain their different retry and
 operation-counting models.
 
+The backup, FM6-bank, persistence and browser adapters also share
+`tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,
+the direct `FL_FAR` call and a selected JEDEC value. Host fixtures retain zero;
+the browser selects `0x856014` for its actual boot/persistence path. Rescue retains
+its dynamic chip fake. This shares host implementations; it does not add real-HAL
+declaration checks or model physical interrupt/flash timing. Replay fingerprints
+include the shared header.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for
