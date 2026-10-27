@@ -42,8 +42,11 @@ accesses no device and changes no firmware or settings.
 Leading silence is allowed. The first non-silent data must synchronize with a
 pair of consecutive tone frames; unrelated data, a nonzero invalid prefix,
 unsupported rates and incomplete PCM fail. The reported checked-frame count
-includes only matched frames. Lost, repeated or corrupted frames produce breaks;
-after a break, resynchronization does not make that file pass. Every complete
+includes only matched frames. A discontinuity in the expected tone sequence
+produces a break; resynchronization does not make that file pass. The pattern
+repeats every 100 frames, so loss or repetition of a complete pattern period can
+be indistinguishable from a shorter or longer valid recording. WAV checks alone
+cannot detect those cases. Every complete
 final frame is checked once synchronized, but file boundaries cannot establish
 continuity outside the recording. Each file is reported even if another input
 is malformed; the command exits 1 if any file fails.
