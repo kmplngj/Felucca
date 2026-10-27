@@ -363,6 +363,13 @@ u_input() {
 }
 unit input "" u_input
 
+UNIT_NEEDS=assets
+u_flash_context_contract() {
+    run "flash-context contract: actual HAL/host/rescue adapters and incompatible definitions/calls" python3 tests/flash_context_contract_test.py
+}
+unit flash_context_contract "" u_flash_context_contract
+UNIT_NEEDS=
+
 u_usb() {
     # Real composite poll/control/EP4 paths with a HAL-only finite host model (#101).
     for cdc in 0 1; do

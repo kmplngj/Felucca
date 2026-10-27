@@ -476,9 +476,13 @@ The backup, FM6-bank, persistence and browser adapters also share
 `tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,
 the direct `FL_FAR` call and a selected JEDEC value. Host fixtures retain zero;
 the browser selects `0x856014` for its actual boot/persistence path. Rescue retains
-its dynamic chip fake. This shares host implementations; it does not add real-HAL
-declaration checks or model physical interrupt/flash timing. Replay fingerprints
-include the shared header.
+its dynamic chip fake. The `flash_context_contract` unit compiles the real HAL,
+shared host group, four actual consumers and the dynamic rescue JEDEC adapter
+against `firmware/hal/fm1_flash_context_contract.h`. Incompatible definitions and
+`FL_FAR` call types must fail the compile checks. The contract declares function
+types only; it does not model physical interrupt/flash timing or change the NOR
+program/read/erase adapters. Replay fingerprints include the shared host header;
+the HAL contract is covered by the existing HAL input inventory.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
