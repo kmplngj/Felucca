@@ -34,6 +34,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Native audio-window evidence:** optional developer tooling discovers and
+  qualifies a bounded held-key renderer window, repeats trace/PCM and compares
+  silent controls and the original native replay basis. See the
+  [capture guide](native-audio-window.md); no physical timing or optimization
+  result is supplied.
+
 - **Native guest hotspot attribution:** optional developer tooling revalidates
   saved replay evidence and counts bounded windows by target function range and
   emulator instruction class. See the [report guide](native-hotspots.md); no

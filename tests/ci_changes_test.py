@@ -123,6 +123,7 @@ class SelectionTest(unittest.TestCase):
         for fixture, implementations in (
             ("native_emulator_replay_test.py", ("tools/native_emulator_replay.py", "tests/native_emulator_replay_execution_test.py")),
             ("native_hotspots_test.py", ("tools/native_hotspots.py",)),
+            ("native_audio_window_test.py", ("tools/native_audio_window.py",)),
         ):
             with self.subTest(fixture=fixture):
                 self.assertIn(fixture, changes.PORTABLE_TESTS)

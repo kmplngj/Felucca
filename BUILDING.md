@@ -747,6 +747,11 @@ windows to verified target function ranges and emulator instruction classes.
 It rechecks saved evidence without executing firmware; counts apply only to the
 declared windows and do not establish physical cycles or deadlines.
 
+The [native audio-window guide](docs/native-audio-window.md) adds a source-qualified
+held-key recipe: seven bounded emulator children discover and verify an audio
+renderer window, repeat traces/PCM and compare matched silent controls and the
+original replay basis. It builds no firmware and makes no physical timing claim.
+
 ### Emulator partition regression
 
 With Node and generated assets, the runner rebuilds the real browser bridge natively;

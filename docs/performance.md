@@ -150,6 +150,12 @@ instruction classes. Unknown or ambiguous coverage remains unavailable; entry-PC
 hits are not call counts. It executes no firmware and supplies no physical timing
 or optimization result.
 
+The [native audio-window capture](native-audio-window.md) additionally discovers
+and verifies a held-key renderer window in the supported native baseline. Actual
+post-dispatch PCs and modeled IRQ state qualify the declared partial window;
+repeats, silent controls and original-basis PCM must agree. These are guest
+instruction observations, not a full ISR cost, nested-load bound or device timing.
+
 ### Target regression
 
 ```sh

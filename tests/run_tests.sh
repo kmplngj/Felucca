@@ -328,6 +328,7 @@ u_portable() {
     run "pinned external guest trace: source, patch and build receipt contracts" python3 tests/emulator_trace_test.py
     run "native emulator replay: bounded children, artifacts and repeat evidence contracts" python3 tests/native_emulator_replay_test.py
     run "native guest hotspots: saved evidence, symbol ranges and instruction attribution" python3 tests/native_hotspots_test.py
+    run "native audio window: discovery, post-dispatch evidence and repeat contracts" python3 tests/native_audio_window_test.py
     run "Wasm build receipts (portable fixtures)" python3 tests/wasm_report_test.py
     run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
     run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py
