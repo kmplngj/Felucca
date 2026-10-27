@@ -126,6 +126,24 @@ growth above both 25% and 20 instructions/sample; mixed workloads use their full
 Host ns/sample depends on scheduling, clock and compiler, so compare repeated runs on
 the same machine and keep CPU-heavy unrelated work out of timing experiments.
 
+### Host retirement observation
+
+The explicit [voice-retirement/LFO measurement](voice-retirement-measurement.md)
+uses `tools/retirement_measure.py` to compare unchanged source, an observer and a
+narrow fresh-phrase counterfactual in separate ignored host snapshots. It is off
+unless invoked and adds no device transport, production hook, target flag or
+resource reservation. Observer file IO invalidates host timing/cost comparisons;
+CPU_FILE `-` means CPU budgets are not checked. PCM/state observations do not
+establish a retirement policy, target timing or device behavior. Use the focused
+guide's pinned inputs, prerequisites and reproduction steps.
+
+### External guest trace prerequisite
+
+The optional [pinned guest-trace check](emulator-trace-prerequisite.md) corrects
+external emulator IRQ attribution, retirement rows and halt status before a native
+hotspot adapter can consume them. It verifies synthetic guest workloads and build
+receipts; native hotspot reports, physical timing and trace overhead remain pending.
+
 ### Target regression
 
 ```sh
@@ -154,6 +172,20 @@ outlined: otherwise JieLi folds them into `fm1_input_tick`, changing its isolate
 score from 14 to 220. With the boundaries preserved, the default build retains
 the original 344/137/82 total instructions and 14/134/204 scores for those three
 functions, with no budget changes.
+
+The outlined hot USB callees also have independent optional budgets:
+`uac_service` 13, `sie_rd` 5 and `sie_wr` 5. Clean native builds at
+`3015b2bcaa28d458130a962591daef13b2cb4e24`, with JieLi Clang 4.0.1, SDK
+AC79NN 1.2.1 and selective size enabled, measure 11/5/5 for standard and MACRO,
+13/5/5 for CPU2-off, and absent/5/5 for UAC-off. The unchanged listings retain their
+hash-bound profile sidecars. These are loop-span heuristic scores; callers do not
+include callee bodies.
+The fixtures keep the USB/TIMER5 callers fixed and grow only one callee past 10%
+(15/6/6), requiring that callee's failure without rewriting budgets. Absent symbols
+remain permitted for disabled/inlined configurations; straight-line work outside
+backward spans is still outside this metric. No runtime annotation, caller/engine
+budget, loader or device behavior changes. This coverage does not establish USB
+service time, cycles, scan/deadline margins or a physical speedup.
 
 The combined optimization integration calibrates only the optional `mix_part`
 score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
@@ -193,8 +225,12 @@ Observe the following together:
 - `cpu_pct`: a smoothed render/deadline ratio over roughly 93 ms. `shed_check()` subtracts
   nested TIMER5 ticks first, so this meter excludes that work and the main loop. It is
   **not whole-chip CPU utilization**.
-- `audio_max_us`: maximum render time with nested scan time subtracted. Diagnostics in
-  `.noinit` can survive reset; take a starting snapshot and identify prior maxima.
+- `audio_max_us` / `dbg.max_us`: the same maximum render time with nested scan time
+  subtracted. Current firmware resets it at application startup, then accumulates it
+  for that boot; polling does not reset it. Take starting/ending snapshots, but do
+  not subtract maxima or treat an unchanged value as the measured interval's peak.
+  Other `.noinit` counters and breadcrumbs can survive reset. For older firmware
+  or historical captures, retain the revision and its actual reset semantics.
 - `audio_late`: cumulative DMA deadline misses. Compare end minus start, using a workload
   interval; a low average cannot dismiss new misses.
 - `voices_shed`: overload protection, triggered after two consecutive halves above 85%
@@ -294,8 +330,12 @@ Optimize by proven lifetimes and multiplicative cost. `ENG_MEM_PART` grows once 
 channel. `eng_mem` already shares mutually exclusive engine state; verify every switch
 with `union_test` before claiming further reuse. Keep immutable tables/assets in XIP.
 Large automatic arrays and recursion spend stack even when static section sizes stay flat.
-The hardware guards detect violations, not stack high-water usage; watermark measurement
-would require separate instrumentation and nested-interrupt stress.
+The hardware guards detect violations, not stack high-water usage. CPU0 watermark
+measurement requires separate instrumentation and nested-interrupt stress. Existing
+`status` `cpu2_stack` covers only the worker's user allocation since its latest
+start attempt; see [diagnostic scope](diagnostics.md#interpreting-a-report).
+An optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
+ELF evidence and exposes unsupported cases; it supplies no stack fit or live peak.
 
 Engine-arena owner checks (host only): `-DFELUCCA_ARENA_CHECK=1` turns `ENG_MEM_OF`
 (`engines.c`) into a checked accessor for GRAIN (`gr_of`), PHYS (`phys_slot_of`), DRUM
@@ -304,7 +344,9 @@ Engine-arena owner checks (host only): `-DFELUCCA_ARENA_CHECK=1` turns `ENG_MEM_
 next engine during a fade and is no owner) and the claimed owner (`eng_mem_owner`). A failure
 calls `eng_arena_fail` before any access and hands back scratch memory. Without the define the
 macro is plain `ENG_MEM(p)`: no code or data (identical `-O2`/`-Os` host assembly of
-`tests/regress.c`; the target build is untouched). `tests/arena_test.c` (negative fixtures,
+`tests/regress.c`; the target build is untouched). Fresh matched JieLi release
+[standard, CPU2-off and MACRO builds](arena-check-target-footprint-139.md) also
+prove byte-identical complete ELF/app/map output with the disabled wrappers removed. `tests/arena_test.c` (negative fixtures,
 fixed-seed random runs) and a checked `union_test` run from `tests/run_tests.sh`, also under
 ASan/UBSan. Limits: it does not see an out-of-bounds write inside the arena or a wrong slot of
 the right owner, and engines that keep state outside the arena (WHEEL, `gr_rng`) are not covered.
@@ -329,8 +371,29 @@ archive the default result first, then rebuild the default afterward. LLVM 4 doc
 that `minsize` may sacrifice runtime speed, unlike `optsize`'s more limited tradeoff:
 [LLVM 4 function attributes](https://releases.llvm.org/4.0.1/docs/LangRef.html#function-attributes).
 Current compiler flags and reachability exclusions are authoritative in `tools/build.py`
-and `tools/size_fns.py`. Clock/voltage changes, a second core, or FPU/DSP rewrites are
+and `tools/size_fns.py`. The [remaining-helper experiment](selective-minsize-521.md)
+measured a 64 B option for HELP/category helpers and rejected promotion because
+of extra main-loop calls without service-latency evidence; production selection
+is unchanged. Clock/voltage changes, a second core, or FPU/DSP rewrites are
 separate hardware experiments with their own correctness, timing and reliability evidence.
+
+## Soft-double link guard
+
+`tools/build.py` always rejects known JieLi Clang 4.0.1 double-precision runtime
+helpers defined in allocated executable sections of the final application ELF.
+The [build policy and target probes](../BUILDING.md#final-image-soft-double-policy)
+describe its exact arithmetic/conversion scope, excluded symbol states and
+retained evidence. Integer-only 64-bit and fp32 helpers remain allowed by this
+guard. Malformed matching symbol/section evidence fails rather than reporting
+absence; the existing resource, ROM, HAL and flash-safe guards remain independent.
+
+This prevents a class of future linked-helper regressions. It is not a measured
+CPU or size improvement, a source-level double ban, or proof of single-precision
+hardware FPU use. Inlined software arithmetic and new ABI names are outside its
+exact-name policy. When a helper is reported, inspect its caller and conversion
+units before changing arithmetic; then repeat the applicable sound, target budget,
+resource and device measurements. A clean guard result cannot establish deadline
+headroom or qualify a future float-kernel/FPU experiment.
 
 ## Report a result
 

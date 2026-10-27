@@ -31,7 +31,8 @@ COUNTERS = {
 }
 SEMANTICS = {
     "cpu_pct": "Smoothed render/deadline ratio; excludes nested TIMER5 scan and main loop, not whole-chip CPU.",
-    "maxima": "audio_max_us / dbg.max_us are cumulative maxima and may survive reset; never interval maxima.",
+    "maxima": "audio_max_us / dbg.max_us share a cumulative maximum reset at startup in current firmware; "
+              "never interval maxima. Older firmware may differ; retain its revision and reset semantics.",
     "inp": "Reset on read except timer_irqs/nested; first window discarded; later windows checked against interval.",
     "latency": "Requires explicit confirmation of FM1_INPUT_LAT and observed key samples; otherwise UNMEASURED.",
     "snapshots": "Commands and fields are read sequentially, not an atomic device snapshot.",

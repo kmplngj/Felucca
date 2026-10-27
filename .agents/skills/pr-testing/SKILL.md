@@ -24,10 +24,22 @@ the upstream wiki, hosted editor and hosted emulator may describe another revisi
 Do not invent an access path. If a route cannot be verified, state what is unknown
 and leave that check pending.
 
-For local host-suite runs performed by the agent, use
+Keep development PRs in draft and use affected named host units with prerequisite
+closure during iteration; see [validation stages](../../../.github/CI.md#feedback-and-merge-stages).
+Creating a draft or preparing early user test instructions does not require a full
+local host suite. Mark the frozen candidate ready for review and require complete
+applicable CI before merge. Reuse successful matching CI evidence rather than
+rerunning an unchanged full suite locally; report its tested revision and scope.
+For local full host-suite runs performed by the agent, use
 `uv run --locked --group build tests/run_tests.sh --ai-output` and follow the
 [summary-first evidence workflow](../../../docs/ai-workflows.md#read-results-before-opening-raw-evidence).
 CI keeps normal output for `tools/ci.py verify-tests`.
+
+For early hardware iteration, the explicit `tools/fm1_pr.py NUMBER --validation target`
+mode omits host/browser validation; label its limits and keep merge acceptance
+pending. For a final standard-profile artifact, use `--automatic` when the tested
+PR merge revision is intended, avoiding an extra exact-head full build. These
+choices do not authorize device installation beyond the current request.
 
 Choose scenarios that exercise the actual change, the original bug or intended
 behavior, and the relevant unchanged behavior. Include boundary values,
@@ -90,6 +102,12 @@ Record skips and limitations. In **User test instructions**, label device scenar
 actually tested on an FM-1. Emulator coverage does not validate USB audio/MIDI,
 TRS MIDI, update/recovery, physical panel/LCD behavior or device audio deadlines.
 See [BUILDING's emulator scope](../../../BUILDING.md#browser-emulator).
+
+When a [Sol loop](../sol-loop/SKILL.md) was run, include its actual model/effort,
+round count, reviewed candidate and final reviewer verdict in **Validation
+performed**. Retain unresolved findings, disagreements and later coverage gaps;
+an exhausted review budget is not approval. A local review is separate from
+required PR review and physical hardware acceptance.
 
 For documentation-only changes, state why hardware testing is unnecessary and
 give steps to verify the changed instructions, relative links and resulting PR

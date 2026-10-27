@@ -32,9 +32,21 @@ if _source_os.path.isfile(_source_os.path.join(_source_root, "SOURCE-PINS.json")
 import argparse
 import hashlib
 import json
+import importlib.metadata
 from pathlib import Path
 import re
 import subprocess
+import sys
+
+COMPILER_ENV = ('CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_PATH',
+                'LIBRARY_PATH', 'COMPILER_PATH', 'GCC_EXEC_PREFIX', 'SDKROOT',
+                'CLANG_CONFIG_FILE_SYSTEM_DIR', 'CLANG_CONFIG_FILE_USER_DIR',
+                'CLANG_CONFIG_FILE', 'CLANG_CONFIG_FILE_PATH', 'CLANG_NO_DEFAULT_CONFIG',
+                'CCC_OVERRIDE_OPTIONS', 'CCC_ADD_ARGS', 'LD_PRELOAD',
+                'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH')
+ALLOWED_LOADER_ENV = ('LD_LIBRARY_PATH',)
+HOST_INJECTION_ENV = ('LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH')
+HEADER_ROOTS = ('pi32v2/lib/clang/4.0.1/include', 'pi32v2/include')
 
 
 def digest(path):
@@ -70,9 +82,65 @@ def input_hashes(root, *, include_generated=True):
     return {name: digest(root / name) for name in sorted(names) if (root / name).is_file()}
 
 
+def generator_runtime(root):
+    """Record the environment that generates the bound headers, not the sealing process's environment."""
+    def version(distribution):
+        try:
+            return importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            return None
+    try:
+        from PIL import features
+        raqm, freetype = features.version('raqm'), features.version('freetype2')
+    except ImportError:
+        raqm = freetype = None
+    lock = root / 'uv.lock'
+    return {'python': sys.version.split()[0], 'Pillow': version('Pillow'),
+            'fontTools': version('fonttools'), 'Brotli': version('Brotli'),
+            'raqm': raqm, 'freetype': freetype,
+            'lock_sha256': digest(lock) if lock.is_file() else None}
+
+
+def loader_environment_fingerprints(env):
+    """Bind allowed loader search values without publishing host paths.
+
+    This identifies the value, not the resolved libraries or system runtime.
+    """
+    return {name: hashlib.sha256(env[name].encode('utf-8')).hexdigest()
+            for name in ALLOWED_LOADER_ENV if env.get(name)}
+
+
 def tool_fingerprints(build):
     """Hash tool/SDK inputs before any jobs; do not launch the compiler here."""
-    return {'compiler_sha256': digest(build.toolchain() / 'pi32v2/bin/clang'),
+    docker = build.use_docker()
+    for name in COMPILER_ENV:
+        # Docker does not forward host compiler search/configuration variables.
+        # Host Python generators still run locally, so loader injection remains
+        # unsupported with either compiler backend.
+        if build.os.environ.get(name) and (not docker or name in HOST_INJECTION_ENV):
+            raise ValueError('unsupported compiler environment: ' + name)
+    toolchain = build.toolchain()
+    headers = {}
+    for directory in HEADER_ROOTS:
+        include = toolchain / directory
+        if not include.is_dir() or not (include / 'stdint.h').is_file():
+            raise ValueError('missing compiler include root/stdint.h: ' + directory)
+        if include.is_symlink():
+            raise ValueError('compiler include root is a symlink: ' + directory)
+        for path in sorted(include.rglob('*')):
+            if path.is_symlink():
+                raise ValueError('compiler header path is a symlink: ' + str(path.relative_to(toolchain)))
+            if path.is_file():
+                if not path.resolve().is_relative_to(toolchain.resolve()):
+                    raise ValueError('compiler header escapes toolchain')
+                headers[path.relative_to(toolchain).as_posix()] = digest(path)
+    return {'generator_runtime': generator_runtime(build.SRC),
+            'loader_environment_sha256': loader_environment_fingerprints(build.os.environ),
+            'compiler_headers_sha256': headers,
+            'execution_environment': {'backend': 'docker' if docker else 'native',
+                                      'image_reference': build.DOCKER_IMAGE if docker else None,
+                                      'system_runtime_fingerprint': None},
+            'compiler_sha256': digest(build.toolchain() / 'pi32v2/bin/clang'),
             'toolchain_sha256': {name: digest(build.toolchain() / name) for name in
                                  ('pi32v2/bin/ld', 'common/bin/objdump', 'common/bin/objcopy')},
             'sdk_sha256': {name: hashlib.sha256(build.fm1pkg_make.sdk_file(name)).hexdigest()
@@ -91,10 +159,16 @@ def configuration(build):
     # source/generated defaults and conditional macros without a second compile.
     macros = build.tc('cc', *flags, '-dM', '-E', build.FW / 'src/felucca.c')
     defines = dict(re.findall(r'^#define (FELUCCA_\w+)(?:[ \t]+(.*))?$', macros, re.M))
+    constants = dict(re.findall(r'^#define (FS|CTL|NPART|NVOICE|NTRK|NSTEP|HALF_FRAMES|C1_NP|NENGINES|ENG_ID_MAX)[ \t]+(.*)$',
+                                macros, re.M))
     if not {'FELUCCA_CPU2', 'FELUCCA_ID', 'FELUCCA_SLICE', 'FELUCCA_FM4'} <= defines.keys():
         raise ValueError('compiler did not expose required effective build defines')
     fingerprints = tool_fingerprints(build)
     return {'compile_flags': ['-target', 'pi32v2', *flags], 'effective_defines': defines,
+            'logical_constants': constants, 'generator_runtime': fingerprints['generator_runtime'],
+            'loader_environment_sha256': fingerprints['loader_environment_sha256'],
+            'compiler_headers_sha256': fingerprints['compiler_headers_sha256'],
+            'execution_environment': fingerprints['execution_environment'],
             'selective_minsize': build.os.environ.get('FELUCCA_SIZE') != '0',
             'cpu2': build.CPU2, 'product': build.PRODUCT, 'version_override': build.VERSION,
             'compiler': {'version': '\n'.join(line for line in build.tc('pi32v2/bin/clang', '--version').strip().splitlines()
@@ -162,10 +236,12 @@ def artifact_paths(package):
 
 def write(build, evidence, package, inputs, config):
     measured, stacks = resources(build, evidence)
+    from font_resources import linked
+    fonts = linked(build.SRC, build.GEN, evidence[2])
     if input_hashes(build.SRC) != inputs or configuration(build) != config:
         raise ValueError('build inputs/configuration changed during target build')
     artifacts = artifact_paths(package)
-    report = {'schema_version': 1, 'kind': 'felucca-post-link-resource-report',
+    report = {'schema_version': 2, 'kind': 'felucca-post-link-resource-report',
               'validation': 'production build guards passed', 'package': package,
               'build_identity': build.BUILD_IDENTITY,
               'configuration': config, 'input_sha256': inputs,
@@ -173,6 +249,7 @@ def write(build, evidence, package, inputs, config):
               'inputs_sha256': hashlib.sha256(canonical(inputs)).hexdigest(),
               'artifact_sha256': {name: digest(build.SRC / name) for name in artifacts},
               'resources': measured, 'stack_reservations': stacks,
+              'native_font_resources': fonts,
               'limitations': ['Exact linked allocation for these inputs and artifacts only',
                               'No live stack watermark, CPU/deadline measurement or cost prediction',
                               'Shared RAM/POOL split and worker stacks must not be double-counted']}
@@ -180,9 +257,10 @@ def write(build, evidence, package, inputs, config):
     return report
 
 
-def verify(root, report, *, config, measured):
+def verify(root, report, *, config, measured, fonts=None):
     """Reject stale artifacts or source/config evidence; no capacity rules are reimplemented."""
-    if (report.get('schema_version') != 1 or report.get('kind') != 'felucca-post-link-resource-report'
+    if (type(report.get('schema_version')) is not int or report.get('schema_version') not in (1, 2)
+            or report.get('kind') != 'felucca-post-link-resource-report'
             or report.get('validation') != 'production build guards passed'):
         raise ValueError('unsupported resource report')
     if not isinstance(report.get('artifact_sha256'), dict):
@@ -205,18 +283,38 @@ def verify(root, report, *, config, measured):
     if (hashlib.sha256(canonical(report['input_sha256'])).hexdigest() != report.get('inputs_sha256')
             or input_hashes(root) != report['input_sha256']):
         raise ValueError('stale resource report input inventory')
+    if report['schema_version'] == 1 and ('build/gen/ui-font-manifest.json' in report['input_sha256']
+                                       or 'native_font_resources' in report):
+        raise ValueError('schema 1 cannot include native font evidence')
     if (hashlib.sha256(canonical(report['configuration'])).hexdigest() != report.get('configuration_sha256')
             or config != report['configuration']):
         raise ValueError('stale resource report configuration')
     if (report.get('resources'), report.get('stack_reservations')) != measured:
         raise ValueError('stale resource report resource/stack measurements')
+    if report['schema_version'] == 2 and (fonts is None or report.get('native_font_resources') != fonts):
+        raise ValueError('stale resource report native font measurements')
     if report.get('build_identity') != json.loads((root / 'build/gen/build-identity.json').read_text()):
         raise ValueError('stale resource report build identity')
+
+
+def frame_output_path(root, requested, report, report_path):
+    """Keep this optional analysis outside verified inputs, including symlink aliases."""
+    path = requested.resolve()
+    if (not path.is_relative_to((root / 'build').resolve())
+            or path.is_relative_to((root / 'build/gen').resolve())):
+        raise ValueError('frame output must be inside build/, outside build/gen/')
+    protected = {report_path.resolve()} | {
+        (root / name).resolve() for name in set(report['input_sha256']) | set(report['artifact_sha256'])}
+    if path in protected or (path.exists() and any(p.exists() and path.samefile(p) for p in protected)):
+        raise ValueError('frame output would overwrite verified evidence or input')
+    return path
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify', type=Path, required=True, metavar='REPORT')
+    parser.add_argument('--frame-output', type=Path, metavar='JSON',
+                        help='after verification, write observed entry frames (no stack bound) inside build/')
     args = parser.parse_args()
     # Standalone verification needs the same unset/empty defaults as build.sh.
     # Apply them only at the CLI entry point, never when the build imports us.
@@ -225,7 +323,8 @@ def main():
             _source_os.environ[name] = str(Path.home() / default)
     try:
         import build
-        report = json.loads(args.verify.read_text())
+        report_bytes = args.verify.read_bytes()
+        report = json.loads(report_bytes)
         if not isinstance(report, dict):
             raise ValueError('invalid resource report object')
         # Restore identity inputs from evidence, then recompute actual flags/macros
@@ -249,7 +348,18 @@ def main():
         if dis != (build.OUT / 'felucca.dis').read_text():
             raise ValueError('resource report disassembly differs from ELF')
         evidence = ((build.OUT / 'felucca.bin').read_bytes(), hdr, syms, dis, rt)
-        verify(build.SRC, report, config=configuration(build), measured=resources(build, evidence))
+        fonts = None
+        if report.get('schema_version') == 2:
+            from font_resources import linked
+            fonts = linked(build.SRC, build.GEN, syms)
+        verify(build.SRC, report, config=configuration(build), measured=resources(build, evidence), fonts=fonts)
+        if args.frame_output is not None:
+            destination = frame_output_path(build.SRC, args.frame_output, report, args.verify)
+            from target_frames import evidence as frame_evidence
+            frames = frame_evidence(report, report_bytes, syms, dis)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(frames, indent=2, sort_keys=True) + '\n')
+            print('target entry frames: ' + str(destination) + ' (no call-path or live stack bound)')
         print('resource report: artifacts, inputs and configuration match')
     except (KeyError, TypeError, OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.error(str(error))

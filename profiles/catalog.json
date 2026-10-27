@@ -5,6 +5,7 @@
   "engines": [
     {
       "id": 0,
+      "key": "felucca.engine.analog",
       "name": "ANALOG",
       "symbol": "ENG_ANALOG",
       "source": "firmware/engines/src/eng_analog.c",
@@ -32,6 +33,7 @@
     },
     {
       "id": 1,
+      "key": "felucca.engine.digital",
       "name": "DIGITAL",
       "symbol": "ENG_DIGITAL",
       "source": "firmware/src/eng_digital.c",
@@ -59,6 +61,7 @@
     },
     {
       "id": 2,
+      "key": "felucca.engine.phase",
       "name": "PHASE",
       "symbol": "ENG_PHASE",
       "source": "firmware/src/eng_phase.c",
@@ -85,6 +88,7 @@
     },
     {
       "id": 3,
+      "key": "felucca.engine.lofi",
       "name": "LOFI",
       "symbol": "ENG_LOFI",
       "source": "firmware/engines/src/eng_lofi.c",
@@ -113,6 +117,7 @@
     },
     {
       "id": 4,
+      "key": "felucca.engine.sample",
       "name": "SAMPLE",
       "symbol": "ENG_SAMPLE",
       "source": "firmware/src/eng_sample.c",
@@ -138,6 +143,7 @@
     },
     {
       "id": 5,
+      "key": "felucca.engine.voice",
       "name": "VOICE",
       "symbol": "ENG_FORMANT",
       "source": "firmware/src/eng_formant.c",
@@ -163,6 +169,7 @@
     },
     {
       "id": 6,
+      "key": "felucca.engine.trio",
       "name": "TRIO",
       "symbol": "ENG_TRIO",
       "source": "firmware/engines/src/eng_trio.c",
@@ -189,6 +196,7 @@
     },
     {
       "id": 7,
+      "key": "felucca.engine.wheel",
       "name": "WHEEL",
       "symbol": "ENG_WHEEL",
       "source": "firmware/engines/src/eng_wheel.c",
@@ -215,6 +223,7 @@
     },
     {
       "id": 8,
+      "key": "felucca.engine.grain",
       "name": "GRAIN",
       "symbol": "ENG_GRAIN",
       "source": "firmware/src/eng_grain.c",
@@ -241,6 +250,7 @@
     },
     {
       "id": 9,
+      "key": "felucca.engine.phys",
       "name": "PHYS",
       "symbol": "ENG_PHYS",
       "source": "firmware/src/eng_phys.c",
@@ -266,6 +276,7 @@
     },
     {
       "id": 10,
+      "key": "felucca.engine.drum",
       "name": "DRUM",
       "symbol": "ENG_DRUM",
       "source": "firmware/src/eng_drum.c",
@@ -291,6 +302,7 @@
     },
     {
       "id": 11,
+      "key": "felucca.engine.noise",
       "name": "NOISE",
       "symbol": "ENG_NOISE",
       "source": "firmware/engines/src/eng_noise.c",
@@ -316,6 +328,7 @@
     },
     {
       "id": 12,
+      "key": "felucca.engine.fm6",
       "name": "FM6",
       "symbol": "ENG_FM6",
       "source": "firmware/src/eng_fm6.c",
@@ -343,6 +356,7 @@
     },
     {
       "id": 13,
+      "key": "felucca.engine.slice",
       "name": "SLICE",
       "symbol": "ENG_SLICE",
       "source": "firmware/src/eng_slice.c",
@@ -369,6 +383,7 @@
     },
     {
       "id": 14,
+      "key": "felucca.engine.macro",
       "name": "MACRO",
       "symbol": "ENG_MACRO",
       "source": "firmware/src/eng_macro.c",
@@ -428,6 +443,7 @@
         "tools/gen_fm6_patches.py",
         "tools/gen_samples.py",
         "tools/gen_bitmap_font.py",
+        "tools/font_resources.py",
         "tools/ui_font_data.py",
         "tools/gen_aa_icons.py",
         "tools/gen_aa_keycaps.py",

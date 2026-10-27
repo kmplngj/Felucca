@@ -115,6 +115,17 @@ alone supplies neither a playable WAVE instrument nor target-fit/performance evi
 
 ## Vocabulary: independent axes
 
+The first host-only identity stage of [#422](https://github.com/kmplngj/Felucca/issues/422)
+adds immutable `felucca.engine.<stable-slug>` keys to the existing catalog and a
+reviewed 64-slot allocation reference, `profiles/engine-identities.json`. DIGITAL 1
+remains retired; MACRO 14 is allocated/active but opt-in. The resolver validates the
+catalog against that reference, and external resolved/contract JSON carries the
+keys. Existing runtime numeric IDs, profile choices and dependency pins do not
+change. See [the key contract](build-profiles.md#stable-engine-exchange-keys) for
+allocation, retirement, validation and the reference's trust limits. This stage
+does not deliver #360's second provider, complete configuration identity/transport,
+compatibility fingerprints, round-trip or physical qualification; #422 stays open.
+
 | Axis | Selects | Chosen | Owner |
 | --- | --- | --- | --- |
 | Build profile | Installed engines, effects, assets, platform features and modes | At build time | [#28](https://github.com/kmplngj/Felucca/issues/28) |
