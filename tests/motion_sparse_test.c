@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Real source differential driver. Observation adapters exist only in build/. */
-#define UI_TEST_NO_MAIN 1
 #include MOTION_TEST_UI
 _Static_assert(P_COUNT == 111u && MOTION_MAX == 128u, "review pinned sparse-mask boundary fixtures");
 

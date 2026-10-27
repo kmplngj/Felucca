@@ -118,13 +118,15 @@ def main():
             host = once(host, f'#include "../firmware/src/{name}.c"', f'#include "{directory / (name + ".c")}"')
         host = host.replace('"../firmware/src/', f'"{ROOT}/firmware/src/')
         (directory / 'hostsim.c').write_text(host, encoding='utf-8')
-        ui = once((ROOT / 'tests/ui_test.c').read_text(), '#include "hostsim.c"', f'#include "{directory / "hostsim.c"}"')
-        ui = ui.replace('"../firmware/src/', f'"{ROOT}/firmware/src/')
-        (directory / 'ui_test.c').write_text(ui, encoding='utf-8')
+        # The driver needs only the shared native UI harness (#708, which no longer carries a main), with its
+        # hostsim.c include redirected to the instrumented copy.
+        harness = once((ROOT / 'tests/ui_harness.h').read_text(), '#include "hostsim.c"', f'#include "{directory / "hostsim.c"}"')
+        harness = harness.replace('"../firmware/', f'"{ROOT}/firmware/')
+        (directory / 'ui_harness.h').write_text(harness, encoding='utf-8')
         binary = directory / 'test'
         command = cc + flags + ['-w', '-I' + str(ROOT / 'build/gen'), '-I' + str(ROOT / 'firmware/src'),
                                '-I' + str(ROOT / 'tests'), f'-DFELUCCA_CPU2={cpu2}',
-                               f'-DMOTION_TEST_UI="{directory / "ui_test.c"}"', str(ROOT / 'tests/motion_sparse_test.c'), '-lm', '-o', str(binary)]
+                               f'-DMOTION_TEST_UI="{directory / "ui_harness.h"}"', str(ROOT / 'tests/motion_sparse_test.c'), '-lm', '-o', str(binary)]
         result = run(label + '-compile', command)
         if result.returncode:
             raise ValueError(f'{label} compile failed; see {out / (label + "-compile.stderr.log")}')
