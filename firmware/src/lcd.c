@@ -92,6 +92,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
     }
 }
 
+static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *px)
 {
     if (!w || !h)

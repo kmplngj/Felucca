@@ -154,6 +154,7 @@ static struct { uint32_t stage; } felucca_dbg;
 static uint32_t host_blit_watch, host_blit_n;
 static struct { uint32_t y, h, stage; } host_blit_log[16];
 #endif
+static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
     lcd_sync();

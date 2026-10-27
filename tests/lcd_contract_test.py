@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Compile actual LCD adapters and reject incompatible fill coordinates/colours."""
+"""Compile actual LCD adapters and reject incompatible fill/blit definitions."""
 import os
 from pathlib import Path
 import shlex
@@ -15,6 +15,10 @@ UI = ROOT / 'tests/ui_harness.h'
 BROWSER = ROOT / 'web/emu/felucca_web.c'
 RESCUE = ROOT / 'tests/rescue_test.c'
 RESCUE_INPUT = ROOT / 'tests/rescue_input_test.c'
+BLIT_NOOPS = tuple(ROOT / f'tests/{name}_test.c' for name in (
+    'backup', 'editor', 'engid', 'fm6_eff', 'fm6bank', 'icon_stream',
+    'persistence', 'settings', 'text_ref', 'theme', 'track_badge'))
+BLIT_ADAPTERS = (DRIVER, UI, BROWSER, *BLIT_NOOPS)
 SIGNATURE = 'static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)'
 
 
@@ -27,6 +31,7 @@ class FirmwareLcdContract(unittest.TestCase):
     def compile(self, path, source=None):
         return subprocess.run([*self.cc, '-w', '-fsyntax-only', '-x', 'c',
                                '-I', str(ROOT / 'firmware/src'), '-I', str(ROOT / 'build/gen'),
+                               '-I', str(ROOT / 'build/host'),
                                '-iquote', str(path.parent),
                                str(path) if source is None else '-'],
                               input=source, cwd=ROOT, text=True, capture_output=True)
@@ -36,6 +41,42 @@ class FirmwareLcdContract(unittest.TestCase):
                      ROOT / 'web/emu/native_check.c', RESCUE, RESCUE_INPUT):
             with self.subTest(adapter=path.name):
                 result = self.compile(path)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_actual_blit_noop_adapters(self):
+        for path in BLIT_NOOPS:
+            with self.subTest(adapter=path.name):
+                result = self.compile(path)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_mutable_blit_sources_are_rejected(self):
+        for path in BLIT_ADAPTERS:
+            with self.subTest(adapter=path.name):
+                entry = REAL if path == DRIVER else path
+                result = self.compile(entry)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                source = path.read_text()
+                pixels = 'px' if path == DRIVER else 'p'
+                signature = ('static void lcd_blit(uint32_t x, uint32_t y, '
+                             'uint32_t w, uint32_t h, const uint16_t *' + pixels + ')')
+                declaration = 'static lcd_blit_fn lcd_blit;'
+                self.assertEqual(source.count(signature), 1, 'expected one actual blit definition')
+                self.assertEqual(source.count(declaration), 1, 'expected one typed declaration')
+                source = source.replace(signature, signature.replace('const uint16_t *', 'uint16_t *'), 1)
+                control = source.replace(declaration, '', 1)
+                if path == DRIVER:
+                    # Both probes retain the real delayed-DMA HAL and original
+                    # driver include directory. Only the typed declaration differs.
+                    wrapper = REAL.read_text()
+                    self.assertEqual(wrapper.count('#include LCD_DRIVER_SOURCE'), 1)
+                    source = wrapper.replace('#include LCD_DRIVER_SOURCE', source, 1)
+                    control = wrapper.replace('#include LCD_DRIVER_SOURCE', control, 1)
+                    entry = DRIVER
+                result = self.compile(entry, source)
+                self.assertNotEqual(result.returncode, 0, 'mutable blit source signature was accepted')
+                self.assertIn('lcd_blit', result.stderr)
+                self.assertIn('conflicting types', result.stderr)
+                result = self.compile(entry, control)
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     def assert_signature_rejected(self, path, wrong_signature):

@@ -144,6 +144,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
             web_fb[(y + j) * 240u + x + i] = sw;
     web_draws++;
 }
+static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
     uint32_t i, j;

@@ -2,6 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Firmware save flows against NOR flash: deferred settings, retries, and failed-save rollback. */
 #define main hostsim_main
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include "hostsim.c"
 #undef main
 
@@ -19,6 +20,7 @@ static void fm1_irq_on(void) {}
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) */
 static void lcd_wake_now(void) {}
+static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 { (void)x; (void)y; (void)w; (void)h; (void)p; }
 #define FELUCCA_FLASH 1

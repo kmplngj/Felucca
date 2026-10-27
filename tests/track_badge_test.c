@@ -4,6 +4,7 @@
  * built-in palettes and CUSTOM, FLAT/LINE, active/lit/idle/dim, 12/16 px used by normal/LARGE callers
  * and the supported 24 px path. A parity tie must go left/up, at most 0.5 px.
  * Optional argv[1]: RGB PPM, palette/state rows and 12/16/24 px columns. */
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,7 @@ typedef struct page page_t;
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }
 static void lcd_wake_now(void) {}
+static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 { (void)x; (void)y; (void)w; (void)h; (void)p; }
 static int32_t hook_box[4];
