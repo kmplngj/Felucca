@@ -127,6 +127,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- The offline USB tone checker rejects recordings without synchronized tone data,
+  unsupported rates and incomplete PCM, and reports matched frames accurately.
+  [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
+  qualification separate from the offline result.
+
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
   update requests still renew the existing staging and writing idle budgets.

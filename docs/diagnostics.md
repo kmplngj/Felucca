@@ -16,6 +16,7 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
 | Rendered-screen screenshots | USB SERIAL `screen` commands; `tools/fm1_screenshot.py` | Development-only `FELUCCA_SCREEN_CAPTURE=1`, default `0`. Stopped static HOME/menu pixels become a verified PNG/JSON. Default capture requires an awake display; explicit `--wake` silently wakes, awaits redraw and holds awake for the bounded session. See [capture setup, bounded memory and failure modes](screen-capture.md); physical LCD colours/backlight are outside its scope. |
+| USB test-tone continuity | Existing stereo WAV files; `tools/uac_tone_check.py` | Offline checker for a known `FELUCCA_UAC_TONE=1` build; tone mode defaults off. Requires complete 16-bit stereo PCM at the configured 44.1/48 kHz rate and actual tone synchronization. See [recording interpretation](#usb-test-tone-recordings); this is separate from CDC collection and does not qualify physical USB or measure diagnostic overhead. |
 | Voice-retirement/LFO observation | Explicit `tools/retirement_measure.py` host run | Off unless invoked. Exports pinned source and applies guarded instrumentation only to ignored host copies; no device transport, firmware flag or target resource reservation. Observer file IO invalidates timing comparisons. See the [host measurement and reproduction](voice-retirement-measurement.md) and [performance scope](performance.md#host-retirement-observation). |
 | Factory-sound digital levels | Explicit `tools/loudness_audit.py` host run with the optional `audit` dependency group | Off unless invoked. Renders 1–8 selected standard-profile cases with isolated generated inputs; retains pre/post-master stereo raw data, JSON metrics and fixed-scale WAVs under ignored `build/`. No device transport, firmware flag, target resource reservation or automatic level trim. Native arithmetic failures stop capture. See the [bounded workflow and meter/listening limits](loudness-audit.md); host levels do not calibrate physical DAC/USB output. |
 
@@ -24,6 +25,33 @@ collector does not run a reproducer, enable instrumentation or capture screensho
 it only reads fields supplied by the installed build. Record the exact build, flags,
 workload and hardware observations with each result. See the linked guides for resource
 costs and distinguish host/emulator coverage from real FM-1 observations.
+
+## USB test-tone recordings
+
+For an existing recording from a known `FELUCCA_UAC_TONE=1` build, run:
+
+```sh
+python3 tools/uac_tone_check.py recording.wav
+```
+
+Record the firmware revision/flags, configured USB rate, recorder rate and host
+setup alongside the WAV. Tone mode supplies fixed diagnostic triangles on the USB
+capture stream; an ordinary musical recording is not a tone fixture. The checker
+accesses no device and changes no firmware or settings.
+
+Leading silence is allowed. The first non-silent data must synchronize with a
+pair of consecutive tone frames; unrelated data, a nonzero invalid prefix,
+unsupported rates and incomplete PCM fail. The reported checked-frame count
+includes only matched frames. Lost, repeated or corrupted frames produce breaks;
+after a break, resynchronization does not make that file pass. Every complete
+final frame is checked once synchronized, but file boundaries cannot establish
+continuity outside the recording. Each file is reported even if another input
+is malformed; the command exits 1 if any file fails.
+
+A passing WAV establishes this pattern's continuity only over the checked samples.
+Physical USB qualification still needs matched device counters, recorder error
+status, workload/build identity and repeated captures. This checker does not measure
+clock accuracy, instrumentation overhead or real-device audio deadlines.
 
 ## Collect diagnostics
 

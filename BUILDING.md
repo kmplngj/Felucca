@@ -447,6 +447,10 @@ fixtures require incompatible signatures across the UI, settings and browser
 adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
+The portable unit also checks the offline USB diagnostic-tone verifier with
+`python3 tests/uac_tone_check_test.py`. See [recording requirements and interpretation](docs/diagnostics.md#usb-test-tone-recordings).
+Synthetic WAV tests check evidence handling; they do not qualify an FM-1 recording.
+
 The native UI tests and their consumers share `tests/ui_harness.h`: the real
 firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
 blank-frame observers, power-on setup and panel/keyboard helpers. Define any
