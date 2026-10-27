@@ -455,12 +455,15 @@ entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
 for its LCD-submission ordering assertions. Consumers include the harness directly;
 they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
-The backup and FM6-bank tests share `tests/host_nor.h`, including their sanitizer
-builds. This existing NOR model only clears programmed bits, rejects 256-byte page
-wrapping, and models sticky power cuts during programming or half an erase. Its
-program counter counts completed bytes; its erase counter excludes requests
-refused before work. Reads remain available for recovery after a cut. Storage and
-persistence tests retain their different retry and operation-counting models.
+The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
+their sanitizer builds. This existing NOR model only clears programmed bits, rejects
+256-byte page wrapping, and models sticky power cuts during programming or half an
+erase. Its program counter counts completed bytes; its erase counter excludes requests
+refused before work. Reads remain available for recovery after a cut. The user-preset
+fixture checks every payload/header byte-cut boundary, interrupted/refused erases
+and restored-power retries through the production bank/storage code; it does not exercise runtime
+`up_put` mirror rollback. Storage and persistence tests retain their different retry
+and operation-counting models.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
@@ -597,7 +600,11 @@ at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enable
 It executes the actual USB poll/control/audio-service code against a finite HAL-only
 SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recovery,
 control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
-nested EP4 ownership. Matched audio producer/host-token schedules compare packet bytes; negative transcript controls
+nested EP4 ownership. Controllable SIE completion checks delayed/failed accesses,
+consecutive-failure shutdown and actual startup/retry/detach paths, including retry
+clock wrap. Suspend/resume, missing SOF and repeated frozen-frame episodes retain
+accepted application data and recover through explicit host events. Matched audio
+producer/host-token schedules compare packet bytes; negative transcript controls
 reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,
 not physical service time, controller races or host-driver qualification. Existing
 UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.

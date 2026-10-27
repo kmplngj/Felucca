@@ -55,6 +55,9 @@ recorded in the linked reports, rather than every current build or device.
 
 - Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
   exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
+  A separate manual main-only workflow now orchestrates canonical builds, Git-free
+  reproduction and a mandatory matching simulator before uploading a verified bundle;
+  the same recipe has an explicit local maintainer mode for pre-merge evidence.
   Offline verification checks artifact correspondence; full host/browser/device acceptance,
   public build service and deployment remain separate.
   Native target builds now refuse unsupported compiler search/configuration variables
