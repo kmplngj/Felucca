@@ -165,6 +165,11 @@ invalid. Crash-record uptime is historic and is never compared with current upti
 Older firmware without boot-count evidence cannot establish continuity. Unknown future
 fields are preserved but do not acquire guessed counter/delta semantics.
 
+Present known numeric fields are validated before generic colon records. For
+example, `audio_late 1:2` is malformed counter evidence, rather than an unknown
+record; empty known fields and duplicate valid/malformed occurrences also
+invalidate collection. Optional fields omitted by older firmware remain absent.
+
 `status.uac_pkts` is local to a USB audio sample-rate epoch: firmware resets it on
 an effective rate change. With packet counts at both endpoints, an observed rate
 or `uac_rate_sets` change invalidates the interval, even if a reset count has
