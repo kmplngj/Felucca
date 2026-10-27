@@ -6,9 +6,11 @@ import os
 from pathlib import Path
 import py_compile
 import subprocess
+import signal
 import struct
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import wave
@@ -97,6 +99,15 @@ class ReplayContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'empty, partial'):
             parse(transcript(), traced=False)
 
+    def test_c1_output_path_tokens_are_not_execution_records(self):
+        original, trace = parse(transcript())
+        path = b'/home/c1/build/native-replay-c1/audio.wav'
+        changed = transcript().replace(b'/ignored/audio.wav', path)
+        changed = b'XIP window -> /home/c1/build/native-replay-c1/xip.bin\n' + changed
+        actual, actual_trace = parse(changed)
+        self.assertEqual(actual, original)
+        self.assertEqual(actual_trace, trace)
+
     def test_empty_or_partial_transcript_is_refused(self):
         for data in (b'', transcript()[:-1], b'T 100 c0 0x02000120', transcript().split(b'stopped')[0]):
             with self.subTest(data=data[:25]), self.assertRaises(ValueError):
@@ -117,9 +128,12 @@ class ReplayContracts(unittest.TestCase):
                          (b'irq=[]', b'irq=[99]'), (b'r1=0x0', b'r1=garbage')):
             with self.subTest(new=new), self.assertRaises(ValueError):
                 parse(transcript().replace(old, new))
-        for prefix in (b'cpu1 released at step 5\n', b'halt: bad opcode\n'):
+        for prefix in (b'cpu1 released at step 5\n', b'c1 irq 63 prio 1 -> 0x02000120\n',
+                       b'break c1 pc=0x02000120 [100]\n', b'halt: bad opcode\n'):
             with self.assertRaises(ValueError):
                 parse(prefix + transcript())
+        with self.assertRaises(ValueError):
+            parse(transcript().replace(b'c0 irq 11 x308', b'c1 irq 11 x308'))
 
     def test_failed_empty_duplicate_and_inconsistent_terminal_are_refused(self):
         for old, new in ((b'step limit', b'halt'), (b'264000000 instructions', b'0 instructions'),
@@ -246,11 +260,46 @@ class ReplayContracts(unittest.TestCase):
         self.assertEqual(record['returncode'], 7)
         self.assertEqual(record['status'], 'incomplete')
 
+    def assert_descendant_terminated(self, pidfile):
+        pid = int(pidfile.read_text())
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            # Linux and macOS ps both expose STAT. A zombie has stopped executing
+            # even if the host's init has not reaped the orphan yet.
+            status = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)],
+                                    capture_output=True, text=True, timeout=0.5)
+            self.assertIn(status.returncode, (0, 1), status.stderr)
+            self.assertFalse(status.stderr.strip(), status.stderr)
+            state = status.stdout.strip()
+            if not state or state.startswith('Z'):
+                return
+            time.sleep(0.02)
+        self.fail(f'descendant {pid} still executing after capture cleanup')
+
+    def cleanup_test_descendant(self, pidfile):
+        # Keep cleanup independent of the capture implementation under test.
+        if pidfile.exists():
+            try:
+                os.kill(int(pidfile.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
     def test_actual_timeout_kills_inherited_pipe_descendant(self):
-        script = 'import subprocess,sys; subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])'
-        with self.assertRaisesRegex(ValueError, 'timeout'):
-            self.child(script, timeout=0.15)
-        self.assertLess(json.loads((self.out / 'child.process.json').read_text())['wall_seconds'], 3)
+        pidfile = self.out / 'descendant.pid'
+        script = ('import subprocess,sys; from pathlib import Path; '
+                  'p=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '
+                  f'Path({str(pidfile)!r}).write_text(str(p.pid))')
+        try:
+            with self.assertRaisesRegex(ValueError, 'timeout'):
+                self.child(script, timeout=1)
+            self.assertLess(json.loads((self.out / 'child.process.json').read_text())['wall_seconds'], 3)
+            self.assert_descendant_terminated(pidfile)
+        finally:
+            self.cleanup_test_descendant(pidfile)
 
     def test_exit_zero_leader_cannot_hide_a_devnull_descendant(self):
         pidfile = self.out / 'descendant.pid'
@@ -258,22 +307,15 @@ class ReplayContracts(unittest.TestCase):
                   'p=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"],'
                   'stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); '
                   f'Path({str(pidfile)!r}).write_text(str(p.pid))')
-        with self.assertRaisesRegex(ValueError, 'surviving process group'):
-            self.child(script)
-        record = json.loads((self.out / 'child.process.json').read_text())
-        self.assertEqual(record['status'], 'incomplete')
-        self.assertEqual(record['returncode'], 0)
-        # A killed descendant can remain a zombie until the host init reaps it;
-        # it must have been signalled and cannot continue executing our payload.
-        pid = int(pidfile.read_text())
-        proc = Path(f'/proc/{pid}/stat')
-        if proc.exists():
-            import time
-            for _ in range(50):
-                if not proc.exists() or proc.read_text().split()[2] == 'Z':
-                    break
-                time.sleep(0.01)
-            self.assertTrue(not proc.exists() or proc.read_text().split()[2] == 'Z')
+        try:
+            with self.assertRaisesRegex(ValueError, 'surviving process group'):
+                self.child(script)
+            record = json.loads((self.out / 'child.process.json').read_text())
+            self.assertEqual(record['status'], 'incomplete')
+            self.assertEqual(record['returncode'], 0)
+            self.assert_descendant_terminated(pidfile)
+        finally:
+            self.cleanup_test_descendant(pidfile)
 
     def test_actual_stdout_or_stderr_overflow_is_bounded(self):
         for fd in (1, 2):

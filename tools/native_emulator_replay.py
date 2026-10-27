@@ -205,8 +205,9 @@ def parse_log(data, *, traced, window=WINDOW, steps=STEPS, break_pc, expected_no
     require(data and data.endswith(b'\n'), 'empty or partial child transcript')
     text = data.decode('ascii')
     lines = text.splitlines()
-    require(not any(l.startswith(('halt', 'cpu1', 'break c1')) for l in lines), 'halt or second-core execution is unsupported')
-    require(not re.search(r'\bc1\b', text), 'second-core execution is unsupported')
+    # Core identity belongs to execution records, not free-form output paths.
+    require(not any(l.startswith(('halt', 'cpu1', 'break c1', 'c1 irq ')) for l in lines),
+            'halt or second-core execution is unsupported')
     rows, notes = [], []
     for line in lines:
         if line.startswith('T'):
