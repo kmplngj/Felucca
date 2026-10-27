@@ -14,7 +14,7 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 8542,
+    "known_remaining_history": 8540,
     "known_remaining_recent": 1722,
     "pending_sources": [],
     "remaining_history": null,
@@ -190,8 +190,8 @@
       },
       {
         "history": {
-          "remaining": 21,
-          "reviewed": 4,
+          "remaining": 20,
+          "reviewed": 5,
           "total": 25
         },
         "recent": {
@@ -200,12 +200,12 @@
           "total": 0
         },
         "repository": "charlesvestal/schwung-chiptune",
-        "terminal_pairs": 4
+        "terminal_pairs": 5
       },
       {
         "history": {
-          "remaining": 21,
-          "reviewed": 8,
+          "remaining": 20,
+          "reviewed": 9,
           "total": 29
         },
         "recent": {
@@ -214,7 +214,7 @@
           "total": 0
         },
         "repository": "charlesvestal/schwung-bouba-kiki",
-        "terminal_pairs": 8
+        "terminal_pairs": 9
       },
       {
         "history": {
@@ -512,7 +512,7 @@
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 389
+    "terminal_pairs": 391
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -524,95 +524,104 @@
     "reconciliation_id": "genkigenki-Felucca-smk37-b4038b2cb1137c61114c0f9bf6622da8c686ca03-to-d682be031a6f10c8779e00b425ba8f4a646707cd"
   },
   "last_run_assessment": {
-    "README_assessment": "Unchanged: README already describes review-only source intake and native capabilities; no firmware behavior implemented.",
-    "comparison_sha": "2a8221a929a127fe4a155e31e1dd78658fd45ecf",
+    "README_assessment": "Existing review/collection descriptions remain accurate; review-only ledger changes add no implemented user capability.",
+    "changelog_assessment": "No firmware/release entry for routine scan state.",
+    "comparison_sha": "fd768dc3f989c4f98f4f60c7cc0f7e14ad2a6730",
     "completed_assessments": 50,
-    "created_issues": [
-      "https://github.com/kmplngj/Felucca/issues/434",
-      "https://github.com/kmplngj/Felucca/issues/435",
-      "https://github.com/kmplngj/Felucca/issues/436",
-      "https://github.com/kmplngj/Felucca/issues/437"
+    "completed_history_this_run": [
+      "zvenson/dinghy"
     ],
+    "created_issues": [],
+    "diagnostic_guide_assessment": "No diagnostic commands/fields, measurement claims or device workflow changes.",
     "dispositions": {
-      "already_present": 6,
-      "bug": 2,
-      "existing_issue": 18,
-      "feature": 1,
+      "already_present": 13,
+      "existing_issue": 14,
       "not_applicable": 23
     },
-    "finished_at": "2026-10-18T13:22:37.003510+00:00",
-    "historical_coverage": "Incomplete; no coverage from snapshots or ancestry; partial DUELL/ChoralRoot and unreviewed Ghoulbox merge retained pending",
-    "identity_method": "Fresh GitHub connector repository responses served to helper gh-api adapter; no counts/coverage inferred from metadata",
-    "initialized_pending_sources": 0,
+    "finished_at": "2026-10-27T21:14:11.288477+00:00",
+    "historical_coverage": "Other history and large root/merge holes remain incomplete; no snapshot/ancestry credit, skipped interval advance or rewritten source pin. Initial and refreshed bounded queues use round-robin selection; recent/history completion counts are actual counts, not time-allocation claims.",
+    "initialized_pending_sources": [
+      "okumurari2/maku",
+      "Rastapopolix/tessera",
+      "glvno/matryoshka",
+      "joakimeriksson/fm1-dock"
+    ],
+    "issue_inventory": "Full paginated issues/comments/PR inventory across all four repositories; all accessible, WebApp Issues disabled,24 transfers verified. No external issue/comment/settings writes.",
     "models": {
-      "coordinator": "Inherited runtime model cannot be configured; limitation reported",
+      "coordinator": "Inherited conversation model; model selection unavailable in-session and limitation reported",
       "diff_worker": "gpt-6.1-sol medium",
       "metadata_worker": "gpt-6.1-sol low"
     },
-    "pending_assessments": [
-      {
-        "queue": "history",
-        "repository": "oscillr/DUELL",
-        "source_sha": "1df6207e5a51a909223c9ccfb6280a97840490c0"
-      },
-      {
-        "queue": "history",
-        "repository": "Quixotic7/ChoralRootFM1",
-        "source_sha": "c1c3cecb82ec5c03f50d463114e837913762242a"
-      },
-      {
-        "queue": "recent",
-        "repository": "jasonpersinger/ghoulbox-fm1-dungeon-synth",
-        "source_sha": "76e2eb40db73adc1c020b2d3f19b8c9c0e694e73"
-      }
-    ],
-    "publication": "Four intermediate checkpoints verified remotely; final ledger-only GitHub connection CAS publication follows. No force push.",
-    "queue_counts": {
-      "history": 21,
-      "recent": 29
+    "publication_count_correction": {
+      "actual_new_assessments": 30,
+      "commit": "742d3d0a0ea1928137840067d661ce5269e820ce",
+      "commit_title_count": 31,
+      "reason": "Commit-title counting error only; journal and final cumulative50 count are authoritative; published history retained."
     },
-    "run_id": "run-2026-10-18T1231-ebdd9de29f35",
+    "queue_counts": {
+      "history": 13,
+      "recent": 37
+    },
+    "run_id": "manual-20261027T2052Z",
     "source_blockers": [
+      {
+        "reason": "branch rewrite: live tip does not contain frozen target for main",
+        "repository": "zvenson/zp12"
+      },
       {
         "reason": "branch rewrite: live tip does not contain frozen target for smk37",
         "repository": "genkigenki/Felucca"
       }
     ],
-    "source_sync": "26 complete non-shallow DAGs; genkigenki/Felucca rewrite retained as blocker",
-    "started_at": "2026-10-18T12:31:30Z",
-    "stop_reason": "50 completed assessments; review stopped at cap",
+    "started_at": "2026-10-27T20:52:00Z",
+    "stop_reason": "50 completed assessments; no further source review or issue creation",
+    "task_launch": "Automations run_now returned404 Action not found before action invocation. User-requested task executed directly; saved automation schedule/enablement unchanged.",
+    "updated_issues": [],
     "validation": {
-      "device": "not run",
-      "firmware_build": "not run; no firmware implementation",
-      "helper_tests": "22 passed",
-      "ledger": "validate/checkpoint; immutable prior journal retained",
-      "native_latch_function": "exact unchanged function OFF/down ON/up reproduced orphan held bit; expected failure exit1"
+      "firmware_build": "Not run: no firmware implementation or build-input changes",
+      "hardware": "Not run: no device access, flash, baseline regeneration or release",
+      "helper_tests": "Not repeated: helper unchanged; full actual ledger/DAG validation and per-record metadata validation performed",
+      "journal_and_archives": "Original348-line journal prefix and complete migration archives byte-for-byte preserved; only50 terminal reviews appended",
+      "ledger": {
+        "journal_records": 398,
+        "pending_sources": 0,
+        "repositories": 37,
+        "terminal_pairs": 391,
+        "valid": true
+      },
+      "native_evidence": "All new pinned native paths checked; corrected invalid unappended Clipper clock fixture URL to tests/midi_drift_test.c. Preserved original BSP supply decision with existing475 follow-up context in state.",
+      "publication": "Ledger-only fast-forward commits; no whole-tree main merge or force push. Remote SHA verified at each prior checkpoint; final commit/ref verification retained in run output.",
+      "source_registry": "37 initialized registrations,35 sources synced; two rewritten branch histories remain explicitly blocked. All pre-existing IDs and immutable historical targets retained."
     }
   },
   "last_run_completed_assessments": 50,
-  "last_run_created_issues": [
-    "https://github.com/kmplngj/Felucca/issues/434",
-    "https://github.com/kmplngj/Felucca/issues/435",
-    "https://github.com/kmplngj/Felucca/issues/436",
-    "https://github.com/kmplngj/Felucca/issues/437"
-  ],
-  "last_run_finished_at": "2026-10-18T13:22:37.003510+00:00",
-  "last_run_id": "run-2026-10-18T1231-ebdd9de29f35",
-  "last_run_initialized_sources": 0,
-  "last_run_pending_assessments": 3,
+  "last_run_created_issues": [],
+  "last_run_finished_at": "2026-10-27T21:14:11.288477+00:00",
+  "last_run_id": "manual-20261027T2052Z",
+  "last_run_initialized_sources": 4,
+  "last_run_pending_assessments": 0,
   "last_run_queue_counts": {
-    "history": 21,
-    "recent": 29
+    "history": 13,
+    "recent": 37
   },
-  "last_run_status": "completed_at_assessment_cap_with_source_blocker",
+  "last_run_status": "completed_at_assessment_cap_with_existing_source_blockers",
   "last_run_validation": {
-    "device": "not run",
-    "firmware_build": "not run; no firmware implementation",
-    "helper_tests": "22 passed",
-    "ledger": "validate/checkpoint; immutable prior journal retained",
-    "native_latch_function": "exact unchanged function OFF/down ON/up reproduced orphan held bit; expected failure exit1"
+    "firmware_build": "Not run: no firmware implementation or build-input changes",
+    "hardware": "Not run: no device access, flash, baseline regeneration or release",
+    "helper_tests": "Not repeated: helper unchanged; full actual ledger/DAG validation and per-record metadata validation performed",
+    "journal_and_archives": "Original348-line journal prefix and complete migration archives byte-for-byte preserved; only50 terminal reviews appended",
+    "ledger": {
+      "journal_records": 398,
+      "pending_sources": 0,
+      "repositories": 37,
+      "terminal_pairs": 391,
+      "valid": true
+    },
+    "native_evidence": "All new pinned native paths checked; corrected invalid unappended Clipper clock fixture URL to tests/midi_drift_test.c. Preserved original BSP supply decision with existing475 follow-up context in state.",
+    "publication": "Ledger-only fast-forward commits; no whole-tree main merge or force push. Remote SHA verified at each prior checkpoint; final commit/ref verification retained in run output.",
+    "source_registry": "37 initialized registrations,35 sources synced; two rewritten branch histories remain explicitly blocked. All pre-existing IDs and immutable historical targets retained."
   },
-  "latest_felucca_comparison_sha": "2a8221a929a127fe4a155e31e1dd78658fd45ecf",
+  "latest_felucca_comparison_sha": "fd768dc3f989c4f98f4f60c7cc0f7e14ad2a6730",
   "pending_source_blockers": {},
   "previous_run_assessments": [
     {
@@ -696,6 +705,97 @@
         "not_applicable": 3,
         "shared_checkout": "preserved",
         "target_build": "not_run_no_native_firmware_change"
+      }
+    },
+    {
+      "last_run_assessment": {
+        "README_assessment": "Unchanged: README already describes review-only source intake and native capabilities; no firmware behavior implemented.",
+        "comparison_sha": "2a8221a929a127fe4a155e31e1dd78658fd45ecf",
+        "completed_assessments": 50,
+        "created_issues": [
+          "https://github.com/kmplngj/Felucca/issues/434",
+          "https://github.com/kmplngj/Felucca/issues/435",
+          "https://github.com/kmplngj/Felucca/issues/436",
+          "https://github.com/kmplngj/Felucca/issues/437"
+        ],
+        "dispositions": {
+          "already_present": 6,
+          "bug": 2,
+          "existing_issue": 18,
+          "feature": 1,
+          "not_applicable": 23
+        },
+        "finished_at": "2026-10-18T13:22:37.003510+00:00",
+        "historical_coverage": "Incomplete; no coverage from snapshots or ancestry; partial DUELL/ChoralRoot and unreviewed Ghoulbox merge retained pending",
+        "identity_method": "Fresh GitHub connector repository responses served to helper gh-api adapter; no counts/coverage inferred from metadata",
+        "initialized_pending_sources": 0,
+        "models": {
+          "coordinator": "Inherited runtime model cannot be configured; limitation reported",
+          "diff_worker": "gpt-6.1-sol medium",
+          "metadata_worker": "gpt-6.1-sol low"
+        },
+        "pending_assessments": [
+          {
+            "queue": "history",
+            "repository": "oscillr/DUELL",
+            "source_sha": "1df6207e5a51a909223c9ccfb6280a97840490c0"
+          },
+          {
+            "queue": "history",
+            "repository": "Quixotic7/ChoralRootFM1",
+            "source_sha": "c1c3cecb82ec5c03f50d463114e837913762242a"
+          },
+          {
+            "queue": "recent",
+            "repository": "jasonpersinger/ghoulbox-fm1-dungeon-synth",
+            "source_sha": "76e2eb40db73adc1c020b2d3f19b8c9c0e694e73"
+          }
+        ],
+        "publication": "Four intermediate checkpoints verified remotely; final ledger-only GitHub connection CAS publication follows. No force push.",
+        "queue_counts": {
+          "history": 21,
+          "recent": 29
+        },
+        "run_id": "run-2026-10-18T1231-ebdd9de29f35",
+        "source_blockers": [
+          {
+            "reason": "branch rewrite: live tip does not contain frozen target for smk37",
+            "repository": "genkigenki/Felucca"
+          }
+        ],
+        "source_sync": "26 complete non-shallow DAGs; genkigenki/Felucca rewrite retained as blocker",
+        "started_at": "2026-10-18T12:31:30Z",
+        "stop_reason": "50 completed assessments; review stopped at cap",
+        "validation": {
+          "device": "not run",
+          "firmware_build": "not run; no firmware implementation",
+          "helper_tests": "22 passed",
+          "ledger": "validate/checkpoint; immutable prior journal retained",
+          "native_latch_function": "exact unchanged function OFF/down ON/up reproduced orphan held bit; expected failure exit1"
+        }
+      },
+      "last_run_completed_assessments": 50,
+      "last_run_created_issues": [
+        "https://github.com/kmplngj/Felucca/issues/434",
+        "https://github.com/kmplngj/Felucca/issues/435",
+        "https://github.com/kmplngj/Felucca/issues/436",
+        "https://github.com/kmplngj/Felucca/issues/437"
+      ],
+      "last_run_finished_at": "2026-10-18T13:22:37.003510+00:00",
+      "last_run_id": "run-2026-10-18T1231-ebdd9de29f35",
+      "last_run_initialized_sources": 0,
+      "last_run_pending_assessments": 3,
+      "last_run_queue_counts": {
+        "history": 21,
+        "recent": 29
+      },
+      "last_run_status": "completed_at_assessment_cap_with_source_blocker",
+      "last_run_validation": {
+        "device": "not run",
+        "firmware_build": "not run; no firmware implementation",
+        "helper_tests": "22 passed",
+        "ledger": "validate/checkpoint; immutable prior journal retained",
+        "native_latch_function": "exact unchanged function OFF/down ON/up reproduced orphan held bit; expected failure exit1"
       }
     }
   ],
@@ -1372,9 +1472,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "aa1032338c1f835070ccbac8192f409d7d341f4b14f3fb0c2e96c34d12524b67",
-  "round_robin_next_repository_index": 33,
-  "round_robin_processed_records": 396,
+  "round_robin_journal_prefix_sha256": "3f65bcdef4ff9b7ee37dc3d68bb0642a6dc49d44b9579f6f8690b9420e228583",
+  "round_robin_next_repository_index": 15,
+  "round_robin_processed_records": 398,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [

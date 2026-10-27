@@ -10,7 +10,7 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 8542,
+  "known_remaining_history": 8540,
   "known_remaining_recent": 1722,
   "pending_sources": [],
   "remaining_history": null,
@@ -186,8 +186,8 @@
     },
     {
       "history": {
-        "remaining": 21,
-        "reviewed": 4,
+        "remaining": 20,
+        "reviewed": 5,
         "total": 25
       },
       "recent": {
@@ -196,12 +196,12 @@
         "total": 0
       },
       "repository": "charlesvestal/schwung-chiptune",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
-        "remaining": 21,
-        "reviewed": 8,
+        "remaining": 20,
+        "reviewed": 9,
         "total": 29
       },
       "recent": {
@@ -210,7 +210,7 @@
         "total": 0
       },
       "repository": "charlesvestal/schwung-bouba-kiki",
-      "terminal_pairs": 8
+      "terminal_pairs": 9
     },
     {
       "history": {
@@ -508,5 +508,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 389
+  "terminal_pairs": 391
 }
