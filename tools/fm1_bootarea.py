@@ -39,6 +39,7 @@ from fm1pkg_make import chipkey_decode  # noqa: E402
 HEAD = 0x4000
 SPL_OFF, SPL_LOAD = 0xA0, 0x01C02000
 # M-VAVE's SPLs by their boot record (data CRC16, size); the whole boot areas of the official packages by SHA-256
+# (firmware/src/ota.c OTA_STOCK pins the same two digests on the device; tests/install_test.py checks they agree)
 KNOWN_SPL = {(0x71C8, 0x3830): "M-VAVE V15", (0xDCC8, 0x3898): "M-VAVE V16"}
 KNOWN_HEAD = {"d9f43191777656de01c7bed4f9e9ba2e34e94832c5d2ed02c3fc7ab7a6d9bd67": "FM-1_015",
               "8f5228c2d6ea2068838ef4916f946bea877d14b07e6cfca49e41957f4c7b234f": "FM-1_016"}

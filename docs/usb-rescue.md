@@ -75,9 +75,13 @@ Unlike Felucca's loader, M-VAVE's loader writes the whole `flash.bin`, **boot ar
 included**, and the flash above Felucca's app area (V16's app area ends at `0xA9000`).
 Felucca's staging (`firmware/src/ota.c`, `OTA_STOCK`) therefore accepts M-VAVE's
 loader only with a reviewed official image: the `flash.bin` size and UFW data CRC16
-and the CRC16 of its 16 KiB boot area must match V15's or V16's, and the device's
-own chip key must be the image's (`0x980F`). The hosts additionally pin each whole
-file by SHA-256. Before #619, the package's boot area had to equal the device's,
+must match V15's or V16's, the SHA-256 of its 16 KiB boot area must be that image's
+(the digests `tools/fm1_bootarea.py` names them by), and the device's own chip key
+must be the image's (`0x980F`). CRC16s alone can be forged, so a changed boot area
+with matching CRCs is refused (−5) before anything is erased. A boot area byte for
+byte equal to the device's own is also accepted, since nothing in it changes. The
+hosts additionally pin each whole file by SHA-256. Before #619, the package's boot
+area had to equal the device's,
 so V15 was refused on a unit with V16's bootloader or m-bootloader and V16 was
 refused everywhere. Now either official file installs over any boot area, and its
 boot area replaces the one the unit had. Original V15 return remains a separately
@@ -96,7 +100,7 @@ Codes −1 to −7, −15 and −16 come before anything is erased.
 | −1, −2 | The package's UFW header or entry list could not be read or is damaged |
 | −3 | No `flash.bin` or no `ota.bin` |
 | −4, −6 | Reading the boot area or the loader from the host failed |
-| −5 | M-VAVE's loader with a flash image that is not a reviewed official one |
+| −5 | M-VAVE's loader with a flash image that is not a reviewed official one (its size or CRC16 is not pinned, or its boot area's SHA-256 is neither the pinned one nor the device's own boot area) |
 | −7 | Unknown or malformed update loader |
 | −8 … −12 | Staging the loader failed (erase, read, program, verify, head); staging is erased again |
 | −13 | The host did not confirm; staging is erased again |

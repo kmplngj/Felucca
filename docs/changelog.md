@@ -199,8 +199,8 @@ recorded in the linked reports, rather than every current build or device.
 
 - **Return to official firmware across bootloaders:** Felucca's update staging and
   the Python installer accept M-VAVE's official V16 as well as V15, each only as the
-  exact reviewed file (whole-file SHA-256 on the host; flash image, boot-area CRCs and
-  chip key on the device), over whichever boot area the unit has. Before, V15 was
+  exact reviewed file (whole-file SHA-256 on the host; flash image size and CRC16,
+  boot-area SHA-256 and chip key on the device), over whichever boot area the unit has. Before, V15 was
   refused on a unit with V16's bootloader or m-bootloader, and V16 everywhere. M-VAVE's
   FM1 Open firmware and m-bootloader's installer now get explicit explanations instead
   of generic failures. The [offline boot-area survey](boot-area-survey.md), hardened

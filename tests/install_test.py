@@ -32,6 +32,7 @@ import fm1_install as I  # noqa: E402
 import fm1pkg_make as M  # noqa: E402
 import build as B  # noqa: E402
 import ota_stock_fixtures  # noqa: E402
+import fm1_bootarea  # noqa: E402
 from test_coverage import Producer
 coverage = Producer()
 
@@ -697,6 +698,13 @@ def foreign_states():
     ok(rc == 0, "an FM-1 on a port named 'FM1' is found")
 
 
+def stock_pins():
+    """#619: the device pins the official boot areas by SHA-256, the same digests the survey tool names them by"""
+    pins = ota_stock_fixtures.stock_pins()
+    ok([(p[0], fm1_bootarea.KNOWN_HEAD.get(p[3])) for p in pins] == [(0x93000, "FM-1_015"), (0xA9000, "FM-1_016")],
+       "ota.c OTA_STOCK: V15's and V16's boot-area SHA-256 are fm1_bootarea.py KNOWN_HEAD's")
+
+
 def official():
     """#32/#619: back to the official V15 or V16 from Felucca, without --force (only the unmodified file)"""
     for version in ("15", "16"):
@@ -720,8 +728,10 @@ def official_one(path, product, version):
     key_ent = I.jl_dec(fl[0x40:0x60])                   # the boot area's isd_config.ini entry: the chip key blob
     blob = fl[I.u32(key_ent, 4):I.u32(key_ent, 4) + 32]
     key = M.chipkey_decode(blob) if key_ent[16:31] == b"isd_config.ini\0" else None
-    ok((size, I.crc16(fl), I.crc16(fl[:0x4000]), key) in ota_stock_fixtures.stock_pins(),
-       f"official V{version}: firmware/src/ota.c OTA_STOCK pins this file's flash.bin, boot area and key")
+    ok((size, I.crc16(fl), key, hashlib.sha256(fl[:0x4000]).hexdigest()) in ota_stock_fixtures.stock_pins(),
+       f"official V{version}: firmware/src/ota.c OTA_STOCK pins this file's flash.bin, boot-area SHA-256 and key")
+    ok(fm1_bootarea.KNOWN_HEAD.get(hashlib.sha256(fl[:0x4000]).hexdigest()) == product,
+       f"official V{version}: tools/fm1_bootarea.py KNOWN_HEAD names this file's boot area")
     dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write=product,
                   loader_identity="ota-FM-1_015")
     rc, out, err = cli([str(path), "--yes"], dev)
@@ -768,6 +778,7 @@ js_synthetic()
 against_js()
 stock_policy()
 foreign_states()
+stock_pins()
 official()
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"INSTALL TESTS FAILED ({failed})" if failed else "install tests passed")
