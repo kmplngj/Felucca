@@ -4,6 +4,8 @@
 import json
 import os
 from pathlib import Path
+import py_compile
+import subprocess
 import struct
 import sys
 import tempfile
@@ -47,6 +49,40 @@ class ReplayContracts(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='native-replay-contract-', dir=ROOT / 'build')
         self.addCleanup(self.temp.cleanup)
         self.out = Path(self.temp.name)
+
+    def test_archive_entry_refuses_before_sourceless_cached_helper_executes(self):
+        archive = self.out / 'unverified-archive'
+        tools = archive / 'tools'
+        tools.mkdir(parents=True)
+        (archive / 'SOURCE-PINS.json').write_text('{}')
+        entry = tools / 'native_emulator_replay.py'
+        source = Path(R.__file__).read_text()
+        entry.write_text(source)
+        marker = self.out / 'unverified-helper-executed'
+        helper = tools / 'build_manifest.py'
+        helper.write_text('from pathlib import Path\nPath(' + repr(str(marker)) +
+                          ').write_text("executed")\n'
+                          'raise SystemExit("cached helper executed before CLI admission")\n')
+        py_compile.compile(str(helper), cfile=str(tools / 'build_manifest.pyc'), doraise=True)
+        helper.unlink()
+        env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME')}
+        def cli():
+            return subprocess.run([sys.executable, str(entry), '--help'], cwd=archive,
+                                  env=env, capture_output=True, text=True, timeout=10)
+        refused = cli()
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('native replay orchestration requires a clean committed Git checkout',
+                      refused.stderr)
+        self.assertFalse(marker.exists())
+        # Bypass only the new startup refusal: this reconstructs the previous
+        # entry, and the same sourceless cache must now execute its marker.
+        start = source.index('import os as _source_os')
+        end = source.index('import argparse', start)
+        entry.write_text(source[:start] + source[end:])
+        previous = cli()
+        self.assertNotEqual(previous.returncode, 0)
+        self.assertIn('cached helper executed before CLI admission', previous.stderr)
+        self.assertTrue(marker.exists())
 
     def test_complete_trace_and_plain_terminal_are_distinct(self):
         result, rows = parse(transcript())

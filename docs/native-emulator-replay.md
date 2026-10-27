@@ -10,7 +10,10 @@ remains open for symbol/range attribution and the remaining profiling acceptance
 This is an opt-in host developer tool. It builds no firmware, changes no firmware
 input, opens no device and downloads nothing. It requires an already built native
 producer and a separately built, receipt-verified emulator inside this checkout's
-ignored `build/`. See [BUILDING](../BUILDING.md) for native prerequisites and the
+ignored `build/`. The replay consumer itself runs from a Git checkout; it refuses
+`SOURCE-PINS.json` extracted-source trees before importing repository helpers.
+Native producers retain their own existing verification rules. See
+[BUILDING](../BUILDING.md) for native prerequisites and the
 [performance guide](performance.md) for the distinct host, static and device evidence.
 
 ## Inputs and supported observations

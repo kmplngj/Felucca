@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Bounded native replay evidence for #662; no hotspot or device timing report."""
+import os as _source_os
+
+# Like maintainer_bundle, this consumer requires Git. Refuse extracted sources
+# before importing repository helpers, including unverified sourceless bytecode.
+if _source_os.path.isfile(_source_os.path.join(_source_os.path.dirname(
+        _source_os.path.dirname(_source_os.path.realpath(__file__))), 'SOURCE-PINS.json')):
+    raise SystemExit('native replay orchestration requires a clean committed Git checkout')
+
 import argparse
 import array
 import hashlib
