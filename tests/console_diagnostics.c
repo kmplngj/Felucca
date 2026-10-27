@@ -129,6 +129,30 @@ int main(int argc, char **argv)
     if (argc == 3) {
         if (!strcmp(argv[2], "no-crash"))
             fm1_crash.magic = 0;
+#if FELUCCA_UAC
+        else if (!strncmp(argv[2], "uac-", 4)) {
+            /* State-only rate epochs; output still uses production dispatch. */
+            static const struct { const char *name; uint32_t ms, r48, sets, pkts; } cases[] = {
+                {"uac-before", 10000, 0, 1, 100},
+                {"uac-drop", 11000, 1, 2, 20},
+                {"uac-overtake", 11000, 1, 2, 120},
+                {"uac-back", 11000, 0, 3, 120},
+                {"uac-same-request", 11000, 0, 2, 120},
+                {"uac-stable", 11000, 0, 1, 120},
+            };
+            size_t i;
+            for (i = 0; i < sizeof cases / sizeof cases[0]; i++)
+                if (!strcmp(argv[2], cases[i].name))
+                    break;
+            if (i == sizeof cases / sizeof cases[0])
+                return 2;
+            fm1_ms = cases[i].ms;
+            uac.r48 = cases[i].r48;
+            uac.rate_sets = cases[i].sets;
+            uac.pkts = cases[i].pkts;
+            uac.frames = uac.r48 ? uac.pkts * 48u : uac.pkts * 441u / 10u;
+        }
+#endif
 #if FELUCCA_CRASH_CTX
         else if (!strcmp(argv[2], "stale-ctx"))
             fm1_crash.ctx = 0;               /* a record another firmware left: no registers */

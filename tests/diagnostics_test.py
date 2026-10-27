@@ -116,12 +116,13 @@ class FakeTransport:
 
 class SessionTransport(FakeTransport):
     def __init__(self, clock, interrupt_at=None, reboot_at=None, unequal_at=None, malformed_at=None,
-                 input_at=None, input_text=None):
+                 input_at=None, input_text=None, status_texts=None):
         super().__init__(clock, chunks=[b"\r\nFelucca v1.6 console - 'help'\r\n> "])
         self.index = -1
         self.interrupt_at, self.reboot_at, self.unequal_at = interrupt_at, reboot_at, unequal_at
         self.malformed_at = malformed_at
         self.input_at, self.input_text = input_at, input_text
+        self.status_texts = status_texts
 
     def write(self, data, timeout):
         self.writes.append(data)
@@ -141,11 +142,13 @@ class SessionTransport(FakeTransport):
                 text = text.replace("audio_late " + str(7 + i * 2), "audio_late -4294967296")
             if i == self.reboot_at:
                 text = text.replace("boots 4", "boots 5")
+            if self.status_texts is not None:
+                text = self.status_texts[i]
         if command == "inp" and i == self.unequal_at:
             text = text.replace("window_ms 1000", "window_ms 1600")
         if command == "inp" and i == self.input_at:
             text = self.input_text
-        raw = reply(command, text)
+        raw = text.encode() if command == "status" and text.startswith("status\r\n") else reply(command, text)
         self.pending.extend([raw[:2], raw[2:10], raw[10:-1], raw[-1:]])
 
 
@@ -215,6 +218,50 @@ class ConsoleContractTests(unittest.TestCase):
     def test_counter_membership(self):
         self.assertEqual(set(diag.COMMANDS), set(EXPECTED_COUNTERS))
         self.assertEqual({command: set(names) for command, names in diag.COUNTERS.items()}, EXPECTED_COUNTERS)
+
+    def test_real_console_packet_rate_epochs(self):
+        def status(case):
+            return subprocess.check_output([str(self.binaries[True]), "status", case], timeout=5).decode()
+        before = status("uac-before")
+        for case in ("uac-drop", "uac-overtake", "uac-back", "uac-same-request", "uac-stable"):
+            with self.subTest(case=case):
+                after = status(case)
+                comparison = diag.compare(snapshot(status=before), snapshot(status=after))
+                expected = "VALID" if case == "uac-stable" else "INVALID"
+                self.assertEqual(comparison["validity"], expected)
+                self.assertEqual(comparison["deltas"]["status"]["uac_pkts"],
+                                 20 if expected == "VALID" else None)
+                # A later good interval cannot repair a bad aggregate. The real
+                # console bytes survive transport, JSONL and raw persistence.
+                third = after.replace("uptime_ms 11000", "uptime_ms 12000")
+                clock, events = Clock(), []
+                transport = SessionTransport(clock, status_texts=[before, after, third])
+                result = diag.collect(diag.Console(transport, 1, clock), 2, 1, {},
+                                      events.append, clock, clock.sleep)
+                self.assertEqual(result["validity"], expected)
+                self.assertEqual(len(transport.writes), 12)
+                intervals = [e for e in events if e["type"] == "interval"]
+                self.assertEqual([e["validity"] for e in intervals], [expected, "VALID"])
+                if expected == "INVALID":
+                    self.assertTrue(all(value is None for group in result["deltas"].values()
+                                        for value in group.values()))
+                with tempfile.TemporaryDirectory() as tmp:
+                    capture = diag.Capture(Path(tmp) / "capture")
+                    for event in events:
+                        capture.emit(event)
+                    capture.close()
+                    self.assertIn(after.encode(), (capture.directory / "console.raw").read_bytes())
+                    saved = json.loads((capture.directory / "summary.json").read_text())
+                    self.assertEqual(saved["validity"], expected)
+                    records = [json.loads(line) for line in
+                               (capture.directory / "samples.jsonl").read_text().splitlines()]
+                    self.assertEqual(records[-1]["validity"], expected)
+
+    def test_real_console_without_uac_has_no_packet_delta(self):
+        raw = subprocess.check_output([str(self.binaries[False]), "status"], timeout=5).decode()
+        result = diag.compare(snapshot(status=raw), snapshot(status=raw.replace("10000", "11000")))
+        self.assertEqual(result["validity"], "VALID")
+        self.assertIsNone(result["deltas"]["status"]["uac_pkts"])
 
     def test_real_console_counters(self):
         for command, names in EXPECTED_COUNTERS.items():
@@ -293,6 +340,69 @@ class ConsoleContractTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_packet_delta_requires_supported_unchanged_epoch_markers(self):
+        for markers in ("", "uac_hz 44100\n", "uac_rate_sets 1\n",
+                        "uac_hz 96000\nuac_rate_sets 1\n",
+                        "uac_hz future-rate\nuac_rate_sets 1\n",
+                        "uac_hz 1:2\nuac_rate_sets 1\n",
+                        "uac_hz 44100\nuac_rate_sets 1\n",
+                        "uac_hz 48000\nuac_rate_sets -2147483648\n"):
+            with self.subTest(markers=markers):
+                first = STATUS + "uac_pkts 100\n" + markers
+                second = first.replace("uptime_ms 10000", "uptime_ms 11000").replace("uac_pkts 100", "uac_pkts 120")
+                a, b = snapshot(status=first), snapshot(status=second)
+                result = diag.compare(a, b)
+                self.assertEqual(result["validity"], "VALID")
+                known = "uac_hz 44100\nuac_rate_sets 1\n" == markers or "uac_hz 48000\n" in markers
+                self.assertEqual(result["deltas"]["status"]["uac_pkts"], 20 if known else None)
+                self.assertEqual(result["deltas"]["status"]["audio_late"], 0)
+                # Missing markers must not conceal a directly observed decrease.
+                b["commands"]["status"]["fields"]["uac_pkts"] = 20
+                self.assertEqual(diag.compare(a, b)["validity"], "INVALID")
+        for remove in ("uac_hz", "uac_rate_sets"):
+            first = snapshot(status=STATUS + "uac_pkts 100\nuac_hz 44100\nuac_rate_sets 1\n")
+            second = snapshot(status=STATUS.replace("10000", "11000") +
+                              "uac_pkts 120\nuac_hz 44100\nuac_rate_sets 1\n")
+            del second["commands"]["status"]["fields"][remove]
+            result = diag.compare(first, second)
+            self.assertEqual(result["validity"], "VALID")
+            self.assertIsNone(result["deltas"]["status"]["uac_pkts"])
+        for old_markers, new_markers in (("uac_hz 44100\n", "uac_hz 48000\n"),
+                                         ("uac_rate_sets 1\n", "uac_rate_sets 2\n"),
+                                         ("uac_hz 44100\nuac_rate_sets 1\n",
+                                          "uac_hz 48000\nuac_rate_sets 1\n")):
+            result = diag.compare(snapshot(status=STATUS + "uac_pkts 100\n" + old_markers),
+                                  snapshot(status=STATUS.replace("10000", "11000") +
+                                           "uac_pkts 120\n" + new_markers))
+            self.assertEqual(result["validity"], "INVALID")
+            self.assertTrue(all(value is None for group in result["deltas"].values() for value in group.values()))
+
+    def test_rate_setter_malformed_values_invalidate_and_stop_with_raw(self):
+        for suffix in ("", " ", " not-a-number", " -2147483649", " 4294967296", " 1:2", ": 1:2"):
+            with self.subTest(suffix=suffix):
+                first = STATUS + "uac_pkts 100\nuac_hz 44100\nuac_rate_sets 1\n"
+                line = "uac_rate_sets" + suffix
+                second = first.replace("10000", "11000").replace("uac_rate_sets 1", line)
+                parsed = diag.parse_response("status", reply("status", second))
+                self.assertIn("invalid uint32 uac_rate_sets", parsed["issues"])
+                clock, events = Clock(), []
+                transport = SessionTransport(clock, status_texts=[first, second])
+                result = diag.collect(diag.Console(transport, 1, clock), 2, 1, {}, events.append, clock, clock.sleep)
+                self.assertEqual(result["validity"], "INVALID")
+                self.assertEqual(len(transport.writes), 5)
+                self.assertTrue(all(value is None for group in result["deltas"].values() for value in group.values()))
+                response = [e for e in events if e["type"] == "response"][-1]
+                self.assertIn((line + "\r\n").encode(), base64.b64decode(response["raw_b64"]))
+                with tempfile.TemporaryDirectory() as tmp:
+                    capture = diag.Capture(Path(tmp) / "capture")
+                    for event in events:
+                        capture.emit(event)
+                    capture.close()
+                    self.assertIn((line + "\r\n").encode(), (capture.directory / "console.raw").read_bytes())
+                    saved = json.loads((capture.directory / "summary.json").read_text())
+                    self.assertEqual(saved["validity"], "INVALID")
+                    self.assertFalse(saved["end_snapshot"]["complete"])
+
     def test_signed_uint32_normalization_rejects_values_below_int32(self):
         for command, text, name in (("status", STATUS, "audio_late"), ("status", STATUS, "uptime_ms"),
                                     ("dbg", DBG, "boots"), ("crash", CRASH, "count")):

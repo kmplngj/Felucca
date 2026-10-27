@@ -40,6 +40,9 @@ SEMANTICS = {
     "latency": "Requires explicit confirmation of FM1_INPUT_LAT, complete valid key-latency fields and "
                "observed press/note samples; otherwise UNMEASURED.",
     "snapshots": "Commands and fields are read sequentially, not an atomic device snapshot.",
+    "uac_pkts": "Rate-epoch-local packet count; delta requires unchanged 44100/48000 Hz and unchanged "
+                "uac_rate_sets. A changed setter count may hide a rate reset, even at equal endpoint rates; "
+                "same-rate requests are conservatively rejected. Missing/unsupported markers leave delta unavailable.",
 }
 
 
@@ -125,6 +128,8 @@ def scalar(value):
 def parse_response(command, raw):
     """Keep extensible fields and verbatim unknown lines; never invent missing zeros."""
     fields, extra, duplicates = {}, [], []
+    scalar_fields = INPUT_LATENCY_FIELDS if command == "inp" else (
+        ("uac_rate_sets",) if command == "status" else ())
     for line in raw.decode("utf-8", errors="replace").replace("\r", "").split("\n"):
         line = line.strip()
         if not line or line in (command, ">", "> " + command):
@@ -136,7 +141,7 @@ def parse_response(command, raw):
             fields["record_present"] = False
             continue
         words = line.split(None, 1)
-        if command == "inp" and len(words) == 2 and words[0] in INPUT_LATENCY_FIELDS:
+        if len(words) == 2 and words[0] in scalar_fields:
             # Recognize known scalar fields before colon records: a malformed
             # value such as "1:2" must not disguise the field as an unknown key.
             key, value = words[0], scalar(words[1])
@@ -150,7 +155,7 @@ def parse_response(command, raw):
             match = re.fullmatch(r"([A-Za-z_][A-Za-z_0-9]*) (.+)", line)
             if not match:
                 extra.append(line)
-                if command != "inp" or line not in INPUT_LATENCY_FIELDS:
+                if line not in scalar_fields:
                     continue
                 # A known field with no value is malformed evidence, not a
                 # legacy reply that omits the field. Retain the original line.
@@ -262,6 +267,21 @@ def compare(start, end):
         reasons.append("uptime unavailable")
     elif b["uptime_ms"] <= a["uptime_ms"]:
         reasons.append("uptime reset/wrap/stopped")
+    # Firmware resets pkts on effective rate changes. A reset can overtake the
+    # old count, and two changes can restore the endpoint rate between samples.
+    # SET_CUR counts requests, including harmless same-rate requests; it does
+    # not prove that every request reset the packet counter.
+    rates = (a.get("uac_hz"), b.get("uac_hz"))
+    setters = (a.get("uac_rate_sets"), b.get("uac_rate_sets"))
+    known_rates = all(type(rate) is int and rate in (44100, 48000) for rate in rates)
+    known_setters = all(type(count) is int and 0 <= count <= 0xFFFFFFFF for count in setters)
+    packets_present = "uac_pkts" in a and "uac_pkts" in b
+    if packets_present:
+        if known_rates and rates[0] != rates[1]:
+            reasons.append("UAC rate changed")
+        if known_setters and setters[0] != setters[1]:
+            reasons.append("UAC rate configuration changed; packet epoch uncertain")
+    packet_epoch = known_rates and rates[0] == rates[1] and known_setters and setters[0] == setters[1]
     deltas = {}
     for command, keys in COUNTERS.items():
         old, new = fields(start, command), fields(end, command)
@@ -272,6 +292,8 @@ def compare(start, end):
                 if y < x:
                     reasons.append("counter reset/wrap: " + command + "." + key)
                 deltas[command][key] = y - x
+                if command == "status" and key == "uac_pkts" and not packet_epoch:
+                    deltas[command][key] = None
             else:
                 deltas[command][key] = None
     if reasons:
