@@ -233,11 +233,17 @@ def report(proof, replay_root, native_root, out):
         native, traces, bindings, timings, process = validate_saved(proof, replay_root, native_root, out)
         command = ("import sys;sys.path.insert(0,sys.argv[1]+'/tools');import build;"
                    "sys.stdout.write(build.tc('common/bin/objdump','-t',build.OUT/'felucca.elf'))")
-        objdump = build.toolchain() / 'common/bin/objdump'
+        # Match the resource-verifier CLI's unset/empty default, and pass the
+        # same selection to the producer's imported build helper below.
+        symbol_env = os.environ.copy()
+        toolchain = Path(symbol_env.get('JIELI_TOOLCHAIN') or Path.home() / '.jieli/toolchain')
+        toolchain = (native_root / toolchain).resolve()
+        symbol_env['JIELI_TOOLCHAIN'] = str(toolchain)
+        objdump = toolchain / 'common/bin/objdump'
         expected_objdump = native['report']['configuration']['toolchain_sha256']['common/bin/objdump']
         require(replay.digest(objdump) == expected_objdump, 'target symbol tool differs from verified compiler closure')
         result['symbol_process'] = replay.capture([sys.executable, '-c', command, native_root], native_root,
-                                                 os.environ.copy(), out / 'symbols', timeout=120)
+                                                 symbol_env, out / 'symbols', timeout=120)
         require(replay.digest(objdump) == expected_objdump, 'target symbol tool changed during capture')
         require(not (out / 'symbols.stderr').read_bytes(), 'unexpected target-tool stderr')
         symbols = (out / 'symbols.stdout').read_text()

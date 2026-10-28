@@ -13,6 +13,11 @@ silent controls and repeated windows. The supported replay verifier is commit
 Use Python 3.11+, Linux/macOS build-verification prerequisites, the native
 producer's original SDK/toolchain environment, and these explicit trusted roots:
 
+`JIELI_TOOLCHAIN` uses the resource verifier's normal selection: unset or empty
+means `~/.jieli/toolchain`; a relative selector resolves against the native producer.
+The reporter hashes the selected objdump and forwards that same absolute toolchain
+directory to its symbol subprocess.
+
 ```sh
 python3 tests/native_hotspots_test.py
 python3 -O tests/native_hotspots_test.py

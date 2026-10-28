@@ -143,6 +143,53 @@ class Hotspots(unittest.TestCase):
         self.assertNotEqual(p.returncode, 0); self.assertIn(b'requires a Git checkout', p.stderr)
         self.assertFalse(marker.exists())
 
+    def test_symbol_capture_uses_verified_toolchain_with_unset_empty_and_override(self):
+        for setting in (None, '', 'explicit', 'relative'):
+            with self.subTest(setting=setting):
+                tree = self.root / ('unset' if setting is None else setting or 'empty')
+                native_root = tree / 'native'
+                tools = native_root / 'tools'; tools.mkdir(parents=True)
+                # Exercise the producer's real build.tc/toolchain selection in
+                # the actual symbol child, without invoking a target compiler.
+                for name in ('build.py', 'fm1pkg_make.py', 'lz4blk.py'):
+                    (tools / name).write_bytes((ROOT / 'tools' / name).read_bytes())
+                (native_root / 'build').mkdir()
+                (native_root / 'build/felucca.dis').write_text(listing())
+                home = tree / 'home'
+                toolchain = tree / 'selected-toolchain' if setting in ('explicit', 'relative') else home / '.jieli/toolchain'
+                objdump = toolchain / 'common/bin/objdump'
+                objdump.parent.mkdir(parents=True)
+                clang = toolchain / 'pi32v2/bin/clang'; clang.parent.mkdir(parents=True); clang.touch()
+                marker = tree / 'symbol-invocation.json'
+                objdump.write_text('#!' + sys.executable + '\nimport json, os, sys\nfrom pathlib import Path\n'
+                                   'Path(' + repr(str(marker)) + ').write_text(json.dumps({'
+                                   '"argv":sys.argv,"toolchain":os.environ["JIELI_TOOLCHAIN"]}))\n'
+                                   'sys.stdout.write(' + repr(sym()) + ')\n')
+                objdump.chmod(0o755)
+                expected_sha = H.replay.digest(objdump)
+                native = {'report': {'configuration': {'toolchain_sha256': {'common/bin/objdump': expected_sha}},
+                                     'build_identity': {}, 'configuration_sha256': 'fixture'}, 'binding': {}}
+                proof = tree / 'replay/build/proof'; proof.mkdir(parents=True)
+                summary = proof / 'summary.json'; summary.write_text('{}')
+                admitted = (native, {'fixture': [trace(A), trace(A)]},
+                            {str(summary): H.replay.digest(summary)}, [], {})
+                with patch.object(H, 'validate_saved', return_value=admitted), \
+                     patch.object(H.replay, 'check_native_unchanged'), patch.object(H, 'source_context'), \
+                     patch.object(Path, 'home', return_value=home), \
+                     patch.dict(os.environ, {'JIELI_DOCKER': '0'}):
+                    if setting is None:
+                        os.environ.pop('JIELI_TOOLCHAIN', None)
+                    else:
+                        os.environ['JIELI_TOOLCHAIN'] = ('../selected-toolchain' if setting == 'relative' else
+                                                       str(toolchain) if setting else '')
+                    path = H.report(proof, tree / 'replay', native_root, tree / 'report')
+                result = json.loads(path.read_text())
+                self.assertEqual(result['status'], 'complete')
+                self.assertEqual(result['objdump_sha256'], expected_sha)
+                invocation = json.loads(marker.read_text())
+                self.assertEqual(invocation['argv'], [str(objdump.resolve()), '-t', 'build/felucca.elf'])
+                self.assertEqual(invocation['toolchain'], str(toolchain))
+
     def saved_fixture(self):
         r = H.replay
         context = self.root / 'replay'; proof = context / 'build/proof'; proof.mkdir(parents=True)

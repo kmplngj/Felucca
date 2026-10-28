@@ -4,8 +4,8 @@
 `tools/native_audio_window.py` adds one bounded audio/DSP window to the existing
 [native replay](native-emulator-replay.md) and [attribution](native-hotspots.md)
 evidence. It discovers a render entry in the unchanged native image, then captures
-repeated workload and matched no-input windows. PR733/738 drivers, recipes,
-receipts and historical captures remain usable without changes.
+repeated workload and matched no-input windows. The original PR733 replay recipe,
+receipts and historical captures remain usable without regeneration.
 
 This first recipe supports only the source-audited clean native revision
 `ce5f4f5f83abee570bdf9141e8f8ec16aaacdd88`, its verified standard/M8Stealth package
