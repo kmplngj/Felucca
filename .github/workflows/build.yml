@@ -70,6 +70,13 @@ jobs:
           python3 - <<'PY'
           import os, re
           scope = os.environ['VALIDATION']
+          if os.environ.get('GITHUB_REF') == 'refs/heads/kori/hardware-719-render-stage-on' and (
+              os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or scope != 'target' or
+              os.environ['SOURCE_REF'] != '93b4da9c9a342dfa708693f2ea169fd52ff19e2e' or
+              os.environ['VERIFIED_PR'] != '719' or os.environ['FELUCCA_PROFILE'] != 'standard' or
+              os.environ['VERSION'] or os.environ['DRAFT_FEEDBACK'] != 'false'
+          ):
+              raise SystemExit('Temporary render-stage build requires frozen PR #719, standard profile and target-only validation')
           if scope not in ('full', 'target', 'quick'):
               raise SystemExit('Unknown validation scope')
           if scope == 'quick' and (os.environ['GITHUB_EVENT_NAME'] != 'pull_request' or
@@ -603,6 +610,8 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
       VALIDATION: ${{ inputs.validation }}
+      # Temporary PR #719 device qualification; other workflow refs retain default-OFF.
+      FELUCCA_RENDER_STAGE: ${{ github.ref == 'refs/heads/kori/hardware-719-render-stage-on' && '1' || '' }}
       FELUCCA_VERIFIED_PR: ${{ inputs.verified_pr }}
       FELUCCA_VERIFIED_COMMIT: ${{ inputs.source_ref }}
       CC: clang
@@ -774,6 +783,25 @@ jobs:
           set -o pipefail
           python3 tests/target_budget.py build/felucca.dis tests/target_budget.txt 2>&1 | tee build/ci/target-budget.log
           python3 "$RUNNER_TEMP/felucca-ci-target.py" package --validation "${VALIDATION/quick/target}" 2>&1 | tee build/ci/package.log
+          if [ "$FELUCCA_RENDER_STAGE" = 1 ]; then
+            python3 - <<'PYRENDER'
+          import hashlib, json, os
+          from pathlib import Path
+          path = Path('build/ci/provenance.json')
+          data = json.loads(path.read_text())
+          report = json.loads(Path('build/resource-report.json').read_text())
+          if report['configuration']['effective_defines']['FELUCCA_RENDER_STAGE'] != '1':
+              raise SystemExit('Target report does not establish enabled render-stage instrumentation')
+          data['hardware_build'] = {
+              'purpose': 'PR #719 matched OFF/ON device qualification; target-only, no acceptance claim',
+              'workflow_ref': os.environ['GITHUB_WORKFLOW_REF'],
+              'workflow_sha': os.environ['GITHUB_WORKFLOW_SHA'],
+              'render_stage': 1,
+              'resource_report_sha256': hashlib.sha256(Path('build/resource-report.json').read_bytes()).hexdigest(),
+          }
+          path.write_text(json.dumps(data, indent=2) + '\n')
+          PYRENDER
+          fi
           git diff --exit-code
       - name: Host, sanitizer, web and emulator tests
         if: needs.workflow-checks.outputs.full == 'true' && inputs.validation == 'full'
