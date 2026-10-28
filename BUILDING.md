@@ -463,8 +463,37 @@ erase. Its program counter counts completed bytes; its erase counter excludes re
 refused before work. Reads remain available for recovery after a cut. The user-preset
 fixture checks every payload/header byte-cut boundary, interrupted/refused erases
 and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. Storage and persistence tests retain their different retry
-and operation-counting models.
+`up_put` mirror rollback. The browser emulator also uses this model behind its
+existing bounds, sector-rounding and successful-operation counters. It exports no
+fault controls. A page-contract violation terminates the native adapter and traps
+in standalone Wasm without adding host imports. Native replay fingerprints include
+the shared NOR header so changes invalidate cached adapters and capture provenance.
+The `emulator_partitions` unit checks bounds, page failures and a panel save restored
+in a fresh process; with Emscripten it also checks the actual Wasm trap and empty
+import list. Storage and persistence tests retain their different retry and
+operation-counting models.
+
+The backup, FM6-bank, persistence and browser adapters also share
+`tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,
+the direct `FL_FAR` call and a selected JEDEC value. Host fixtures retain zero;
+the browser selects `0x856014` for its actual boot/persistence path. Rescue retains
+its dynamic chip fake. The `flash_context_contract` unit compiles the real HAL,
+shared host group, four actual consumers and the dynamic rescue JEDEC adapter
+against `firmware/hal/fm1_flash_context_contract.h`. Incompatible definitions and
+`FL_FAR` call types must fail the compile checks. The contract declares function
+types only; it does not model physical interrupt/flash timing or change the NOR
+program/read/erase adapters. Replay fingerprints include the shared host header;
+the HAL contract is covered by the existing HAL input inventory.
+
+The `flash_data_contract` unit checks the real HAL and partial rescue, editor,
+FM6-effective-patch and engine-ID adapters against
+`firmware/hal/fm1_flash_data_contract.h`. It covers RAM erase/program/read and the
+erase/write wrappers, including byte-buffer types and `FL_FAR` calls. The six
+former generic-pointer fake signatures now match the HAL; their bodies and error
+models are unchanged. Object-buffer `st_*` hooks remain owned by `storage.c`,
+with `storage_hw.c` bridging to the byte-oriented HAL. This is compile/host
+coverage, not physical flash timing or power-loss qualification. The existing HAL
+replay input inventory covers this header.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set

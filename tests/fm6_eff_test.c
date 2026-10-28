@@ -14,6 +14,7 @@
  * Build: the editor_test.c flags; -DFELUCCA_CPU2=0 for a build without the second core. With the second core, the
  * cases run once with a thread as core 1 (tests/c1_host.h) and once on one core (MENU > 2ND CORE OFF).
  *   build/host/fm6_eff_test */
+#include "../firmware/hal/fm1_flash_data_contract.h"
 static unsigned char host_samples[3][0x14000];
 #define SMP_USER_XIP(k) host_samples[k]
 #define FELUCCA_OTA 1
@@ -66,11 +67,13 @@ static uint32_t flash_ok = 1;
 static void audio_silence(void) {}
 static void fl_inval(uint32_t off, uint32_t n) { (void)off; (void)n; }
 static uint8_t *host_flash_ptr(uint32_t off) { return &host_samples[0][0] + off - SMP_USER_BASE; }
+static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took)
 {
     memset(host_flash_ptr(off), 0xFF, 4096); *took = 0; return 0;
 }
-static int fl_write(uint32_t off, const void *p, uint32_t n)
+static fl_write_fn fl_write;
+static int fl_write(uint32_t off, const uint8_t *p, uint32_t n)
 {
     memcpy(host_flash_ptr(off), p, n); return 0;
 }

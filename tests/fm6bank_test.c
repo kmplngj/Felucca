@@ -28,11 +28,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 static void panel_setup(void) {}
 
 static uint8_t flash_ok = 1;
-static uint32_t irq_save(void) { return 0; }
-static void irq_restore(uint32_t f) { (void)f; }
-static uint32_t fl_jedec_ram(void) { return 0; }
-static void fl_plain_window_init(void) {}
-#define FL_FAR(fn) (fn)
+#include "host_flash_context.h"
 #include "../firmware/src/storage.c"
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"

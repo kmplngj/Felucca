@@ -363,6 +363,18 @@ u_input() {
 }
 unit input "" u_input
 
+UNIT_NEEDS=assets
+u_flash_context_contract() {
+    run "flash-context contract: actual HAL/host/rescue adapters and incompatible definitions/calls" python3 tests/flash_context_contract_test.py
+}
+unit flash_context_contract "" u_flash_context_contract
+
+u_flash_data_contract() {
+    run "flash data contract: actual HAL/partial adapters, buffer types and RAM call signatures" python3 tests/flash_data_contract_test.py
+}
+unit flash_data_contract "" u_flash_data_contract
+UNIT_NEEDS=
+
 u_usb() {
     # Real composite poll/control/EP4 paths with a HAL-only finite host model (#101).
     for cdc in 0 1; do
@@ -1447,6 +1459,19 @@ fi
 UNIT_NEEDS=
 u_emulator_partitions() {
     if command -v node >/dev/null 2>&1 && [ -f build/gen/felucca_tables.h ]; then
+        $CC -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
+            tests/emulator_nor_test.c -lm -o "$OUT/emulator_nor"
+        set -- "$OUT/emulator_nor"
+        if command -v emcc >/dev/null 2>&1; then
+            emcc -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
+                --no-entry -sSTANDALONE_WASM -sSTACK_SIZE=1048576 -sINITIAL_MEMORY=33554432 -sFILESYSTEM=0 \
+                -o "$OUT/emulator_nor.wasm" tests/emulator_nor_test.c
+            set -- "$@" --wasm "$OUT/emulator_nor.wasm"
+        else
+            echo "== emulator NOR: WebAssembly guard unavailable (no emcc)"
+        fi
+        run "emulator NOR: bounds, shared page guard and panel save across fresh instances" \
+            python3 tests/emulator_nor_test.py "$@"
         run "emulator partitions: exact PCM/state/publication, native and optional WebAssembly, negative fixtures" \
             sh web/emu/partition_test.sh
     else

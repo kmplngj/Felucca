@@ -152,6 +152,10 @@ recorded in the linked reports, rather than every current build or device.
   full commit provenance remain in release metadata; the UI regression gate now
   exercises the generated Dev version before merge. This fixes the initial Dev
   release's layout-test failure; no publication gate is relaxed.
+- Native replay source-change guards include consumed portable Engines sources
+  and generated include files, so changes during compilation cannot publish an
+  adapter or completed capture with stale input provenance. See
+  [interaction replay](interaction-replay.md).
 
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
