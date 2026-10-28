@@ -211,6 +211,13 @@ recorded in the linked reports, rather than every current build or device.
   pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
   See [implementation evidence and test procedure](midi-dsp-reliability.md).
 
+- Backport the remaining signed DSP arithmetic fixes from upstream 1.7.0:
+  ANALOG, LOFI, TRIO, WHEEL, NOISE and native PHASE retain their output while
+  avoiding undefined signed shifts and overflow. The fork's engine API,
+  zero-mix ANALOG path and per-part PHASE scratch remain intact. See the
+  [arithmetic follow-up](midi-dsp-reliability.md#upstream-170-arithmetic-follow-up)
+  for provenance and validation limits; FM-1 listening remains pending.
+
 - **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
   immediately when their brightness is changed without leaving the row. Physical
   brightness/readability checks remain pending; see [display controls](display-idle.md).
