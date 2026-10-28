@@ -13,11 +13,23 @@ static int fail_after = -1;            /* torn-write injection: stop after N pro
 static int fail_bytes = -1;            /* power loss after any programmed byte */
 static int erase_error, write_protected;
 static uint32_t io_calls;
+static uint32_t read_calls, read_bytes, erase_calls, prog_calls;
+static uint32_t read_fail_off = UINT32_MAX, read_fail_n, read_fail_after_program;
 
-static int st_read(uint32_t off, void *dst, uint32_t n) { io_calls++; memcpy(dst, nor + off, n); return 0; }
+static int st_read(uint32_t off, void *dst, uint32_t n)
+{
+    io_calls++;
+    read_calls++;
+    read_bytes += n;
+    if (off == read_fail_off && n == read_fail_n && prog_calls >= read_fail_after_program)
+        return -8;
+    memcpy(dst, nor + off, n);
+    return 0;
+}
 static int st_erase(uint32_t off)
 {
     io_calls++;
+    erase_calls++;
     if (erase_error) return -8;
     if (!write_protected) memset(nor + off, 0xFF, 4096);
     return 0;
@@ -27,6 +39,7 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)
     const uint8_t *s = src;
     uint32_t i;
     io_calls++;
+    prog_calls++;
     if (fail_after == 0)
         return -9;
     if (fail_after > 0)
@@ -52,6 +65,126 @@ static int check(const char *what, int ok)
 
 static uint32_t isr_hits;
 static void isr_hook(const char *file, int line) { (void)file; (void)line; isr_hits++; }
+
+/* Counts cover complete saves, including copy selection and mandatory readback. */
+static void reset_counts(void)
+{
+    read_calls = read_bytes = erase_calls = prog_calls = 0;
+}
+
+static int blank_sector_tests(void)
+{
+    static uint8_t payload[ST_PAYLOAD_MAX], got[ST_PAYLOAD_MAX];
+    uint32_t base = st_sector(OBJ_PROJECT0, 0), other = st_sector(OBJ_PROJECT0, 1), i, len;
+    int bad = 0, ok = 1;
+    for (i = 0; i < sizeof payload; i++) payload[i] = (uint8_t)(i * 7u + 3u);
+    for (len = 0; len <= ST_PAYLOAD_MAX; len++) {
+        memset(nor, 0xFF, sizeof nor);
+        reset_counts();
+        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 0u;
+        ok &= st_load(OBJ_PROJECT0, got, sizeof got) == (int)len && !memcmp(got, payload, len);
+        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 0u; /* blank B */
+        ok &= st_save(OBJ_PROJECT0, payload, len) == 0 && erase_calls == 1u; /* reused A */
+        ok &= st_load(OBJ_PROJECT0, got, sizeof got) == (int)len && !memcmp(got, payload, len);
+    }
+    bad += check("all lengths: blank A/B skip, reused A erases", ok);
+
+    ok = 1;
+    for (i = 0; i < ST_SECTOR; i++) {
+        memset(nor, 0xFF, sizeof nor);
+        nor[base + i] = 0;                        /* includes padding and unused tail, not just payload */
+        reset_counts();
+        ok &= st_save(OBJ_PROJECT0, payload, 1) == 0 && erase_calls == 1u;
+        ok &= nor[base + ST_SECTOR - 1u] == 0xFFu;
+    }
+    bad += check("one dirty byte at every offset forces erase", ok);
+
+    ok = 1;
+    for (i = 0; i < ST_SECTOR; i += 256u) {
+        memset(nor, 0xFF, sizeof nor);
+        ok &= st_save(OBJ_PROJECT0, payload, sizeof payload) == 0;
+        reset_counts();
+        read_fail_off = other + i;
+        read_fail_n = 256u;
+        read_fail_after_program = 0;
+        ok &= st_save(OBJ_PROJECT0, payload, 1) == -8 && erase_calls == 0u && prog_calls == 0u;
+        read_fail_off = UINT32_MAX;
+        memset(st_buf, 0, sizeof st_buf);          /* no RAM payload survives a reboot */
+        ok &= st_load(OBJ_PROJECT0, got, sizeof got) == (int)sizeof payload && !memcmp(got, payload, sizeof payload);
+    }
+    bad += check("every scan read error refuses all writes", ok);
+
+    /* A blank header after an interrupted first write still has dirty payload bytes. */
+    memset(nor, 0xFF, sizeof nor);
+    fail_after = 1;
+    ok = st_save(OBJ_PROJECT0, payload, sizeof payload) == -9;
+    fail_after = -1;
+    reset_counts();
+    ok &= st_save(OBJ_PROJECT0, payload, sizeof payload) == 0 && erase_calls == 1u;
+    bad += check("retry erases an uncommitted payload", ok);
+
+    {   /* The new no-erase path must retain the previous copy at every write boundary too. */
+        uint8_t copies[2 * ST_SECTOR];
+        memset(nor, 0xFF, sizeof nor);
+        ok = st_save(OBJ_PROJECT0, payload, 600) == 0;
+        memcpy(copies, nor + base, sizeof copies);
+        for (i = 0; i < 600u + sizeof(st_hdr_t); i++) {
+            memcpy(nor + base, copies, sizeof copies);
+            reset_counts();
+            fail_bytes = (int)i;
+            ok &= st_save(OBJ_PROJECT0, payload + 1, 600) == -9 && erase_calls == 0u;
+            fail_bytes = -1;
+            memset(st_buf, 0, sizeof st_buf);
+            ok &= st_load(OBJ_PROJECT0, got, sizeof got) == 600 && !memcmp(got, payload, 600);
+        }
+        bad += check("every blank-target write cut keeps old data", ok);
+    }
+
+    memset(nor, 0xFF, sizeof nor);
+    reset_counts();
+    write_protected = 1;
+    ok = st_save(OBJ_PROJECT0, payload, 600) == -7 && erase_calls == 0u;
+    write_protected = 0;
+    bad += check("blank write-protected flash never reports saved", ok);
+
+    /* Explicit-copy migration may source the retired object's bytes from shared scratch. */
+    memset(nor, 0xFF, sizeof nor);
+    ok = st_save(OBJ_FM6BANK, payload, sizeof payload) == 0;
+    reset_counts();
+    ok &= st_save_to(OBJ_UPFM6, st_buf, sizeof payload, 1) == 0 && erase_calls == 0u;
+    ok &= st_load(OBJ_UPFM6, got, sizeof got) == (int)sizeof payload && !memcmp(got, payload, sizeof payload);
+    ok &= st_load(OBJ_FM6BANK, got, sizeof got) == (int)sizeof payload && !memcmp(got, payload, sizeof payload);
+    bad += check("blank explicit-copy save preserves st_buf source", ok);
+
+    /* Readback must still report a failure even if the blank scan and programs succeeded. */
+    ok = 1;
+    for (i = 0; i < 2u; i++) {
+        memset(nor, 0xFF, sizeof nor);
+        reset_counts();
+        read_fail_off = base + (i ? ST_PAYLOAD_OFF : 0u);
+        read_fail_n = i ? 1u : sizeof(st_hdr_t);
+        read_fail_after_program = 2u;
+        ok &= st_save(OBJ_PROJECT0, payload, 1) == -7 && erase_calls == 0u && prog_calls == 2u;
+        read_fail_off = UINT32_MAX;
+    }
+    bad += check("blank saves retain header/payload readback", ok);
+
+    memset(nor, 0xFF, sizeof nor);
+    reset_counts();
+    ok = st_save(OBJ_PROJECT0, payload, 600) == 0;
+    printf("blank 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
+    ok &= read_calls == 20u && read_bytes == 4792u && erase_calls == 0u && prog_calls == 4u;
+    reset_counts();
+    ok &= st_save(OBJ_PROJECT0, payload, 600) == 0;
+    printf("blank B 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
+    ok &= read_calls == 21u && read_bytes == 5392u && erase_calls == 0u && prog_calls == 4u;
+    reset_counts();
+    ok &= st_save(OBJ_PROJECT0, payload, 600) == 0;
+    printf("reused A 600-byte save: reads=%u bytes=%u erases=%u programs=%u\n", read_calls, read_bytes, erase_calls, prog_calls);
+    ok &= read_calls == 6u && read_bytes == 1552u && erase_calls == 1u && prog_calls == 4u;
+    bad += check("complete save I/O cost and early dirty exit", ok);
+    return bad;
+}
 
 int main(void)
 {
@@ -215,6 +348,7 @@ int main(void)
         bad += check("save after the ISR returns: quiet again", st_save(OBJ_PROJECT0, a, sizeof a) == 0 && isr_hits == 1u);
         fm1_isr_assert_hook = 0;
     }
+    bad += blank_sector_tests();
     printf("%s\n", bad ? "STORAGE TEST FAILED" : "storage test passed");
     return bad != 0;
 }

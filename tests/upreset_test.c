@@ -123,12 +123,14 @@ static int bank_transactions(void)
                 if (cut < total) {
                     ok &= rc == -9 && dead && bank_is(b, &old);
                     memcpy(torn, nor + base, sizeof torn);
-                    /* Power loss is sticky: retries cannot erase/program more. */
-                    ok &= st_save(OBJ_UPRESET0 + b, &next, sizeof next) == -8 &&
+                    /* Power loss is sticky: retries cannot erase/program more.
+                     * A cut before byte zero leaves a blank destination, so its
+                     * retry skips erase and is refused by the program hook. */
+                    ok &= st_save(OBJ_UPRESET0 + b, &next, sizeof next) == (cut == 0u ? -9 : -8) &&
                           erases == 1u && progs == cut && !memcmp(torn, nor + base, sizeof torn);
                     nor_power_on();
                     ok &= !st_save(OBJ_UPRESET0 + b, &next, sizeof next) &&
-                          erases == 1u && progs == total && bank_is(b, &next);
+                          erases == (cut == 0u ? 0u : 1u) && progs == total && bank_is(b, &next);
                 } else {
                     ok &= !rc && !dead && bank_is(b, &next);
                 }

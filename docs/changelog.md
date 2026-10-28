@@ -296,6 +296,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- Storage skips a redundant erase only after a complete destination-sector blank
+  check; read errors stop the save before writes, and native commit/readback checks
+  remain. [Measured host I/O counts](flash-capacity.md#blank-destination-checks-197)
+  distinguish extra scan reads from avoided erase calls. Physical timing and
+  retention qualification remain pending; no proactive erase or format change.
+
 - Native icons share identical complete 12 px compressed streams while preserving
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
   [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.

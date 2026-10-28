@@ -97,6 +97,38 @@ Object types are stored in each commit record ([`st_hdr_t`, storage.c:36-42](htt
 so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is kept at or above
 `OBJ_COUNT` on purpose.
 
+### Blank destination checks (#197)
+
+`st_save_to` reads a destination in 256-byte chunks before programming. It skips
+one erase only after all 4,096 bytes read as `0xFF`, including header padding and
+unused tail. The first dirty byte keeps the ordinary erase path; a scan read error
+returns a save failure before erasing or programming. A separate 256-byte automatic
+buffer preserves the payload already copied to `st_buf`, including explicit-copy
+legacy migration. The [Maku source](https://github.com/okumurari2/maku/blob/64cb7e4bc426d308185baf7d577a336968632657/firmware/src/storage.c)
+supplied the complete-sector scan approach; native mandatory header/payload readback
+and fail-closed read handling are retained. No proactive erase is added.
+
+Production-source simulated-NOR checks count the following complete 600-byte saves,
+including current-copy selection and final readback. The baseline always erases.
+
+| Destination state | Baseline reads / bytes / erases | Blank-check reads / bytes / erases | Programs (both) |
+| --- | --- | --- | --- |
+| Empty A, no valid copy | 4 / 696 / 1 | 20 / 4,792 / 0 | 4 |
+| Empty B, valid A | 5 / 1,296 / 1 | 21 / 5,392 / 0 | 4 |
+| Reused A, valid A/B | 5 / 1,296 / 1 | 6 / 1,552 / 1 | 4 |
+
+Thus a blank destination adds 4 KiB of reads and avoids one erase; ordinary reused
+A/B destinations add one 256-byte read and still erase. Dirty bytes late in an
+uncommitted sector can require the full scan and an erase. These are hook-operation
+counts, not FM-1 durations or endurance measurements. The hardware driver still
+limits each read's IRQ-off window to at most 256 bytes. Programming still pauses
+interrupts; no interruption-free save or measured latency gain is claimed. Target
+stack/code cost and physical save, retention, audio/panel/USB timing remain separate
+qualification gates. Saved formats, sector allocations and CRC/commit ordering stay
+unchanged. The [storage fixture](../tests/storage_test.c) covers every payload length,
+every single dirty-byte position, scan errors, both blank/nonblank torn saves,
+readback failures, sequence wrap, fallback and explicit-copy migration.
+
 ### 2.2 Areas Felucca must not touch
 
 | Range | What | Evidence | Rule |
