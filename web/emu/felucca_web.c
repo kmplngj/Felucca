@@ -63,7 +63,9 @@
 /* ------------------------------------------------------------ the clock --- */
 #define FM1_TICKS_PER_US 24u             /* TIMER4: 24 MHz */
 static uint32_t web_ticks;
-static uint32_t fm1_ticks(void) { return web_ticks; }
+#define HOST_CLOCK_TICKS web_ticks
+#include "../../tests/host_clock.h"
+#undef HOST_CLOCK_TICKS
 
 /* ------------------------------------------------------ audio (ALNK0) --- */
 static uint32_t web_half;                /* the half the next render fills */

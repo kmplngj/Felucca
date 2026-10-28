@@ -456,6 +456,19 @@ entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
 for its LCD-submission ordering assertions. Consumers include the harness directly;
 they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
+The UI and browser adapters share the passive `fm1_ticks()` accessor in
+`tests/host_clock.h`, selecting their existing `host_ticks`/`web_ticks` state.
+Each adapter still owns its units, advancement and reset policy: UI ticks are
+microseconds, while browser ticks run at 24 ticks per microsecond. Reading the
+accessor does not advance either clock. Audio/rescue and input-bus clocks retain
+their intentional read-side effects; scheduled TIMER5 and constant console/click
+clocks also remain separate. `fm1_ms` remains independently owned.
+The `clock_contract` unit checks actual HAL/UI/browser signatures against
+`firmware/hal/fm1_time_contract.h`, incompatible definitions, passive reads,
+unsigned wrap and the actual frame/turn/browser scheduling paths. It does not
+qualify wall-clock accuracy, target timer hardware or audio deadlines. Replay
+fingerprints include the shared clock header and the existing HAL inventory.
+
 The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
 their sanitizer builds. This existing NOR model only clears programmed bits, rejects
 256-byte page wrapping, and models sticky power cuts during programming or half an

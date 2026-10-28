@@ -373,6 +373,10 @@ u_flash_data_contract() {
     run "flash data contract: actual HAL/partial adapters, buffer types and RAM call signatures" python3 tests/flash_data_contract_test.py
 }
 unit flash_data_contract "" u_flash_data_contract
+u_clock_contract() {
+    run "clock contract: actual HAL/UI/browser signatures and passive wrap/scheduling behavior" python3 tests/clock_contract_test.py
+}
+unit clock_contract "" u_clock_contract
 UNIT_NEEDS=
 
 u_usb() {

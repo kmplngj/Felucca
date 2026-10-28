@@ -40,7 +40,9 @@ static void fm1_led_anim_stop(void) { host_anim = host_idle = 0; }
 #define FM1_TICKS_PER_US 1u
 static uint32_t host_ticks, host_pressed, host_notes;
 static int32_t host_enc[7];
-static uint32_t fm1_ticks(void) { return host_ticks; }
+#define HOST_CLOCK_TICKS host_ticks
+#include "host_clock.h"
+#undef HOST_CLOCK_TICKS
 /* This UI fake models press edges only; the firmware UI requests no release output. */
 static fm1_input_edges_fn fm1_input_edges;
 static uint32_t fm1_input_edges(uint32_t *x) { uint32_t p = host_pressed; (void)x; host_pressed = 0; return p; }
