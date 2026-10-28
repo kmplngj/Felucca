@@ -448,6 +448,10 @@ fixtures require incompatible signatures across the UI, settings and browser
 adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
+The portable unit also checks the offline USB diagnostic-tone verifier with
+`python3 tests/uac_tone_check_test.py`. See [recording requirements and interpretation](docs/diagnostics.md#usb-test-tone-recordings).
+Synthetic WAV tests check evidence handling; they do not qualify an FM-1 recording.
+
 The `lcd_contract` unit runs `python3 tests/lcd_contract_test.py` after its
 `icon_streams` prerequisite generates the actual icon fixture's reference header.
 The real LCD driver and UI, browser and rescue fakes declare `lcd_fill_fn`; all

@@ -148,6 +148,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- The offline USB tone checker rejects recordings without synchronized tone data,
+  unsupported rates and incomplete PCM, and reports matched frames accurately.
+  [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
+  qualification separate from the offline result.
+
 - PR-source cleanup protects reflog-only detached commits and refuses removal with
   deinitialized or orphan private submodule repositories. It preserves history
   without automatic metadata repair. See the
