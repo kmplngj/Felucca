@@ -26,9 +26,9 @@ def dev_identity(pulls, repo, sha):
         return None
     number = matches[0]['number']
     # Match the compact commit identity used by the firmware's bounded ABOUT UI.
-    # PR number and longer SHA stay in the release tag, title and provenance.
+    # PR number and full SHA stay in the release title, notes and provenance.
     return dict(pr=str(number), version=f'0.0-dev{sha[:8]}',
-                tag=f'dev-pr{number}-{sha[:12]}')
+                tag='latest-dev')
 
 
 def check_approval(version, sha, ref_type, ref_name, tested_commit, hardware_tested, evidence):
@@ -57,10 +57,21 @@ def notes(channel, repo, sha, version, pr='', evidence='', base=None):
     root = f'https://github.com/{repo}'
     docs = f'{root}/blob/{sha}'
     if channel == 'dev':
-        intro = ('**Experimental development firmware — not hardware-qualified.** '
-                 'Regressions, audio glitches, failed boots/updates and loss of saved data are possible. '
-                 'Use only if you can back up and recover your FM-1.\n\n'
-                 f'Merged PR: {root}/pull/{pr}. This prerelease never replaces the stable Latest release.')
+        return f'''## Latest Dev — PR #{pr}
+
+[Pull request]({root}/pull/{pr}) · [Commit `{sha[:12]}`]({root}/commit/{sha}) · [CI checks]({root}/actions/runs/{os.environ['GITHUB_RUN_ID']})
+
+**Experimental firmware, not hardware-qualified.** Regressions, failed updates and
+loss of saved data are possible. This release is replaced after the next validated PR merge.
+
+- **Before installing:** FM-1, reliable USB data cable, stable power, backups of
+  projects/presets/samples/settings and a verified known-good package.
+- **Install:** verify `felucca-{version}-release.tar.gz` with its `.sha256` sidecar,
+  then install the **.fwsc**. [Setup and checksum instructions]({docs}/.github/CI.md#downloads-and-checksums).
+- **Recovery:** retry the compatible MIDI installer; hold **OCT− while powering on**
+  for USB rescue. If unreachable, follow the [ROM/M-Flasher recovery guide]({docs}/docs/usb-rescue.md).
+  Recovery is not guaranteed. Read the guide before flashing.
+'''
     else:
         intro = ('Maintainer-approved release: the author attests that the '
                  '[FM-1 release checklist](' + docs + '/docs/releases.md#device-release-checklist) '
@@ -150,7 +161,8 @@ def main():
     else:
         Path('release-notes.md').write_text(notes(
             os.environ['CHANNEL'], repo, sha, os.environ['VERSION'], os.environ.get('PR_NUMBER', ''),
-            os.environ.get('TEST_EVIDENCE', ''), previous_stable(repo, sha)))
+            os.environ.get('TEST_EVIDENCE', ''),
+            previous_stable(repo, sha) if os.environ['CHANNEL'] == 'stable' else None))
 
 
 if __name__ == '__main__':

@@ -11,7 +11,7 @@ permissions:
   pull-requests: read
   actions: read
 
-# Each merge gets immutable assets; a later merge must not cancel this validation.
+# Build each merge; serialize only the rolling-release writer below.
 concurrency:
   group: dev-release-${{ github.sha }}
   cancel-in-progress: false
@@ -44,12 +44,17 @@ jobs:
     needs: [revision, validate]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Never cancel a release swap halfway through. A stale build is rejected again
+    # immediately before promotion, so an older run cannot replace a newer merge.
+    concurrency:
+      group: latest-dev-publisher
+      cancel-in-progress: false
     permissions:
       contents: write
+      pull-requests: read
     env:
       VERSION: ${{ needs.revision.outputs.version }}
       PR_NUMBER: ${{ needs.revision.outputs.pr }}
-      RELEASE_TAG: ${{ needs.revision.outputs.tag }}
       CHANNEL: dev
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -62,21 +67,11 @@ jobs:
         with:
           name: release-${{ github.run_id }}
           path: downloaded
-      - name: Verify and publish immutable Dev prerelease
+      - name: Verify and replace the single Dev prerelease
         run: |
           set -euo pipefail
           mv "downloaded/release-$VERSION" release
           python3 tools/ci.py stage-release "$VERSION"
           (cd release-assets && sha256sum -c SHA256SUMS)
           python3 tools/release_notes.py notes
-          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[].tag_name')
-          if printf '%s\n' "$existing" | grep -Fxq "$RELEASE_TAG"; then
-            echo '::notice::Dev release already exists; preserving its assets.'
-            exit 0
-          fi
-          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
-          fi
-          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "Latest Dev — PR #$PR_NUMBER @ ${GITHUB_SHA:0:12}" \
-            --notes-file release-notes.md release-assets/*
+          python3 tools/dev_release.py

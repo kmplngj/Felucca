@@ -9,22 +9,32 @@ PR and its recorded merge SHA. Direct pushes without a matching merged PR do not
 publish. The workflow runs the complete release validation even for documentation-only
 merges. A failed gate leaves the previous releases available and publishes no package.
 
-Each successful merge gets an immutable prerelease named
-`Latest Dev — PR #NUMBER @ COMMIT`, tagged `dev-prNUMBER-COMMIT`.
-The package version is `0.0-devSHORTSHA` (8 SHA digits), keeping the firmware's
-ABOUT screen within its layout bounds. The release tag retains the PR number and
-12 SHA digits; the existing one-digit product-version format remains intact.
-Firmware ABOUT/provenance identifies the commit; do not infer installed bytes from the MIDI product identity alone.
-These are rolling *development availability*, with an archived package per merge,
-rather than overwriting one moving tag. Select the desired main commit in
-[Releases](https://github.com/kmplngj/Felucca/releases); concurrent builds may finish
-out of order. Dev never sets GitHub's stable **Latest** marker. Reruns preserve
-published assets. No hardware-tested claim follows from a Dev build.
+There is exactly one public Dev prerelease, at the permanent
+[`latest-dev` address](https://github.com/kmplngj/Felucca/releases/tag/latest-dev).
+Its title and short notes identify the PR and commit. The package version remains
+`0.0-devSHORTSHA` (8 SHA digits) so it fits ABOUT; full source identity remains in
+provenance. Dev never sets GitHub's stable **Latest** marker and makes no hardware
+qualification claim.
 
-Every release page includes risks, checksum instructions, exact source/CI links,
-backup prerequisites and recovery routes pinned to that revision. Dev firmware can
-regress or lose data. Back up first and retain a known-good package and a usable
-recovery host. Read [USB rescue and ROM recovery](usb-rescue.md) before installing.
+Builds can run concurrently, but the publisher is serialized and never cancelled
+by another merge. It checks the most recently merged main PR before upload and
+again before promotion; a slower older run cannot roll Dev back. Direct pushes
+create no Dev release. If the newest merge fails validation, the preceding
+successful Dev remains available until a newer eligible build passes.
+
+A hidden draft stages and uploads the complete validated package first. The writer
+then replaces the public `latest-dev` release and moves its lightweight tag to the
+new commit. The previous rolling package is retained privately during the swap
+and restored if promotion fails. The swap has a short availability gap. Successful
+publication removes superseded Dev releases/tags, including legacy `dev-pr*`
+releases and abandoned staging drafts; no per-merge release archive is retained.
+Reserved `dev-staging-*` and `dev-retired-*` names are temporary writer state.
+Tagged versions are excluded from Dev cleanup.
+
+Dev notes contain only PR/commit/CI links, experimental risks, backup and install
+prerequisites and the pinned [recovery guide](usb-rescue.md). There is no Dev
+commit history. Download the matching bundle and checksum together before the
+next update replaces them; keep local backups and a known-good package.
 
 ## Tagged release procedure
 
@@ -56,8 +66,9 @@ recovery host. Read [USB rescue and ROM recovery](usb-rescue.md) before installi
 
 Leave `publish` off to rehearse packaging from a branch or tag (with `version`).
 A failed publication can be rerun; failures never replace a stable release.
-For immutable versioning, protect `v*` and `dev-*` tags with repository rulesets;
+For immutable tagged versions, protect `v*` tags with repository rulesets;
 workflow checks cannot prevent an administrator from moving a tag later.
+The rolling `latest-dev` tag must remain movable by its publisher.
 No workflow flashes hardware or deploys the web installer.
 
 ## Device release checklist
@@ -90,7 +101,7 @@ qualification if claimed supported. See [contribution validation](../CONTRIBUTIN
 
 ## Changelog and evidence
 
-Release pages combine installation/risk/recovery notes, the curated changelog link,
+Tagged release pages combine installation/risk/recovery notes, the curated changelog link,
 and **every commit** since the most recently published stable release that is an
 ancestor of the candidate. Dev/prerelease tags never truncate that stable range.
 Without a stable ancestor, all reachable history is included. This includes direct
