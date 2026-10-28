@@ -398,6 +398,42 @@
       "requested_at": "2026-10-26",
       "source_name": "FM1 Dock (FM-1 firmware)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/762",
+      "authorization": "User requested on 2026-10-28: analyse Ravel_FM1 features, instruments and optimizations for our fork, make a plan and GitHub issues, and consider adding it to the watcher. Source review recommends registration.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "d7f51158f581050022fa35a691eddd4c078a9ab1"
+      },
+      "historical_total_at_setup": 105,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; verify repository identity/main/pin, fetch complete non-shallow DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. This source snapshot grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca-Engines-GPL/issues/39",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "d7f51158f581050022fa35a691eddd4c078a9ab1"
+      },
+      "recent_frontiers": {
+        "main": "d7f51158f581050022fa35a691eddd4c078a9ab1"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/762",
+        "https://github.com/kmplngj/Felucca/issues/763",
+        "https://github.com/kmplngj/Felucca/issues/459",
+        "https://github.com/kmplngj/Felucca/issues/17",
+        "https://github.com/kmplngj/Felucca/issues/179",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/39"
+      ],
+      "repository": "De-Pattern/Ravel_FM1",
+      "repository_id": 1425709397,
+      "requested_at": "2026-10-28",
+      "source_name": "Ravel (FM-1 main firmware; software branch excluded)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [
