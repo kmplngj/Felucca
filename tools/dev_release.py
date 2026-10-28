@@ -26,6 +26,16 @@ class GitHub:
         if result.returncode:
             if missing and '(HTTP 404)' in result.stderr:
                 return None
+            # GitHub reports an absent Git ref as 422 on DELETE (GET uses 404).
+            # Do not suppress other 422s, such as protected-reference failures.
+            if (missing and method == 'DELETE' and path.startswith('git/refs/tags/') and
+                    '(HTTP 422)' in result.stderr):
+                try:
+                    message = json.loads(result.stdout).get('message')
+                except (ValueError, AttributeError):
+                    message = None
+                if message == 'Reference does not exist':
+                    return None
             raise RuntimeError(result.stderr.strip())
         return json.loads(result.stdout) if result.stdout.strip() else None
 

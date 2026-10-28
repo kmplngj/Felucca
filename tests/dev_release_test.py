@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Single-Dev publication, stale writers, rollback and scoped cleanup contracts."""
 import copy
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -110,6 +111,24 @@ class DevReleaseTest(unittest.TestCase):
         self.assertFalse(any(tag.startswith(('dev-staging-', 'dev-retired-')) for tag in api.refs))
         writes = [c for c in api.calls if c[0] == 'PATCH']
         self.assertEqual(writes[0][2]['draft'], True)  # old retained until candidate is ready
+
+    def test_missing_tag_delete_accepts_github_422_but_not_other_validation_errors(self):
+        api = dev.GitHub('owner/repo')
+        result = subprocess.CompletedProcess('gh', 1,
+                    json.dumps({'message': 'Reference does not exist'}),
+                    'gh: Reference does not exist (HTTP 422)')
+        with patch.object(dev.subprocess, 'run', return_value=result):
+            self.assertIsNone(api.request('DELETE', 'git/refs/tags/dev-retired-4', missing=True))
+            for method, path, missing in [('DELETE', 'git/refs/tags/dev-retired-4', False),
+                                          ('PATCH', 'git/refs/tags/latest-dev', True),
+                                          ('DELETE', 'releases/4', True)]:
+                with self.assertRaises(RuntimeError):
+                    api.request(method, path, missing=missing)
+        for body in ({'message': 'Protected reference cannot be deleted'},
+                     {'message': 'Validation failed'}):
+            result = subprocess.CompletedProcess('gh', 1, json.dumps(body), 'gh: Validation failed (HTTP 422)')
+            with patch.object(dev.subprocess, 'run', return_value=result), self.assertRaises(RuntimeError):
+                api.request('DELETE', 'git/refs/tags/dev-retired-4', missing=True)
 
     def test_cleanup_removes_orphan_dev_tags_but_preserves_retained_release_tags(self):
         api = GitHubFake()
