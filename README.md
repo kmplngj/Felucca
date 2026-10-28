@@ -13,7 +13,7 @@ This is ongoing integration and experimentation. Features are adopted as they ar
 reviewed and tested; the fork does not automatically include every upstream or fork change.
 
 [Release channels](docs/releases.md): **Latest Dev** publishes a traceable experimental
-prerelease after each validated PR merge; tagged releases require an explicit FM-1
+prerelease at one fixed `latest-dev` address, replaced after each validated PR merge; tagged releases require an explicit FM-1
 test report and maintainer approval before publication. Back up first and read the
 [recovery guide](docs/usb-rescue.md) before installing development firmware.
 

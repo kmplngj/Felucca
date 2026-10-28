@@ -34,10 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
-- Two [release channels](releases.md): immutable **Latest Dev** prereleases identify
-  each validated main-branch PR merge; tagged packages require exact-commit device
+- Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
+  the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery
-  guidance and a complete commit changelog since the previous stable release.
+  guidance; tagged versions include the complete commit changelog since the previous
+  stable release. Dev notes stay short, and superseded Dev releases/tags are removed.
 
 
 - Default-off [raw render-stage evidence](render-stage-evidence.md) adds one

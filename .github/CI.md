@@ -542,8 +542,9 @@ required-check behavior changes, and no new firmware build is requested.
 There are two [release channels](../docs/releases.md):
 
 - **Latest Dev** runs full release validation after a merged PR reaches `main`, then
-  publishes an immutable prerelease with PR number and commit. Direct pushes do not
-  publish. Dev never changes the stable Latest marker.
+  replaces the single `latest-dev` prerelease with PR number and commit. Direct pushes do not
+  publish. Older runs cannot roll it back; superseded Dev releases/tags are removed.
+  Dev notes are brief and omit commit history. Dev never changes the stable Latest marker.
 - **Release** validates a pushed `vVERSION` tag and retains candidate artifacts.
   Publication requires a manual dispatch **on that tag**, `publish=true`, its exact
   `tested_commit`, `tested_package_sha256`, `hardware_tested=true`, and an HTTPS `test_evidence` report after
@@ -556,7 +557,7 @@ syntax, test evidence, risks, backup and recovery prerequisites. Both channels u
 the existing release packaging: verified FWSC, app, provenance, licenses, full source
 archive, checksums and reproducibility checks. The read-only reusable build must
 succeed before a separate publisher receives `contents: write`. Existing releases
-are preserved; no published assets are silently replaced. Nothing flashes a device
+for tagged versions are preserved. The single Dev package is deliberately replaced. Nothing flashes a device
 or deploys an installer/Pages.
 
 ## Sources of the design
