@@ -152,6 +152,11 @@ recorded in the linked reports, rather than every current build or device.
   full commit provenance remain in release metadata; the UI regression gate now
   exercises the generated Dev version before merge. This fixes the initial Dev
   release's layout-test failure; no publication gate is relaxed.
+- **SLICE persistence:** MAN-slice saves and backup restores verify the stored
+  record before reporting success. Ineffective or corrupt writes take the existing
+  save/restore error paths; a failed save (readback mismatch) is retried at the next
+  stopped poll, at most twice per slot, then SAVE ERROR stays. Records remain
+  single-copy, no rollback; interrupted saves can still lose that slot's slices. FM-1 save/restart/restore qualification remains pending.
 
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
