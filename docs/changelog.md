@@ -34,6 +34,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Two [release channels](releases.md): immutable **Latest Dev** prereleases identify
+  each validated main-branch PR merge; tagged packages require exact-commit device
+  test attestation and a linked report before publication. Both ship risk/recovery
+  guidance and a complete commit changelog since the previous stable release.
+
+
 - Default-off [raw render-stage evidence](render-stage-evidence.md) adds one
   inclusive CPU0 mix-stage observer, empty controls and coherent optional `status`
   snapshots with explicit rejection/error semantics. Release builds refuse the
