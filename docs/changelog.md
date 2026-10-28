@@ -34,6 +34,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Default-off [raw render-stage evidence](render-stage-evidence.md) adds one
+  inclusive CPU0 mix-stage observer, empty controls and coherent optional `status`
+  snapshots with explicit rejection/error semantics. Release builds refuse the
+  diagnostic flag; target cost accounting and matched FM-1 acceptance remain
+  pending. This delivers instrumentation, without a DSP speedup claim.
+
 - **Standalone RAM-loader status:** waiting and package validation, verified
   application-sector progress, native completion/restart and host retry guidance
   work without an intact application. Bounded RAM-owned scanlines contain missing

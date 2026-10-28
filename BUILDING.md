@@ -370,6 +370,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_CRASH_CTX` | 0 | diagnostic build: the crash record keeps r0..r15, usp and ssp (+76 B NOINIT, below the 100 B floor; [diagnostics](docs/diagnostics.md#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro)); refused with `--release` |
 | `FELUCCA_MUL64_REPRO` | 0 | diagnostic build: the #425 synthetic reproducer runs in the main loop's idle time ([audit, phase 2](docs/mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak)); refused with `--release` |
 | `FELUCCA_SCREEN_CAPTURE` | 0 | diagnostic build: bounded static HOME/menu RGB565 capture over USB SERIAL, exported as PNG/JSON by the [host tool](docs/screen-capture.md); explicit `--wake` silently wakes and holds the view during capture; refused with `--release` |
+| `FELUCCA_RENDER_STAGE` | 0 | diagnostic build: inclusive raw TIMER4 mix-stage/observer-window evidence and empty controls in `status`, with coherent snapshots and explicit unavailable/error states; [scope, resource accounting and matched device checks](docs/render-stage-evidence.md); refused with `--release` |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/src/usb.c`.

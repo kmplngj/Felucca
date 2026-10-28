@@ -784,6 +784,19 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_audio() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/audio_test" tests/audio_test.c -lm
         run "audio: overload protection, bounded fades and DMA diagnostics" "$OUT/audio_test"
+        run "audio: observer-off PCM and voice-state fixture" env STAGE_EQUIVALENCE="$OUT/audio_off.pcm-state" "$OUT/audio_test"
+        for variant in on cpu0 thread_off thread_on; do
+            stage_flags=-DFELUCCA_RENDER_STAGE=1
+            case "$variant" in
+                cpu0) stage_flags="$stage_flags -DFELUCCA_CPU2=0" ;;
+                thread_off) stage_flags="-DC1_HOST -pthread" ;;
+                thread_on) stage_flags="$stage_flags -DC1_HOST -pthread" ;;
+            esac
+            $CC -w -Ibuild/gen -Ifirmware/src $stage_flags -o "$OUT/audio_stage_$variant" tests/audio_test.c -lm
+            run "audio: raw render-stage contracts ($variant)" "$OUT/audio_stage_$variant"
+            run "audio: PCM and voice-state fixture ($variant)" env STAGE_EQUIVALENCE="$OUT/audio_$variant.pcm-state" "$OUT/audio_stage_$variant"
+            run "audio: observer preserves exact PCM and voice state ($variant)" cmp "$OUT/audio_off.pcm-state" "$OUT/audio_$variant.pcm-state"
+        done
     }
     unit audio "" u_audio
 
@@ -1312,6 +1325,11 @@ else
     for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test fm6_eff_test; do
         unit "asan_$t" "" u_asan_record "$t"
     done
+    u_asan_audio_stage() {
+        $SCC -DFELUCCA_RENDER_STAGE=1 -o "$A/audio_stage_test" tests/audio_test.c -lm
+        run "ASan/UBSan: raw render-stage observer contracts" "$A/audio_stage_test"
+    }
+    unit asan_audio_stage "" u_asan_audio_stage
     u_asan_catalog() {
         omit=$1
         $SCC -DFELUCCA_ARENA_CHECK=1 -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit \
