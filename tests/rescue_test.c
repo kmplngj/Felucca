@@ -2,6 +2,9 @@
 /* Real rescue loop, OTA protocol and hardware adapter against fake HAL/USB.
  * No normal settings, project, audio or CPU1 initialization exists in this harness. */
 #include <stdint.h>
+#include "../firmware/hal/fm1_flash_context_contract.h"
+#include "../firmware/hal/fm1_flash_data_contract.h"
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,19 +43,23 @@ static void usb_detach(void) { usb.up = 0; usb.detached = 1; }
 static void fm1_enter_uboot(void) { rom++; }
 static void fm1_enter_update(const uint8_t *p) { (void)p; commits++; }
 static void lcd_init(void) { screens++; }
-static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t c)
+static lcd_fill_fn lcd_fill;
+static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 { (void)x; (void)y; (void)w; (void)h; (void)c; }
 static void draw_text_box(uint32_t x, uint32_t y, uint32_t w, const int *font, const char *s, uint32_t c, int a)
 { (void)x; (void)y; (void)w; (void)font; (void)s; (void)c; (void)a; }
 static void str_cpy(char *dst, const char *src, uint32_t n) { snprintf(dst, n, "%s", src); }
+static fl_jedec_ram_fn fl_jedec_ram;
 static uint32_t fl_jedec_ram(void) { return chip; }
+static fl_erase4k_ram_fn fl_erase4k_ram;
 static int fl_erase4k_ram(uint32_t off, uint32_t *took)
 {
     erases++; *took = 17000u; ticks += 17000u * 24u;
     if (fail_erase) return -1;
     memset(nor + off, 255, 4096); return 0;
 }
-static int fl_prog_ram(uint32_t off, const void *p, uint32_t n, uint32_t *took)
+static fl_prog_ram_fn fl_prog_ram;
+static int fl_prog_ram(uint32_t off, const uint8_t *p, uint32_t n, uint32_t *took)
 {
     const uint8_t *src = p;
     uint32_t i;
@@ -61,11 +68,14 @@ static int fl_prog_ram(uint32_t off, const void *p, uint32_t n, uint32_t *took)
     for (i = 0; i < n; i++) nor[off + i] &= src[i];
     return 0;
 }
-static int fl_read_ram(uint32_t off, void *p, uint32_t n) { memcpy(p, nor + off, n); return 0; }
+static fl_read_ram_fn fl_read_ram;
+static int fl_read_ram(uint32_t off, uint8_t *p, uint32_t n) { memcpy(p, nor + off, n); return 0; }
 /* Normal wrappers must never run before TIMER5/audio startup. */
 static void audio_silence(void) { audio_calls++; }
+static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took) { wrapper_calls++; return fl_erase4k_ram(off,took); }
-static int fl_write(uint32_t off, const void *p, uint32_t n) { uint32_t t; wrapper_calls++; return fl_prog_ram(off,p,n,&t); }
+static fl_write_fn fl_write;
+static int fl_write(uint32_t off, const uint8_t *p, uint32_t n) { uint32_t t; wrapper_calls++; return fl_prog_ram(off,p,n,&t); }
 static int st_read(uint32_t off, void *p, uint32_t n) { wrapper_calls++; return fl_read_ram(off,p,n); }
 static int ota_frame_get(const uint8_t **p, uint32_t *n)
 { if (!frame_ready) return 0; *p = frame; *n = frame_len; return 1; }

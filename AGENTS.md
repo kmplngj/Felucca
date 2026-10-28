@@ -60,6 +60,12 @@ per revision, and inspect summaries before raw logs or media. Keep large outputs
 under ignored `build/`; page required evidence rather than accepting truncation.
 Preserve complete relevant diffs, callers, invariants and validation coverage.
 
+For complex tasks, deepen the investigation and verification within the requested
+goal; do not add deliverables or silently raise acceptance targets. Follow the
+[depth check](.agents/skills/issue-delivery/SKILL.md#deepen-the-method-within-scope)
+when needed. Complete simple, clear requests directly without an extra planning
+or confirmation step; preserve explicit limits and previously granted authority.
+
 ## Every change considers
 
 - **Three builds.** The target firmware, host tests and browser emulator compile the same
