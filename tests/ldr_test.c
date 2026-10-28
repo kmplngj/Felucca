@@ -18,6 +18,7 @@ static uint8_t nor[0x100000], *logical;
 static size_t logical_len;
 static uint8_t rx[1024];
 static uint32_t rx_len, rx_full, now_ms, requests, erases, bad_range, record_cleared, f0_asked;
+static uint32_t prog_fail, verify_fail, expected_flash_off;
 static uint32_t erase_n[0x100], prot_reads, rd_fail_off = 0xFFFFFFFFu, er_fail_off = 0xFFFFFFFFu;   /* per 4K sector; fault injection */
 static uint32_t flip_addr = 0xFFFFFFFFu, flip_seen, flip_on;   /* serve addr's flip_on-th reply with a byte changed */
 
@@ -82,6 +83,9 @@ static int ota_fread(uint32_t off, void *p, uint32_t n) { memcpy(p, nor + off, n
 static void ota_show(uint32_t step, int32_t code) { (void)step; (void)code; }
 static void ota_commit(const uint8_t *parm) { (void)parm; }
 #include "../firmware/src/ota.c"
+#include "ldr_screen_host.h"
+#define LDR_SCREEN_EMBEDDED 1
+#include "ldr_screen_test.c"
 
 /* Felucca's autosave pair and FM6 voice bank (storage.c, fm6_vbank.c): the loader must neither erase nor read them */
 #define PROT_LO 0xE5000u
@@ -109,12 +113,42 @@ static int ldr_prog(uint32_t off, const void *p, uint32_t n)
     const uint8_t *s = p;
     uint32_t i;
     if (off < 0x4000u || off + n > 0x93000u || ((off & 0xFFu) + n) > 256u) bad_range++;
+    if (prog_fail) return -1;
     for (i = 0; i < n; i++) nor[off + i] &= s[i];
+    if (verify_fail && (off & 0xFFFu) == 0xF00u) nor[off] ^= 1;
     return 0;
 }
 static void ldr_record_clear(void) { record_cleared++; }
-static void ldr_progress(uint32_t done, uint32_t total) { (void)done; (void)total; }
+static uint32_t status_seen[6], progress_seen, progress_last, progress_bad;
+static void ldr_status(uint32_t state, int32_t code)
+{
+    status_seen[state]++;
+    if (state == LDR_VALIDATING) progress_last = progress_seen = 0;
+    ldr_screen_status(state, code);
+}
+static void ldr_progress(uint32_t done, uint32_t total)
+{
+    if (done != progress_last + 4096u || total != 0x8F000u || done > total) progress_bad++;
+    if (memcmp(nor + done + 0x4000u - 4096u, logical + expected_flash_off + done + 0x4000u - 4096u, 4096u)) progress_bad++;
+    progress_last = done;
+    progress_seen++;
+    ldr_screen_progress(done, total);
+}
 #include "../firmware/loader/ldr_core.c"
+
+static uint32_t restart_step, restart_calls;
+static void fm1_delay_ms(uint32_t ms)
+{
+    assert((restart_step == 0 && ms == 200u) || (restart_step == 2 && ms == 30u));
+    restart_step++;
+}
+static void usb_detach(void) { assert(restart_step == 1); restart_step++; }
+static void fm1_core_reset(void)
+{
+    assert(restart_step == 3 && ldr_screen_state == LDR_SUCCESS);
+    restart_calls++; restart_step = 0;
+}
+#include "../firmware/loader/ldr_install.c"
 
 /* the production storage objects (storage.c) on the same simulated flash: st_save writes the real layout (commit
  * record at sector + 0, payload at sector + 0x100). Its erases are not the loader's: erase_n counts only ldr_erase. */
@@ -455,10 +489,12 @@ int main(int argc, char **argv)
     uint32_t ofo, nfo, i;
     int bad = 0, rc;
     if (argc < 3) { printf("usage: ldr_test OLD.fwsc NEW.fwsc\n"); return 2; }
+    ldr_screen_contract_tests();
     old = load_logical(argv[1], &olen);
     logical = load_logical(argv[2], &logical_len);
     ofo = flash_off(old);
     nfo = flash_off(logical);
+    expected_flash_off = nfo;
     /* device: OLD installed, plus a valid update record at 0xE4F00 (Felucca's step 1) and 0xE8F00 (the stock
      * firmware's, a first install from it); user sample data in Felucca's store that looks like a record */
     memset(nor, 0xFF, sizeof nor);
@@ -510,11 +546,16 @@ int main(int argc, char **argv)
         logical[at] ^= 0x01;
         requests = 0;
     }
+    bad += check("validation failures publish failure before any verified progress", ldr_screen_state == LDR_FAILED &&
+                 ldr_screen_error == -12 && progress_seen == 0 && status_seen[LDR_WRITING] == 0);
     /* a sector that comes in different the second time (a transfer error after the check) is read again */
     flip_addr = nfo + 0x20000u; flip_on = 2; flip_seen = 0;
     rc = ldr_session();
     printf("  rc %d, %u requests, %u sector erases\n", rc, requests, erases);
     bad += check("install completes (flash.bin exactly the app area, 0x93000)", rc == 0);
+    bad += check("retry validates, verifies every app sector then finishes successfully", ldr_screen_state == LDR_SUCCESS &&
+                 status_seen[LDR_VALIDATING] > 1 && status_seen[LDR_FINISHING] == 1 && progress_seen == LDR_NSEC &&
+                 progress_last == LDR_APP_HI - LDR_APP_LO && progress_bad == 0);
     bad += check("a sector changed in transfer after the check is read again", flip_seen == 3);
     flip_addr = 0xFFFFFFFFu;
     bad += check("app area == the new package's flash.bin", !memcmp(nor + 0x4000, logical + nfo + 0x4000, 0x93000 - 0x4000));
@@ -538,6 +579,50 @@ int main(int argc, char **argv)
     bad += failure_cases();
     bad += update_record_upfm6_tests();
     bad += check("app area still the new package's flash.bin", !memcmp(nor + 0x4000, logical + nfo + 0x4000, 0x93000 - 0x4000));
+    /* Actual native erase/program/verify failures never report a completed sector.
+     * The same real entry point retries without a reset or changed flash policy. */
+    for (uint32_t fault = 0; fault < 3u; fault++) {
+        nor[LDR_APP_LO + 4096u + 64u] ^= 1;
+        er_fail_off = fault == 0 ? LDR_APP_LO + 4096u : 0xFFFFFFFFu;
+        prog_fail = fault == 1;
+        verify_fail = fault == 2;
+        rc = ldr_session();
+        bad += check("write failure preserves only the previously verified prefix", rc == -(int)(9u + fault) &&
+                     ldr_screen_state == LDR_FAILED && ldr_screen_error == rc && progress_seen == 1 && progress_last == 4096u);
+        er_fail_off = 0xFFFFFFFFu; prog_fail = verify_fail = 0;
+        rc = ldr_session();
+        bad += check("same loader retries to successful verified completion", rc == 0 && ldr_screen_state == LDR_SUCCESS &&
+                     progress_seen == LDR_NSEC && progress_bad == 0);
+    }
+    /* Display failure during validation must leave USB/session/retry functional,
+     * retaining the exact borrowed source across all flash operations. */
+    display_reset();
+    display_stall_at = 6;                           /* first pixel row */
+    ldr_usb_started = 1;
+    rc = ldr_session();
+    bad += check("missing display completion does not prevent verified install", rc == 0 && ldr_lcd_failed &&
+                 display_active && display_cs && progress_seen == LDR_NSEC && display_usb && display_wdt);
+    {
+        uint32_t sends = display_sends;
+        nor[LDR_APP_LO + 64u] ^= 1;
+        er_fail_off = LDR_APP_LO;
+        rc = ldr_session();
+        er_fail_off = 0xFFFFFFFFu;
+        bad += check("missing LCD preserves error result and owned source", rc == -9 && display_sends == sends);
+        rc = ldr_session();
+        display_check();
+        bad += check("retry with permanently missing LCD still succeeds", rc == 0 && display_sends == sends &&
+                     display_active && progress_bad == 0);
+    }
+    display_reset();
+    display_delay = 24u * 1900u;
+    {
+        uint32_t start = display_ticks;
+        ldr_install();
+        bad += check("slow completing display returns actual session within aggregate deadline", ldr_lcd_failed &&
+                     display_ticks - start < 24u * (LDR_LCD_DRAW_US + 1000u) && display_sends < 240u);
+    }
+    bad += check("successful actual installer path sends reply then detaches and restarts", restart_calls == 1 && restart_step == 0);
     /* a package for another chip key is refused before any erase */
     {
         uint8_t save = logical[nfo + 0x4000 + 5];
@@ -546,6 +631,9 @@ int main(int argc, char **argv)
         erases = 0;
         rc = ldr_session();
         bad += check("foreign key / damaged app head refused, nothing erased", rc == -6 && erases == 0);
+        ldr_install();
+        bad += check("failed actual installer path returns for retry without restart", restart_calls == 1 && restart_step == 0 &&
+                     ldr_screen_state == LDR_FAILED && ldr_screen_error == -6);
         logical[nfo + 0x4000 + 5] = save;
     }
     printf("%s\n", bad ? "LOADER TEST FAILED" : "loader test passed");

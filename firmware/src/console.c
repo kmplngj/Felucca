@@ -9,6 +9,7 @@
 #define FELUCCA_SCREEN_CAPTURE 0
 #endif
 #define CON_LINE 64u
+#include "render_stage.h"
 
 static struct {
     char line[CON_LINE];
@@ -71,6 +72,33 @@ static void con_kx(const char *k, uint32_t v)
     con_hex(v, 8);
     con_puts("\r\n");
 }
+
+#if FELUCCA_RENDER_STAGE
+static void con_render_stage(void)
+{
+    render_stage_t s;
+    uint32_t readable = (uint32_t)render_stage_read(&s);
+    con_kv("stage_schema", 1);
+    con_kv("stage_readable", (int32_t)readable);
+    if (!readable)
+        return;
+    con_kx("stage_error", s.error);
+    con_kx("stage_halves", s.halves);
+    con_kx("stage_blocks", s.blocks);
+    con_kx("stage_rejected", s.rejected);
+    con_kv("stage_available", s.valid && !s.error);
+    if (!s.valid || s.error)
+        return;
+    con_kx("stage_mix_last_t4", s.mix_last);
+    con_kx("stage_mix_max_t4", s.mix_max);
+    con_kx("stage_empty_last_t4", s.empty_last);
+    con_kx("stage_empty_max_t4", s.empty_max);
+    con_kx("stage_window_last_t4", s.half_last);
+    con_kx("stage_window_max_t4", s.half_max);
+    con_kx("stage_nested_last_t4", s.nested_last);
+    con_kx("stage_nested_max_t4", s.nested_max);
+}
+#endif
 
 static uint32_t con_num(const char **p, int *ok)        /* decimal or 0x hex */
 {
@@ -202,6 +230,9 @@ static void con_status(void)
     con_kv("uptime_ms", (int32_t)fm1_ms);
     con_kv("cpu_pct", (int32_t)(song.cpu_q8 * 100u / 256u));
     con_kv("audio_max_us", (int32_t)felucca_dbg.max_us);
+#if FELUCCA_RENDER_STAGE
+    con_render_stage();
+#endif
     con_kv("audio_late", (int32_t)felucca_dbg.late);
     con_kv("voices_shed", (int32_t)shed_count);
 #if FELUCCA_CPU2
