@@ -340,8 +340,9 @@ identity derived from `--release` (`FM-1_9XY`), then the development default `FM
 The value is checked before anything is generated, compiled or written: `FM-1_` followed by 1 to 15
 of `A-Z 0-9 . _ -` (ASCII upper case only, 20 characters at most, as the package marker allows; upper
 case so that no two products share a file name on a case-insensitive file system); empty, lower-case,
-overlong, non-ASCII, control, space, quote, backslash and newline values are refused, as is
-`FM-1_015` (the stock firmware's identity, from which the loader's USB identity is derived). The
+overlong, non-ASCII, control, space, quote, backslash and newline values are refused, as are
+M-VAVE's identities: `FM-1_0NN` (official firmware such as `FM-1_015`, from which the loader's USB
+identity is derived, and m-bootloader's installer `FM-1_099`) and `FM-1_8nnnnnn` (FM1 Open). The
 loader keeps its own identity `ota-FM-1_900` whatever the app uses. An explicit product that differs
 from the default is part of the output names (`felucca-1.0-FM-1_ACME.fwsc`, `release-1.0-FM-1_ACME/`),
 so two products at one version do not overwrite each other.
@@ -1100,12 +1101,17 @@ FM-1 or a successful installation; the installer still checks the device and fin
 
 `--force` is a deprecated compatibility option with no effect. Unknown package loader
 families are rejected with exit code 2 before MIDI discovery or an installation prompt,
-including with `--force`. The exact unmodified official V15 file is accepted through its
-pinned SHA-256 digest without `--force`; this exception does not cover arbitrary vendor files.
-The selected package also determines the accepted running loader: current Felucca
-requires `ota-FM-1_900`, verified original V15 requires `ota-FM-1_015` through
-Python/the maintained browser. Unknown/crossed pairs fail before the loader's
-writing phase. `--force` cannot override this contract.
+including with `--force`. The exact unmodified official V15 and V16 files are accepted
+through their pinned SHA-256 digests without `--force` (the maintained browser installer:
+V15 until its client update); this exception does not cover arbitrary vendor files or other
+`FM-1_0NN` identities. The selected package also determines the accepted running loader:
+current Felucca requires `ota-FM-1_900`, verified official V15/V16 require `ota-FM-1_015`.
+Unknown/crossed pairs fail before the loader's writing phase. `--force` cannot override this
+contract. M-VAVE's loader also writes the boot area; see
+[return to official firmware](docs/usb-rescue.md#return-to-official-firmware-and-the-boot-area-619),
+the device's [result codes](docs/usb-rescue.md#update-result-codes), and the explicit refusals
+for [m-bootloader](docs/usb-rescue.md#m-bootloader) and
+[M-VAVE's FM1 Open firmware](docs/usb-rescue.md#m-vave-fm1-open-firmware).
 
 Device discovery and connection errors occur later: exit code 3 means the FM-1 was not
 found (check the USB data cable and other apps using MIDI), 4 means the connection was lost

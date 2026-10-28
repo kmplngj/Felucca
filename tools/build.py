@@ -110,9 +110,11 @@ CPU2 = os.environ.get("FELUCCA_CPU2") != "0"
 
 PRODUCT_RE = re.compile(r"FM-1_[A-Z0-9._-]{1,15}")    # 20 characters at most: the package marker's room;
 # upper case only, so two products never name the same file on a case-insensitive file system
-# identities an explicit --product must not take: the stock firmware's (the loader's USB identity
-# "ota-FM-1_015" is derived from it, firmware/src/ota.c); the loader's own "ota-FM-1_900" never matches
-RESERVED_PRODUCTS = ("FM-1_015",)
+# identities an explicit --product must not take: M-VAVE's FM-1_0NN (the loader's USB identity "ota-FM-1_015"
+# is derived from the stock one, firmware/src/ota.c; tools/fm1_install.py installs only the pinned official files
+# there and refuses m-bootloader's FM-1_099) and its FM1 Open firmware's FM-1_8nnnnnn; the loader's own
+# "ota-FM-1_900" never matches
+RESERVED_PRODUCTS = re.compile(r"FM-1_0\d\d|FM-1_8\d{6}")
 
 
 def check_product(product):
@@ -120,8 +122,8 @@ def check_product(product):
     identity is not registered with, or accepted by, any host or Hub)."""
     if not product.isascii() or not PRODUCT_RE.fullmatch(product):
         raise SystemExit(f"--product {product!r}: use FM-1_ and 1..15 of A-Z 0-9 . _ - (ASCII, 20 characters at most)")
-    if product in RESERVED_PRODUCTS:
-        raise SystemExit(f"--product {product}: reserved for the stock firmware / the update loader")
+    if RESERVED_PRODUCTS.fullmatch(product):
+        raise SystemExit(f"--product {product}: reserved for M-VAVE's firmware / the update loader")
     if any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product)):
         raise SystemExit(f"--product {product}: a character encodes to the unused package marker (0x7D)")
 
