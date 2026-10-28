@@ -31,6 +31,9 @@ Hügelton Instruments' own work and live in their own repository, Felucca-Engine
 (`felucca_engine.h`), the shared DSP helpers (`dsp.c`) and the generator of their tables
 (`SPDX-License-Identifier: MIT`, `firmware/engines/LICENSE`, also
 `LICENSES/MIT-Felucca-Engines.txt`). The firmware built with them is GPL-3.0-only as a whole.
+The pinned collection also includes MIT PHASE source, which this firmware does not
+compile. The firmware retains its native GPL-3.0-only PHASE implementation and
+per-part crossfade storage in `firmware/src/eng_phase.c`.
 Felucca's complete source includes that submodule: clone with `--recurse-submodules`, and
 give it along with the rest when you share the source. Releases produced by our
 complete-source workflow also carry `felucca-VERSION-source.tar.gz`, which includes the

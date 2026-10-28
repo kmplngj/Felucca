@@ -147,6 +147,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- Backport the remaining signed DSP arithmetic fixes from upstream 1.7.0:
+  ANALOG, LOFI, TRIO, WHEEL, NOISE and native PHASE retain their output while
+  avoiding undefined signed shifts and overflow. The fork's engine API,
+  zero-mix ANALOG path and per-part PHASE scratch remain intact. See the
+  [arithmetic follow-up](midi-dsp-reliability.md#upstream-170-arithmetic-follow-up)
+  for provenance and validation limits; FM-1 listening remains pending.
+
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
   update requests still renew the existing staging and writing idle budgets.
