@@ -20,7 +20,8 @@ class ReleaseTest(unittest.TestCase):
         pr = dict(number=42, merged_at='2026-10-28', merge_commit_sha=sha,
                   base={'ref': 'main', 'repo': {'full_name': 'owner/repo'}})
         identity = release.dev_identity([pr], 'owner/repo', sha)
-        self.assertEqual(identity['tag'], 'dev-pr42-' + sha[:12])
+        self.assertEqual(identity['tag'], 'latest-dev')
+        self.assertEqual(identity['version'], '0.0-dev' + sha[:8])
         ci.version(identity['version'])  # Real package version validator.
         for wrong in (dict(pr, merged_at=None), dict(pr, merge_commit_sha='b' * 40),
                       dict(pr, base={'ref': 'other', 'repo': {'full_name': 'owner/repo'}})):
@@ -52,16 +53,28 @@ class ReleaseTest(unittest.TestCase):
                     base = git('rev-parse', 'HEAD')
             sha = git('rev-parse', 'HEAD')
             with patch.object(release, 'git', side_effect=git), patch.dict(os.environ, GITHUB_RUN_ID='123'):
-                dev = release.notes('dev', 'owner/repo', sha, '0.0-devPR42gabcdef', '42', base=base)
+                dev = release.notes('dev', 'owner/repo', sha, '0.0-devabcdef12', '42', base=base)
                 stable = release.notes('stable', 'owner/repo', sha, '1.6.2', evidence='https://example.org/test', base=base)
+            self.assertIn('direct maintenance', stable)
+            self.assertIn('PR change (#42)', stable)
+            self.assertNotIn('- ' + base[:7] + ' previous stable', stable)
             for text in (dev, stable):
-                self.assertIn('direct maintenance', text)
-                self.assertIn('PR change (#42)', text)
-                self.assertNotIn('- ' + base[:7] + ' previous stable', text)
                 self.assertIn('/blob/' + sha + '/docs/usb-rescue.md', text)
+            self.assertNotIn('direct maintenance', dev)
+            self.assertNotIn('Complete commit changelog', dev)
             self.assertIn('not hardware-qualified', dev)
             self.assertNotIn('author attests', dev)
             self.assertIn('https://example.org/test', stable)
+
+    def test_dev_notes_do_not_read_history_and_keep_build_risk_install_recovery_links(self):
+        with patch.object(release, 'git', side_effect=AssertionError('Dev must not read history')), \
+             patch.dict(os.environ, GITHUB_RUN_ID='123'):
+            text = release.notes('dev', 'owner/repo', 'a' * 40, '0.0-devaaaaaaaa', '42')
+        for expected in ('/pull/42', '/commit/' + 'a' * 40, '/actions/runs/123',
+                         'not hardware-qualified', '.sha256', '.fwsc', 'backups',
+                         'OCT−', 'M-Flasher', 'usb-rescue.md'):
+            self.assertIn(expected, text)
+        self.assertNotIn('Complete commit changelog', text)
 
     def test_publication_refuses_rebuilt_bytes_different_from_tested_package(self):
         import hashlib

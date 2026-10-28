@@ -34,10 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
-- Two [release channels](releases.md): immutable **Latest Dev** prereleases identify
-  each validated main-branch PR merge; tagged packages require exact-commit device
+- Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
+  the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery
-  guidance and a complete commit changelog since the previous stable release.
+  guidance; tagged versions include the complete commit changelog since the previous
+  stable release. Dev notes stay short, and superseded Dev releases/tags are removed.
 
 
 - Default-off [raw render-stage evidence](render-stage-evidence.md) adds one
@@ -153,6 +154,15 @@ recorded in the linked reports, rather than every current build or device.
   zero-mix ANALOG path and per-part PHASE scratch remain intact. See the
   [arithmetic follow-up](midi-dsp-reliability.md#upstream-170-arithmetic-follow-up)
   for provenance and validation limits; FM-1 listening remains pending.
+
+- Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
+  full commit provenance remain in release metadata; the UI regression gate now
+  exercises the generated Dev version before merge. This fixes the initial Dev
+  release's layout-test failure; no publication gate is relaxed.
+- Native replay source-change guards include consumed portable Engines sources
+  and generated include files, so changes during compilation cannot publish an
+  adapter or completed capture with stale input provenance. See
+  [interaction replay](interaction-replay.md).
 
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
