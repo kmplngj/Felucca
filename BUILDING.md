@@ -448,6 +448,23 @@ fixtures require incompatible signatures across the UI, settings and browser
 adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
+The `lcd_contract` unit runs `python3 tests/lcd_contract_test.py` after its
+`icon_streams` prerequisite generates the actual icon fixture's reference header.
+The real LCD driver and UI, browser and rescue fakes declare `lcd_fill_fn`; all
+14 blit adapter entries use `lcd_blit_fn`, preserving the const pixel-buffer
+type. Eleven non-rendering fixtures share `tests/host_lcd_blit_noop.h`; the real
+driver, UI framebuffer and browser retain their distinct implementations, giving
+four definition owners. The shared no-op reads no pixels and adds no output,
+synchronization, counters or DMA model. Default and CPU2-off builds are checked,
+including incompatible
+definitions that compile only after removing their typed declaration. The
+`lcd_power` unit retains its independent delayed-DMA controller runtime check.
+
+`firmware/hal/fm1_lcd_contract.h` preserves unsigned 32-bit coordinates,
+16-bit RGB565 fill colours and const RGB565 pixel buffers. The compile checks
+include the rescue fill types corrected by the earlier contract work. Delayed
+DMA, pixel output and physical LCD behavior remain separate checks.
+
 The native UI tests and their consumers share `tests/ui_harness.h`: the real
 firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
 blank-frame observers, power-on setup and panel/keyboard helpers. Define any
@@ -456,6 +473,19 @@ entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
 for its LCD-submission ordering assertions. Consumers include the harness directly;
 they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
+The UI and browser adapters share the passive `fm1_ticks()` accessor in
+`tests/host_clock.h`, selecting their existing `host_ticks`/`web_ticks` state.
+Each adapter still owns its units, advancement and reset policy: UI ticks are
+microseconds, while browser ticks run at 24 ticks per microsecond. Reading the
+accessor does not advance either clock. Audio/rescue and input-bus clocks retain
+their intentional read-side effects; scheduled TIMER5 and constant console/click
+clocks also remain separate. `fm1_ms` remains independently owned.
+The `clock_contract` unit checks actual HAL/UI/browser signatures against
+`firmware/hal/fm1_time_contract.h`, incompatible definitions, passive reads,
+unsigned wrap and the actual frame/turn/browser scheduling paths. It does not
+qualify wall-clock accuracy, target timer hardware or audio deadlines. Replay
+fingerprints include the shared clock header and the existing HAL inventory.
+
 The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
 their sanitizer builds. This existing NOR model only clears programmed bits, rejects
 256-byte page wrapping, and models sticky power cuts during programming or half an
@@ -463,8 +493,37 @@ erase. Its program counter counts completed bytes; its erase counter excludes re
 refused before work. Reads remain available for recovery after a cut. The user-preset
 fixture checks every payload/header byte-cut boundary, interrupted/refused erases
 and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. Storage and persistence tests retain their different retry
-and operation-counting models.
+`up_put` mirror rollback. The browser emulator also uses this model behind its
+existing bounds, sector-rounding and successful-operation counters. It exports no
+fault controls. A page-contract violation terminates the native adapter and traps
+in standalone Wasm without adding host imports. Native replay fingerprints include
+the shared NOR header so changes invalidate cached adapters and capture provenance.
+The `emulator_partitions` unit checks bounds, page failures and a panel save restored
+in a fresh process; with Emscripten it also checks the actual Wasm trap and empty
+import list. Storage and persistence tests retain their different retry and
+operation-counting models.
+
+The backup, FM6-bank, persistence and browser adapters also share
+`tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,
+the direct `FL_FAR` call and a selected JEDEC value. Host fixtures retain zero;
+the browser selects `0x856014` for its actual boot/persistence path. Rescue retains
+its dynamic chip fake. The `flash_context_contract` unit compiles the real HAL,
+shared host group, four actual consumers and the dynamic rescue JEDEC adapter
+against `firmware/hal/fm1_flash_context_contract.h`. Incompatible definitions and
+`FL_FAR` call types must fail the compile checks. The contract declares function
+types only; it does not model physical interrupt/flash timing or change the NOR
+program/read/erase adapters. Replay fingerprints include the shared host header;
+the HAL contract is covered by the existing HAL input inventory.
+
+The `flash_data_contract` unit checks the real HAL and partial rescue, editor,
+FM6-effective-patch and engine-ID adapters against
+`firmware/hal/fm1_flash_data_contract.h`. It covers RAM erase/program/read and the
+erase/write wrappers, including byte-buffer types and `FL_FAR` calls. The six
+former generic-pointer fake signatures now match the HAL; their bodies and error
+models are unchanged. Object-buffer `st_*` hooks remain owned by `storage.c`,
+with `storage_hw.c` bridging to the byte-oriented HAL. This is compile/host
+coverage, not physical flash timing or power-loss qualification. The existing HAL
+replay input inventory covers this header.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set

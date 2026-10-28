@@ -146,8 +146,13 @@ def git(*args):
 
 
 def source_inputs():
-    patterns = ("firmware/src/*.[ch]", "firmware/hal/*.[ch]", "build/gen/*.h",
-                "tests/hostsim.c", "web/emu/felucca_web.c", "tools/replay_native.c", "tools/fm1_replay.py",
+    # Profile freshness is checked before compilation; retain its consumed engine
+    # sources and generated includes for the compile/replay change guards too.
+    patterns = ("firmware/src/*.[ch]", "firmware/hal/*.[ch]", "firmware/engines/src/*.[ch]",
+                "build/gen/*.h", "build/gen/*.inc",
+                "tests/hostsim.c", "tests/host_nor.h", "tests/host_flash_context.h",
+                "tests/host_clock.h",
+                "web/emu/felucca_web.c", "tools/replay_native.c", "tools/fm1_replay.py",
                 "tools/gen_*.py", "tools/aa_raster.py", "assets/fonts/**/*", "web/fukiai.ttf")
     return {str(p.relative_to(ROOT)): digest(p.read_bytes()) for pattern in patterns
             for p in sorted(ROOT.glob(pattern)) if p.is_file()}
