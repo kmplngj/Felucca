@@ -456,12 +456,15 @@ entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
 for its LCD-submission ordering assertions. Consumers include the harness directly;
 they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
-The backup and FM6-bank tests share `tests/host_nor.h`, including their sanitizer
-builds. This existing NOR model only clears programmed bits, rejects 256-byte page
-wrapping, and models sticky power cuts during programming or half an erase. Its
-program counter counts completed bytes; its erase counter excludes requests
-refused before work. Reads remain available for recovery after a cut. Storage and
-persistence tests retain their different retry and operation-counting models.
+The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
+their sanitizer builds. This existing NOR model only clears programmed bits, rejects
+256-byte page wrapping, and models sticky power cuts during programming or half an
+erase. Its program counter counts completed bytes; its erase counter excludes requests
+refused before work. Reads remain available for recovery after a cut. The user-preset
+fixture checks every payload/header byte-cut boundary, interrupted/refused erases
+and restored-power retries through the production bank/storage code; it does not exercise runtime
+`up_put` mirror rollback. Storage and persistence tests retain their different retry
+and operation-counting models.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
@@ -598,7 +601,11 @@ at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enable
 It executes the actual USB poll/control/audio-service code against a finite HAL-only
 SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recovery,
 control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
-nested EP4 ownership. Matched audio producer/host-token schedules compare packet bytes; negative transcript controls
+nested EP4 ownership. Controllable SIE completion checks delayed/failed accesses,
+consecutive-failure shutdown and actual startup/retry/detach paths, including retry
+clock wrap. Suspend/resume, missing SOF and repeated frozen-frame episodes retain
+accepted application data and recover through explicit host events. Matched audio
+producer/host-token schedules compare packet bytes; negative transcript controls
 reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,
 not physical service time, controller races or host-driver qualification. Existing
 UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
@@ -725,6 +732,11 @@ a fresh build. The [stress replay guide](tests/stress_matrix.md) describes the f
 data-driven scenarios, exact repeat checks and retained WAV/JSON evidence under
 `build/stress/`. This first increment uses direct host musical input; emulator/device
 adapters and instruction counts remain follow-ups. The full host runner includes it.
+
+For the optional external emulator trace prerequisite, use the
+[pinned source/build and executable controls](docs/emulator-trace-prerequisite.md).
+It needs a separate Rust toolchain; its portable refusal tests run in the normal
+host suite without Rust. Native hotspot attribution remains a follow-up.
 
 ### Emulator partition regression
 
@@ -1062,6 +1074,15 @@ File-only checks open no device; live ROM sessions may upload a RAM loader and
 need host permissions. A unit with no reachable USB route can still need
 [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
 
+The standalone RAM loader displays waiting, package validation, verified app-sector
+progress, completion/restart and native-error retry guidance. Its writing percentage
+is verified application work, not confirmation of a complete install. If it reports
+**UPDATE STOPPED**, keep power and USB connected and retry the same reviewed
+compatible package with the supported installer after the host operation returns.
+A display failure may leave a stale image while USB/retry continues. Check the
+host's final application identity; see [loader screen meanings and limits](docs/usb-rescue.md#standalone-ram-loader-screen).
+Physical FM-1 qualification of the new loader screen remains pending.
+
 ### Package validation and file errors
 
 When given a package, the command-line installer validates its identity, UFW structure,
@@ -1085,6 +1106,11 @@ Device discovery and connection errors occur later: exit code 3 means the FM-1 w
 found (check the USB data cable and other apps using MIDI), 4 means the connection was lost
 or the device stopped, 5 means a timeout, and 6 means a model or installed-identity mismatch.
 Run `uv run --locked --group midi tools/fm1_install.py --help` for the options and complete exit-code list.
+
+The Python installer allows 8 seconds without a valid update request during package staging
+and 180 seconds during writing. Unrelated or malformed SysEx does not reset that idle budget.
+Valid requests renew it, so a progressing transfer may take longer than the idle interval.
+A stalled transfer still reports exit code 4; follow the installer's phase-specific retry guidance.
 
 If package generation reports `app area is ... B, available ... B`, the app region plus
 the SDK configuration files and headers exceeds the flash boundary. The app fitting its

@@ -472,6 +472,8 @@ def ldr_head(dcrc, a, b, attr, name):
 def ldr_wrap(image):
     """ota.bin = outer JLFS head (32 B) + inner head (32 B, load address) +
     blocks [clen u32][dlen u32][LZ4 block], dlen 4096 except the last"""
+    if not image or len(image) > 0x14000:
+        raise SystemExit("loader: image empty or too big")
     blocks = bytearray()
     for i in range(0, len(image), 4096):
         raw = image[i:i + 4096]
@@ -481,6 +483,10 @@ def ldr_wrap(image):
         blocks += struct.pack("<II", len(c), len(raw)) + c
     inner = ldr_head(crc16(image), len(image), LOADER_LOAD, 0, LOADER_NAME)
     body = inner + bytes(blocks)
+    # ota.c accepts at most OTA_AREA_LEN - 0x200 for the staged body.
+    # Keep the wrapper/header and update-record reserve out of that area.
+    if len(body) > 0x5000 - 0x200:
+        raise SystemExit("loader: wrapped body exceeds native staging area")
     return ldr_head(crc16(body), 0x20, len(body), 0x41, LOADER_NAME) + body
 
 

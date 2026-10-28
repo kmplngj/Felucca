@@ -40,6 +40,14 @@ recorded in the linked reports, rather than every current build or device.
   diagnostic flag; target cost accounting and matched FM-1 acceptance remain
   pending. This delivers instrumentation, without a DSP speedup claim.
 
+- **Standalone RAM-loader status:** waiting and package validation, verified
+  application-sector progress, native completion/restart and host retry guidance
+  work without an intact application. Bounded RAM-owned scanlines contain missing
+  or slow LCD completion while retaining in-flight sources and servicing USB and
+  the watchdog. Package, protocol and protected-storage policy are unchanged.
+  Physical FM-1 update/display/retry qualification remains pending; see
+  [screen meanings and limits](usb-rescue.md#standalone-ram-loader-screen).
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.
@@ -61,6 +69,9 @@ recorded in the linked reports, rather than every current build or device.
 
 - Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
   exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
+  A separate manual main-only workflow now orchestrates canonical builds, Git-free
+  reproduction and a mandatory matching simulator before uploading a verified bundle;
+  the same recipe has an explicit local maintainer mode for pre-merge evidence.
   Offline verification checks artifact correspondence; full host/browser/device acceptance,
   public build service and deployment remain separate.
   Native target builds now refuse unsupported compiler search/configuration variables
@@ -129,6 +140,11 @@ recorded in the linked reports, rather than every current build or device.
   and checksums, and a repository-backed firmware-watch ledger for reviewing other forks.
 
 ### Fixed
+
+- **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
+  stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
+  update requests still renew the existing staging and writing idle budgets.
+  See [installer errors](../BUILDING.md#package-validation-and-file-errors).
 
 - **Native attribution:** ABOUT credits and the retained installer template now
   distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0

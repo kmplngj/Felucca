@@ -88,11 +88,34 @@ class SelectionTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.suites(["tools/fm1_update_records.py", path]), {"full"})
 
+    def test_maintainer_orchestration_fixtures_keep_source_validation_full(self):
+        self.assertIn("maintainer_bundle_test.py", changes.PORTABLE_TESTS)
+        runner = (Path(__file__).resolve().parents[1] / "tests/run_tests.sh").read_text()
+        portable = runner.split("u_portable() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("python3 tests/maintainer_bundle_test.py", portable)
+        self.assertEqual(self.suites(["tests/maintainer_bundle_test.py"]), {"python"})
+        for path in ("tools/maintainer_bundle.py", ".github/workflows/maintainer-bundle.yml"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), {"full"})
+                self.assertEqual(self.suites(["tests/maintainer_bundle_test.py", path]), {"full"})
+
     def test_console_parser_contract_inputs(self):
         self.assertEqual(self.suites(["firmware/src/console.c"]), {"full"})
         for path in ("tools/fm1_diagnostics.py", "tests/diagnostics_test.py", "tests/console_diagnostics.c"):
             with self.subTest(path=path):
                 self.assertEqual(self.suites([path]), {"python"})
+
+    def test_external_trace_fixture_is_portable_but_implementation_keeps_full_ci(self):
+        self.assertIn("emulator_trace_test.py", changes.PORTABLE_TESTS)
+        runner = (Path(__file__).resolve().parents[1] / "tests/run_tests.sh").read_text()
+        portable = runner.split("u_portable() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("python3 tests/emulator_trace_test.py", portable)
+        self.assertEqual(self.suites(["tests/emulator_trace_test.py"]), {"python"})
+        for path in ("tools/emulator_trace.py", "tools/emulator_trace/pin.json",
+                     "tools/emulator_trace/retired-trace.patch", "tests/emulator_trace_execution_test.py"):
+            with self.subTest(path=path):
+                self.assertEqual(self.suites([path]), {"full"})
+                self.assertEqual(self.suites(["tests/emulator_trace_test.py", path]), {"full"})
 
     def test_firmware_watch_ledger_uses_portable_validation(self):
         for path in ("data/firmware-watch/sources.json", "data/firmware-watch/state.json",
