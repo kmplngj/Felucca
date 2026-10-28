@@ -191,6 +191,12 @@ class ConsoleContractTests(unittest.TestCase):
             "-DFELUCCA_CRASH_CTX=1", "-DFELUCCA_MUL64_REPRO=1",
             str(root / "tests/console_diagnostics.c"), "-o", str(binary)], check=True, timeout=30)
         cls.binaries["diag"] = binary
+        binary = Path(cls.directory.name) / "console-stage"
+        subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
+            "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+            "-DFELUCCA_RENDER_STAGE=1", str(root / "tests/console_diagnostics.c"),
+            "-o", str(binary)], check=True, timeout=30)
+        cls.binaries["stage"] = binary
 
     def response(self, command, features=True, *arguments):
         raw = subprocess.check_output([str(self.binaries[features]), command, *arguments], timeout=5)
@@ -228,6 +234,33 @@ class ConsoleContractTests(unittest.TestCase):
         for invalid in ("-1", "0x100000000", "unknown"):
             bad = raw.replace("boot_clock_119a4 0xFFFFFFFF", "boot_clock_119a4 " + invalid)
             self.assertIn("invalid uint32 boot_clock_119a4", diag.parse_response("status", bad.encode())["issues"])
+
+    def test_stage_snapshot_is_optional_unsigned_and_fail_closed(self):
+        fields = self.response("status", "stage")
+        self.assertEqual((fields["stage_schema"], fields["stage_readable"], fields["stage_available"]), (1, 1, 1))
+        self.assertEqual((fields["stage_halves"], fields["stage_blocks"], fields["stage_rejected"]), (1, 2, 0))
+        expected = {"mix": 500, "empty": 5, "window": 1000, "nested": 100}
+        timings = {f"stage_{name}_{kind}_t4" for name in expected for kind in ("last", "max")}
+        for name, value in expected.items():
+            for kind in ("last", "max"):
+                self.assertEqual(fields[f"stage_{name}_{kind}_t4"], value)
+        for features in (True, False, "diag"):
+            self.assertFalse(any(key.startswith("stage_") for key in self.response("status", features)))
+        for mode in ("stage-unsampled", "stage-error", "stage-rejected"):
+            fields = self.response("status", "stage", mode)
+            self.assertEqual(fields["stage_available"], 0)
+            self.assertTrue(timings.isdisjoint(fields))
+        rejected = self.response("status", "stage", "stage-rejected")
+        self.assertEqual((rejected["stage_halves"], rejected["stage_rejected"], rejected["stage_error"]), (1, 1, 0))
+        busy = self.response("status", "stage", "stage-busy")
+        self.assertEqual(busy["stage_readable"], 0)
+        self.assertTrue(timings.isdisjoint(busy))
+        self.assertNotIn("stage_available", busy)
+        # Unknown diagnostic fields retain full unsigned values and gain no
+        # guessed delta semantics; the four-command collector stays unchanged.
+        parsed = diag.parse_response("status", reply("status", STATUS + "stage_blocks 0xffffffff\n"))
+        self.assertEqual(parsed["fields"]["stage_blocks"], 0xffffffff)
+        self.assertNotIn("stage_blocks", diag.COUNTERS["status"])
 
     def test_real_console_counters(self):
         for command, names in EXPECTED_COUNTERS.items():

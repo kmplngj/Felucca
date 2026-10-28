@@ -48,6 +48,12 @@ recorded in the linked reports, rather than every current build or device.
   Real bootloader/reset-path readings and any correction decision remain pending;
   see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
 
+- Default-off [raw render-stage evidence](render-stage-evidence.md) adds one
+  inclusive CPU0 mix-stage observer, empty controls and coherent optional `status`
+  snapshots with explicit rejection/error semantics. Release builds refuse the
+  diagnostic flag; target cost accounting and matched FM-1 acceptance remain
+  pending. This delivers instrumentation, without a DSP speedup claim.
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.

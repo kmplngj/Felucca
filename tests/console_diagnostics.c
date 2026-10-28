@@ -118,6 +118,12 @@ int main(int argc, char **argv)
         (strcmp(argv[1], "status") && strcmp(argv[1], "dbg") &&
          strcmp(argv[1], "inp") && strcmp(argv[1], "crash")))
         return 2;
+#if FELUCCA_RENDER_STAGE
+    render_stage_begin();
+    render_stage_block(200u, 2u);
+    render_stage_block(300u, 3u);
+    render_stage_publish(1000u, 100u, 0);
+#endif
 #if FELUCCA_CRASH_CTX
     {
         uint32_t i;
@@ -134,6 +140,16 @@ int main(int argc, char **argv)
             fm1_boot_clock.valid = 0;
         else if (!strcmp(argv[2], "no-crash"))
             fm1_crash.magic = 0;
+#if FELUCCA_RENDER_STAGE
+        else if (!strcmp(argv[2], "stage-unsampled"))
+            memset((void *)&render_stage, 0, sizeof render_stage);
+        else if (!strcmp(argv[2], "stage-busy"))
+            render_stage_seq |= 1u;
+        else if (!strcmp(argv[2], "stage-error"))
+            render_stage.error = RENDER_STAGE_COUNT;
+        else if (!strcmp(argv[2], "stage-rejected"))
+            render_stage_publish(1000u, 100u, 1);
+#endif
 #if FELUCCA_CRASH_CTX
         else if (!strcmp(argv[2], "stale-ctx"))
             fm1_crash.ctx = 0;               /* a record another firmware left: no registers */
