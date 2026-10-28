@@ -21,6 +21,7 @@ class ReleaseTest(unittest.TestCase):
                   base={'ref': 'main', 'repo': {'full_name': 'owner/repo'}})
         identity = release.dev_identity([pr], 'owner/repo', sha)
         self.assertEqual(identity['tag'], 'dev-pr42-' + sha[:12])
+        self.assertEqual(identity['version'], '0.0-dev' + sha[:8])
         ci.version(identity['version'])  # Real package version validator.
         for wrong in (dict(pr, merged_at=None), dict(pr, merge_commit_sha='b' * 40),
                       dict(pr, base={'ref': 'other', 'repo': {'full_name': 'owner/repo'}})):
@@ -52,7 +53,7 @@ class ReleaseTest(unittest.TestCase):
                     base = git('rev-parse', 'HEAD')
             sha = git('rev-parse', 'HEAD')
             with patch.object(release, 'git', side_effect=git), patch.dict(os.environ, GITHUB_RUN_ID='123'):
-                dev = release.notes('dev', 'owner/repo', sha, '0.0-devPR42gabcdef', '42', base=base)
+                dev = release.notes('dev', 'owner/repo', sha, '0.0-devabcdef12', '42', base=base)
                 stable = release.notes('stable', 'owner/repo', sha, '1.6.2', evidence='https://example.org/test', base=base)
             for text in (dev, stable):
                 self.assertIn('direct maintenance', text)
