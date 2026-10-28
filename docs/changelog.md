@@ -148,6 +148,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- PR-source cleanup protects reflog-only detached commits and refuses removal with
+  deinitialized or orphan private submodule repositories. It preserves history
+  without automatic metadata repair. See the
+  [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
+
 - Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
   full commit provenance remain in release metadata; the UI regression gate now
   exercises the generated Dev version before merge. This fixes the initial Dev
