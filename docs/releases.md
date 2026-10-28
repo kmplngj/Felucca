@@ -11,9 +11,10 @@ merges. A failed gate leaves the previous releases available and publishes no pa
 
 Each successful merge gets an immutable prerelease named
 `Latest Dev — PR #NUMBER @ COMMIT`, tagged `dev-prNUMBER-COMMIT`.
-The package version is `0.0-devPRNUMBERgCOMMIT` (12 SHA digits); the existing
-one-digit product-version format remains intact. Firmware ABOUT/provenance identifies
-the commit; do not infer installed bytes from the MIDI product identity alone.
+The package version is `0.0-devSHORTSHA` (8 SHA digits), keeping the firmware's
+ABOUT screen within its layout bounds. The release tag retains the PR number and
+12 SHA digits; the existing one-digit product-version format remains intact.
+Firmware ABOUT/provenance identifies the commit; do not infer installed bytes from the MIDI product identity alone.
 These are rolling *development availability*, with an archived package per merge,
 rather than overwriting one moving tag. Select the desired main commit in
 [Releases](https://github.com/kmplngj/Felucca/releases); concurrent builds may finish

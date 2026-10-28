@@ -25,7 +25,9 @@ def dev_identity(pulls, repo, sha):
     if len(matches) != 1:
         return None
     number = matches[0]['number']
-    return dict(pr=str(number), version=f'0.0-devPR{number}g{sha[:12]}',
+    # Match the compact commit identity used by the firmware's bounded ABOUT UI.
+    # PR number and longer SHA stay in the release tag, title and provenance.
+    return dict(pr=str(number), version=f'0.0-dev{sha[:8]}',
                 tag=f'dev-pr{number}-{sha[:12]}')
 
 

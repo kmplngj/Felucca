@@ -147,6 +147,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
+  full commit provenance remain in release metadata; the UI regression gate now
+  exercises the generated Dev version before merge. This fixes the initial Dev
+  release's layout-test failure; no publication gate is relaxed.
+
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
   update requests still renew the existing staging and writing idle budgets.
