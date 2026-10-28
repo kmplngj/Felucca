@@ -603,7 +603,12 @@ SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recover
 control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
 nested EP4 ownership. Controllable SIE completion checks delayed/failed accesses,
 consecutive-failure shutdown and actual startup/retry/detach paths, including retry
-clock wrap. Suspend/resume, missing SOF and repeated frozen-frame episodes retain
+clock wrap. Configured-origin retries clear stale configuration, EP0 stages and
+CDC/UAC session state before reattachment; bulk/audio service waits for fresh
+host configuration. Data still owned by application rings at local restart is
+retained. A subsequent host bus reset keeps the existing MIDI/SysEx output-drop
+policy; these tests do not guarantee delivery of packets already consumed or
+staged in DMA when a SIE access fails. Suspend/resume, missing SOF and repeated frozen-frame episodes retain
 accepted application data and recover through explicit host events. Matched audio
 producer/host-token schedules compare packet bytes; negative transcript controls
 reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,

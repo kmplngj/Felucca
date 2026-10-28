@@ -219,6 +219,14 @@ invalid. Crash-record uptime is historic and is never compared with current upti
 Older firmware without boot-count evidence cannot establish continuity. Unknown future
 fields are preserved but do not acquire guessed counter/delta semantics.
 
+`usb_retries` counts local controller restarts; `usb_resets` counts host bus resets.
+A local restart abandons configuration and pending control/CDC/UAC session state
+before reattachment, then waits for fresh host configuration. It retains data
+still in application rings at restart; a later host bus reset keeps the existing
+MIDI/SysEx output-drop policy. Neither counter establishes packet delivery or
+physical recovery. Check host re-enumeration, stream behavior and error deltas
+alongside the retained report.
+
 In builds with second-core support (`FELUCCA_CPU2=1`), `crash` includes `core 0` for
 the main core or `core 1` for the worker. This identifies the retained crash's origin,
 even after the device falls back to one core; current `status` worker state describes
