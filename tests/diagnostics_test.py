@@ -204,6 +204,31 @@ class ConsoleContractTests(unittest.TestCase):
         self.assertEqual(set(diag.COMMANDS), set(EXPECTED_COUNTERS))
         self.assertEqual({command: set(names) for command, names in diag.COUNTERS.items()}, EXPECTED_COUNTERS)
 
+    def test_boot_clock_reader(self):
+        root = Path(__file__).resolve().parents[1]
+        binary = Path(self.directory.name) / "boot-clock"
+        subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
+            "-std=c99", "-O2", "-Wall", "-Wextra", "-Werror", "-fsanitize=address,undefined",
+            "-fno-sanitize-recover=all", str(root / "tests/boot_clock_test.c"), "-o", str(binary)],
+            check=True, timeout=30)
+        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("seven ordered reads", result.stdout)
+
+    def test_real_boot_clock_and_older_firmware(self):
+        fields = self.response("status")
+        expected = [0x10014, 0x1000C, 0x10008, 0x119A8, 0x119AC, 0x119A0, 0xFFFFFFFF]
+        self.assertEqual([fields[key] for key in diag.CLOCK_FIELDS], expected)
+        self.assertTrue(set(diag.CLOCK_FIELDS).isdisjoint(self.response("status", True, "no-clock")))
+        self.assertEqual(diag.parse_response("status", STATUS.encode())["issues"], [])
+        raw = STATUS + "".join(f"{key} 0x{value:08X}\n" for key, value in zip(diag.CLOCK_FIELDS, expected))
+        self.assertEqual(diag.parse_response("status", raw.encode())["issues"], [])
+        partial = raw.replace("boot_clock_119a4 0xFFFFFFFF\n", "")
+        self.assertIn("missing boot_clock_119a4", diag.parse_response("status", partial.encode())["issues"])
+        for invalid in ("-1", "0x100000000", "unknown"):
+            bad = raw.replace("boot_clock_119a4 0xFFFFFFFF", "boot_clock_119a4 " + invalid)
+            self.assertIn("invalid uint32 boot_clock_119a4", diag.parse_response("status", bad.encode())["issues"])
+
     def test_real_console_counters(self):
         for command, names in EXPECTED_COUNTERS.items():
             fields = self.response(command)

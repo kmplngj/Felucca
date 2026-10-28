@@ -42,6 +42,12 @@ recorded in the linked reports, rather than every current build or device.
   Physical FM-1 update/display/retry qualification remains pending; see
   [screen meanings and limits](usb-rescue.md#standalone-ram-loader-screen).
 
+- **Read-only boot clock evidence:** normal USB SERIAL diagnostics report seven
+  saved startup clock-register words without changing clock configuration.
+  The collector retains raw values and supports older firmware that omits them.
+  Real bootloader/reset-path readings and any correction decision remain pending;
+  see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.
