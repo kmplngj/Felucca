@@ -448,6 +448,23 @@ fixtures require incompatible signatures across the UI, settings and browser
 adapters to fail compilation. The UI fake supplies press edges only; this check
 does not add release simulation or qualify physical input timing.
 
+The `lcd_contract` unit runs `python3 tests/lcd_contract_test.py` after its
+`icon_streams` prerequisite generates the actual icon fixture's reference header.
+The real LCD driver and UI, browser and rescue fakes declare `lcd_fill_fn`; all
+14 blit adapter entries use `lcd_blit_fn`, preserving the const pixel-buffer
+type. Eleven non-rendering fixtures share `tests/host_lcd_blit_noop.h`; the real
+driver, UI framebuffer and browser retain their distinct implementations, giving
+four definition owners. The shared no-op reads no pixels and adds no output,
+synchronization, counters or DMA model. Default and CPU2-off builds are checked,
+including incompatible
+definitions that compile only after removing their typed declaration. The
+`lcd_power` unit retains its independent delayed-DMA controller runtime check.
+
+`firmware/hal/fm1_lcd_contract.h` preserves unsigned 32-bit coordinates,
+16-bit RGB565 fill colours and const RGB565 pixel buffers. The compile checks
+include the rescue fill types corrected by the earlier contract work. Delayed
+DMA, pixel output and physical LCD behavior remain separate checks.
+
 The native UI tests and their consumers share `tests/ui_harness.h`: the real
 firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
 blank-frame observers, power-on setup and panel/keyboard helpers. Define any

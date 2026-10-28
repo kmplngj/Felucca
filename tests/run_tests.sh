@@ -502,6 +502,11 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     unit icon_streams "" u_icon_streams
     UNIT_NEEDS=assets
 
+    u_lcd_contract() {
+        run "LCD contracts: actual fill/blit adapters, CPU2-off variants and incompatible signatures" python3 tests/lcd_contract_test.py
+    }
+    unit lcd_contract "icon_streams" u_lcd_contract
+
     u_replay() {
         run "timestamped interaction replay: PCM/LCD determinism and real emulator" python3 tests/replay_test.py NativeReplayTests
     }

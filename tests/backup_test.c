@@ -4,6 +4,7 @@
  * CRC before any write, stale runtime copies, USB resets and timeouts, malformed objects, older
  * project formats, settings values and user preset banks kept byte for byte; and (#321) the FM6 voice
  * bank (id 20) and the SLICE records (id 21): LIST 1, round trips, refusals, power cuts. */
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include "update_record_fixture.h"
 #include "host_nor.h"                              /* before the user sample slots' XIP mapping */
 #define SMP_USER_XIP(k) (nor + 0xA0000u + (k) * 0x14000u)
@@ -17,8 +18,7 @@ static void fm1_irq_on(void) {}
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) */
 static void lcd_wake_now(void) {}
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #define FELUCCA_FLASH 1
 #include "../firmware/src/gfx.c"
 #include "../firmware/src/panel.c"
