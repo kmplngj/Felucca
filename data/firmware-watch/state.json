@@ -14,8 +14,8 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 8540,
-    "known_remaining_recent": 1722,
+    "known_remaining_history": 8534,
+    "known_remaining_recent": 1710,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
@@ -125,12 +125,12 @@
           "total": 179
         },
         "recent": {
-          "remaining": 11,
-          "reviewed": 3,
+          "remaining": 10,
+          "reviewed": 4,
           "total": 14
         },
         "repository": "zednaked/jangada",
-        "terminal_pairs": 23
+        "terminal_pairs": 24
       },
       {
         "history": {
@@ -218,8 +218,8 @@
       },
       {
         "history": {
-          "remaining": 28,
-          "reviewed": 6,
+          "remaining": 27,
+          "reviewed": 7,
           "total": 34
         },
         "recent": {
@@ -228,12 +228,12 @@
           "total": 0
         },
         "repository": "sd88me/schwung-maze",
-        "terminal_pairs": 6
+        "terminal_pairs": 7
       },
       {
         "history": {
-          "remaining": 8,
-          "reviewed": 12,
+          "remaining": 7,
+          "reviewed": 13,
           "total": 20
         },
         "recent": {
@@ -242,7 +242,7 @@
           "total": 0
         },
         "repository": "charlesvestal/schwung-ducker",
-        "terminal_pairs": 12
+        "terminal_pairs": 13
       },
       {
         "history": {
@@ -293,12 +293,12 @@
           "total": 405
         },
         "recent": {
-          "remaining": 104,
-          "reviewed": 6,
+          "remaining": 103,
+          "reviewed": 7,
           "total": 110
         },
         "repository": "DeadActive/hortator",
-        "terminal_pairs": 12
+        "terminal_pairs": 13
       },
       {
         "history": {
@@ -316,8 +316,8 @@
       },
       {
         "history": {
-          "remaining": 39,
-          "reviewed": 6,
+          "remaining": 38,
+          "reviewed": 7,
           "total": 45
         },
         "recent": {
@@ -326,7 +326,7 @@
           "total": 0
         },
         "repository": "genkigenki/Makkuro37",
-        "terminal_pairs": 15
+        "terminal_pairs": 16
       },
       {
         "history": {
@@ -344,8 +344,8 @@
       },
       {
         "history": {
-          "remaining": 21,
-          "reviewed": 13,
+          "remaining": 20,
+          "reviewed": 14,
           "total": 34
         },
         "recent": {
@@ -354,7 +354,7 @@
           "total": 0
         },
         "repository": "genkigenki/fm1-to-smk37",
-        "terminal_pairs": 26
+        "terminal_pairs": 27
       },
       {
         "history": {
@@ -363,17 +363,17 @@
           "total": 8
         },
         "recent": {
-          "remaining": 3,
-          "reviewed": 4,
+          "remaining": 2,
+          "reviewed": 5,
           "total": 7
         },
         "repository": "oscillr/DUELL",
-        "terminal_pairs": 4
+        "terminal_pairs": 5
       },
       {
         "history": {
-          "remaining": 38,
-          "reviewed": 4,
+          "remaining": 37,
+          "reviewed": 5,
           "total": 42
         },
         "recent": {
@@ -382,7 +382,7 @@
           "total": 9
         },
         "repository": "hugelton/felucca-bsp",
-        "terminal_pairs": 12
+        "terminal_pairs": 13
       },
       {
         "history": {
@@ -391,12 +391,12 @@
           "total": 135
         },
         "recent": {
-          "remaining": 7,
-          "reviewed": 9,
+          "remaining": 5,
+          "reviewed": 11,
           "total": 16
         },
         "repository": "charlesvestal/fm1-base",
-        "terminal_pairs": 11
+        "terminal_pairs": 13
       },
       {
         "history": {
@@ -405,17 +405,17 @@
           "total": 2018
         },
         "recent": {
-          "remaining": 22,
-          "reviewed": 10,
+          "remaining": 21,
+          "reviewed": 11,
           "total": 32
         },
         "repository": "w0ts/optimist",
-        "terminal_pairs": 10
+        "terminal_pairs": 11
       },
       {
         "history": {
-          "remaining": 34,
-          "reviewed": 3,
+          "remaining": 33,
+          "reviewed": 4,
           "total": 37
         },
         "recent": {
@@ -424,7 +424,7 @@
           "total": 0
         },
         "repository": "jsmith13/fm_lab",
-        "terminal_pairs": 3
+        "terminal_pairs": 4
       },
       {
         "history": {
@@ -447,12 +447,12 @@
           "total": 49
         },
         "recent": {
-          "remaining": 9,
-          "reviewed": 4,
+          "remaining": 7,
+          "reviewed": 6,
           "total": 13
         },
         "repository": "isod89/clipper-fm1",
-        "terminal_pairs": 4
+        "terminal_pairs": 6
       },
       {
         "history": {
@@ -475,12 +475,12 @@
           "total": 73
         },
         "recent": {
-          "remaining": 1044,
-          "reviewed": 2,
+          "remaining": 1042,
+          "reviewed": 4,
           "total": 1046
         },
         "repository": "Rastapopolix/tessera",
-        "terminal_pairs": 2
+        "terminal_pairs": 4
       },
       {
         "history": {
@@ -489,12 +489,12 @@
           "total": 841
         },
         "recent": {
-          "remaining": 121,
-          "reviewed": 2,
+          "remaining": 120,
+          "reviewed": 3,
           "total": 123
         },
         "repository": "glvno/matryoshka",
-        "terminal_pairs": 2
+        "terminal_pairs": 3
       },
       {
         "history": {
@@ -503,16 +503,16 @@
           "total": 40
         },
         "recent": {
-          "remaining": 18,
-          "reviewed": 3,
+          "remaining": 17,
+          "reviewed": 4,
           "total": 21
         },
         "repository": "joakimeriksson/fm1-dock",
-        "terminal_pairs": 3
+        "terminal_pairs": 4
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 391
+    "terminal_pairs": 409
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -823,7 +823,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "b0cb5840a6345523dc1996f6e89f895ec49b345e",
       "observed_tips": {
-        "main": "440e62ce8a33d9bb285ab6bbca9a0fd50e459648"
+        "main": "d7b1b7c4099bba28854869ddb256b3d9f634cee8"
       },
       "pinned_recent_targets": {
         "main": "440e62ce8a33d9bb285ab6bbca9a0fd50e459648"
@@ -840,7 +840,7 @@
       "last_reviewed_sha": "3ad8542b68899b9772ba8d0b9c39aa155ba794bc",
       "observed_tips": {
         "main": "c14912ba911d4f4fefaa07120eb068a91d7ccb78",
-        "next": "9fdf7dc0a398fe292d8a72c2d513dbc8145c1579"
+        "next": "ee854ccb2826f2efd39dc45744b67a812c3cff8a"
       },
       "pinned_recent_targets": {
         "main": "16daf99ea797f2e4f6b5e40065942df3648d08b9",
@@ -858,7 +858,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "85d8fae7a288f66833bbce5269cf58e181f9bd5a",
       "observed_tips": {
-        "main": "6e236946952cd772379c2c06e3c909f0bf312006"
+        "main": "bd7f431bd7bfe6202d931b8245a821eaf711fa64"
       },
       "pinned_recent_targets": {
         "main": "722fe71dd0a1a272e23ce658d1ed64f384c6b6ea"
@@ -874,7 +874,7 @@
       "identity_verified": true,
       "last_reviewed_sha": "8fad1a15ff59d5c3ed0bfe2d7a9ae90962cf4d5e",
       "observed_tips": {
-        "main": "3c0f4365a183456ea767cf628ef405536eed5e27"
+        "main": "5eb24c1dc18261a85c193e8b28318944690e58fd"
       },
       "pinned_recent_targets": {
         "main": "4ec1ac829fd2bdf2c571ea215fb3d62477d01220"
@@ -1278,7 +1278,7 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "934e40d846d84e76e9c428d37b74bccb6192c823"
+        "main": "4587fda7eac415da41d0012a99a32dc6af600245"
       },
       "pinned_recent_targets": {
         "main": "93bee3fe9def08127dd5dff638df5bd57cebcc80"
@@ -1342,7 +1342,7 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "e69067211c4690f34e494b5b896e4585163dcc2b"
+        "main": "a160376c5ef61d6836ff570df925d12b5a66fc63"
       },
       "pinned_recent_targets": {
         "main": "e69067211c4690f34e494b5b896e4585163dcc2b"
@@ -1390,7 +1390,7 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "07a4045e7b5e95374196bfd63e36d8178984652a"
+        "main": "ec7d934d1a7b6a260d628ee4e5d526a6fb63a912"
       },
       "pinned_recent_targets": {
         "main": "07a4045e7b5e95374196bfd63e36d8178984652a"
@@ -1406,7 +1406,7 @@
       "identity_verified": true,
       "last_reviewed_sha": null,
       "observed_tips": {
-        "main": "3ead086893b0a0bc1cf139c1b1234b86461fda56"
+        "main": "e4c99bf37ea662557aad539bd7ca7f7a3c88010b"
       },
       "pinned_recent_targets": {
         "main": "3ead086893b0a0bc1cf139c1b1234b86461fda56"
@@ -1472,9 +1472,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "3f65bcdef4ff9b7ee37dc3d68bb0642a6dc49d44b9579f6f8690b9420e228583",
-  "round_robin_next_repository_index": 15,
-  "round_robin_processed_records": 398,
+  "round_robin_journal_prefix_sha256": "eebef48d4bfc7a86c8be97e8434d31491066f840a1ab3504f3332ebd32b32bed",
+  "round_robin_next_repository_index": 28,
+  "round_robin_processed_records": 416,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [
