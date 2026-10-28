@@ -34,6 +34,14 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Standalone RAM-loader status:** waiting and package validation, verified
+  application-sector progress, native completion/restart and host retry guidance
+  work without an intact application. Bounded RAM-owned scanlines contain missing
+  or slow LCD completion while retaining in-flight sources and servicing USB and
+  the watchdog. Package, protocol and protected-storage policy are unchanged.
+  Physical FM-1 update/display/retry qualification remains pending; see
+  [screen meanings and limits](usb-rescue.md#standalone-ram-loader-screen).
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.
