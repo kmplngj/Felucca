@@ -456,20 +456,32 @@ entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
 for its LCD-submission ordering assertions. Consumers include the harness directly;
 they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
-The backup, FM6-bank, user-preset and editor-derived tests share `tests/host_nor.h`,
-including their sanitizer builds. This existing NOR model only clears programmed bits, rejects
-256-byte page wrapping, and models sticky power cuts during programming or half an
-erase. Its program counter counts completed bytes; its erase counter excludes requests
-refused before work. Reads remain available for recovery after a cut. The user-preset
-fixture checks every payload/header byte-cut boundary, interrupted/refused erases
-and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. The editor fixture maps all three sample slots onto this
-NOR and splits HAL writes at page boundaries, including its 480-byte sample header.
-Its protocol requests cover payload/header cuts, refused/half erases, sticky faults,
-same-data retries and neighboring flash. Logical HAL-call counters remain separate
-from completed NOR bytes/erases. Robustness and sample/editor/project fuzz consumers
-retain the same sample-array view; `FELUCCA_FLASH=0` bank/settings branches stay disabled.
-Storage and persistence tests retain their different retry and operation-counting models.
+The backup, FM6-bank, user-preset, editor-derived, persistence/autosave, storage and
+SLICE tests share `tests/host_nor.h`, including their sanitizer builds. This NOR
+model only clears programmed bits, rejects 256-byte page wrapping and models
+sticky power cuts during programming or half an erase. Its program counter counts
+completed bytes; its erase counter excludes requests refused before work. Reads
+remain available for recovery after a cut.
+
+Narrow adapters retain each owner's logical I/O counters and deliberate non-sticky
+call/byte refusals separately from the shared completed-byte/actual-erase counters.
+Storage fault expectations follow the actual destination image: a fully blank
+sector skips erase, so a sticky power cut may be reported by programming instead.
+Storage exercises old-or-complete-new A/B recovery and untouched neighbors across
+all object/copy maps; persistence additionally checks runtime `up_put` RAM,
+generation and label rollback plus last-complete-bank and restored-power retries.
+The user-preset fixture retains its exhaustive payload/header cut matrix.
+
+The editor maps all three sample slots onto the NOR image and splits HAL writes
+at page boundaries, including its 480-byte sample header. Protocol requests cover
+payload/header cuts, refused/half erases, sticky faults, same-data retries and
+neighboring flash. Robustness and sample/editor/project fuzz consumers retain the
+same sample-array view; `FELUCCA_FLASH=0` bank/settings branches stay disabled.
+SLICE exercises record-byte cuts, interrupted/refused erases, bounded readback
+retries and acknowledged ineffective/corrupt writes through actual save/boot paths.
+Its records remain single-copy: an erase may lose the old table; recovery finds a
+complete valid record or no manual table, not an A/B rollback. These simulated
+faults do not establish physical flash or power-loss qualification.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set

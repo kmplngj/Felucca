@@ -28,35 +28,41 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #include "../firmware/src/menu_items.c"
 static void panel_setup(void) {}
 
-static uint8_t nor[0x100000], flash_ok = 1;
-static int erase_error, fail_after = -1;
+/* Retain this fixture's per-attempt counters and non-sticky per-call refusal
+ * policy; physical NOR bytes, page bounds and sticky cuts have one owner. */
+#define st_erase host_nor_erase
+#define st_prog host_nor_prog
+#define erases nor_erases
+#include "host_nor.h"
+#undef erases
+#undef st_prog
+#undef st_erase
+static uint8_t flash_ok = 1;
+static int fail_after = -1;
 static uint32_t programs, commits, as_programs, as_commits, as_mutations;
 static uint32_t erases, as_erases;               /* (as_erases: the autosave's two sectors, 0xE5000 / 0xE6000) */
-static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
 static int st_erase(uint32_t off)
 {
     erases++;
     as_erases += off >= 0xE5000u && off < 0xE7000u;
     as_mutations += off >= 0xE5000u && off < 0xE7000u;
-    if (erase_error) return -8;
-    memset(nor + off, 0xFF, 4096);
-    return 0;
+    return host_nor_erase(off);
 }
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
-    const uint8_t *s = src;
-    uint32_t i, autosave = off >= 0xE5000u && off < 0xE7000u;
+    int result;
+    uint32_t autosave = off >= 0xE5000u && off < 0xE7000u;
     programs++;
     as_programs += autosave;
     as_mutations += autosave;
     if (fail_after == 0) return -9;
     if (fail_after > 0) fail_after--;
-    for (i = 0; i < n; i++) nor[off + i] &= s[i];
-    if ((off & 0xFFFu) == 0u) {       /* successful commit-record program, including zero-length objects */
+    result = host_nor_prog(off, src, n);
+    if (!result && (off & 0xFFFu) == 0u) { /* completed commit record, including zero-length objects */
         commits++;
         as_commits += autosave;
     }
-    return 0;
+    return result;
 }
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
@@ -104,6 +110,9 @@ static void reset(void)
     persist_retry_ms = 0;
     flash_ok = 1;
     erase_error = 0;
+    dead = 0;
+    cut_bytes = cut_erase = -1;
+    nor_erases = progs = 0;
     fail_after = -1;
     up_gen = erases = programs = commits = 0;
     as_erases = as_programs = as_commits = as_mutations = 0;
@@ -594,6 +603,119 @@ static int durability_test(void)
     return bad;
 }
 
+static void preset_power_on(void)
+{
+    erase_error = dead = 0;
+    fail_after = -1;
+    cut_bytes = cut_erase = -1;
+    nor_erases = progs = 0;                       /* do not erase NOR or reset logical attempt counters */
+}
+
+static int preset_disk_is(uint32_t bank, const up_bank_t *expected)
+{
+    up_bank_t got;
+    return st_load(OBJ_UPRESET0 + bank, &got, sizeof got) == (int)sizeof got &&
+           !memcmp(&got, expected, sizeof got);
+}
+
+static int preset_outside_is(uint32_t base, const uint8_t *before)
+{
+    return !memcmp(nor, before, base) &&
+           !memcmp(nor + base + ST_SECTOR, before + base + ST_SECTOR, sizeof nor - base - ST_SECTOR);
+}
+
+/* Unlike the UP_HOST bank fixture, call the runtime owner: failed saves must
+ * roll back its full RAM bank, generation and loaded label as well as retain
+ * the last complete flash bank. Sample a few boundaries; storage/upreset own
+ * exhaustive byte-cut selection. Both old target copies are committed. */
+static int preset_runtime_nor_test(void)
+{
+    static uint8_t before[sizeof nor];
+    const uint32_t byte_cuts[] = {0, 1, 255, sizeof(up_bank_t), sizeof(up_bank_t) + 1u};
+    up_bank_t old[2], next;
+    up_rec_t record, changed;
+    uint32_t b, op, fault, k, base, gen, attempts, physical, bytes, trials = 0;
+    int bad = 0, ok;
+    for (b = 0; b < 2u; b++) {
+        reset();
+        memset(nor, 0x5A, sizeof nor);
+        memset(nor + st_sector(OBJ_UPRESET0, 0), 0xFF, 4u * ST_SECTOR);
+        memset(&record, 0, sizeof record);
+        record.used = UP_USED; record.ver = UP_VER; record.np = P_COUNT;
+        memcpy(record.name, "NEIGHBOR", 8);
+        for (k = 0; k < P_COUNT; k++) up_set_value(&record, k, param_desc_of(0, k)->def);
+        record.note[0] = 60;
+        ok = !up_put((1u - b) * UP_PER_BANK + 4u, &record);
+        memcpy(record.name, "OLD BANK", 8);
+        k = b * UP_PER_BANK + 3u;
+        ok &= !up_put(k, &record) && !up_put(k, &record);
+        memcpy(old, up_bank, sizeof old);
+        gen = up_gen;
+        base = st_sector(OBJ_UPRESET0 + b, 0);      /* A is older; the current committed copy is B */
+        ok &= preset_disk_is(b, &old[b]) && preset_disk_is(1u - b, &old[1u - b]);
+        bad += check("runtime NOR fixture: committed target copies and distinct neighbor", ok);
+        if (!ok) return bad;
+        memcpy(before, nor, sizeof nor);
+        changed = record;
+        memcpy(changed.name, "NEW BANK", 8);
+        up_set_value(&changed, P_LEVEL, 77);
+        for (op = 0; op < 2u; op++) {
+            next = old[b];
+            if (op) memset(&next.r[3], 0, sizeof next.r[3]);
+            else next.r[3] = changed;
+            ok = 1;
+            for (fault = 0; fault < 7u; fault++) {
+                memcpy(nor, before, sizeof nor);
+                memcpy(up_bank, old, sizeof old);
+                up_gen = gen;
+                trk[0].user = (uint8_t)(k + 1u);
+                preset_power_on();
+                attempts = erases;
+                if (fault < 5u) cut_bytes = (long)byte_cuts[fault];
+                else if (fault == 5u) cut_erase = 0;
+                else erase_error = 1;
+                ok &= up_put(k, op ? 0 : &changed) == 2 && erases == attempts + 1u &&
+                      nor_erases == (fault == 6u ? 0u : 1u) &&
+                      progs == (fault < 5u ? byte_cuts[fault] : 0u) && dead == (fault != 6u) &&
+                      up_gen == gen && trk[0].user == k + 1u && !memcmp(up_bank, old, sizeof old) &&
+                      preset_disk_is(b, &old[b]) && preset_disk_is(1u - b, &old[1u - b]) &&
+                      preset_outside_is(base, before);
+                if (fault == 5u) {
+                    for (uint32_t i = 0; i < ST_SECTOR / 2u; i++) ok &= nor[base + i] == 0xFFu;
+                    ok &= !memcmp(nor + base + ST_SECTOR / 2u, before + base + ST_SECTOR / 2u, ST_SECTOR / 2u);
+                } else if (fault == 6u) {
+                    ok &= !memcmp(nor, before, sizeof nor);
+                }
+                physical = nor_erases; bytes = progs;
+                ok &= up_put(k, op ? 0 : &changed) == 2 && nor_erases == physical && progs == bytes &&
+                      up_gen == gen && trk[0].user == k + 1u && !memcmp(up_bank, old, sizeof old) &&
+                      preset_disk_is(b, &old[b]) && preset_outside_is(base, before);
+                preset_power_on();
+                attempts = erases;
+                ok &= !up_put(k, op ? 0 : &changed) && up_gen == gen + 1u &&
+                      trk[0].user == (op ? 0u : k + 1u) &&
+                      !memcmp(&up_bank[b], &next, sizeof next) &&
+                      !memcmp(&up_bank[1u - b], &old[1u - b], sizeof next) &&
+                      preset_disk_is(b, &next) && preset_disk_is(1u - b, &old[1u - b]) &&
+                      progs == sizeof next + sizeof(st_hdr_t) && nor_erases <= 1u &&
+                      erases - attempts == nor_erases && preset_outside_is(base, before);
+                /* A blank destination may avoid an erase (#197); full retry
+                 * completion and unchanged neighbors are the runtime contract. */
+                trials++;
+                if (!ok) {
+                    printf("runtime preset NOR failed: bank %u op %u fault %u\n", b, op, fault);
+                    break;
+                }
+            }
+            bad += check(op ? "runtime preset erase: rollback, sticky/refused faults, retry and neighbors" :
+                              "runtime preset update: rollback, sticky/refused faults, retry and neighbors", ok);
+        }
+    }
+    printf("runtime preset NOR: %u selected update/erase faults across both banks\n", trials);
+    reset();
+    return bad;
+}
+
 int main(void)
 {
     int bad = 0, ok;
@@ -897,6 +1019,7 @@ int main(void)
     bad += check("PLAY consumed before the settings snapshot defers the write",
                   irq_races == 3u && song.playing && !transport_req && persist_pending && erases == before && programs == before_programs);
     bad += durability_test();
+    bad += preset_runtime_nor_test();
     bad += mig_test();
     bad += autosave_test();
     printf("%s\n", bad ? "PERSISTENCE TEST FAILED" : "persistence test passed");
