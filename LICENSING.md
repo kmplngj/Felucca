@@ -83,6 +83,7 @@ release/site packaging includes every `LICENSES/*.txt` notice with the package.
 
 | What | Licence | Where |
 | --- | --- | --- |
+| MIDI test music: Empacotatron by Fupi; Elytra and Xenon Phoenix (MIDI versions) by continuum.mid | CC0 1.0; original MIDI files retain CC0 independently of test code | `tests/fixtures/midi/`, provenance and checksums in `manifest.json`, `LICENSES/CC0-1.0.txt` |
 | External fm1-emu trace patch after Joakim Eriksson (2026); optional externally built CLI also includes its GPL-3.0-only USB source | MIT patch; combined CLI includes MIT and GPL-3.0-only | `tools/emulator_trace/retired-trace.patch`, `tools/emulator_trace/LICENSE-MIT-fm1-emu.txt`; source/build boundary in `docs/emulator-trace-prerequisite.md` |
 | Inter Tight font by The Inter Project Authors: documentation panel-diagram outlines only, outside the firmware asset closure; the font declares no Reserved Font Name | SIL OFL 1.1 | `docs/manual/fonts/InterTight[wght].ttf`, `docs/manual/fonts/OFL.txt`, `LICENSES/OFL-InterTight.txt` |
 | M8Stealth57 / M8Stealth89 by Trash80, with embedded ancestry credits including Matthias Tellen: native UI text and keycap/badge legend ink, rasterised and packed at build time; ten additional bitmap marks are local adaptations | CC BY-SA 3.0; font data and adaptations retain these terms | `assets/fonts/m8stealth/README.md`, `LICENSES/CC-BY-SA-3.0-M8Stealth.txt` |
