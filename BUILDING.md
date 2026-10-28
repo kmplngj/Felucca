@@ -795,7 +795,22 @@ adapters and instruction counts remain follow-ups. The full host runner includes
 For the optional external emulator trace prerequisite, use the
 [pinned source/build and executable controls](docs/emulator-trace-prerequisite.md).
 It needs a separate Rust toolchain; its portable refusal tests run in the normal
-host suite without Rust. Native hotspot attribution remains a follow-up.
+host suite without Rust.
+
+With an existing verified native build and corrected emulator receipt, the
+[native replay evidence guide](docs/native-emulator-replay.md) covers repeated
+held-key and modeled-UART captures, silent controls and bounded trace/PCM checks.
+It builds no firmware and makes no device-timing or hotspot claim.
+
+The [native hotspot guide](docs/native-hotspots.md) attributes those retained
+windows to verified target function ranges and emulator instruction classes.
+It rechecks saved evidence without executing firmware; counts apply only to the
+declared windows and do not establish physical cycles or deadlines.
+
+The [native audio-window guide](docs/native-audio-window.md) adds a source-qualified
+held-key recipe: seven bounded emulator children discover and verify an audio
+renderer window, repeat traces/PCM and compare matched silent controls and the
+original replay basis. It builds no firmware and makes no physical timing claim.
 
 ### Emulator partition regression
 
