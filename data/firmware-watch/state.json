@@ -14,16 +14,16 @@
       }
     ],
     "complete_inventory": false,
-    "known_remaining_history": 8531,
-    "known_remaining_recent": 1709,
+    "known_remaining_history": 8529,
+    "known_remaining_recent": 1705,
     "pending_sources": [],
     "remaining_history": null,
     "remaining_recent": null,
     "repositories": [
       {
         "history": {
-          "remaining": 26,
-          "reviewed": 12,
+          "remaining": 25,
+          "reviewed": 13,
           "total": 38
         },
         "recent": {
@@ -32,7 +32,7 @@
           "total": 5
         },
         "repository": "hugelton/Felucca",
-        "terminal_pairs": 24
+        "terminal_pairs": 25
       },
       {
         "history": {
@@ -41,12 +41,12 @@
           "total": 296
         },
         "recent": {
-          "remaining": 21,
-          "reviewed": 17,
+          "remaining": 20,
+          "reviewed": 18,
           "total": 38
         },
         "repository": "keremimo/melodee",
-        "terminal_pairs": 29
+        "terminal_pairs": 30
       },
       {
         "history": {
@@ -293,12 +293,12 @@
           "total": 405
         },
         "recent": {
-          "remaining": 103,
-          "reviewed": 7,
+          "remaining": 102,
+          "reviewed": 8,
           "total": 110
         },
         "repository": "DeadActive/hortator",
-        "terminal_pairs": 13
+        "terminal_pairs": 14
       },
       {
         "history": {
@@ -307,12 +307,12 @@
           "total": 39
         },
         "recent": {
-          "remaining": 271,
-          "reviewed": 7,
+          "remaining": 269,
+          "reviewed": 9,
           "total": 278
         },
         "repository": "Wulgaren/Araminta",
-        "terminal_pairs": 17
+        "terminal_pairs": 19
       },
       {
         "history": {
@@ -456,8 +456,8 @@
       },
       {
         "history": {
-          "remaining": 259,
-          "reviewed": 2,
+          "remaining": 258,
+          "reviewed": 3,
           "total": 261
         },
         "recent": {
@@ -466,7 +466,7 @@
           "total": 0
         },
         "repository": "okumurari2/maku",
-        "terminal_pairs": 4
+        "terminal_pairs": 5
       },
       {
         "history": {
@@ -512,7 +512,7 @@
       }
     ],
     "schema_version": 1,
-    "terminal_pairs": 421
+    "terminal_pairs": 427
   },
   "history_policy": "Review every commit reachable from each initial snapshot; snapshot comparisons are not per-commit coverage.",
   "last_checked_at": "2026-10-13T15:52:45.942502+00:00",
@@ -1490,9 +1490,9 @@
     }
   ],
   "reviewed_commit_count": 108,
-  "round_robin_journal_prefix_sha256": "d5ff8aa0c9fedabf7aefd0f812aaba5ec0160c12bc98de96fba602541a278f70",
-  "round_robin_next_repository_index": 7,
-  "round_robin_processed_records": 428,
+  "round_robin_journal_prefix_sha256": "3b16c8cbd36537641b795ddf24393a0ddca2e73fe2fae52bbca9c16a5a710245",
+  "round_robin_next_repository_index": 21,
+  "round_robin_processed_records": 434,
   "schema_version": 1,
   "setup_felucca_revision": "89fc57c7d7c905a21132470ae475ab534fb80c9f",
   "source_blockers": [

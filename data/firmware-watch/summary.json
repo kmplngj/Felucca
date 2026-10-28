@@ -10,16 +10,16 @@
     }
   ],
   "complete_inventory": false,
-  "known_remaining_history": 8531,
-  "known_remaining_recent": 1709,
+  "known_remaining_history": 8529,
+  "known_remaining_recent": 1705,
   "pending_sources": [],
   "remaining_history": null,
   "remaining_recent": null,
   "repositories": [
     {
       "history": {
-        "remaining": 26,
-        "reviewed": 12,
+        "remaining": 25,
+        "reviewed": 13,
         "total": 38
       },
       "recent": {
@@ -28,7 +28,7 @@
         "total": 5
       },
       "repository": "hugelton/Felucca",
-      "terminal_pairs": 24
+      "terminal_pairs": 25
     },
     {
       "history": {
@@ -37,12 +37,12 @@
         "total": 296
       },
       "recent": {
-        "remaining": 21,
-        "reviewed": 17,
+        "remaining": 20,
+        "reviewed": 18,
         "total": 38
       },
       "repository": "keremimo/melodee",
-      "terminal_pairs": 29
+      "terminal_pairs": 30
     },
     {
       "history": {
@@ -289,12 +289,12 @@
         "total": 405
       },
       "recent": {
-        "remaining": 103,
-        "reviewed": 7,
+        "remaining": 102,
+        "reviewed": 8,
         "total": 110
       },
       "repository": "DeadActive/hortator",
-      "terminal_pairs": 13
+      "terminal_pairs": 14
     },
     {
       "history": {
@@ -303,12 +303,12 @@
         "total": 39
       },
       "recent": {
-        "remaining": 271,
-        "reviewed": 7,
+        "remaining": 269,
+        "reviewed": 9,
         "total": 278
       },
       "repository": "Wulgaren/Araminta",
-      "terminal_pairs": 17
+      "terminal_pairs": 19
     },
     {
       "history": {
@@ -452,8 +452,8 @@
     },
     {
       "history": {
-        "remaining": 259,
-        "reviewed": 2,
+        "remaining": 258,
+        "reviewed": 3,
         "total": 261
       },
       "recent": {
@@ -462,7 +462,7 @@
         "total": 0
       },
       "repository": "okumurari2/maku",
-      "terminal_pairs": 4
+      "terminal_pairs": 5
     },
     {
       "history": {
@@ -508,5 +508,5 @@
     }
   ],
   "schema_version": 1,
-  "terminal_pairs": 421
+  "terminal_pairs": 427
 }
