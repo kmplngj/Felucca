@@ -43,7 +43,8 @@ SEMANTICS = {
                "observed press/note samples; otherwise UNMEASURED.",
     "snapshots": "Commands and fields are read sequentially, not an atomic device snapshot.",
     "boot_clock": "Optional seven raw clock words captured once at this boot, before normal initialization; "
-                  "not live clock readings or measured MHz. Absent unless built with FELUCCA_BOOT_CLOCK=1 (default off), and on older/CDC-disabled firmware.",
+                  "not live clock readings or measured MHz. Current builds report them only with FELUCCA_BOOT_CLOCK=1 "
+                  "(default off); earlier CDC builds after #648 reported them by default. Absent on older/CDC-disabled firmware.",
     "uac_pkts": "Rate-epoch-local packet count; delta requires unchanged 44100/48000 Hz and unchanged "
                 "uac_rate_sets. A changed setter count may hide a rate reset, even at equal endpoint rates; "
                 "same-rate requests are conservatively rejected. Missing/unsupported markers leave delta unavailable.",
