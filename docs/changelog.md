@@ -376,14 +376,15 @@ recorded in the linked reports, rather than every current build or device.
 
 - Storage skips a redundant erase only for a fresh copy: neither A nor B holds a
   commit record, no save of the object was tried since boot, and a complete
-  destination-sector check reads blank. Every other destination, including any retry
-  after a failed or interrupted save, is erased as before, because a sector that
-  reads blank after an interrupted erase can still hold cells with too little margin.
+  destination-sector check reads blank. Every other destination, including any
+  same-boot retry after a failed or interrupted save, is erased as before, because a
+  sector that reads blank after an interrupted erase can still hold cells with too
+  little margin. A first erase or program cut by power loss that leaves the copy
+  reading blank cannot be told apart from a fresh copy after reboot and may still skip.
   Read errors stop the save before writes, and native commit/readback checks remain.
   [Measured host I/O counts and the interrupted-erase caveat](flash-capacity.md#blank-destination-checks-197-narrowed-in-721)
   distinguish extra scan reads from avoided erase calls. Physical timing
-  qualification remains pending; retention after an interrupted erase is not relied
-  on. No proactive erase or format change.
+  and retention qualification remain pending. No proactive erase or format change.
 
 - Native icons share identical complete 12 px compressed streams while preserving
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
