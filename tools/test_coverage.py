@@ -21,7 +21,7 @@ REQUIRED_OUTPUTS = {'build/felucca.dis': None, 'build/emu/felucca.wasm': None,
                     'build/host/asan/fuzz_ed': 'asan_fuzz_ed', 'build/host/phys_ref': 'phys_ref',
                     'build/host/regress': 'regression', 'build/host/regress_os': 'regression'}
 PRODUCERS = {'tests/target_budget.py': {'target-budget'},
-             'tests/install_test.py': {'js-synthetic', 'built-package-parity', 'official-v15'},
+             'tests/install_test.py': {'js-synthetic', 'built-package-parity', 'official-v15', 'official-v16'},
              'tests/fx_rest_test.py': {'fx-rest'},
              'tests/chorus_depth_test.py': {'chorus-native', 'chorus-sanitizer'},
              'tests/send_gain_test.py': {'sends-native', 'sends-sanitizer'},
@@ -519,7 +519,7 @@ def _verify(path, run_id, root=ROOT, shard=False):
                             name + ': missing/duplicate/unknown child capability')
                     for outcome in producer['outcomes']:
                         require((outcome['status'] == 'passed' and outcome['reason'] is None) or
-                                (outcome['name'] == 'official-v15' and outcome['status'] == 'skipped' and
+                                (outcome['name'] in ('official-v15', 'official-v16') and outcome['status'] == 'skipped' and
                                  outcome['reason'] == 'proprietary-fixture-absent') or
                                 (outcome['name'] == 'macro-webapp-parser' and outcome['status'] == 'not_applicable' and
                                  outcome['reason'] == 'not-requested' and

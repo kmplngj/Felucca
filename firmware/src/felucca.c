@@ -22,6 +22,12 @@
 #ifndef FELUCCA_SCREEN_CAPTURE
 #define FELUCCA_SCREEN_CAPTURE 0 /* opt-in stopped/static LCD diagnostic capture (#562) */
 #endif
+#ifndef FELUCCA_RENDER_STAGE
+#define FELUCCA_RENDER_STAGE 0 /* development-only raw TIMER4 mix-stage observer (#94) */
+#endif
+#if FELUCCA_RENDER_STAGE != 0 && FELUCCA_RENDER_STAGE != 1
+#error "FELUCCA_RENDER_STAGE must be 0 or 1"
+#endif
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1            /* USB audio input: the master output, 16-bit stereo 44.1 kHz (usb.c) */
 #endif
@@ -58,6 +64,9 @@
 #include <stdint.h>
 #include "fm1_time.h"
 #include "fm1_sys.h"
+#if FELUCCA_CDC
+#include "fm1_clock.h"
+#endif
 #include "fm1_irq.h"
 #include "fm1_guard.h"
 #if FELUCCA_CPU2

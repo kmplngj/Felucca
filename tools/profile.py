@@ -32,7 +32,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 
@@ -105,17 +105,57 @@ def validate_identities(catalog, reference):
 def resolve(catalog, profile, reference):
     if catalog['schema_version'] != 1 or profile['schema_version'] != 1:
         raise ValueError('unsupported profile schema')
-    ids = unique([e['id'] for e in catalog['engines']], 'engine IDs in registry')
-    if any(type(i) is not int or not 0 <= i < ENGINE_ID_LIMIT for i in ids):
+    raw_ids = [e['id'] for e in catalog['engines']]
+    if any(type(i) is not int or not 0 <= i < ENGINE_ID_LIMIT for i in raw_ids):
         raise ValueError('engine IDs must be in stable range 0..63')
+    ids = unique(raw_ids, 'engine IDs in registry')
+    if not ids:
+        raise ValueError('empty engine registry')
     if ids != set(range(max(ids) + 1)):
         raise ValueError('missing reserved stable slot in registry')
     validate_identities(catalog, reference)
+    collections = catalog['collections']
+    # source_pins/source_archive currently integrate only firmware and MIT. The
+    # GPL owner is understood for metadata fixtures, never enabled by metadata.
+    supported = {'firmware': '.', 'portable-mit': 'firmware/engines', 'portable-gpl': 'firmware/engines-gpl'}
+    for owner, collection in collections.items():
+        for facet in ('path', 'repository', 'license', 'licenses', 'requires'):
+            if facet not in collection:
+                raise ValueError(f'collection {owner} missing metadata: {facet}')
+        if owner not in supported or collection['path'] != supported[owner]:
+            raise ValueError(f'unsupported collection owner/path: {owner}')
+        if any(dep not in collections for dep in collection['requires']):
+            raise ValueError(f'collection {owner} unknown dependency')
+    visiting_collections, checked_collections = set(), set()
+    def check_collection(owner):
+        if owner in visiting_collections:
+            raise ValueError(f'collection dependency cycle at {owner}')
+        if owner not in checked_collections:
+            visiting_collections.add(owner)
+            for dep in collections[owner]['requires']:
+                check_collection(dep)
+            visiting_collections.remove(owner)
+            checked_collections.add(owner)
+    for owner in collections:
+        check_collection(owner)
     unique([e['name'] for e in catalog['engines']], 'engine names')
     for e in catalog['engines']:
         for facet in ('tag', 'icon', 'category', 'preset_categories', 'cc', 'order', 'union_control', 'source', 'symbol', 'render', 'budget_functions', 'tests', 'assets', 'requires'):
             if facet not in e or e[facet] is None:
                 raise ValueError(f"engine {e['id']} missing metadata: {facet}")
+        if e.get('owner') not in collections:
+            raise ValueError(f"engine {e['id']} unknown collection owner")
+        source = e['source']
+        if not isinstance(source, str):
+            raise ValueError(f"engine {e['id']} invalid source path")
+        path = PurePosixPath(source)
+        if (not path.parts or path.is_absolute() or path.as_posix() != source
+                or '..' in path.parts or '\\' in source or any(ord(c) < 32 for c in source)):
+            raise ValueError(f"engine {e['id']} invalid source path")
+        if (e['owner'] != 'firmware' and not source.startswith(collections[e['owner']]['path'] + '/')
+                or e['owner'] == 'firmware' and any(source.startswith(prefix + '/')
+                    for owner, prefix in supported.items() if owner != 'firmware')):
+            raise ValueError(f"engine {e['id']} source differs from collection owner")
         if not e['tag'] or len(e['tag']) > 4 or not 0 <= e['category'] < 9 or not 0 <= e['cc'] <= 255:
             raise ValueError(f"engine {e['id']} invalid identity metadata")
         if type(e['union_control']) is not bool:
@@ -123,12 +163,18 @@ def resolve(catalog, profile, reference):
         if any(letter not in 'BLPUKDFO' for letter in e['preset_categories']):
             raise ValueError(f"engine {e['id']} invalid category letters")
     unique([e['order'] for e in catalog['engines']], 'display orders')
-    selected = unique(profile['engines'], 'selected engine IDs')
-    excluded = unique(profile.get('exclude', []), 'excluded engine IDs')
+    raw_selected, raw_excluded = profile['engines'], profile.get('exclude', [])
+    if any(type(i) is not int for i in raw_selected + raw_excluded):
+        raise ValueError('selected and excluded engine IDs must be integers')
+    selected = unique(raw_selected, 'selected engine IDs')
+    excluded = unique(raw_excluded, 'excluded engine IDs')
     if (selected | excluded) - ids:
         raise ValueError(f'unknown engine IDs: {sorted((selected | excluded) - ids)}')
     if selected & excluded:
         raise ValueError('dependency conflict: selected engine explicitly excluded')
+    statuses = {slot['id']: slot['status'] for slot in reference['slots']}
+    if any(statuses[i] != 'active' for i in selected):
+        raise ValueError('profile cannot select retired engine identity; use the existing FELUCCA_FM4 developer flag')
     if not set(catalog['defaults']) <= selected:
         raise ValueError('missing boot default engine')
     providers = {p['id']: p for p in catalog['providers']}
@@ -154,6 +200,10 @@ def resolve(catalog, profile, reference):
         visiting.remove(name)
         done.add(name)
     engines = [e for e in catalog['engines'] if e['id'] in selected]
+    owners = {e['owner'] for e in engines}
+    for owner in owners:
+        if not set(collections[owner]['requires']) <= owners:
+            raise ValueError(f'dependency conflict: collection {owner} requires another collection')
     for root in sorted(roots):
         visit(root)
     for e in engines:
@@ -196,6 +246,49 @@ def condition(e, *, honor_omit=True):
     return f"FELUCCA_PROFILE_ENGINE_{e['id']}{extra}{omit}"
 
 
+def portable_api(root):
+    """Read the existing C contract, without maintaining another API version."""
+    header, host_header = 'firmware/engines/src/felucca_engine.h', 'firmware/src/core.h'
+    def revision(path, macro):
+        match = re.search(r'^#define\s+' + re.escape(macro) + r'\s+(\d+)[uU]?\s*$',
+                          (root / path).read_text(), re.MULTILINE)
+        return int(match[1]) if match else None
+    required = revision(host_header, 'FELUCCA_ENGINE_API_REQUIRED')
+    actual = revision(header, 'FELUCCA_ENGINE_API_VERSION')
+    if required is None or actual != required:
+        raise ValueError(f'incompatible portable API revision: firmware requires {required}, collection provides {actual}')
+    return dict(required=required, actual=actual, header=header, host_header=host_header)
+
+
+def collection_provenance(catalog, engines, providers, pins, hashes, api, licenses):
+    """Describe consumed collections using the existing source pin authority."""
+    records = {}
+    for owner in sorted({e['owner'] for e in engines}):
+        collection = catalog['collections'][owner]
+        dependencies = set()
+        by_provider = {p['id']: p for p in providers}
+        def visit(name):
+            if name not in dependencies:
+                dependencies.add(name)
+                for dep in by_provider[name]['requires']:
+                    visit(dep)
+        owned = [e for e in engines if e['owner'] == owner]
+        for engine in owned:
+            for name in engine['requires']:
+                visit(name)
+        def owns(path):
+            portable = path.startswith('firmware/engines/')
+            return portable if owner == 'portable-mit' else not portable
+        records[owner] = dict(path=collection['path'], repository=collection['repository'],
+                             revision=pins['firmware_revision'] if owner == 'firmware' else pins['engines_gitlink'],
+                             api=api if owner == 'portable-mit' else None,
+                             license=collection['license'], licenses=[p for p in licenses if owns(p)],
+                             requires=collection['requires'], engine_keys=[e['key'] for e in owned],
+                             dependencies=sorted(dependencies),
+                             input_sha256={p: digest for p, digest in hashes.items() if owns(p)})
+    return records
+
+
 def validate_selection(root, name):
     if not name or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in name):
         raise ValueError('invalid profile name')
@@ -221,8 +314,16 @@ def generated(root, name, font_variant=None, *, feature_flags=None):
         selected.discard(13)
     all_engines = sorted(catalog['engines'], key=lambda e: e['id'])
     engines = [e for e in all_engines if e['id'] in selected]
+    if any(e['owner'] == 'portable-gpl' for e in engines):
+        raise ValueError('portable-gpl collection is not integrated; checkout/build support belongs to issue #360')
     icons = read_json(root / 'assets/icons.json')['names']
-    inputs = ['profiles/catalog.json', IDENTITY_REFERENCE, f'profiles/{name}.json', 'assets/icons.json', 'tools/profile.py']
+    licenses = sorted(set([l for p in providers for l in p['licenses']] +
+                          [l for owner in {e['owner'] for e in engines} for l in catalog['collections'][owner]['licenses']] +
+                          ['LICENSING.md', 'assets/samples-cc0/ATTRIBUTION.txt'] +
+                          [str(p.relative_to(root)) for p in (root/'LICENSES').glob('*.txt')]))
+    api = portable_api(root)
+    inputs = ['profiles/catalog.json', IDENTITY_REFERENCE, f'profiles/{name}.json', 'assets/icons.json', 'tools/profile.py',
+              api['header'], api['host_header']] + licenses
     inputs += [e['source'] for e in engines]
     inputs += [i for p in providers for i in p['generator_inputs']]
     for asset in catalog['shared_assets']:
@@ -233,11 +334,13 @@ def generated(root, name, font_variant=None, *, feature_flags=None):
     hashes = {p: hashlib.sha256((root / p).read_bytes()).hexdigest() for p in sorted(set(inputs))}
     pins = source_pins(root)
     pins['engines_upstream_revision'] = catalog['engines_upstream_revision']
+    collections = collection_provenance(catalog, engines, providers, pins, hashes, api, licenses)
     font_variant = font_variant if font_variant is not None else os.environ.get('FELUCCA_FONT', 'm8stealth')
     if font_variant != 'm8stealth':
         raise ValueError('FELUCCA_FONT supports m8stealth only; Tamzen and Inter Tight firmware fonts are retired')
     resolved = dict(schema_version=1, profile=name, asset_variant=font_variant, standard_base=catalog['standard_base'],
                     source_pins=pins, engine_ids=sorted(selected), portable_engine_ids=[e['id'] for e in engines if e['owner']=='portable-mit'],
+                    profile_engine_ids=sorted(profile['engines']), collections=collections, provider_dependencies=providers,
                     firmware_native_engine_ids=[e['id'] for e in engines if e['owner']=='firmware'],
                     includes=[e['source'] for e in engines], providers=[p['id'] for p in providers],
                     defaults=catalog['defaults'], engine_budget_functions=sorted(set(f for e in engines for f in e['budget_functions'])),
@@ -245,7 +348,7 @@ def generated(root, name, font_variant=None, *, feature_flags=None):
                     assets=sorted(set(catalog['shared_assets'] + [a for e in engines for a in e['assets']])),
                     generator_inputs=sorted(set(i for p in providers for i in p['generator_inputs'])),
                     tests=sorted(set(catalog['shared_tests'] + [t for e in engines for t in e['tests']] + [t for p in providers for t in p.get('tests',[])])),
-                    licenses=sorted(set([l for p in providers for l in p['licenses']] + ['LICENSING.md', 'assets/samples-cc0/ATTRIBUTION.txt'] + [str(p.relative_to(root)) for p in (root/'LICENSES').glob('*.txt')])), input_sha256=hashes)
+                    licenses=licenses, input_sha256=hashes)
     slots = {s['id']: s for s in read_json(root / IDENTITY_REFERENCE)['slots']}
     resolved['engine_identity_reference'] = {'path': IDENTITY_REFERENCE, 'sha256': hashes[IDENTITY_REFERENCE]}
     resolved['engine_identities'] = [dict(id=e['id'], key=e['key'], status=slots[e['id']]['status'],
@@ -253,6 +356,8 @@ def generated(root, name, font_variant=None, *, feature_flags=None):
     # Firmware HEAD is provenance, not a C selection input; commits do not force identical code to rebuild.
     stamp_inputs = dict(resolved)
     stamp_inputs['source_pins'] = {k:v for k,v in pins.items() if k!='firmware_revision'}
+    stamp_inputs['collections'] = {owner: {k: v for k, v in record.items() if not (owner == 'firmware' and k == 'revision')}
+                                   for owner, record in collections.items()}
     stamp = hashlib.sha256(json.dumps(stamp_inputs,sort_keys=True).encode()).hexdigest()
     resolved['selection_sha256'] = stamp
     banner = '/* generated by tools/profile.py; GPL-3.0-only; do not edit */\n'
@@ -326,13 +431,17 @@ def contract(root):
             'validation': {
                 'authority': 'tools/profile.py resolve, validate_selection, generated and source_pins',
                 'engine_id_min': 0, 'engine_id_max': ENGINE_ID_LIMIT - 1,
-                'stable_slots_must_be_contiguous': True, 'retired_engine_ids': [1],
+                'stable_slots_must_be_contiguous': True,
+                'retired_engine_ids': [s['id'] for s in read_json(root / IDENTITY_REFERENCE)['slots'] if s['status'] == 'retired'],
+                'profiles_may_select_retired_engines': False,
                 'engine_keys_must_match_reviewed_reference': IDENTITY_REFERENCE,
                 'boot_default_engine_ids_required': catalog['defaults'],
                 'provider_dependency_cycles_allowed': False,
                 'explicit_exclusions_must_not_conflict_with_selection_or_dependencies': True,
                 'provider_required_engines_must_be_selected': True,
                 'engine_checkout_must_match_exact_gitlink': True,
+                'source_paths_must_match_collection_owner': True,
+                'portable_api_must_match_firmware_requirement': True,
                 'developer_boolean_flags': {'FELUCCA_FM4': ['0', '1'], 'FELUCCA_SLICE': ['0', '1']},
                 'font_variants': ['m8stealth']},
             'supported_profiles': recipes,

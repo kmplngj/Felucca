@@ -26,14 +26,23 @@
 static void host_write(uint32_t r, uint32_t v);
 static void host_read(uint32_t r);
 static uint32_t host_data(void);
+static uint32_t host_on(void);
+static uint32_t host_done(void);
+static uint32_t host_sof(void);
+static void host_reset(void);
+static void host_attach(void *p);
+static void host_off(void);
+static void fm1_delay_ms(uint32_t ms);
 static void host_buf(uint32_t ep, void *p, int tx);
 static void host_send(uint32_t ep, void *p, uint32_t n);
 static void host_enable(uint32_t mask);
-static void fm1_delay_ms(uint32_t ms) { (void)ms; }
-#define fm1_usb_sie_on() 1u
+#define fm1_usb_reset() host_reset()
+#define fm1_usb_attach(p) host_attach(p)
+#define fm1_usb_off() host_off()
+#define fm1_usb_sie_on() host_on()
 #define fm1_usb_sie_wr_start(r, v) host_write(r, v)
 #define fm1_usb_sie_rd_start(r) host_read(r)
-#define fm1_usb_sie_done() 1u
+#define fm1_usb_sie_done() host_done()
 #define fm1_usb_sie_data() host_data()
 #define fm1_usb_ep0_buf(p) host_buf(0, p, 0)
 #define fm1_usb_ep_txbuf(ep, p) host_buf(ep, p, 1)
@@ -44,13 +53,16 @@ static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #define fm1_usb_ep4_send(p, n) host_send(4, p, n)
 #define fm1_usb_ep_enable(mask) host_enable(mask)
 #define fm1_usb_rx_sync() ((void)0)
-#define fm1_usb_sof_take() 1u
+#define fm1_usb_sof_take() host_sof()
 #include "../firmware/src/usb.c"
 
 #define LOG_N 65536u
 #define PACKETS 512u
 static struct {
     uint8_t common[16], ep[5][24], selected, data;
+    uint32_t on, sof_each_poll, starts, checks, data_reads, delay, missing;
+    uint32_t pending_r, pending_v, pending_read, completed, polls;
+    uint32_t resets, attaches, offs, delay_calls, delay_ms;
     void *rx[5], *tx[5];
     uint8_t staged[5][196];
     uint32_t staged_n[5], prepared[5], enabled, operations, max_operations;
@@ -79,10 +91,9 @@ static void host_send(uint32_t ep, void *p, uint32_t n)
     host.sends[ep]++;
     host.touched |= 1u << ep;
 }
-static void host_write(uint32_t r, uint32_t v)
+static void host_apply_write(uint32_t r, uint32_t v)
 {
     uint32_t ep = host.selected;
-    CHECK(r < 24u && ++host.operations <= 128u);
     if (r == S_INDEX) { CHECK(v < 5u); host.selected = (uint8_t)v; return; }
     if (r < 16u) { host.common_touched |= 1u << r; host.common[r] = (uint8_t)v; return; }
     host.touched |= 1u << ep;
@@ -104,9 +115,8 @@ static void host_write(uint32_t r, uint32_t v)
         host.ep[ep][r] = (uint8_t)(v & ~1u);    /* service/flush RX packet */
     } else host.ep[ep][r] = (uint8_t)v;
 }
-static void host_read(uint32_t r)
+static void host_apply_read(uint32_t r)
 {
-    CHECK(r < 24u && ++host.operations <= 128u);
     if (r < 16u) {
         host.common_touched |= 1u << r;
         host.data = host.common[r];
@@ -117,7 +127,62 @@ static void host_read(uint32_t r)
         host.data = host.ep[host.selected][r];
     }
 }
-static uint32_t host_data(void) { return host.data; }
+/* One command can be delayed or never complete. Effects happen only on done;
+ * failed reads leave their read-clear latch and stale data register untouched.
+ * The check cap is a model-operation oracle, not an AC791N time measurement. */
+static void host_command(uint32_t r, uint32_t v, uint32_t read)
+{
+    CHECK(host.on && r < 24u && ++host.operations <= 128u);
+    host.starts++;
+    host.pending_r = r; host.pending_v = v; host.pending_read = read;
+    host.polls = host.completed = 0;
+}
+static void host_write(uint32_t r, uint32_t v) { host_command(r, v, 0); }
+static void host_read(uint32_t r) { host_command(r, 0, 1); }
+static uint32_t host_on(void) { return host.on; }
+static uint32_t host_done(void)
+{
+    CHECK(host.starts && ++host.polls <= 20000u);
+    host.checks++;
+    if (host.missing || host.polls <= host.delay) return 0;
+    if (!host.completed) {
+        if (host.pending_read) host_apply_read(host.pending_r);
+        else host_apply_write(host.pending_r, host.pending_v);
+        host.completed = 1;
+    }
+    return 1;
+}
+static uint32_t host_data(void)
+{
+    CHECK(host.completed && host.pending_read);
+    host.data_reads++;
+    return host.data;
+}
+/* The script supplies one SOF event per poll unless that input is disabled. */
+static uint32_t host_sof(void) { return host.sof_each_poll; }
+static void host_reset(void)
+{
+    host.resets++;
+    host.on = host.enabled = host.completed = 0;
+    memset(host.common, 0, sizeof host.common); memset(host.ep, 0, sizeof host.ep);
+    memset(host.prepared, 0, sizeof host.prepared);
+    memset(host.rx, 0, sizeof host.rx); memset(host.tx, 0, sizeof host.tx);
+}
+static void fm1_delay_ms(uint32_t ms)
+{
+    CHECK(!host.on && host.resets == host.attaches + 1u && ms == 25u);
+    host.delay_calls++; host.delay_ms += ms;
+}
+static void host_attach(void *p)
+{
+    CHECK(!host.on && host.resets == host.attaches + 1u && host.delay_calls == host.resets);
+    host.attaches++; host.on = 1;
+    host_buf(0, p, 0);
+}
+static void host_off(void)
+{
+    host.offs++; host.on = 0;
+}
 static void bounds(void)
 {
     CHECK(mi_w - mi_r <= MQ && mo_w - mo_r <= MQ);
@@ -193,7 +258,7 @@ static void configure(uint32_t hz)
     setup(0x010B, 1, UAC_AS_IF, 0);
     CHECK(uac.alt && !uac.go);
 }
-static void reset_fixture(uint32_t hz)
+static void reset_model(void)
 {
     memset(&host, 0, sizeof host); memset(&usb, 0, sizeof usb);
     memset(&uac, 0, sizeof uac); memset(&rs, 0, sizeof rs);
@@ -203,7 +268,12 @@ static void reset_fixture(uint32_t hz)
     mi_r = mi_w = mo_r = mo_w = so_r = so_w = ua_r = ua_w = 0;
     sx_ready = sx_collect = sx_busy = midi_in_overflow = 0;
     usb_rescue_mode = 0; usb.up = 1;
+    host.on = host.sof_each_poll = 1;
     host_buf(0, ep0buf, 0);
+}
+static void reset_fixture(uint32_t hz)
+{
+    reset_model();
     configure(hz);
 }
 static uint32_t ota_now_ms(void) { return fm1_ms; }
@@ -499,10 +569,282 @@ static void control_recovery(uint32_t hz)
     CHECK(!usb.rx_pend && host_in(4));
     puts("control abort/stall, nested EP4 ownership and bus-reset/reconfigure passed");
 }
+/* Distinct, nonzero application data survives controller-only transitions.
+ * Accepted MIDI/CDC input is not an endpoint buffer or a reset-clears-all queue. */
+static const uint8_t recovery_sx[12] = {4, 0xF0, 0x7D, 1, 4, 2, 3, 4, 6, 5, 0xF7, 0};
+static void seed_application(void)
+{
+    static const uint8_t sx[8] = {0xF0, 0x7D, 1, 2, 3, 4, 5, 0xF7};
+    CHECK(midi_enqueue(0x5B439009u, 2));
+    midi_out_event(0x5A409009u);
+    CHECK(!ota_wire_send(sx, sizeof sx));
+#if T_CDC
+    cdc_in[0] = 'I'; cdc_in[1] = 'N'; ci_w = 2;
+    cdc_out[0] = 'O'; cdc_out[1] = 'K'; co_w = 2;
+#endif
+}
+static void application_pending(void)
+{
+    CHECK(!mi_r && mi_w == 1u && midi_in_q[0] == 0x5B439009u && midi_in_source[0] == 2u);
+    CHECK(!mo_r && mo_w == 1u && midi_out_q[0] == 0x5A409009u);
+    CHECK(!so_r && so_w == 3u);
+    for (uint32_t i = 0; i < 3u; i++) {
+        uint32_t want = 0;
+        for (uint32_t j = 0; j < 4u; j++) want |= (uint32_t)recovery_sx[4u * i + j] << (8u * j);
+        CHECK(sx_out_q[i] == want);
+    }
+#if T_CDC
+    CHECK(!ci_r && ci_w == 2u && cdc_in[0] == 'I' && cdc_in[1] == 'N');
+    CHECK(!co_r && co_w == 2u && cdc_out[0] == 'O' && cdc_out[1] == 'K');
+#endif
+}
+static void application_delivered(void)
+{
+    CHECK(host_in(1) && host.nbytes[1] == 16u && !memcmp(host.bytes[1], recovery_sx, sizeof recovery_sx));
+    CHECK(!memcmp(host.bytes[1] + 12, "\x09\x90\x40\x5A", 4));
+    CHECK(so_r == so_w && mo_r == mo_w && !mi_r && mi_w == 1u && midi_in_q[0] == 0x5B439009u);
+#if T_CDC
+    CHECK(host_in(3) && host.nbytes[3] == 2u && !memcmp(host.bytes[3], "OK", 2));
+    CHECK(co_r == co_w && !ci_r && ci_w == 2u && !memcmp(cdc_in, "IN", 2));
+#endif
+}
+static void sie_failures(void)
+{
+    uint32_t before, checks, value;
+    reset_model();
+    usb.config = 1; seed_application(); usb.config = 0; /* accepted before the controller fault */
+    host.on = 0;
+    usb.timeouts = 7;
+    value = sie_rd(S_POWER);
+    sie_wr(S_POWER, 0x5A);
+    CHECK(!value && !host.starts && !host.checks && !host.data_reads && usb.timeouts == 7u);
+
+    host.on = 1; host.delay = 3; host.common[S_POWER] = 0xA6;
+    value = sie_rd(S_POWER);
+    CHECK(value == 0xA6u && host.polls == 4u && !usb.timeouts && host.data_reads == 1u);
+    sie_wr(S_POWER, 0x5A);
+    CHECK(host.common[S_POWER] == 0x5Au && host.polls == 4u && !usb.timeouts);
+    /* Last permitted completion: one fewer failed poll than the timeout cap. */
+    host.delay = 19999;
+    value = sie_rd(S_POWER);
+    CHECK(value == 0x5Au && host.polls == 20000u && !usb.timeouts);
+    sie_wr(S_POWER, 0xA7);
+    CHECK(host.common[S_POWER] == 0xA7u && host.polls == 20000u && !usb.timeouts);
+
+    for (uint32_t write = 0; write < 2u; write++) {
+        host.delay = 0; host.missing = 1; usb.up = 1; usb.timeouts = 0;
+        host.common[S_INTRUSB] = 2;                    /* read-clear latch must survive a failed read */
+        before = host.data_reads;
+        for (uint32_t i = 1; i <= 50u; i++) {
+            host.operations = 0;
+            checks = host.checks;
+            if (write) sie_wr(S_POWER, 0xCC);
+            else { value = sie_rd(S_INTRUSB); CHECK(!value); }
+            CHECK(host.polls == 20000u && host.checks - checks == 20000u);
+            CHECK(usb.up && usb.timeouts == i && !host.completed);
+            CHECK(host.common[S_POWER] == 0xA7u && host.common[S_INTRUSB] == 2u && host.data_reads == before);
+        }
+        /* A success resets CONSECUTIVE failures for both accessor paths. */
+        host.missing = 0;
+        if (write) sie_wr(S_POWER, 0xA7);
+        else { value = sie_rd(S_POWER); CHECK(value == 0xA7u); }
+        CHECK(usb.up && !usb.timeouts);
+        host.missing = 1;
+        for (uint32_t i = 1; i <= 51u; i++) {
+            host.operations = 0;
+            if (write) sie_wr(S_POWER, 0xCC);
+            else { value = sie_rd(S_INTRUSB); CHECK(!value); }
+            CHECK(usb.timeouts == i && usb.up == (i <= 50u));
+        }
+        before = host.starts; checks = host.checks;
+        usb.config = 1; uac.alt = 1;                   /* both service guards must suppress real pending work */
+        service(0); service(1);
+        CHECK(host.starts == before && host.checks == checks && !host.operations);
+        usb.config = 0; uac.alt = 0;
+        application_pending();
+    }
+    puts("SIE: delayed/bounded completion, no stale reads, consecutive failures and poll shutoff passed");
+}
+static void retry_lifecycle(void)
+{
+    uint32_t before;
+    /* Called only once: usb_retry's function-local last-attempt time starts at zero. */
+    reset_model();
+    usb.config = 1; seed_application(); usb.config = 0;
+    usb.up = 0; host.missing = 1;
+    usb_start();
+    CHECK(!usb.up && usb.timeouts == 6u && host.resets == 1u && host.attaches == 1u);
+    CHECK(host.delay_calls == 1u && host.delay_ms == 25u && host.enabled == 0x1Fu && host.rx[0] == ep0buf);
+    application_pending();
+    usb_retry(999u); CHECK(!usb.retries && host.resets == 1u);
+    usb_retry(1000u); CHECK(usb.retries == 1u && host.resets == 2u && !usb.up);
+    usb_retry(1000u); usb_retry(1999u); CHECK(usb.retries == 1u && host.resets == 2u);
+    usb_retry(2000u); CHECK(usb.retries == 2u && host.resets == 3u && !usb.up);
+    host.missing = 0; host.delay = 2;
+    usb_retry(2999u); CHECK(usb.retries == 2u && !usb.up);
+    usb_retry(3000u); CHECK(usb.retries == 3u && host.resets == 4u && usb.up && !usb.timeouts);
+    CHECK(host.common[S_POWER] == 0x60u && host.common[S_INTRUSBE] == 7u && host.common[S_INTRTX1E] == 1u);
+    CHECK(!host.common[S_INTRTX2E] && !host.common[S_INTRRX1E] && !host.common[S_INTRRX2E]);
+    before = host.starts;
+    usb_retry(4000u); CHECK(usb.retries == 3u && host.starts == before);
+    application_pending();
+
+    usb.up = 0; host.missing = 1;
+    usb_retry(UINT32_MAX - 499u);
+    CHECK(usb.retries == 4u && host.resets == 5u && !usb.up);
+    usb_retry(499u); CHECK(usb.retries == 4u && host.resets == 5u); /* 999 ms across wrap */
+    host.missing = 0;
+    usb_retry(500u); CHECK(usb.retries == 5u && host.resets == 6u && usb.up); /* exactly 1000 */
+    CHECK(host.delay_calls == 6u && host.delay_ms == 150u);
+    application_pending();
+    configure(44100u);
+    CHECK(usb.config == 1u && host.rx[1] == ep1rx && host.tx[1] == ep1tx && host.tx[4] == ep4tx);
+    application_delivered();
+    usb_detach(); CHECK(!usb.up && usb.detached && !host.on && host.offs == 1u);
+    before = host.starts;
+    usb_retry(1500u); usb_retry(UINT32_MAX);
+    CHECK(usb.retries == 5u && host.resets == 6u && host.starts == before && host.offs == 1u);
+    CHECK(!mi_r && mi_w == 1u && mo_r == mo_w && so_r == so_w);
+    puts("USB lifecycle: actual startup, failed/healthy retry, interval/wrap and intentional detach passed");
+}
+/* A local SIE reset is not a host bus-reset event. Restart from a genuinely
+ * configured session; unlike retry_lifecycle, do not force config=0 in the fixture. */
+static void configured_retry(uint32_t hz)
+{
+    static uint32_t retry_at = 1500u;               /* prior lifecycle's final attempt was at 500 */
+    static const uint8_t complete[] = {4, 0xF0, 0x7D, 0x12, 6, 0x34, 0xF7, 0};
+    static const uint8_t partial[] = {4, 0xF0, 0x7D, 0x56};
+    uint32_t source_frame, before[5], rate_sets, retry_count;
+    const uint8_t *frame;
+    uint32_t frame_len;
+    /* Rate data, descriptor continuation and pending address are independent
+     * EP0 owners. CDC adds its own line-coding data stage. */
+    for (uint32_t stage = 0; stage < 3u + T_CDC; stage++) {
+        reset_fixture(hz);
+        source_frame = 0;
+        CHECK(host_in(4)); service(0); CHECK(host_in(4)); render(&source_frame); service(0);
+        CHECK(uac.alt && uac.go && uac.flowing);
+        if (!stage) {
+            host_out(1, complete, sizeof complete); service(0);
+            CHECK(ota_frame_get(&frame, &frame_len) && frame_len == 3u && !memcmp(frame, "\x7D\x12\x34", 3));
+        }
+        host_out(1, partial, sizeof partial); service(0);
+        CHECK(usb.sx_on && (stage ? sx_collect : sx_ready));
+        if (!stage) {
+            setup(0x2201, 0x0100, 0x84, 3); CHECK(uac.e0_rx);
+        } else if (stage == 1u) {
+            setup(0x8006, 0x0200, 0, 0xFFFF); CHECK(usb.e0_tx);
+        } else if (stage == 2u) {
+            setup(0x0005, 37, 0, 0); CHECK(usb.has_pend_addr);
+#if T_CDC
+        } else {
+            setup(0x2120, 0, CDC_IF_CDC, 7); CHECK(cdc.e0_rx);
+#endif
+        }
+        seed_application();                       /* accepted queues; no poll may drain them before failure */
+        rate_sets = uac.rate_sets; retry_count = usb.retries;
+        host.missing = 1;
+        for (uint32_t i = 0; i < 51u; i++) {
+            host.operations = 0;
+            (void)sie_rd(S_POWER);
+        }
+        CHECK(!usb.up && usb.config == 1u && usb.timeouts == 51u);
+        host.missing = 0;
+        usb_retry(retry_at); retry_at += 1000u;
+        CHECK(usb.up && !usb.timeouts && usb.retries == retry_count + 1u && host.resets == 1u);
+        for (uint32_t ep = 0; ep < 5u; ep++) before[ep] = host.sends[ep];
+        service(0); service(1);
+        /* No host bus reset or SET_CONFIGURATION has happened since local
+         * restart. Stale bulk/audio state must not consume accepted queues. */
+        if (usb.config)
+            fprintf(stderr, "configured retry CDC%u %uHz stage%u: config=%u sends1=%u sends4=%u mo=%u/%u so=%u/%u\n",
+                    T_CDC, hz, stage, usb.config, host.sends[1] - before[1], host.sends[4] - before[4],
+                    mo_r, mo_w, so_r, so_w);
+        CHECK(host.sends[1] == before[1] && host.sends[4] == before[4]);
+#if T_CDC
+        CHECK(host.sends[3] == before[3] && !cdc.dtr && !cdc.e0_rx && !cdc.rx_pend);
+#endif
+        CHECK(!usb.config && !usb.e0_tx && !usb.has_pend_addr && !usb.rx_pend && !usb.sx_on && !sx_collect);
+        CHECK(!uac.alt && !uac.go && !uac.r48 && !uac.e0_rx && !uac.queued && !uac.flowing);
+        application_pending();
+        if (!stage) CHECK(ota_frame_get(&frame, &frame_len) && frame_len == 3u && !memcmp(frame, "\x7D\x12\x34", 3));
+        else CHECK(!sx_ready);
+        /* The first new SETUP must not become old rate/line data or continue
+         * an abandoned descriptor. Nor may an old SET_ADDRESS be applied. */
+        setup(0x8006, 0x0100, 0, 18);
+        CHECK(host_in(0) && host.lengths[0][host.npackets[0] - 1u] == 18u);
+        CHECK(!memcmp(host.bytes[0] + host.nbytes[0] - 18u, DEV_DESC, 18));
+        CHECK(!host.common[S_FADDR] && uac.rate_sets == rate_sets);
+        configure(hz);
+        CHECK(usb.config == 1u && host.rx[1] == ep1rx && host.tx[1] == ep1tx && host.tx[4] == ep4tx);
+        application_delivered();
+        CHECK(host_in(4)); service(0); render(&source_frame); service(0);
+        CHECK(uac.go && uac.ring48 == (hz == 48000u) && !uac.underruns && !uac.overruns && !uac.missed);
+        if (!stage) ota_frame_done();
+    }
+    puts("configured SIE restart: queues/frames preserved, stale control/audio state aborted and fresh configuration rearmed");
+}
+
+static void frame_progress(uint32_t frame)
+{
+    uint32_t polls = 0;
+    CHECK(frame != usb.frame);
+    host.frame = frame;
+    do { service(0); CHECK(++polls <= 20u); } while (usb.frame != frame);
+    CHECK(!usb.suspended && !usb.frame_same);
+}
+static void suspend_lifecycle(uint32_t hz)
+{
+    uint32_t base_resets, before;
+    reset_fixture(hz); seed_application();
+    /* Hold existing IN slots busy; suspend/resume must not discard the pending
+     * application messages. No host-completion token is fabricated here. */
+    host.ep[1][S_TXCSR1] |= 1u;
+#if T_CDC
+    host.ep[3][S_TXCSR1] |= 1u;
+#endif
+    base_resets = usb.resets;
+    host.common[S_INTRUSB] = 1;
+    service(0); CHECK(usb.suspends == 1u && usb.suspended && usb.config == 1u);
+    host.common[S_INTRUSB] = 2;
+    service(0); CHECK(usb.suspends == 1u && !usb.suspended && usb.config == 1u);
+    application_pending();
+
+    host.sof_each_poll = 0;
+    for (uint32_t i = 0; i < 5u; i++) service(0);
+    CHECK(usb.no_sof == 5u && usb.max_gap == 5u);
+    host.sof_each_poll = 1;
+    service(0); CHECK(!usb.no_sof && usb.max_gap == 5u);
+    frame_progress(77u);                     /* align the actual function-local 20-poll divider */
+    before = usb.frame_stalls;
+    for (uint32_t i = 0; i < 199u; i++) service(0);
+    CHECK(!usb.suspended && usb.frame_same == 9u && usb.frame_stalls == before);
+    service(0);
+    CHECK(usb.suspended && usb.frame_same == 10u && usb.frame_stalls == before + 1u);
+    for (uint32_t i = 0; i < 200u; i++) service(0);
+    CHECK(usb.suspended && usb.frame_stalls == before + 1u && !usb.no_sof);
+    frame_progress(78u);
+    CHECK(usb.frame_stalls == before + 1u);
+    for (uint32_t i = 0; i < 200u; i++) service(0);
+    CHECK(usb.suspended && usb.frame_stalls == before + 2u);
+    frame_progress(79u);
+    CHECK(usb.frame_stalls == before + 2u && usb.resets == base_resets && usb.config == 1u && !usb.retries);
+    application_pending();
+
+    host.ep[1][S_TXCSR1] &= (uint8_t)~1u;
+#if T_CDC
+    host.ep[3][S_TXCSR1] &= (uint8_t)~1u;
+#endif
+    service(0);
+    application_delivered();
+    puts("suspend/resume, missing SOF, repeated frame-freeze episodes and pending application data passed");
+}
 int main(void)
 {
+    sie_failures(); retry_lifecycle();
     for (uint32_t hz = 44100u; hz <= 48000u; hz += 3900u) {
         composite(hz, 0); composite(hz, 1); stream_transitions(hz); control_recovery(hz);
+        suspend_lifecycle(hz); configured_retry(hz);
     }
     puts("USB service model: all finite contracts passed (no physical timing claim)");
     return 0;

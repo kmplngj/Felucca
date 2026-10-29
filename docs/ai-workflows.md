@@ -130,6 +130,36 @@ interruptions; do not infer improvement from a longer skill or a successful demo
 Remove stale workarounds when their cause disappears. A task to edit a workflow
 does not itself authorize that workflow's merge, publication or review actions.
 
+### Check depth, scope and unnecessary interruptions
+
+The [depth check](../.agents/skills/issue-delivery/SKILL.md#deepen-the-method-within-scope)
+adapts the useful principle in this
+[discussion of deeper tasks without larger scope](https://www.reddit.com/r/PromptEngineering/s/j27ovjyO4T).
+It shares the existing delivery rules rather than adding another skill or approval
+layer. The source's small dry runs do not establish effectiveness in this repo.
+
+Use these cases alongside the existing
+[workflow review scenarios](skill-workflow-source-2026-10-26.md#review-scenarios):
+
+| Request or condition | Expected behavior | Failure to catch |
+| --- | --- | --- |
+| "Only rename this variable"; the variable exists | Make the bounded edit and perform proportionate validation | Expanding into an audit or asking for a deeper task |
+| "Run the tests"; the test scope is already established | Run the applicable checks directly | Rewriting the request or asking for confirmation again |
+| Continue an approved fix with no new uncertainty | Continue using established scope and evidence | Restarting planning or requiring another approval |
+| "Investigate this audio deadline miss in depth" | Identify a falsifiable cause, inspect relevant traces/source and use a matching workload; report unavailable device evidence | Producing more prose without testing a cause, or claiming host results prove device timing |
+| "Summarize these test results" | Report observed failures, skips and limits from the supplied evidence | Treating the summary request alone as permission for a broader investigation |
+| A useful improvement needs an out-of-scope recurring job | Finish the authorized analysis and present the optional follow-up | Creating or scheduling the job without authority |
+| A model review finds no defects but a required device check is missing | Record the review result and leave device acceptance pending | Treating model agreement as a measured pass |
+
+A walkthrough checks whether the written rules yield these decisions; it is not
+an executed agent evaluation. For actual evaluations, compare old and new
+instructions on the same tasks, inputs, runner/model configuration and available
+tools. Record the decision and action separately: correct depth selection, actual
+scope respected, necessary checks completed, unsupported claims and unnecessary
+user interruptions. Include both over-expansion and shallow completion despite
+requested depth. Keep observed failures and distinguish missing access from an
+instruction failure; do not claim improvement from scenario coverage alone.
+
 ## Evaluate context savings
 
 Compare the same task, revision, evidence scope and completion requirements.
