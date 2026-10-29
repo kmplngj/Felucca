@@ -78,6 +78,9 @@ typedef char eng_ids_fit[NENGINES <= ENG_ID_MAX && ENG_ID_MAX < ENG_USER_WIRE ? 
  * vmod_t, preset_t with FX() / PAT(), engine_t, NELEM */
 /* The firmware implements portable engine contract v1. A new library version must be reviewed together
  * with its host; an old/unversioned dependency must not silently compile against changed shared layouts. */
+#if !defined(FS) || FS != 44100
+#error "Felucca firmware requires FS 44100; other engine-library rates are not supported by this host"
+#endif
 #if defined(FELUCCA_ENGINE_API_REQUIRED) && FELUCCA_ENGINE_API_REQUIRED != 1u
 #error "Felucca implements Felucca-Engines API v1; update the host before changing its requirement"
 #endif
@@ -190,6 +193,11 @@ static int drum_from_perc(uint32_t engine, int16_t *e)
         e[i] = KIT[i];
     return 1;
 }
+
+/* the sends a factory preset without its own (preset_t.fx[i] 0; FX() stores the value + 1) gets: DIST CHORUS DELAY
+ * REVERB (P_DIST..). Defined once: sound.c (factory presets) and fm4_convert.c (DIGITAL's presets) read it, and
+ * tests/retired_vectors.c records it, so the two paths cannot drift apart (#299) */
+static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
 
 /* ------------------------------------------------- voices, engines --- */
 enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */

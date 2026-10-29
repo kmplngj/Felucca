@@ -8,6 +8,72 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [Ravel adoption review](ravel-adoption-2026-10-28.md), tracked in
+[Felucca #762](https://github.com/kmplngj/Felucca/issues/762), registers
+`De-Pattern/Ravel_FM1` main as a pending source, repository ID `1425709397`,
+pinned at `d7f51158f581050022fa35a691eddd4c078a9ab1` (105 reachable commits
+in its complete non-shallow main DAG; zero credited assessments). The separate
+`software` branch is excluded. After ordinary review brings this registration
+to main and the canonical state registry, the existing runner must reverify
+identity, branch, immutable pin and full history before initialization.
+Pending registration is not active tracking or completed coverage; this adds
+no schedule or automation.
+
+The [TastyWaves optimization review](tastywaves-review-2026-10-27.md) registers
+`marksweiss/tastywaves` main as a pending source, repository ID `1433738566`, pinned
+at `12d3499d056ae4c93908783748ca3ddb5d4d61fc` (133 reachable commits in a complete
+non-shallow DAG, zero credited assessments). New MASTER ADC/LCD-DMA investigation
+[#757](https://github.com/kmplngj/Felucca/issues/757) is hardware-gated; chorus LFO
+ramps reuse [#110](https://github.com/kmplngj/Felucca/issues/110).
+After ordinary review brings this registration to main and the canonical state
+registry, the existing runner must reverify identity, branch, immutable pin and full
+history before initialization. Pending registration is not active tracking or
+completed review coverage; this changes no schedule or automation.
+
+The [fm1-dock adoption plan](https://github.com/kmplngj/Felucca/issues/701)
+registers `joakimeriksson/fm1-dock` main as a pending source, repository ID
+`1428799110`, pinned at `e177e83e560483f419baad80511d9dd1acfdeffe` (40 reachable
+commits in its complete non-shallow DAG, zero credited assessments). After ordinary
+review brings this registration to main and the canonical state registry, the existing
+runner must reverify identity, branch, immutable pin and full history before
+initialization. Pending registration is not active tracking or completed review
+coverage; this adds no schedule or automation.
+
+The [Matryoshka adoption review](matryoshka-adoption-plan-2026-10-25.md), tracked in
+[Felucca #672](https://github.com/kmplngj/Felucca/issues/672), proposes a pending
+`glvno/matryoshka` main registration at
+`99f1149d55fa549c4202e6f5080610770399c832` (841 reachable commits, zero individually
+reviewed). The complete non-shallow main graph was fetched and integrity checked.
+The local registration requires ordinary review to main and state-branch integration
+before the existing runner verifies identity, branch, immutable pin and full history
+and initializes it. This snapshot creates no per-commit credit or new schedule.
+
+[Registration #446](https://github.com/kmplngj/Felucca/issues/446) adds two pending
+sources on `main`: `okumurari2/maku` (repository ID `1411236607`), retaining
+historical target `2aea69253110233f0934da0444381177a2bbd7d5`, and
+`Rastapopolix/tessera` (repository ID `1414783836`), retaining
+`4ac494e51ee73abdbbf70f2979184e2a147a5e53`. The latter is the verified canonical
+name of the former `Rastapopolix/melodee-tess`; using the old redirect would fail
+the helper's canonical-name check. Both track the verified `main` branch.
+
+These entries are pending registrations, not active tracking or completed history
+review. Full-DAG counts have not been collected; no snapshot receives per-commit
+review credit. After registration reaches main and the canonical state registry,
+the next audit must independently reverify each ID, canonical name, branch and
+immutable object; fetch its complete non-shallow DAG and fresh tip; preserve
+existing journals and frozen intervals; calculate queues from complete DAGs and
+confirmed records; and remove each pending entry only after successful
+initialization. An unavailable source remains an explicit blocker. Issue #446
+stays open until initialization and remote state evidence satisfy its acceptance
+checks. Reuse MAKU owners [#200](https://github.com/kmplngj/Felucca/issues/200)/
+[#202](https://github.com/kmplngj/Felucca/issues/202) and portable sound recipes
+[Engines-GPL #18](https://github.com/kmplngj/Felucca-Engines-GPL/issues/18), Tessera
+owners [#162](https://github.com/kmplngj/Felucca/issues/162)/
+[#167](https://github.com/kmplngj/Felucca/issues/167), and shared generator/workflow
+owners [#214](https://github.com/kmplngj/Felucca/issues/214)/
+[#208](https://github.com/kmplngj/Felucca/issues/208). This changes no runner,
+schedule, firmware or musical features.
+
 The [FM Lab adoption review](fm-lab-adoption-2026-10-21.md) registers
 `jsmith13/fm_lab` main as a pending source at
 `cf35dc26709ede9c974654dfc2135f8c25a00082` (37 reachable commits, zero individually

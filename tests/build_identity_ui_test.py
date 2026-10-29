@@ -10,9 +10,12 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import build_identity
+from release_notes import dev_identity
 
 
 CASES = {
+    'compiled': ('', '', 'source'),
+    'dev-release': ('688cca29', '', 'override'),
     'release': ('1234abcd', '', 'override'),
     'long-release': ('1234abcd', '', 'override'),
     'commit': ('1234abcd', '', 'source'),
@@ -27,6 +30,12 @@ CASES = {
 
 def run():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/identity-ui'
+    # Reproduce the first failing Dev identity through the production resolver.
+    dev_sha = '688cca29ad194151b9167ee4f715b0b0900d30fb'
+    dev = dev_identity([{'number': 765, 'merged_at': '2026-10-28',
+                        'merge_commit_sha': dev_sha,
+                        'base': {'ref': 'main', 'repo': {'full_name': 'fixture/Felucca'}}}],
+                       'fixture/Felucca', dev_sha)
     for font in ('m8stealth',):
         directory = out / font
         directory.mkdir(parents=True, exist_ok=True)
@@ -36,18 +45,26 @@ def run():
         for name, (revision, pr, origin) in CASES.items():
             case = directory / name
             (case / 'ppm').mkdir(parents=True, exist_ok=True)
-            data = {'version': 'v1.0-' + 'w' * 26 if name == 'long-release' else 'v1.6.1',
+            data = {'version': ('v' + dev['version'].lower() if name == 'dev-release' else
+                               'v1.0-' + 'w' * 26 if name == 'long-release' else 'v1.6.1'),
                     'build': revision, 'pr_label': pr,
                     'version_source': origin, 'revision': None if revision == 'unknown' else 'f' * 40,
                     'dirty': revision.endswith('-dirty'),
                     'repository': (None if name == 'unknown' else
                                    'o' * 39 + '/' + 'r' * 100 if name == 'boundary' else
                                    'fixture/Felucca')}
-            (case / 'build_identity.h').write_text(build_identity.outputs(data)['build_identity.h'])
+            fixture_flags = []
+            if name != 'compiled':
+                header = case / 'build_identity.h'
+                header.write_text(build_identity.outputs(data)['build_identity.h'])
+                # The coverage compiler adds -Ibuild/gen before caller flags.
+                # Force fixture identity before that header's include guard;
+                # 'compiled' separately exercises the real generated identity.
+                fixture_flags = ['-include', str(header)]
             exe = case / 'render'
             subprocess.run(shlex.split(os.environ.get('CC', 'clang')) +
                            ['-O1', '-w', *(['-DIDENTITY_SPLASH_ONLY'] if name == 'long-release' else []),
-                            '-I' + str(case), '-I' + str(directory),
+                            *fixture_flags, '-I' + str(directory),
                             '-Ibuild/gen', '-Ifirmware/src', '-Itests',
                             'tests/build_identity_ui.c', '-lm', '-o', str(exe)], cwd=ROOT, check=True)
             subprocess.run([str(exe.resolve()), str(case)], cwd=ROOT, check=True)

@@ -28,6 +28,11 @@ Links of the form `[file:lines]` are permalinks at `a373657`; relative links nam
 Numbers marked **(est.)** are this page's estimates, not measurements; the owning issue replaces
 them with measured values when it designs the format.
 
+The preset spare-byte count, retained-parent selection and paired-save requirements below were
+checked against source [`2579e557`](https://github.com/kmplngj/Felucca/tree/2579e55791df0ccc2d72f35177526248d75cbc79).
+That source review adds no new build, compression or device measurements; existing measurements
+retain their dated provenance.
+
 ## 1. Summary
 
 1. **Flash is 100% allocated.** The 79 sectors Felucca may write (plus 5 sectors of OTA staging)
@@ -48,7 +53,8 @@ them with measured values when it designs the format.
    spare), the backup staging, and every protocol size. A sidecar needs none of that.
 6. **Pattern banks (#62) are blocked as specified.** Eight banks per track per project need about
    19 KB per project (est.), 50 sectors for four slots plus the autosave with A/B, more than the 40 sectors of user sample
-   area that remain after USR3 is reclaimed. It needs a variable-length bank store and a further
+   area that remain after USR3 is reclaimed; those 40 sectors still hold USR1 and USR2, not free space.
+   It needs a variable-length bank store and a further
    capacity trade, tracked as its own design issue ([A8](#5-allocation-table)). #66 depends on it.
 7. **Common rules** ([section 7](#7-common-rules)): append-only object types, one payload per sector,
    commit record last, tag-verified sidecars written before their parent, a backup id for every
@@ -97,7 +103,7 @@ so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is k
 | --- | --- | --- | --- |
 | `0x0000..0x4000` | SPL, `isd_config.ini`, JLFS head | the update loader writes only `[0x4000, 0x93000)` and states the head "is never written" ([ldr_core.c:12-22](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L12-L22)); the package's flash image carries a head for the stock installer ([fm1pkg_make.py:106-127](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/tools/fm1pkg_make.py#L106-L127)) | Never written by the app or the loader |
 | `0x4000..0x93000` | The firmware image (`APP_SLOT` 581,564 B incl. the SDK files); the loader rewrites it on every update | ldr_core.c:15, `LDR_APP_HI` | App-flash spare (111,124 B now) is **not** persistent-data space: every update rewrites the whole area, and the app region is read through the cipher (`fl_plain_window_init` makes only flash above `0x93000` plaintext) |
-| `0x93000..0x97000` | 4 sectors between the image and Felucca's store; the SPL scans for update records here | ldr_core.c:32-36 | Not in `FL_STORE_OK`; contents on stock-flashed devices are **unverified** |
+| `0x93000..0x97000` | 4 sectors between the image and Felucca's store; native loader cleanup scans their tails; external SPL scan rules remain unverified | ldr_core.c:32-36 | Not in `FL_STORE_OK`; contents on stock-flashed devices are **unverified** |
 | `0xE8000..0xFC000` | 20 sectors: the stock firmware's OTA VM backup; its update record at `0xE8F00` | [fm1_flash.h:47](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/hal/fm1_flash.h#L47), [ldr_core.c:34-35](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L34-L35) | Never written. The stock-return path means stock code may read it |
 | `0xFF000..0x100000` | JLFS `key_mac` entry | [fm1pkg_make.py:127](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/tools/fm1pkg_make.py#L127) | Never written (`FL_GLOB_HI`) |
 | `0xE0000..0xE5000` | OTA staging | ota.c | Not data space: any non-blank byte at `0xE0000` or `0xE4F00` is erased at boot as a stale update |
@@ -105,11 +111,13 @@ so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is k
 Two rules follow from the update path. First, the loader protects `0x97000..0xE0000` entirely
 ([ldr_core.c `LDR_DATA_LO`/`LDR_DATA_HI`](../firmware/loader/ldr_core.c),
 and `tests/ldr_test.c` counts any erase there as a bad range), so new objects that stay inside that
-window need **no loader, guard-window or SPL change**. Second, the SPL looks for an update record at
-sector offset `+0xF00` of every sector from `0x93000` up. Object payloads reach that offset (a project
-fills the sector); a new object must not be able to hold a valid `UPDATA_PARM` there (u16 at +6 =
-`0x5441` with a matching CRC16, [ldr_core.c `ldr_session`](../firmware/loader/ldr_core.c)).
-User-uploaded sample bytes already carry that theoretical risk; reserved headers must not add to it.
+window need **no native loader or guard-window change**. Second, the external SPL has a separate
+boot-time update-record scan whose exact bounds, required fields and selection rules remain
+unverified. Felucca's loader cleanup examines `sector + 0xF00` for a nonzero CRC16 over bytes 2..79
+and u16 `0x5441` at +6 ([ldr_core.c `ldr_session`](../firmware/loader/ldr_core.c)). Object payloads
+reach that offset (a project fills the sector), so new persistent layouts must account for this
+record-shaped-data exposure without treating that loader predicate as a complete SPL specification.
+User-uploaded sample bytes also carry that theoretical risk; reserved headers must not add to it.
 
 **Loader cleanup versus the SPL scan (#418).** These are two different scans, and only the first is
 Felucca's. After a successful update the loader's cleanup walks the sector tails from `0x93000` to
@@ -146,6 +154,39 @@ distinct from `tests/ldr_test.c`, whose fixture saves an arbitrary 3,840-byte st
 at `payload + 0xE00` and so proves the loader's behavior for any object, reachable or not. The voice bank
 (`FVB_INFO + FVB_LEN == 0xF00`) cannot hold one: its tail stays erased.
 
+**Accepted UPF6 backup bytes (#438).** The current user-preset FM6 patch object (`OBJ_UPFM6`,
+backup id 9) is 3,728 bytes at `0x9F000` / `0xFE000`, with its payload at `sector + 0x100`.
+Payload `0xE00` is entry 30's packed byte 84 (entries numbered from zero); the following bytes
+cross into entry 31's tag and packed data. `BACKUP_PUT` validates the UPF6 header and transfer
+CRC, then preserves inactive-entry bytes without running the patch sanitizer over them.
+A valid header with no used entries can therefore carry an entire 112-byte native-style update
+record at `sector + 0xF00`, including bytes above 127. This is a distinct path from the sanitized
+FUN10 voice fixture above, not a claim about an ordinary musician's voice or SPL boot behavior.
+
+The production-source [backup fixture](../tests/backup_test.c) sends the shared
+[record fixture](../tests/update_record_fixture.h) through real PUT begin/chunks/commit,
+checks rejection before writes for an incorrect outer CRC, and checks exact LIST/GET export,
+reimport and valid A/B copies. The [loader fixture](../tests/ldr_test.c) validates its inner CRC
+with production `ota_crc16`, then checks that both UPF6 sectors survive successful and repeated
+native loader sessions byte for byte with no erase. Real staging/stock records still clear,
+and the autosave/voice-bank windows remain untouched. An otherwise erasable control sector
+confirms the actual cleanup erases the matching fixture but preserves versions with a changed
+CRC-covered byte or a changed marker and recomputed CRC. Literal mode/magic, name and staging
+address in this fixture describe its bytes; they do not establish that the SPL requires,
+accepts or selects them.
+
+This adds causal host evidence without a firmware, format, validator or update-policy change.
+It does not remove existing record-shaped saved bytes. A runtime save refusal remains a separate
+#438 decision after evidence of the exact SPL scan and failure behavior, with explicit save-error
+UX and old-object/backup compatibility. A guard in `st_save` alone would also leave the user-sample
+path uncovered: sample upload/restore writes raw data through `SMP_BEGIN/WRITE/END` and bypasses
+`st_save`. No device access, crafted-data upload or destructive interruption establishes SPL
+behavior in these host fixtures; that qualification remains pending.
+
+An [offline saved-raw-file survey](update-record-survey.md) reports byte coverage,
+input SHA-256 and matches of this native-loader predicate without accessing hardware.
+Its observations do not establish the external SPL scan or justify a runtime save refusal.
+
 ### 2.3 Retained RAM and the RAM mirrors
 
 `.noinit` is the only region that survives a warm reset and UBOOT entry
@@ -165,8 +206,10 @@ vectors) lie above it.
 | **used** | **15,564** | | |
 | **spare** | **132** | `0x01C7FCCC..0x01C7FD50` | |
 
-The flash copy wins at boot (`persist_boot` fills empty RAM slots with `proj_fetch`), so `proj_slot`
-is a warm-reset convenience, not the source of truth. Growth of a project record is multiplied by
+At boot, `persist_boot` fetches flash only for retained slots whose import fails. A valid retained slot
+can survive a warm reset and be selected without fetching flash; `project_load` also fetches only
+when retained import fails ([current boot/load paths](https://github.com/kmplngj/Felucca/blob/2579e55791df0ccc2d72f35177526248d75cbc79/firmware/src/project.c#L1118-L1176)).
+A sidecar must match the parent actually selected, not assume flash always wins. Growth of a project record is multiplied by
 four here; this is the reason a multi-sector project format is rejected ([4](#4-options-and-their-user-visible-cost)).
 
 Other measured sizes that new objects add to or must avoid duplicating (`.pool` unless noted):
@@ -335,7 +378,7 @@ repository could not be read for this page); GENDEV device defaults of the gener
 | [#71](https://github.com/kmplngj/Felucca/issues/71) per-drum overrides | tune/decay/character per lane | per project | 128 B | FITS after A9 | A3/P6 |
 | [#141](https://github.com/kmplngj/Felucca/issues/141) editable kits (stage C) | 4 banks x 16 sounds | device | 1,464 B (from #141) | FITS after A9, conditional on stage C promotion | A6 |
 | [#168](https://github.com/kmplngj/Felucca/issues/168) Yama kits, per-lane edits | kit id; later per-lane edits | per project | 32 B; edits via #71 | FITS after A9 | A3/P8, P6 |
-| [#188](https://github.com/kmplngj/Felucca/issues/188) deep patches | FM TONE 80 B, VA 110 B, CZ 144 B | per track in a project; per user sound | 576 B per project; 148 B per sound | FITS after A9. The user-preset record has 33 spare bytes (`np` 111 of 144 values, a category byte): none of the three fits it | A3/P7, A4 |
+| [#188](https://github.com/kmplngj/Felucca/issues/188) deep patches | FM TONE 80 B, VA 110 B, CZ 144 B | per track in a project; per user sound | 576 B per project; 148 B per sound | FITS after A9. The user-preset record has 32 unclaimed packed bytes: `np` uses 0–110 of 144 and category uses 143, leaving 111–142. None of the three fits it | A3/P7, A4 |
 | [#74](https://github.com/kmplngj/Felucca/issues/74) FM6 library, 64 voices | 64 x 112 B | device | 7,168 B in two objects | FITS after A9 | A5 |
 | [#79](https://github.com/kmplngj/Felucca/issues/79) boot project / template | a slot reference and flags | device | 16 B | FITS if the template *is* a project slot; an independent template object is **BLOCKED** (2 sectors, none free) | A2/STARTUP |
 | [#169](https://github.com/kmplngj/Felucca/issues/169) setlist | an order over projects | device | at most 96 B | FITS for an order over the four slots; a setlist with its own song storage is **BLOCKED** (2 sectors per song). WaveLoop's design (USR3 plus project 4) is not transplanted | A2/SETLIST |
@@ -357,10 +400,14 @@ Facts the design follows from (the format is F3's job):
   up). **A tag that is a hash of the serialized bytes does not survive a backup restore.** The tag must be
   a hash of the musical values (the `autosave_sig` function, minus the sidecar) or a uid stored in the
   project's spare bytes (O8). F3 chooses.
-- Torn-write recovery for a pair: write the sidecar first, the parent second. The reader takes the newest
-  *valid* sidecar copy whose tag matches the parent that actually loaded, and the older copy otherwise.
-  A cut before the parent commits leaves the old pair; a cut after it leaves the new pair. Writing the parent
-  first would leave a new parent with no matching sidecar.
+- Torn-write recovery for a pair is F3's required contract, not a property supplied by two ordinary
+  `st_save` calls. Stage the sidecar before committing its parent and read only a valid matching pair,
+  but also specify how the last committed pair survives retries. For example, after P0/S0, an unmatched
+  S1 followed by a cut can make S1 the newest sidecar; another ordinary sidecar save may erase S0
+  before either new parent commits. A parent-value tag also cannot distinguish a sidecar-only edit
+  when the parent is unchanged. F3 must choose the association/generation and matching-copy retention
+  rules, then prove interrupted prefixes, repeated failed-save/retry sequences and unchanged-parent
+  edits. Ordering alone does not establish that every pre-parent cut leaves the old complete pair.
 - A project that never had sidecar content writes no sidecar (no erase): absent means defaults. A project that
   *had* one and is reset to defaults must invalidate it, because the tag does not cover sidecar content and the
   old record would still match the unchanged parent and bring the cleared fields back after a reload. The
@@ -369,7 +416,8 @@ Facts the design follows from (the format is F3's job):
   (set, clear, reload).
 - The project's FUN10 record has 13 spare bytes ([project.c:154-167](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/project.c#L154-L167):
   body ends at byte 3,296 of 3,309, `PROJ_MIDI_OFF`), three more track parameters at 4 B each. Nothing else
-  should be appended to FUN10; use PRX.
+  should be appended to FUN10; use PRX. If F3 chooses a 4-byte UID from this space, only 9 bytes remain;
+  it cannot simultaneously promise all 13 bytes remain unused.
 
 ## 7. Common rules
 
@@ -393,13 +441,17 @@ Every persistent object, in this order of decision:
    field is non-default). Appending is by tagged chunk; unknown chunks are preserved on re-save.
 4. **Commit and recovery.** Payload first, the 32-byte record last, read back; the newest valid copy wins and
    a torn write leaves the previous copy in charge ([storage.c:136-173](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/storage.c#L136-L173)).
-   A multi-object update is ordered so that every prefix is a valid state (sidecar before parent).
+   A multi-object update must preserve a valid matched state at every interruption, including retries;
+   sidecar-before-parent ordering alone is insufficient. Specify and test the matched-copy retention
+   and transaction association under [section 6](#6-what-the-prx-sidecar-needs).
    A single-copy object (the SLICE record) is allowed only for data that can be rebuilt.
 5. **Ties.** A sidecar carries a tag of its parent inside its own payload (so a backup of the payload keeps
    it), is ignored when the tag does not match, and is never applied to a different parent. See [6](#6-what-the-prx-sidecar-needs).
 6. **Backup and restore.** An object has a `BACKUP_LIST` id (ids 10-31 are free except 20 and 21; the existing
    ones are 0-9 and 32-34) or it is documented as rebuildable. Restore validates content before writing, refuses a
-   newer version, and keeps the commit order of rule 4: it stages and validates the sidecar first and commits the parent last, so every interrupted prefix leaves the old complete pair. INFO advertises a capability tag; older
+   newer version, and satisfies rule 4's matched-pair recovery contract. Staging a sidecar and committing
+   its parent last must not discard the last matching pair during a retry; restore needs the same
+   interruption and unchanged-parent tests as save. INFO advertises a capability tag; older
    firmware answers rc 1 and the editor skips it. Update `web/EDITOR_PROTOCOL.md`, `tests/backup_test.c` and
    the editor tests together. A new id is listed only behind an INFO capability (a manifest whose count an
    editor does not know is refused by the in-repo reader), so `BACKUP_LIST 1` (INFO `58 01`) lists the 13 objects and the

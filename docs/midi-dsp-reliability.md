@@ -1,9 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # MIDI timing and DSP reliability
 
-This bounded integration covers #525–#529 with separate fix commits and a shared
-qualification candidate. No engine pin, data/wire IDs, sound goldens or performance
-thresholds are updated. #540 remains a separate measurement-led deadline diagnosis.
+The original bounded integration covers #525–#529 with separate fix commits and a
+shared qualification candidate. It changed no engine pin, data/wire IDs, sound
+goldens or performance thresholds. The 1.7.0 arithmetic follow-up below advances
+the engine pin separately. #540 remains a separate measurement-led deadline diagnosis.
 
 ## Changes and provenance
 
@@ -19,7 +20,7 @@ Adapted from fgunited upstream #258 `f3290a70529dbe8c49e3a5981999c58a3fbcdcc5`
 and #269 `ebdf867d631b2e9dff0dc64880ee29d26855c111`, ordenador #264
 `1a3bc4a6c1a74c3964edf8f1ae3b792017bbfcc2` and #265
 `c91d7b6f905706a8ebe47873d230ef6185aa64c7`. Original notices remain.
-MIT Engines stays pinned to `9630426f5c4a34a209ca851356fbe8ba3c4c6d19`.
+That integration retained MIT Engines at `9630426f5c4a34a209ca851356fbe8ba3c4c6d19`.
 
 The official AC79NN SDK V1.2.1_2023-12-13 WL82.h and `cpu.a` were retrieved from
 [JieLi's tagged source](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK/tree/AC79NN_SDK_V1.2.1_2023-12-13).
@@ -77,6 +78,43 @@ estimation changes, not per sample; #425 audit and real timing remain separate.
 A live ARP rate reduction can leave a backlog. Eight firings per control block
 bound work; unconsumed phase drains later, including a filtered-empty-list case.
 Legal SEQ/ARP rates are the ten N_DIV values; dotted rates are delay-only.
+
+## Upstream 1.7.0 arithmetic follow-up
+
+The [1.7.0 release](https://github.com/hugelton/Felucca/releases/tag/v1.7.0)
+at `d7b1b7c4099bba28854869ddb256b3d9f634cee8` also advances its Engines
+dependency. Its five firmware fixes above were already present in this fork;
+the remaining arithmetic changes come from Felucca-Engines
+`e88bc70200beece3c13b831cafc76c009d20afbb` (ANALOG signed scaling) and
+`7511c0a784dc10d5fadc5e06dcb583118e02010e` (LOFI, NOISE, TRIO and WHEEL,
+with explicit wrapping helpers). Native PHASE adopts the output multiplication
+from Engines `04ffe903eb87a752305d1e5b10da01b53e4ab004`.
+The fork's integrated Engines pin is
+`7cf364f6c2ce0130be4fe8bf436ffe62077cb175`, already published on the Engines
+fork's main branch with these fixes and the fork's integration contracts.
+
+This selective backport retains the firmware's fixed 44.1 kHz configuration,
+contract-v1 checks, zero-mix ANALOG render path and per-part PHASE crossfade
+scratch. The library also supports other sample rates and includes a standalone
+MIT PHASE; this firmware explicitly rejects other rates in `core.h` and continues
+to compile its native PHASE. It does not replace the HAL with felucca-bsp. BSP
+alignment remains [#430](https://github.com/kmplngj/Felucca/issues/430);
+cross-bootloader stock return remains in
+[PR #622](https://github.com/kmplngj/Felucca/pull/622). Engine IDs, stored formats,
+presets and protocol do not change.
+
+The PHASE regression in `signed_audio_scaling_test.c` freezes 36,864 samples
+across all eight waves, three notes and FOLD 0/1/127. On unchanged `05a3de5`,
+fatal UBSan rejects the first negative output shift; the optimized reference hash
+is `be19079679d9c71d`. No sound or cost baseline is regenerated. Host and target
+validation do not establish physical FM-1 listening or deadline qualification.
+
+For device acceptance, follow the setup and comparison procedure below with
+CPU2 OFF first, then repeat with CPU2 ON separately. Include ANALOG (MIX 0 and
+nonzero), LOFI, TRIO, WHEEL, NOISE and PHASE (FOLD off/on), using identical notes,
+presets, controls and output levels before/after. Exercise held notes, releases
+and engine changes. Expect unchanged sound and no new clicks or dropouts; these
+checks remain pending until performed on an FM-1.
 
 ## Combined user test instructions
 

@@ -31,6 +31,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 import fm1_install as I  # noqa: E402
 import fm1pkg_make as M  # noqa: E402
 import build as B  # noqa: E402
+import ota_stock_fixtures  # noqa: E402
+import fm1_bootarea  # noqa: E402
 from test_coverage import Producer
 coverage = Producer()
 
@@ -303,6 +305,7 @@ def errors():
 
     rc, out, err = cli([p, "--yes"], FakeFM1(image, name="IAC Driver Bus 1"))
     ok(rc == 3 and "not found" in err and "IAC Driver" in err, "no FM-1 port -> exit 3, lists the MIDI inputs")
+    ok("PLAY or REC" in err and "m-bootloader" in err, "no FM-1 port: explains m-bootloader's menu/download mode (#619)")
     dev = FakeFM1(image)
     rc, out, err = cli([p, "--yes", "--port", "Felucca"], dev)
     ok(rc == 3 and dev.upgrades == 0, "--port that matches nothing -> exit 3")
@@ -314,6 +317,9 @@ def errors():
     rc, out, err = cli([p, "--yes"], FakeFM1(image, unplug_after=2))
     ok(rc == 4 and "disconnected" in err and "nothing was written" in err and time.monotonic() - t0 < 3,
        "unplugged in step 1 -> exit 4 'lost', nothing written")
+    rc, out, err = cli([p, "--yes"], FakeFM1(image, stall_after=2))
+    ok(rc == 4 and "stopped answering" in err and "nothing was written" in err and I.CODES in err,
+       "firmware stops in step 1 -> exit 4, points to the screen's result code (#619)")
     t0 = time.monotonic()
     rc, out, err = cli([p, "--yes"], FakeFM1(image, identity="ota-FM-1_900", name="Felucca Update", unplug_after=3))
     ok(rc == 4 and "run the install again" in err and time.monotonic() - t0 < 3, "unplugged during the write -> exit 4 at once")
@@ -358,6 +364,127 @@ def errors():
     ok(rc == 2 and "too short" in err, "not a package -> exit 2")
     rc, out, err = cli([str(TMP / "missing.fwsc"), "--yes"], FakeFM1(image))
     ok(rc == 2, "missing file -> exit 2")
+
+
+def transport_idle():
+    """Unrelated SysEx cannot extend the idle budget of the actual request server."""
+    class Clock:
+        now = 0.0
+
+        def monotonic(self):
+            return self.now
+
+        def sleep(self, seconds):
+            self.now += seconds
+
+    class Stream:
+        def __init__(self, clock, packets=(), tail=b"\xF0\x01\xF7", lost_at=None, limit=32):
+            self.clock, self.packets, self.tail = clock, list(packets), tail
+            self.lost_at, self.limit = lost_at, limit
+            self.reads, self.sent, self.closed = 0, [], False
+
+        @property
+        def lost(self):
+            return self.lost_at is not None and self.clock.now >= self.lost_at
+
+        def read(self, timeout):
+            self.reads += 1
+            if self.reads > self.limit:
+                raise AssertionError("no-progress stream exhausted its finite read oracle")
+            self.clock.now += min(timeout, 1.0)
+            return self.packets.pop(0) if self.packets else self.tail
+
+        def send(self, packet):
+            self.sent.append(bytes(packet))
+            return True
+
+        def close(self):
+            self.closed = True
+
+    def request(addr, n, flags=0):
+        body = bytearray([0, 0x59, 0x30, 8, 0, 0, flags])
+        body += addr.to_bytes(4, "little") + n.to_bytes(3, "little")
+        body.append(~sum(body[6:]) & 0xFF)
+        return b"\xF0" + I.pack7(body) + b"\xF7"
+
+    identity = b"\xF0" + I.pack7(bytes([0, 0x59, 0x11, 27, 0, 0]) + b"FM-1_900" + bytes(20)) + b"\xF7"
+    bad = bytearray(I.unpack7(request(0, 4)[1:-1]))
+    bad[-1] ^= 1
+    invalid = (b"\xF0\x01\xF7", identity, b"\xF0" + I.pack7(bad) + b"\xF7")
+    image = bytes(range(64))
+    ok(all(I.parse_request(packet) is None for packet in invalid),
+       "idle fixtures: truncated, unrelated identity and wrong-checksum SysEx are not requests")
+    # Integer simulated seconds keep the strict existing > boundary exact.
+    # Each read consumes at most its supplied timeout; no wall-clock sleep occurs.
+    with patch.dict(I.DELAY, poll=1.0, reply=0, start=0, idle_check=4.0, idle_write=4.0):
+        for index, packet in enumerate(invalid):
+            clock = Clock()
+            link = Stream(clock, tail=packet)
+            with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+                try:
+                    result = I.Updater(None).serve(link, image, I.FINISH_CHECK, 4.0, lambda *_: None)
+                except AssertionError:
+                    result = None
+            ok(result == (0, False, False) and link.reads == 5 and clock.now == 5 and not link.sent,
+               f"idle: continuous non-request SysEx {index} stops without data at the existing deadline")
+
+        clock = Clock()
+        link = Stream(clock, packets=[request(0, 4, 3), *invalid])
+        progress = []
+        with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+            try:
+                result = I.Updater(None).serve(link, image, I.FINISH_WRITE, 4.0,
+                                               lambda count, end: progress.append((count, end)))
+            except AssertionError:
+                result = None
+        ok(result == (1, False, False) and link.reads == 6 and clock.now == 6
+           and link.sent == [I.response(0, image[:4], 3)] and progress == [(1, 4)],
+           "idle: non-request traffic after a valid serve cannot extend its deadline")
+
+        clock = Clock()
+        link = Stream(clock, lost_at=3.0)
+        with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+            try:
+                result = I.Updater(None).serve(link, image, I.FINISH_WRITE, 4.0, lambda *_: None)
+            except AssertionError:
+                result = None
+        ok(result == (0, False, True) and link.reads == 3 and not link.sent,
+           "idle: queued non-request traffic does not hide a disconnected port")
+
+        # Total duration greatly exceeds idle. Valid requests renew the budget;
+        # the final request and its success response retain the wire contract.
+        clock = Clock()
+        packets, expected = [], []
+        for index in range(32):
+            addr = index % 16 * 4
+            packets.extend((request(addr, 4, 2), invalid[0], invalid[1]))
+            expected.append(I.response(addr, image[addr:addr + 4], 2))
+        packets.append(request(I.FINISH_WRITE, 8))
+        expected.append(I.response(I.FINISH_WRITE, b"success\0"))
+        link = Stream(clock, packets=packets, limit=128)
+        progress = []
+        with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+            result = I.Updater(None).serve(link, image, I.FINISH_WRITE, 4.0,
+                                           lambda count, end: progress.append((count, end)))
+        ok(result == (32, True, False) and clock.now == 97 and link.sent == expected
+           and progress == [(i + 1, (i % 16 + 1) * 4) for i in range(32)],
+           "idle: valid traffic resets the budget through a long transfer and exact finish response")
+
+        for phase in ("check", "write"):
+            clock = Clock()
+            link = Stream(clock)
+            dev = I.Device(link, I.Identity("FM-1_900", "FM-1", 900), "simulated")
+            error = None
+            with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+                try:
+                    getattr(I.Updater(None), phase)(dev, image, lambda *_: None)
+                except I.InstallError as e:
+                    error = e
+                except AssertionError:
+                    pass
+            ok(error is not None and error.code == "stopped" and I.EXIT[error.code] == 4
+               and link.closed and link.reads == 5 and link.sent == [I.UPGRADE],
+               f"idle: {phase} keeps exit 4 and closes the stalled link without extra responses")
 
 
 def compatibility():
@@ -613,89 +740,167 @@ def against_js():
 
 
 def stock_policy():
-    """Exercise the exact-digest exception with a synthetic stand-in, not real V15 format/device evidence."""
-    raw = flip(package(product="FM-1_015", marker=False), 0x30)
-    ok(I.ufw_damage(I.logical_image(raw)) is not None, "stock policy fixture would fail ordinary preflight")
-    digest = I.STOCK_V15_SHA256
+    """Exercise the exact-digest exception with a synthetic stand-in, not real V15/V16 format/device evidence."""
+    pins = dict(I.STOCK_SHA256)
     try:
-        I.STOCK_V15_SHA256 = hashlib.sha256(raw).hexdigest()
-        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015",
-                      loader_identity="ota-FM-1_015")
-        rc, out, err = cli([pkgfile("digest-approved.fwsc", raw), "--yes"], dev)
-        ok(rc == 0 and dev.bad == 0 and dev.identity == "FM-1_015",
-           "stock policy: exactly approved bytes bypass preflight and marker restrictions")
-        bad = bytearray(raw)
-        bad[-1] ^= 1
-        for force in ([], ["--force"]):
-            dev = FakeFM1(I.logical_image(bytes(bad)))
-            rc, out, err = cli([pkgfile("digest-modified.fwsc", bytes(bad)), "--yes", *force], dev)
-            ok(rc == 2 and dev.opened == 0 and dev.sent == [],
-               f"stock policy: changed bytes lose the digest exception, no MIDI ({force})")
-        unlisted = package(product="FM-1_015", marker=False)
-        dev = FakeFM1(I.logical_image(unlisted))
-        rc, out, err = cli([pkgfile("digest-unlisted.fwsc", unlisted), "--yes"], dev)
-        ok(rc == 2 and "reserved" in err and dev.opened == 0 and dev.sent == [],
-           "stock policy: matching identity alone does not grant the digest exception")
+        for product in ("FM-1_015", "FM-1_016"):
+            raw = flip(package(product=product, marker=False), 0x30)
+            ok(I.ufw_damage(I.logical_image(raw)) is not None, f"stock policy fixture would fail ordinary preflight ({product})")
+            I.STOCK_SHA256[product] = hashlib.sha256(raw).hexdigest()
+            dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write=product,
+                          loader_identity="ota-FM-1_015")
+            rc, out, err = cli([pkgfile("digest-approved.fwsc", raw), "--yes"], dev)
+            ok(rc == 0 and dev.bad == 0 and dev.identity == product and "boot area" in out,
+               f"stock policy: exactly approved bytes bypass preflight and marker restrictions ({product})")
+            ok(I.package_family(I.logical_image(raw), product) == "stock", f"stock policy: classified 'stock' ({product})")
+            bad = bytearray(raw)
+            bad[-1] ^= 1
+            for force in ([], ["--force"]):
+                dev = FakeFM1(I.logical_image(bytes(bad)))
+                rc, out, err = cli([pkgfile("digest-modified.fwsc", bytes(bad)), "--yes", *force], dev)
+                ok(rc == 2 and dev.opened == 0 and dev.sent == [],
+                   f"stock policy: changed bytes lose the digest exception, no MIDI ({product}, {force})")
+            unlisted = package(product=product, marker=False)
+            dev = FakeFM1(I.logical_image(unlisted))
+            rc, out, err = cli([pkgfile("digest-unlisted.fwsc", unlisted), "--yes"], dev)
+            ok(rc == 2 and "reserved" in err and dev.opened == 0 and dev.sent == [],
+               f"stock policy: matching identity alone does not grant the digest exception ({product})")
+        # the other version's digest does not approve this identity: each file is pinned to its own product
+        raw = flip(package(product="FM-1_016", marker=False), 0x30)
+        I.STOCK_SHA256["FM-1_015"], I.STOCK_SHA256["FM-1_016"] = hashlib.sha256(raw).hexdigest(), pins["FM-1_016"]
+        rc, out, err = cli([pkgfile("digest-crossed.fwsc", raw), "--yes"], FakeFM1(I.logical_image(raw)))
+        ok(rc == 2 and "reserved" in err, "stock policy: a digest pinned to V15 does not approve an FM-1_016 file")
+        for product in ("FM-1_014", "FM-1_017", "FM-1_000"):
+            unpinned = package(product=product, marker=False)
+            dev = FakeFM1(I.logical_image(unpinned))
+            rc, out, err = cli([pkgfile("unpinned.fwsc", unpinned), "--yes", "--force"], dev)
+            ok(rc == 2 and "reserved for M-VAVE's official firmware" in err and dev.opened == 0,
+               f"stock policy: unreviewed official identity {product} refused before MIDI")
     finally:
-        I.STOCK_V15_SHA256 = digest
+        I.STOCK_SHA256.clear()
+        I.STOCK_SHA256.update(pins)
+
+
+def foreign_states():
+    """#619: M-VAVE's FM1 Open firmware and m-bootloader get their own explanation, not a generic failure"""
+    raw = package()
+    image = I.logical_image(raw)
+    p = pkgfile("ok.fwsc", raw)
+    for identity in ("FM1_OFFICIAL_OPEN", "FM1_COMMUNITY_7", "FM-1_8000012"):
+        ident = I.parse_identity(b"\xF0" + I.pack7(bytes([0, 0x59, 0x11, 0, 0, 0]) + identity.encode()
+                                                   + bytes(28 - len(identity))) + b"\xF7")
+        ok(ident is not None and ident.open and not ident.loader, f"identity {identity}: M-VAVE FM1 Open firmware")
+        for name in ("FM1", "FM-1"):
+            dev = FakeFM1(image, identity=identity, name=name)
+            prompts = []
+            rc, out, err = cli([p], dev, prompts=prompts)
+            ok(rc == 6 and "FM1 Open firmware" in err and "official V15" in err and dev.upgrades == 0
+               and dev.served == 0 and prompts == [],
+               f"Open firmware {identity} on port {name!r}: exit 6 before confirmation, nothing sent")
+        dev = FakeFM1(image, identity=identity, name="FM1")
+        rc, out, err = cli(["--info"], dev)
+        ok(rc == 0 and "FM1 Open firmware" in out and dev.upgrades == 0, f"--info: {identity} named as Open firmware")
+        dev = FakeFM1(image, identity=identity)
+        link = FakeLink(dev, dev.gen)
+        try:
+            I.Updater(dev).install(I.Device(link, ident, "FM-1"), image, "FM-1_900")
+            code = None
+        except I.InstallError as e:
+            code = e.code
+        ok(code == "open" and link.closed and dev.upgrades == 0, f"install(): {identity} refused as 'open'")
+    for product, words in (("FM-1_099", "m-bootloader's installer"), ("FM-1_8000012", "FM1 Open firmware package")):
+        foreign = package(product=product, marker=False)
+        for force in ([], ["--force"]):
+            dev = FakeFM1(I.logical_image(foreign))
+            rc, out, err = cli([pkgfile("foreign.fwsc", foreign), "--yes", *force], dev)
+            ok(rc == 2 and words in err and dev.opened == 0 and dev.sent == [],
+               f"package {product}: '{words}', exit 2 before MIDI ({force})")
+    rc, out, err = cli([p, "--yes"], FakeFM1(image, name="FM1"))
+    ok(rc == 0, "an FM-1 on a port named 'FM1' is found")
+
+
+def stock_pins():
+    """#619: the device pins the official boot areas by SHA-256, the same digests the survey tool names them by"""
+    pins = ota_stock_fixtures.stock_pins()
+    ok([(p[0], fm1_bootarea.KNOWN_HEAD.get(p[3])) for p in pins] == [(0x93000, "FM-1_015"), (0xA9000, "FM-1_016")],
+       "ota.c OTA_STOCK: V15's and V16's boot-area SHA-256 are fm1_bootarea.py KNOWN_HEAD's")
 
 
 def official():
-    """#32: back to the official V15 from Felucca, without --force (only the unmodified file)"""
-    v15 = ROOT / "FM-1_v15.fwsc"
-    if not v15.exists():
-        v15 = ROOT / "build/recovery-inputs/FM-1_v15.fwsc"
-    if not v15.exists():
-        print("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)")
-        coverage.outcome('official-v15', 'skipped', 'proprietary-fixture-absent')
-        return
-    raw = v15.read_bytes()
-    dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015",
-                      loader_identity="ota-FM-1_015")
-    rc, out, err = cli([str(v15), "--yes"], dev)
-    ok(rc == 0 and dev.bad == 0 and "FM-1_015" in out and dev.identity == "FM-1_015",
-       "official V15 (FM-1.fwsc) from Felucca: installed without --force, back as FM-1_015")
-    ok(I.package_family(I.logical_image(raw), "FM-1_015") == "stock-v15",
-       "official V15: classifier recognizes complete approved file")
+    """#32/#619: back to the official V15 or V16 from Felucca, without --force (only the unmodified file)"""
+    for version in ("15", "16"):
+        product = f"FM-1_0{version}"
+        found = [f for f in (ROOT / f"FM-1_v{version}.fwsc", ROOT / f"build/recovery-inputs/FM-1_v{version}.fwsc")
+                 if f.exists()]
+        if not found:
+            print(f"official V{version} restore: skipped (needs FM-1_v{version}.fwsc in the repo root or "
+                  "build/recovery-inputs/)")
+            coverage.outcome(f'official-v{version}', 'skipped', 'proprietary-fixture-absent')
+            continue
+        official_one(found[0], product, version)
+
+
+def official_one(path, product, version):
+    raw = path.read_bytes()
+    before = failed
+    ok(hashlib.sha256(raw).hexdigest() == I.STOCK_SHA256[product], f"official V{version}: the fixture is the pinned file")
+    off, size = entry_of(raw, 0)
+    fl = I.logical_image(raw)[off:off + size]
+    key_ent = I.jl_dec(fl[0x40:0x60])                   # the boot area's isd_config.ini entry: the chip key blob
+    blob = fl[I.u32(key_ent, 4):I.u32(key_ent, 4) + 32]
+    key = M.chipkey_decode(blob) if key_ent[16:31] == b"isd_config.ini\0" else None
+    ok((size, I.crc16(fl), key, hashlib.sha256(fl[:0x4000]).hexdigest()) in ota_stock_fixtures.stock_pins(),
+       f"official V{version}: firmware/src/ota.c OTA_STOCK pins this file's flash.bin, boot-area SHA-256 and key")
+    ok(fm1_bootarea.KNOWN_HEAD.get(hashlib.sha256(fl[:0x4000]).hexdigest()) == product,
+       f"official V{version}: tools/fm1_bootarea.py KNOWN_HEAD names this file's boot area")
+    dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write=product,
+                  loader_identity="ota-FM-1_015")
+    rc, out, err = cli([str(path), "--yes"], dev)
+    ok(rc == 0 and dev.bad == 0 and product in out and dev.identity == product,
+       f"official V{version} (FM-1.fwsc) from Felucca: installed without --force, back as {product}")
+    ok(I.package_family(I.logical_image(raw), product) == "stock",
+       f"official V{version}: classifier recognizes complete approved file")
     for identity in ("ota-FM-1_015", "ota-FM-1_900", "ota-FM-1_901", "ota-FM-1_CUSTOM"):
-        dev = FakeFM1(I.logical_image(raw), identity=identity, name="Felucca Update", after_write="FM-1_015")
-        rc, out, err = cli([str(v15), "--yes"], dev)
+        dev = FakeFM1(I.logical_image(raw), identity=identity, name="Felucca Update", after_write=product)
+        rc, out, err = cli([str(path), "--yes"], dev)
         compatible = identity == "ota-FM-1_015"
         ok((rc == 0 and dev.upgrades == 1 and dev.served == 7) if compatible
            else (rc == 6 and dev.upgrades == 0 and dev.served == 0),
-           f"official V15 resume: loader {identity}, compatible={compatible}")
-        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", after_write="FM-1_015", loader_identity=identity)
-        rc, out, err = cli([str(v15), "--yes"], dev)
+           f"official V{version} resume: loader {identity}, compatible={compatible}")
+        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", after_write=product, loader_identity=identity)
+        rc, out, err = cli([str(path), "--yes"], dev)
         ok((rc == 0 and dev.upgrades == 2 and dev.served == 11) if compatible
            else (rc == 6 and dev.upgrades == 1 and dev.served == 4),
-           f"official V15 fresh: loader {identity}, compatible={compatible}")
+           f"official V{version} fresh: loader {identity}, compatible={compatible}")
     shifted = bytearray(raw)
-    product = "FM-1_015"
     for i in range(I.BLOCKS):
         shifted[i * I.BLK + I.KEEP] = ((ord(product[i - 1]) + i + 1) & 0xFF) if 1 <= i <= len(product) else 0x7D
     ok(I.product_of(shifted) == product and I.logical_image(shifted) == I.logical_image(raw),
-       "official digest fixture: noncanonical markers keep logical image and identity")
+       f"official V{version} digest fixture: noncanonical markers keep logical image and identity")
     dev = FakeFM1(I.logical_image(raw))
-    rc, out, err = cli([pkgfile("v15-shifted-markers.fwsc", shifted), "--yes", "--force"], dev)
+    rc, out, err = cli([pkgfile(f"v{version}-shifted-markers.fwsc", shifted), "--yes", "--force"], dev)
     ok(rc == 2 and dev.opened == 0 and "whole-file digest" in err,
-       "official V15: modified marker bytes fail exact-file digest before MIDI")
+       f"official V{version}: modified marker bytes fail exact-file digest before MIDI")
     bad = bytearray(raw)
     bad[-1] ^= 1
     dev = FakeFM1(I.logical_image(bytes(bad)), identity="FM-1_900", name="Felucca")
-    rc, out, err = cli([pkgfile("v15mod.fwsc", bytes(bad)), "--yes"], dev)
-    ok(rc == 2 and dev.opened == 0 and dev.sent == [], "a modified V15 is still refused (no MIDI)")
-    coverage.outcome('official-v15', 'failed' if failed else 'passed', sha256=hashlib.sha256(raw).hexdigest())
-
+    rc, out, err = cli([pkgfile(f"v{version}mod.fwsc", bytes(bad)), "--yes"], dev)
+    ok(rc == 2 and dev.opened == 0 and dev.sent == [], f"a modified V{version} is still refused (no MIDI)")
+    coverage.outcome(f'official-v{version}', 'failed' if failed != before else 'passed',
+                     sha256=hashlib.sha256(raw).hexdigest())
 
 wire()
 installs()
 errors()
+transport_idle()
 compatibility()
 preflight()
 dependency_guidance()
 js_synthetic()
 against_js()
 stock_policy()
+foreign_states()
+stock_pins()
 official()
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"INSTALL TESTS FAILED ({failed})" if failed else "install tests passed")

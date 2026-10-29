@@ -42,6 +42,13 @@ the portable host contract, never firmware engine IDs or storage versions.
   `ENGINES[]` (`firmware/src/engines.c`). The editor protocol, user presets, projects and favourites store
   it. **Append; never reorder or reuse.** `NENGINES` is only the length of this build's table (its highest
   id + 1); it is no stored value and no marker ([#212](https://github.com/kmplngj/Felucca/issues/212)).
+- Allocate its immutable `felucca.engine.<stable-slug>` key in `profiles/catalog.json`
+  and the reviewed `profiles/engine-identities.json` 64-slot reference together.
+  Never rename/reassign an allocated key or reuse its ID; retirement retains both.
+  Source moves, display names and compatible releases do not create a new identity.
+  Incompatible saved-sound changes require explicit migration or a separately reviewed
+  identity/ID, not a catalog rename. The [key contract](build-profiles.md#stable-engine-exchange-keys)
+  explains the host-only metadata, namespace and remaining #422 compatibility work.
 - A retired engine keeps its slot. Engine 1 (DIGITAL) is the example: `ENG_FM4_GONE` fills
   the slot, `eng_ok()` refuses to select it and old sounds convert to FM6
   (`firmware/src/fm4_convert.c`).
@@ -169,7 +176,9 @@ entry point changes engine, preset and values inside one window.
 - `F_*` formats are in `core.h`; reuse an existing format before adding one (UI, protocol and
   `tests/descdump.c` all switch on it).
 - [#31](https://github.com/kmplngj/Felucca/issues/31) owns shared parameter-metadata
-  exploration; reuse these native descriptors and preserve numeric/wire IDs rather
+  exploration; its [consumer audit and read-only proposal](parameter-metadata-research.md)
+  describe the existing owners, intentional panel/editor differences and follow-up
+  contract cases. Reuse these native descriptors and preserve numeric/wire IDs rather
   than creating a plugin metadata system in an engine extension.
 
 ### 1.6 Presets, categories, UI and help

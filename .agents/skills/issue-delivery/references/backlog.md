@@ -41,7 +41,7 @@ write or trusting prior results. Do not commit transient queue snapshots.
 2. Implement and perform focused checks. Delegate only independent work using the
    main skill's model/effort policy and explicit file/region ownership.
 3. Freeze the candidate and complete integrated validation, documentation and PR
-   user-test instructions. Obtain reviews and inspect current-head CI.
+   user-test instructions. Complete required review and inspect current-head CI.
 4. Resolve findings and recheck the updated candidate. Merge only if authorized and
    every gate in the main skill passes. Otherwise retain the exact pending gate and
    a reviewable handoff, then advance another independent package.
@@ -52,7 +52,17 @@ write or trusting prior results. Do not commit transient queue snapshots.
 
 Finish started packages before opening more when practical. Use bounded waits for
 CI/reviews and continue useful independent work; missing external results remain
-pending. Give concise updates on findings, completed packages and changed blockers.
+pending. Prefer completing existing candidates' missing evidence over accumulating
+more research plans or hardware-pending branches. When the hardware queue prevents
+acceptance, make the combined handoff ready and favor work that can finish independently.
+Give concise updates on findings, completed packages and changed blockers.
+
+For the next few batches after changing the delivery workflow, use available run/CI
+timestamps to record approximate time spent implementing, validating, correcting
+review findings and waiting for external gates in the working notes. Label estimates
+and overlapping work; distinguish elapsed wait from active effort. Use those findings
+to address the actual bottleneck without adding a new reporting system or claiming
+an unmeasured speedup.
 
 Stop only when every selected item is assessed and either no actionable work remains
 or every remaining item has an explicit blocker. Report what merged, what is ready
