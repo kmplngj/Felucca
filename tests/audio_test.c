@@ -5,6 +5,7 @@
 #ifdef C1_HOST
 #include "c1_host.h"
 #endif
+#define FELUCCA_UAC 1
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -40,13 +41,20 @@ static void fm1_audio_ack_half(void) { host_acks++; }
 static void fm1_audio_init(int32_t *b, uint32_t n, void (*isr)(void), uint32_t p)
 { (void)b; (void)n; (void)isr; (void)p; }
 void isr_alnk0(void) {}
-#define FELUCCA_UAC 1                                  /* audio.c taps USB audio: here into host_tap */
 static int32_t host_tap[2 * 64];
 static uint32_t host_tap_n;
-static void uac_tap(const int32_t *out, uint32_t n) { memcpy(host_tap, out, 8u * n); host_tap_n = n; }
+static void host_audio_tap(const int32_t *out, uint32_t n)
+{
+    memcpy(host_tap, out, 8u * n); host_tap_n = n;
+    uac_tap(out, n);                                    /* the real producer, including its 48 kHz FIR */
+}
 static int probe_isr;                                  /* isr_assert(): the stub calls a main-loop-only check from the render */
-static void uac_render_start(void) { if (probe_isr) FM1_ASSERT_THREAD(); }
+static void host_render_start(void) { if (probe_isr) FM1_ASSERT_THREAD(); uac_render_start(); }
+#define uac_tap host_audio_tap
+#define uac_render_start host_render_start
 #include "../firmware/src/audio.c"
+#undef uac_tap
+#undef uac_render_start
 #if FELUCCA_RENDER_STAGE
 static void host_stage_barrier(void)
 {
@@ -286,46 +294,191 @@ static double block_rms(const int32_t *b, uint32_t n)
     for (i = 0; i < 2u * n; i++) s += (double)b[i] * b[i];
     return sqrt(s / (2.0 * n));
 }
-static double usb_run(uint32_t fixed, uint32_t master, int dac_is_tap_scaled_ok[1], double *dac_rms)
+/* #775: matched renders, no replacement mixer or USB implementation.  The packet
+ * adapter calls usb.c directly; uac_test retains the independent FIR/transport oracle.
+ * Each case is 0.87 s: held chord, released voices, then FX alone. */
+#define USB_BLOCKS 1200u
+#define USB_WORDS (USB_BLOCKS * CTL * 2u)
+#define USB_PACKETS USB_WORDS
+static struct usb_capture {
+    int32_t tap[USB_WORDS], dac[USB_WORDS];
+    uint32_t packet[USB_PACKETS], np;
+    double energy[3][2];
+    uint32_t tail_voices, transport_ok;
+} usb_full, usb_off, usb_on;
+
+static void usb_fresh(uint32_t eq)
 {
-    int32_t out[2 * 32];
-    uint32_t b, i;
-    double usb = 0, dac = 0;
     fresh();
-    lim_env = LIM_T; dc_l = dc_r = dce_l = dce_r = 0;    /* (the master's state as at power-on: runs compare) */
-    trk[0].p[P_VOICE] = V_POLY;
-    trk[0].p[P_DIST] = trk[0].p[P_CHOR] = trk[0].p[P_DLY] = trk[0].p[P_REV] = 0;   /* (no tails between runs) */
-    trk_note_on(&trk[0], 48, 110); trk_note_on(&trk[0], 55, 110); trk_note_on(&trk[0], 64, 110);
-    fx_usb_fixed = (uint8_t)fixed;
-    song.master_q12 = master;
-    dac_is_tap_scaled_ok[0] = 1;
-    for (b = 0; b < 400u; b++) {                       /* ~0.3 s */
-        audio_block(out, 32);
-        for (i = 0; i < 64u; i++) {
-            int32_t want = fixed ? ((host_tap[i] * (int32_t)master) >> 12) << OUT_SHIFT : host_tap[i] << OUT_SHIFT;
-            if (out[i] != want) dac_is_tap_scaled_ok[0] = 0;
-        }
-        if (b >= 100u) { usb += block_rms(host_tap, 32); dac += block_rms(out, 32) / (1 << OUT_SHIFT); }
+    memset(&fx, 0, sizeof fx); memset(&hl, 0, sizeof hl);
+    memset(dly_buf, 0, sizeof dly_buf); memset(cho_buf, 0, sizeof cho_buf);
+    memset(rev_comb, 0, sizeof rev_comb); memset(&rev_u, 0, sizeof rev_u);
+    memset(&pf, 0, sizeof pf);
+    pf.src = pf.next = PF_N; pf.lc = PF_TOP;
+    for (uint32_t p = 0; p < NPART; p++) pf.mg[p] = 32768;
+    perf_held = perf_latched = perf_act = perf_kill = perf_solo = 0;
+    memset((void *)perf_k, 0, sizeof perf_k);
+    lim_env = LIM_T; dc_l = dc_r = dce_l = dce_r = 0;
+    lc_l1 = lc_l2 = lc_r1 = lc_r2 = 0; memset(lce, 0, sizeof lce);
+    sb_lp1 = sb_lp2 = sb_lp3 = sb_lp4 = sb_env = sb_h1 = sb_h2 = sb_hl = 0;
+    fx_lowcut = (uint8_t)eq;
+    seq_stop(); clk_pos = CLK_START; clk_step = 0;
+    memset(&clk, 0, sizeof clk);
+    click_req = cin_bars = 0; click_lvl = 1;
+    fm1_in.notes = kb_prev = 0; kb_boot_hold = 0;
+    memset(&midi_clock, 0, sizeof midi_clock); mi_r = mi_w = 0;
+    vage = 0;
+    for (uint32_t p = 0; p < 2u; p++) {
+        trk[p].p[P_VOICE] = V_POLY;
+        trk[p].p[P_LEVEL] = 70;
+        trk[p].p[P_PAN] = p ? 40 : -40;
+        trk[p].p[P_ATK] = 0; trk[p].p[P_SUS] = 100; trk[p].p[P_REL] = 25;
+        trk[p].p[P_DIST] = 0;
+        trk[p].p[P_CHOR] = 50; trk[p].p[P_DLY] = 60; trk[p].p[P_REV] = 70;
     }
-    fx_usb_fixed = 0;
-    *dac_rms = dac / 300.0;
-    return usb / 300.0;
+    trk_note_on(&trk[0], 43, 95); trk_note_on(&trk[1], 64, 105);
+    song.g[G_BPM] = 120; song.g[G_DTIME] = 2;
+    song.g[G_RSIZE] = 90;
 }
+
+static void usb_run(struct usb_capture *c, uint32_t fixed, uint32_t master,
+                    uint32_t click, uint32_t eq, uint32_t rate, int switching)
+{
+    int32_t out[2u * CTL];
+    uint32_t b, i, next_ms = 1;
+    usb_fresh(eq);
+    memset(c, 0, sizeof *c);
+    memset(&uac, 0, sizeof uac); ua_w = ua_r = 0;
+    usb.config = 1; uac_rate_set(rate); uac_stream(1); uac.flowing = 1;
+    fx_usb_fixed = (uint8_t)fixed; song.master_q12 = master;
+    click_mode = click ? CLICK_ON : CLICK_OFF;
+    transport_req = 1;                                /* empty patterns; held notes are independent */
+    for (b = 0; b < USB_BLOCKS; b++) {
+        if (switching) fx_usb_fixed = (uint8_t)((b / 200u) & 1u);
+        if (b == 400u) {
+            trk_note_off(&trk[0], 43); trk_note_off(&trk[1], 64);
+        }
+        if (b % (HALF_FRAMES / CTL) == 0) uac_render_start();
+        audio_block(out, CTL);
+        memcpy(c->tap + b * 2u * CTL, host_tap, sizeof out);
+        for (i = 0; i < 2u * CTL; i++) c->dac[b * 2u * CTL + i] = out[i] / (1 << OUT_SHIFT);
+        if (b == 700u) c->tail_voices = voices_busy();
+        uint32_t phase = b < 400u ? 0 : b < 500u ? 1 : 2;
+        for (i = 0; i < 2u * CTL; i++)
+            if (b < 500u || b >= 700u)
+                c->energy[phase][i & 1u] += (double)host_tap[i] * host_tap[i];
+        /* Instantaneous half renders at nominal I2S cadence; drain the intervening
+         * 1 ms packets as a burst. This offline adapter checks routing/ordering,
+         * not ISR/service interleaving, render lateness or physical deadlines. */
+        if ((b + 1u) % (HALF_FRAMES / CTL) == 0)
+            while ((uint64_t)next_ms * 24000u <= (uint64_t)(b + 1u) * CTL * DAC_TICKS) {
+                uint32_t packet[UA_MAXF], n = uac_packet(packet);
+                if (c->np + n > USB_PACKETS) abort();
+                memcpy(c->packet + c->np, packet, n * sizeof *packet); c->np += n;
+                next_ms++;
+            }
+    }
+    c->transport_ok = !uac.underruns && !uac.overruns && c->np > FS / 2u;
+    /* Independent 44.1 oracle: priming silence, then every rendered stereo
+     * frame once, in order. Do not read ua_ring or call the production packer. */
+    if (rate == 44100u)
+        for (i = 0; i < c->np; i++) {
+            uint32_t want = 0;
+            if (i >= UA_PRIME) {
+                uint32_t at = 2u * (i - UA_PRIME);
+                want = (uint16_t)c->tap[at] | (uint32_t)(uint16_t)c->tap[at + 1u] << 16;
+            }
+            c->transport_ok &= c->packet[i] == want;
+        }
+    /* The 48 kHz numerical FIR oracle remains in uac_test. Here require the
+     * rendered stream's duration and both packet channels to carry music. */
+    c->transport_ok &= c->np > (uint64_t)USB_BLOCKS * CTL * rate / FS * 98u / 100u &&
+                       c->np < (uint64_t)USB_BLOCKS * CTL * rate / FS * 102u / 100u;
+    uac_stream(0); usb.config = 0; fx_usb_fixed = fx_lowcut = click_mode = 0;
+}
+
 static void usb_level(void)
 {
-    int ok_full, ok_quiet, ok_off, ok_fixed, ok_fixed0;
-    double d_full, d_quiet, d_off, d_fixed, d_fixed0;
-    double u_full = usb_run(0, 4096, &ok_full, &d_full), u_quiet = usb_run(0, 1024, &ok_quiet, &d_quiet);
-    double u_off = usb_run(0, 0, &ok_off, &d_off), u_fixed = usb_run(1, 1024, &ok_fixed, &d_fixed);
-    double u_fixed0 = usb_run(1, 0, &ok_fixed0, &d_fixed0);
-    printf("audio: USB / DAC rms: MASTER full %.0f / %.0f, 1/4 %.0f / %.0f, 0 %.0f / %.0f; FIXED 1/4 %.0f / %.0f, 0 %.0f / %.0f\n",
-           u_full, d_full, u_quiet, d_quiet, u_off, d_off, u_fixed, d_fixed, u_fixed0, d_fixed0);
-    check("USB LEVEL MASTER (default): USB is the DAC's signal and follows the knob (0: silent)",
-          ok_full && ok_quiet && ok_off && u_full > 1000.0 && u_quiet < u_full * 0.5 && u_off == 0.0);
-    check("USB LEVEL FIXED: USB at the full level whatever MASTER is (within 0.1 dB), MASTER 0 too",
-          fabs(20.0 * log10(u_fixed / u_full)) < 0.1 && fabs(20.0 * log10(u_fixed0 / u_full)) < 0.1);
-    check("USB LEVEL FIXED: the DAC gets exactly USB scaled by MASTER (MASTER 0: silent, 1/4: -12 dB)",
-          ok_fixed && ok_fixed0 && d_fixed0 == 0.0 && fabs(20.0 * log10(d_fixed / u_fixed) + 12.04) < 0.2);
+    static const uint32_t masters[3] = {0, 1024, 4096};
+    static int32_t previous_eq[USB_WORDS];
+    uint32_t rate, eq, fixed, m, i, ch, phase;
+    char label[150];
+    for (rate = 44100; rate <= (FELUCCA_UAC_48K ? 48000u : 44100u); rate += 3900)
+        for (eq = 0; eq < 3u; eq++) {
+            usb_run(&usb_full, 0, 4096, 0, eq, rate, 0);
+            int bounded = 1;
+            uint32_t changed[2] = {0, 0};
+            for (i = 0; i < USB_WORDS; i++) {
+                bounded &= abs(usb_full.tap[i]) < 32000;
+                changed[i & 1u] += usb_full.tap[i] != previous_eq[i];
+            }
+            snprintf(label, sizeof label, "%u Hz EQ %u: full reference has headroom; EQ reaches both shared output channels", rate, eq);
+            check(label, bounded && (!eq || (changed[0] > 1000u && changed[1] > 1000u)));
+            memcpy(previous_eq, usb_full.tap, sizeof previous_eq);
+            for (fixed = 0; fixed < 2u; fixed++)
+                for (m = 0; m < 3u; m++) {
+                    uint32_t master = masters[m];
+                    int route = 1, clean = 1, audible = 1, click_dac = 0, stereo = 0;
+                    usb_run(&usb_off, fixed, master, 0, eq, rate, 0);
+                    usb_run(&usb_on, fixed, master, 1, eq, rate, 0);
+                    for (i = 0; i < USB_WORDS; i++) {
+                        int32_t tap = usb_off.tap[i];
+                        int32_t want = fixed ? (tap * (int32_t)master) >> 12 : tap;
+                        route &= usb_off.dac[i] == want;
+                        if (fixed || master == 4096) route &= tap == usb_full.tap[i];
+                        if (!master) route &= !usb_off.dac[i] && !usb_on.dac[i] && (fixed || !tap);
+                        clean &= usb_on.tap[i] == tap;
+                        click_dac |= usb_on.dac[i] != usb_off.dac[i];
+                        if ((i & 1u) && usb_full.tap[i] != usb_full.tap[i - 1u]) stereo = 1;
+                    }
+                    clean &= usb_on.np == usb_off.np && !memcmp(usb_on.packet, usb_off.packet, usb_on.np * sizeof(uint32_t));
+                    if (fixed || master == 4096)
+                        route &= usb_off.np == usb_full.np && !memcmp(usb_off.packet, usb_full.packet, usb_off.np * sizeof(uint32_t));
+                    for (ch = 0; ch < 2u; ch++)
+                        for (phase = 0; phase < 3u; phase++) {
+                            double e = usb_off.energy[phase][ch], full = usb_full.energy[phase][ch];
+                            audible &= full > 1000000.0;
+                            if (fixed || master) audible &= e > 1000.0;
+                            if (!fixed && master == 1024) audible &= e < full * 0.3;
+                        }
+                    for (ch = 0; ch < 2u; ch++) {
+                        double packet_energy = 0;
+                        for (i = 0; i < usb_off.np; i++) {
+                            int16_t v = (int16_t)(usb_off.packet[i] >> (16u * ch));
+                            packet_energy += (double)v * v;
+                        }
+                        audible &= fixed || master ? packet_energy > 1000000.0 : packet_energy == 0;
+                    }
+                    if (!fixed && !master)
+                        for (i = 0; i < usb_off.np; i++) route &= !usb_off.packet[i];
+                    snprintf(label, sizeof label, "%u Hz EQ %u %s MASTER %u: stereo held/release/FX, DAC/tap/packets, click OFF/ON",
+                             rate, eq, fixed ? "FIXED" : "MASTER", master);
+                    check(label, route && clean && audible && stereo && !usb_off.tail_voices &&
+                          usb_off.transport_ok && usb_on.transport_ok && (master ? click_dac : !click_dac));
+                }
+            /* Full MASTER makes the two routing paths identical: switching while
+             * sounding and during release/tails must preserve every stereo sample. */
+            usb_run(&usb_on, 0, 4096, 0, eq, rate, 1);
+            snprintf(label, sizeof label, "%u Hz EQ %u: MASTER <-> FIXED during held notes, release and FX tails", rate, eq);
+            check(label, !memcmp(usb_on.tap, usb_full.tap, sizeof usb_full.tap) &&
+                  !memcmp(usb_on.dac, usb_full.dac, sizeof usb_full.dac) && usb_on.np == usb_full.np &&
+                  !memcmp(usb_on.packet, usb_full.packet, usb_on.np * sizeof(uint32_t)) && usb_on.transport_ok);
+            usb_run(&usb_on, 0, 1024, 0, eq, rate, 1);
+            int route = 1;
+            double held_master[2] = {0, 0}, held_fixed[2] = {0, 0};
+            for (i = 0; i < USB_WORDS; i++) {
+                uint32_t b = i / (2u * CTL), fixed_now = (b / 200u) & 1u;
+                int32_t tap = usb_on.tap[i];
+                route &= usb_on.dac[i] == (fixed_now ? (tap * 1024) >> 12 : tap);
+                if (b >= 100u && b < 200u) held_master[i & 1u] += (double)tap * tap;
+                if (b >= 300u && b < 400u) held_fixed[i & 1u] += (double)tap * tap;
+            }
+            snprintf(label, sizeof label, "%u Hz EQ %u: live MASTER <-> FIXED at quarter MASTER preserves DAC scaling", rate, eq);
+            check(label, route && usb_on.transport_ok && !usb_on.tail_voices &&
+                  held_fixed[0] > 2.0 * held_master[0] && held_fixed[1] > 2.0 * held_master[1]);
+        }
+    /* Keep the following boot/overload fixtures independent of this FX history. */
+    usb_fresh(0); fresh();
 }
 
 /* #137: keys pressed under the splash. main.c: master_boot before audio_init (the pot's level from the first block),

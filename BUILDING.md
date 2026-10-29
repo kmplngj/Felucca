@@ -664,6 +664,12 @@ their floating-point originals; without it that test is skipped. Felucca-Engines
 (`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
 against the same golden renders.
 
+The audio and click fixtures also check the [USB music routing
+matrix](docs/usb-audio-routing.md): MASTER/FIXED, stereo MASTER attenuation,
+DAC-only click and shared SPEAKER EQ, including release/FX tails and production
+UAC packet output at 44.1/48 kHz. Host routing and packet evidence remains
+separate from physical USB/analog capture.
+
 The USB and USB sanitizer units also run
 [the composite-service fixture](tests/usb_service_test.c) with CDC compiled in/out
 at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enabled.

@@ -89,6 +89,11 @@ retain/defer decision; no clock correction is enabled by this diagnostic.
 
 ## USB test-tone recordings
 
+For ordinary musical recordings, use the [USB music routing and capture
+checks](usb-audio-routing.md). MASTER/FIXED gain, DAC-only metronome and shared
+SPEAKER EQ need separate USB and analog observations; a tone result does not
+qualify those routes.
+
 For an existing recording from a known `FELUCCA_UAC_TONE=1` build, run:
 
 ```sh
