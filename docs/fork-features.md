@@ -267,3 +267,64 @@ complete physical darkness. The owner reports immediate colour/text recovery
 with the [LCD rollback A/B](lcd-colour-ab-2026-10-22.md); timed transitions and
 repeated wake/audio checks remain pending. Independent backlight-off is unresolved,
 and no power-saving claim is made.
+
+## Native MIDI layers
+
+In MIDI IN TRACK mode, assigning two or more parts to the same channel layers
+those parts. Choose a different sound for each part on the panel or with the
+editor, and mix them with each part's LVL in HOME > MIXER. Levels are independent;
+there is no automatic complementary percentage or stock V16 SysEx command.
+All parts still share the existing eight-voice pool, so layering uses more voices.
+The built-in keys play only the selected part, and sequencer tracks remain independent.
+
+Notes, sustain, bend, wheel, aftertouch, mapped CCs and Program Change reach all
+parts explicitly assigned to that channel. A shared-channel CC7 sets every layer's
+level; use the panel/editor or MIDI LEARN for independent levels. Program Change
+selects a program in each part's current engine, so it can replace prepared sounds.
+MIDI LEARN retains its explicit target and runs once per incoming CC.
+An unassigned channel uses the first OMNI part, as before; OFF receives nothing.
+
+Removing a part from the layer releases that part's MIDI notes, including pedal-held
+ones, while remaining parts retain their notes. Adding a part takes effect on the
+next note-on. Sound changes forget only that part's old note owners. USB and TRS
+continue to share MIDI channel state. Projects store the existing channel assignments;
+older firmware loads them but plays only the first part on a duplicate channel.
+
+### Hardware check — pending
+
+Build this checkout with `uv run --locked --group build ./build.sh` using the
+[prerequisites](../BUILDING.md#prerequisites-macos). Retain the build's
+`build/gen/build-identity.json` and `build/resource-report.json`, together
+with the source revision and local diff. The installable file is
+`build/felucca.fwsc`; follow [installation](../BUILDING.md#install) for an FM-1.
+Host and emulator checks do not establish physical USB/TRS, sound or deadline behavior.
+
+Use a disposable project, transport stopped, CPU2 OFF, headphones/output and an
+external MIDI keyboard sending channel 1 through USB or TRS. Keep a backup of any
+project you intend to overwrite.
+
+1. Select T1 with SELECT, choose an ANALOG preset using ALGORITHM/PRESETS; select
+   T2 and choose a contrasting preset. Tap HOME to reach HOME, then tap HOME for
+   MIXER; set T1/T2 levels with knobs 1/2, starting quietly.
+2. Hold HOME to open MENU. Select the MIDI tab with ALGORITHM and the MIDI IN row
+   with PRESETS; turn KNOB 1 to TRACK. Set T1 CHANNEL and T2 CHANNEL to 1 using
+   the same row/value controls. Keep T3/T4 on their default channels 3/4. Tap HOME
+   to close MENU.
+3. Play channel-1 notes externally. Hear both sounds; reduce T1 then T2 independently
+   on HOME > MIXER to isolate each. Sustain a note, release the key, then release
+   the pedal: both sounds should release without a stuck note. Repeat with quick
+   repeated notes and a small chord.
+4. While a note is pedal-held, change T2 CHANNEL to 2 in MENU. Only T2 should release;
+   T1 continues until pedal-up. Restore T2 CHANNEL to 1; the next note plays both.
+   Repeat the note/release checks over the other USB/TRS transport when available.
+5. Tap SAVE until PROJECT appears (the page cycle is USER, PRESETS, PHRASES,
+   PROJECT, TOOLS). Turn KNOB 1 to an empty disposable slot A–D. Turn KNOB 4
+   right to pick SAVE, tap OCT+ to open NAME, then tap OCT+ to save the default
+   name. Temporarily give T2 a different channel in MENU, return to PROJECT,
+   turn KNOB 3 right to pick LOAD and tap OCT+. Both channel assignments and
+   levels should return. On older firmware the same project plays only the first
+   assigned part. Restore separate channels 1/2 to disable the layer.
+
+Report the source revision/local diff, package identity, device/host, transport,
+scenarios performed and observed results. Physical validation remains pending until
+these steps have been performed on the actual candidate.

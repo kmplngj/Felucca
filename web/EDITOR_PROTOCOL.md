@@ -729,9 +729,11 @@ for a value outside −64..127. See [parameter-count history](#parameter-count-h
   0..4 and the five names; firmware before 1.2 clamps 2..4 to 1 (SEL) when it loads such a project.
   1.5.5 (#202, append-only): 5 "TRACK", each track on its own channel, set by MENU settings 26..29 (T1..T4 CHANNEL:
   1..16, OMNI = any channel no track has, OFF = none; 1..4 by default, so TRACK with the defaults is CH1-4). A channel
-  two tracks have plays the first; a channel no track has is ignored as outside a block. Notes, bend, CCs (the CC
+  several tracks have plays all of them as a layer (older firmware plays only the first); a channel no track has is ignored as outside a block. Notes, bend, CCs (the CC
   map, CC1, the panic CCs), aftertouch and Program Change follow it; MIDI LEARN's CCs still set their own track (from
-  any channel a track hears); the keys' MIDI out goes on the track's channel (OMNI / OFF: its CH1-4 one). `DESC` gives
+  any channel a track hears); the keys' MIDI out goes on the track's channel (OMNI / OFF: its CH1-4 one). The built-in keys still play only
+  the selected part. Shared-channel CCs and Program Change reach every layered part; use track-specific SET or
+  the panel to prepare different sounds and levels. No new wire IDs or saved bytes are introduced. `DESC` gives
   range 0..5. The channels are the project's, in FUN10's spare bytes (below: "MIDI IN TRACK in a project"); a project
   with TRACK stores id 14 as the block its channels make (channels 5..8 in order: CH5-8 ..), else CH1-4, so 1.5.1 and
   earlier (which never read those bytes) open it with that block.
