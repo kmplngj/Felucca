@@ -7,6 +7,9 @@ part of the process once the larger tasks I want to complete are done. See the
 
 The requirements below guide my development work and any future contributions.
 
+Project interactions follow the [code of conduct](CODE_OF_CONDUCT.md). For suspected
+security vulnerabilities, use the [security policy](SECURITY.md) before posting details.
+
 ## Issue notes
 
 When recording a bug, include the build commit, Felucca version, relevant host OS

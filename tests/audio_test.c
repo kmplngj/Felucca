@@ -2,6 +2,9 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The real audio ISR with a simulated DMA and clock: overload must free work
  * within one block without cutting another part's lead or bass. */
+#ifdef C1_HOST
+#include "c1_host.h"
+#endif
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -10,9 +13,27 @@
 #define FM1_TICKS_PER_US 1u
 static uint32_t host_clock, host_us, host_half_reads, host_dma_advanced, host_acks, host_nest;
 static uint8_t host_pending;
+#if FELUCCA_RENDER_STAGE
+static uint32_t host_tick_reads, host_inject_read, host_copy_interrupt;
+static void host_stage_barrier(void);
+#undef RING_PUBLISH
+#define RING_PUBLISH() host_stage_barrier()
+#endif
 static volatile uint32_t t5_nested_ticks;              /* audio.c's: TIMER5 nested in the render (main.c) */
-static uint32_t fm1_ticks(void) { t5_nested_ticks = host_nest; host_clock += host_us; return host_clock; }
-static uint8_t fm1_audio_pending(void) { return host_pending; }
+static uint32_t fm1_ticks(void)
+{
+#if FELUCCA_RENDER_STAGE
+    if (++host_tick_reads == host_inject_read) host_nest += 3u;
+#endif
+    t5_nested_ticks = host_nest; host_clock += host_us; return host_clock;
+}
+static uint8_t fm1_audio_pending(void)
+{
+#if FELUCCA_RENDER_STAGE
+    host_tick_reads = 0;
+#endif
+    return host_pending;
+}
 static void fm1_audio_ack_aux(uint8_t p) { (void)p; }
 static uint32_t fm1_audio_free_half(void) { return host_dma_advanced && host_half_reads++ > 0u; }
 static void fm1_audio_ack_half(void) { host_acks++; }
@@ -26,6 +47,16 @@ static void uac_tap(const int32_t *out, uint32_t n) { memcpy(host_tap, out, 8u *
 static int probe_isr;                                  /* isr_assert(): the stub calls a main-loop-only check from the render */
 static void uac_render_start(void) { if (probe_isr) FM1_ASSERT_THREAD(); }
 #include "../firmware/src/audio.c"
+#if FELUCCA_RENDER_STAGE
+static void host_stage_barrier(void)
+{
+    __asm__ volatile("" ::: "memory");
+    if (host_copy_interrupt && !--host_copy_interrupt) {
+        render_stage_seq += 2u;              /* a complete ALNK publication during a foreground copy */
+        render_stage.halves++;
+    }
+}
+#endif
 enum { FM1_ADC_BATT = 3, FM1_ADC_MASTER = 4 };
 static int32_t host_pot = 1023;                        /* the MASTER pot as the ADC reads it (-1: timeout) */
 static int32_t fm1_adc_read(uint32_t ch) { return ch == FM1_ADC_MASTER ? host_pot : 620; }
@@ -50,8 +81,90 @@ static void fresh(void)
     shed_req = 0; shed_count = 0; shed_over = 0;
     host_clock = host_us = host_half_reads = host_dma_advanced = host_acks = host_nest = 0;
     host_pending = FM1_AUDIO_HALF;
+#if FELUCCA_RENDER_STAGE
+    memset((void *)&render_stage, 0, sizeof render_stage);
+    render_stage_seq = host_tick_reads = host_inject_read = host_copy_interrupt = 0;
+    render_stage_begin();
+#endif
     transport_req = panic_req = 0;
 }
+
+#if FELUCCA_RENDER_STAGE
+static void stage_observer(void)
+{
+    render_stage_t s;
+    uint32_t n = HALF_FRAMES / CTL, end_read = 3u + 4u * n;
+    fresh();
+    check("stage: boot has no samples", render_stage_read(&s) && !s.halves && !s.valid);
+    host_us = 10;
+    fm1_alnk0_irq();
+    check("stage: real ISR publishes raw per-half mix/control/window/nested values",
+          render_stage_read(&s) && s.valid && !s.error && s.halves == 1u && s.blocks == n &&
+          s.mix_last == 10u * n && s.empty_last == 10u * n &&
+          s.half_last == (end_read - 2u) * 10u && s.nested_last == 0);
+    host_inject_read = 6u;                   /* TIMER5 inside a mix interval, not a boundary */
+    host_nest = 0;
+    fm1_alnk0_irq();
+    check("stage: nested service remains inclusive and is reported once separately",
+          render_stage_read(&s) && s.valid && s.nested_last == 3u && s.mix_last == 10u * n);
+    fresh(); host_clock = UINT32_MAX - 30u; host_us = 10;
+    fm1_alnk0_irq();
+    check("stage: raw timer wrap preserves bounded unsigned intervals",
+          render_stage_read(&s) && s.valid && !s.error && s.half_last == (end_read - 2u) * 10u);
+    fresh(); host_us = 10; host_inject_read = 2u;
+    fm1_alnk0_irq();
+    check("stage: start-boundary preemption rejects latest sample",
+          render_stage_read(&s) && !s.valid && !s.error && s.rejected == 1u && !s.halves);
+    host_nest = host_inject_read = 0;
+    fm1_alnk0_irq();
+    check("stage: next unambiguous half recovers, retaining rejection count",
+          render_stage_read(&s) && s.valid && !s.error && s.rejected == 1u && s.halves == 1u);
+    host_nest = 0; host_inject_read = end_read;
+    fm1_alnk0_irq();
+    check("stage: end-boundary preemption rejects without refreshing history",
+          render_stage_read(&s) && !s.valid && !s.error && s.rejected == 2u && s.halves == 1u);
+    host_nest = host_inject_read = 0;
+    fm1_alnk0_irq();
+    check("stage: end-boundary rejection also recovers", render_stage_read(&s) && s.valid && s.halves == 2u);
+    render_stage_seq |= 1u;
+    check("stage: active writer makes snapshot unavailable", !render_stage_read(&s));
+    render_stage_seq++;
+    host_copy_interrupt = 2u;
+    check("stage: publication after copy invalidates snapshot", !render_stage_read(&s));
+    host_copy_interrupt = 1u;
+    check("stage: publication before copy also invalidates snapshot", !render_stage_read(&s));
+    check("stage: coherent subsequent snapshot succeeds", render_stage_read(&s));
+    fresh();
+    render_stage_block(RENDER_STAGE_LIMIT, 0);
+    render_stage_publish(RENDER_STAGE_LIMIT, RENDER_STAGE_LIMIT, 0);
+    check("stage: supported raw range reaches its upper bound",
+          render_stage_read(&s) && s.valid && s.mix_last == RENDER_STAGE_LIMIT);
+    render_stage_begin(); render_stage_block(1u, 0);
+    render_stage_publish(10u, 11u, 0);
+    check("stage: unmatched nested total fails closed", render_stage_read(&s) && !s.valid && (s.error & RENDER_STAGE_RANGE));
+    render_stage_publish(10u, 0, 0);
+    check("stage: range failure is sticky", render_stage_read(&s) && !s.valid && s.halves == 1u);
+    fresh(); host_us = 0; fm1_alnk0_irq();
+    check("stage: stopped/nonprogressing clock is unavailable", render_stage_read(&s) && !s.valid && (s.error & RENDER_STAGE_RANGE));
+    fresh(); render_stage_block(0, 0); render_stage_publish(10u, 0, 0);
+    check("stage: zero mix interval is unavailable even with a progressing window",
+          render_stage_read(&s) && !s.valid && (s.error & RENDER_STAGE_RANGE));
+    fresh(); render_stage_block(RENDER_STAGE_LIMIT + 1u, 0); render_stage_publish(RENDER_STAGE_LIMIT, 0, 0);
+    check("stage: unsupported half-period interval is unavailable",
+          render_stage_read(&s) && !s.valid && (s.error & RENDER_STAGE_RANGE));
+    fresh(); render_stage_block(RENDER_STAGE_LIMIT, 0); render_stage_block(RENDER_STAGE_LIMIT, 0);
+    render_stage_block(2u, 0); render_stage_publish(10u, 0, 0);
+    check("stage: sum overflow freezes data", render_stage_read(&s) && !s.valid && (s.error & RENDER_STAGE_SUM));
+    fresh(); render_stage.halves = UINT32_MAX; render_stage_block(1u, 0); render_stage_publish(10u, 0, 0);
+    check("stage: half-count exhaustion cannot wrap", render_stage_read(&s) && !s.valid && s.halves == UINT32_MAX && (s.error & RENDER_STAGE_COUNT));
+    fresh(); render_stage.blocks = UINT32_MAX; render_stage_block(1u, 0); render_stage_publish(10u, 0, 0);
+    check("stage: block-count exhaustion cannot wrap", render_stage_read(&s) && !s.valid && s.blocks == UINT32_MAX && (s.error & RENDER_STAGE_COUNT));
+    fresh(); render_stage.rejected = UINT32_MAX; render_stage_publish(0, 0, 1);
+    check("stage: rejection-count exhaustion cannot wrap", render_stage_read(&s) && !s.valid && s.rejected == UINT32_MAX && (s.error & RENDER_STAGE_COUNT));
+    fresh(); render_stage_seq = UINT32_MAX - 1u; host_us = 10; fm1_alnk0_irq();
+    check("stage: publication sequence wraps coherently", render_stage_read(&s) && s.valid && render_stage_seq == 0);
+}
+#endif
 static voice_t *held(track_t *t, uint32_t note)
 {
     uint32_t i;
@@ -289,12 +402,49 @@ static void boot_keys(void)
           ref > 100.0 && fabs(quiet - ref) < 1e-9 && silent == 0.0);
 }
 
+/* Byte-for-byte matched observer OFF/ON output/state, independent of host clock
+ * call count. Only the synthetic timing differs; both remain below shedding. */
+static int stage_equivalence(const char *path)
+{
+    uint32_t b, p;
+    FILE *f = fopen(path, "wb");
+    if (!f) return 2;
+    fresh();
+    song.master_q12 = 4096;
+    host_us = 1;
+    trk_note_on(&trk[0], 48, 100);
+    trk_note_on(&trk[0], 55, 90);
+    for (b = 0; b < 80u; b++) {
+        if (b == 24u) trk_note_off(&trk[0], 48);
+        if (b == 40u) trk_note_off(&trk[0], 55);
+        fm1_alnk0_irq();
+        if (fwrite(abuf, sizeof abuf[0], HALF_WORDS, f) != HALF_WORDS) return 2;
+        for (p = 0; p < NPART; p++)
+            if (fwrite(trk[p].v, sizeof trk[p].v, 1, f) != 1) return 2;
+    }
+    if (fclose(f)) return 2;
+#ifdef C1_HOST
+    if (!c1h_taken || !c1h_blocks) {
+        fputs("audio: threaded fixture dispatched no worker blocks\n", stderr);
+        return 2;
+    }
+#endif
+    return 0;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
+    if (getenv("STAGE_EQUIVALENCE")) return stage_equivalence(getenv("STAGE_EQUIVALENCE"));
     usb_level();
     boot_keys();
-    overload(); dma(); isr_assert();
+    overload();
+#if FELUCCA_RENDER_STAGE
+    stage_observer();             /* dma()'s two-read synthetic clock is specific to the OFF build */
+#else
+    dma();
+#endif
+    isr_assert();
     printf(bad ? "audio: %d FAILED\n" : "audio: all passed\n", bad);
     return bad != 0;
 }

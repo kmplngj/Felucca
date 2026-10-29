@@ -360,6 +360,127 @@ def errors():
     ok(rc == 2, "missing file -> exit 2")
 
 
+def transport_idle():
+    """Unrelated SysEx cannot extend the idle budget of the actual request server."""
+    class Clock:
+        now = 0.0
+
+        def monotonic(self):
+            return self.now
+
+        def sleep(self, seconds):
+            self.now += seconds
+
+    class Stream:
+        def __init__(self, clock, packets=(), tail=b"\xF0\x01\xF7", lost_at=None, limit=32):
+            self.clock, self.packets, self.tail = clock, list(packets), tail
+            self.lost_at, self.limit = lost_at, limit
+            self.reads, self.sent, self.closed = 0, [], False
+
+        @property
+        def lost(self):
+            return self.lost_at is not None and self.clock.now >= self.lost_at
+
+        def read(self, timeout):
+            self.reads += 1
+            if self.reads > self.limit:
+                raise AssertionError("no-progress stream exhausted its finite read oracle")
+            self.clock.now += min(timeout, 1.0)
+            return self.packets.pop(0) if self.packets else self.tail
+
+        def send(self, packet):
+            self.sent.append(bytes(packet))
+            return True
+
+        def close(self):
+            self.closed = True
+
+    def request(addr, n, flags=0):
+        body = bytearray([0, 0x59, 0x30, 8, 0, 0, flags])
+        body += addr.to_bytes(4, "little") + n.to_bytes(3, "little")
+        body.append(~sum(body[6:]) & 0xFF)
+        return b"\xF0" + I.pack7(body) + b"\xF7"
+
+    identity = b"\xF0" + I.pack7(bytes([0, 0x59, 0x11, 27, 0, 0]) + b"FM-1_900" + bytes(20)) + b"\xF7"
+    bad = bytearray(I.unpack7(request(0, 4)[1:-1]))
+    bad[-1] ^= 1
+    invalid = (b"\xF0\x01\xF7", identity, b"\xF0" + I.pack7(bad) + b"\xF7")
+    image = bytes(range(64))
+    ok(all(I.parse_request(packet) is None for packet in invalid),
+       "idle fixtures: truncated, unrelated identity and wrong-checksum SysEx are not requests")
+    # Integer simulated seconds keep the strict existing > boundary exact.
+    # Each read consumes at most its supplied timeout; no wall-clock sleep occurs.
+    with patch.dict(I.DELAY, poll=1.0, reply=0, start=0, idle_check=4.0, idle_write=4.0):
+        for index, packet in enumerate(invalid):
+            clock = Clock()
+            link = Stream(clock, tail=packet)
+            with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+                try:
+                    result = I.Updater(None).serve(link, image, I.FINISH_CHECK, 4.0, lambda *_: None)
+                except AssertionError:
+                    result = None
+            ok(result == (0, False, False) and link.reads == 5 and clock.now == 5 and not link.sent,
+               f"idle: continuous non-request SysEx {index} stops without data at the existing deadline")
+
+        clock = Clock()
+        link = Stream(clock, packets=[request(0, 4, 3), *invalid])
+        progress = []
+        with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+            try:
+                result = I.Updater(None).serve(link, image, I.FINISH_WRITE, 4.0,
+                                               lambda count, end: progress.append((count, end)))
+            except AssertionError:
+                result = None
+        ok(result == (1, False, False) and link.reads == 6 and clock.now == 6
+           and link.sent == [I.response(0, image[:4], 3)] and progress == [(1, 4)],
+           "idle: non-request traffic after a valid serve cannot extend its deadline")
+
+        clock = Clock()
+        link = Stream(clock, lost_at=3.0)
+        with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+            try:
+                result = I.Updater(None).serve(link, image, I.FINISH_WRITE, 4.0, lambda *_: None)
+            except AssertionError:
+                result = None
+        ok(result == (0, False, True) and link.reads == 3 and not link.sent,
+           "idle: queued non-request traffic does not hide a disconnected port")
+
+        # Total duration greatly exceeds idle. Valid requests renew the budget;
+        # the final request and its success response retain the wire contract.
+        clock = Clock()
+        packets, expected = [], []
+        for index in range(32):
+            addr = index % 16 * 4
+            packets.extend((request(addr, 4, 2), invalid[0], invalid[1]))
+            expected.append(I.response(addr, image[addr:addr + 4], 2))
+        packets.append(request(I.FINISH_WRITE, 8))
+        expected.append(I.response(I.FINISH_WRITE, b"success\0"))
+        link = Stream(clock, packets=packets, limit=128)
+        progress = []
+        with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+            result = I.Updater(None).serve(link, image, I.FINISH_WRITE, 4.0,
+                                           lambda count, end: progress.append((count, end)))
+        ok(result == (32, True, False) and clock.now == 97 and link.sent == expected
+           and progress == [(i + 1, (i % 16 + 1) * 4) for i in range(32)],
+           "idle: valid traffic resets the budget through a long transfer and exact finish response")
+
+        for phase in ("check", "write"):
+            clock = Clock()
+            link = Stream(clock)
+            dev = I.Device(link, I.Identity("FM-1_900", "FM-1", 900), "simulated")
+            error = None
+            with patch.object(I.time, "monotonic", clock.monotonic), patch.object(I.time, "sleep", clock.sleep):
+                try:
+                    getattr(I.Updater(None), phase)(dev, image, lambda *_: None)
+                except I.InstallError as e:
+                    error = e
+                except AssertionError:
+                    pass
+            ok(error is not None and error.code == "stopped" and I.EXIT[error.code] == 4
+               and link.closed and link.reads == 5 and link.sent == [I.UPGRADE],
+               f"idle: {phase} keeps exit 4 and closes the stalled link without extra responses")
+
+
 def compatibility():
     """#119: connected loader identity, not an ota- prefix, decides phase-two safety."""
     raw = package()
@@ -690,6 +811,7 @@ def official():
 wire()
 installs()
 errors()
+transport_idle()
 compatibility()
 preflight()
 dependency_guidance()

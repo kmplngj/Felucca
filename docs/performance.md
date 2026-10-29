@@ -132,6 +132,30 @@ CPU_FILE `-` means CPU budgets are not checked. PCM/state observations do not
 establish a retirement policy, target timing or device behavior. Use the focused
 guide's pinned inputs, prerequisites and reproduction steps.
 
+### External guest trace prerequisite
+
+The optional [pinned guest-trace check](emulator-trace-prerequisite.md) corrects
+external emulator IRQ attribution, retirement rows and halt status before a native
+hotspot adapter can consume them. It verifies synthetic guest workloads and build
+receipts; physical timing remains a separate device measurement.
+
+The [bounded native replay evidence](native-emulator-replay.md) checks matched
+native artifacts, repeated traces/PCM, modeled input delivery and no-input controls.
+Its wall-time observations apply to that small trace window and host run; they do
+not establish physical deadlines or a general tracing cost.
+
+The [native hotspot reporter](native-hotspots.md) revalidates that saved evidence
+and attributes the declared windows to sized target function ranges and emulator
+instruction classes. Unknown or ambiguous coverage remains unavailable; entry-PC
+hits are not call counts. It executes no firmware and supplies no physical timing
+or optimization result.
+
+The [native audio-window capture](native-audio-window.md) additionally discovers
+and verifies a held-key renderer window in the supported native baseline. Actual
+post-dispatch PCs and modeled IRQ state qualify the declared partial window;
+repeats, silent controls and original-basis PCM must agree. These are guest
+instruction observations, not a full ISR cost, nested-load bound or device timing.
+
 ### Target regression
 
 ```sh
