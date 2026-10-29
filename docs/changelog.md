@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- Focused piano keys in the browser emulator respond to Enter, Space and numpad
+  Enter, report their pressed state to assistive technology, and release when
+  focus moves away. Adapted to the native input ownership model after
+  [fm1-base's keyboard controls](https://github.com/charlesvestal/fm1-base/commit/46743d1de1101f0a614964e0a4334edd48b5aded).
+
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed present known numeric fields,
