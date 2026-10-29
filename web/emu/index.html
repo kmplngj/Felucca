@@ -160,6 +160,8 @@ const angle = Object.fromEntries(KNOBS.map((n) => [n, 0]));
 angle.MASTER = -135 + 270 * masterValue / 1023;
 const knobs = [], buttons = [], keys = [];
 const btnBy = new Map(), keyBy = new Map();                   // pointer / key code -> label bit or key
+const virtualKeyTimers = new Map();                           // click-only activations, bounded momentary notes
+const physicalKeyActivations = new Set();                    // suppress synthesized follow-on click in same event turn
 const send = (m) => { if (node) node.port.postMessage(m); };
 
 function build(name) {
@@ -277,8 +279,16 @@ function bindButton(b) {
   b.hit.addEventListener("keyup", () => { if (btnBy.delete("f" + b.bit)) syncButtons(); });
 }
 function bindKey(k, i) {
+  const id = "v" + i;
+  const endPhysicalActivation = () => setTimeout(() => physicalKeyActivations.delete(i), 0);
+  const releaseVirtual = () => {
+    clearTimeout(virtualKeyTimers.get(id));
+    virtualKeyTimers.delete(id);
+    if (keyBy.delete(id)) syncKeys();
+  };
   k.hit.addEventListener("pointerdown", (e) => {
     e.preventDefault();
+    physicalKeyActivations.add(i);
     k.hit.setPointerCapture(e.pointerId);
     keyBy.set("p" + e.pointerId, i);
     syncKeys();
@@ -286,11 +296,26 @@ function bindKey(k, i) {
   k.hit.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault(); e.stopPropagation();
+    physicalKeyActivations.add(i);
     if (e.repeat || !node) return;
     keyBy.set("f" + e.code, i);
     syncKeys();
   });
+  k.hit.addEventListener("click", (e) => {
+    // Pointer clicks are already handled from pointerdown/up. Keyboard default
+    // activation is prevented above. detail 0 also accepts click-only AT actions.
+    if (e.detail !== 0 || !node || physicalKeyActivations.has(i) ||
+        [...keyBy].some(([owner, key]) => key === i && (owner[0] === "f" || owner[0] === "p"))) return;
+    clearTimeout(virtualKeyTimers.get(id));
+    keyBy.set(id, i);
+    syncKeys();
+    virtualKeyTimers.set(id, setTimeout(releaseVirtual, 350));
+  });
+  for (const event of ["pointerup", "pointercancel", "lostpointercapture", "keyup"])
+    k.hit.addEventListener(event, endPhysicalActivation);
   k.hit.addEventListener("blur", () => {
+    physicalKeyActivations.delete(i);
+    releaseVirtual();
     for (const [id, key] of keyBy) if (id[0] === "f" && key === i) keyBy.delete(id);
     syncKeys();
   });
@@ -381,6 +406,9 @@ addEventListener("keyup", (e) => {
   if (btnBy.delete(id)) syncButtons();
 });
 addEventListener("blur", () => {
+  physicalKeyActivations.clear();
+  for (const timer of virtualKeyTimers.values()) clearTimeout(timer);
+  virtualKeyTimers.clear();
   for (const id of [...btnBy.keys()]) if (id[0] !== "p") btnBy.delete(id);
   for (const id of [...keyBy.keys()]) if (id[0] !== "p") keyBy.delete(id);
   syncButtons();

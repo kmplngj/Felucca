@@ -201,6 +201,36 @@ try {
     assert.equal(await other.getAttribute("aria-pressed"), "false", "focus transfer pressed another key");
     return { activation: ["Enter", "Space", "NumpadEnter"], repeat_held: true, blur_released: true };
   });
+  await check("click-only note activation is momentary and does not duplicate physical input", async () => {
+    const key = page.getByRole("button", { name: "F3", exact: true });
+    const other = page.getByRole("button", { name: "G3", exact: true });
+    await key.focus();
+    await key.evaluate((el) => el.click());                 // click-only DOM activation, not a real AT test
+    assert.equal(await key.getAttribute("aria-pressed"), "true");
+    await freshAudio(true);
+    await waitFor(() => document.querySelector('[aria-label="F3"]').getAttribute("aria-pressed") === "false");
+    await freshAudio(false);
+    await key.evaluate((el) => el.click());
+    assert.equal(await key.getAttribute("aria-pressed"), "true");
+    await other.focus();
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "blur left virtual note held");
+    await freshAudio(false);
+    await key.focus();
+    await key.evaluate((el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "pointer click duplicated note");
+    await page.keyboard.down("Enter");
+    await key.evaluate((el) => el.click());                 // synthesized click while keyboard owns it
+    await page.keyboard.up("Enter");
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "keyboard click duplicated note");
+    await key.evaluate((el) => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
+      el.click();                                         // follow-on click in the same event turn
+    });
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "follow-on keyboard click duplicated note");
+    await freshAudio(false);
+    return { click_only: true, timed_release: true, blur_release: true, physical_click_suppressed: true };
+  });
   await check("pointer opens ENV and encoder redraws LCD", async () => {
     await page.getByRole("button", { name: "SEL", exact: true }).click();
     await waitFor(() => (__feluccaTest.leds[0] & (1 << 1)) !== 0);
