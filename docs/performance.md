@@ -8,6 +8,11 @@ Re-read them if their behavior changes. Dated resource figures below precede the
 support while its runtime preference stays OFF; measure both that build and `FELUCCA_CPU2=0`
 under the current [modularity direction](modularity.md).
 
+Normal CDC builds expose [raw boot clock words](diagnostics.md#boot-clock-evidence)
+for comparing known bootloader/reset paths. These saved registers are neither a
+live frequency measurement nor clock correction; record the available words and
+actual boot path alongside device timing, without inferring MHz from an identity.
+
 ## Establish a comparable baseline
 
 1. Record the revision and local diff, target and host compiler versions, SDK revision,
@@ -142,7 +147,24 @@ guide's pinned inputs, prerequisites and reproduction steps.
 The optional [pinned guest-trace check](emulator-trace-prerequisite.md) corrects
 external emulator IRQ attribution, retirement rows and halt status before a native
 hotspot adapter can consume them. It verifies synthetic guest workloads and build
-receipts; native hotspot reports, physical timing and trace overhead remain pending.
+receipts; physical timing remains a separate device measurement.
+
+The [bounded native replay evidence](native-emulator-replay.md) checks matched
+native artifacts, repeated traces/PCM, modeled input delivery and no-input controls.
+Its wall-time observations apply to that small trace window and host run; they do
+not establish physical deadlines or a general tracing cost.
+
+The [native hotspot reporter](native-hotspots.md) revalidates that saved evidence
+and attributes the declared windows to sized target function ranges and emulator
+instruction classes. Unknown or ambiguous coverage remains unavailable; entry-PC
+hits are not call counts. It executes no firmware and supplies no physical timing
+or optimization result.
+
+The [native audio-window capture](native-audio-window.md) additionally discovers
+and verifies a held-key renderer window in the supported native baseline. Actual
+post-dispatch PCs and modeled IRQ state qualify the declared partial window;
+repeats, silent controls and original-basis PCM must agree. These are guest
+instruction observations, not a full ISR cost, nested-load bound or device timing.
 
 ### Target regression
 

@@ -3,7 +3,11 @@
 /* Host test of firmware/src/ota.c: a fake M-UPGRADE serves a real .fwsc over
  * the SysEx protocol (pack7, cmd 0x30 reads, 0xE0000000 -> "success") and a
  * simulated NOR plays the flash.
- *   cc -o ota_test tests/ota_test.c && ./ota_test FILE.fwsc
+ *   cc -o ota_test tests/ota_test.c && ./ota_test FILE.fwsc [STOCK_DIR]
+ * STOCK_DIR: tests/ota_stock_fixtures.py's stand-ins for M-VAVE's official packages
+ * (#619), served to a device whose boot area is FILE.fwsc's. ota.c's OTA_STOCK pins the
+ * official boot areas by SHA-256, which no stand-in can match: this test pins the
+ * stand-ins' (v15, v16) in its copy of the table, after checking the real table's rows.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -13,8 +17,10 @@
 
 #define FELUCCA_ID "FM-1_900"
 #define FELUCCA_OTA_DRYRUN 0
+#define OTA_STOCK_CONST                  /* the table is written below: the stand-ins' boot areas */
 
 static uint8_t nor[0x100000];
+static uint8_t dev_head[0x4000];         /* the device's boot area: the first package's */
 static uint8_t *logical;
 static size_t logical_len;
 static uint8_t rx[1024];                 /* one pending host frame (7-bit bytes) */
@@ -116,7 +122,7 @@ static void ota_commit(const uint8_t *parm) { committed = 1; memcpy(committed_pa
 
 #include "../firmware/src/ota.c"
 
-static uint32_t ota_body_off(void)                  /* ota.bin data + 0x20 in the logical image */
+static uint32_t entry_of(uint32_t type, uint32_t *size)   /* a UFW file's offset in the logical image (0: none) */
 {
     uint8_t h[0x400];
     uint32_t i, n;
@@ -126,9 +132,54 @@ static uint32_t ota_body_off(void)                  /* ota.bin data + 0x20 in th
     for (i = 0; i < n; i++) {
         uint8_t *e = h + 0x40 + i * 0x50u;
         ota_jl_enc(e, 0x50);
-        if (ota_rd16(e) == 100) return ota_rd32(e + 8) + 0x20u;
+        if (ota_rd16(e) == type) {
+            if (size) *size = ota_rd32(e + 12);
+            return ota_rd32(e + 8);
+        }
     }
     return 0;
+}
+
+static uint32_t ota_body_off(void) { return entry_of(100, NULL) + 0x20u; }   /* ota.bin data + 0x20 */
+
+static void sha256(const uint8_t *p, uint32_t n, uint8_t *d)   /* ota.c's, n a multiple of 64 */
+{
+    static const uint8_t none[32];
+    uint32_t h[8], i;
+    ota_sha256_init(h);
+    for (i = 0; i < n; i += 64u) ota_sha256_block(h, p + i);
+    ota_sha256_is(h, n, none);                            /* (pads: h is the digest) */
+    for (i = 0; i < 32u; i++) d[i] = (uint8_t)(h[i >> 2] >> (24u - 8u * (i & 3u)));
+}
+
+static int hex_is(const uint8_t *d, const char *hex)
+{
+    char t[65];
+    uint32_t i;
+    for (i = 0; i < 32u; i++) snprintf(t + 2 * i, 3, "%02x", d[i]);
+    return !strcmp(t, hex);
+}
+
+/* set flash.bin's last two bytes so that its data CRC16 is the UFW entry's again (the forge of
+ * tests/ota_stock_fixtures.py): a changed flash.bin the CRCs cannot tell apart */
+static void forge_fl_crc(void)
+{
+    uint32_t size, off = entry_of(0, &size), want = 0, i, v, c;
+    uint8_t h[0x400];
+    memcpy(h, logical, sizeof h);
+    ota_jl_enc(h, 0x40);
+    for (i = 0; i < ota_rd16(h + 8); i++) {
+        uint8_t *e = h + 0x40 + i * 0x50u;
+        ota_jl_enc(e, 0x50);
+        if (ota_rd16(e) == 0) want = ota_rd16(e + 4);
+    }
+    c = ota_crc16(logical + off, size - 2u, 0);
+    for (v = 0; v < 0x10000u; v++) {
+        uint8_t t[2] = {(uint8_t)v, (uint8_t)(v >> 8)};
+        if (ota_crc16(t, 2, c) == want) { memcpy(logical + off + size - 2u, t, 2); return; }
+    }
+    printf("no CRC16 forgery\n");
+    exit(1);
 }
 
 /* rewrite flash.bin's size in the logical image's UFW entry list (the entries' and the header's CRCs too): a package
@@ -169,28 +220,60 @@ static int area_erased(void)
 static void reset_dev(void)
 {
     memset(nor, 0xFF, sizeof nor);
-    memcpy(nor, logical + 0x400, 0x4000);                 /* device flash head = package flash.bin head */
+    memcpy(nor, dev_head, 0x4000);                        /* device flash head = the first package's flash.bin head */
     rx_full = 0; requests = 0; ident_replies = 0; committed = 0; last_code = 0;
     mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0;
 }
 
-int main(int argc, char **argv)
+/* the device's chip key: its isd_config.ini blob rewritten as fm1pkg_make.key_blob does; 0x10000 = a broken blob */
+static void dev_key(uint32_t key)
+{
+    uint8_t e[32], *d;
+    uint32_t off, i;
+    for (off = 32; off < 0x400u; off += 32u) {
+        memcpy(e, nor + off, 32);
+        ota_jl_enc(e, 32);
+        if (memcmp(e + 16, "isd_config.ini", 15))
+            continue;
+        d = nor + ota_rd32(e + 4);
+        for (i = 0; i < 16u; i++)
+            d[i] = 0x10;
+        for (i = 0; i < 16u; i++)
+            d[16 + i] = d[15 - i] ^ (key >> i & 1u ? 0x00 : 0xFF);
+        ota_wr16(d + 32, ota_crc16(d, 32, 0) ^ (key > 0xFFFFu));
+        return;
+    }
+    printf("no isd_config.ini in the device head\n");
+    exit(1);
+}
+
+static int load(const char *path)
 {
     FILE *f;
     uint8_t *raw;
     size_t n, i;
-    int bad = 0, rc;
-    if (argc < 2) { printf("usage: ota_test FILE.fwsc\n"); return 2; }
-    f = fopen(argv[1], "rb");
-    if (!f) { perror(argv[1]); return 2; }
+    f = fopen(path, "rb");
+    if (!f) { perror(path); return 2; }
     raw = malloc(0x200000);
     n = fread(raw, 1, 0x200000, f);
     fclose(f);
-    if (n < 20 * 48 + 0x4400) { printf("%s: too short for a package\n", argv[1]); return 2; }
+    if (n < 20 * 48 + 0x4400) { printf("%s: too short for a package\n", path); free(raw); return 2; }
+    free(logical);
     logical = malloc(n);
     for (i = 0; i < 20; i++) memcpy(logical + i * 47, raw + i * 48, 47);   /* drop the marker bytes */
     memcpy(logical + 20 * 47, raw + 20 * 48, n - 20 * 48);
     logical_len = n - 20;
+    free(raw);
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    int bad = 0, rc;
+    if (argc < 2) { printf("usage: ota_test FILE.fwsc [STOCK_DIR]\n"); return 2; }
+    if ((rc = load(argv[1])) != 0)
+        return rc;
+    memcpy(dev_head, logical + 0x400, sizeof dev_head);
 
     /* handshake outside a session */
     reset_dev();
@@ -234,6 +317,11 @@ int main(int argc, char **argv)
         bad += check("another board's size (0x9D000): -15, no commit, no erase", rc == -15 && !committed && erases == 0 &&
                      area_erased());
         memcpy(logical, keep, sizeof keep);
+        reset_dev();
+        set_fl_size(logical, 0xA9000u);                    /* V16's size is the official loader's only */
+        rc = ota_session();
+        bad += check("own loader, V16's size (0xA9000): -15, no erase", rc == -15 && !committed && erases == 0);
+        memcpy(logical, keep, sizeof keep);
     }
     /* host disappears in the middle */
     reset_dev();
@@ -252,6 +340,72 @@ int main(int argc, char **argv)
         mute_after = total - 1;                            /* answer everything but the confirmation */
         rc = ota_session();
         bad += check("no 'success' -> -13, no commit, area clean", rc == -13 && !committed && area_erased());
+    }
+
+    /* #619: M-VAVE's loader writes the boot area, so only the pinned official images, over whichever boot area the
+     * device has (here the first package's, never theirs), for this chip's key; anything else before any erase */
+    {
+        static const uint8_t zero[0x4000];
+        uint8_t d[32];
+        sha256(zero, 0, d);
+        bad += check("SHA-256 of nothing", hex_is(d, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+        sha256(zero, sizeof zero, d);
+        bad += check("SHA-256 of a 16 KiB zero boot area",
+                     hex_is(d, "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe"));
+        bad += check("OTA_STOCK pins V15's and V16's boot areas (fm1_bootarea.py KNOWN_HEAD)",
+                     sizeof OTA_STOCK / sizeof OTA_STOCK[0] == 2 &&
+                     hex_is(OTA_STOCK[0].head_sha256, "d9f43191777656de01c7bed4f9e9ba2e34e94832c5d2ed02c3fc7ab7a6d9bd67") &&
+                     hex_is(OTA_STOCK[1].head_sha256, "8f5228c2d6ea2068838ef4916f946bea877d14b07e6cfca49e41957f4c7b234f"));
+    }
+    if (argc > 2) {
+        static const struct { const char *file; int rc; uint32_t key; const char *what; } S[] = {
+            {"v15", 0, 0x980Fu, "official V15 image over another boot area: commits"},
+            {"v16", 0, 0x980Fu, "official V16 image (0xA9000) over another boot area"},
+            {"v16", -16, 0x1234u, "official image, another chip key: -16"},
+            {"v16", -16, 0x10000u, "official image, chip key unreadable: -16"},
+            {"head", -5, 0x980Fu, "boot area not the pinned one: -5"},
+            {"forged", -5, 0x980Fu, "boot area changed, both CRC16s forged: -5"},
+            {"flcrc", -5, 0x980Fu, "flash.bin CRC not pinned: -5"},
+            {"size", -5, 0x980Fu, "official loader, unpinned flash.bin size: -5"},
+            {"unknown", -7, 0x980Fu, "unknown loader: -7"},
+        };
+        char path[1024];
+        uint32_t k, off;
+        for (k = 0; k < 2u; k++) {                         /* the stand-ins' boot areas in place of the official ones */
+            snprintf(path, sizeof path, "%s/%s.fwsc", argv[2], k ? "v16" : "v15");
+            if ((rc = load(path)) != 0)
+                return rc;
+            sha256(logical + entry_of(0, NULL), 0x4000, OTA_STOCK[k].head_sha256);
+        }
+        for (k = 0; k < sizeof S / sizeof S[0]; k++) {
+            snprintf(path, sizeof path, "%s/%s.fwsc", argv[2], S[k].file);
+            if ((rc = load(path)) != 0)
+                return rc;
+            reset_dev();
+            dev_key(S[k].key);
+            rc = ota_session();
+            bad += check(S[k].what, rc == S[k].rc &&
+                         (rc ? !committed && erases == 0 && area_erased()
+                             : committed && !memcmp(nor + 0xE0020, logical + ota_body_off(), 64) &&
+                               !memcmp(nor + 0xE4F00, committed_parm, 112)) &&
+                         bad_erase == 0 && !memcmp(nor + 0x20, dev_head + 0x20, 0x60));
+        }
+        /* a boot area byte for byte the device's own needs no pin (nothing in it changes, as before #619); one byte
+         * off it, it is neither: refused before any erase */
+        for (k = 0; k < 2u; k++) {
+            snprintf(path, sizeof path, "%s/v16.fwsc", argv[2]);
+            if ((rc = load(path)) != 0)
+                return rc;
+            reset_dev();
+            dev_key(0x980Fu);
+            off = entry_of(0, NULL);
+            memcpy(logical + off, nor, 0x4000);
+            logical[off + 0x200] ^= (uint8_t)k;
+            forge_fl_crc();
+            rc = ota_session();
+            bad += check(k ? "the device's boot area but one byte, CRC forged: -5" : "official image, the device's own boot area",
+                         k ? rc == -5 && !committed && erases == 0 && area_erased() : rc == 0 && committed);
+        }
     }
 
     printf("%s\n", bad ? "OTA TEST FAILED" : "ota test passed");

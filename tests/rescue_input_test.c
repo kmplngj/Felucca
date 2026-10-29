@@ -2,6 +2,7 @@
 /* Actual rescue entry + input HAL against a 595 and delayed matrix-row model.
  * Unlike rescue_test, buttons are never assigned by a stub. */
 #include <stdint.h>
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include <stdio.h>
 #include <string.h>
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
@@ -74,7 +75,8 @@ static void fm1_delay_ms(uint32_t ms)
 }
 static void usb_poll(void) {}
 static void usb_retry(uint32_t now) { (void)now; }
-static void lcd_fill(int x, int y, int w, int h, int c)
+static lcd_fill_fn lcd_fill;
+static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 { (void)x; (void)y; (void)w; (void)h; (void)c; }
 static void draw_text_box(int x, int y, int w, const int *f, const char *s, int c, int a)
 { (void)x; (void)y; (void)w; (void)f; (void)s; (void)c; (void)a; }

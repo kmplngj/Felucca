@@ -31,6 +31,7 @@
  *   ldr_record_clear()    forget the RAM update record
  *   ldr_progress(done, total)
  * plus the ota.c hooks (frames, time, idle). */
+#include "ldr_status.h"
 #define LDR_APP_LO 0x4000u
 #define LDR_APP_HI 0x93000u
 #define LDR_REC_LO 0x93000u                     /* update records live above the app ... */
@@ -48,6 +49,7 @@ static int ldr_erase(uint32_t off);
 static int ldr_prog(uint32_t off, const void *p, uint32_t n);
 static void ldr_record_clear(void);
 static void ldr_progress(uint32_t done, uint32_t total);
+static void ldr_status(uint32_t state, int32_t code);
 
 /* SFC cipher: per 32-byte block, key ^ (block offset >> 2) */
 static void ldr_sfc(uint8_t *p, uint32_t n, uint32_t base_off, uint32_t key)
@@ -60,37 +62,6 @@ static void ldr_sfc(uint8_t *p, uint32_t n, uint32_t base_off, uint32_t key)
             k = ((k << 1) ^ (k & 0x8000u ? 0x1021u : 0u)) & 0xFFFFu;
         }
     }
-}
-
-/* chip key from the device's flash head: JLFS top entries (ENC 0xFFFF) -> isd_config.ini blob */
-static int ldr_chip_key(uint32_t *key)
-{
-    uint8_t e[32], blob[34];
-    uint32_t off, i, sum, k;
-    for (off = 32; off < 0x400u; off += 32u) {
-        if (ldr_fread(off, e, 32))
-            return -1;
-        ota_jl_enc(e, 32);
-        if (ota_crc16(e + 2, 30, 0) != ota_rd16(e))
-            return -2;
-        if (!ota_memeq(e + 16, (const uint8_t *)"isd_config.ini", 15)) {
-            if (ota_rd16(e + 14))
-                return -3;                               /* last entry, not found */
-            continue;
-        }
-        if (ldr_fread(ota_rd32(e + 4), blob, 34) || ota_crc16(blob, 32, 0) != ota_rd16(blob + 32))
-            return -4;
-        for (i = 0, sum = 0; i < 16u; i++)
-            sum += blob[i];
-        sum &= 0xFFu;
-        sum = sum >= 0xE0u ? 0xAAu : sum <= 0x10u ? 0x55u : sum;
-        for (i = 0, k = 0; i < 16u; i++)
-            if ((uint32_t)(blob[16 + i] ^ blob[15 - i]) < sum)
-                k |= 1u << i;
-        *key = k;
-        return 0;
-    }
-    return -3;
 }
 
 /* 2b. flash.bin [0, fl_size) from the host, before any erase: its CRC16 must be the UFW entry's (want); sc gets
@@ -111,7 +82,7 @@ static int ldr_check(uint32_t fl_off, uint32_t fl_size, uint32_t want, uint16_t 
     return crc == want ? 0 : -12;
 }
 
-static int ldr_session(void)
+static int ldr_run_session(void)
 {
     static uint8_t hdr[0x400], sec[0x1000], cur[0x1000];
     static uint16_t sc[LDR_NSEC];
@@ -128,7 +99,7 @@ static int ldr_session(void)
         if (ota_rd16(hdr + 0x40 + i * 0x50u) == 0)
             want = ota_rd16(hdr + 0x40 + i * 0x50u + 4u);   /* flash.bin's data CRC16 */
     /* 2. the package's app area must decrypt with this chip's key */
-    if ((rc = ldr_chip_key(&key)) != 0)
+    if ((rc = ota_chip_key(&key)) != 0)               /* (ota.c: the device's isd_config.ini) */
         return -40 + rc;
     if (ota_read(fl_off + LDR_APP_LO, sec, 32))
         return -5;
@@ -138,6 +109,7 @@ static int ldr_session(void)
     /* 2b. the whole package first: nothing is erased for a damaged one */
     if ((rc = ldr_check(fl_off, fl_size, want, sc, sec)) != 0)
         return rc;
+    ldr_status(LDR_WRITING, 0);
     /* 3. app area, sector by sector */
     for (s = LDR_APP_LO; s < LDR_APP_HI; s += 0x1000u) {
         uint32_t again;
@@ -171,6 +143,7 @@ static int ldr_session(void)
         done += 0x1000u;
         ldr_progress(done, LDR_APP_HI - LDR_APP_LO);
     }
+    ldr_status(LDR_FINISHING, 0);
     /* 4. finish: the host confirms, the record goes, the SPL boots the app */
     for (i = 0; i < 4u; i++)
         if (!ota_read(0xF0000000u, sec, 8))
@@ -188,4 +161,16 @@ static int ldr_session(void)
             ldr_erase(s - 0x1000u);
     }
     return 0;
+}
+
+/* All exits from the native session publish their real outcome. A new host
+ * request re-enters validation even after failure; flash/protocol policy stays
+ * in ldr_run_session. Success retains its native best-effort record cleanup. */
+static int ldr_session(void)
+{
+    int rc;
+    ldr_status(LDR_VALIDATING, 0);
+    rc = ldr_run_session();
+    ldr_status(rc ? LDR_FAILED : LDR_SUCCESS, rc);
+    return rc;
 }

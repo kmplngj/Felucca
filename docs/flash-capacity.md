@@ -260,7 +260,7 @@ Findings:
   AUTO OFF uses bits 3–4 of its already-owned byte `[27]` for the output target;
   its historical timer codes stay in bits 0–2. It claims no additional byte or
   sector; older firmware resets a LEDS/BOTH selection to NEVER. See
-  [display settings compatibility](display-idle.md#storage-and-editor-compatibility).
+  [display settings compatibility](display-idle.md#midi-editor-and-stored-data-compatibility).
   MENU > DISPLAY > GRAPH (#572) uses bits 1–2 of ANIM IDLE's already-owned byte `[10]`
   (bit 0 IDLE unchanged; stored 0 = TURN, the default). It claims no additional byte;
   older firmware ignores the bits and keeps them as saved.

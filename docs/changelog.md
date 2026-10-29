@@ -32,7 +32,61 @@ recorded in the linked reports, rather than every current build or device.
 
 ## Fork development
 
+### Fixed
+
+- The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
+  complete, valid key-latency group before reporting measured latency. Missing
+  older-firmware metrics remain unmeasured; malformed present known numeric fields,
+  including empty or colon-containing values, invalidate collection while retaining
+  raw evidence. USB audio packet deltas also require
+  unchanged supported sample-rate and setter evidence: observed rate boundaries
+  invalidate collection even when a reset count overtakes its old value. Missing
+  legacy rate evidence leaves packet deltas unavailable. No firmware or protocol
+  change.
+
 ### Added
+
+- Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
+  the latest validated main-branch PR merge; tagged packages require exact-commit device
+  test attestation and a linked report before publication. Both ship risk/recovery
+  guidance; tagged versions include the complete commit changelog since the previous
+  stable release. Dev notes stay short, and superseded Dev releases/tags are removed.
+
+
+- Default-off [raw render-stage evidence](render-stage-evidence.md) adds one
+  inclusive CPU0 mix-stage observer, empty controls and coherent optional `status`
+  snapshots with explicit rejection/error semantics. Release builds refuse the
+  diagnostic flag; target cost accounting and matched FM-1 acceptance remain
+  pending. This delivers instrumentation, without a DSP speedup claim.
+
+- **Standalone RAM-loader status:** waiting and package validation, verified
+  application-sector progress, native completion/restart and host retry guidance
+  work without an intact application. Bounded RAM-owned scanlines contain missing
+  or slow LCD completion while retaining in-flight sources and servicing USB and
+  the watchdog. Package, protocol and protected-storage policy are unchanged.
+  Physical FM-1 update/display/retry qualification remains pending; see
+  [screen meanings and limits](usb-rescue.md#standalone-ram-loader-screen).
+- **Native audio-window evidence:** optional developer tooling discovers and
+  qualifies a bounded held-key renderer window, repeats trace/PCM and compares
+  silent controls and the original native replay basis. See the
+  [capture guide](native-audio-window.md); no physical timing or optimization
+  result is supplied.
+
+- **Native guest hotspot attribution:** optional developer tooling revalidates
+  saved replay evidence and counts bounded windows by target function range and
+  emulator instruction class. See the [report guide](native-hotspots.md); no
+  firmware execution, physical timing or optimization result is supplied.
+
+- **Native emulator replay evidence:** optional developer tooling verifies matched
+  artifacts, repeated held-key/modeled-UART traces and PCM, and silent controls.
+  See the [bounded replay guide](native-emulator-replay.md); this supplies no
+  hotspot attribution, physical timing result or device qualification.
+
+- **Read-only boot clock evidence:** normal USB SERIAL diagnostics report seven
+  saved startup clock-register words without changing clock configuration.
+  The collector retains raw values and supports older firmware that omits them.
+  Real bootloader/reset-path readings and any correction decision remain pending;
+  see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
 
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
@@ -127,6 +181,33 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **USB controller retry:** local restart clears stale configuration and pending
+  control/stream state before reattachment, so bulk/audio endpoints wait for fresh host
+  configuration. Existing host-reset queue policy is preserved. Software-model
+  checks pass; physical USB recovery qualification remains pending. See
+  [test scope](../BUILDING.md#tests) and [counter interpretation](diagnostics.md#interpreting-a-report).
+
+- The offline USB tone checker rejects recordings without synchronized tone data,
+  unsupported rates and incomplete PCM, and reports matched frames accurately.
+  [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
+  qualification separate from the offline result.
+
+- PR-source cleanup protects reflog-only detached commits in the parent worktree
+  and its submodules, including commits retained only by an old-side HEAD-log entry.
+  It refuses removal with deinitialized or orphan private submodule repositories
+  and preserves history without automatic metadata repair. Unrelated checkouts'
+  reflogs do not block cleanup. See the
+  [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
+
+- Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
+  full commit provenance remain in release metadata; the UI regression gate now
+  exercises the generated Dev version before merge. This fixes the initial Dev
+  release's layout-test failure; no publication gate is relaxed.
+- Native replay source-change guards include consumed portable Engines sources
+  and generated include files, so changes during compilation cannot publish an
+  adapter or completed capture with stale input provenance. See
+  [interaction replay](interaction-replay.md).
+
 - **ADSR redraw synchronization:** keep submitted curve values and redraw state
   coherent across asynchronous parameter changes, avoiding stale curves when values
   return during a display transfer. Other parameter edits retain conservative redraws;
@@ -181,6 +262,13 @@ recorded in the linked reports, rather than every current build or device.
   pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
   See [implementation evidence and test procedure](midi-dsp-reliability.md).
 
+- Backport the remaining signed DSP arithmetic fixes from upstream 1.7.0:
+  ANALOG, LOFI, TRIO, WHEEL, NOISE and native PHASE retain their output while
+  avoiding undefined signed shifts and overflow. The fork's engine API,
+  zero-mix ANALOG path and per-part PHASE scratch remain intact. See the
+  [arithmetic follow-up](midi-dsp-reliability.md#upstream-170-arithmetic-follow-up)
+  for provenance and validation limits; FM-1 listening remains pending.
+
 - **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
   immediately when their brightness is changed without leaving the row. Physical
   brightness/readability checks remain pending; see [display controls](display-idle.md).
@@ -210,6 +298,18 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Changed
 
+- **Return to official firmware across bootloaders:** Felucca's update staging and
+  the Python installer accept M-VAVE's official V16 as well as V15, each only as the
+  exact reviewed file (whole-file SHA-256 on the host; flash image size and CRC16,
+  boot-area SHA-256 and chip key on the device), over whichever boot area the unit has. Before, V15 was
+  refused on a unit with V16's bootloader or m-bootloader, and V16 everywhere. M-VAVE's
+  FM1 Open firmware and m-bootloader's installer now get explicit explanations instead
+  of generic failures. The [offline boot-area survey](boot-area-survey.md), hardened
+  separately in #712 and retained here, checks saved dump/package CRCs and bounded
+  fields; declared clocks (V16's: 320 MHz, #618) are not live measurements. V16
+  return and crossed-bootloader transitions await FM-1 qualification; the browser installer keeps V15 until its
+  client update. See [return to official firmware](usb-rescue.md#return-to-official-firmware-and-the-boot-area-619)
+  and [compatible bootloaders](usb-rescue.md#boot-areas-and-other-firmware).
 - **Unified native reading:** value pages use a shared four-knob parameter bank
   and a stable larger current value while keeping full native graphs. Explicit
   scope feedback covers held-step locks, motion and temporary/kept edits; focus

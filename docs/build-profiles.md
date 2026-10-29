@@ -56,6 +56,45 @@ and transport, saved-sound compatibility revisions/fingerprints and storage/clie
 round-trip qualification remain open in #422. The selection digest is not a full
 configuration, compatibility or final-binary digest, nor an authenticity check.
 
+### Collection provenance and profile validation
+
+Resolved profiles and each canonical contract recipe also record `collections`
+for the consumed firmware and MIT owners. Each record binds the repository,
+source location and exact revision from the existing source pins, declared licences,
+portable API requirements, selected engine keys, provider dependencies and input
+hashes. The portable API requirement and implementation revision come from the
+actual host and collection headers; an incompatible pair is rejected. Consumed
+API headers and licence files are hashed inputs, so their changes invalidate stale
+profile output. These records stay outside generated C tables.
+
+`profile_engine_ids` records the recipe before legacy feature overrides;
+`engine_ids` and `engine_identities` describe the effective selection.
+`provider_dependencies` retains the declared provider contracts, whose
+`requires_engines` constraints apply to the recipe. The existing explicit
+`FELUCCA_FM4=1` historical-fixture override remains available. An ordinary profile
+cannot directly select a retired identity, use a boolean as a numeric engine ID,
+or mislabel a native source as portable MIT. Source paths must be canonical relative
+POSIX paths within the declared owner; traversal and ambiguous spellings are rejected.
+
+These are metadata and validation checks for current collections, not the GPL
+checkout/build integration owned by [#360](https://github.com/kmplngj/Felucca/issues/360).
+The exported contract continues to describe only the supported profiles. Firmware
+revision changes alone remain provenance and do not change the selection digest.
+
+To review this tooling without hardware, run `uv run --locked --group build python`
+with each of `tests/profile_test.py`, `tests/profile_contract_test.py` and
+`tests/source_archive_test.py`. Export and verify a canonical contract with:
+
+```sh
+uv run --locked --group build python tools/profile.py --export-contract build/collection-review.json
+uv run --locked --group build python tools/profile.py --export-contract build/collection-review.json --check
+```
+
+Expect passing fixtures and byte-for-byte export verification. Inspect each
+`supported_profiles` entry: collection revisions must match its source pins, API
+requirements must match the actual headers, and selected engine keys must agree
+with the unchanged identity reference. No firmware installation is required.
+
 `reduced-lofi` removes LOFI's implementation at id 3. Its engine table slot becomes
 `ENG_NONE`; editor INFO reports the same 14-slot prefix with a '-' name and cleared
 availability bit for 3. Factory LOFI presets and WRAM data are absent. Stored projects,

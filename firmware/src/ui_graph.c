@@ -173,6 +173,7 @@ static uint32_t curve_sig(const track_t *t, uint32_t k)
 {
     int32_t cut = filter_cut_id(t), res = filter_res_id(t, cut);
     uint32_t h = k * 2654435761u + (uint32_t)(ui.hot_t && ui.hot_col == ui.read_bank.focus) * 40503u;
+    h = (h ^ ui.read_bank.focus) * 16777619u;         /* the curve marker follows the focused knob */
     h = (h ^ (uint32_t)(cut >= 0 ? t->p[cut] : 0)) * 16777619u;
     h = (h ^ (uint32_t)(res >= 0 ? t->p[res] : 0)) * 16777619u;
     h = (h ^ (uint32_t)t->p[P_FTYPE]) * 16777619u;
