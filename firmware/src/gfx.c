@@ -9,18 +9,40 @@
  * (tools/gen_aa_icons.py: Fukiai) and cached 16-entry ink/background ramps.
  * Colours come from the theme tokens. */
 typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
+typedef struct { uint16_t off; int8_t bx; uint8_t by, bw, bh; } aag_fixed_t;
 typedef struct {
     uint8_t h, asc, first, last, nex;   /* line height, baseline; ASCII range; extras */
     uint16_t nk;                        /* kerning pairs */
-    const aag_t *g;
+    const void *g;                      /* aag_fixed_t when fixed_adv != 0, otherwise aag_t */
     const uint8_t *data;
     const uint16_t *kkey;               /* a << 8 | b, sorted */
     const int8_t *kd;                   /* 1/16 px */
     const uint8_t *ex;                  /* codes of the extra glyphs */
     uint8_t psh;                        /* log2 of the phases per glyph: g[i << psh] .. g[(i << psh) + phases - 1] */
     uint8_t bitmap_scale;               /* 0 = alpha; 1/2 = packed 1-bit glyphs, integer scale (in existing padding) */
+    uint16_t fixed_adv;                 /* positive: compact, phase-free bitmap metadata; 1/16 px (existing padding) */
     const uint8_t *hc;                  /* data's Huffman code (cv_alpha_hc), 0 = 2 px per byte (cv_alpha) */
 } aafont_t;
+_Static_assert(sizeof(aag_t) == 8 && __alignof__(aag_t) == 2 &&
+               __builtin_offsetof(aag_t, off) == 0 && __builtin_offsetof(aag_t, adv) == 2 &&
+               __builtin_offsetof(aag_t, bx) == 4 && __builtin_offsetof(aag_t, by) == 5 &&
+               __builtin_offsetof(aag_t, bw) == 6 && __builtin_offsetof(aag_t, bh) == 7, "original glyph ABI");
+_Static_assert(sizeof(aag_fixed_t) == 6 && __alignof__(aag_fixed_t) == 2 &&
+               __builtin_offsetof(aag_fixed_t, off) == 0 && __builtin_offsetof(aag_fixed_t, bx) == 2 &&
+               __builtin_offsetof(aag_fixed_t, by) == 3 && __builtin_offsetof(aag_fixed_t, bw) == 4 &&
+               __builtin_offsetof(aag_fixed_t, bh) == 5, "constant-advance glyph ABI");
+_Static_assert(__builtin_offsetof(aafont_t, h) == 0 && __builtin_offsetof(aafont_t, asc) == 1 &&
+               __builtin_offsetof(aafont_t, first) == 2 && __builtin_offsetof(aafont_t, last) == 3 &&
+               __builtin_offsetof(aafont_t, nex) == 4 && __builtin_offsetof(aafont_t, nk) == 6 &&
+               __builtin_offsetof(aafont_t, g) == 8 && __builtin_offsetof(aafont_t, data) == 8 + sizeof(void *) &&
+               __builtin_offsetof(aafont_t, kkey) == 8 + 2 * sizeof(void *) &&
+               __builtin_offsetof(aafont_t, kd) == 8 + 3 * sizeof(void *) &&
+               __builtin_offsetof(aafont_t, ex) == 8 + 4 * sizeof(void *) &&
+               __builtin_offsetof(aafont_t, psh) == 8 + 5 * sizeof(void *) &&
+               __builtin_offsetof(aafont_t, bitmap_scale) == 9 + 5 * sizeof(void *) &&
+               __builtin_offsetof(aafont_t, fixed_adv) == 10 + 5 * sizeof(void *) &&
+               __builtin_offsetof(aafont_t, hc) == (sizeof(void *) == 4 ? 32 : 56) &&
+               sizeof(aafont_t) == (sizeof(void *) == 4 ? 36 : 64), "font descriptor ABI");
 typedef struct { const char *name; uint16_t bg, surf, text, theme, accent; } ui_pal_t;
 typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #include "ui_fonts.h"                   /* M8Stealth native grids and shared integer-scaled roles */
@@ -537,6 +559,26 @@ static void cv_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint
 }
 
 /* ------------------------------------------------------------- text --- */
+/* Only these accessors interpret the two glyph record layouts. Compact faces
+ * have psh=0; original alpha phase arrays keep their direct, typed view. */
+static const aag_t *glyph_metrics(const aafont_t *f, uint32_t i, aag_t *scratch)
+{
+    const aag_fixed_t *g;
+    if (!f->fixed_adv)
+        return (const aag_t *)f->g + i;
+    g = (const aag_fixed_t *)f->g + i;
+    scratch->off = g->off;
+    scratch->adv = f->fixed_adv;
+    scratch->bx = g->bx;
+    scratch->by = g->by;
+    scratch->bw = g->bw;
+    scratch->bh = g->bh;
+    return scratch;
+}
+static uint16_t glyph_advance(const aafont_t *f, uint32_t i)
+{
+    return f->fixed_adv ? f->fixed_adv : ((const aag_t *)f->g)[i].adv;
+}
 /* the glyph number of ch in f, -1 = not in the face */
 static int32_t glyph_at(const aafont_t *f, uint32_t ch)
 {
@@ -587,7 +629,7 @@ static int32_t text_w(const aafont_t *f, const char *s)
         uint32_t c = fold(f, (uint8_t)*s);
         if (prev)
             pen += kern(f, prev, c);
-        pen += f->g[glyph(f, c)].adv;
+        pen += glyph_advance(f, glyph(f, c));
         prev = c;
     }
     return (pen + 8) >> 4;
@@ -600,11 +642,12 @@ static int32_t text_run(int32_t x, int32_t y, const aafont_t *f, const char *s, 
     uint32_t prev = 0;
     for (; *s; s++) {
         uint32_t c = fold(f, (uint8_t)*s);
+        aag_t scratch;
         const aag_t *g;
         int32_t pos, d0, d1;
         if (prev)
             pen += kern(f, prev, c);
-        g = &f->g[glyph(f, c)];
+        g = glyph_metrics(f, glyph(f, c), &scratch);
         if (f->psh && g[1].off != g->off) {
             pos = pen - (pen & (step - 1));          /* the phase position at or left of the pen */
             d0 = pos - pen - err;                    /* .. and the one right of it: which keeps the gap truer */

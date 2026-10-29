@@ -16,7 +16,7 @@ def main():
     faces = parse(header)
     checked = 0
     for name, source, width, height in (('S', '5_7.bmp', 5, 7), ('M', '8_9.bmp', 8, 9),
-                                        ('L', '8_9.bmp', 8, 9), ('N', '8_9.bmp', 8, 9)):
+                                        ('L', '8_9.bmp', 8, 9), ('N', '8_9.bmp', 8, 9), ('X', '8_9.bmp', 8, 9)):
         f = faces[name]
         scale = f['scale']
         cap_y = f['g'][glyph_at(f, ord('H'))][3]
@@ -38,7 +38,7 @@ def main():
             expected = expected.resize(actual.size, Image.Resampling.NEAREST)
             assert actual.tobytes() == expected.tobytes(), (name, chr(code))
             checked += 1
-        if name != 'L':
+        if name not in ('L', 'X'):
             for code in (0xA9, 0xB0, 0xB7, 0xC4, 0xD6, 0xDC, 0xE4, 0xF6, 0xFC, 0x85):
                 index = glyph_at(f, code)
                 assert index is not None, (name, hex(code))
@@ -46,6 +46,7 @@ def main():
                 assert any(bitmap(f, g)) and 0 <= g[3] <= g[3] + g[5] <= f['h']
     assert faces['L']['data'] == faces['M']['data']
     assert faces['N']['data'] == faces['M']['data']
+    assert faces['X']['data'] == faces['M']['data']
     for code in range(32, 127):
         m = faces['M']['g'][glyph_at(faces['M'], code)]
         n = faces['N']['g'][glyph_at(faces['N'], code)]
@@ -61,7 +62,7 @@ def main():
             bits = [a[5][y * a[3] + x] for y in range(a[4]) for _ in range(2)
                     for x in range(a[3]) for _ in range(2)]
             assert trimmed(direct[code]) == tuple(v * 2 for v in a[:5]) + (bits,), (file, chr(code))
-    print(f'M8Stealth: {checked} glyphs match upstream ASCII at 1x/2x; extra marks fit; L/N share M; '
+    print(f'M8Stealth: {checked} glyphs match upstream ASCII at 1x/2x/3x; extra marks fit; L/N/X share M; '
           '190 direct-size ASCII rasters equal exact 2x ink and metrics')
 
 

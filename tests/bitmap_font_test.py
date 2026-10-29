@@ -79,11 +79,12 @@ class FontResourceTest(unittest.TestCase):
 
     def test_asset_growth_glyph_growth_metrics_and_stale_input_refused(self):
         changes = (self.header.replace('AF_S_DATA[1]', 'AF_S_DATA[2]'),
-                   self.header.replace('AF_S_G[1]', 'AF_S_G[2]'),
                    self.header.replace('{15, 12,', '{16, 12,'))
         for header in changes:
             with self.subTest(header=header), self.assertRaisesRegex(ValueError, 'contract changed'):
                 F.checked(self.root, header)
+        with self.assertRaisesRegex(ValueError, 'glyph records disagree'):
+            F.checked(self.root, self.header.replace('AF_S_G[1]', 'AF_S_G[2]'))
         for name in F.INPUTS:
             path = self.root / name
             before = path.read_bytes()
@@ -102,6 +103,26 @@ class FontResourceTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'budget exceeded'):
             F.checked(self.root, self.header)
 
+    def test_compact_and_original_records_with_strict_descriptor_matching(self):
+        compact = self.header.replace('static const aag_t AF_S_G[1] = {{0, 16, 0, 0, 1, 1}};',
+                                      'static const aag_fixed_t AF_S_G[1] = {{0, 0, 0, 1, 1}};')
+        compact = compact.replace('AF_S_G, AF_S_DATA, 0, 0, AF_S_EX, 0, 1, 0}',
+                                  'AF_S_G, AF_S_DATA, 0, 0, AF_S_EX, 0, 1, 16, 0}')
+        actual = F.inventory(self.root, compact)
+        self.assertEqual(actual['symbol_bytes']['AF_S_G'], 6)
+        self.assertEqual(actual['faces']['S']['glyph_count'], 1)
+        self.assertEqual(actual['faces']['S']['advances_sixteenths_px'], [16])
+        self.assertEqual(actual['target_abi']['compact_glyph_record_bytes'], 6)
+        self.assertEqual(actual['array_descriptor_bytes'], self.manifest['array_descriptor_bytes'] - 2)
+        self.assertNotIn('compact_glyph_record_bytes', self.manifest['target_abi'])
+        for invalid in (compact.replace('AF_S_EX, 0, 1, 16, 0}', 'AF_S_EX, 0, 1, 0, 0}'),
+                        compact.replace('AF_S_EX, 0, 1, 16, 0}', 'AF_S_EX, 1, 1, 16, 0}'),
+                        compact.replace('AF_S_EX, 0, 1, 16, 0}', 'AF_S_EX, 0, 0, 16, 0}'),
+                        compact.replace('aag_fixed_t AF_S_G', 'aag_t AF_S_G'),
+                        compact.replace('AF_S_G[1]', 'AF_S_G[2]')):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                F.inventory(self.root, invalid)
+
     def test_actual_target_sizes_missing_extra_and_malformed_symbols(self):
         syms = self.symbols()
         for changed in (syms.replace('00000024 AF_S', '00000028 AF_S'),
@@ -117,13 +138,13 @@ class FontResourceTest(unittest.TestCase):
 
 class GlyphStorageTest(unittest.TestCase):
     def generate(self, advance=1, bx=0, by=0, width=1, height=1, scale=1,
-                 baseline=1, offset=None):
+                 baseline=1, offset=None, compact=False):
         glyphs = {ord('H'): (1, 0, 0, [[1]]),
                   ord('A'): (advance, bx, by, [[1] * width for _ in range(height)])}
         shared = {} if offset is None else {'data': bytearray(b'\x80'),
                                             'offsets': {ord('H'): 0, ord('A'): offset}}
         with contextlib.redirect_stdout(io.StringIO()):
-            return emit('S', 1, glyphs, [ord('H'), ord('A')], 15, baseline, scale, **shared)
+            return emit('S', 1, glyphs, [ord('H'), ord('A')], 15, baseline, scale, compact=compact, **shared)
 
     def test_metric_overflow_is_rejected(self):
         cases = (('bx', {'bx': -129}), ('bx', {'bx': 128}),
@@ -144,6 +165,20 @@ class GlyphStorageTest(unittest.TestCase):
                        {'advance': 4095}, {'offset': 65535}):
             with self.subTest(kwargs=kwargs):
                 self.generate(**kwargs)
+
+    def test_compact_requires_positive_constant_bitmap_advance(self):
+        for kwargs in ({'advance': 2}, {'advance': 0}, {'scale': 0}):
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(ValueError, 'compact metadata requires'):
+                self.generate(compact=True, **kwargs)
+        self.generate(compact=True)
+        glyphs = {ord('H'): (0, 0, 0, [[1]])}
+        with self.assertRaisesRegex(ValueError, 'compact metadata requires'):
+            emit('S', 1, glyphs, [ord('H')], 15, 1, 1, compact=True)
+
+    def test_compact_keeps_full_offset_and_signed_bearing_ranges(self):
+        for kwargs in ({'bx': -128}, {'bx': 127}, {'offset': 65535}):
+            with self.subTest(kwargs=kwargs):
+                self.generate(compact=True, **kwargs)
 
 
 if __name__ == '__main__':

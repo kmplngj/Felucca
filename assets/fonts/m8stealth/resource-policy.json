@@ -1,6 +1,6 @@
 {
   "expected": {
-    "array_descriptor_bytes": 4630,
+    "array_descriptor_bytes": 4000,
     "faces": {
       "L": {
         "advances_sixteenths_px": [
@@ -206,13 +206,13 @@
       }
     },
     "family": "m8stealth",
-    "header_sha256": "6f720cce24448a8ed2a8d02cfe86153701c27f6a426e0233820553f8f3542736",
+    "header_sha256": "d4e87d9fee97a62a3caba0eea358da82f803da7c6ade932001982c4a7c51d633",
     "input_sha256": {
       "assets/fonts/m8stealth/m8stealth57.woff2": "b14bef6752f91197166ffe5ee7283f168d022d8c30b3c9ba57233451704edce6",
       "assets/fonts/m8stealth/m8stealth89.woff2": "b811d17dc96b9c617e76fc12eaeb4c8e79614d79885935567429e1cea907d02e",
       "tools/aa_raster.py": "981615a837bbc3f75e6b2f9baf0bf54f80162e2df2f17fccb45589bbdb0b6dc6",
-      "tools/font_resources.py": "e9fc550b9afe2c289b3624e4cda06c0591c91dbd6a9d52200e3fee9ab7ad0157",
-      "tools/gen_bitmap_font.py": "7e3038b288b817b8e0567fbe8a9ec5e2664369365235fc608c4e35daef256496",
+      "tools/font_resources.py": "b6a0204ebffef0ea93d43ab316eface91539171ab06bd657530a4c74aa640c68",
+      "tools/gen_bitmap_font.py": "65bd3b6248e32cd7d9003cfc4675fa4d9a11ca0d999822f5b34bf61e00492ddb",
       "tools/ui_font_data.py": "6c0e26a76d234335ddaa81c17e79dbbb636d97546b4eb628a76c919463707412"
     },
     "kind": "felucca-native-font-resources",
@@ -224,31 +224,32 @@
       "AF_M": 36,
       "AF_M_DATA": 749,
       "AF_M_EX": 10,
-      "AF_M_G": 840,
+      "AF_M_G": 630,
       "AF_N": 36,
       "AF_N_EX": 10,
-      "AF_N_G": 840,
+      "AF_N_G": 630,
       "AF_S": 36,
       "AF_S_DATA": 415,
       "AF_S_EX": 10,
-      "AF_S_G": 840,
+      "AF_S_G": 630,
       "AF_X": 36,
       "AF_X_EX": 40,
       "AF_X_G": 328
     },
     "target_abi": {
+      "compact_glyph_record_bytes": 6,
       "descriptor_bytes": 36,
       "glyph_record_bytes": 8,
       "pointer_bytes": 4
     }
   },
-  "max_array_descriptor_bytes": 4630,
+  "max_array_descriptor_bytes": 4000,
   "reviewed_target": {
     "compiler_sha256": "c45189ee624de0430deb0db02e6dce171fb5538e7fe323e3964dc8ac6236240f",
     "configuration_sha256": "41742654a2c08eea343fcc0c3e02549bd3e1b2d4658565640a601347aa2d2fa0",
     "firmware_revision": "c7a3a11d0841648217fb688de9e15ece7971ddda",
-    "method": "Exact AF_* sized symbols from standard-profile objdump -t; records 8 B, descriptors 36 B; excludes alignment padding",
-    "physical_acceptance": "Pending #37; this policy establishes generated resource identity only",
+    "method": "Historical original format: exact AF_* sized symbols from standard-profile objdump -t; records 8 B, descriptors 36 B; excludes alignment padding. Compact 6 B record allocation is not yet verified by a current target link.",
+    "physical_acceptance": "Pending #37 and #150; compact representation requires fresh target, stack and physical qualification",
     "profile": "standard",
     "resource_report_sha256": "edb8f40969111c6de9ad05c3526e7a4b15980572f4a3f802d49e22d6897345a2",
     "toolchain": "JieLi clang 4.0.1, pi32v2"

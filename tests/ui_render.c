@@ -169,7 +169,15 @@ static int32_t icon_cell(uint32_t *size, uint32_t id);
 static void hk_icon(int32_t x, int32_t y, uint32_t size, uint32_t id);   /* (after the icons: their cells' nibbles) */
 #define GFX_HOOK_ALIGN(x0, y0, x1, y1, mode, tag) hk_align(x0, (y0) + cv_oy, x1, (y1) + cv_oy, mode, tag)
 static uint8_t pen_h;                           /* GFX_HOOK_PEN: the line height of the text being hooked (its face) */
-#define GFX_HOOK_PEN(y, f) (pen_h = (f)->h, al_n ? (al_cy0 = (y) + cv_oy + (f)->g[glyph((f), 'H')].by, al_cy1 = al_cy0 + (f)->g[glyph((f), 'H')].bh) : 0)
+#define GFX_HOOK_PEN(y, f) do { \
+    pen_h = (f)->h; \
+    if (al_n) { \
+        aag_t hook_scratch; \
+        const aag_t *hook_g = glyph_metrics((f), glyph((f), 'H'), &hook_scratch); \
+        al_cy0 = (y) + cv_oy + hook_g->by; \
+        al_cy1 = al_cy0 + hook_g->bh; \
+    } \
+} while (0)
 #define GFX_HOOK_ITEM(x0, y0, x1, y1) al_item(x0, (y0) + cv_oy, x1, (y1) + cv_oy, 1, "cushion")
 #define GFX_HOOK_ICON(x, y, size, id) hk_icon(x, (y) + cv_oy, size, id)
 static char splash_seen[160];                    /* the splash scene: its texts as drawn, '|' between (draw) */

@@ -31,16 +31,24 @@ def inventory(root, header):
         raise ValueError('font resource gate requires FELUCCA_FONT=m8stealth')
     if '#define UI_FONT_M8STEALTH 1' not in header:
         raise ValueError('font resource gate requires M8Stealth header')
-    sizes = {}
-    for typ, name, count in re.findall(r'static const (uint8_t|aag_t) (AF_\w+)\[(\d+)\]', header):
+    sizes, glyph_types = {}, {}
+    for typ, name, count in re.findall(r'static const (uint8_t|aag_t|aag_fixed_t) (AF_\w+)\[(\d+)\]', header):
         if name in sizes:
             raise ValueError('duplicate font array: ' + name)
-        sizes[name] = int(count) * (8 if typ == 'aag_t' else 1)
+        record_bytes = {'uint8_t': 1, 'aag_t': 8, 'aag_fixed_t': 6}[typ]
+        sizes[name] = int(count) * record_bytes
+        if typ != 'uint8_t':
+            glyph_types[name] = (typ, int(count))
     faces = {}
     for name, fields in re.findall(r'static const aafont_t AF_(\w+) = \{([^}]+)\};', header):
         values = [v.strip() for v in fields.split(',')]
-        if name in faces or len(values) != 14:
+        if name in faces or len(values) not in (14, 15):
             raise ValueError('duplicate or unsupported font descriptor: ' + name)
+        fixed = int(values[13]) if len(values) == 15 else 0
+        glyph_type, glyph_count = glyph_types.get(values[6], (None, 0))
+        if fixed < 0 or fixed > 65535 or (fixed and (glyph_type != 'aag_fixed_t' or
+                int(values[11]) != 0 or int(values[12]) == 0)) or (not fixed and glyph_type != 'aag_t'):
+            raise ValueError('font glyph representation disagrees with descriptor: ' + name)
         faces[name] = dict(height=int(values[0]), baseline=int(values[1]),
                            first=int(values[2]), last=int(values[3]), extras=int(values[4]),
                            glyph_array=values[6], bitmap_array=values[7], scale=int(values[12]))
@@ -49,12 +57,15 @@ def inventory(root, header):
             raise ValueError('missing font extra-code array: ' + name)
         codes = [int(v.strip(), 0) for v in extras[1].split(',') if v.strip()]
         faces[name]['extra_codes'] = codes
-        faces[name]['glyph_count'] = sizes.get(values[6], 0) // 8
+        faces[name]['glyph_count'] = glyph_count
         table = re.search(re.escape(values[6]) + r'\[\d+\] = \{(.*?)\};', header, re.S)
         if table is None:
             raise ValueError('missing font glyph array: ' + name)
-        faces[name]['advances_sixteenths_px'] = sorted({int(row.split(',')[1])
-                for row in re.findall(r'\{([^{}]+)\}', table[1])})
+        rows = re.findall(r'\{([^{}]+)\}', table[1])
+        if len(rows) != glyph_count or any(len(row.split(',')) != (5 if fixed else 6) for row in rows):
+            raise ValueError('font glyph records disagree with declaration: ' + name)
+        faces[name]['advances_sixteenths_px'] = ([fixed] if fixed else
+                sorted({int(row.split(',')[1]) for row in rows}))
         for metric in ('Y', 'H'):
             cap = re.search(r'^#define AF_' + name + r'_CAP_' + metric + r' (\d+)$', header, re.M)
             if cap is None:
@@ -67,10 +78,13 @@ def inventory(root, header):
     if payloads != {'AF_S_DATA', 'AF_M_DATA'} or any(
             faces[name]['bitmap_array'] != 'AF_M_DATA' for name in 'LNX'):
         raise ValueError('L/N/X must share M payload; only S/M bitmap arrays are allowed')
+    abi = dict(pointer_bytes=4, glyph_record_bytes=8, descriptor_bytes=36)
+    if any(typ == 'aag_fixed_t' for typ, _ in glyph_types.values()):
+        abi['compact_glyph_record_bytes'] = 6
     return dict(schema_version=1, kind='felucca-native-font-resources', family='m8stealth',
                 input_sha256={name: sha((root / name).read_bytes()) for name in INPUTS},
                 header_sha256=sha(header.encode()), faces=faces, symbol_bytes=sizes,
-                target_abi=dict(pointer_bytes=4, glyph_record_bytes=8, descriptor_bytes=36),
+                target_abi=abi,
                 array_descriptor_bytes=sum(sizes.values()))
 
 

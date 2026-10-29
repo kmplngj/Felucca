@@ -375,6 +375,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- **Pixel-font metadata:** storing S/M/N's constant advance once per face preserves
+  L/X point spacing and generic alpha formats. In the historical `36511fd` controlled
+  comparison it saved 576 app bytes in standard, CPU2-off and MACRO builds, with
+  unchanged static RAM and exact reference pixels. Current target resources, additional
+  local frames and loaded FM-1 latency await qualification; see the
+  [metadata experiment](constant-advance-font-metadata.md).
+
 - Native icons share identical complete 12 px compressed streams while preserving
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
   [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.

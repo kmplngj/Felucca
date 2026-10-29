@@ -34,6 +34,9 @@ only glyph metadata and descriptors are added, without a decode cache. The
 two native bitmap sets are the only stored text rasters. The ten local extra marks retain their explicit
 bitmap adaptations and attribution. Keycap legends use the same native S
 grid, within the existing 13 px pills; icons remain the existing icon system.
+The [constant-advance metadata experiment](constant-advance-font-metadata.md)
+records the candidate S/M/N representation, exact pixel checks, resource costs
+and pending FM-1 latency/stack qualification; it changes no role or ink.
 Track digits 1–4 use the selected text face, centered against their actual
 rounded cushion. The former extra left shift for “1” is removed. An odd-width
 glyph in an even-width cushion cannot land at an integer-pixel center; the

@@ -7,7 +7,8 @@
  * (the glyph at the rounded pen) to horizontal phases (tools/aa_raster.py): of the two phase positions around
  * the pen, the one whose offset is nearer the previous glyph's, plus that phase's ink offset; a glyph with one
  * phase (figures, .) at the rounded pen as before; restated here too.
- * How close that lands to the font's own spacing is tests/text_spacing_test.py's question. Every string below, in S M L, THEME on SURF and TEXT on BG, in every palette: the end pen and every
+ * How close that lands to the font's own spacing is tests/text_spacing_test.py's question. Every string below, in all
+ * five M8 roles and a generic alpha phase array, THEME on SURF and TEXT on BG, in every palette: the end pen and every
  * pixel must be identical (GREY expands its gray with G = 2 R, the gray rule; the prototype's G = 2 R + R / 16
  * differed by one green LSB there, and that is the only difference to the prototype's renders). */
 #include "../firmware/hal/fm1_lcd_contract.h"
@@ -21,6 +22,7 @@ static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) *
 static void lcd_wake_now(void) {}
 #include "host_lcd_blit_noop.h"
 #include "../firmware/src/gfx.c"
+#include "font_metadata_reference.h"
 #include "ui_icons.h"                            /* the one shared non-font Huffman consumer */
 
 static const char *const STR[] = {
@@ -30,7 +32,7 @@ static const char *const STR[] = {
     "AV AW LT TA YO To Vo", "KEYS = STEPS", "PAGE 1/2", "HARDWARE CALIBRATION", "Multi-engine synthesizer",
     "H\xFCgelton Instruments", "FELUCCA", "MENU", "HOME", "ENV DEST 2/2", "ANLG", "SUPER SAW", "WIRE",
     "oeo coco eco nono", "minimum hello level", "decay release sound", "Pitch Cutoff", "bdpq doob", "-1 +2.5",
-    "0O 1Il 5S 8B .-", "\xB7\x85\xD7\xB0\xE4\xF6\xFC\xC4\xD6\xDC",
+    "0O 1Il 5S 8B .-", "\xB7\x85\xD7\xB0\xE4\xF6\xFC\xC4\xD6\xDC", "\x01\x7F\x80\xFF",
 };
 #define NSTR (sizeof STR / sizeof STR[0])
 #define W 240
@@ -127,7 +129,7 @@ static int32_t ref_text(int32_t x, int32_t y, const aafont_t *f, const char *s, 
         int32_t lo, hi, pos;
         if (c >= 'a' && c <= 'z' && f->last < 'a') c -= 32u;
         if (prev) pen += ref_kern(f, prev, c);
-        g = &f->g[ref_gi(f, c) * (uint32_t)n];
+        g = &((const aag_t *)f->g)[ref_gi(f, c) * (uint32_t)n];
         if (n > 1 && g[1].off != g[0].off) {
             lo = step * (int32_t)floor((double)pen / step);       /* the phase positions around the pen */
             hi = lo + step;
@@ -152,19 +154,52 @@ static int32_t ref_text(int32_t x, int32_t y, const aafont_t *f, const char *s, 
 
 int main(void)
 {
-    const aafont_t *F[4] = {&AF_S, &AF_M, &AF_L, &AF_N};
-    const uint8_t *books[5] = {AF_S.hc, AF_M.hc, AF_L.hc, AF_N.hc, AI_HC};
+    {
+        static const aag_fixed_t compact[1] = {{65535, -128, 255, 255, 255}};
+        const aafont_t edge = {1, 1, 'A', 'A', 0, 0, compact, 0, 0, 0, 0, 0, 1, 65535, 0};
+        const aag_t expected = {65535, 65535, -128, 255, 255, 255};
+        aag_t scratch;
+        if (memcmp(glyph_metrics(&edge, 0, &scratch), &expected, sizeof expected) || glyph_advance(&edge, 0) != 65535)
+            return fprintf(stderr, "compact signed-bearing/offset/advance edge mismatch\n"), 1;
+    }
+    /* Original alpha records still form phase arrays, including signed bearings
+     * and non-whole-pixel advances. This path must never use compact scratch. */
+    static const aag_t phase_g[4] = {{0, 24, -1, 0, 1, 1}, {1, 24, 0, 0, 1, 1},
+                                    {2, 40, -1, 0, 1, 1}, {3, 40, 0, 0, 1, 1}};
+    static const uint8_t phase_data[4] = {0xF0, 0x80, 0x40, 0x10};
+    const aafont_t phase = {1, 1, 'A', 'B', 0, 0, phase_g, phase_data, 0, 0, 0, 1, 0, 0, 0};
+    const aafont_t *F[6] = {&AF_S, &AF_M, &AF_L, &AF_N, &AF_X, &phase};
+    const aafont_t *RF[6] = {&REF_AF_S, &REF_AF_M, &REF_AF_L, &REF_AF_N, &REF_AF_X, &phase};
+    const unsigned counts[6] = {105, 105, 41, 105, 41, 4};
+    unsigned metadata = 0;
+    for (unsigned f = 0; f < 6; f++) {
+        if (F[f]->h != RF[f]->h || F[f]->asc != RF[f]->asc || F[f]->first != RF[f]->first ||
+            F[f]->last != RF[f]->last || F[f]->nex != RF[f]->nex || F[f]->psh != RF[f]->psh ||
+            F[f]->bitmap_scale != RF[f]->bitmap_scale ||
+            (F[f]->nex && memcmp(F[f]->ex, RF[f]->ex, F[f]->nex)))
+            return fprintf(stderr, "font descriptor mismatch %u\n", f), 1;
+        for (unsigned i = 0; i < counts[f]; i++) {
+            aag_t scratch;
+            const aag_t *actual = glyph_metrics(F[f], i, &scratch);
+            const aag_t *expected = (const aag_t *)RF[f]->g + i;
+            if (memcmp(actual, expected, sizeof *expected) || glyph_advance(F[f], i) != expected->adv)
+                return fprintf(stderr, "metadata mismatch font%u record%u\n", f, i), 1;
+            metadata++;
+        }
+    }
+    printf("Original metrics: %u native + 4 generic alpha-phase records match independent 8B reference\n", metadata - 4);
+    const uint8_t *books[6] = {AF_S.hc, AF_M.hc, AF_L.hc, AF_N.hc, AF_X.hc, AI_HC};
     uint32_t font_books = 0, all_books = 0;
     /* Check compiled consumers independently of the generator's count: a future
      * font/codebook change must not silently make the cache rebuild every draw. */
-    for (uint32_t i = 0; i < 5u; i++) {
+    for (uint32_t i = 0; i < 6u; i++) {
         uint32_t j;
         if (!books[i]) continue;
         for (j = 0; j < i && books[j] != books[i]; j++)
             ;
         if (j != i) continue;
         all_books++;
-        if (i < 4u) font_books++;
+        if (i < 5u) font_books++;
     }
     if (font_books != UI_FONT_HUFFMAN_BOOKS || all_books != HC_FONTS) {
         fprintf(stderr, "Huffman cache contract: %u font books, %u total, declared %u/%u\n",
@@ -176,13 +211,13 @@ int main(void)
     for (uint32_t p = 0; p < NPALETTES; p++) {
         palette_set(p);
         for (uint32_t k = 0; k < 2u; k++)
-            for (uint32_t f = 0; f < 4u; f++)
+            for (uint32_t f = 0; f < 6u; f++)
                 for (uint32_t s = 0; s < NSTR; s++)
                     for (uint32_t at = 0; at < 3u; at++) {
                         uint16_t fg = k ? T_TEXT : T_THEME, bg = k ? T_BG : T_SURF;
                         int32_t e0, e1;
                         for (uint32_t i = 0; i < W * H; i++) ref[i] = bg;
-                        e0 = ref_text(positions[at][0], positions[at][1], F[f], STR[s], fg, bg);
+                        e0 = ref_text(positions[at][0], positions[at][1], RF[f], STR[s], fg, bg);
                         cv_begin(W, H, bg);
                         e1 = cv_text(positions[at][0], positions[at][1], F[f], STR[s], fg);
                         bad_pen += e0 != e1;
