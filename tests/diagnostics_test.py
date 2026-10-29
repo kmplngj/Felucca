@@ -221,6 +221,12 @@ class ConsoleContractTests(unittest.TestCase):
             "-DFELUCCA_RENDER_STAGE=1", str(root / "tests/console_diagnostics.c"),
             "-o", str(binary)], check=True, timeout=30)
         cls.binaries["stage"] = binary
+        binary = Path(cls.directory.name) / "console-clock"
+        subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
+            "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+            "-DFELUCCA_BOOT_CLOCK=1", str(root / "tests/console_diagnostics.c"),
+            "-o", str(binary)], check=True, timeout=30)
+        cls.binaries["clock"] = binary
 
     def response(self, command, features=True, *arguments):
         raw = subprocess.check_output([str(self.binaries[features]), command, *arguments], timeout=5)
@@ -246,10 +252,13 @@ class ConsoleContractTests(unittest.TestCase):
         self.assertIn("seven ordered reads", result.stdout)
 
     def test_real_boot_clock_and_older_firmware(self):
-        fields = self.response("status")
         expected = [0x10014, 0x1000C, 0x10008, 0x119A8, 0x119AC, 0x119A0, 0xFFFFFFFF]
+        # FELUCCA_BOOT_CLOCK=0 (default): the firmware reports none of the fields, which is valid
+        for features in (True, False):
+            self.assertTrue(set(diag.CLOCK_FIELDS).isdisjoint(self.response("status", features)))
+        fields = self.response("status", "clock")
         self.assertEqual([fields[key] for key in diag.CLOCK_FIELDS], expected)
-        self.assertTrue(set(diag.CLOCK_FIELDS).isdisjoint(self.response("status", True, "no-clock")))
+        self.assertTrue(set(diag.CLOCK_FIELDS).isdisjoint(self.response("status", "clock", "no-clock")))
         self.assertEqual(diag.parse_response("status", STATUS.encode())["issues"], [])
         raw = STATUS + "".join(f"{key} 0x{value:08X}\n" for key, value in zip(diag.CLOCK_FIELDS, expected))
         self.assertEqual(diag.parse_response("status", raw.encode())["issues"], [])

@@ -910,6 +910,7 @@ else:
         # build/issue466-actual-mapping/actual-maps.json (actual JieLi/emcc -dM).
         # Inline data keeps the regression independent of ignored local evidence.
         native = {'FELUCCA_ARENA_CHECK': '0',
+         'FELUCCA_BOOT_CLOCK': '0',     # #618 opt-in diagnostic, target-only (TARGET_ONLY)
          'FELUCCA_BOOT_POLICY_H': '',
          'FELUCCA_BUILD_COMMIT': '"87e17594c2bc1a540db1700f521ac2ef5a3d6ec6"',
          'FELUCCA_BUILD_DIRTY': '0',

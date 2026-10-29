@@ -78,6 +78,7 @@ TARGET_ONLY = {
     'FELUCCA_CRASH_CTX': 'native crash capture absent',
     'FELUCCA_SCREEN_CAPTURE': 'native CDC screen capture absent',
     'FELUCCA_MUL64_REPRO': 'native main-loop diagnostic absent',
+    'FELUCCA_BOOT_CLOCK': 'native boot-time clock capture absent',
 }
 SHARED = set(('ARENA_CHECK BUILD_COMMIT BUILD_DIRTY BUILD_ID BUILD_PR BOOT_POLICY_H '
               'ENGINE_API_REQUIRED ENGINE_API_VERSION ENGINE_H ENG_OMIT ENG_TEST14 '
