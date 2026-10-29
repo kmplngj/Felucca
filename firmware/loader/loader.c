@@ -17,6 +17,7 @@
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")
 #include "fm1_time.h"
 #include "fm1_sys.h"
+#include "fm1_lcd_hw.h"
 /* the loader may write the app area and erase update records; never the head, nor Felucca's store
  * [0x97000, 0xE0000), the autosave and the FM6 voice bank [0xE5000, 0xE8000) (user data, never a record:
  * ldr_core.c). The records it clears are at 0xE4F00 (staging sector 0xE4000) and 0xE8F00 (0xE8000). */
@@ -26,27 +27,9 @@
 #include "../src/libc.c"
 #include "../src/usb.c"
 
-static uint32_t ldr_ms(void)   /* monotonic ms; survives the TIMER4 wrap (178.9 s) */
-{
-    static uint32_t last, acc, ms;
-    uint32_t now = fm1_ticks();
-    acc += now - last;
-    last = now;
-    ms += acc / (1000u * FM1_TICKS_PER_US);
-    acc %= 1000u * FM1_TICKS_PER_US;
-    return ms;
-}
+#include "ldr_service.c"
 
-static void ldr_poll(void)                          /* USB at ~2 kHz, watchdog */
-{
-    static uint32_t last;
-    uint32_t now = fm1_ticks();
-    fm1_wdt_feed();
-    if (now - last >= 500u * FM1_TICKS_PER_US) {
-        last = now;
-        usb_poll();
-    }
-}
+#include "ldr_screen.c"
 
 /* ---- ota.c hooks (the SysEx frame hooks are in usb.c) ---- */
 static uint32_t ota_now_ms(void) { return ldr_ms(); }
@@ -75,8 +58,10 @@ static void ldr_record_clear(void)
 {
     fm1_updata_parm_clear();                        /* CRC 0: the SPL ignores it on a warm reset */
 }
-static void ldr_progress(uint32_t done, uint32_t total) { (void)done; (void)total; ldr_poll(); }
+static void ldr_progress(uint32_t done, uint32_t total) { ldr_screen_progress(done, total); ldr_poll(); }
+static void ldr_status(uint32_t state, int32_t code) { ldr_screen_status(state, code); }
 #include "ldr_core.c"
+#include "ldr_install.c"
 _Static_assert(LDR_AUTO_LO == FL_AUTO_LO && LDR_AUTO_HI == FL_VBANK_HI && FL_AUTO_HI == FL_VBANK_LO,
                "the loader's protected window is the autosave pair plus the voice bank");
 
@@ -86,7 +71,9 @@ void ldr_main(void)
 {
     fm1_wdt_arm(0x0D);                              /* ~8 s, fed by ldr_poll */
     fm1_time_init();
+    ldr_screen_init();                             /* bounded display setup before USB enumeration */
     usb_start();
+    ldr_usb_started = 1;
     for (;;) {
         ldr_poll();
         usb_retry(ldr_ms());
@@ -98,12 +85,7 @@ void ldr_main(void)
         ota_service();                              /* handshake */
         if (usb.ota_req) {
             usb.ota_req = 0;
-            if (ldr_session() == 0) {
-                fm1_delay_ms(200);                  /* the "success" reply leaves */
-                usb_detach();
-                fm1_delay_ms(30);
-                fm1_core_reset();                   /* the SPL boots the new app */
-            }
+            ldr_install();
         }
     }
 }

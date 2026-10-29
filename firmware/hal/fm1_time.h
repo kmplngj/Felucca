@@ -11,6 +11,7 @@
  */
 #pragma once
 #include <stdint.h>
+#include "fm1_time_contract.h"
 
 #define FM1_T4_CON (*(volatile uint32_t *)0x10800u)
 #define FM1_T4_CNT (*(volatile uint32_t *)0x10804u)
@@ -29,6 +30,7 @@ static inline void fm1_time_init(void)
     FM1_T4_CON = (2u << 2) | 1u | (1u << 14);
 }
 
+static fm1_ticks_fn fm1_ticks;
 static inline uint32_t fm1_ticks(void) { return FM1_T4_CNT; }
 
 /* Microseconds, wrapping every ~178.9 s. */

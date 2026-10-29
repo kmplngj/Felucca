@@ -86,8 +86,10 @@ def check(module, text):
     for inc in re.findall(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', uncomment(text), flags=re.M):
         if inc not in MODULES[module]["headers"]:
             out.append(("include", inc))
-    mine, _ = defined_names(text)
-    allowed = set(mine)
+    # In the single translation unit, even a repeated tentative static declaration
+    # can name another owner's state. Only the interfaces may expose a name already
+    # owned elsewhere; genuine local helpers/state are absent from forbidden_set.
+    allowed = set()
     for h in MODULES[module]["interface"]:
         allowed |= idents(strip((SRC / h).read_text()))
     for name in sorted((idents(strip(text)) & forbidden_set(module)) - allowed):
@@ -99,6 +101,13 @@ FIXTURES = [   # (name, text appended to sound.c, what must be reported)
     ("a module's state", "\nvoid leak(void) { trk[0].eng_req = 0; }\n", ("use", "trk")),
     ("another module's function", "\nvoid leak(void) { (void)eng_of(0); }\n", ("use", "eng_of")),
     ("an owner's helper", "\nvoid leak(void) { fm6_set_patch(0, 0); }\n", ("use", "fm6_set_patch")),
+    ("an owner's helper with a local prototype",
+     "\nstatic void fm6_set_patch(uint32_t tr, const uint8_t *v);\n"
+     "void leak(void) { fm6_set_patch(0, 0); }\n", ("use", "fm6_set_patch")),
+    ("an owner's state with an extern declaration",
+     "\nextern volatile uint8_t panic_req;\nvoid leak(void) { panic_req = 1; }\n", ("use", "panic_req")),
+    ("an owner's state with a repeated tentative declaration",
+     "\nstatic volatile uint8_t panic_req;\nvoid leak(void) { panic_req = 1; }\n", ("use", "panic_req")),
     ("a core.h static function", "\nvoid leak(void) { (void)swing_step_len(0, 0, 0); }\n", ("use", "swing_step_len")),
     ("a macro that expands to state", "\nvoid leak(void) { TSEL->eng_req = 0; }\n", ("use", "TSEL")),
     ("a sequencer variable", "\nvoid leak(void) { panic_req = 1; }\n", ("use", "panic_req")),
@@ -121,6 +130,16 @@ def main():
         else:
             print(f"  FAIL fixture not rejected: {label} ({want[1]}); reported {got}")
             bad += 1
+    local = "\nstatic int local_helper(uint32_t i);\nstatic int local_helper(uint32_t i) { return i != 0; }\n" \
+            "void local_use(void) { (void)local_helper(0); }\n"
+    got = check("sound", text + local)
+    print(f"  {'FAIL' if got else 'ok'}  local helper definition with forward declaration: {got}")
+    bad += bool(got)
+    local_state = "\nstatic volatile uint8_t module_local_state;\n" \
+                  "void local_state_use(void) { module_local_state = 1; }\n"
+    got = check("sound", text + local_state)
+    print(f"  {'FAIL' if got else 'ok'}  local tentative state: {got}")
+    bad += bool(got)
     return 1 if bad else 0
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Compile actual input adapters and reject the UI fake's former signature drift."""
+"""Compile actual input adapters and reject incompatible accessor signatures."""
 import os
 from pathlib import Path
 import shlex
@@ -11,8 +11,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / 'tests/ui_harness.h'
 UI_ENTRY = ROOT / 'tests/ui_test.c'
-SETTINGS = ROOT / 'tests/settings_test.c'
 BROWSER = ROOT / 'web/emu/felucca_web.c'
+ENCODER_NOOP = ROOT / 'tests/host_encoder_noop.h'
+ENCODER_NOOPS = tuple(ROOT / f'tests/{name}_test.c' for name in (
+    'backup', 'fm6bank', 'fm6_eff', 'engid', 'editor', 'persistence', 'settings'))
 
 
 class FirmwareInputContract(unittest.TestCase):
@@ -35,9 +37,11 @@ class FirmwareInputContract(unittest.TestCase):
         result = self.compile(UI_ENTRY)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_settings_adapter(self):
-        result = self.compile(SETTINGS)
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_actual_encoder_noop_adapters(self):
+        for path in ENCODER_NOOPS:
+            with self.subTest(adapter=path.name):
+                result = self.compile(path)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_browser_adapter(self):
         result = self.compile(ROOT / 'web/emu/native_check.c')
@@ -65,14 +69,45 @@ class FirmwareInputContract(unittest.TestCase):
         cases = [
             (UI, 'static int32_t fm1_enc_take(uint32_t e)',
              'static uint32_t fm1_enc_take(uint32_t e)'),
-            (SETTINGS, 'static int32_t fm1_enc_take(uint32_t k)',
-             'static int32_t fm1_enc_take(int32_t k)'),
             (BROWSER, 'static int32_t fm1_enc_take(uint32_t e)',
              'static uint32_t fm1_enc_take(uint32_t e)'),
         ]
         for path, signature, wrong_signature in cases:
             with self.subTest(adapter=path.name):
                 self.assert_signature_rejected(path, signature, wrong_signature, 'fm1_enc_take')
+
+    def test_wrong_encoder_noop_signatures_are_rejected(self):
+        signature = 'static int32_t fm1_enc_take(uint32_t e)'
+        declaration = 'static fm1_enc_take_fn fm1_enc_take;'
+        helper = ENCODER_NOOP.read_text()
+        self.assertEqual(helper.count(signature), 1, 'expected one actual accessor definition')
+        self.assertEqual(helper.count(declaration), 1, 'expected one typed declaration')
+        wrong_signatures = (
+            signature.replace('int32_t fm1_enc_take', 'uint32_t fm1_enc_take'),
+            signature.replace('uint32_t e', 'int32_t e'),
+        )
+        for path in ENCODER_NOOPS:
+            # Keep each actual consumer's prerequisites and include directory.
+            # An unrelated compile failure must not establish contract rejection.
+            result = self.compile(path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            wrapper = path.read_text()
+            include = '#include "host_encoder_noop.h"'
+            self.assertEqual(wrapper.count(include), 1, 'expected one shared encoder include')
+            for wrong_signature in wrong_signatures:
+                with self.subTest(adapter=path.name, signature=wrong_signature):
+                    mutated = helper.replace(signature, wrong_signature, 1)
+                    source = wrapper.replace(include, mutated, 1)
+                    result = self.compile(path, source)
+                    self.assertNotEqual(result.returncode, 0, 'incompatible encoder signature was accepted')
+                    self.assertIn('fm1_enc_take', result.stderr)
+                    self.assertIn('conflicting types', result.stderr)
+
+                    # Removing only the typed declaration must accept the same
+                    # mutated implementation, proving why the contract rejected it.
+                    control = wrapper.replace(include, mutated.replace(declaration, '', 1), 1)
+                    result = self.compile(path, control)
+                    self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_wrong_note_edge_signatures_are_rejected(self):
         for path in (UI, BROWSER):
