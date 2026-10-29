@@ -855,6 +855,8 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_backup() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/backup_test" tests/backup_test.c -lm
         run "full backup: CRC before writes, stale runtime, USB reset / timeout, malformed objects, older projects" "$OUT/backup_test"
+        run "stored record kinds boundary (#310): the backup / raw export handlers only iterate SK_KINDS" \
+            python3 tests/store_kind_boundary_test.py
     }
     unit backup "" u_backup
 

@@ -61,7 +61,7 @@ updated device still hold it).
 
 All formats: u32 magic, u32 size (= stored length), ..., u32 FNV-1a of the preceding bytes last. Since #300 the
 codec (`project_codec.h`, `project_codec.c`) owns the record and every caller (`proj_fetch`, `project_load`,
-`autosave_boot`, `ed_bk_commit`, `project_used`, `project_info`, `project_rename`, `chain_prepare`, `persist_boot`)
+`autosave_boot`, the backup's project kinds (`editor_backup.c sk_proj_check`), `project_used`, `project_info`, `project_rename`, `chain_prepare`, `persist_boot`)
 decodes through `proj_decode` in one fixed order: `proj_classify` (the raw export's classification); a CURRENT record
 through `proj_unpack_current`, anything else through the one transitional hook `project_legacy.c proj_decode_legacy`
 (FUN7..FUN10 of another count: `proj_unpack`; FUN5/FUN6: `proj_import_old`; FUN1..FUN4: `proj_from_v4` ..
@@ -145,7 +145,8 @@ magic, record size or count reads as **empty** (`up_bank_check` zeroes the RAM m
 
 ### 2.4 Settings (type 0)
 
-Entry point `settings_persist.c settings_import` (boot: `persist_boot`; restore: `ed_bk_commit`). It normalizes the PER4
+Entry point `settings_persist.c settings_import` (boot: `persist_boot`; restore: the settings kind's
+install, `editor_backup.c sk_set_install`). It normalizes the PER4
 block in place and applies it to the runtime (`settings`, `panel`, `favorites`, `settings_ml`, `settings_dev`).
 
 | Format | Identify | Size | Becomes | Fixtures | On a device? |
@@ -181,7 +182,7 @@ raw export does not migrate PER5, normalize the PER4 prefix, or discard a future
 ### 2.5 Backup archives (web/fm1backup.js, not flash)
 
 Archives of 11 objects (before FM6), 12 (1.0 .. 1.0.2: id 8 the FM6 bank) and 13 (1.0.3+: id 9), optionally ids 20/21
-behind `LIST 1`. `BACKUP_PUT` converts on restore: projects FUN6..FUN9 -> FUN10 (`ed_bk_commit`: `proj_decode`,
+behind `LIST 1`. `BACKUP_PUT` converts on restore: projects FUN6..FUN9 -> FUN10 (`sk_proj_check`: `proj_decode`,
 `proj_encode`; FUN1..FUN5 have no accepted length: `proj_accepts_length`), settings via `settings_import`, id 8
 via `upf_migrate`. Fixtures: `backup_test.c`, `web/test_backup.mjs`.
 
@@ -211,7 +212,7 @@ implicitly).
 | Type | Schema id | Length | Validation the firmware keeps | Growth budget |
 | --- | --- | ---: | --- | --- |
 | 1..4, 9 | `FUNA` + size 3840 + byte 66 = P_COUNT (111), `parts` NPART, `phys` >= 2 (`proj_classify` CURRENT) | 3840 | storage CRC, FNV-1a, `proj_decode_current` (`proj_unpack_current` ranges, `proj_engines_ok`, chain/motion validity, `proj_bound`) | **none in the object** (3840 B = `ST_PAYLOAD_MAX`); 13 spare bytes before `PROJ_MIDI_OFF` (3 track parameters). Further project data goes to PRX sidecars (types 10..14, A3, #316), tagged to the parent by value hash or uid ([flash-capacity.md 6](flash-capacity.md#6-what-the-prx-sidecar-needs)) |
-| 0 | `PER4` (572) or `PER6` ext ver 1 (672..2688) | as stored | storage CRC, `persist_ext_ok`, the field checks of `ed_bk_commit` | SETX tail (`ver` 2, tagged chunks) inside the 2,688 B envelope: 960 B (A2, #315). Calibration (`panel_t`) to be split from preferences: never imported from another device's record |
+| 0 | `PER4` (572) or `PER6` ext ver 1 (672..2688) | as stored | storage CRC, `persist_ext_ok`, the field checks of `sk_set_check` | SETX tail (`ver` 2, tagged chunks) inside the 2,688 B envelope: 960 B (A2, #315). Calibration (`panel_t`) to be split from preferences: never imported from another device's record |
 | 5, 6 | `UPB1`, rsize 192, 16 slots; records ver 4 / 5, np = P_COUNT | 3080 | storage CRC, bank shape, `up_valid` | 32 packed value bytes per record unused (np 111 of 144, the category at 143); deep patches go to DEEP sidecars (A4, #317) |
 | 8 | `UPF6` ver 1, 32 slots | 3728 | storage CRC, `upf_valid`, tag match | 112 B |
 | 32 | `FM6V` ver 1, 32 voices | 3616 | storage CRC, `ed_bk_fvb_check` | tail kept erased (SPL record scan) |
@@ -220,13 +221,19 @@ Removing compatibility frees **no sector and no NOINIT**: every object keeps its
 stays 4 x 3840 B. What removal saves is app flash (code), which is reported when it happens. No automatic sample-slot
 reclamation follows from it.
 
+Per-kind descriptor (#310, implemented): `firmware/src/store_kind.h` and the table `editor_backup.c SK_KINDS` hold, for
+every kind above (and the live music, the samples and the SLICE records of the full backup), its backup ids and
+storage types, the lengths `BACKUP_PUT` takes, its whole-object check, its install, its export view and its
+`STORE_LIST` state. The backup and raw-export handlers only iterate that table (`tests/store_kind_boundary_test.py`).
+A read-only descriptor command and the current-schema-only upload below would be built from those rows.
+
 Explicit schema descriptors: the web editor must choose its output schema from the connected firmware's contract, not
 its version string (#457). INFO already carries P_COUNT, P_E0, the engine id bitmap (`49 01`) and the capability tags;
 the remaining per-type identifiers (magic, version, length, record size and count, as in the table above) are
 proposed as a read-only descriptor command behind another bit of INFO `59 01` (not implemented; open question).
 
-Upload rule for the later stage: accept only the current schema, validate the whole object (as `ed_bk_commit` does
-today) before the existing `st_save` commit, never into a slot whose current content is UNKNOWN or DAMAGED without an
+Upload rule for the later stage: accept only the current schema, validate the whole object (as each kind's
+`check` does today, `SK_KINDS`) before the existing `st_save` commit, never into a slot whose current content is UNKNOWN or DAMAGED without an
 explicit replace request, and leave prior data intact on any refusal or interruption.
 
 ## 4. Handover to the web editor (#457)

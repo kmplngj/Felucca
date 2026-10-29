@@ -591,6 +591,11 @@ any separate opt-in FPU/ABI/IRQ/device experiment.
   every stored format and conversion and proposes the supported schema. Do not add another permanent firmware
   converter for a new layout; keep the raw store export (`STORE_LIST` / `STORE_GET`, `editor_backup.c`) listing
   every storage type, so content a build cannot load stays downloadable.
+- **A new stored kind.** The full backup and the raw export reach every stored kind through one row of
+  `editor_backup.c` `SK_KINDS` ([`store_kind.h`](../firmware/src/store_kind.h), #310): its backup ids and storage
+  types, the lengths `BACKUP_PUT` takes, a whole-object check, the install, the export view and its `STORE_LIST`
+  state. Add the row with the kind's codec; the handlers stay unchanged (`tests/store_kind_boundary_test.py`), and
+  `tests/backup_test.c` checks the table against the wire order and lengths.
 - **Retired values.** Retired engines, enum values and parameter ids stay reserved and keep a
   migration (`core.h` `drum_from_phys`, `drum_from_perc`; `params.c enum_orig`, `param_fit`).
 - **Editor protocol.** SysEx commands, parameter ids and `INFO` are specified in

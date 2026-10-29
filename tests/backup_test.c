@@ -307,7 +307,7 @@ static int plain_list_tests(void)
     ok &= rep[1] == 1u && rep[2] == 0;
     bad += check("LIST with another argument, or two: rc 1, as firmware without LIST 1 answers", ok);
     bad += check("INFO's 58 01 caps (editor.c) with the flash store and SLICE: 7 = LIST 1, id 20, id 21",
-                 ED_BK_XCAPS == (FELUCCA_SLICE ? 7u : 3u) && ED_BK_XN == (FELUCCA_SLICE ? 2u : 1u) && sizeof ED_BK_XIDS == 2u && ED_BK_XIDS[0] == 20u && ED_BK_XIDS[1] == 21u);
+                 ED_BK_XCAPS == (FELUCCA_SLICE ? 7u : 3u) && ED_BK_XN == (FELUCCA_SLICE ? 2u : 1u) && ED_BK_ID_FVB == 20u && ED_BK_ID_SLC == 21u);
     return bad;
 }
 
@@ -871,6 +871,10 @@ static void raw_proj(uint8_t *b, uint32_t n, uint32_t m)
     s = proj_hash(b, n - 4u); memcpy(b + n - 4u, &s, 4);
 }
 
+/* STORE_LIST's objects in their wire order (web/EDITOR_PROTOCOL.md "Raw store export"), written out here, not taken
+ * from the firmware's table */
+static const uint8_t RAW_IDS[11] = {OBJ_SETTINGS, OBJ_PROJECT0, OBJ_PROJECT0 + 1, OBJ_PROJECT0 + 2, OBJ_PROJECT0 + 3,
+                                    OBJ_UPRESET0, OBJ_UPRESET0 + 1, OBJ_FM6BANK, OBJ_UPFM6, OBJ_AUTOSAVE, OBJ_FM6VB};
 static int raw_tests(void)
 {
     int bad = 0, ok;
@@ -890,7 +894,7 @@ static int raw_tests(void)
     ok = raw_list_keep() == 0 && raw_lst[0] == 1u && raw_lst[2] == 11u;
     for (i = 0; ok && i < raw_lst[2]; i++) {
         const uint8_t *o = raw_lst + 3u + i * RAW_REC;
-        ok = o[0] == ED_RAW_IDS[i] && o[1] == ED_RAW_EMPTY && o[2] == 127u && !ed_bk_r32(o + 3) && !ed_bk_r32(o + 8);
+        ok = o[0] == RAW_IDS[i] && o[1] == ED_RAW_EMPTY && o[2] == 127u && !ed_bk_r32(o + 3) && !ed_bk_r32(o + 8);
     }
     bad += check("raw LIST, erased device: 11 objects (types 0..9, 32), all EMPTY, no copy, 0 bytes", ok && raw_untouched());
     bad += check("raw GET of an empty object: rc 1, nothing read", raw_get(OBJ_SETTINGS, 0, 16) == 1u);
@@ -1193,6 +1197,166 @@ static int raw_tests(void)
     return bad;
 }
 
+/* ---- #310: the stored record kinds (store_kind.h, editor_backup.c SK_KINDS) against the wire contract ----
+ * Every backup id and every storage type has exactly one kind, in the wire order; BACKUP_PUT's length rule of each
+ * id is the one of the release before the table (written out below, not taken from the table); each kind's check
+ * takes the record this firmware writes and refuses a damaged one, before anything is written; STORE_LIST's state of
+ * those records is CURRENT and UNKNOWN. */
+static int old_put_len(uint32_t id, uint32_t len)   /* 1 = BEGIN refuses (editor_backup.c before #310) */
+{
+    return len > ED_BK_MAX || (id == 0u && !proj_accepts_length(len)) ||
+           (id == 1u && len != sizeof(persist_t) && (len <= sizeof(persist_t) + PERSIST_EXT_HDR ||
+                                                     len > sizeof(persist_rec_t) || (len - sizeof(persist_t) - PERSIST_EXT_HDR) % 32u)) ||
+           (id >= 2u && id <= 5u && len && !proj_accepts_length(len)) ||
+           ((id == 6u || id == 7u) && len && len != sizeof(up_bank_t)) ||
+           (id == 8u && len && len != sizeof(fm6_bank_t)) || (id == 9u && len && len != sizeof(upf_t)) ||
+           (id == ED_BK_ID_FVB && len && len != FVB_LEN) ||
+           (id == ED_BK_ID_SLC && len && len != (FELUCCA_SLICE ? (uint32_t)sizeof(slc_bk_t) : 0u));
+}
+static uint8_t kind_buf[ST_PAYLOAD_MAX] __attribute__((aligned(4)));
+/* kind of backup id id: check on n bytes of b (copied: a check may normalise), its reply */
+static uint32_t kind_check(uint32_t id, const void *b, uint32_t n)
+{
+    const store_kind_t *s = sk_of_bk(id);
+    memset(kind_buf, 0, sizeof kind_buf);
+    memcpy(kind_buf, b, n);
+    return s && s->check ? s->check(kind_buf, &n) : 99u;
+}
+static int kind_tests(void)
+{
+    static const uint8_t BK[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 32, 33, 34, ED_BK_ID_FVB, ED_BK_ID_SLC};
+    static project_store_t st;
+    static persist_rec_t pr;
+    static up_bank_t ub;
+    static upf_t uf;
+    static fm6_bank_t fb;
+    static uint8_t vb[FVB_LEN];
+    int bad = 0, ok = 1;
+    uint32_t i, id, len, n, put = 0, rows = 0;
+    const store_kind_t *s;
+    uint8_t seen[64] = {0};
+
+    /* one kind per backup id and storage type, the table's order the wire order */
+    for (s = SK_KINDS; s < SK_KINDS + SK_N; s++) {
+        ok &= s->bk != SK_NONE || s->obj != SK_NONE;                  /* (a row the handlers never reach) */
+        ok &= (s->obj == SK_NONE) == !s->state && (s->obj == SK_NONE || s->nobj);
+        ok &= !(s->flags & SK_SAVE) || (s->obj != SK_NONE && s->nobj == s->nbk);
+        ok &= !s->install || (s->check && s->view);
+        for (id = 0; id < 128u; id++)
+            if (s->bk != SK_NONE && id - s->bk < s->nbk) rows++;
+    }
+    bad += check("kinds: every row reachable; a raw row has a state; SK_SAVE rows store backup id k as type obj + k", ok);
+    for (ok = 1, id = 0; id < 128u; id++) {
+        uint32_t want = 0;
+        for (i = 0; i < sizeof BK; i++) want |= BK[i] == id && (id != ED_BK_ID_FVB || FELUCCA_FLASH) &&
+                                                (id != ED_BK_ID_SLC || (FELUCCA_FLASH && FELUCCA_SLICE));
+        ok &= !!sk_of_bk(id) == want && (!sk_of_bk(id) || sk_of_bk(id)->bk + sk_of_bk(id)->nbk > id);
+    }
+    bad += check("kinds: backup ids 0..9, 32..34, 20, 21 (as this build has them), nothing else", ok && rows == 13u + ED_BK_XN);
+    for (ok = 1, id = 0; id < 128u; id++)
+        ok &= !!sk_of_obj(id) == (id < OBJ_COUNT || id == OBJ_FM6VB);
+    for (i = 0; i < sizeof RAW_IDS; i++) ok &= sk_of_obj(RAW_IDS[i]) && !seen[RAW_IDS[i]]++;
+    bad += check("kinds: storage types 0..9 and 32, each once", ok);
+    reset();
+    call(ED_BACKUP_LIST, 0, 0);
+    for (ok = rep[2] == 13u && sk_bk_count(0) == 13u, i = 0; ok && i < 13u; i++) ok = rep[3u + i * 11u] == BK[i];
+    {
+        uint8_t a[1] = {1};
+        call(ED_BACKUP_LIST, a, 1);
+        ok &= rep[2] == 13u + ED_BK_XN && sk_bk_count(1) == 13u + ED_BK_XN;
+        for (i = 0; ok && i < rep[2]; i++) ok = rep[3u + i * 11u] == BK[i];
+    }
+    bad += check("kinds: BACKUP_LIST in the 1.0.3 order (0..9, 32..34), LIST 1 then 20, 21", ok);
+    raw_call(ED_STORE_LIST, 0, 0);
+    for (ok = rep[2] == sizeof RAW_IDS, i = 0; ok && i < sizeof RAW_IDS; i++) ok = rep[3u + i * RAW_REC] == RAW_IDS[i];
+    bad += check("kinds: STORE_LIST in the order of the raw export (types 0..9, 32)", ok);
+
+    /* lengths: BEGIN takes exactly the lengths it took before the table, for every id and every length */
+    for (ok = 1, id = 0; id < 128u; id++) {
+        s = sk_of_bk(id);
+        if (!s || !s->install) continue;
+        put++;
+        for (len = 0; len <= ED_BK_MAX + 1u; len++)
+            ok &= !(len <= ED_BK_MAX && sk_accepts(s, len)) == old_put_len(id, len);
+    }
+    bad += check("kinds: BACKUP_PUT's lengths per id as before (0..3841 bytes), the samples not PUT-able",
+                 ok && put == 10u + ED_BK_XN && !sk_of_bk(32)->install);
+    for (ok = 1, id = 0; id <= ED_BK_ID_SLC; id++) {             /* .. and through the wire: rc 1 exactly there */
+        s = sk_of_bk(id);
+        if (!s || !s->install) continue;
+        for (len = 0; len <= ED_BK_MAX + 1u; len += len < 700u || len > 3000u ? 1u : 97u) {
+            reset();
+            ok &= (put_begin(id, len, 0) == 1u) == old_put_len(id, len);
+            put_end(id, 3);
+        }
+    }
+    bad += check("kinds: .. and BEGIN over the wire answers 1 exactly for those lengths", ok);
+
+    /* check: the record this firmware writes passes, a damaged one is refused (2), nothing written either way */
+    reset();
+    trk[0].step[0] = (step_t){{60}, 1, ST_NOTE, 0, 96, 0, 0};
+    project_capture(&proj_scratch);
+    ok = proj_encode(&st, &proj_scratch);
+    memset(&pr, 0, sizeof pr);
+    settings_export_rec(&pr);
+    memset(&ub, 0, sizeof ub);
+    ub.magic = UP_BANK_MAGIC; ub.rsize = sizeof(up_rec_t); ub.nslot = UP_PER_BANK;
+    memset(&uf, 0, sizeof uf);
+    uf.magic = UPF_MAGIC; uf.ver = 1; uf.nslot = UP_SLOTS;
+    memset(&fb, 0, sizeof fb);
+    fb.magic = FM6_BANK_MAGIC; fb.ver = 1; fb.nslot = FM6_BANK_N;
+    {
+        fvb_info_t in;
+        memset(&in, 0, sizeof in);
+        memset(vb, 0xFF, sizeof vb);
+        in.magic = FVB_MAGIC; in.ver = 1; in.n = FM6_NBANK;
+        memcpy(in.name, "BANK      ", 10);
+        memcpy(vb, &in, sizeof in);
+    }
+    raw_snap();
+    n = persist_len(&pr);
+    ok &= kind_check(0, &st, sizeof st) == 0 && kind_check(2, &st, sizeof st) == 0 && kind_check(1, &pr, n) == 0 &&
+          kind_check(6, &ub, sizeof ub) == 0 && kind_check(8, &fb, sizeof fb) == 0 && kind_check(9, &uf, sizeof uf) == 0 &&
+          (!FELUCCA_FLASH || kind_check(ED_BK_ID_FVB, vb, sizeof vb) == 0);
+    for (id = 2; id <= 9u; id++)                                  /* 0 bytes: the slots, the banks, the patches */
+        ok &= id == 1u || kind_check(id, &st, 0) == 0;
+    ok &= kind_check(0, &st, 0) == 2u && (!FELUCCA_FLASH || kind_check(ED_BK_ID_FVB, vb, 0) == 0);
+    bad += check("kinds: check takes what this firmware writes (and 0 bytes where PUT takes them; not the live music)", ok);
+    st.raw[100] ^= 1u;                                            /* the project's hash no longer matches */
+    pr.lowcut = 3;                                                /* a SPEAKER value no firmware stores */
+    ub.nslot = 3;
+    uf.ver = 2;
+    fb.v[0][0] = 200;                                             /* a packed byte past 7 bits */
+    vb[FVB_VOICES - FVB_INFO] = 0;                                /* data in the slot of an unused voice */
+    ok = kind_check(0, &st, sizeof st) == 2u && kind_check(3, &st, sizeof st) == 2u && kind_check(1, &pr, n) == 2u &&
+         kind_check(7, &ub, sizeof ub) == 2u && kind_check(8, &fb, sizeof fb) == 2u && kind_check(9, &uf, sizeof uf) == 2u &&
+         (!FELUCCA_FLASH || kind_check(ED_BK_ID_FVB, vb, sizeof vb) == 2u);
+#if ED_BK_HAS_SLC
+    memset(kind_buf, 0, sizeof kind_buf);
+    ok &= kind_check(ED_BK_ID_SLC, kind_buf, sizeof(slc_bk_t)) == 2u && kind_check(ED_BK_ID_SLC, kind_buf, 0) == 0;
+#endif
+    bad += check("kinds: check refuses a damaged record of each kind (2), and nothing is written", ok && raw_untouched());
+    pr.lowcut = 0;
+    ub.nslot = UP_PER_BANK; uf.ver = 1; fb.v[0][0] = 0;
+    st.raw[100] ^= 1u;
+    ok = sk_of_obj(OBJ_PROJECT0)->state(st.raw, sizeof st) == ED_RAW_CURRENT &&
+         sk_of_obj(OBJ_AUTOSAVE)->state(st.raw, sizeof st) == ED_RAW_CURRENT &&
+         sk_of_obj(OBJ_SETTINGS)->state((const uint8_t *)&pr, n) == ED_RAW_CURRENT &&
+         sk_of_obj(OBJ_UPRESET0)->state((const uint8_t *)&ub, sizeof ub) == ED_RAW_CURRENT &&
+         sk_of_obj(OBJ_UPFM6)->state((const uint8_t *)&uf, sizeof uf) == ED_RAW_CURRENT &&
+         sk_of_obj(OBJ_FM6BANK)->state((const uint8_t *)&fb, sizeof fb) == ED_RAW_LEGACY &&
+         sk_of_obj(OBJ_FM6VB)->state(vb, sizeof vb) == ED_RAW_CURRENT;
+    st.raw[0] ^= 1u; pr.magic ^= 1u; ub.nslot = 3; uf.ver = 2; fb.ver = 2; vb[0] ^= 1u;
+    ok &= sk_of_obj(OBJ_PROJECT0)->state(st.raw, sizeof st) == ED_RAW_UNKNOWN &&
+          sk_of_obj(OBJ_SETTINGS)->state((const uint8_t *)&pr, n) == ED_RAW_UNKNOWN &&
+          sk_of_obj(OBJ_UPRESET0)->state((const uint8_t *)&ub, sizeof ub) == ED_RAW_UNKNOWN &&
+          sk_of_obj(OBJ_UPFM6)->state((const uint8_t *)&uf, sizeof uf) == ED_RAW_UNKNOWN &&
+          sk_of_obj(OBJ_FM6BANK)->state((const uint8_t *)&fb, sizeof fb) == ED_RAW_UNKNOWN &&
+          sk_of_obj(OBJ_FM6VB)->state(vb, sizeof vb) == ED_RAW_UNKNOWN;
+    bad += check("kinds: STORE_LIST's state: those records CURRENT (the retired bank LEGACY), another magic UNKNOWN", ok);
+    return bad;
+}
+
 /* #438: storage/backup reachability only, never a claim about SPL behavior. */
 static int update_record_backup_tests(void)
 {
@@ -1492,6 +1656,7 @@ int main(void)
     }
     bad += ext_tests();
     bad += raw_tests();
+    bad += kind_tests();
     bad += update_record_backup_tests();
     printf("backup test %s\n", bad ? "FAILED" : "passed");
     return bad != 0;

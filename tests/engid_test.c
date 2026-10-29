@@ -362,6 +362,13 @@ static int presets(void)
 /* the settings object of a full backup: PER4 while no favourite is past id 13, PER6 with one (an id this build may
  * lack: kept); restored (BACKUP_PUT) both ways; an extension it cannot read refused */
 static uint32_t bk_u32(uint8_t *a, uint32_t v) { for (uint32_t i = 0; i < 5u; i++) a[i] = (uint8_t)((v >> (7u * i)) & 127u); return 5; }
+/* the bytes BACKUP_LIST / GET export for backup id id (its kind's view, editor_backup.c SK_KINDS); *len 0: none */
+static const uint8_t *bk_object(uint32_t id, uint32_t *len)
+{
+    const store_kind_t *s = sk_of_bk(id);
+    *len = 0;
+    return s ? s->view(id - s->bk, len) : 0;
+}
 static uint32_t bk_put_object(uint32_t id, const uint8_t *data, uint32_t len)
 {
     uint8_t a[400];
@@ -395,10 +402,10 @@ static int backup(void)
     reset();
     panel = PANEL_DEFAULT;                            /* (a restore checks the calibration) */
     favorite_set(ENGI_FM6, 2, 1);
-    ok = ed_bk_capture() == 0 && (obj = ed_bk_object(1, &len)) && len == sizeof(persist_t) &&
+    ok = ed_bk_capture() == 0 && (obj = bk_object(1, &len)) && len == sizeof(persist_t) &&
          ((const persist_t *)obj)->magic == PERSIST_MAGIC;
     favorite_set(ID_GONE, 1, 1); favorite_set(ID_FAR, 255, 1);   /* (an id this build lacks: kept, as imported) */
-    ok &= ed_bk_capture() == 0 && (obj = ed_bk_object(1, &len)) && len == sizeof(persist_t) + PERSIST_EXT_HDR + FAV_ROWS * 32u &&
+    ok &= ed_bk_capture() == 0 && (obj = bk_object(1, &len)) && len == sizeof(persist_t) + PERSIST_EXT_HDR + FAV_ROWS * 32u &&
           ((const persist_t *)obj)->magic == PERSIST_MAGIC_EXT;
     bad += check("BACKUP_LIST's settings: PER4 (as 1.6) while no favourite is past 13, PER6 with one", ok);
     memcpy(&r, obj, len);
@@ -502,7 +509,7 @@ static int unavailable_storage(void)
         ok &= host_wire[7] == 0 && !memcmp(host_wire + 8, pk, sizeof pk);
         bad += check("unavailable FM6: preset load -> project round trip -> preset save/editor GET preserves the patch", ok);
         saved = upf;
-        ok = ed_bk_object(9, &len) == (const uint8_t *)&upf && len == sizeof upf;
+        ok = bk_object(9, &len) == (const uint8_t *)&upf && len == sizeof upf;
         upf_empty();
         ok &= bk_put_object(9, (const uint8_t *)&saved, sizeof saved) == 0 && !memcmp(&saved, &upf, sizeof upf) &&
               !upf_get(5, got) && !memcmp(pk, got, sizeof pk);
