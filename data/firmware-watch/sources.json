@@ -400,6 +400,36 @@
       "status": "pending_initialization"
     },
     {
+      "authorization": "User requested on 2026-10-27: analyse marksweiss/tastywaves firmware for useful optimizations absent from native code and existing issues, and add it to the firmware watcher.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "12d3499d056ae4c93908783748ca3ddb5d4d61fc"
+      },
+      "historical_total_at_setup": 133,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; reverify stable repository identity/canonical name/main/immutable pin, fetch complete non-shallow DAG and fresh tip, preserve existing intervals and journal, append initialized repository state, recalculate queues from complete DAGs and confirmed records, then remove this pending entry only after success. This topic snapshot grants no per-commit coverage; retain an explicit blocker on failure.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "12d3499d056ae4c93908783748ca3ddb5d4d61fc"
+      },
+      "recent_frontiers": {
+        "main": "12d3499d056ae4c93908783748ca3ddb5d4d61fc"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/757",
+        "https://github.com/kmplngj/Felucca/issues/110"
+      ],
+      "repository": "marksweiss/tastywaves",
+      "repository_id": 1433738566,
+      "requested_at": "2026-10-27",
+      "source_name": "TastyWaves (Dinghy-derived FM-1 wavetable synth; active-FX modulation ramps and nonblocking MASTER ADC/LCD DMA scheduling)",
+      "status": "pending_initialization"
+    },
+    {
       "adoption_plan": "https://github.com/kmplngj/Felucca/issues/762",
       "authorization": "User requested on 2026-10-28: analyse Ravel_FM1 features, instruments and optimizations for our fork, make a plan and GitHub issues, and consider adding it to the watcher. Source review recommends registration.",
       "branches": [
