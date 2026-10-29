@@ -245,13 +245,17 @@ try {
     await freshAudio(false);
     await key.focus();
     await page.keyboard.down("Enter");
+    await page.keyboard.down("Space");
     const previousKey = await key.elementHandle();
     // Model browsers that omit blur on target removal, even if this one emits it.
     await previousKey.evaluate((el) => el.addEventListener("blur", (e) => e.stopImmediatePropagation(), { capture: true, once: true }));
     await page.setViewportSize({ width: 390, height: 844 }); // rebuild removes the focused key while held
     await waitFor((el) => !el.isConnected, previousKey);
     await previousKey.dispose();
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "layout rebuild kept the removed focus owners before keyup");
+    await freshAudio(false);                              // release must not depend on a future physical keyup
     await page.keyboard.up("Enter");
+    await page.keyboard.up("Space");
     const afterRebuild = await key.evaluate((el) => { el.click(); return el.getAttribute("aria-pressed"); });
     assert.equal(afterRebuild, "true", "layout rebuild left the virtual-click guard set");
     await waitFor(() => document.querySelector('[aria-label="F3"]').getAttribute("aria-pressed") === "false");

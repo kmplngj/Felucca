@@ -167,6 +167,7 @@ const send = (m) => { if (node) node.port.postMessage(m); };
 function build(name) {
   const L = LAYOUTS[name];
   physicalKeyActivations.clear();                    // removed focused targets need not receive blur or keyup
+  for (const id of keyBy.keys()) if (id[0] === "f") keyBy.delete(id); // keep independent computer/pointer owners
   layout = name;
   svg.innerHTML = "";
   svg.setAttribute("viewBox", `0 0 ${L.w} ${L.h}`);
