@@ -239,7 +239,7 @@ static int panel_midi_ownership_test(void)
                     if (key_up_first) queued(0x80, shared, 0, 1);
                     else ownership_key(0);
                     bad += check("  final release: gates/recording end, output is exact; MIDI-first ARP count remains",
-                                 !ownership_gates(t) && !t->rh_n && !t->nheld && !t->arp_note &&
+                                 !ownership_gates(t) && !t->rh_n && !t->nheld && !t->arp_note && !t->arp_mask &&
                                  t->arp_phys == (arp ? midi_first : 0u) && !midi_notes[0][shared] && !midi_owners[0] &&
                                  !kb_chn[7] && ownership_output(chord, 1, 1) &&
                                  ownership_record(t, recorded, record_n, record_vel));
@@ -335,24 +335,187 @@ static int arp_ext_stop_test(void)
     arp_latch(1); ms = arp_ext_run(10);
     bad += check("ARP HOLD on the external clock plays the upper octave", trk[0].arp_note == 72 && gate_note(&trk[0], 72));
     clock_packet(1, 0xFC, ms + 5); idle_ms(2000);
-    bad += check("external Stop ends the sounding ARP note", !trk[0].arp_note && !gate_note(&trk[0], 72) && !gate_note(&trk[0], 60));
+    bad += check("external Stop ends the sounding ARP note", !trk[0].arp_note && !trk[0].arp_mask && !gate_note(&trk[0], 72) && !gate_note(&trk[0], 60));
     bad += check("external Stop keeps the latched HOLD chord", trk[0].nheld == 1u && trk[0].held[0] == 60u);
     ms = fm1_ms; clock_packet(1, 0xFB, ms);
-    for (i = 1; i < 40 && !trk[0].arp_note; i++) clock_packet(1, 0xF8, ms + i * 21u);
-    bad += check("Continue plays the latched chord again", trk[0].arp_note != 0);
+    for (i = 1; i < 40 && !trk[0].arp_mask; i++) clock_packet(1, 0xF8, ms + i * 21u);
+    bad += check("Continue plays the latched chord again", trk[0].arp_mask != 0);
     arp_latch(1); arp_ext_run(10); idle_ms(2000);
-    bad += check("a lost external clock stops the transport and ends the ARP note", !song.playing && !trk[0].arp_note && !gate_note(&trk[0], 72));
+    bad += check("a lost external clock stops the transport and ends the ARP note", !song.playing && !trk[0].arp_note && !trk[0].arp_mask && !gate_note(&trk[0], 72));
     arp_latch(1); queued(0x90, 64, 100, 1); queued(0x80, 64, 0, 1);
     bad += check("a tap while the external transport is stopped sounds", trk[0].arp_note == 64);
     idle_ms(2000);
-    bad += check("its ARP gate still ends in real time", !trk[0].arp_note && !gate_note(&trk[0], 64));
+    bad += check("its ARP gate still ends in real time", !trk[0].arp_note && !trk[0].arp_mask && !gate_note(&trk[0], 64));
     arp_latch(0); transport_req = 1; events_block(CTL); queued(0x90, 60, 100, 1); queued(0x80, 60, 0, 1);
     for (i = 0; i < 4000 && trk[0].arp_note != 72; i++) events_block(CTL);
     off = trk[0].arp_off;
     transport_req = 2; events_block(CTL);
     bad += check("internal clock: STOP leaves the free-running ARP note to its gate", trk[0].arp_note == 72 && gate_note(&trk[0], 72) && trk[0].arp_off == off - CTL);
-    for (i = 0; i < 4000 && (!trk[0].arp_note || trk[0].arp_note == 72); i++) events_block(CTL);
-    bad += check("internal clock: the ARP keeps stepping after STOP", trk[0].arp_note && trk[0].arp_note != 72 && trk[0].nheld == 1u);
+    for (i = 0; i < 4000 && (!trk[0].arp_mask || trk[0].arp_note == 72); i++) events_block(CTL);
+    bad += check("internal clock: the ARP keeps stepping after STOP", trk[0].arp_mask && trk[0].arp_note != 72 && trk[0].nheld == 1u);
+    return bad;
+}
+/* #651: expectations use real admitted gates, not ARP's pitch/activity encoding.
+ * At 120 BPM the 1/16 period is floor(44100*60/120/4)=5512 samples;
+ * GATE64 ends at 2756. 87 CTL blocks are past that gate, before the next step. */
+static track_t *arp_zero_setup(uint32_t mode, uint32_t hold)
+{
+    midi_test_reset();
+    track_t *t = &trk[0];
+    t->p[P_VOICE] = V_POLY; t->p[P_TRANS] = 0;
+    song.g[G_BPM] = 120; song.g[G_CLOCK] = 0;
+    t->p[P_AMODE] = (int16_t)mode; t->p[P_AHOLD] = (int16_t)hold;
+    t->p[P_ARATE] = 2; t->p[P_AOCT] = 1; t->p[P_AGATE] = 64;
+    t->p[P_ASWING] = 0; t->p[P_APROB] = 127; t->p[P_AORDER] = 0;
+    events_block(CTL);
+    return t;
+}
+static void arp_zero_blocks(uint32_t n)
+{
+    while (n--) events_block(CTL);
+}
+static uint32_t arp_zero_gates(const track_t *t)
+{
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < NVOICE; i++) n += !!(t->v[i].active && t->v[i].gate);
+    return n;
+}
+static void arp_zero_chord(const uint8_t *notes, uint32_t n)
+{
+    for (uint32_t i = 0; i < n; i++)
+        midi_enqueue(0x09u | 0x90u << 8 | (uint32_t)notes[i] << 16 | 100u << 24, 1);
+    events_block(CTL);
+}
+static int arp_zero_test(void)
+{
+    static const uint8_t NOTES[] = {0, 1, 60, 127};
+    int bad = 0;
+    track_t *t;
+    for (uint32_t mode = 1; mode <= 6; mode += 5)
+        for (uint32_t hold = 0; hold < 2; hold++)
+            for (uint32_t k = 0; k < sizeof NOTES; k++) {
+                uint32_t note = NOTES[k], age;
+                printf("#651 mode=%u HOLD=%u note=%u\n", mode, hold, note);
+                t = arp_zero_setup(mode, hold);
+                queued(0x90, note, 100, 1);
+                age = vage;
+                bad += check("  legal input admits exactly the requested gated pitch", arp_zero_gates(t) == 1 && gate_note(t, note));
+                arp_zero_blocks(87);
+                bad += check("  independent 2756-sample gate expires before next step", !arp_zero_gates(t));
+                arp_zero_blocks(86);
+                bad += check("  next step retriggers the same pitch", gate_note(t, note) && vage > age);
+                queued(0x80, note, 0, 1);
+                bad += check("  ordinary input-off releases the pitch, including zero", !arp_zero_gates(t));
+                if (hold) {
+                    arp_zero_blocks(173);
+                    bad += check("  HOLD refires the retained input after physical release", gate_note(t, note) && !t->arp_phys && t->nheld == 1);
+                    t->p[P_AHOLD] = 0; events_block(CTL);
+                    bad += check("  disabling HOLD releases its refired note", !arp_zero_gates(t) && !t->nheld);
+                }
+                queued(0xB0, 120, 0, 1);
+                bad += check("  All Sound Off leaves no held or gated notes", !arp_zero_gates(t) && !t->nheld);
+            }
+    /* First/secondary zero, sorted/as-played, explicit four-note cap. */
+    static const uint8_t CHORDS[][5] = {{0, 60}, {60, 0}, {0, 1, 60, 127, 64}};
+    for (uint32_t c = 0; c < 3; c++) {
+        t = arp_zero_setup(14, 0); t->p[P_AORDER] = c != 0;
+        arp_zero_chord(CHORDS[c], c == 2 ? 5u : 2u);
+        bad += check("#651 CHORD emits zero and the other pitches, at most four", gate_note(t, 0) && gate_note(t, 60) &&
+                     arp_zero_gates(t) == (c == 2 ? 4u : 2u) && (c != 2 || (gate_note(t, 1) && gate_note(t, 127) && !gate_note(t, 64))));
+        arp_zero_blocks(87);
+        bad += check("#651 every CHORD pitch expires, including a secondary zero", !arp_zero_gates(t));
+    }
+    /* As-played high notes clamp to one127 at the upper octave; a later zero
+     * becomes12 in its original slot, even when a preceding127 was skipped. */
+    static const uint8_t TOP[] = {126, 127, 0};
+    t = arp_zero_setup(14, 0); t->p[P_AORDER] = 1; t->p[P_AOCT] = 2;
+    arp_zero_chord(TOP, 3); arp_zero_blocks(173);
+    bad += check("#651 CHORD upper clamping deduplicates127 and preserves later slots", arp_zero_gates(t) == 2 && gate_note(t, 127) && gate_note(t, 12));
+    arp_zero_blocks(87);
+    bad += check("#651 a sparse clamped CHORD releases all emitted identities", !arp_zero_gates(t));
+
+    t = arp_zero_setup(1, 0); queued(0x90, 0, 100, 1);
+    t->p[P_AMODE] = 0; events_block(CTL);
+    bad += check("#651 mode OFF releases zero and drops its held set", !arp_zero_gates(t) && !t->nheld);
+    t = arp_zero_setup(1, 0); queued(0x90, 0, 100, 1);
+    panic_req |= 1u; events_block(CTL);
+    bad += check("#651 panic clears zero release identity and voices", !arp_zero_gates(t) && !t->nheld);
+    queued(0x90, 60, 100, 1); arp_zero_blocks(87);
+    bad += check("#651 a post-panic note has an ordinary gate", !arp_zero_gates(t));
+    t = arp_zero_setup(1, 0); queued(0x90, 0, 100, 1);
+    for (uint32_t i = 0; i <= MQ; i++) midi_enqueue(0x007FB00Bu, 1);
+    events_block(CTL);
+    bad += check("#651 real queue overflow clears zero and held input", !midi_in_overflow && mi_r == mi_w && !arp_zero_gates(t) && !t->nheld);
+
+    t = arp_zero_setup(1, 0); t->p[P_APROB] = 0;
+    rng_state = 1u; uint32_t age_before_miss = vage;
+    queued(0x90, 0, 100, 1);
+    bad += check("#651 probability miss admits no pitch and consumes one RNG draw", !arp_zero_gates(t) && vage == age_before_miss && rng_state == 270369u);
+    t = arp_zero_setup(1, 0); t->p[P_ARATE] = 0; t->p[P_AGATE] = 127;
+    song.octave = -3; t->p[P_TRANS] = -24;
+    fm1_in.notes = 1u << 1; events_block(CTL);       /* a black key clamped to zero */
+    bad += check("#651 legal low black key admits note0 before WHITE", kb_map(t, 1) == 0 && gate_note(t, 0));
+    t->p[P_QUANT] = QN_WHITE; t->p[P_ARATE] = 5;    /* empty list before the old long gate ends */
+    arp_zero_blocks(120);
+    bad += check("#651 empty remapped key list releases its previous zero", !arp_zero_gates(t) && t->nheld == 1);
+
+    /* Pedal/independent channel ownership stays with the existing MIDI owner. */
+    t = arp_zero_setup(1, 0);
+    queued(0x90, 0, 100, 1); queued(0xB0, 64, 127, 1); queued(0x80, 0, 0, 1);
+    bad += check("#651 sustain keeps note0 input owned until pedal-up", gate_note(t, 0) && midi_notes[0][0] == (1u | MIDI_PEDAL_NOTE));
+    queued(0xB0, 64, 0, 1);
+    bad += check("#651 pedal-up releases note0 input", !gate_note(t, 0) && !midi_notes[0][0]);
+    t = arp_zero_setup(1, 0); song.g[G_ROUTE] = 1;
+    queued(0x94, 0, 100, 1); queued(0x95, 0, 100, 2); queued(0x84, 0, 0, 1);
+    bad += check("#651 one source cannot release another source's zero hold", midi_owners[0] == 1 && gate_note(t, 0));
+    queued(0x85, 0, 0, 2);
+    bad += check("#651 last owner releases zero normally", !midi_owners[0] && !gate_note(t, 0));
+
+    /* Real recording entry and release, without borrowing ARP state as oracle. */
+    t = arp_zero_setup(1, 0); track_defaults_steps(t);
+    song.playing = song.rec = 1;
+    queued(0x90, 0, 100, 1);
+    bad += check("#651 generated zero is recorded as NOTE0 and held", t->step[0].time == ST_NOTE && t->step[0].n == 1 && t->step[0].note[0] == 0 && t->rh_n == 1 && t->rh_note[0] == 0);
+    arp_zero_blocks(87);
+    bad += check("#651 gate closes zero's recording hold", !t->rh_n && !gate_note(t, 0));
+
+    t = arp_zero_setup(1, 0); track_defaults_steps(t);
+    t->p[P_ARATE] = 0; t->p[P_SDIV] = 2;       /* quarter-note ARP spans two sixteenth-note steps */
+    song.playing = song.rec = 1;
+    queued(0x90, 0, 100, 1); arp_zero_blocks(173);
+    bad += check("#651 long recorded zero produces NOTE then TIE", t->step[0].time == ST_NOTE && t->step[0].note[0] == 0 &&
+                 t->step[1].time == ST_TIE && t->rh_n == 1);
+    arp_zero_blocks(173);
+    bad += check("#651 generated zero gate closes recording before later ties", !t->rh_n && !gate_note(t, 0));
+    arp_zero_blocks(173);
+    bad += check("#651 closed zero recording does not extend a later TIE", t->step[3].time == ST_REST);
+
+    /* Stop/loss release uses the same identity with the actual clock handler. */
+    for (uint32_t stop = 0; stop < 2; stop++) {
+        t = arp_zero_setup(1, 1); song.g[G_CLOCK] = 1; events_block(CTL);
+        clock_packet(1, 0xFA, 10); queued(0x90, 0, 100, 1);
+        bad += check("#651 external Start admits zero", gate_note(t, 0));
+        if (stop) clock_packet(1, 0xFC, 11);
+        else { fm1_ms = 2011; events_block(CTL); }
+        bad += check("#651 external Stop/loss releases zero, retaining HOLD inputs", !song.playing && !arp_zero_gates(t) && t->nheld == 1);
+        uint32_t ms = fm1_ms;
+        clock_packet(1, 0xFB, ms);
+        for (uint32_t i = 1; i <= 7; i++) clock_packet(1, 0xF8, ms + 21u * i);
+        bad += check("#651 Continue can emit the latched zero again", song.playing && gate_note(t, 0));
+    }
+    /* The sound installer requests panic; an old release must not cut a new note. */
+    t = arp_zero_setup(1, 0); queued(0x90, 0, 100, 1);
+    set_engine_of(t, ENGI_FM6); events_block(CTL);
+    bad += check("#651 engine install's panic clears old zero input/gate", !arp_zero_gates(t) && !t->nheld);
+    t = arp_zero_setup(1, 0); queued(0x90, 0, 100, 1);
+    apply_preset_to(t, 1); events_block(CTL);
+    bad += check("#651 preset install's panic clears old zero input/gate", !arp_zero_gates(t) && !t->nheld);
+    t = arp_zero_setup(1, 0);
+    project_capture(&proj_scratch);
+    queued(0x90, 0, 100, 1);
+    int restored = project_restore_runtime(&proj_scratch);
+    events_block(CTL);
+    bad += check("#651 project restore drops runtime zero identity, not saved data", restored == 0 && !arp_zero_gates(t) && !t->nheld);
     return bad;
 }
 /* USB-MIDI back-pressure: full 64-byte bulk packets (16 events) faster than the audio ISR drains the ring are
@@ -1174,6 +1337,6 @@ static int pc_test(void)
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
+              arp_ext_stop_test() + arp_zero_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

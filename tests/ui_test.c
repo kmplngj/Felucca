@@ -5148,9 +5148,20 @@ static int test_play_leds(void)
     ok = kb_map(t, 8) == 60u && play_leds() == (1u << 7 | 1u << 11);
     t->p[P_QUANT] = t->p[P_SCALE] = 0;
     bad += check("QNT SNAP: only the key of the note itself lights, not the keys rounding onto it", ok);
-    t->arp_note = 65;
+    t->arp_note = 65; t->arp_mask = 1u;
     bad += check("the ARP's note lights its key too", play_leds() == (1u << 7 | 1u << 11 | 1u << 12));
-    t->arp_note = 0;
+    t->arp_note = 0; t->arp_mask = 1u;
+    song.octave = -3; t->p[P_TRANS] = -24;              /* lowest visible mapped note is now0 */
+    uint32_t zero_key = 0;
+    for (uint32_t k = 0; k < 27u; k++)
+        if (kb_map(t, k) == 0u) { zero_key = 1u << k; break; }
+    bad += check("the ARP's valid note0 lights its mapped key", zero_key && (play_leds() & zero_key));
+    t->arp_mask = 2u; t->arp_ch[0] = 0;
+    bad += check("a secondary CHORD note0 lights its mapped key", (play_leds() & zero_key) != 0u);
+    t->arp_mask = 0;
+    bad += check("an inactive zero release slot does not light a key", !(play_leds() & zero_key));
+    song.octave = 0; t->p[P_TRANS] = 0;
+    t->arp_note = t->arp_ch[0] = 0;
     events_block(div_samples((uint32_t)t->p[P_SDIV]) + CTL);
     bad += check("a note above the keyboard (G#7) lights nothing", t->seq_n == 1u && t->seq_notes[0] == 100u &&
                  play_leds() == 0u);

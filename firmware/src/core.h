@@ -324,9 +324,10 @@ typedef struct track {
     /* arp runtime */
     uint32_t arp_pos;            /* q8 samples into the current arp step */
     uint32_t arp_idx;
-    uint8_t arp_note;            /* sounding arp note, 0 = none */
+    uint8_t arp_note;            /* raw MIDI pitch; validity is arp_mask, including note0 */
     uint8_t arp_walk;            /* WALK: the place in the note list it stands on */
-    uint8_t arp_ch[3];           /* CHORD: the other notes sounding with arp_note, 0 = none */
+    uint8_t arp_ch[3];           /* CHORD: raw pitches of the other three release slots */
+    uint8_t arp_mask;            /* bit0: arp_note; bits1..3: arp_ch[]. ISR-owned release identities, not voices */
     uint32_t arp_off;            /* q8 sample time of its note-off */
     /* sequencer */
     step_t step[NSTEP];
@@ -390,6 +391,8 @@ typedef struct track {
 /* the audio ISR indexes trk[] with a multiply by a small immediate and a shift while the size is a multiple of 16; 1.5's
  * new track parameters (the INSERT, the filter TYPE, ENV SYNC) and state would make it no multiple (the constant
  * loaded first: +3 % on the ISR's static cost, target_budget.py): one pad, rsv_sz, keeps it */
+_Static_assert(__builtin_offsetof(track_t, arp_off) == __builtin_offsetof(track_t, arp_note) + 8u,
+               "ARP release validity fits before arp_off without moving it");
 _Static_assert(sizeof(track_t) % 16u == 0, "track_t: a multiple of 16 bytes (a cheap trk[] index on the target)");
 
 typedef struct {
