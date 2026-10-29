@@ -66,6 +66,21 @@ recorded in the linked reports, rather than every current build or device.
   the watchdog. Package, protocol and protected-storage policy are unchanged.
   Physical FM-1 update/display/retry qualification remains pending; see
   [screen meanings and limits](usb-rescue.md#standalone-ram-loader-screen).
+- **Native audio-window evidence:** optional developer tooling discovers and
+  qualifies a bounded held-key renderer window, repeats trace/PCM and compares
+  silent controls and the original native replay basis. See the
+  [capture guide](native-audio-window.md); no physical timing or optimization
+  result is supplied.
+
+- **Native guest hotspot attribution:** optional developer tooling revalidates
+  saved replay evidence and counts bounded windows by target function range and
+  emulator instruction class. See the [report guide](native-hotspots.md); no
+  firmware execution, physical timing or optimization result is supplied.
+
+- **Native emulator replay evidence:** optional developer tooling verifies matched
+  artifacts, repeated held-key/modeled-UART traces and PCM, and silent controls.
+  See the [bounded replay guide](native-emulator-replay.md); this supplies no
+  hotspot attribution, physical timing result or device qualification.
 
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device

@@ -117,6 +117,23 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(self.suites([path]), {"full"})
                 self.assertEqual(self.suites(["tests/emulator_trace_test.py", path]), {"full"})
 
+    def test_native_replay_fixture_is_portable_but_execution_keeps_full_validation(self):
+        runner = (Path(__file__).resolve().parents[1] / "tests/run_tests.sh").read_text()
+        portable = runner.split("u_portable() {", 1)[1].split("\n}", 1)[0]
+        for fixture, implementations in (
+            ("native_emulator_replay_test.py", ("tools/native_emulator_replay.py", "tests/native_emulator_replay_execution_test.py")),
+            ("native_hotspots_test.py", ("tools/native_hotspots.py",)),
+            ("native_audio_window_test.py", ("tools/native_audio_window.py",)),
+        ):
+            with self.subTest(fixture=fixture):
+                self.assertIn(fixture, changes.PORTABLE_TESTS)
+                fixture_path = "tests/" + fixture
+                self.assertIn("python3 " + fixture_path, portable)
+                self.assertEqual(self.suites([fixture_path]), {"python"})
+                for path in implementations:
+                    self.assertEqual(self.suites([path]), {"full"})
+                    self.assertEqual(self.suites([fixture_path, path]), {"full"})
+
     def test_firmware_watch_ledger_uses_portable_validation(self):
         for path in ("data/firmware-watch/sources.json", "data/firmware-watch/state.json",
                      "data/firmware-watch/reviews.jsonl", "data/firmware-watch/migration-report.json",
