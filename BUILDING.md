@@ -458,6 +458,13 @@ The portable unit also checks the offline USB diagnostic-tone verifier with
 `python3 tests/uac_tone_check_test.py`. See [recording requirements and interpretation](docs/diagnostics.md#usb-test-tone-recordings).
 Synthetic WAV tests check evidence handling; they do not qualify an FM-1 recording.
 
+The `flash_wait` unit runs `python3 tests/flash_wait_test.py` against the shared
+flash-completion helper and the actual application/loader entry bodies with a
+simulated NOR and TIMER4. It covers late completion, stuck-part reset, timer
+wrap and refused commands. These host checks do not qualify physical flash
+timing or the boot ROM's response to a part still busy after reset; see
+[flash completion and timeouts](docs/usb-rescue.md#flash-completion-and-timeouts).
+
 The `lcd_contract` unit runs `python3 tests/lcd_contract_test.py` after its
 `icon_streams` prerequisite generates the actual icon fixture's reference header.
 The real LCD driver and UI, browser and rescue fakes declare `lcd_fill_fn`; all

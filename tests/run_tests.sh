@@ -367,6 +367,12 @@ u_input() {
 }
 unit input "" u_input
 
+u_flash_wait() {
+    run "flash completion: late/stuck NOR, actual app/loader paths, timer wrap and refused commands" python3 tests/flash_wait_test.py
+    run "flash completion (ASan/UBSan): actual app/loader paths" env CFLAGS="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all" python3 tests/flash_wait_test.py
+}
+unit flash_wait "" u_flash_wait
+
 UNIT_NEEDS=assets
 u_flash_context_contract() {
     run "flash-context contract: actual HAL/host/rescue adapters and incompatible definitions/calls" python3 tests/flash_context_contract_test.py

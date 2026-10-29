@@ -34,6 +34,14 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- Application saves and the update loader wait for an issued flash erase or
+  page program to finish before resuming flash execution. A late completion
+  reports the existing error only after the part is idle; a persistently busy
+  part triggers a reset from RAM. Adapted from
+  [felucca-bsp PR #12](https://github.com/hugelton/felucca-bsp/pull/12).
+  Physical slow-part/reset qualification remains pending; see
+  [flash completion limits](usb-rescue.md#flash-completion-and-timeouts).
+
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed present known numeric fields,
