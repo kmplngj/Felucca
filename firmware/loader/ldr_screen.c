@@ -6,31 +6,44 @@
  * The native Felucca/SLOOP loader and HAL remain their respective authors' work.
  * No donor artwork, branding, colours or font data is included. */
 /* A single RAM scanline, no app UI/framebuffer. All transfers complete before
- * source reuse. A deadline latches display failure forever; it does NOT clear
- * hardware pending, deselect, abort DMA or grant ownership back. The static
- * source is then retained untouched until reset. USB/watchdog service continues.
- * Each redraw also has a 100ms aggregate budget (init <=500ms), so a slow
- * but completing peripheral cannot hold a session callback indefinitely.
+ * source reuse. A per-transfer deadline latches display failure forever; it
+ * does NOT clear hardware pending, deselect, abort DMA or grant ownership back.
+ * The static source is then retained untouched until reset. USB/watchdog
+ * service continues (ldr_poll in every wait and after every row).
+ * Each redraw also has a 250ms aggregate budget (a full 115200 B frame is
+ * 76.8ms of 12 MHz SPI wire time plus per-row CPU), so a slow but completing
+ * peripheral cannot hold a session callback indefinitely. The budget is checked
+ * only between transfers: running over it abandons the redraw WITHOUT latching,
+ * since every transfer completed. Only a state change repaints the frame, so
+ * a panel too slow for it costs one budget per state, never one per progress
+ * step; progress-only updates repaint just the percentage strip. DISPON has
+ * its own per-transfer deadline, not the first draw's leftover budget.
  * A completion bit establishes SPI source release, not visible panel acceptance. */
 #include "ldr_status.h"
 #include "ldr_font.h"
 
 #define LDR_LCD_WAIT_US 2000u
-#define LDR_LCD_DRAW_US 100000u
+#define LDR_LCD_DRAW_US 250000u
 #define LDR_LCD_INIT_US 500000u
+#define LDR_STRIP_TOP 164u                         /* percentage/number text rows */
+#define LDR_STRIP_END (LDR_STRIP_TOP + 18u)        /* 9-row face at scale 2 */
 static uint8_t ldr_lcd_failed;
-static uint8_t ldr_line[480];
-static uint8_t ldr_args[4];
+static uint8_t ldr_screen_framed;                  /* this state's full frame has been attempted */
+static uint8_t ldr_line[480] __attribute__((aligned(4)));
+static uint8_t ldr_args[4] __attribute__((aligned(4)));
 static uint32_t ldr_screen_state, ldr_screen_percent, ldr_screen_next;
 static int32_t ldr_screen_error;
 static uint32_t ldr_lcd_budget_start, ldr_lcd_budget_us;
 
+static void ldr_lcd_arm(uint32_t us)
+{
+    ldr_lcd_budget_start = fm1_ticks();
+    ldr_lcd_budget_us = us;
+}
+/* Aggregate time only stops starting more transfers; it never latches. */
 static int ldr_lcd_budget_ok(void)
 {
-    if (fm1_ticks() - ldr_lcd_budget_start < ldr_lcd_budget_us * FM1_TICKS_PER_US)
-        return 1;
-    ldr_lcd_failed = 1;
-    return 0;
+    return fm1_ticks() - ldr_lcd_budget_start < ldr_lcd_budget_us * FM1_TICKS_PER_US;
 }
 
 static int ldr_lcd_wait(void)
@@ -38,7 +51,7 @@ static int ldr_lcd_wait(void)
     uint32_t start = fm1_ticks();
     while (!fm1_lcd_done()) {
         ldr_poll();
-        if (!ldr_lcd_budget_ok() || fm1_ticks() - start >= LDR_LCD_WAIT_US * FM1_TICKS_PER_US) {
+        if (fm1_ticks() - start >= LDR_LCD_WAIT_US * FM1_TICKS_PER_US) {
             ldr_lcd_failed = 1;
             return 0;
         }
@@ -66,12 +79,13 @@ static void ldr_lcd_delay(uint32_t ms)
     while (ldr_ms() - start < ms)
         ldr_poll();
 }
-static int ldr_lcd_axis(uint8_t cmd, uint32_t end)
+static int ldr_lcd_axis(uint8_t cmd, uint32_t first, uint32_t end)
 {
     /* Previous synchronous transfer has released args, or this call is skipped. */
     if (!ldr_lcd_cmd(cmd))
         return 0;
-    ldr_args[0] = ldr_args[1] = 0;
+    ldr_args[0] = (uint8_t)(first >> 8);
+    ldr_args[1] = (uint8_t)first;
     ldr_args[2] = (uint8_t)(end >> 8);
     ldr_args[3] = (uint8_t)end;
     return ldr_lcd_data(ldr_args, 4);
@@ -101,7 +115,8 @@ static void ldr_row_text(uint32_t y, uint32_t top, uint32_t face, uint32_t scale
                     ldr_pixel(x + i * scale + j, 0xFFFFu);
     }
 }
-static void ldr_screen_draw(void)
+/* Repaint rows [first, last) of the 240x240 frame; the full frame is 0..240. */
+static void ldr_screen_draw(uint32_t first, uint32_t last)
 {
     static const char *const title[] = {
         "UPDATE MODE", "CHECKING PACKAGE", "WRITING APP", "APP VERIFIED", "APP VERIFIED", "UPDATE STOPPED"
@@ -112,8 +127,9 @@ static void ldr_screen_draw(void)
     char number[8];
     uint32_t n = 0, y, x, v;
     if (ldr_lcd_failed) return;
-    ldr_lcd_budget_start = fm1_ticks();
-    ldr_lcd_budget_us = LDR_LCD_DRAW_US;
+    ldr_lcd_arm(LDR_LCD_DRAW_US);
+    if (first == 0 && last == 240u)
+        ldr_screen_framed = 1;                     /* a slow panel is not asked for the frame again */
     if (ldr_screen_state == LDR_WRITING) {
         v = ldr_screen_percent;
         if (v >= 100u) number[n++] = '1';
@@ -128,8 +144,8 @@ static void ldr_screen_draw(void)
         number[n++] = (char)('0' + v % 10u);
     }
     number[n] = 0;
-    if (!ldr_lcd_axis(0x2A, 239u) || !ldr_lcd_axis(0x2B, 239u) || !ldr_lcd_cmd(0x2C)) return;
-    for (y = 0; y < 240u; y++) {
+    if (!ldr_lcd_axis(0x2A, 0u, 239u) || !ldr_lcd_axis(0x2B, first, last - 1u) || !ldr_lcd_cmd(0x2C)) return;
+    for (y = first; y < last; y++) {
         /* The previous row completed; failure returns before this source write. */
         for (x = 0; x < 240u; x++) ldr_pixel(x, 0x0841u); /* native GREY background */
         ldr_row_text(y, 36, 1, 2, "FELUCCA");
@@ -152,7 +168,7 @@ static void ldr_screen_status(uint32_t state, int32_t code)
     ldr_screen_percent = 0;
     if (ldr_lcd_failed) return;
     ldr_screen_next = ldr_ms() + 250u;
-    ldr_screen_draw();
+    ldr_screen_draw(0, 240u);
 }
 static void ldr_screen_progress(uint32_t done, uint32_t total)
 {
@@ -162,12 +178,14 @@ static void ldr_screen_progress(uint32_t done, uint32_t total)
     if (percent == ldr_screen_percent || (done < total && (int32_t)(ldr_ms() - ldr_screen_next) < 0)) return;
     ldr_screen_percent = percent;
     ldr_screen_next = ldr_ms() + 250u;
-    ldr_screen_draw();
+    if (ldr_screen_state == LDR_WRITING && ldr_screen_framed)
+        ldr_screen_draw(LDR_STRIP_TOP, LDR_STRIP_END);   /* only the number changed */
+    else
+        ldr_screen_draw(0, 240u);
 }
 static void ldr_screen_init(void)
 {
-    ldr_lcd_budget_start = fm1_ticks();
-    ldr_lcd_budget_us = LDR_LCD_INIT_US;
+    ldr_lcd_arm(LDR_LCD_INIT_US);
     fm1_lcd_hw_init();
     ldr_lcd_delay(80);
     if (!ldr_lcd_cmd(0x01)) return;                  /* native ST7789 sequence */
@@ -180,5 +198,6 @@ static void ldr_screen_init(void)
     ldr_args[0] = 0;
     if (!ldr_lcd_data(ldr_args, 1) || !ldr_lcd_cmd(0x21) || !ldr_lcd_cmd(0x13)) return;
     ldr_screen_status(LDR_WAITING, 0);
+    ldr_lcd_arm(LDR_LCD_WAIT_US);                    /* not the first draw's leftover budget */
     ldr_lcd_cmd(0x29);
 }

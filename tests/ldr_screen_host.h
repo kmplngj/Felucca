@@ -6,13 +6,16 @@
 #define FM1_TICKS_PER_US 24u
 static uint32_t display_ticks, display_wdt, display_usb, display_sends, display_commands;
 static uint32_t display_usb_last, display_usb_gap;
+/* Measured traffic: pixel rows (480 B transfers) and bytes submitted, DISPON
+ * commands and the row window (RASET) last programmed. Deltas only. */
+static uint32_t display_rows, display_row_bytes, display_dispon, display_raset[2], display_last_cmd;
 static uint32_t display_due, display_delay = 24u * 20u, display_stall_at;
 static const uint8_t *display_borrow;
 static uint8_t display_snapshot[480];
 static uint32_t display_size, display_consumed, display_active, display_cs, display_init;
 #ifdef LDR_SCREEN_IMAGES
 static uint8_t display_frame[240u * 480u];
-static uint32_t display_row;
+static uint32_t display_row, display_row_first;
 #endif
 static void display_check(void)
 {
@@ -36,6 +39,14 @@ static void display_submit(const void *p, uint32_t n)
     display_check();
     assert(!display_active);                        /* no command or DMA can overlap */
     display_sends++;
+    if (p && n == 480u) { display_rows++; display_row_bytes += n; }
+    if (p && n == 4u && display_last_cmd == 0x2Bu) {
+        display_raset[0] = (uint32_t)((const uint8_t *)p)[0] << 8 | ((const uint8_t *)p)[1];
+        display_raset[1] = (uint32_t)((const uint8_t *)p)[2] << 8 | ((const uint8_t *)p)[3];
+#ifdef LDR_SCREEN_IMAGES
+        display_row_first = display_raset[0];
+#endif
+    }
     display_cs = display_active = 1;
     display_borrow = p;
     display_size = n;
@@ -46,10 +57,10 @@ static void display_submit(const void *p, uint32_t n)
 static void fm1_lcd_send_cmd(uint8_t c)
 {
 #ifdef LDR_SCREEN_IMAGES
-    if (c == 0x2C) display_row = 0;
-#else
-    (void)c;
+    if (c == 0x2C) display_row = display_row_first;
 #endif
+    display_last_cmd = c;
+    if (c == 0x29) display_dispon++;
     display_commands++; display_submit(NULL, 0);
 }
 static void fm1_lcd_send_data(const void *p, uint32_t n) { assert(n); display_submit(p, n); }

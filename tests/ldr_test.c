@@ -747,8 +747,11 @@ int main(int argc, char **argv)
     {
         uint32_t start = display_ticks;
         ldr_install();
-        bad += check("slow completing display returns actual session within aggregate deadline", ldr_lcd_failed &&
-                     display_ticks - start < 24u * (LDR_LCD_DRAW_US + 1000u) && display_sends < 240u);
+        /* 1.9ms per transfer never times out, so the display stays usable, but a full frame
+         * cannot finish: each status change spends at most one aggregate budget (<=5 of them
+         * per install) and progress repaints only the strip, never the frame. */
+        bad += check("slow completing display returns actual session within aggregate deadlines", !ldr_lcd_failed &&
+                     display_ticks - start < 24u * 6u * LDR_LCD_DRAW_US && display_sends < 1500u);
     }
     bad += check("successful actual installer path sends reply then detaches and restarts", restart_calls == 1 && restart_step == 0);
     /* a package for another chip key is refused before any erase */

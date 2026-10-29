@@ -34,6 +34,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **RAM-loader redraw budget:** progress repaints only the percentage strip,
+  and DISPON starts with a fresh deadline. An aggregate redraw overrun stops new
+  transfers without permanently disabling the display; actual transfer timeouts
+  still retain the in-flight source. Verified-sector progress and update policy
+  stay unchanged. [Screen meanings and retry limits](usb-rescue.md#standalone-ram-loader-screen);
+  exact-package FM-1 redraw timing, install and retry checks remain pending.
+
 - Focused piano keys in the browser emulator respond to Enter, Space and numpad
   Enter, report their pressed state to assistive technology, and release when
   focus moves away. Adapted to the native input ownership model after
