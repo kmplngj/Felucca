@@ -5,6 +5,9 @@
 static void ldr_install(void)
 {
     if (ldr_session() == 0) {
+#if FELUCCA_LDR_LCD_TRACE
+        ldr_trace_read_window();
+#endif
         fm1_delay_ms(200);                          /* the "success" reply leaves */
         usb_detach();
         fm1_delay_ms(30);

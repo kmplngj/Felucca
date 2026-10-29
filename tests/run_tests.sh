@@ -467,6 +467,7 @@ unit screen_capture "" u_screen_capture
 [ "$MODE" = --plan ] || [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
+    run "loader LCD trace: bounded rows, wire passivity, default equivalence and build policy" python3 tests/ldr_trace_test.py
     run "loader font: native M8 source fidelity and complete status copy" python3 tests/ldr_screen_font_test.py
     $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/boot_policy_test" tests/boot_policy_test.c
     run "early boot: retained guard, OCT/calibration priority, rescue escalation and live-start window" "$OUT/boot_policy_test"

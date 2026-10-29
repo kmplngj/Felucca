@@ -399,3 +399,7 @@ still separate. SPL interpretation of record-shaped user data remains #438. Full
 readback, rollback and writer-failure qualification remain [legacy m-flasher #13](https://github.com/kmplngj/m-flasher-legacy/issues/13),
 [#15](https://github.com/kmplngj/m-flasher-legacy/issues/15) and
 [#16](https://github.com/kmplngj/m-flasher-legacy/issues/16).
+
+## Developer LCD timing variant
+
+The [disabled-by-default loader LCD observation](loader-lcd-trace.md) records completed rows and timer intervals without changing flash ranges or creating a new recovery path. It deliberately adds a bounded diagnostic read window before successful reset. Use only a separately reviewed and qualified diagnostic package; ordinary rescue/installer behavior remains unchanged when disabled. Healthy diagnostic timing does not replace native timeout, source-ownership or power-loss qualification.

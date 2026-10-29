@@ -117,6 +117,10 @@ Physical USB qualification still needs matched device counters, recorder error
 status, workload/build identity and repeated captures. This checker does not measure
 clock accuracy, instrumentation overhead or real-device audio deadlines.
 
+## Loader LCD observations
+
+The opt-in `FELUCCA_LDR_LCD_TRACE=1` loader variant has a separate [RAM trace/read-only native query](loader-lcd-trace.md). It does not use CDC, add app `status` fields, run from the ordinary collector or qualify production timing. Its build, calibration, perturbation limits and pending FM-1 checks are documented separately.
+
 ## Collect diagnostics
 
 For early boot failure, see [USB rescue and compatible loaders](usb-rescue.md).
