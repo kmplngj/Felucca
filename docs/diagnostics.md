@@ -13,6 +13,7 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | Build identity | Startup, ABOUT, INFO | Normal firmware identifies the version, commit or PR and fork source; see [build identity](../BUILDING.md#build-revision-and-pr-identity). |
 | Health, input and retained crashes | USB SERIAL `status`, `dbg`, `inp`, `crash`; `tools/fm1_diagnostics.py` | Normal CDC builds. The read-only collector retains raw replies, JSONL and summary counter deltas; [collection and interpretation](#collect-diagnostics) are described below. Input latency requires confirmed `FM1_INPUT_LAT` instrumentation; render load is not whole-chip CPU use. |
 | Boot clock registers | USB SERIAL `status` keys `boot_clock_*`; the same read-only collector | Normal CDC builds, captured once before normal initialization. Seven raw words help compare boot paths; they neither measure MHz nor correct clocks. See [boot clock evidence](#boot-clock-evidence). |
+| Acquisition session state | USB SERIAL `status` keys `session_*`; the same read-only collector | Normal CDC builds. Versioned observations expose active learning, open menus and pending settings/SLICE work. Feature-disabled fields are unavailable. This neither inhibits writes nor establishes a safe session; see [session observations](#acquisition-session-observations). |
 | Interrupt misuse | `status` keys `isr_misuse`, `isr_misuse_pc` | Opt-in `FELUCCA_ISR_ASSERT=1` on the FM-1, default `0`. Counts guarded main-loop calls made in interrupt context; [target and host behavior differ](#interrupt-context-assertion-felucca_isr_assert). |
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
@@ -86,6 +87,57 @@ standalone #648 and integrated `526824f3` builds. They do not qualify this merge
 revision. Its reset-path checks, loaded polling comparisons and live stack evidence
 remain pending. [#618](https://github.com/kmplngj/Felucca/issues/618) owns the later
 retain/defer decision; no clock correction is enabled by this diagnostic.
+
+## Acquisition session observations
+
+The optional `session_*` group supports future benchmark/capture preflight (#57).
+It reports existing state without exporting settings, requesting a save, clearing
+pending CCs or extending an autosave hold. The main-loop getter copies its values
+before any host-paced console output. Its only interrupt-written value is a single
+volatile pending-learn byte, read once; the remaining owners stay stable in the
+main loop during the copy. It adds no IRQ mask, retained buffer or session lock.
+Formatting still takes main-loop/USB work; target cost is recorded in the PR,
+and physical polling overhead remains a separate review check.
+
+| Field | Schema 1 meaning |
+| --- | --- |
+| `session_schema` | `1` identifies this group's field/range contract. |
+| `session_features` | Compiled capabilities: bit 0 = FLASH; bit 1 = FLASH and SLICE. Valid masks are `0`, `1`, `3`. This is not runtime flash health; retain the existing `flash` observation too. |
+| `session_learn` | Mask: bit 0 learning on; bit 1 a target picked; bit 2 learn input armed; bit 3 a CC is pending for the main-loop learn consumer. Values `0..15`; it does not expose the CC payload. |
+| `session_settings_later` | `0/1`: deferred settings-save request absent/present (for example LIST/FAV edits or CPU2 fallback). |
+| `session_menu` | `0/1`: any menu/detail view closed/open, including INFO/ABOUT. |
+| `session_settings_pending` | FLASH only: `0` IDLE, `1` REQUESTED, `2` RETRY after a settings-write error. IDLE describes this queue, not durable/saved/unchanged data. |
+| `session_slice_pending` | FLASH and SLICE only: pending MAN-slice saves for user slots 1–3, bits 0–2 (`0..7`). |
+
+These values are state, never cumulative counters: do not subtract endpoints.
+They describe an instant before formatting and may already have changed when a
+reply arrives. All-zero fields are not a `SAFE` verdict and do not reserve
+quiescence between polls. An active learn handoff can later request a settings
+write even with playback stopped and RESTORE LAST OFF. Reading diagnostics does
+not stop that work, and the pending byte can be consumed between observations.
+
+Older firmware may omit the entire group; its session state remains unavailable,
+not zero. The collector preserves supported values in each status response and
+raw evidence. A partial group, unsupported schema, malformed/out-of-range value,
+impossible feature mask, missing enabled field or present disabled field invalidates
+collection. Other unknown fields remain extensible.
+
+Existing INFO/DESC, TRACK (27) and MENU_DESC (72) supply identity/capabilities,
+REC arms and RESTORE LAST policy separately. Raw STORE_LIST/GET (82/83) already
+include the autosave object (type 9); raw bytes and a commit identity are evidence
+of observed storage, not protection against a later write. Repeated raw reads
+postpone autosave for a bounded hold rather than locking a session. A future
+capture adapter still needs a tested refusal/restoration policy; it must not send
+MENU_SET merely to manufacture an apparently safe starting state. This group
+does not implement the benchmark or authorize persistent backup restoration.
+
+Use the existing [idle setup](#idle-baseline-setup) and collector command with the
+candidate's exact firmware identity. Expect schema 1, supported feature masks and
+observed flags in status responses; retain absent/unsupported evidence explicitly.
+During later hardware review, compare matched polling-off/on workloads and
+retain recordings, device counters, host status and artifact identity. Do not
+create pending flash faults to test these observations; causal fault and
+passivity checks belong to the existing production-source host fixtures.
 
 ## USB test-tone recordings
 
@@ -424,4 +476,6 @@ identical, collect under USB audio and USB/TRS MIDI load, listen to the output a
 panel responsiveness. Compare the same workload with/without polling to quantify collector
 overhead, including lateness, shedding, stream errors and scan timing; record both runs'
 provenance, duration and configuration. No hardware session is implied by simulated logs.
-This host-only client changes no firmware source, build flags, target code or RAM.
+The collector script itself changes no firmware or settings. Firmware diagnostic
+additions, including the session-state group above, have their own target-resource
+and physical-overhead evidence; a passing host capture does not qualify that cost.

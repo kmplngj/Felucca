@@ -46,6 +46,13 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Read-only [acquisition session observations](diagnostics.md#acquisition-session-observations)
+  expose active/pending MIDI learning, open menus and deferred settings/SLICE
+  writes through ordinary CDC status and the collector. Legacy absence stays
+  unavailable; malformed groups are rejected. This supplies benchmark preflight
+  evidence, without inhibiting writes or claiming a safe session between polls.
+  Physical polling overhead remains pending.
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery
