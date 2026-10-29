@@ -228,6 +228,15 @@ static void con_status(void)
     con_puts(FELUCCA_VERSION);
     con_puts("\r\n");
     con_kv("uptime_ms", (int32_t)fm1_ms);
+    if (fm1_boot_clock.valid) {
+        con_kx("boot_clock_10014", fm1_boot_clock.r10014);
+        con_kx("boot_clock_1000c", fm1_boot_clock.r1000c);
+        con_kx("boot_clock_10008", fm1_boot_clock.r10008);
+        con_kx("boot_clock_119a8", fm1_boot_clock.r119a8);
+        con_kx("boot_clock_119ac", fm1_boot_clock.r119ac);
+        con_kx("boot_clock_119a0", fm1_boot_clock.r119a0);
+        con_kx("boot_clock_119a4", fm1_boot_clock.r119a4);
+    }
     con_kv("cpu_pct", (int32_t)(song.cpu_q8 * 100u / 256u));
     con_kv("audio_max_us", (int32_t)felucca_dbg.max_us);
 #if FELUCCA_RENDER_STAGE

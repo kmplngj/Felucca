@@ -53,8 +53,11 @@ led_on_max_us: 105 103 104
 enc moves/lost/detent state: 4/1/0 0/0/2
 key_presses 2
 key_press_avg_us 1100
+key_press_max_us 1300
 key_notes 2
 key_noteon_avg_us 1900
+key_noteon_max_us 2200
+key_dac_avg_us 4000
 key_dac_max_us 4800
 timer_irqs 4096
 nested 64
@@ -71,6 +74,11 @@ early 0
 
 def reply(command, text):
     return (command + "\r\n" + text.replace("\n", "\r\n") + "> ").encode()
+
+
+# The current production con_inp group; legacy replies may omit any of it.
+LATENCY_FIELDS = ("key_presses", "key_press_avg_us", "key_press_max_us", "key_notes",
+                  "key_noteon_avg_us", "key_noteon_max_us", "key_dac_avg_us", "key_dac_max_us")
 
 
 class Clock:
@@ -107,11 +115,15 @@ class FakeTransport:
 
 
 class SessionTransport(FakeTransport):
-    def __init__(self, clock, interrupt_at=None, reboot_at=None, unequal_at=None, malformed_at=None):
+    def __init__(self, clock, interrupt_at=None, reboot_at=None, unequal_at=None, malformed_at=None,
+                 input_at=None, input_text=None, status_texts=None, command_texts=None):
         super().__init__(clock, chunks=[b"\r\nFelucca v1.6 console - 'help'\r\n> "])
         self.index = -1
         self.interrupt_at, self.reboot_at, self.unequal_at = interrupt_at, reboot_at, unequal_at
         self.malformed_at = malformed_at
+        self.input_at, self.input_text = input_at, input_text
+        self.status_texts = status_texts
+        self.command_texts = command_texts or {}
 
     def write(self, data, timeout):
         self.writes.append(data)
@@ -131,9 +143,14 @@ class SessionTransport(FakeTransport):
                 text = text.replace("audio_late " + str(7 + i * 2), "audio_late -4294967296")
             if i == self.reboot_at:
                 text = text.replace("boots 4", "boots 5")
+            if self.status_texts is not None:
+                text = self.status_texts[i]
         if command == "inp" and i == self.unequal_at:
             text = text.replace("window_ms 1000", "window_ms 1600")
-        raw = reply(command, text)
+        if command == "inp" and i == self.input_at:
+            text = self.input_text
+        text = self.command_texts.get((i, command), text)
+        raw = text.encode() if command == "status" and text.startswith("status\r\n") else reply(command, text)
         self.pending.extend([raw[:2], raw[2:10], raw[10:-1], raw[-1:]])
 
 
@@ -156,6 +173,13 @@ EXPECTED_COUNTERS = {
     "inp": {"timer_irqs", "nested"},
     "crash": {"count"},
 }
+# The parser's existing numeric contract, including optional legacy fields.
+EXPECTED_NUMERIC = {command: names | additional for command, names, additional in (
+    ("status", EXPECTED_COUNTERS["status"], {"boots", "uptime_ms"}),
+    ("dbg", EXPECTED_COUNTERS["dbg"], {"boots", "magic"}),
+    ("inp", EXPECTED_COUNTERS["inp"], {"window_ms", *LATENCY_FIELDS}),
+    ("crash", EXPECTED_COUNTERS["crash"], {"uptime_ms"}),
+)}
 OPTIONAL_COUNTERS = {name for name in EXPECTED_COUNTERS["status"]
                      if name.startswith(("uart_", "uac_")) or name == "isr_misuse"}
 # isr_misuse/isr_misuse_pc are `status` keys of FELUCCA_ISR_ASSERT=1 FM-1 builds only
@@ -210,6 +234,75 @@ class ConsoleContractTests(unittest.TestCase):
         self.assertEqual(set(diag.COMMANDS), set(EXPECTED_COUNTERS))
         self.assertEqual({command: set(names) for command, names in diag.COUNTERS.items()}, EXPECTED_COUNTERS)
 
+    def test_boot_clock_reader(self):
+        root = Path(__file__).resolve().parents[1]
+        binary = Path(self.directory.name) / "boot-clock"
+        subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
+            "-std=c99", "-O2", "-Wall", "-Wextra", "-Werror",
+            str(root / "tests/boot_clock_test.c"), "-o", str(binary)],
+            check=True, timeout=30)
+        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("seven ordered reads", result.stdout)
+
+    def test_real_boot_clock_and_older_firmware(self):
+        fields = self.response("status")
+        expected = [0x10014, 0x1000C, 0x10008, 0x119A8, 0x119AC, 0x119A0, 0xFFFFFFFF]
+        self.assertEqual([fields[key] for key in diag.CLOCK_FIELDS], expected)
+        self.assertTrue(set(diag.CLOCK_FIELDS).isdisjoint(self.response("status", True, "no-clock")))
+        self.assertEqual(diag.parse_response("status", STATUS.encode())["issues"], [])
+        raw = STATUS + "".join(f"{key} 0x{value:08X}\n" for key, value in zip(diag.CLOCK_FIELDS, expected))
+        self.assertEqual(diag.parse_response("status", raw.encode())["issues"], [])
+        partial = raw.replace("boot_clock_119a4 0xFFFFFFFF\n", "")
+        self.assertIn("missing boot_clock_119a4", diag.parse_response("status", partial.encode())["issues"])
+        for invalid in ("-1", "0x100000000", "unknown", "1:2", ""):
+            bad = raw.replace("boot_clock_119a4 0xFFFFFFFF", "boot_clock_119a4 " + invalid)
+            self.assertIn("invalid uint32 boot_clock_119a4", diag.parse_response("status", bad.encode())["issues"])
+
+    def test_real_console_packet_rate_epochs(self):
+        def status(case):
+            return subprocess.check_output([str(self.binaries[True]), "status", case], timeout=5).decode()
+        before = status("uac-before")
+        for case in ("uac-drop", "uac-overtake", "uac-back", "uac-same-request", "uac-stable"):
+            with self.subTest(case=case):
+                after = status(case)
+                comparison = diag.compare(snapshot(status=before), snapshot(status=after))
+                expected = "VALID" if case == "uac-stable" else "INVALID"
+                self.assertEqual(comparison["validity"], expected)
+                self.assertEqual(comparison["deltas"]["status"]["uac_pkts"],
+                                 20 if expected == "VALID" else None)
+                # A later good interval cannot repair a bad aggregate. The real
+                # console bytes survive transport, JSONL and raw persistence.
+                third = after.replace("uptime_ms 11000", "uptime_ms 12000")
+                clock, events = Clock(), []
+                transport = SessionTransport(clock, status_texts=[before, after, third])
+                result = diag.collect(diag.Console(transport, 1, clock), 2, 1, {},
+                                      events.append, clock, clock.sleep)
+                self.assertEqual(result["validity"], expected)
+                self.assertEqual(len(transport.writes), 12)
+                intervals = [e for e in events if e["type"] == "interval"]
+                self.assertEqual([e["validity"] for e in intervals], [expected, "VALID"])
+                if expected == "INVALID":
+                    self.assertTrue(all(value is None for group in result["deltas"].values()
+                                        for value in group.values()))
+                with tempfile.TemporaryDirectory() as tmp:
+                    capture = diag.Capture(Path(tmp) / "capture")
+                    for event in events:
+                        capture.emit(event)
+                    capture.close()
+                    self.assertIn(after.encode(), (capture.directory / "console.raw").read_bytes())
+                    saved = json.loads((capture.directory / "summary.json").read_text())
+                    self.assertEqual(saved["validity"], expected)
+                    records = [json.loads(line) for line in
+                               (capture.directory / "samples.jsonl").read_text().splitlines()]
+                    self.assertEqual(records[-1]["validity"], expected)
+
+    def test_real_console_without_uac_has_no_packet_delta(self):
+        raw = subprocess.check_output([str(self.binaries[False]), "status"], timeout=5).decode()
+        result = diag.compare(snapshot(status=raw), snapshot(status=raw.replace("10000", "11000")))
+        self.assertEqual(result["validity"], "VALID")
+        self.assertIsNone(result["deltas"]["status"]["uac_pkts"])
+
     def test_stage_snapshot_is_optional_unsigned_and_fail_closed(self):
         fields = self.response("status", "stage")
         self.assertEqual((fields["stage_schema"], fields["stage_readable"], fields["stage_available"]), (1, 1, 1))
@@ -260,6 +353,14 @@ class ConsoleContractTests(unittest.TestCase):
                 self.assertTrue(CRASH_CTX_KEYS.isdisjoint(fields))
         self.assertEqual(self.response("crash").get("count"), 2)
 
+    def test_real_console_latency_group_is_complete_but_unsampled(self):
+        values = self.response("inp")
+        self.assertTrue(set(LATENCY_FIELDS) <= values.keys())
+        self.assertTrue(all(type(values[key]) is int and values[key] == 0 for key in LATENCY_FIELDS))
+        result = diag.input_window({"commands": {"inp": {"fields": values}}}, 1, False, True, "enabled")
+        self.assertEqual(result["validity"], "VALID")
+        self.assertEqual(result["latency"], "UNMEASURED")
+
     def test_diagnostic_build_keys(self):
         """FELUCCA_CRASH_CTX=1 / FELUCCA_MUL64_REPRO=1: the added keys, parsed and counted by the collector."""
         status = self.response("status", "diag")
@@ -306,6 +407,118 @@ class ConsoleContractTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_all_known_numeric_fields_reject_disguised_or_empty_values(self):
+        texts = {"status": STATUS, "dbg": DBG, "inp": INP, "crash": CRASH}
+        for command, names in EXPECTED_NUMERIC.items():
+            for key in sorted(names):
+                # Some optional counters are absent from the legacy fixture.
+                base = re.sub(r"(?m)^" + key + r" .*\n?", "", texts[command])
+                for suffix in ("", " ", "\t", " 1:2", "\t1:2", " : 1", " 1:", " 1 : 2", ": 1:2"):
+                    with self.subTest(command=command, key=key, suffix=suffix):
+                        parsed = diag.parse_response(command, reply(command, base + key + suffix + "\n"))
+                        self.assertIn("invalid uint32 " + key, parsed["issues"])
+                        self.assertIn(key, parsed["fields"])
+                        self.assertNotIn(key + " 1", parsed["fields"])
+                        if not suffix.strip():
+                            self.assertEqual(parsed["fields"][key], "")
+                            self.assertIn(key, parsed["unknown_lines"])
+                        # A preceding valid record cannot hide malformed evidence.
+                        duplicate = diag.parse_response(command, reply(command,
+                            base + key + " 1\n" + key + suffix + "\n"))
+                        self.assertIn("duplicate " + key, duplicate["issues"])
+                        self.assertIn("invalid uint32 " + key, duplicate["issues"])
+
+    def test_numeric_recognition_preserves_normalization_and_legacy_omissions(self):
+        texts = {"status": STATUS, "dbg": DBG, "inp": INP, "crash": CRASH}
+        required = {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
+                    "crash": {"count"}}
+        for command, names in EXPECTED_NUMERIC.items():
+            for key in sorted(names):
+                base = re.sub(r"(?m)^" + key + r" .*\n?", "", texts[command])
+                with self.subTest(command=command, key=key):
+                    if key not in required[command]:
+                        omitted = diag.parse_response(command, reply(command, base))
+                        self.assertEqual(omitted["issues"], [])
+                        self.assertNotIn(key, omitted["fields"])
+                    signed = (key in EXPECTED_COUNTERS[command]
+                              or command in ("status", "dbg") and key == "boots"
+                              or command in ("status", "crash") and key == "uptime_ms")
+                    for value in ("-2147483648", "-2147483649", "4294967295", "4294967296"):
+                        parsed = diag.parse_response(command, reply(command, base + key + " " + value + "\n"))
+                        valid = value == "4294967295" or signed and value == "-2147483648"
+                        self.assertEqual("invalid uint32 " + key not in parsed["issues"], valid)
+                        expected = 1 << 31 if signed and value == "-2147483648" else int(value)
+                        self.assertEqual(parsed["fields"][key], expected)
+            parsed = diag.parse_response(command, reply(command, texts[command]
+                + "future_record: 1 2\nfuture_metric 1:2\nfuture_empty\n"))
+            self.assertEqual(parsed["issues"], [])
+            self.assertEqual(parsed["fields"]["future_record"], [1, 2])
+            self.assertEqual(parsed["fields"]["future_metric 1"], [2])
+            self.assertIn("future_empty", parsed["unknown_lines"])
+
+    def test_packet_delta_requires_supported_unchanged_epoch_markers(self):
+        for markers in ("", "uac_hz 44100\n", "uac_rate_sets 1\n",
+                        "uac_hz 96000\nuac_rate_sets 1\n",
+                        "uac_hz future-rate\nuac_rate_sets 1\n",
+                        "uac_hz 1:2\nuac_rate_sets 1\n",
+                        "uac_hz 44100\nuac_rate_sets 1\n",
+                        "uac_hz 48000\nuac_rate_sets -2147483648\n"):
+            with self.subTest(markers=markers):
+                first = STATUS + "uac_pkts 100\n" + markers
+                second = first.replace("uptime_ms 10000", "uptime_ms 11000").replace("uac_pkts 100", "uac_pkts 120")
+                a, b = snapshot(status=first), snapshot(status=second)
+                result = diag.compare(a, b)
+                self.assertEqual(result["validity"], "VALID")
+                known = "uac_hz 44100\nuac_rate_sets 1\n" == markers or "uac_hz 48000\n" in markers
+                self.assertEqual(result["deltas"]["status"]["uac_pkts"], 20 if known else None)
+                self.assertEqual(result["deltas"]["status"]["audio_late"], 0)
+                # Missing markers must not conceal a directly observed decrease.
+                b["commands"]["status"]["fields"]["uac_pkts"] = 20
+                self.assertEqual(diag.compare(a, b)["validity"], "INVALID")
+        for remove in ("uac_hz", "uac_rate_sets"):
+            first = snapshot(status=STATUS + "uac_pkts 100\nuac_hz 44100\nuac_rate_sets 1\n")
+            second = snapshot(status=STATUS.replace("10000", "11000") +
+                              "uac_pkts 120\nuac_hz 44100\nuac_rate_sets 1\n")
+            del second["commands"]["status"]["fields"][remove]
+            result = diag.compare(first, second)
+            self.assertEqual(result["validity"], "VALID")
+            self.assertIsNone(result["deltas"]["status"]["uac_pkts"])
+        for old_markers, new_markers in (("uac_hz 44100\n", "uac_hz 48000\n"),
+                                         ("uac_rate_sets 1\n", "uac_rate_sets 2\n"),
+                                         ("uac_hz 44100\nuac_rate_sets 1\n",
+                                          "uac_hz 48000\nuac_rate_sets 1\n")):
+            result = diag.compare(snapshot(status=STATUS + "uac_pkts 100\n" + old_markers),
+                                  snapshot(status=STATUS.replace("10000", "11000") +
+                                           "uac_pkts 120\n" + new_markers))
+            self.assertEqual(result["validity"], "INVALID")
+            self.assertTrue(all(value is None for group in result["deltas"].values() for value in group.values()))
+
+    def test_rate_setter_malformed_values_invalidate_and_stop_with_raw(self):
+        for suffix in ("", " ", " not-a-number", " -2147483649", " 4294967296", " 1:2", ": 1:2"):
+            with self.subTest(suffix=suffix):
+                first = STATUS + "uac_pkts 100\nuac_hz 44100\nuac_rate_sets 1\n"
+                line = "uac_rate_sets" + suffix
+                second = first.replace("10000", "11000").replace("uac_rate_sets 1", line)
+                parsed = diag.parse_response("status", reply("status", second))
+                self.assertIn("invalid uint32 uac_rate_sets", parsed["issues"])
+                clock, events = Clock(), []
+                transport = SessionTransport(clock, status_texts=[first, second])
+                result = diag.collect(diag.Console(transport, 1, clock), 2, 1, {}, events.append, clock, clock.sleep)
+                self.assertEqual(result["validity"], "INVALID")
+                self.assertEqual(len(transport.writes), 5)
+                self.assertTrue(all(value is None for group in result["deltas"].values() for value in group.values()))
+                response = [e for e in events if e["type"] == "response"][-1]
+                self.assertIn((line + "\r\n").encode(), base64.b64decode(response["raw_b64"]))
+                with tempfile.TemporaryDirectory() as tmp:
+                    capture = diag.Capture(Path(tmp) / "capture")
+                    for event in events:
+                        capture.emit(event)
+                    capture.close()
+                    self.assertIn((line + "\r\n").encode(), (capture.directory / "console.raw").read_bytes())
+                    saved = json.loads((capture.directory / "summary.json").read_text())
+                    self.assertEqual(saved["validity"], "INVALID")
+                    self.assertFalse(saved["end_snapshot"]["complete"])
+
     def test_signed_uint32_normalization_rejects_values_below_int32(self):
         for command, text, name in (("status", STATUS, "audio_late"), ("status", STATUS, "uptime_ms"),
                                     ("dbg", DBG, "boots"), ("crash", CRASH, "count")):
@@ -386,6 +599,69 @@ class ParserTests(unittest.TestCase):
         json.dumps(result)
         malformed = diag.parse_response("status", reply("status", STATUS.replace("audio_late 7", "audio_late " + number)))
         self.assertIn("invalid uint32 audio_late", malformed["issues"])
+
+    def test_latency_present_metrics_reject_malformed_values(self):
+        for key in LATENCY_FIELDS:
+            for value in ("0", "4294967295", "0xFFFFFFFF"):
+                text = re.sub(r"(?m)^" + key + r" .*", key + " " + value, INP)
+                parsed = diag.parse_response("inp", text.encode())
+                self.assertEqual(parsed["issues"], [])
+                self.assertEqual(parsed["fields"][key], diag.scalar(value))
+            for bad in ("", "not-a-number", "1.5", "-1", "-2147483648", "4294967296", "0x100000000", "9" * 5000):
+                with self.subTest(key=key, bad=bad[:20]):
+                    text = re.sub(r"(?m)^" + key + r" .*", key + " " + bad, INP)
+                    parsed = diag.parse_response("inp", text.encode())
+                    self.assertIn("invalid uint32 " + key, parsed["issues"])
+                    self.assertEqual(parsed["fields"][key], diag.scalar(bad))
+                    if bad == "":
+                        self.assertIn(key, parsed["unknown_lines"])
+                    window = diag.input_window({"commands": {"inp": parsed}}, 1, False, True, "enabled")
+                    self.assertEqual(window["validity"], "INVALID")
+                    self.assertEqual(window["latency"], "UNMEASURED")
+        # Unknown future fields stay extensible, including strings and large integers.
+        parsed = diag.parse_response("inp", (INP + "key_future_metric not-a-number\n").encode())
+        self.assertEqual(parsed["issues"], [])
+        self.assertEqual(parsed["fields"]["key_future_metric"], "not-a-number")
+
+    def test_latency_missing_metrics_remain_valid_but_unmeasured(self):
+        for omitted in LATENCY_FIELDS:
+            text = "\n".join(line for line in INP.splitlines() if line.split(" ")[0] != omitted)
+            parsed = diag.parse_response("inp", text.encode())
+            self.assertEqual(parsed["issues"], [])
+            window = diag.input_window({"commands": {"inp": parsed}}, 1, False, True, "enabled")
+            self.assertEqual(window["validity"], "VALID")
+            self.assertEqual(window["latency"], "UNMEASURED")
+        legacy = "\n".join(line for line in INP.splitlines() if line.split(" ")[0] not in LATENCY_FIELDS)
+        window = diag.input_window(snapshot(inp=legacy), 1, False, True, "enabled")
+        self.assertEqual((window["validity"], window["latency"]), ("VALID", "UNMEASURED"))
+
+    def test_latency_colon_values_cannot_hide_known_fields(self):
+        for key in LATENCY_FIELDS:
+            for suffix in (" 1:2", "\t1:2", " : 1", " 1:", " 1 : 2", ": 1:2"):
+                with self.subTest(key=key, suffix=suffix):
+                    text = "\n".join(key + suffix if line.startswith(key + " ") else line
+                                     for line in INP.splitlines())
+                    parsed = diag.parse_response("inp", reply("inp", text + "\n"))
+                    self.assertIn("invalid uint32 " + key, parsed["issues"])
+                    window = diag.input_window({"commands": {"inp": parsed}}, 1, False, True, "enabled")
+                    self.assertEqual((window["validity"], window["latency"]), ("INVALID", "UNMEASURED"))
+        # Existing multi-value colon records and future unknown names retain their shape.
+        parsed = diag.parse_response("inp", reply("inp", INP + "key_future_metric 1:2\nfuture_record: 1 2\n"))
+        self.assertEqual(parsed["issues"], [])
+        self.assertEqual(parsed["fields"]["key_future_metric 1"], [2])
+        self.assertEqual(parsed["fields"]["future_record"], [1, 2])
+        self.assertEqual(parsed["fields"]["led_on_permille"], [90, 90, 90])
+        self.assertEqual(parsed["fields"]["enc moves/lost/detent state"], [[4, 1, 0], [0, 0, 2]])
+
+    def test_latency_zero_samples_are_unmeasured_not_invalid(self):
+        for key in ("key_presses", "key_notes"):
+            text = re.sub(r"(?m)^" + key + r" .*", key + " 0", INP)
+            window = diag.input_window(snapshot(inp=text), 1, False, True, "enabled")
+            self.assertEqual((window["validity"], window["latency"]), ("VALID", "UNMEASURED"))
+        # Sub-microsecond observations can round to zero even with observed samples.
+        text = re.sub(r"(?m)^(key_\w+_us) .*", r"\1 0", INP)
+        window = diag.input_window(snapshot(inp=text), 1, False, True, "enabled")
+        self.assertEqual((window["validity"], window["latency"]), ("VALID", "MEASURED"))
 
     def test_input_first_equal_latency_and_cumulative_fields(self):
         s = snapshot()
@@ -491,13 +767,120 @@ class TransportTests(unittest.TestCase):
 
 
 class SessionTests(unittest.TestCase):
-    def run_session(self, **kwargs):
+    def run_session(self, input_latency="unknown", **kwargs):
         clock, events = Clock(), []
         transport = SessionTransport(clock, **kwargs)
         console = diag.Console(transport, timeout=1, clock=clock)
-        summary = diag.collect(console, 2, 1, {"scenario": "simulated", "input_latency": "unknown"},
+        summary = diag.collect(console, 2, 1, {"scenario": "simulated", "input_latency": input_latency},
                                events.append, clock=clock, sleep=clock.sleep)
         return summary, events, transport
+
+    def test_malformed_known_scalars_stop_and_persist_invalid_session(self):
+        cases = (("status", "audio_late", STATUS), ("status", "boots", STATUS),
+                 ("status", "uptime_ms", STATUS), ("dbg", "halves", DBG),
+                 ("dbg", "magic", DBG), ("inp", "timer_irqs", INP),
+                 ("inp", "window_ms", INP), ("crash", "count", CRASH),
+                 ("crash", "uptime_ms", CRASH))
+        for command, key, text in cases:
+            for index in (1, 2):
+                for suffix in (" 1:2", ""):
+                    with self.subTest(command=command, key=key, index=index, suffix=suffix):
+                        line = key + suffix
+                        bad = re.sub(r"(?m)^" + key + r" .*$", line, text)
+                        summary, events, transport = self.run_session(
+                            command_texts={(index, command): bad})
+                        self.assertEqual(summary["validity"], "INVALID")
+                        self.assertFalse(summary["end_snapshot"]["complete"])
+                        self.assertTrue(all(value is None for group in summary["deltas"].values()
+                                            for value in group.values()))
+                        self.assertEqual(len(transport.writes), index * 4 + diag.COMMANDS.index(command) + 1)
+                        response = [e for e in events if e["type"] == "response"][-1]
+                        self.assertIn("invalid uint32 " + key, response["issues"])
+                        malformed_bytes = (line + "\r\n").encode()
+                        self.assertIn(malformed_bytes, base64.b64decode(response["raw_b64"]))
+                        intervals = [e for e in events if e["type"] == "interval"]
+                        self.assertEqual(intervals[-1]["validity"], "INVALID")
+                        with tempfile.TemporaryDirectory() as tmp:
+                            capture = diag.Capture(Path(tmp) / "capture")
+                            for event in events:
+                                capture.emit(event)
+                            capture.close()
+                            raw = (capture.directory / "console.raw").read_bytes()
+                            self.assertIn(malformed_bytes, raw)
+                            saved = json.loads((capture.directory / "summary.json").read_text())
+                            self.assertEqual(saved, summary)
+                            samples = [json.loads(item) for item in
+                                       (capture.directory / "samples.jsonl").read_text().splitlines()]
+                            saved_response = [e for e in samples if e["type"] == "response"][-1]
+                            offset, length = saved_response["raw_offset"], saved_response["raw_length"]
+                            self.assertEqual(raw[offset:offset + length], base64.b64decode(response["raw_b64"]))
+                            self.assertEqual(saved_response["fields"][key], "1:2" if suffix else "")
+
+    def test_invalid_latency_invalidates_session_and_preserves_evidence(self):
+        for instrumentation in ("enabled", "unknown", "disabled"):
+            bad = INP.replace("key_noteon_avg_us 1900", "key_noteon_avg_us not-a-number")
+            summary, events, transport = self.run_session(input_at=1, input_text=bad, input_latency=instrumentation)
+            self.assertEqual(summary["validity"], "INVALID")
+            self.assertIsNone(summary["deltas"]["status"]["audio_late"])
+            self.assertFalse(summary["end_snapshot"]["complete"])
+            self.assertEqual(summary["end_snapshot"]["input_window"]["latency"], "UNMEASURED")
+            self.assertEqual(len(transport.writes), 7)
+            response = [e for e in events if e["type"] == "response"][-1]
+            self.assertIn("invalid uint32 key_noteon_avg_us", response["issues"])
+            self.assertIn(b"key_noteon_avg_us not-a-number", base64.b64decode(response["raw_b64"]))
+            # The actual writer keeps raw bytes, parsed values and invalid summary.
+            with tempfile.TemporaryDirectory() as tmp:
+                capture = diag.Capture(Path(tmp) / "capture")
+                for event in events:
+                    capture.emit(event)
+                capture.close()
+                self.assertIn(b"key_noteon_avg_us not-a-number", (capture.directory / "console.raw").read_bytes())
+                saved = json.loads((capture.directory / "summary.json").read_text())
+                self.assertEqual(saved["validity"], "INVALID")
+                self.assertEqual(saved["end_snapshot"]["commands"]["inp"]["fields"]["key_noteon_avg_us"], "not-a-number")
+
+    def test_empty_latency_value_invalidates_session_not_legacy_absence(self):
+        for suffix in ("", " ", "\t"):
+            bad = INP.replace("key_press_max_us 1300", "key_press_max_us" + suffix)
+            summary, events, transport = self.run_session(input_at=1, input_text=bad, input_latency="enabled")
+            self.assertEqual(summary["validity"], "INVALID")
+            self.assertIsNone(summary["deltas"]["status"]["audio_late"])
+            self.assertFalse(summary["end_snapshot"]["complete"])
+            self.assertEqual(summary["end_snapshot"]["input_window"]["latency"], "UNMEASURED")
+            self.assertEqual(len(transport.writes), 7)
+            response = [e for e in events if e["type"] == "response"][-1]
+            self.assertIn("invalid uint32 key_press_max_us", response["issues"])
+            self.assertEqual(response["fields"]["key_press_max_us"], "")
+            self.assertIn("key_press_max_us", response["unknown_lines"])
+            self.assertIn(("key_press_max_us" + suffix + "\r\n").encode(), base64.b64decode(response["raw_b64"]))
+        parsed = diag.parse_response("inp", (INP + "key_future_empty\n").encode())
+        self.assertEqual(parsed["issues"], [])
+        self.assertIn("key_future_empty", parsed["unknown_lines"])
+
+    def test_colon_latency_value_invalidates_session_and_preserves_raw(self):
+        for suffix in (" 1:2", "\t1:2", " : 1", " 1:", " 1 : 2", ": 1:2"):
+            with self.subTest(suffix=suffix):
+                line = "key_press_max_us" + suffix
+                bad = INP.replace("key_press_max_us 1300", line)
+                summary, events, transport = self.run_session(input_at=1, input_text=bad, input_latency="enabled")
+                self.assertEqual(summary["validity"], "INVALID")
+                self.assertTrue(all(value is None for group in summary["deltas"].values() for value in group.values()))
+                self.assertFalse(summary["end_snapshot"]["complete"])
+                self.assertEqual(summary["end_snapshot"]["input_window"]["latency"], "UNMEASURED")
+                self.assertEqual(len(transport.writes), 7)
+                response = [e for e in events if e["type"] == "response"][-1]
+                self.assertIn("invalid uint32 key_press_max_us", response["issues"])
+                self.assertIn((line + "\r\n").encode(), base64.b64decode(response["raw_b64"]))
+
+    def test_partial_legacy_latency_keeps_continuous_session_unmeasured(self):
+        old = "\n".join(line for line in INP.splitlines()
+                        if line.split(" ")[0] not in {"key_press_max_us", "key_noteon_max_us", "key_dac_avg_us"}) + "\n"
+        summary, events, _ = self.run_session(input_at=1, input_text=old, input_latency="enabled")
+        self.assertEqual(summary["validity"], "VALID")
+        self.assertEqual(summary["deltas"]["status"]["audio_late"], 4)
+        windows = [e["input_window"] for e in events if e["type"] == "snapshot"]
+        self.assertEqual([w["latency"] for w in windows], ["UNMEASURED", "UNMEASURED", "MEASURED"])
+        self.assertEqual([w["validity"] for w in windows], ["INVALID", "VALID", "VALID"])
 
     def test_malformed_signed_counter_invalidates_session_and_preserves_raw(self):
         summary, events, transport = self.run_session(malformed_at=1)

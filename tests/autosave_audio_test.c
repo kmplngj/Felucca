@@ -236,13 +236,14 @@ static int retry_case(void)
     bad += check("failed save retries wait thirty seconds across timer wrap", !as_commits && as_programs == 1u && as_erases == dirty_start);
     fail_after = -1;
     as_run(1500u);
-    bad += check("retry commits once, then respects the wear gap", !as.err && as.writes == 1u && as_commits == 1u && as_programs == 1u + AUTO_PROGRAMS && as_erases == dirty_start &&
+    /* #721: the failed save tried the copy: its retry always erases, as does the next save (B beside a valid A) */
+    bad += check("retry commits once, then respects the wear gap", !as.err && as.writes == 1u && as_commits == 1u && as_programs == 1u + AUTO_PROGRAMS && as_erases == dirty_start + 1u &&
                  fm1_ms - before >= AS_RETRY_MS);
     as_edit(1);
     as_run(59000u);
-    bad += check("next dirty edit still waits sixty seconds", as.writes == 1u && as_commits == 1u && as_programs == 1u + AUTO_PROGRAMS && as_erases == dirty_start);
+    bad += check("next dirty edit still waits sixty seconds", as.writes == 1u && as_commits == 1u && as_programs == 1u + AUTO_PROGRAMS && as_erases == dirty_start + 1u);
     as_run(1500u);
-    bad += check("dirty edit commits once after wear gap", as.writes == 2u && as_commits == 2u && as_programs == 1u + 2u * AUTO_PROGRAMS && as_erases == dirty_start);
+    bad += check("dirty edit commits once after wear gap", as.writes == 2u && as_commits == 2u && as_programs == 1u + 2u * AUTO_PROGRAMS && as_erases == dirty_start + 2u);
     return bad;
 }
 

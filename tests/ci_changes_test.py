@@ -117,6 +117,23 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(self.suites([path]), {"full"})
                 self.assertEqual(self.suites(["tests/emulator_trace_test.py", path]), {"full"})
 
+    def test_native_replay_fixture_is_portable_but_execution_keeps_full_validation(self):
+        runner = (Path(__file__).resolve().parents[1] / "tests/run_tests.sh").read_text()
+        portable = runner.split("u_portable() {", 1)[1].split("\n}", 1)[0]
+        for fixture, implementations in (
+            ("native_emulator_replay_test.py", ("tools/native_emulator_replay.py", "tests/native_emulator_replay_execution_test.py")),
+            ("native_hotspots_test.py", ("tools/native_hotspots.py",)),
+            ("native_audio_window_test.py", ("tools/native_audio_window.py",)),
+        ):
+            with self.subTest(fixture=fixture):
+                self.assertIn(fixture, changes.PORTABLE_TESTS)
+                fixture_path = "tests/" + fixture
+                self.assertIn("python3 " + fixture_path, portable)
+                self.assertEqual(self.suites([fixture_path]), {"python"})
+                for path in implementations:
+                    self.assertEqual(self.suites([path]), {"full"})
+                    self.assertEqual(self.suites([fixture_path, path]), {"full"})
+
     def test_firmware_watch_ledger_uses_portable_validation(self):
         for path in ("data/firmware-watch/sources.json", "data/firmware-watch/state.json",
                      "data/firmware-watch/reviews.jsonl", "data/firmware-watch/migration-report.json",
@@ -136,7 +153,8 @@ class SelectionTest(unittest.TestCase):
                      "assets/samples-cc0/PIANO/sample.wav", "LICENSE", "LICENSING.md",
                      "LICENSES/Apache-2.0.txt", "web/editor.html", "web/fm1pkg.js",
                      "web/fm1ota.js", "web/package.json", "web/test_web.mjs",
-                     "tests/hostsim.c", "tests/host_nor.h", "tests/ui_render.py", "tests/cpu_baseline.py",
+                     "tests/hostsim.c", "tests/host_nor.h", "tests/host_lcd_blit_noop.h",
+                     "tests/ui_render.py", "tests/cpu_baseline.py",
                      "tests/target_budget.py", "tests/golden.txt", "tests/union_golden.txt",
                      "tests/run_tests.sh", "tests/build_guard_target_test.py",
                      "tools/replay_native.c", "tools/fm1_replay.py", "tests/replay_test.py",
@@ -187,6 +205,7 @@ class SelectionTest(unittest.TestCase):
                       'firmware/engines', 'firmware/src/eng_macro.c',
                       'firmware/src/ui_new.c', 'firmware/src/eng_new.c',
                       'tests/ui_test.c', 'tests/ui_harness.h', 'tests/ui_render.c', 'tests/hostsim.c',
+                      'tests/host_lcd_blit_noop.h',
                       'tests/golden.txt', 'tests/target_budget.txt',
                       'tools/ci_changes.py', '.github/workflows/ci.yml',
                       'unknown.c', 'tools/fm1_diagnostics.py',

@@ -2,6 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The firmware editor handler, USB framing and UART recovery against shared NOR.
  * Build with the generated tables and the same flags as hostsim.c. */
+#include "../firmware/hal/fm1_flash_data_contract.h"
 #include "host_nor.h"
 /* Keep the array shape used by robustness/fuzz fixtures, backed by the real slot map. */
 #define host_samples (*(uint8_t (*)[3][0x14000])(nor + 0xA0000u))
@@ -11,6 +12,7 @@
 #define FELUCCA_VERSION "TEST"
 #define FELUCCA_CDC 1                                    /* (as the firmware: MENU > USB SERIAL switches the console) */
 #define main hostsim_main
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include "hostsim.c"
 #undef main
 _Static_assert(sizeof host_samples == SMP_USER_SLOTS * SMP_USER_SIZE && SMP_USER_BASE == 0xA0000u,
@@ -38,12 +40,11 @@ static void fm1_wdt_feed(void)
 }
 static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
+#include "host_encoder_noop.h"
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) */
 static void lcd_wake_now(void) {}
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #include "../firmware/src/gfx.c"
 #include "../firmware/src/panel.c"
 #include "../firmware/src/ui.c"
@@ -55,6 +56,7 @@ static void panel_setup(void) {}
 static uint32_t flash_ok = 1;
 static void audio_silence(void) {}
 static void fl_inval(uint32_t off, uint32_t n) { (void)off; (void)n; }
+static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took)
 {
     *took = 0;
@@ -63,6 +65,7 @@ static int fl_erase4k(uint32_t off, uint32_t *took)
         return -8;
     return st_erase(off);
 }
+static fl_write_fn fl_write;
 static int fl_write(uint32_t off, const uint8_t *p, uint32_t n)
 {
     host_writes++;                                /* one HAL call can program several NOR pages */

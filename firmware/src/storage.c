@@ -4,8 +4,8 @@
 /* Persistent storage on the SPI NOR.
  *
  * Every object has an A/B sector pair. A save goes to the copy that is not
- * the current one: erase the sector unless it reads entirely blank, program the payload pages (from offset
- * 256), then the 32-byte header at offset 0 LAST. The header is the commit
+ * the current one: erase the sector (skipped only for a fresh object's blank copy: st_fresh),
+ * program the payload pages (from offset 256), then the 32-byte header at offset 0 LAST. The header is the commit
  * record (magic, seq, length, payload CRC, header CRC); on load the valid
  * copy with the newest seq wins (including wrap), so a write torn at any point leaves the
  * previous copy in charge.
@@ -134,19 +134,41 @@ static int st_load(uint32_t obj, void *dst, uint32_t max)
 }
 
 /* #197: adapt Maku's complete-sector blank check (64cb7e4bc426d308185baf7d577a336968632657),
- * keeping native readback and using independent scratch: st_buf already holds the new payload.
- * A torn write may leave a blank header and dirty tail. Only a successful full scan may skip the
- * erase; a read error stops the save before any write. st_read retains its <=256-byte IRQ windows. */
+ * keeping native readback. #721: only for a genuinely fresh object (st_fresh). A sector that reads all
+ * 0xFF after a power cut during an erase or a first program can still hold cells with too little margin;
+ * only a full erase clears that, so every copy known to have seen an erase or write attempt is erased.
+ * Fresh: neither copy holds a commit record (any type: the FM6 bank and the voice bank share pairs) and
+ * no save of the object was attempted since boot (st_tried, set before the first flash write and never
+ * cleared, so a failed or interrupted save erases on retry in the same boot). An interrupted first
+ * erase or program leaving a blank-looking copy cannot be distinguished after reboot from a fresh
+ * copy (docs/flash-capacity.md). The scan scratch is
+ * static (main loop only, as st_buf, which already holds the new payload): no 256 bytes on the stack.
+ * Only a successful full scan may skip the erase; a read error stops the save before any write.
+ * st_read retains its <=256-byte IRQ windows. */
+static uint16_t st_tried;                       /* bit obj: a save was attempted since boot */
+_Static_assert(OBJ_COUNT <= 16, "st_tried bits");
+static uint8_t st_scan[256] __attribute__((aligned(4), section(".pool")));   /* (main loop only) */
+
+static int st_record(uint32_t base)             /* any commit record (or an unreadable header): 1 */
+{
+    st_hdr_t h;
+    return st_read(base, &h, sizeof h) || (h.magic == ST_MAGIC && h.hcrc == st_crc32(&h, sizeof h - 4u));
+}
+
+static int st_fresh(uint32_t obj)
+{
+    return !((st_tried >> obj) & 1u) && !st_record(st_sector(obj, 0)) && !st_record(st_sector(obj, 1));
+}
+
 static int st_erase_unless_blank(uint32_t base)
 {
-    uint8_t page[256];
     uint32_t off, i;
     int rc;
-    for (off = 0; off < ST_SECTOR; off += sizeof page) {
-        if ((rc = st_read(base + off, page, sizeof page)) != 0)
+    for (off = 0; off < ST_SECTOR; off += sizeof st_scan) {
+        if ((rc = st_read(base + off, st_scan, sizeof st_scan)) != 0)
             return rc;
-        for (i = 0; i < sizeof page; i++)
-            if (page[i] != 0xFFu)
+        for (i = 0; i < sizeof st_scan; i++)
+            if (st_scan[i] != 0xFFu)
                 return st_erase(base);
     }
     return 0;
@@ -156,7 +178,7 @@ static int st_erase_unless_blank(uint32_t base)
 static int st_save_to(uint32_t obj, const void *src, uint32_t len, int to)
 {
     uint32_t seq, base, off;
-    int cur, rc;
+    int cur, rc, fresh;
     st_hdr_t h;
     FM1_ASSERT_THREAD();                         /* erases and programs flash: main loop only (#428) */
     if (obj >= OBJ_COUNT || len > ST_PAYLOAD_MAX || to > 1)
@@ -168,7 +190,9 @@ static int st_save_to(uint32_t obj, const void *src, uint32_t len, int to)
     base = st_sector(obj, (uint32_t)to);
     for (off = 0; off < len; off++)
         st_buf[off] = ((const uint8_t *)src)[off];    /* the driver wants RAM sources */
-    if ((rc = st_erase_unless_blank(base)) != 0)
+    fresh = st_fresh(obj);
+    st_tried |= (uint16_t)(1u << obj);                /* before any write: a retry always erases */
+    if ((rc = fresh ? st_erase_unless_blank(base) : st_erase(base)) != 0)
         return rc;
     for (off = 0; off < len; off += 256u) {
         uint32_t n = len - off > 256u ? 256u : len - off;

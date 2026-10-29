@@ -361,10 +361,16 @@ void fm1_cstart(void)
 {
     uint32_t *s, *d, p3, src, wdt;
     boot_policy_path_t boot_path;
+#if FELUCCA_CDC && defined(__PI32V2__)
+    fm1_clock_snapshot_t boot_clock;
+#endif
 #if FELUCCA_CPU2
     fm1_cpu1_halt();                           /* (after Jangada, X0X): a second core still running from before
                                                 * this reset (a watchdog, a fault, another firmware) would read the RAM
                                                 * cleared below */
+#endif
+#if FELUCCA_CDC && defined(__PI32V2__)
+    fm1_clock_read(&boot_clock);                /* after the optional core-1 hold; before peripheral initialization */
 #endif
     fm1_time_init();
     fm1_reset_reason();
@@ -385,6 +391,9 @@ void fm1_cstart(void)
         *d = 0;
     for (s = _data_load, d = _data_start; d < _data_end; s++, d++)
         *d = *s;
+#if FELUCCA_CDC && defined(__PI32V2__)
+    fm1_boot_clock = boot_clock;                /* RAM is initialized; normal-startup CDC reports this boot only */
+#endif
     for (s = _rt_load, d = _rt_start; d < _rt_end; s++, d++)
         *d = *s;                                /* flash driver code that must run from RAM */
 #if FELUCCA_CPU2

@@ -2,10 +2,11 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Firmware save flows against NOR flash: deferred settings, retries, and failed-save rollback. */
 #define main hostsim_main
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include "hostsim.c"
 #undef main
 
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
+#include "host_encoder_noop.h"
 static uint32_t irq_start_race, irq_races;
 static void fm1_irq_off(void)
 {
@@ -19,8 +20,7 @@ static void fm1_irq_on(void) {}
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) */
 static void lcd_wake_now(void) {}
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #define FELUCCA_FLASH 1
 #include "../firmware/src/gfx.c"
 #include "../firmware/src/panel.c"
@@ -64,11 +64,7 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)
     }
     return result;
 }
-static uint32_t irq_save(void) { return 0; }
-static void irq_restore(uint32_t f) { (void)f; }
-static uint32_t fl_jedec_ram(void) { return 0; }
-static void fl_plain_window_init(void) {}
-#define FL_FAR(fn) (fn)
+#include "host_flash_context.h"
 #include "../firmware/src/storage.c"
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
@@ -89,9 +85,10 @@ static int check(const char *what, int ok)
     return ok ? 0 : 1;
 }
 
-static void reset(void)
+static void reset(void)                                  /* a fresh device: blank flash, nothing tried since boot */
 {
     memset(nor, 0xFF, sizeof nor);
+    st_tried = 0;
     memset(&song, 0, sizeof song);
     memset(trk, 0, sizeof trk);
     memset(&chain, 0, sizeof chain);
@@ -140,6 +137,7 @@ static void mig_setup(void)
 {
     static up_bank_t b[2];
     memset(nor, 0xFF, sizeof nor);
+    st_tried = 0;
     memset(b, 0, sizeof b);
     for (uint32_t i = 0; i < 2u; i++) { b[i].magic = UP_BANK_MAGIC; b[i].rsize = sizeof(up_rec_t); b[i].nslot = UP_PER_BANK; }
     mig_rec(&b[0], 0, ENGI_FM6, FM6_NFACTORY + 2, 'A');
@@ -162,6 +160,7 @@ static void mig_boot(void)                               /* a power-on: RAM lost
 {
     memset(up_bank, 0, sizeof up_bank);
     memset(&upf, 0, sizeof upf);
+    st_tried = 0;
     up_boot();
 }
 
@@ -255,6 +254,7 @@ static void as_run(uint32_t ms)                          /* the main loop for ms
 static void as_power_on(void)                            /* RAM lost: the defaults, then main.c's restore */
 {
     uint32_t k;
+    st_tried = 0;                                        /* (storage.c: no save tried since this boot) */
     memset(trk, 0, sizeof trk);
     memset(&motion, 0, sizeof motion);
     memset(motion_active, 0, sizeof motion_active);
@@ -568,9 +568,9 @@ static int durability_test(void)
         ok &= settings_save_result() == SETTINGS_SAVED;               /* unchanged */
         settings.palette = 3; song.playing = 1;
         ok &= settings_save_result() == SETTINGS_QUEUED;
-        song.playing = 0; fail_after = 0;
+        song.playing = 0; erase_error = 1;               /* (B, beside a valid A: always erased, #721) */
         ok &= settings_save_result() == SETTINGS_RAM_ONLY && persist_pending == 2;
-        fail_after = -1; flash_ok = 0;
+        erase_error = 0; flash_ok = 0;
         ok &= settings_save_result() == SETTINGS_RAM_ONLY;
         flash_ok = 1;
         ok &= settings_save_result() == SETTINGS_SAVED && !settings_unsaved();
@@ -739,12 +739,12 @@ int main(void)
         before = erases; before_programs = programs;
         bad += check("repeating an unchanged editor preference succeeds without erasing",
                       ed_ui_set(amber, sizeof amber) == 0 && erases == before && programs == before_programs);
-        fail_after = 0;                /* blank B: fail its first program, not an erase it need not do */
+        erase_error = 1;               /* blank B beside a valid A: still erased (#721), and that fails */
         const uint8_t mono[] = {0, 0};
         bad += check("editor reports failed saving while preserving the previous flash setting",
                       ed_ui_set(mono, sizeof mono) == 3 && settings.palette == 0u && persist_pending == 2 &&
                       persist_saved.palette == palette_to_stored(2));
-        fail_after = -1;
+        erase_error = 0;
         fm1_ms += 1000;
         settings_poll();
         bad += check("failed editor preference retries through the existing persistence path",
@@ -822,16 +822,16 @@ int main(void)
     settings_save();
     bad += check("unchanged settings do not erase or program", !persist_pending && commits == 1u && programs == (sizeof p + 255u) / 256u + 1u && erases == 0u);
     settings.palette = 1;
-    fail_after = 0;                     /* the alternate settings sector is still blank */
+    erase_error = 1;                    /* the alternate sector is blank but not fresh: erased (#721), and that fails */
     fm1_ms = 0xFFFFFF00u;
     settings_save();
-    before = programs;
+    before = erases;
     settings_poll();
     fm1_ms += 999u;
     settings_poll();
-    bad += check("failed settings retry waits through clock wrap", persist_pending && programs == before &&
+    bad += check("failed settings retry waits through clock wrap", persist_pending && erases == before &&
                   persist_saved.palette == palette_to_stored(2) && settings.palette == 1u);
-    fail_after = -1;
+    erase_error = 0;
     before = commits;
     fm1_ms++;
     settings_poll();
