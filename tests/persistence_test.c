@@ -30,12 +30,14 @@ static void panel_setup(void) {}
 
 static uint8_t nor[0x100000], flash_ok = 1;
 static int erase_error, fail_after = -1;
+static uint32_t programs, commits, as_programs, as_commits, as_mutations;
 static uint32_t erases, as_erases;               /* (as_erases: the autosave's two sectors, 0xE5000 / 0xE6000) */
 static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
 static int st_erase(uint32_t off)
 {
     erases++;
     as_erases += off >= 0xE5000u && off < 0xE7000u;
+    as_mutations += off >= 0xE5000u && off < 0xE7000u;
     if (erase_error) return -8;
     memset(nor + off, 0xFF, 4096);
     return 0;
@@ -43,10 +45,17 @@ static int st_erase(uint32_t off)
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
     const uint8_t *s = src;
-    uint32_t i;
+    uint32_t i, autosave = off >= 0xE5000u && off < 0xE7000u;
+    programs++;
+    as_programs += autosave;
+    as_mutations += autosave;
     if (fail_after == 0) return -9;
     if (fail_after > 0) fail_after--;
     for (i = 0; i < n; i++) nor[off + i] &= s[i];
+    if ((off & 0xFFFu) == 0u) {       /* successful commit-record program, including zero-length objects */
+        commits++;
+        as_commits += autosave;
+    }
     return 0;
 }
 #include "host_flash_context.h"
@@ -70,9 +79,10 @@ static int check(const char *what, int ok)
     return ok ? 0 : 1;
 }
 
-static void reset(void)
+static void reset(void)                                  /* a fresh device: blank flash, nothing tried since boot */
 {
     memset(nor, 0xFF, sizeof nor);
+    st_tried = 0;
     memset(&song, 0, sizeof song);
     memset(trk, 0, sizeof trk);
     memset(&chain, 0, sizeof chain);
@@ -92,7 +102,8 @@ static void reset(void)
     flash_ok = 1;
     erase_error = 0;
     fail_after = -1;
-    up_gen = erases = 0;
+    up_gen = erases = programs = commits = 0;
+    as_erases = as_programs = as_commits = as_mutations = 0;
     irq_start_race = irq_races = 0;
 }
 
@@ -117,6 +128,7 @@ static void mig_setup(void)
 {
     static up_bank_t b[2];
     memset(nor, 0xFF, sizeof nor);
+    st_tried = 0;
     memset(b, 0, sizeof b);
     for (uint32_t i = 0; i < 2u; i++) { b[i].magic = UP_BANK_MAGIC; b[i].rsize = sizeof(up_rec_t); b[i].nslot = UP_PER_BANK; }
     mig_rec(&b[0], 0, ENGI_FM6, FM6_NFACTORY + 2, 'A');
@@ -139,6 +151,7 @@ static void mig_boot(void)                               /* a power-on: RAM lost
 {
     memset(up_bank, 0, sizeof up_bank);
     memset(&upf, 0, sizeof upf);
+    st_tried = 0;
     up_boot();
 }
 
@@ -153,7 +166,7 @@ static int mig_ok(void)
 static int mig_test(void)
 {
     int bad = 0, ok = 1;
-    uint32_t cut, before, cuts = 0;
+    uint32_t cut, before, before_programs, cuts = 0;
     uint8_t pk[FM6_PACKED];
     upf_t got;
     reset();
@@ -174,9 +187,9 @@ static int mig_test(void)
     up_load(2);
     bad += check("  .. UP_LOAD 3 (an empty B5) plays the init voice, as before",
                  !memcmp(fm6_patch[song.sel] + FP_NAME, "INIT VOICE", 10) && TSEL->p[P_E7] == FM6_OWN);
-    before = erases;
+    before = erases; before_programs = programs;
     mig_boot();
-    bad += check("  .. the next boot: done (no write), the same patches", mig_ok() && erases == before);
+    bad += check("  .. the next boot: done (no write), the same patches", mig_ok() && erases == before && programs == before_programs);
     /* a power cut at every write step of the migration: the next boot ends with the same result */
     for (cut = 0; cut < 64u && ok; cut++) {
         memcpy(nor, mig_pre, sizeof nor);
@@ -213,9 +226,9 @@ static int mig_test(void)
                  mig_ok() && !upf_get(20, pk) && !memcmp(pk + 118, FM6_FACTORY[3] + 118, 10) &&
                      ((st_hdr_t *)(nor + 0x9F000))->type == OBJ_UPFM6 && ((st_hdr_t *)(nor + 0xFE000))->type == OBJ_UPFM6);
     memset(nor, 0xFF, sizeof nor);                        /* a device that never had a bank: nothing written */
-    before = erases;
+    before = erases; before_programs = programs;
     mig_boot();
-    bad += check("no bank: nothing to move, nothing written", erases == before && upf_valid(&upf));
+    bad += check("no bank: nothing to move, nothing written", erases == before && programs == before_programs && upf_valid(&upf));
     return bad;
 }
 
@@ -232,6 +245,7 @@ static void as_run(uint32_t ms)                          /* the main loop for ms
 static void as_power_on(void)                            /* RAM lost: the defaults, then main.c's restore */
 {
     uint32_t k;
+    st_tried = 0;                                        /* (storage.c: no save tried since this boot) */
     memset(trk, 0, sizeof trk);
     memset(&motion, 0, sizeof motion);
     memset(motion_active, 0, sizeof motion_active);
@@ -269,10 +283,10 @@ static int autosave_test(void)
     as_run(9000u);
     ok = !as.writes;
     as_run(1500u);
-    bad += check("autosave: a change: no write within 10 s, one once idle 10 s (one erase)",
-                 ok && as.writes == 1u && as_erases == 1u && st_load(OBJ_AUTOSAVE, &raw, sizeof raw) == (int)sizeof raw);
+    bad += check("autosave: a change: no write within 10 s, one commit once idle 10 s (blank target: no erase)",
+                 ok && as.writes == 1u && as_commits == 1u && as_erases == 0u && st_load(OBJ_AUTOSAVE, &raw, sizeof raw) == (int)sizeof raw);
     as_run(600000u);
-    bad += check("autosave: 10 min unchanged after it: no more writes", as.writes == 1u && as_erases == 1u);
+    bad += check("autosave: 10 min unchanged after it: no more writes", as.writes == 1u && as_commits == 1u && as_erases == 0u);
     song.g[G_SLOT] = 3;                                  /* (the PROJECT page's pick, the selected track: not the music) */
     song.sel = 2;
     as_run(120000u);
@@ -386,7 +400,7 @@ static int autosave_test(void)
     /* wear: a 4-hour session: 3 h of editing (a change every 3 s), pauses and playing it back, then an hour away */
     as_power_on();
     autosave_boot(1);
-    as_erases = 0;
+    as_erases = as_commits = 0;
     for (minute = 0; minute < 240u; minute++) {
         uint32_t s;
         if (minute >= 180u) {
@@ -402,18 +416,18 @@ static int autosave_test(void)
     }
     song.playing = 0;
     as_run(20000u);
-    printf("persist:   a 4-hour session (3 h editing and playing, 1 h idle): %u autosave writes\n", (unsigned)as_erases);
-    bad += check("autosave wear: a session's writes stay far below one a minute", as_erases > 0u && as_erases <= 60u);
+    printf("persist:   a 4-hour session (3 h editing and playing, 1 h idle): %u autosave writes\n", (unsigned)as_commits);
+    bad += check("autosave wear: a session's writes stay far below one a minute", as_commits > 0u && as_commits <= 60u && as_erases <= as_commits);
     {   /* worst case: a change, then just enough idle, over and over, for 8 hours */
         uint32_t i;
-        as_erases = 0;
+        as_erases = as_commits = 0;
         for (i = 0; i < 8u * 3600u / 11u; i++) {
             as_edit(i);
             as_run(11000u);
         }
-        printf("persist:   worst case, 8 h of a change every 11 s: %u writes (%u per sector)\n", (unsigned)as_erases,
+        printf("persist:   worst case, 8 h of a change every 11 s: %u commits (%u erases per sector)\n", (unsigned)as_commits,
                (unsigned)(as_erases / 2u));
-        bad += check("autosave wear, worst case: at most one write a minute (480 in 8 h)", as_erases <= 8u * 60u + 1u);
+        bad += check("autosave wear, worst case: at most one write a minute (480 in 8 h)", as_commits <= 8u * 60u + 1u && as_erases <= as_commits);
     }
     return bad;
 }
@@ -461,7 +475,7 @@ static int durability_test(void)
 {
     static persist_rec_t old;
     int bad = 0;
-    uint32_t w, before;
+    uint32_t w, before, before_programs;
     for (w = 0; w < DUR_N; w++) {
         char what[96];
         int ok;
@@ -471,12 +485,12 @@ static int durability_test(void)
         settings_save();                              /* (a first record in flash: what a failure must keep) */
         old = persist_saved;
 #define DUR_CHECK(label, cond) do { snprintf(what, sizeof what, "%s: %s", DUR_NAME[w], label); bad += check(what, cond); } while (0)
-        before = erases;
-        ok = dur_write(w, 0) == 0 && erases == before + 1u && !persist_pending && dur_flash_is(&persist_saved) &&
+        before = commits;
+        ok = dur_write(w, 0) == 0 && commits == before + 1u && !persist_pending && dur_flash_is(&persist_saved) &&
              memcmp(&persist_saved, &old, sizeof old) != 0;
-        DUR_CHECK("stopped: rc 0, one erase, the new record committed", ok);
-        before = erases;
-        DUR_CHECK("unchanged request: rc 0, no erase", dur_write(w, 1) == 0 && erases == before && !persist_pending);
+        DUR_CHECK("stopped: rc 0, one new record committed", ok);
+        before = erases; before_programs = programs;
+        DUR_CHECK("unchanged request: rc 0, no erase", dur_write(w, 1) == 0 && erases == before && programs == before_programs && !persist_pending);
         old = persist_saved;
         /* playing, a pending PLAY, an armed SONG: rc 4, nothing erased; STOP commits the latest values once */
         song.playing = 1;
@@ -484,14 +498,14 @@ static int durability_test(void)
         song.playing = 0; transport_req = 1;
         ok &= dur_write(w, 0) == 4;
         transport_req = 0; chain.armed = 1;
-        ok &= dur_write(w, 0) == 4 && erases == before && dur_flash_is(&old);
+        ok &= dur_write(w, 0) == 4 && erases == before && programs == before_programs && dur_flash_is(&old);
         chain.armed = 0;
         settings_poll();
         ok &= !persist_pending && erases == before + 1u && !settings_unsaved() && dur_flash_is(&persist_saved);
         DUR_CHECK("PLAY / pending PLAY / armed SONG: rc 4, no erase; STOP commits the latest once", ok);
         /* a failed erase: RAM applied, rc 3, the committed record kept, retried 1000 ms later by polling */
         old = persist_saved;
-        before = erases;
+        before = erases; before_programs = programs;
         erase_error = 1;
         ok = dur_write(w, 0) == 3 && persist_pending == 2 && settings_unsaved() && dur_flash_is(&old) &&
              !memcmp(&persist_saved, &old, sizeof old);
@@ -510,7 +524,7 @@ static int durability_test(void)
         fail_after = -1;
         /* the same value requested again, still within the retry wait, stopped: the latest RAM values written at
          * once (a fresh request is no poll: no blanket rate limit) */
-        before = erases;
+        before = erases; before_programs = programs;
         ok &= dur_write(w, 1) == 0 && erases == before + 1u && !persist_pending && dur_flash_is(&persist_saved) &&
               memcmp(&persist_saved, &old, sizeof old) != 0;
         DUR_CHECK("interrupted write: rc 3, old record kept; a fresh request retries at once", ok);
@@ -527,10 +541,10 @@ static int durability_test(void)
         /* no usable flash: applied in RAM, rc 3, never an erase, even stopped and polled */
         old = persist_saved;
         flash_ok = 0;
-        before = erases;
+        before = erases; before_programs = programs;
         ok = dur_write(w, 0) == 3 && dur_write(w, 1) == 3;
         settings_poll();
-        ok &= erases == before && dur_flash_is(&old) && settings_unsaved();
+        ok &= erases == before && programs == before_programs && dur_flash_is(&old) && settings_unsaved();
         DUR_CHECK("no flash (flash_ok 0): rc 3, applied in RAM, no erase", ok);
         flash_ok = 1;
 #undef DUR_CHECK
@@ -545,7 +559,7 @@ static int durability_test(void)
         ok &= settings_save_result() == SETTINGS_SAVED;               /* unchanged */
         settings.palette = 3; song.playing = 1;
         ok &= settings_save_result() == SETTINGS_QUEUED;
-        song.playing = 0; erase_error = 1;
+        song.playing = 0; erase_error = 1;               /* (B, beside a valid A: always erased, #721) */
         ok &= settings_save_result() == SETTINGS_RAM_ONLY && persist_pending == 2;
         erase_error = 0; flash_ok = 0;
         ok &= settings_save_result() == SETTINGS_RAM_ONLY;
@@ -559,19 +573,19 @@ static int durability_test(void)
              !settings_unsaved();
         bad += check("settings_save_result: the whole record compared, fields of other firmware kept", ok);
         /* the panel's deferred request (ui.c set_later, #197) cleared is no evidence of a write */
-        before = erases;
+        before = erases; before_programs = programs;
         settings.palette = 5;
         settings_later();
         ui.menu = 1;                                 /* (a view change: the request goes out) */
         song.playing = 1;
         settings_later_poll();
-        ok = !set_later.on && persist_pending == 1 && erases == before && settings_save_result() == SETTINGS_QUEUED;
+        ok = !set_later.on && persist_pending == 1 && erases == before && programs == before_programs && settings_save_result() == SETTINGS_QUEUED;
         song.playing = 0;
         flash_ok = 0;
         settings.palette = 6;
         settings_later();
         settings_later_poll();
-        ok &= !set_later.on && erases == before && settings_save_result() == SETTINGS_RAM_ONLY;
+        ok &= !set_later.on && erases == before && programs == before_programs && settings_save_result() == SETTINGS_RAM_ONLY;
         flash_ok = 1;
         ui.menu = 0;
         bad += check("panel's deferred request cleared (playing, no flash): still QUEUED / RAM_ONLY, no erase", ok);
@@ -583,7 +597,7 @@ static int durability_test(void)
 int main(void)
 {
     int bad = 0, ok;
-    uint32_t before;
+    uint32_t before, before_programs;
     persist_t p;
     project_store_t old, got;
     project_v5_t v5;
@@ -595,15 +609,15 @@ int main(void)
         const uint8_t amber[] = {0, 2};
         song.playing = 1;
         bad += check("editor display change while playing is applied and reports deferred saving",
-                      ed_ui_set(amber, sizeof amber) == 4 && settings.palette == 2u && persist_pending == 1 && !erases);
+                      ed_ui_set(amber, sizeof amber) == 4 && settings.palette == 2u && persist_pending == 1 && !erases && !programs);
         song.playing = 0;
         settings_poll();
         bad += check("STOP commits the deferred palette setting",
-                      !persist_pending && erases == 1 && persist_saved.palette == palette_to_stored(2));
-        before = erases;
+                      !persist_pending && commits == 1u && erases == 0u && persist_saved.palette == palette_to_stored(2));
+        before = erases; before_programs = programs;
         bad += check("repeating an unchanged editor preference succeeds without erasing",
-                      ed_ui_set(amber, sizeof amber) == 0 && erases == before);
-        erase_error = 1;
+                      ed_ui_set(amber, sizeof amber) == 0 && erases == before && programs == before_programs);
+        erase_error = 1;               /* blank B beside a valid A: still erased (#721), and that fails */
         const uint8_t mono[] = {0, 0};
         bad += check("editor reports failed saving while preserving the previous flash setting",
                       ed_ui_set(mono, sizeof mono) == 3 && settings.palette == 0u && persist_pending == 2 &&
@@ -624,11 +638,11 @@ int main(void)
         song.playing = 1;
         ed_repn = 0; ed_menu_handle(ED_MENU_SET, leds_off, 3);
         bad += check("MENU_SET while playing: applied, rc 4 (queued until STOP), no erase",
-                     ed_repn == 4 && ed_rep[0] == 4 && ed_rep[1] == 4 && settings_leds == LEDS_OFF && persist_pending == 1 && !erases);
+                     ed_repn == 4 && ed_rep[0] == 4 && ed_rep[1] == 4 && settings_leds == LEDS_OFF && persist_pending == 1 && !erases && !programs);
         song.playing = 0;
         settings_poll();
         bad += check("STOP commits the MENU setting (LEDS OFF in the settings record)",
-                     !persist_pending && erases == 1 && st_load(OBJ_SETTINGS, &q, sizeof q) == (int)sizeof q &&
+                     !persist_pending && commits == 1u && erases == 0u && st_load(OBJ_SETTINGS, &q, sizeof q) == (int)sizeof q &&
                      leds_from_stored(q.zoom) == LEDS_OFF);
         ed_repn = 0; ed_menu_handle(ED_MENU_SET, large_on, 3);
         ok = ed_rep[0] == 0 && (ui_prefs & PREF_LARGE);
@@ -638,9 +652,9 @@ int main(void)
         ok &= ed_rep[0] == 0 && st_load(OBJ_SETTINGS, &q, sizeof q) == (int)sizeof q && q.lowcut == 2u &&
               hold_from_stored(q.bold) == 3u && (q.favorites.factory[15][30] & PREF_LARGE) && leds_from_stored(q.zoom) == LEDS_OFF;
         bad += check("MENU_SET stopped: rc 0, saved at once (LARGE, HOLD, SPEAKER EQ), the others kept", ok);
-        before = erases;
+        before = erases; before_programs = programs;
         ed_repn = 0; ed_menu_handle(ED_MENU_SET, hold_06, 3);
-        bad += check("repeating an unchanged MENU_SET: rc 0, no erase", ed_rep[0] == 0 && erases == before);
+        bad += check("repeating an unchanged MENU_SET: rc 0, no erase", ed_rep[0] == 0 && erases == before && programs == before_programs);
         erase_error = 1;
         ed_repn = 0; ed_menu_handle(ED_MENU_SET, leds_off, 3);   /* unchanged: still rc 0 (no write) */
         ok = ed_rep[0] == 0;
@@ -665,28 +679,28 @@ int main(void)
     favorites.user = 1u << 31;
     song.playing = 1;
     settings_save();
-    bad += check("playing: settings queued, no erase, runtime kept", persist_pending && !erases &&
+    bad += check("playing: settings queued, no erase, runtime kept", persist_pending && !erases && !programs &&
                   settings.palette == 3u && settings.lowcut == 2u && settings.zoom == 1u);
     song.playing = 0;
     transport_req = 1;
     settings_poll();
-    bad += check("pending PLAY: settings still queued, no erase", persist_pending && !erases);
+    bad += check("pending PLAY: settings still queued, no erase", persist_pending && !erases && !programs);
     transport_req = 0;
     chain.armed = 1;
     settings_poll();
-    bad += check("pending SONG: settings still queued, no erase", persist_pending && !erases);
+    bad += check("pending SONG: settings still queued, no erase", persist_pending && !erases && !programs);
     chain.armed = 0;
     settings.palette = 2;
     settings_poll();
-    bad += check("STOP: latest settings saved and request cleared", !persist_pending && erases == 1u &&
+    bad += check("STOP: latest settings saved and request cleared", !persist_pending && commits == 1u && erases == 0u &&
                   st_load(OBJ_SETTINGS, &p, sizeof p) == (int)sizeof p && p.palette == palette_to_stored(2) &&
                   p.lowcut == 2u && p.zoom == 1u && p.bold == 1u &&
                   p.favorites.factory[8][0] == 1 && p.favorites.user == (1u << 31) &&
                   !memcmp(&p.panel, &panel, sizeof panel));
     settings_save();
-    bad += check("unchanged settings do not erase", !persist_pending && erases == 1u);
+    bad += check("unchanged settings do not erase or program", !persist_pending && commits == 1u && programs == (sizeof p + 255u) / 256u + 1u && erases == 0u);
     settings.palette = 1;
-    erase_error = 1;
+    erase_error = 1;                    /* the alternate sector is blank but not fresh: erased (#721), and that fails */
     fm1_ms = 0xFFFFFF00u;
     settings_save();
     before = erases;
@@ -696,9 +710,10 @@ int main(void)
     bad += check("failed settings retry waits through clock wrap", persist_pending && erases == before &&
                   persist_saved.palette == palette_to_stored(2) && settings.palette == 1u);
     erase_error = 0;
+    before = commits;
     fm1_ms++;
     settings_poll();
-    bad += check("settings retry succeeds after 1000 ms", !persist_pending && erases == before + 1u &&
+    bad += check("settings retry succeeds after 1000 ms", !persist_pending && commits == before + 1u &&
                   st_load(OBJ_SETTINGS, &p, sizeof p) == (int)sizeof p && p.palette == palette_to_stored(1));
 
     reset();
@@ -716,16 +731,16 @@ int main(void)
     bad += check("successful project save publishes new RAM", !strcmp(ui.msg, "SAVED") &&
                   proj_import(&proj_scratch, &proj_slot[0], sizeof proj_slot[0]) &&
                   proj_scratch.t[0].step[0].note[0] == 72u && proj_ok(&proj_scratch));
-    before = erases;
+    before = erases; before_programs = programs;
     transport_req = 1;
     project_save(1);
-    bad += check("pending PLAY: project save leaves slot and flash", !project_used(1) && erases == before &&
+    bad += check("pending PLAY: project save leaves slot and flash", !project_used(1) && erases == before && programs == before_programs &&
                   !strcmp(ui.msg, "STOP TO SAVE"));
     transport_req = 0;
-    erase_error = 1;
+    fail_after = 0;
     project_save(2);
     bad += check("failed first project save leaves slot empty", !project_used(2));
-    erase_error = 0;
+    fail_after = -1;
     {   /* names: a project's through flash; a failed rename keeps the old one in RAM and flash */
         char n[16];
         project_store_t keep;
@@ -741,9 +756,9 @@ int main(void)
                       project_rename(0, "DUB") == 2 && !strcmp(ui.msg, "SAVE ERROR") && !memcmp(&proj_slot[0], &keep, sizeof keep) &&
                       st_load(OBJ_PROJECT0, &got, sizeof got) == (int)sizeof got && !memcmp(&got, &keep, sizeof got));
         fail_after = -1;
-        before = erases;
+        before = erases; before_programs = programs;
         transport_req = 1;
-        bad += check("pending PLAY: no rename, no erase", project_rename(0, "DUB") == 1 && erases == before &&
+        bad += check("pending PLAY: no rename, no erase", project_rename(0, "DUB") == 1 && erases == before && programs == before_programs &&
                       !strcmp(ui.msg, "STOP TO SAVE"));
         transport_req = 0;
         bad += check("project rename: flash has the new name, the music as it was", project_rename(0, "DUB") == 0 &&
@@ -758,17 +773,17 @@ int main(void)
               st_load(OBJ_PROJECT0, &got, sizeof got) == (int)sizeof got && !memcmp(&got, &keep, sizeof got);
         fail_after = -1;
         bad += check("failed project erase (cut before its record): ERASE ERROR, the project in RAM and flash", ok2);
-        before = erases;
+        before = erases; before_programs = programs;
         transport_req = 1;
-        ok2 = project_erase(0) == 1 && erases == before && !strcmp(ui.msg, "STOP TO ERASE") && project_used(0);
+        ok2 = project_erase(0) == 1 && erases == before && programs == before_programs && !strcmp(ui.msg, "STOP TO ERASE") && project_used(0);
         transport_req = 0;
-        ok2 &= project_erase(3) == 1 && erases == before && !strcmp(ui.msg, "EMPTY SLOT");
+        ok2 &= project_erase(3) == 1 && erases == before && programs == before_programs && !strcmp(ui.msg, "EMPTY SLOT");
         bad += check("project erase refused while playing and on an empty slot (no flash erase)", ok2);
         (void)project_save(1);
-        before = erases;
+        before = commits;
         proj_cur = 0;
         pat_from[0] = 1; pat_from[1] = 2;
-        ok2 = project_erase(0) == 0 && !strcmp(ui.msg, "PROJECT A ERASED") && !project_used(0) && erases == before + 1u &&
+        ok2 = project_erase(0) == 0 && !strcmp(ui.msg, "PROJECT A ERASED") && !project_used(0) && commits == before + 1u &&
               st_load(OBJ_PROJECT0, &got, sizeof got) == 0 && proj_cur == PROJ_NO_SLOT && !pat_from[0] && pat_from[1] == 2u;
         proj_fetch(0);
         ok2 &= !project_used(0) && project_used(1);           /* (read back from flash: empty; the next slot kept) */
@@ -832,10 +847,10 @@ int main(void)
     r.ver = UP_VER;
     r.np = P_COUNT;
     memcpy(r.name, "First", 6);
-    erase_error = 1;
+    fail_after = 0;
     bank = up_bank[1];
     ok = up_put(17, &r) == 2;
-    erase_error = 0;
+    fail_after = -1;
     bad += check("failed first preset save restores empty bank", ok && !memcmp(&up_bank[1], &bank, sizeof bank));
     bad += check("preset initial save", up_put(3, &r) == 0 && up_used(3));
     bank = up_bank[0];
@@ -862,25 +877,25 @@ int main(void)
     bad += check("failed preset erase keeps record and loaded label", ok && trk[0].user == 4u && up_gen == before &&
                   !memcmp(&up_bank[0], &bank, sizeof bank));
     bad += check("successful preset erase clears loaded label", up_put(3, 0) == 0 && !up_used(3) && !trk[0].user);
-    before = erases;
+    before = erases; before_programs = programs;
     transport_req = 1;
-    bad += check("pending PLAY: preset save blocked", up_put(3, &r) == 2 && erases == before && !up_used(3));
+    bad += check("pending PLAY: preset save blocked", up_put(3, &r) == 2 && erases == before && programs == before_programs && !up_used(3));
     transport_req = 0;
     chain.armed = 1;
-    bad += check("pending SONG: preset save blocked", up_put(3, &r) == 2 && erases == before && !up_used(3));
+    bad += check("pending SONG: preset save blocked", up_put(3, &r) == 2 && erases == before && programs == before_programs && !up_used(3));
     chain.armed = 0;
-    bad += check("preset invalid slot blocked before access", up_put(UP_SLOTS, &r) == 1 && erases == before);
+    bad += check("preset invalid slot blocked before access", up_put(UP_SLOTS, &r) == 1 && erases == before && programs == before_programs);
     song.playing = 0; transport_req = 1; irq_start_race = 1;
     bad += check("PLAY consumed before the save snapshot still blocks a project write",
-                  project_save(1) != 0 && irq_races == 1u && song.playing && !transport_req && erases == before);
+                  project_save(1) != 0 && irq_races == 1u && song.playing && !transport_req && erases == before && programs == before_programs);
     song.playing = 0; transport_req = 1; irq_start_race = 1;
     bad += check("PLAY consumed before the preset snapshot still blocks a bank write",
-                  up_put(3, &r) == 2 && irq_races == 2u && song.playing && !transport_req && erases == before);
+                  up_put(3, &r) == 2 && irq_races == 2u && song.playing && !transport_req && erases == before && programs == before_programs);
     song.playing = 0; transport_req = 1; irq_start_race = 1;
     settings.palette = 4;
     settings_save();
     bad += check("PLAY consumed before the settings snapshot defers the write",
-                  irq_races == 3u && song.playing && !transport_req && persist_pending && erases == before);
+                  irq_races == 3u && song.playing && !transport_req && persist_pending && erases == before && programs == before_programs);
     bad += durability_test();
     bad += mig_test();
     bad += autosave_test();
