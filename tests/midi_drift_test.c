@@ -2,8 +2,7 @@
  * Based on fgunited's upstream PR #269 (ebdf867), with boundary regressions.
  * Long-run external-clock phase measured against independent wire pulse counts.
  * Use rational musical positions, not another copy of the firmware clock math. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 #include <math.h>
 
 static void drift_packet(uint32_t source, uint32_t status, uint32_t ms)

@@ -291,10 +291,12 @@ class ContractTests(unittest.TestCase):
                      self.assertRaisesRegex(ValueError, 'applicability'):
                     C.verify(path, 'fresh', self.root)
 
-    def test_only_absent_v15_fixture_is_allowed(self):
+    def test_only_absent_official_fixtures_are_allowed(self):
         self.verify(self.semantic('official-v15', status='skipped', reason='proprietary-fixture-absent'))
+        self.verify(self.semantic('official-v16', status='skipped', reason='proprietary-fixture-absent'))
         for name, status, reason in (('official-v15', 'skipped', 'foreign-file'),
-                                     ('official-v15', 'failed', None), ('built-package-parity', 'skipped', 'package-missing'),
+                                     ('official-v15', 'failed', None), ('official-v16', 'failed', None),
+                                     ('built-package-parity', 'skipped', 'package-missing'),
                                      ('js-synthetic', 'skipped', 'node-unavailable')):
             with self.subTest(name=name, status=status), self.assertRaises(ValueError):
                 self.verify(self.semantic(name, status=status, reason=reason))

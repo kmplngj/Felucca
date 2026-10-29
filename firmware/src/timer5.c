@@ -10,7 +10,9 @@
  * nested work is subtracted from the render-only load figures.
  * The USB audio stream cannot wait for the render (one packet per 1 ms frame, a render takes up to
  * ~5 ms): uac_service also runs nested. It touches only EP4 (INDEX is set on every access) and the
- * consumer side of the audio ring, and usb_poll never runs nested, so the two never interleave. */
+ * consumer side of the audio ring, and usb_poll never runs nested. The USB reset cleanup (usb_reset_state,
+ * which also runs from the main loop via usb_start) can be preempted by ALNK0, so it does interleave with
+ * the audio ISR: usb.config = 0 is published before the rest of the state is cleared. */
 void fm1_timer5_irq(void)
 {
     static uint32_t sub, owed;

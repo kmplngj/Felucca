@@ -240,6 +240,38 @@ redraw behavior remain pending. The dated [font experiment](docs/font-experiment
 retains the historical comparisons; removing alternate build options does not
 itself save bytes in a build that already selected M8Stealth.
 
+`assets/fonts/m8stealth/resource-policy.json` pins the native font inputs, generated
+header hash, glyph coverage/metrics and shared payloads. Generation writes
+`build/gen/ui-font-manifest.json` and rejects an unreviewed change before writing
+the font header. Host/emulator profile freshness checks reject a stale header or
+manifest. The approved current pi32v2 array/descriptor bound is **4,630 B**:
+1,164 B S/M bitmap payload, 3,176 B glyph records, 110 B extra-code arrays and
+180 B descriptors. L/N/X reference M's payload. This excludes inter-object alignment
+padding and supersedes the historical 3,340 B S/M/L-only figure for this gate.
+
+For an intentional font change, review the generator/assets and reproduce its output
+in an isolated directory. Use `font_resources.inventory(root, header_text)` to inspect
+the proposed contract, then review the policy's `expected` and bound changes together.
+There is no automatic budget update option. Confirm the target's actual `AF_*`
+symbol sizes with JieLi Clang 4.0.1; the policy models 8 B glyph records and 36 B
+descriptors with 4 B pointers. A successful target build checks those exact linked
+sizes and records separate named keycap, icon, decoder/ramp and cache groups in
+the existing resource report. Missing optional groups are marked unlocated, and
+inlined code remains in its callers. Whole-image/RAM/POOL/stack accounting stays
+in that report; these groups are subsets, not additional allocation.
+
+To check the generator and causal rejection fixtures without hardware:
+
+```sh
+mkdir -p build/font-check
+uv run --locked --group build python tools/gen_bitmap_font.py build/font-check/ui_fonts.h
+python3 tests/bitmap_font_test.py
+```
+
+Expected: the approved configuration passes; fixtures reject extra faces, duplicated
+scaled payloads, glyph/asset growth, stale inputs/configuration and incorrect linked
+sizes. These checks change no runtime bytes or physical readability acceptance.
+
 `uv run --locked --group build ./build.sh --release 1.0` makes a release build:
 the package identity becomes `FM-1_910`
 and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
@@ -308,8 +340,9 @@ identity derived from `--release` (`FM-1_9XY`), then the development default `FM
 The value is checked before anything is generated, compiled or written: `FM-1_` followed by 1 to 15
 of `A-Z 0-9 . _ -` (ASCII upper case only, 20 characters at most, as the package marker allows; upper
 case so that no two products share a file name on a case-insensitive file system); empty, lower-case,
-overlong, non-ASCII, control, space, quote, backslash and newline values are refused, as is
-`FM-1_015` (the stock firmware's identity, from which the loader's USB identity is derived). The
+overlong, non-ASCII, control, space, quote, backslash and newline values are refused, as are
+M-VAVE's identities: `FM-1_0NN` (official firmware such as `FM-1_015`, from which the loader's USB
+identity is derived, and m-bootloader's installer `FM-1_099`) and `FM-1_8nnnnnn` (FM1 Open). The
 loader keeps its own identity `ota-FM-1_900` whatever the app uses. An explicit product that differs
 from the default is part of the output names (`felucca-1.0-FM-1_ACME.fwsc`, `release-1.0-FM-1_ACME/`),
 so two products at one version do not overwrite each other.
@@ -338,6 +371,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_CRASH_CTX` | 0 | diagnostic build: the crash record keeps r0..r15, usp and ssp (+76 B NOINIT, below the 100 B floor; [diagnostics](docs/diagnostics.md#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro)); refused with `--release` |
 | `FELUCCA_MUL64_REPRO` | 0 | diagnostic build: the #425 synthetic reproducer runs in the main loop's idle time ([audit, phase 2](docs/mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak)); refused with `--release` |
 | `FELUCCA_SCREEN_CAPTURE` | 0 | diagnostic build: bounded static HOME/menu RGB565 capture over USB SERIAL, exported as PNG/JSON by the [host tool](docs/screen-capture.md); explicit `--wake` silently wakes and holds the view during capture; refused with `--release` |
+| `FELUCCA_RENDER_STAGE` | 0 | diagnostic build: inclusive raw TIMER4 mix-stage/observer-window evidence and empty controls in `status`, with coherent snapshots and explicit unavailable/error states; [scope, resource accounting and matched device checks](docs/render-stage-evidence.md); refused with `--release` |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/src/usb.c`.
@@ -408,6 +442,99 @@ compiler, sample-rate and capture provenance alongside its measurements and
 bounded audition files. Host levels do not qualify physical DAC/USB levels or
 authorize changing factory sounds.
 
+The `input` unit also runs `python3 tests/input_contract_test.py`. It compiles
+the actual hardware, UI-test and browser input adapters against the shared
+button-edge, note-edge and encoder function types they implement. Seven partial
+host adapters (backup, FM6-bank, FM6-effective-patch, engine-ID, editor, persistence
+and settings) share `tests/host_encoder_noop.h`, which always returns zero steps
+without accumulating input or modeling timing. Actual-source checks compile all
+seven consumers; incompatible encoder return and parameter types must fail and
+compile only after removing the shared typed declaration. UI and browser signature
+checks remain independent, as do their delayed and accumulated encoder models.
+The UI fake supplies press edges only; this check does not add release simulation
+or qualify physical input timing.
+
+The portable unit also checks the offline USB diagnostic-tone verifier with
+`python3 tests/uac_tone_check_test.py`. See [recording requirements and interpretation](docs/diagnostics.md#usb-test-tone-recordings).
+Synthetic WAV tests check evidence handling; they do not qualify an FM-1 recording.
+
+The `lcd_contract` unit runs `python3 tests/lcd_contract_test.py` after its
+`icon_streams` prerequisite generates the actual icon fixture's reference header.
+The real LCD driver and UI, browser and rescue fakes declare `lcd_fill_fn`; all
+14 blit adapter entries use `lcd_blit_fn`, preserving the const pixel-buffer
+type. Eleven non-rendering fixtures share `tests/host_lcd_blit_noop.h`; the real
+driver, UI framebuffer and browser retain their distinct implementations, giving
+four definition owners. The shared no-op reads no pixels and adds no output,
+synchronization, counters or DMA model. Default and CPU2-off builds are checked,
+including incompatible
+definitions that compile only after removing their typed declaration. The
+`lcd_power` unit retains its independent delayed-DMA controller runtime check.
+
+`firmware/hal/fm1_lcd_contract.h` preserves unsigned 32-bit coordinates,
+16-bit RGB565 fill colours and const RGB565 pixel buffers. The compile checks
+include the rescue fill types corrected by the earlier contract work. Delayed
+DMA, pixel output and physical LCD behavior remain separate checks.
+
+The native UI tests and their consumers share `tests/ui_harness.h`: the real
+firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
+blank-frame observers, power-on setup and panel/keyboard helpers. Define any
+consumer-specific IRQ, boot or drawing hooks before including it. The UI scenario
+entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
+for its LCD-submission ordering assertions. Consumers include the harness directly;
+they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
+
+The UI and browser adapters share the passive `fm1_ticks()` accessor in
+`tests/host_clock.h`, selecting their existing `host_ticks`/`web_ticks` state.
+Each adapter still owns its units, advancement and reset policy: UI ticks are
+microseconds, while browser ticks run at 24 ticks per microsecond. Reading the
+accessor does not advance either clock. Audio/rescue and input-bus clocks retain
+their intentional read-side effects; scheduled TIMER5 and constant console/click
+clocks also remain separate. `fm1_ms` remains independently owned.
+The `clock_contract` unit checks actual HAL/UI/browser signatures against
+`firmware/hal/fm1_time_contract.h`, incompatible definitions, passive reads,
+unsigned wrap and the actual frame/turn/browser scheduling paths. It does not
+qualify wall-clock accuracy, target timer hardware or audio deadlines. Replay
+fingerprints include the shared clock header and the existing HAL inventory.
+
+The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
+their sanitizer builds. This existing NOR model only clears programmed bits, rejects
+256-byte page wrapping, and models sticky power cuts during programming or half an
+erase. Its program counter counts completed bytes; its erase counter excludes requests
+refused before work. Reads remain available for recovery after a cut. The user-preset
+fixture checks every payload/header byte-cut boundary, interrupted/refused erases
+and restored-power retries through the production bank/storage code; it does not exercise runtime
+`up_put` mirror rollback. The browser emulator also uses this model behind its
+existing bounds, sector-rounding and successful-operation counters. It exports no
+fault controls. A page-contract violation terminates the native adapter and traps
+in standalone Wasm without adding host imports. Native replay fingerprints include
+the shared NOR header so changes invalidate cached adapters and capture provenance.
+The `emulator_partitions` unit checks bounds, page failures and a panel save restored
+in a fresh process; with Emscripten it also checks the actual Wasm trap and empty
+import list. Storage and persistence tests retain their different retry and
+operation-counting models.
+
+The backup, FM6-bank, persistence and browser adapters also share
+`tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,
+the direct `FL_FAR` call and a selected JEDEC value. Host fixtures retain zero;
+the browser selects `0x856014` for its actual boot/persistence path. Rescue retains
+its dynamic chip fake. The `flash_context_contract` unit compiles the real HAL,
+shared host group, four actual consumers and the dynamic rescue JEDEC adapter
+against `firmware/hal/fm1_flash_context_contract.h`. Incompatible definitions and
+`FL_FAR` call types must fail the compile checks. The contract declares function
+types only; it does not model physical interrupt/flash timing or change the NOR
+program/read/erase adapters. Replay fingerprints include the shared host header;
+the HAL contract is covered by the existing HAL input inventory.
+
+The `flash_data_contract` unit checks the real HAL and partial rescue, editor,
+FM6-effective-patch and engine-ID adapters against
+`firmware/hal/fm1_flash_data_contract.h`. It covers RAM erase/program/read and the
+erase/write wrappers, including byte-buffer types and `FL_FAR` calls. The six
+former generic-pointer fake signatures now match the HAL; their bodies and error
+models are unchanged. Object-buffer `st_*` hooks remain owned by `storage.c`,
+with `storage_hw.c` bridging to the byte-oriented HAL. This is compile/host
+coverage, not physical flash timing or power-loss qualification. The existing HAL
+replay input inventory covers this header.
+
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
 `TEST_JOBS=1 uv run --locked --group build tests/run_tests.sh` for
@@ -435,6 +562,17 @@ uv run --locked --group build python tests/test_jobs.py tests/run_tests.sh --pre
 
 This writes an explicitly focused report. It cannot satisfy strict full-suite
 verification. Unknown units fail instead of silently reducing coverage.
+
+Keep development PRs in draft: known source changes and matching test entry points
+use focused CI plus fresh target/resource/package guards. Shared or unknown inputs
+still select complete validation. A full local suite is not required just to open
+a draft or after every edit. Mark the frozen candidate ready for review to run its
+complete applicable CI plan before merge. Successful matching CI can supply final
+validation evidence without an identical local full-suite rerun; refresh checks
+after code changes or failures. See [the stage policy](.github/CI.md#feedback-and-merge-stages).
+Exact selector/helper-contract-only changes need the unconditional workflow/helper
+checks and skip firmware/audio/browser builds, even when ready or pushed to `main`.
+Workflow YAML and shared scheduler/coverage implementations retain full validation.
 
 CI runs the complete unit plan across two independent runners. Each uses
 `tests/test_jobs.py tests/run_tests.sh --preflight --shard 1/2 --cohort ID`
@@ -525,6 +663,26 @@ and swing. With `DAISYSP` pointing at a DaisySP checkout, the PHYS models are al
 their floating-point originals; without it that test is skipped. Felucca-Engines' own test
 (`firmware/engines/tests/run.sh`) runs too, and its standalone host is built once more with Felucca's tables
 against the same golden renders.
+
+The USB and USB sanitizer units also run
+[the composite-service fixture](tests/usb_service_test.c) with CDC compiled in/out
+at 44.1/48 kHz, optimized and under strict ASan/UBSan when sanitizers are enabled.
+It executes the actual USB poll/control/audio-service code against a finite HAL-only
+SIE/DMA model: whole-packet backpressure, finite SysEx priority and bulk recovery,
+control abort/stall, queued-packet alt/rate transitions, reset/reconfiguration and
+nested EP4 ownership. Controllable SIE completion checks delayed/failed accesses,
+consecutive-failure shutdown and actual startup/retry/detach paths, including retry
+clock wrap. Configured-origin retries clear stale configuration, EP0 stages and
+CDC/UAC session state before reattachment; bulk/audio service waits for fresh
+host configuration. Data still owned by application rings at local restart is
+retained. A subsequent host bus reset keeps the existing MIDI/SysEx output-drop
+policy; these tests do not guarantee delivery of packets already consumed or
+staged in DMA when a SIE access fails. Suspend/resume, missing SOF and repeated frozen-frame episodes retain
+accepted application data and recover through explicit host events. Matched audio
+producer/host-token schedules compare packet bytes; negative transcript controls
+reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evidence,
+not physical service time, controller races or host-driver qualification. Existing
+UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
 
 The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
 and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
@@ -649,6 +807,26 @@ data-driven scenarios, exact repeat checks and retained WAV/JSON evidence under
 `build/stress/`. This first increment uses direct host musical input; emulator/device
 adapters and instruction counts remain follow-ups. The full host runner includes it.
 
+For the optional external emulator trace prerequisite, use the
+[pinned source/build and executable controls](docs/emulator-trace-prerequisite.md).
+It needs a separate Rust toolchain; its portable refusal tests run in the normal
+host suite without Rust.
+
+With an existing verified native build and corrected emulator receipt, the
+[native replay evidence guide](docs/native-emulator-replay.md) covers repeated
+held-key and modeled-UART captures, silent controls and bounded trace/PCM checks.
+It builds no firmware and makes no device-timing or hotspot claim.
+
+The [native hotspot guide](docs/native-hotspots.md) attributes those retained
+windows to verified target function ranges and emulator instruction classes.
+It rechecks saved evidence without executing firmware; counts apply only to the
+declared windows and do not establish physical cycles or deadlines.
+
+The [native audio-window guide](docs/native-audio-window.md) adds a source-qualified
+held-key recipe: seven bounded emulator children discover and verify an audio
+renderer window, repeat traces/PCM and compare matched silent controls and the
+original replay basis. It builds no firmware and makes no physical timing claim.
+
 ### Emulator partition regression
 
 With Node and generated assets, the runner rebuilds the real browser bridge natively;
@@ -690,6 +868,21 @@ differing PCM/state word appear in the output; fixture code is in
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
+
+For an existing private flash dump or `.fwsc` package, the standard-library
+[offline boot-area survey](docs/boot-area-survey.md) checks bounded boot records,
+SPL CRCs, chip key and declared clock fields without opening a device. Use
+`python3 tools/fm1_bootarea.py --raw FILE` or `--package FILE` for the known saved
+format; no firmware build is needed. Format hints are not authentication,
+installer permission, a complete backup or live clock measurements.
+
+For saved raw bytes beginning at flash address zero, the standard-library
+[offline update-record survey](docs/update-record-survey.md) reports native-loader
+record-predicate matches and exact supplied coverage:
+`python3 tools/fm1_update_records.py --raw FILE`. It opens no device and performs
+no decryption or writes. Matches and no-match results do not establish external SPL
+behavior, bootability or safe storage capacity.
+
 For static native HOME/menu PNGs, the opt-in `FELUCCA_SCREEN_CAPTURE=1` development build
 and standard-library host CLI are described in [screen capture](docs/screen-capture.md).
 Normal builds leave it disabled; release packaging rejects the diagnostic flag.
@@ -907,6 +1100,18 @@ worktrees, changed HEADs, local edits, and additional files, including ignored
 build output and files inside nested submodules. Preserve or remove those files
 yourself before retrying; it does not automatically clean or stash them. Keep
 firmware artifacts outside the disposable worktree if you need them later.
+Submodule commits retained only in a reflog are protected too, including detached
+work followed by a return to the pinned commit. Deleting a local branch does not
+remove that protection. Push the work to an independent repository, or export and
+verify it outside the disposable worktree, before resolving the local history and
+retrying; a branch inside its private submodule Git directory is not an external
+backup. The helper does not expire reflogs or discard commits for you.
+Removal also refuses deinitialized tracked submodules and inactive/orphan private
+submodule repositories that recursive working-tree checks cannot inspect. Restore
+and initialize tracked submodules explicitly, inspect and preserve their history,
+then retry. Preserve and resolve orphan repositories manually; an external backup
+alone does not make the helper remove their metadata. Cleanup never initializes
+submodules or resolves inactive/orphan metadata automatically.
 Returning to your original directory or removing PR sources does **not** revert
 the FM-1: reinstall the previously saved firmware package to restore that build.
 
@@ -963,9 +1168,21 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 On a build with early USB rescue, hold OCT− while powering on to reach the
 MIDI-only updater before settings/projects and audio initialize. Use the same
 reviewed `.fwsc` and supported installer. See [early USB rescue](docs/usb-rescue.md)
-for the loader matrix, exact client versions and pending hardware checks.
-If application rescue cannot start, ROM recovery is a separate path; some faults
-need [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+for the accepted PR #487 entry result, loader matrix and remaining qualification.
+If application rescue cannot start, the [existing M-Flasher ROM path](docs/usb-rescue.md#rom-recovery-with-existing-m-flasher)
+provides saved-file inspection and a separate device backup/recovery procedure.
+File-only checks open no device; live ROM sessions may upload a RAM loader and
+need host permissions. A unit with no reachable USB route can still need
+[FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
+The standalone RAM loader displays waiting, package validation, verified app-sector
+progress, completion/restart and native-error retry guidance. Its writing percentage
+is verified application work, not confirmation of a complete install. If it reports
+**UPDATE STOPPED**, keep power and USB connected and retry the same reviewed
+compatible package with the supported installer after the host operation returns.
+A display failure may leave a stale image while USB/retry continues. Check the
+host's final application identity; see [loader screen meanings and limits](docs/usb-rescue.md#standalone-ram-loader-screen).
+Physical FM-1 qualification of the new loader screen remains pending.
 
 ### Package validation and file errors
 
@@ -979,17 +1196,27 @@ FM-1 or a successful installation; the installer still checks the device and fin
 
 `--force` is a deprecated compatibility option with no effect. Unknown package loader
 families are rejected with exit code 2 before MIDI discovery or an installation prompt,
-including with `--force`. The exact unmodified official V15 file is accepted through its
-pinned SHA-256 digest without `--force`; this exception does not cover arbitrary vendor files.
-The selected package also determines the accepted running loader: current Felucca
-requires `ota-FM-1_900`, verified original V15 requires `ota-FM-1_015` through
-Python/the maintained browser. Unknown/crossed pairs fail before the loader's
-writing phase. `--force` cannot override this contract.
+including with `--force`. The exact unmodified official V15 and V16 files are accepted
+through their pinned SHA-256 digests without `--force` (the maintained browser installer:
+V15 until its client update); this exception does not cover arbitrary vendor files or other
+`FM-1_0NN` identities. The selected package also determines the accepted running loader:
+current Felucca requires `ota-FM-1_900`, verified official V15/V16 require `ota-FM-1_015`.
+Unknown/crossed pairs fail before the loader's writing phase. `--force` cannot override this
+contract. M-VAVE's loader also writes the boot area; see
+[return to official firmware](docs/usb-rescue.md#return-to-official-firmware-and-the-boot-area-619),
+the device's [result codes](docs/usb-rescue.md#update-result-codes), and the explicit refusals
+for [m-bootloader](docs/usb-rescue.md#m-bootloader) and
+[M-VAVE's FM1 Open firmware](docs/usb-rescue.md#m-vave-fm1-open-firmware).
 
 Device discovery and connection errors occur later: exit code 3 means the FM-1 was not
 found (check the USB data cable and other apps using MIDI), 4 means the connection was lost
 or the device stopped, 5 means a timeout, and 6 means a model or installed-identity mismatch.
 Run `uv run --locked --group midi tools/fm1_install.py --help` for the options and complete exit-code list.
+
+The Python installer allows 8 seconds without a valid update request during package staging
+and 180 seconds during writing. Unrelated or malformed SysEx does not reset that idle budget.
+Valid requests renew it, so a progressing transfer may take longer than the idle interval.
+A stalled transfer still reports exit code 4; follow the installer's phase-specific retry guidance.
 
 If package generation reports `app area is ... B, available ... B`, the app region plus
 the SDK configuration files and headers exceeds the flash boundary. The app fitting its
@@ -1061,6 +1288,8 @@ Every successful target build also writes `build/resource-report.json`, bound to
 actual source/generated inputs, effective configuration and output artifacts. It records
 app, RAM, POOL, RAMTEXT and NOINIT used/spare bytes, enforced minimum spare and remaining
 margin, plus static stack reservations. Existing build/linker guards remain authoritative.
+Schema version 2 adds the checked native font manifest and separate named UI resource
+groups; verification retains support for schema version 1 reports without those fields.
 The report is removed at the start of the next attempted build, including failed attempts.
 To recheck matching artifacts and sources, retain the build directory and use the same
 profile/font/feature environment and toolchain/SDK:
@@ -1068,6 +1297,11 @@ profile/font/feature environment and toolchain/SDK:
 ```sh
 python3 tools/build_report.py --verify build/resource-report.json
 ```
+
+After successful verification, add `--frame-output build/stack-entry-frames.json`
+to export observed target entry frames. The [frame evidence guide](docs/stack-frame-evidence.md)
+explains unsupported instructions, ASM boundaries and unresolved calls. This optional
+inventory is not a stack-fit or live-watermark result and changes no reservation.
 
 The verifier uses the same default dependency locations as `build.sh`
 (`~/.jieli/toolchain` and `~/fw-AC79_AIoT_SDK`). Nonempty `JIELI_TOOLCHAIN`

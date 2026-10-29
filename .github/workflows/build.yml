@@ -143,6 +143,12 @@ jobs:
           else
             echo 'Historical sources predate target helper fixtures; the workflow scope guard still runs.' | tee build/ci/target-helper-tests.log
           fi
+          if [ -f tests/release_notes_test.py ]; then
+            python3 tests/release_notes_test.py -v 2>&1 | tee build/ci/release-helper-tests.log
+          fi
+          if [ -f tests/dev_release_test.py ]; then
+            python3 tests/dev_release_test.py -v 2>&1 | tee build/ci/dev-release-helper-tests.log
+          fi
           python3 tests/source_archive_test.py -v 2>&1 | tee build/ci/source-tests.log
           python3 -m unittest discover -s tests -p ci_changes_test.py -v 2>&1 | tee build/ci/selection-tests.log
           if [ -f tests/ci_reuse_test.py ]; then

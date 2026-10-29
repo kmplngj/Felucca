@@ -103,7 +103,7 @@ so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is k
 | --- | --- | --- | --- |
 | `0x0000..0x4000` | SPL, `isd_config.ini`, JLFS head | the update loader writes only `[0x4000, 0x93000)` and states the head "is never written" ([ldr_core.c:12-22](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L12-L22)); the package's flash image carries a head for the stock installer ([fm1pkg_make.py:106-127](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/tools/fm1pkg_make.py#L106-L127)) | Never written by the app or the loader |
 | `0x4000..0x93000` | The firmware image (`APP_SLOT` 581,564 B incl. the SDK files); the loader rewrites it on every update | ldr_core.c:15, `LDR_APP_HI` | App-flash spare (111,124 B now) is **not** persistent-data space: every update rewrites the whole area, and the app region is read through the cipher (`fl_plain_window_init` makes only flash above `0x93000` plaintext) |
-| `0x93000..0x97000` | 4 sectors between the image and Felucca's store; the SPL scans for update records here | ldr_core.c:32-36 | Not in `FL_STORE_OK`; contents on stock-flashed devices are **unverified** |
+| `0x93000..0x97000` | 4 sectors between the image and Felucca's store; native loader cleanup scans their tails; external SPL scan rules remain unverified | ldr_core.c:32-36 | Not in `FL_STORE_OK`; contents on stock-flashed devices are **unverified** |
 | `0xE8000..0xFC000` | 20 sectors: the stock firmware's OTA VM backup; its update record at `0xE8F00` | [fm1_flash.h:47](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/hal/fm1_flash.h#L47), [ldr_core.c:34-35](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/loader/ldr_core.c#L34-L35) | Never written. The stock-return path means stock code may read it |
 | `0xFF000..0x100000` | JLFS `key_mac` entry | [fm1pkg_make.py:127](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/tools/fm1pkg_make.py#L127) | Never written (`FL_GLOB_HI`) |
 | `0xE0000..0xE5000` | OTA staging | ota.c | Not data space: any non-blank byte at `0xE0000` or `0xE4F00` is erased at boot as a stale update |
@@ -111,11 +111,13 @@ so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is k
 Two rules follow from the update path. First, the loader protects `0x97000..0xE0000` entirely
 ([ldr_core.c `LDR_DATA_LO`/`LDR_DATA_HI`](../firmware/loader/ldr_core.c),
 and `tests/ldr_test.c` counts any erase there as a bad range), so new objects that stay inside that
-window need **no loader, guard-window or SPL change**. Second, the SPL looks for an update record at
-sector offset `+0xF00` of every sector from `0x93000` up. Object payloads reach that offset (a project
-fills the sector); a new object must not be able to hold a valid `UPDATA_PARM` there (u16 at +6 =
-`0x5441` with a matching CRC16, [ldr_core.c `ldr_session`](../firmware/loader/ldr_core.c)).
-User-uploaded sample bytes already carry that theoretical risk; reserved headers must not add to it.
+window need **no native loader or guard-window change**. Second, the external SPL has a separate
+boot-time update-record scan whose exact bounds, required fields and selection rules remain
+unverified. Felucca's loader cleanup examines `sector + 0xF00` for a nonzero CRC16 over bytes 2..79
+and u16 `0x5441` at +6 ([ldr_core.c `ldr_session`](../firmware/loader/ldr_core.c)). Object payloads
+reach that offset (a project fills the sector), so new persistent layouts must account for this
+record-shaped-data exposure without treating that loader predicate as a complete SPL specification.
+User-uploaded sample bytes also carry that theoretical risk; reserved headers must not add to it.
 
 **Loader cleanup versus the SPL scan (#418).** These are two different scans, and only the first is
 Felucca's. After a successful update the loader's cleanup walks the sector tails from `0x93000` to
@@ -151,6 +153,39 @@ patches does not. The validators were not weakened and no historical payload was
 distinct from `tests/ldr_test.c`, whose fixture saves an arbitrary 3,840-byte storage object with a record
 at `payload + 0xE00` and so proves the loader's behavior for any object, reachable or not. The voice bank
 (`FVB_INFO + FVB_LEN == 0xF00`) cannot hold one: its tail stays erased.
+
+**Accepted UPF6 backup bytes (#438).** The current user-preset FM6 patch object (`OBJ_UPFM6`,
+backup id 9) is 3,728 bytes at `0x9F000` / `0xFE000`, with its payload at `sector + 0x100`.
+Payload `0xE00` is entry 30's packed byte 84 (entries numbered from zero); the following bytes
+cross into entry 31's tag and packed data. `BACKUP_PUT` validates the UPF6 header and transfer
+CRC, then preserves inactive-entry bytes without running the patch sanitizer over them.
+A valid header with no used entries can therefore carry an entire 112-byte native-style update
+record at `sector + 0xF00`, including bytes above 127. This is a distinct path from the sanitized
+FUN10 voice fixture above, not a claim about an ordinary musician's voice or SPL boot behavior.
+
+The production-source [backup fixture](../tests/backup_test.c) sends the shared
+[record fixture](../tests/update_record_fixture.h) through real PUT begin/chunks/commit,
+checks rejection before writes for an incorrect outer CRC, and checks exact LIST/GET export,
+reimport and valid A/B copies. The [loader fixture](../tests/ldr_test.c) validates its inner CRC
+with production `ota_crc16`, then checks that both UPF6 sectors survive successful and repeated
+native loader sessions byte for byte with no erase. Real staging/stock records still clear,
+and the autosave/voice-bank windows remain untouched. An otherwise erasable control sector
+confirms the actual cleanup erases the matching fixture but preserves versions with a changed
+CRC-covered byte or a changed marker and recomputed CRC. Literal mode/magic, name and staging
+address in this fixture describe its bytes; they do not establish that the SPL requires,
+accepts or selects them.
+
+This adds causal host evidence without a firmware, format, validator or update-policy change.
+It does not remove existing record-shaped saved bytes. A runtime save refusal remains a separate
+#438 decision after evidence of the exact SPL scan and failure behavior, with explicit save-error
+UX and old-object/backup compatibility. A guard in `st_save` alone would also leave the user-sample
+path uncovered: sample upload/restore writes raw data through `SMP_BEGIN/WRITE/END` and bypasses
+`st_save`. No device access, crafted-data upload or destructive interruption establishes SPL
+behavior in these host fixtures; that qualification remains pending.
+
+An [offline saved-raw-file survey](update-record-survey.md) reports byte coverage,
+input SHA-256 and matches of this native-loader predicate without accessing hardware.
+Its observations do not establish the external SPL scan or justify a runtime save refusal.
 
 ### 2.3 Retained RAM and the RAM mirrors
 

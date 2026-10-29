@@ -316,12 +316,20 @@ if [ -f build/gen/felucca_profile.h ] && grep -q '^#define FELUCCA_PROFILE_ENGIN
 fi
 
 u_portable() {
+    run "offline update-record survey: raw coverage, predicate and file boundaries" python3 tests/update_records_test.py
+    run "offline boot-area survey: synthetic CRC, extent, clock and format boundaries" python3 tests/bootarea_test.py
     run "structured host coverage: verifier, producer and compiler causal fixtures" python3 tests/coverage_contract_test.py
     run "target budget: synthetic disassembly and CLI fixtures (no toolchain)" python3 tests/target_budget_test.py
     run "64-bit multiply / 16-bit load inventory: parser, window and baseline fixtures (#425)" python3 tests/mul64_hload_check_test.py
     run "supported profile contract (portable fixtures)" python3 tests/profile_contract_test.py
     run "post-link resource reports (portable fixtures)" python3 tests/build_report_test.py
+    run "target entry frames: bounded parser and unresolved-state fixtures" python3 tests/target_frames_test.py
     run "immutable build bundles (portable fixtures)" python3 tests/build_manifest_test.py
+    run "maintainer build orchestration: admission, staged failures and verified promotion" python3 tests/maintainer_bundle_test.py
+    run "pinned external guest trace: source, patch and build receipt contracts" python3 tests/emulator_trace_test.py
+    run "native emulator replay: bounded children, artifacts and repeat evidence contracts" python3 tests/native_emulator_replay_test.py
+    run "native guest hotspots: saved evidence, symbol ranges and instruction attribution" python3 tests/native_hotspots_test.py
+    run "native audio window: discovery, post-dispatch evidence and repeat contracts" python3 tests/native_audio_window_test.py
     run "Wasm build receipts (portable fixtures)" python3 tests/wasm_report_test.py
     run "firmware build safety guards (portable fixtures)" python3 tests/build_guard_test.py
     run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py
@@ -337,6 +345,7 @@ u_portable() {
     $CC -O2 -fstrict-aliasing -fno-builtin -o "$OUT/libc_test" tests/libc_test.c
     run "firmware libc: copy/fill sizes, alignments, sentinels and typed objects" "$OUT/libc_test"
     run "exact PR firmware: selection, download integrity and installer handoff" python3 tests/fm1_pr_test.py
+    run "USB tone recordings: synchronization, matched-frame counts and complete WAV evidence" python3 tests/uac_tone_check_test.py
 }
 unit portable "" u_portable
 
@@ -350,6 +359,7 @@ u_storage() {
 unit storage "" u_storage
 
 u_input() {
+    run "input accessor contract: actual HAL/UI/browser adapters and incompatible UI signature" python3 tests/input_contract_test.py
     $CC -o "$OUT/input_test" tests/input_test.c
     run "keys and buttons: fast press, long release, bouncy contacts (one note each), glitches, encoders" "$OUT/input_test"
 
@@ -358,7 +368,29 @@ u_input() {
 }
 unit input "" u_input
 
+UNIT_NEEDS=assets
+u_flash_context_contract() {
+    run "flash-context contract: actual HAL/host/rescue adapters and incompatible definitions/calls" python3 tests/flash_context_contract_test.py
+}
+unit flash_context_contract "" u_flash_context_contract
+
+u_flash_data_contract() {
+    run "flash data contract: actual HAL/partial adapters, buffer types and RAM call signatures" python3 tests/flash_data_contract_test.py
+}
+unit flash_data_contract "" u_flash_data_contract
+u_clock_contract() {
+    run "clock contract: actual HAL/UI/browser signatures and passive wrap/scheduling behavior" python3 tests/clock_contract_test.py
+}
+unit clock_contract "" u_clock_contract
+UNIT_NEEDS=
+
 u_usb() {
+    # Real composite poll/control/EP4 paths with a HAL-only finite host model (#101).
+    for cdc in 0 1; do
+        $CC -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-function -Wno-missing-field-initializers \
+            -DT_CDC=$cdc -DHALF_FRAMES=$HALF -o "$OUT/usb_service_test_$cdc" tests/usb_service_test.c
+        run "USB composite service: CDC $cdc, bounded saturation, control/reset recovery and nested EP4" "$OUT/usb_service_test_$cdc"
+    done
     $CC -O2 -DT_CDC=1 -DHALF_FRAMES=$HALF -o "$OUT/uac_test" tests/uac_test.c -lm
     run "USB audio input: descriptors (with CDC), ring and packets, 44.1 -> 48 kHz resampler, 48 kHz stream" "$OUT/uac_test"
     $CC -O2 -DT_CDC=0 -DHALF_FRAMES=$HALF -o "$OUT/uac_test_nocdc" tests/uac_test.c -lm
@@ -436,14 +468,16 @@ unit screen_capture "" u_screen_capture
 [ "$MODE" = --plan ] || [ -f "$FWSC" ] || { echo "run ./build.sh first"; exit 1; }
 
 u_loader() {
+    run "loader font: native M8 source fidelity and complete status copy" python3 tests/ldr_screen_font_test.py
     $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/boot_policy_test" tests/boot_policy_test.c
     run "early boot: retained guard, OCT/calibration priority, rescue escalation and live-start window" "$OUT/boot_policy_test"
     $CC -o "$OUT/rescue_input_test" tests/rescue_input_test.c
     run "early rescue: real input HAL, shift register, delayed rows, OCT combinations and timer wrap" "$OUT/rescue_input_test"
     $CC -o "$OUT/rescue_test" tests/rescue_test.c
     run "early USB rescue: real OTA staging, zero idle writes, unsupported flash, timer wrap and reconnect" "$OUT/rescue_test" "$FWSC"
+    python3 tests/ota_stock_fixtures.py "$OUT/ota-stock"
     $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
-    run "M-UPGRADE entry (own loader)" "$OUT/ota_test" "$FWSC"
+    run "M-UPGRADE entry (own loader; pinned official images over other boot areas, #619)" "$OUT/ota_test" "$FWSC" "$OUT/ota-stock"
 
     head -c 200000 build/felucca.bin > "$OUT/old_app.bin"
     python3 tools/fm1pkg_make.py "$OUT/old_app.bin" build/loader/ota.bin "$OUT/old.fwsc" >/dev/null
@@ -473,6 +507,11 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     }
     unit icon_streams "" u_icon_streams
     UNIT_NEEDS=assets
+
+    u_lcd_contract() {
+        run "LCD contracts: actual fill/blit adapters, CPU2-off variants and incompatible signatures" python3 tests/lcd_contract_test.py
+    }
+    unit lcd_contract "icon_streams" u_lcd_contract
 
     u_replay() {
         run "timestamped interaction replay: PCM/LCD determinism and real emulator" python3 tests/replay_test.py NativeReplayTests
@@ -777,6 +816,19 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_audio() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/audio_test" tests/audio_test.c -lm
         run "audio: overload protection, bounded fades and DMA diagnostics" "$OUT/audio_test"
+        run "audio: observer-off PCM and voice-state fixture" env STAGE_EQUIVALENCE="$OUT/audio_off.pcm-state" "$OUT/audio_test"
+        for variant in on cpu0 thread_off thread_on; do
+            stage_flags=-DFELUCCA_RENDER_STAGE=1
+            case "$variant" in
+                cpu0) stage_flags="$stage_flags -DFELUCCA_CPU2=0" ;;
+                thread_off) stage_flags="-DC1_HOST -pthread" ;;
+                thread_on) stage_flags="$stage_flags -DC1_HOST -pthread" ;;
+            esac
+            $CC -w -Ibuild/gen -Ifirmware/src $stage_flags -o "$OUT/audio_stage_$variant" tests/audio_test.c -lm
+            run "audio: raw render-stage contracts ($variant)" "$OUT/audio_stage_$variant"
+            run "audio: PCM and voice-state fixture ($variant)" env STAGE_EQUIVALENCE="$OUT/audio_$variant.pcm-state" "$OUT/audio_stage_$variant"
+            run "audio: observer preserves exact PCM and voice state ($variant)" cmp "$OUT/audio_off.pcm-state" "$OUT/audio_$variant.pcm-state"
+        done
     }
     unit audio "" u_audio
 
@@ -1248,6 +1300,13 @@ else
     }
     unit asan_libc "" u_asan_libc
 
+    u_asan_boot_clock() {
+        ${CC%% *} -std=c99 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -fno-sanitize-recover=all -o "$A/boot_clock_test" tests/boot_clock_test.c
+        run "Boot clock: ordered reads and immutable publication (ASan/UBSan)" "$A/boot_clock_test"
+    }
+    unit asan_boot_clock "" u_asan_boot_clock
+
     u_asan_lcd_power() {
         ${CC%% *} -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
             -o "$A/lcd_power_test" tests/lcd_power_test.c
@@ -1272,6 +1331,12 @@ else
     unit asan_insert "insert" u_asan_insert
 
     u_asan_usb() {
+        for cdc in 0 1; do
+            ${CC%% *} -std=c11 -O1 -g -Wall -Wextra -Werror -Wno-unused-function -Wno-missing-field-initializers \
+                -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+                -DT_CDC=$cdc -DHALF_FRAMES=$HALF -o "$A/usb_service_test_$cdc" tests/usb_service_test.c
+            run "USB composite service: CDC $cdc (strict ASan/UBSan)" "$A/usb_service_test_$cdc"
+        done
         # Unlike the general DSP harness below, retain every UBSan bounds/pointer/shift check here.
         ${CC%% *} -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined -fno-sanitize-recover=all \
             -DHALF_FRAMES=$HALF -o "$A/uac_fir_bounds_test" tests/uac_fir_bounds_test.c
@@ -1287,7 +1352,7 @@ else
         $SCC -o "$A/ldr_test" tests/ldr_test.c
         run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" "$FWSC"
         $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
-        run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" "$FWSC"
+        run "ASan/UBSan: M-UPGRADE entry (own loader, pinned official images)" "$A/ota_test" "$FWSC" "$OUT/ota-stock"
     }
     unit asan_loader "loader" u_asan_loader
 
@@ -1299,6 +1364,11 @@ else
     for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test fm6_eff_test; do
         unit "asan_$t" "" u_asan_record "$t"
     done
+    u_asan_audio_stage() {
+        $SCC -DFELUCCA_RENDER_STAGE=1 -o "$A/audio_stage_test" tests/audio_test.c -lm
+        run "ASan/UBSan: raw render-stage observer contracts" "$A/audio_stage_test"
+    }
+    unit asan_audio_stage "" u_asan_audio_stage
     u_asan_catalog() {
         omit=$1
         $SCC -DFELUCCA_ARENA_CHECK=1 -DFELUCCA_ENG_TEST14=1 -DFELUCCA_ENG_OMIT=$omit \
@@ -1422,6 +1492,19 @@ fi
 UNIT_NEEDS=
 u_emulator_partitions() {
     if command -v node >/dev/null 2>&1 && [ -f build/gen/felucca_tables.h ]; then
+        $CC -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
+            tests/emulator_nor_test.c -lm -o "$OUT/emulator_nor"
+        set -- "$OUT/emulator_nor"
+        if command -v emcc >/dev/null 2>&1; then
+            emcc -O2 -ffp-contract=off -std=gnu99 -w -Ibuild/gen -Ifirmware/src \
+                --no-entry -sSTANDALONE_WASM -sSTACK_SIZE=1048576 -sINITIAL_MEMORY=33554432 -sFILESYSTEM=0 \
+                -o "$OUT/emulator_nor.wasm" tests/emulator_nor_test.c
+            set -- "$@" --wasm "$OUT/emulator_nor.wasm"
+        else
+            echo "== emulator NOR: WebAssembly guard unavailable (no emcc)"
+        fi
+        run "emulator NOR: bounds, shared page guard and panel save across fresh instances" \
+            python3 tests/emulator_nor_test.py "$@"
         run "emulator partitions: exact PCM/state/publication, native and optional WebAssembly, negative fixtures" \
             sh web/emu/partition_test.sh
     else

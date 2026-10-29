@@ -18,8 +18,7 @@
  *   favourites   a PER4 / PER6 settings record -> the favourites rows after settings_import; moved and dropped bits
  *   load         fm4_apply on DIGITAL values and fm4_load_preset on DIGITAL preset numbers: the track afterwards
  *   cc -w -Ibuild/gen -Ifirmware/src -o build/host/retired_vectors tests/retired_vectors.c -lm */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 #include "old_pack.h"
 
 #if FELUCCA_FM4
