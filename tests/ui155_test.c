@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* 1.5.5, fixes and UI, on the real UI sources (with the stubs of tests/ui_test.c):
+/* 1.5.5, fixes and UI, on the real UI sources (with the stubs of tests/ui_harness.h):
  *   PAN        (#199) a bipolar value (-64..63, F_BIPCT) reads -100..+100 %: +100 at the top (was +98), the stored
  *              range and the sound unchanged; the MIXER strip's number the same
  *   (and AUTOMATION KNOB 3, SELECT PAGE, PROJECT ERASE, CLEAN INIT; OCT- on the press as in 1.5.1 (1.5.6: #205 taken
  *   out), next to EUCLID, FILL)
  * Built and run by tests/run_tests.sh. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* ---------------------------------------------------------------- PAN --- */
 static int fmt_is(const param_desc_t *d, int32_t v, const char *want)

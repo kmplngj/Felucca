@@ -7,6 +7,9 @@ part of the process once the larger tasks I want to complete are done. See the
 
 The requirements below guide my development work and any future contributions.
 
+Project interactions follow the [code of conduct](CODE_OF_CONDUCT.md). For suspected
+security vulnerabilities, use the [security policy](SECURITY.md) before posting details.
+
 ## Issue notes
 
 When recording a bug, include the build commit, Felucca version, relevant host OS
@@ -25,7 +28,9 @@ work, use the same requirements:
 - make sure you understand the change and can explain it;
 - test hardware-dependent changes on a real FM-1 and report any pending device checks;
 - run the applicable checks in [BUILDING.md](BUILDING.md), including
-  `tests/run_tests.sh` for firmware changes;
+  complete host coverage for final firmware candidates; use focused checks and
+  draft PRs during iteration, then require complete applicable CI before merge
+  ([validation stages](.github/CI.md#feedback-and-merge-stages));
 - new files carry the GPL-3.0-only SPDX header.
 
 Include **User test instructions** in the PR description: setup, how to reach the
@@ -50,3 +55,13 @@ Existing native engines stay here until a separately qualified extraction. GPL a
 must not be submitted to the MIT collection under an MIT header.
 
 The web editor and installer live in [Felucca-WebApp](https://github.com/kmplngj/Felucca-WebApp).
+
+Engine contributions must retain the firmware-owned numeric ID and immutable
+`felucca.engine.<stable-slug>` key across compatible updates and repository moves.
+New allocations require review of both `profiles/catalog.json` and the permanent
+`profiles/engine-identities.json` reference; retired slots keep their key/ID and
+must not be reused. Do not rewrite the reference to make an accidental renumbering
+pass. It is a reviewed authority, not a security signature. Follow the
+[identity/allocation contract](docs/build-profiles.md#stable-engine-exchange-keys)
+and [engine extension rules](docs/extending.md#11-stable-ids). Per-engine saved-sound
+compatibility fingerprints and the remaining #422 update policy are still pending.

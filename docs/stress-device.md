@@ -103,8 +103,13 @@ Copy/link its start/end snapshots and cumulative deltas for `audio_late`,
 `voices_shed`, `voices_given_up`, UAC underruns/overruns/missed/stalls and UART drops.
 Keep unavailable fields null and list them. Retain raw `console.raw`, `samples.jsonl`
 and `summary.json`; reject reboot/reset/wrap/disconnect intervals rather than
-subtract discontinuous counters. Separate boot-surviving `audio_max_us` from new
-interval maxima. Discard the first reset-on-read `inp` window and compare equal
+subtract discontinuous counters. Current firmware resets the shared
+`audio_max_us` / `dbg.max_us` maximum at application startup; it accumulates for
+that boot, not each polling interval. Record starting/ending values without
+subtracting them or inferring an interval peak from an unchanged maximum. Other
+retained diagnostics and older firmware can have different reset semantics;
+keep the revision and matching evidence with historical reports. Discard the
+first reset-on-read `inp` window and compare equal
 remaining windows, including scan gaps and encoder losses. Without a proven
 `FM1_INPUT_LAT` build, latency stays unmeasured. `cpu_pct` excludes nested scan work
 and is not whole-chip CPU use; current audio timing has averages/maxima, not p95/p99.

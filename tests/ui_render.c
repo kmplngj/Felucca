@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Renders of the firmware UI (firmware/src/ui*.c on tests/ui_test.c's stubs), the layout lint, the GREY and MONO
+/* Renders of the firmware UI (firmware/src/ui*.c on tests/ui_harness.h's stubs), the layout lint, the GREY and MONO
  * checks and the host draw cost.
  *   ui_render OUTDIR [SLOTDIR]   (run by tests/run_tests.sh; tests/ui_render.py makes the PNGs;
  *                                 SLOTDIR: filmstrips of the rolling digits, GREY MONO and GREEN)
@@ -245,8 +245,7 @@ static char lg_val[4][16];                       /* .. and its value */
                               lg_hook(s, (face) == 0u ? 4 : (face) == 1u ? 0 : (face) == 3u ? 3 : !large_face_has(s) ? 1 : 2))
 static void cs_hook(const char *v, const char *u);
 #define CARD_HOOK(v, u) cs_hook(v, u)
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 
 static uint8_t large_on;                         /* the LARGE pass: every scene with MENU > LARGE ON */
 /* the card values set in S (ui_draw.c CARD_HOOK: M too wide for the card with its unit), distinct, for the report
@@ -1962,7 +1961,7 @@ static void sweep_columns(void)
 }
 
 /* the rolling digits (ui_draw.c roll_*): the old GLOBAL page's four (1.2: a page over HOME > CLOCK, whose KNOB 4 is
- * empty: ui_test.c ROLL_PG), SELECT and KNOB 4 turned together, BPM 129 -> 130 in the header
+ * empty: ui_harness.h ROLL_PG), SELECT and KNOB 4 turned together, BPM 129 -> 130 in the header
  * and TUNE 19 -> 20 on a card, then back. Every frame is linted and (GREY, MONO) checked for gray; with a directory,
  * filmstrips of both (each frame side by side, x4: the static frame before, then the roll's frames) as
  * DIR/<PALETTE>_bpm_roll.ppm and DIR/<PALETTE>_card_roll.ppm, the up roll above the down roll. */

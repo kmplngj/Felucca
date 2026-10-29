@@ -7,8 +7,7 @@
  * chord into one step, the ARP gets the chord as held notes, QNT WHITE maps the key first, a kit (the DRUM engine,
  * SAMPLE PERC) ignores CHRD, MIDI OUT of the keys, and OFF plays exactly as before.
  * Run by tests/run_tests.sh (needs build/gen from one firmware build). */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 #include "scale_expected.h"
 
 static int gate_note(const track_t *t, uint32_t note)

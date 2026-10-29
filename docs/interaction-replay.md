@@ -34,8 +34,14 @@ includes the emulator source.
 Use a new output directory for every capture. Outputs must stay under this
 checkout's ignored `build/`. No hardware, Emscripten, browser or Pillow is required
 for replay. The native adapter is rebuilt when the compiler, flags, source or
-generated-asset hashes change; its binary and exact inputs are recorded. `CC`
-selects the host compiler, as for the other host tests. A failed run exits 2;
+generated-asset hashes change; its binary and exact inputs are recorded.
+Fingerprints include portable Engines C sources/headers, generated `.inc` files
+and the shared host NOR/flash-context/clock headers consumed by the native adapter.
+Profile freshness is checked before
+compilation; these same dependencies are checked again before publishing the
+compiled adapter and before/after replay. A source change during compilation
+cannot become a completed capture merely because the earlier profile check passed.
+`CC` selects the host compiler, as for the other host tests. A failed run exits 2;
 partial outputs have no completed `manifest.json` and should be discarded.
 
 Each output directory contains streamed stereo signed PCM24 `audio.wav`, numbered

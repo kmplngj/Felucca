@@ -7,6 +7,8 @@ host harness and JieLi Clang 4.0.1 for pi32v2. No repository secrets are require
 Build jobs have `contents: read`, checkout does not retain credentials, Actions
 are pinned to commit SHAs, jobs time out after 60 minutes, and superseded PR runs
 are canceled. Fork PRs use `pull_request`; there is no `pull_request_target` job.
+Actions artifact reads use read-only `actions: read` permission for verified
+receipt lookup; no write token or repository secret is needed.
 Repository Actions policy may require maintainer approval for first-time fork
 contributors. This change does not alter branch protection or repository settings.
 
@@ -14,19 +16,22 @@ contributors. This change does not alter branch protection or repository setting
 
 Every PR and `main` push starts CI, including documentation changes. Workflow
 syntax, CI helper failure cases and change-selection regressions always run.
-The existing `firmware / Target, host and emulator` check always completes and
-requires every selected focused job to succeed; a failed or canceled selected
-job cannot turn into a successful check. There are no workflow-level path filters
+The existing `firmware / Target, host and emulator` check aggregates the selected
+focused, target/host and full-browser jobs. Every selected job must succeed; a
+failed, canceled or unexpectedly skipped selected job cannot turn into a successful
+check. Canceled workflows stop their running jobs instead of waiting for an
+unconditional aggregate. There are no workflow-level path filters
 that could leave a required check pending. Existing check names are preserved.
 
 | Changed inputs | Validation |
 | --- | --- |
-| Known documentation, documentation images, `AGENTS.md`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
+| Known documentation, documentation images, `AGENTS.md`, Markdown under `.agents/skills/`, review configuration and issue templates | Workflow/helper checks; no firmware build or test dependency downloads |
+| Exact selector/helper-contract inputs in `WORKFLOW_CHECK_INPUTS` (`tools/ci_changes.py` and the CI/selector/coverage/scheduler contract tests) | Unconditional workflow/helper checks, including the real scheduler plan and failure/coverage contracts; no firmware, audio or browser builds |
 | Portable fixture tests listed in `tools/ci_changes.py`, `tools/fm1_diagnostics.py`, `tests/console_diagnostics.c`, `tests/ui_compare.py` | Portable Python suite with pinned Python/image dependencies; no target SDK, firmware or emulator |
 | `tools/firmware_watch.py`, its tests and `data/firmware-watch/**` | Portable Python suite, including ledger migration/integrity and offline Git-DAG recovery tests; no firmware build |
 | `web/fm1backup.js`, `web/test_backup.mjs` | Standalone Node backup suite |
 | `web/emu/**` | Fresh generated assets, pinned Emscripten build and freshly compiled native/WASM song equality and emulator checks; no target package, DaisySP or unrelated host/sanitizer suites |
-| Firmware, build scripts/generators, package/installer/editor inputs, shared host harnesses, goldens/budgets, assets, licenses, workflow/selector implementation, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
+| Firmware, build scripts/generators, package/installer/editor inputs, shared host/scheduler/coverage implementations, goldens/budgets, assets, licenses, workflow YAML, or unfamiliar files | Complete existing target, host, sanitizer, web, emulator and reproducibility pipeline |
 | Manual CI dispatch, releases, or unavailable change comparison | Complete pipeline regardless of changed paths |
 
 The diagnostics fixture compiles the real `firmware/src/console.c` with bounded
@@ -37,8 +42,21 @@ without generated firmware assets or a connected device. Changes to `console.c`
 continue to select full firmware validation.
 
 Independent selections combine when a PR changes several independent areas.
-Full validation includes the focused suites, so separate focused jobs are not
-duplicated. Firmware is a single translation unit, and host/emulator harnesses
+Selector/helper-contract-only changes use the same lightweight plan in draft,
+ready PRs and `main` pushes. The existing workflow/helper job always runs and must
+succeed for the required aggregate to pass. Its fixtures exercise selector Git
+diffs, the real unit plan, scheduler behavior and refusal of incomplete coverage;
+running DSP goldens adds no direct coverage of those changes. Combining these
+inputs with firmware retains complete validation, including while draft. Workflow
+YAML and the scheduler/coverage implementations are deliberately outside this
+exception. Manual/release and unavailable-diff fallbacks remain complete.
+Skill scripts, non-Markdown assets and unfamiliar files still require full validation;
+mixing skill instructions with firmware changes also selects full validation.
+Full validation includes the focused suites, so their separate focused jobs are
+not duplicated. Its target/host work and Chromium UI/AudioWorklet checks run on
+independent runners. The browser job builds a fresh emulator at the same selected
+revision and profile; native/WASM parity checks remain in the host suite.
+Firmware is a single translation unit, and host/emulator harnesses
 include shared sources: changing an engine or a firmware UI file still runs the
 complete suite. Changes to the Python build/package tools still require real
 target/package validation even when portable mocked fixtures exist.
@@ -52,6 +70,80 @@ detection is disabled so both old and new paths are considered. Missing history,
 new-branch zero SHAs and unsupported events select full validation. The selection
 summary and `selection.json` workflow artifact record the suites, reason and paths.
 Full history is fetched only for selection and builds that need it.
+
+## Feedback and merge stages
+
+Create development PRs as **drafts**. Run affected local units during edits rather
+than the full host suite on every change or merely to open the PR. When the package
+is frozen, mark it **ready for review**; complete applicable validation must pass
+before merge. Testing only after merge would allow a broken candidate onto `main`.
+
+Known firmware UI, graphics/icons, native engine/effect and selected DSP-helper
+changes in a draft PR can run focused host regressions with fresh target/resource/package
+guards. Exact matching test entry points also get focused feedback, so adding a
+regression alongside its source change does not alone force the full suite.
+`tools/ci_changes.py` records the audited source/test paths and units; the scheduler
+adds prerequisite closure. UI and engine filename prefixes do not admit unfamiliar
+new files. Graphics changes include text, icon decoder/sanitizer and rendering
+checks; FM6 and PHYS helpers include their engine-specific fixtures. Shared test
+harnesses such as `ui_test.c`, `ui_render.c` and `hostsim.c` retain full validation.
+The workflow summary records the stage and focused units. This is not an AI choice
+of which tests to omit. Shared contracts, persistence, protocol, build inputs, dependency
+pins, unfamiliar paths and mixed independent suites retain full validation even
+while draft. Documentation, exact selector/helper-contract and independent-tool selections keep their existing
+lightweight checks.
+
+Partial runs use the **Draft feedback** caller. They never report the required
+`firmware / Workflow and CI helper checks` or `firmware / Target, host and emulator`
+names. A successful focused run therefore cannot establish merge acceptance.
+Both ready-for-review and converted-to-draft transitions trigger classification;
+ready PRs always run their complete applicable plan. Later code pushes refresh
+that candidate. Manual target-only builds remain explicit, and releases always
+run full validation.
+
+Successful CI can supply final host/target/browser evidence without an identical
+local rerun when revision, inputs, toolchain, profile and flags match. New code
+pushes require refreshed validation; failed or incomplete runs remain incomplete.
+Early device iteration can explicitly request a target-only exact-PR build; final
+standard-profile testing can reuse an automatic PR merge artifact with
+`tools/fm1_pr.py NUMBER --automatic` when that merge revision is intended. Neither
+a focused run nor a target-only package replaces complete pre-merge validation.
+
+Full host validation partitions the source-derived dependency graph across two
+independent target/host runners. It retains every existing golden, sanitizer,
+reference, compatibility and profile-applicability obligation. Each shard has a
+fresh invocation ID within a run/attempt cohort and exports complete logs, required
+outputs and its source/configuration-bound receipt. The aggregate restores the
+same generated inputs and compiler identity, independently reconstructs the full
+plan and verifies every unit exactly once. It refuses missing, duplicate, stale,
+failed, canceled or unapproved skipped work. Matching target/Wasm prerequisite
+bytes are required across runners. A single shard or focused report cannot pass
+ordinary full-suite verification. Historical exact-PR sources without this interface
+retain their original complete single-runner path and verifier.
+
+Only shard 1 reproduces and stages the package/site. Candidate artifacts become
+validated artifacts after successful combined host and browser validation. The
+browser job continues independently of host work.
+
+## Verified evidence reuse
+
+The standalone backup fixture is the first audited identity-independent scope.
+It can reuse a successful automatic CI receipt from this repository when all
+tracked inputs, clean recursive engine pins, workflow/helper bytes, Node binary
+and runtime versions, platform, locale and relevant configuration match. The
+fingerprint includes actual file bytes and modes. A bounded artifact lookup uses
+that exact fingerprint, verifies the original successful run/repository/job and
+evidence hashes, and reports the original run and revision as **reused**.
+
+Missing, unavailable, expired, malformed or mismatching evidence runs the fixture
+fresh. Fork origins and other workflows cannot supply a reusable receipt. ZIP
+members, paths and sizes are bounded; reused results are never relabeled as fresh
+invocations. Newly executed fixtures alone publish new receipts.
+
+Firmware and browser builds embed Git/PR identity, which changes across merges
+even when the tree is identical. They continue to run fresh, as do target/identity
+checks and releases. Reuse is not keyed by a branch name or an unqualified green
+status, and does not substitute an older package for the current build.
 
 Run selector regressions locally with:
 
@@ -219,14 +311,19 @@ Setup failures may have only checkout details; the complete Actions step logs
 remain on the run page. A canceled job can upload available diagnostics while
 its runner remains alive; a killed runner cannot guarantee an upload.
 
+Target/host validation stages candidate firmware and release artifacts. The final
+required check promotes them under the existing `firmware-*` and `release-*` names
+only after all selected validation, including full-browser checks, succeeds.
+Candidate artifacts are not accepted firmware; device checks remain separate.
+
 Diagnostics expire after 14 days; successful firmware/release artifacts after
 30 days (subject to repository policy). Download them from the Actions run's
 Artifacts section. Artifact access follows repository permissions and may
 require sign-in. Only explicit build paths are uploaded, never an environment
 dump, credentials or dependency caches. Public GitHub-hosted runner use follows
 GitHub's plan; private forks can consume minutes and artifact storage. There is
-at most one target/test job per run, with focused independent jobs when applicable,
-and no recurring nightly schedule. Focused emulator diagnostics include its fresh
+two target/host shards and one parallel browser job for a full run, with focused
+independent jobs when applicable, and no recurring nightly schedule. Focused emulator diagnostics include its fresh
 WASM, copied browser files and native song output; focused checks do not upload a
 validated firmware package. Documentation-only runs upload workflow diagnostics.
 
@@ -320,7 +417,7 @@ from published tag releases; access and retention are described under
 The package digest in `build/ci/package.sha256` names the CI build path, so compare it with the
 digest of the downloaded `.fwsc` rather than use the release-manifest commands unchanged.
 
-Manual `Release` dispatch produces artifacts without publishing. Tag release publication
+Manual `Release` dispatch defaults to artifacts without publishing. Approved tag release publication
 does not flash a device or deploy the Pages site. Fork-site publication follows the
 separate process below.
 
@@ -442,26 +539,26 @@ required-check behavior changes, and no new firmware build is requested.
 
 ## Releasing
 
-Push a `vX.Y`, `vX.Y.Z`, `vX.Y.Z.W` or `vX.Y-suffix` tag; each numeric component
-must be one digit because the existing package product identity has that limit.
-The workflow validates the version, builds the versioned target, exercises that
-exact FWSC with the existing loader/update tests, reproduces the package, then
-verifies the complete release directory. No tag is created by CI.
+There are two [release channels](../docs/releases.md):
 
-A separate job downloads and checks the validated bundle before receiving
-`contents: write` publication privileges. It publishes the FWSC, app,
-`SHA256SUMS`, provenance, attribution, license documents and a tar.gz containing
-all files and third-party license texts. The archive has its own `.sha256` file.
-Every third-party license is also uploaded as a standalone release asset. GitHub
-flattens asset filenames, so the release-page `SHA256SUMS` covers those flat names,
-including the archive and sidecar. The manifest inside the archive instead covers
-the unpacked directory structure, including `LICENSES/` paths.
-Suffix versions become prereleases; an existing release is preserved without
-replacing its assets. Nothing flashes a device or publishes an installer/Pages.
+- **Latest Dev** runs full release validation after a merged PR reaches `main`, then
+  replaces the single `latest-dev` prerelease with PR number and commit. Direct pushes do not
+  publish. Older runs cannot roll it back; superseded Dev releases/tags are removed.
+  Dev notes are brief and omit commit history. Dev never changes the stable Latest marker.
+- **Release** validates a pushed `vVERSION` tag and retains candidate artifacts.
+  Publication requires a manual dispatch **on that tag**, `publish=true`, its exact
+  `tested_commit`, `tested_package_sha256`, `hardware_tested=true`, and an HTTPS `test_evidence` report after
+  the documented FM-1 checklist. The publisher reruns full validation before upload.
+  Default manual dispatch remains artifact-only. Numeric versions become Latest;
+  suffix versions stay prereleases.
 
-To rehearse, manually dispatch `Release` with a version such as `1.6-rc1` from
-the desired source branch. It runs all checks and produces release artifacts
-without executing the publisher. Do not push a tag merely to test CI.
+The [release procedure and device checklist](../docs/releases.md) define version
+syntax, test evidence, risks, backup and recovery prerequisites. Both channels use
+the existing release packaging: verified FWSC, app, provenance, licenses, full source
+archive, checksums and reproducibility checks. The read-only reusable build must
+succeed before a separate publisher receives `contents: write`. Existing releases
+for tagged versions are preserved. The single Dev package is deliberately replaced. Nothing flashes a device
+or deploys an installer/Pages.
 
 ## Sources of the design
 

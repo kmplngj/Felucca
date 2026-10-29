@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Offline watch regressions: legacy evidence, real Git DAGs and crash safety."""
+import copy
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,125 @@ def review(sha, disposition="not_applicable", repo=REPO, queue="recent"):
             "source_evidence": [f"https://github.com/{repo}/commit/{sha}"],
             "native_evidence": [f"https://github.com/kmplngj/Felucca/blob/{NATIVE}/README.md"],
             "issue_urls": [], "run_id": "fixture-run"}
+
+
+class RegistryReconciliationTests(unittest.TestCase):
+    def setUp(self):
+        self.pending = source(REPO, 'a' * 40)
+        self.pending['unknown_metadata'] = {'retain': ['all evidence']}
+        self.base = {'schema_version': 1, 'destination_repo': 'kmplngj/Felucca',
+                     'repositories': [], 'pending_source_additions': [self.pending]}
+        self.ours = copy.deepcopy(self.base)
+        self.ours['repositories'] = [{k: v for k, v in self.pending.items()
+                                      if k not in W.RUNTIME_FIELDS}]
+        self.ours['pending_source_additions'] = []
+        self.theirs = copy.deepcopy(self.base)
+        self.new = source('fixture/new', 'b' * 40, identity=124)
+        self.theirs['pending_source_additions'].append(self.new)
+        self.state = {'repositories': [self.pending | {'identity_verified': True}]}
+
+    def merge(self):
+        return W.reconcile_sources(self.base, self.ours, self.theirs, self.state)
+
+    def test_promotion_and_new_registration_preserve_evidence_and_order(self):
+        inputs = copy.deepcopy((self.base, self.ours, self.theirs, self.state))
+        result = self.merge()
+        self.assertEqual(result['repositories'], self.ours['repositories'])
+        self.assertEqual(result['pending_source_additions'], [self.new])
+        self.assertEqual(inputs, (self.base, self.ours, self.theirs, self.state))
+        self.assertEqual(W.reconcile_sources(self.base, result, self.theirs, self.state), result)
+
+    def test_repeated_run_after_new_registration_initializes(self):
+        result = self.merge()
+        result['repositories'].append({k: v for k, v in self.new.items()
+                                       if k not in W.RUNTIME_FIELDS})
+        result['pending_source_additions'] = []
+        self.state['repositories'].append(self.new | {'identity_verified': True})
+        self.assertEqual(W.reconcile_sources(self.base, result, self.theirs, self.state), result)
+
+    def test_main_omitting_state_only_registration_is_blocked(self):
+        self.ours['repositories'].append({k: v for k, v in self.new.items()
+                                         if k not in W.RUNTIME_FIELDS})
+        self.state['repositories'].append(self.new | {'identity_verified': True})
+        self.theirs['pending_source_additions'].pop()
+        with self.assertRaises(W.WatchError):
+            self.merge()
+
+    def test_pending_failed_initialization_remains_pending(self):
+        self.ours = copy.deepcopy(self.base)
+        self.state = {'repositories': [], 'pending_source_blockers': {REPO: 'auth failed'}}
+        self.assertEqual(self.merge(), self.theirs)
+        self.assertEqual(self.state['pending_source_blockers'], {REPO: 'auth failed'})
+
+    def test_changed_immutable_fields_are_blocked(self):
+        for field, value in [('repository_id', 999),
+                             ('historical_targets', {'main': 'c' * 40}),
+                             ('historical_targets', {'next': 'a' * 40})]:
+            with self.subTest(field=field, value=value):
+                original = self.ours['repositories'][0][field]
+                self.ours['repositories'][0][field] = value
+                with self.assertRaises(W.WatchError):
+                    self.merge()
+                self.ours['repositories'][0][field] = original
+
+    def test_changed_promoted_metadata_requires_manual_review(self):
+        self.theirs['pending_source_additions'][0]['unknown_metadata'] = {'changed': True}
+        with self.assertRaises(W.WatchError):
+            self.merge()
+
+    def test_current_only_definition_edits_require_manual_review(self):
+        for group in ('repositories', 'pending_source_additions'):
+            for edit in ('change', 'remove', 'add'):
+                with self.subTest(group=group, edit=edit):
+                    self.setUp()
+                    if group == 'repositories':
+                        self.base = copy.deepcopy(self.ours)
+                    else:
+                        self.ours = copy.deepcopy(self.base)
+                        self.state = {'repositories': []}
+                    self.theirs = copy.deepcopy(self.base)
+                    entry = self.ours[group][0]
+                    if edit == 'change':
+                        entry['unknown_metadata'] = {'changed': True}
+                    elif edit == 'remove':
+                        del entry['unknown_metadata']
+                    else:
+                        entry['new_metadata'] = {'added': True}
+                    inputs = copy.deepcopy((self.base, self.ours, self.theirs, self.state))
+                    with self.assertRaisesRegex(W.WatchError, 'source definition changed; manual reconciliation'):
+                        self.merge()
+                    self.assertEqual(inputs, (self.base, self.ours, self.theirs, self.state))
+
+    def test_unverified_promotion_is_blocked(self):
+        self.state['repositories'][0]['identity_verified'] = False
+        with self.assertRaises(W.WatchError):
+            self.merge()
+
+    def test_removal_is_blocked(self):
+        self.theirs['pending_source_additions'] = [self.new]
+        with self.assertRaises(W.WatchError):
+            self.merge()
+
+    def test_new_active_without_runtime_is_blocked(self):
+        self.theirs['repositories'].append(self.new)
+        self.theirs['pending_source_additions'].pop()
+        with self.assertRaises(W.WatchError):
+            self.merge()
+
+    def test_duplicate_case_and_reused_identity_are_blocked(self):
+        for extra in [self.pending | {'repository': REPO.upper()},
+                      self.new | {'repository_id': self.pending['repository_id']}]:
+            with self.subTest(extra=extra):
+                self.theirs['pending_source_additions'].append(extra)
+                with self.assertRaises(W.WatchError):
+                    self.merge()
+                self.theirs['pending_source_additions'].pop()
+
+    def test_conflicting_top_level_permission_changes_are_blocked(self):
+        self.ours['issue_repositories'] = ['kmplngj/Felucca', 'fixture/ours']
+        self.theirs['issue_repositories'] = ['kmplngj/Felucca', 'fixture/theirs']
+        with self.assertRaises(W.WatchError):
+            self.merge()
 
 
 class WatchTests(unittest.TestCase):

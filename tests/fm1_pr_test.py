@@ -424,6 +424,13 @@ class Worktrees(unittest.TestCase):
     def remove(self):
         P.remove_worktree(REPO, 333, self.path, self.source)
 
+    def preserve_commit(self, root, revision):
+        backup = self.base / "preserved.git"
+        self.git(self.base, "init", "--bare", str(backup))
+        self.git(root, "remote", "add", "preserved", str(backup))
+        self.git(root, "push", "preserved", f"{revision}:refs/heads/kept")
+        return backup
+
     def test_dirty_source_unchanged_exact_detached_head_and_recursive_pins(self):
         (self.source / "tracked").write_text("staged\n")
         self.git(self.source, "add", "tracked")
@@ -522,12 +529,194 @@ class Worktrees(unittest.TestCase):
         self.git(nested, "checkout", "-b", "my-work")
         (nested / "tracked").write_text("local commit\n")
         self.commit(nested)
+        local = self.git(nested, "rev-parse", "HEAD")
         self.git(nested, "checkout", "--detach", pinned)
         with self.assertRaisesRegex(ValueError, "local submodule commits"):
             self.remove()
         self.assertTrue(self.path.exists())
         self.git(nested, "branch", "-D", "my-work")
+        with self.assertRaisesRegex(ValueError, "local submodule commits"):
+            self.remove()
+        backup = self.preserve_commit(nested, local)
         self.remove()
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "local commit")
+
+    def test_cleanup_preserves_reflog_only_nested_submodule_commits_until_backed_up(self):
+        self.prepare()
+        nested = self.path / "engine/nested"
+        pinned = self.git(nested, "rev-parse", "HEAD")
+        (nested / "tracked").write_text("detached local work\n")
+        self.commit(nested)
+        local = self.git(nested, "rev-parse", "HEAD")
+        self.git(nested, "checkout", "--detach", pinned)
+        private = Path(self.git(nested, "rev-parse", "--absolute-git-dir"))
+        self.assertEqual(self.git(nested, "rev-list", "--all", "--not", "--remotes", "HEAD"), "")
+        self.assertEqual(self.git(nested, "rev-list", "--reflog", "--all", "--not", "--remotes", "HEAD"), local)
+        retained = {file: file.read_bytes() for file in
+                    (nested / "tracked", private / "HEAD", private / "logs/HEAD")}
+        with self.assertRaisesRegex(ValueError, "local submodule commits"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        self.assertTrue(private.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+        self.assertEqual(self.git(nested, "show", f"{local}:tracked"), "detached local work")
+
+        # A branch in the private Git directory would still be deleted. Preserve
+        # the commit in an independent repository before retrying removal.
+        backup = self.preserve_commit(nested, local)
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "detached local work")
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertFalse(private.exists())
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "detached local work")
+
+    def test_cleanup_preserves_reflog_only_parent_commits_until_pushed(self):
+        self.prepare()
+        (self.path / "tracked").write_text("detached parent work\n")
+        self.commit(self.path)
+        local = self.git(self.path, "rev-parse", "HEAD")
+        self.git(self.path, "checkout", "--detach", self.revision)
+        private = Path(self.git(self.path, "rev-parse", "--absolute-git-dir"))
+        self.assertEqual(self.git(self.path, "rev-parse", "HEAD"), self.revision)
+        self.assertEqual(self.git(self.path, "status", "--porcelain"), "")
+        retained = {file: file.read_bytes() for file in (private / "HEAD", private / "logs/HEAD")}
+        with self.assertRaisesRegex(ValueError, "parent commits"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        self.assertTrue(private.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+        self.assertEqual(self.git(self.path, "show", f"{local}:tracked"), "detached parent work")
+
+        backup = self.preserve_commit(self.path, local)
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertFalse(private.exists())
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "detached parent work")
+
+    def test_cleanup_preserves_parent_commit_retained_only_as_reflog_old_object(self):
+        self.prepare()
+        (self.path / "tracked").write_text("old-object-only parent work\n")
+        self.commit(self.path)
+        local = self.git(self.path, "rev-parse", "HEAD")
+        self.git(self.path, "checkout", "--detach", self.revision)
+        self.git(self.path, "reflog", "delete", "HEAD@{1}")
+        private = Path(self.git(self.path, "rev-parse", "--absolute-git-dir"))
+        log = private / "logs/HEAD"
+        self.assertNotIn(local, self.git(self.path, "reflog", "show", "--format=%H", "HEAD").split())
+        self.assertIn(local, [line.split()[0] for line in log.read_text().splitlines()])
+        retained = {file: file.read_bytes() for file in (private / "HEAD", log)}
+        with self.assertRaisesRegex(ValueError, "parent commits"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+        self.assertEqual(self.git(self.path, "show", f"{local}:tracked"), "old-object-only parent work")
+
+        backup = self.preserve_commit(self.path, local)
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertFalse(private.exists())
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "old-object-only parent work")
+
+    def test_cleanup_ignores_unrelated_source_head_and_shared_branch_reflogs(self):
+        self.prepare()
+        self.git(self.source, "checkout", "-b", "unrelated-local")
+        (self.source / "tracked").write_text("unrelated source work\n")
+        self.commit(self.source)
+        local = self.git(self.source, "rev-parse", "HEAD")
+        self.git(self.source, "checkout", "--detach", self.original)
+        self.git(self.source, "branch", "-D", "unrelated-local")
+        # Keep a shared branch reflog as another independent root, with no live branch tip on local.
+        self.git(self.source, "update-ref", "--create-reflog", "refs/heads/unrelated-kept", local)
+        self.git(self.source, "update-ref", "refs/heads/unrelated-kept", self.original)
+        self.assertIn(local, self.git(self.path, "rev-list", "--single-worktree", "--reflog",
+                                     "--not", "--remotes", "HEAD").split())
+        private = Path(self.git(self.path, "rev-parse", "--absolute-git-dir"))
+        self.assertNotIn(local, (private / "logs/HEAD").read_text())
+        common = Path(self.git(self.source, "rev-parse", "--absolute-git-dir"))
+        retained = {file: file.read_bytes() for file in
+                    (common / "logs/HEAD", common / "logs/refs/heads/unrelated-kept")}
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertFalse(private.exists())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+        self.assertEqual(self.git(self.source, "show", f"{local}:tracked"), "unrelated source work")
+
+    def check_deinitialized_submodule_cleanup(self, target):
+        self.prepare()
+        nested = self.path / "engine/nested"
+        self.assertEqual(self.git(nested, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
+        (nested / "tracked").write_text("deinitialized detached work\n")
+        self.commit(nested)
+        local = self.git(nested, "rev-parse", "HEAD")
+        private = Path(self.git(nested, "rev-parse", "--absolute-git-dir"))
+        target = Path(target)
+        self.git(self.path / target.parent, "submodule", "deinit", "--force", "--", target.name)
+        # Deinitialization hides this repository from recursive foreach/status,
+        # including when an ancestor submodule is the one deinitialized.
+        retained = {file: file.read_bytes() for file in
+                    (private / "HEAD", private / "logs/HEAD", self.path / "tracked")}
+        with self.assertRaisesRegex(ValueError, "uninitialized submodules"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        self.assertTrue(private.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+        self.assertEqual(self.git(self.path, "--git-dir", str(private), "--work-tree", str(self.path),
+                                  "show", f"{local}:tracked"),
+                         "deinitialized detached work")
+
+        # The helper never initializes on removal. Explicitly restore the fixture
+        # and back up its detached commit outside the disposable worktree.
+        self.git(self.path, "submodule", "update", "--init", "--recursive", "--checkout")
+        with self.assertRaisesRegex(ValueError, "local submodule commits"):
+            self.remove()
+        backup = self.preserve_commit(nested, local)
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "deinitialized detached work")
+
+    def test_cleanup_preserves_deinitialized_nested_submodule_work(self):
+        self.check_deinitialized_submodule_cleanup("engine/nested")
+
+    def test_cleanup_preserves_nested_work_under_deinitialized_ancestor(self):
+        self.check_deinitialized_submodule_cleanup("engine")
+
+    def test_cleanup_preserves_orphaned_submodule_repository(self):
+        self.prepare()
+        parent = self.path / "engine"
+        self.git(parent, "submodule", "add", str(self.base / "leaf"), "temporary")
+        orphan = parent / "temporary"
+        self.git(orphan, "checkout", "--detach")
+        (orphan / "tracked").write_text("orphan detached work\n")
+        self.commit(orphan)
+        local = self.git(orphan, "rev-parse", "HEAD")
+        private = Path(self.git(orphan, "rev-parse", "--absolute-git-dir"))
+        self.git(parent, "submodule", "deinit", "--force", "--", "temporary")
+        self.git(parent, "rm", "--cached", "temporary")
+        self.git(parent, "restore", "--source", "HEAD", "--staged", "--worktree", ".gitmodules")
+        orphan.rmdir()
+        self.assertFalse(any(line.startswith("-") for line in
+                             self.git(self.path, "submodule", "status", "--recursive").splitlines()))
+        self.assertEqual(self.git(self.path, "status", "--porcelain"), "")
+        retained = {file: file.read_bytes() for file in (private / "HEAD", private / "logs/HEAD")}
+        with self.assertRaisesRegex(ValueError, "orphaned submodule repositories"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+
+        backup = self.base / "preserved.git"
+        self.git(self.base, "init", "--bare", str(backup))
+        self.git(backup, "fetch", str(private), f"{local}:refs/heads/kept")
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "orphan detached work")
+        # Cleanup cannot resolve an orphan automatically, even after a backup.
+        with self.assertRaisesRegex(ValueError, "orphaned submodule repositories"):
+            self.remove()
+        self.assertTrue(private.is_dir())
 
     def test_wrong_pr_and_force_push_do_not_reuse_unrelated_sources(self):
         self.prepare()

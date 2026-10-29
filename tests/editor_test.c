@@ -2,6 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The firmware editor handler, USB framing and UART recovery against RAM flash.
  * Build with the generated tables and the same flags as hostsim.c. */
+#include "../firmware/hal/fm1_flash_data_contract.h"
 static unsigned char host_samples[3][0x14000];
 #define SMP_USER_XIP(k) host_samples[k]
 #define FELUCCA_OTA 1
@@ -9,6 +10,7 @@ static unsigned char host_samples[3][0x14000];
 #define FELUCCA_VERSION "TEST"
 #define FELUCCA_CDC 1                                    /* (as the firmware: MENU > USB SERIAL switches the console) */
 #define main hostsim_main
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include "hostsim.c"
 #undef main
 #define MENU_N (34u + FELUCCA_CPU2)                  /* ALL DARK id 33, GRAPH 34 (#572); id 32 stays reserved in CPU2=0 builds */
@@ -34,12 +36,11 @@ static void fm1_wdt_feed(void)
 }
 static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
+#include "host_encoder_noop.h"
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) */
 static void lcd_wake_now(void) {}
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #include "../firmware/src/gfx.c"
 #include "../firmware/src/panel.c"
 #include "../firmware/src/ui.c"
@@ -52,11 +53,13 @@ static uint32_t flash_ok = 1;
 static void audio_silence(void) {}
 static void fl_inval(uint32_t off, uint32_t n) { (void)off; (void)n; }
 static uint8_t *host_flash_ptr(uint32_t off) { return &host_samples[0][0] + off - SMP_USER_BASE; }
+static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took)
 {
     memset(host_flash_ptr(off), 0xFF, 4096); *took = 0; host_erases++; return 0;
 }
-static int fl_write(uint32_t off, const void *p, uint32_t n)
+static fl_write_fn fl_write;
+static int fl_write(uint32_t off, const uint8_t *p, uint32_t n)
 {
     memcpy(host_flash_ptr(off), p, n); host_writes++; return 0;
 }
@@ -808,6 +811,218 @@ static int live_sync(void)
     return bad;
 }
 
+/* Native producer lifecycle, independent of the web client's mock WATCH clock.
+ * Exercise real framed requests and main-loop service; fake only elapsed time and
+ * host consumption. Decode the whole transcript so truncated/extra pushes fail. */
+static int watch_frame(uint32_t *at, uint32_t cmd, const uint8_t *args, uint32_t n)
+{
+    uint32_t p = *at;
+    if (p > host_wire_n || host_wire_n - p < n + 6u ||
+        host_wire[p] != 0xF0 || host_wire[p + 1u] != ED_HDR0 ||
+        host_wire[p + 2u] != ED_HDR1 || host_wire[p + 3u] != ED_HDR2 ||
+        host_wire[p + 4u] != cmd || memcmp(host_wire + p + 5u, args, n) ||
+        host_wire[p + 5u + n] != 0xF7)
+        return 0;
+    *at += n + 6u;
+    return 1;
+}
+static int watch_changed(uint32_t *at, uint32_t cmd, uint8_t scope, uint8_t id, int32_t value)
+{
+    uint32_t v = (uint32_t)(value + 8192);
+    uint8_t args[] = {scope, id, (uint8_t)(v & 127u), (uint8_t)(v >> 7)};
+    return watch_frame(at, cmd, args, sizeof args);
+}
+static int watch_reply(uint32_t cmd, uint8_t value)
+{
+    uint32_t at = 0;
+    return watch_frame(&at, cmd, &value, 1u) && at == host_wire_n;
+}
+static void watch_start(uint32_t now)
+{
+    uint8_t on = 3;
+    reset();
+    usb.resets = 0;
+    fm1_ms = now;
+    request(ED_WATCH, &on, 1u);
+}
+static int watch_service(uint32_t now)
+{
+    fm1_ms = now;
+    host_wire_n = 0;
+    int ota = ed_service();
+    host_drain();
+    return !ota && !sx_ready && !sx_busy;
+}
+static int watch_lifecycle(void)
+{
+    int bad = 0;
+    uint32_t base, wrap, i, at;
+    uint8_t on = 3, ping = 0;
+    for (wrap = 0; wrap < 2u; wrap++) {
+        base = wrap ? UINT32_MAX - 1500u : 100000u;
+        watch_start(base);
+        int ok = watch_reply(ED_WATCH, 3);
+        for (i = 1; i <= 4u; i++) {
+            fm1_ms = base + i * 1000u;
+            TSEL->p[P_LEVEL] = (int16_t)(40u + i);
+            request(ED_PING, 0, 0);
+            at = 0;
+            ok &= watch_changed(&at, ED_CHANGED, 0, P_LEVEL, (int32_t)(40u + i)) &&
+                  watch_frame(&at, ED_PING, &ping, 1u) && at == host_wire_n;
+        }
+        bad += check(wrap ? "native WATCH across uint32 wrap: repeated PINGs preserve actual CHANGED pushes" :
+                            "native WATCH: repeated PINGs preserve actual CHANGED pushes", ok);
+
+        /* The producer expires after 3000 ms, checked at its next eligible 5 ms
+         * service pass. Polling service alone does not renew the request lease. */
+        TSEL->p[P_LEVEL] = 51;
+        ok = watch_service(base + 7000u);
+        at = 0;
+        ok &= watch_changed(&at, ED_CHANGED, 0, P_LEVEL, 51) && at == host_wire_n;
+        TSEL->p[P_LEVEL] = 52;
+        ok &= watch_service(base + 7005u) && !host_wire_n && !ed_w.on;
+        bad += check(wrap ? "native WATCH across uint32 wrap: boundary push then silence expires subscription" :
+                            "native WATCH: boundary push then silence expires subscription", ok);
+
+        request(ED_PING, 0, 0);
+        ok = watch_reply(ED_PING, 0);
+        TSEL->p[P_LEVEL] = 53;
+        ok &= watch_service(base + 7030u) && !host_wire_n && !ed_w.on;
+        request(ED_WATCH, &on, 1u);
+        ok &= watch_reply(ED_WATCH, 3);
+        ok &= watch_service(base + 7060u) && !host_wire_n;
+        TSEL->p[P_LEVEL] = 54;
+        ok &= watch_service(base + 7090u);
+        at = 0;
+        ok &= watch_changed(&at, ED_CHANGED, 0, P_LEVEL, 54) && at == host_wire_n;
+        bad += check(wrap ? "native WATCH across uint32 wrap: late PING cannot rearm; explicit WATCH snapshots then pushes" :
+                            "native WATCH: late PING cannot rearm; explicit WATCH snapshots then pushes", ok);
+
+        /* No intervening service has expired this lease. The PING's own service
+         * must expire before recording its arrival, without reviving old pushes. */
+        watch_start(base);
+        TSEL->p[P_LEVEL] = 55;
+        fm1_ms = base + 3005u;
+        request(ED_PING, 0, 0);
+        ok = watch_reply(ED_PING, 0) && !ed_w.on;
+        TSEL->p[P_LEVEL] = 56;
+        ok &= watch_service(base + 3035u) && !host_wire_n;
+        request(ED_WATCH, &on, 1u);
+        ok &= watch_reply(ED_WATCH, 3);
+        ok &= watch_service(base + 3065u) && !host_wire_n;
+        TSEL->p[P_LEVEL] = 57;
+        ok &= watch_service(base + 3095u);
+        at = 0;
+        ok &= watch_changed(&at, ED_CHANGED, 0, P_LEVEL, 57) && at == host_wire_n;
+        bad += check(wrap ? "native WATCH across uint32 wrap: first late PING expires before renewal; WATCH can rearm" :
+                            "native WATCH: first late PING expires before renewal; WATCH can rearm", ok);
+
+        /* Step notifications have no per-parameter coalescing interval, so these
+         * calls distinguish the main-loop service cadence from the 20 ms knobs. */
+        watch_start(base);
+        TSEL->step[2].vel = 75;
+        ok = watch_service(base + 1498u);
+        at = 0;
+        const uint8_t step[] = {2, 0};
+        ok &= watch_frame(&at, ED_STEP_CHANGED, step, sizeof step) && at == host_wire_n;
+        TSEL->step[2].vel = 76;
+        ok &= watch_service(base + 1502u) && !host_wire_n;
+        ok &= watch_service(base + 1503u);
+        at = 0;
+        ok &= watch_frame(&at, ED_STEP_CHANGED, step, sizeof step) && at == host_wire_n;
+        bad += check(wrap ? "native WATCH across uint32 wrap: service skips 4 ms and delivers pending step at 5 ms" :
+                            "native WATCH: service skips 4 ms and delivers pending step at 5 ms", ok);
+    }
+    for (i = 0; i < 2u; i++) {
+        base = 200000u + i * 10000u;
+        watch_start(base);
+        TSEL->p[P_LEVEL] = 61;
+        TSEL->step[2].vel = 71;
+        trk[1].p[P_PAN] = 4;
+        if (i) usb.config = 0;
+        else usb.resets++;
+        int ok = watch_service(base + 30u) && !host_wire_n && !ed_w.on;
+        usb.config = 1;
+        ok &= watch_service(base + 60u) && !host_wire_n;
+        request(ED_PING, 0, 0);
+        ok &= watch_reply(ED_PING, 0);
+        TSEL->p[P_LEVEL] = 62;
+        ok &= watch_service(base + 90u) && !host_wire_n;
+        request(ED_WATCH, &on, 1u);
+        ok &= watch_reply(ED_WATCH, 3);
+        ok &= watch_service(base + 120u) && !host_wire_n;
+        TSEL->p[P_LEVEL] = 63;
+        ok &= watch_service(base + 150u);
+        at = 0;
+        ok &= watch_changed(&at, ED_CHANGED, 0, P_LEVEL, 63) && at == host_wire_n;
+        bad += check(i ? "native WATCH: deconfiguration suppresses pending pushes; reconnect needs explicit WATCH" :
+                         "native WATCH: USB reset suppresses pending pushes; reconnect needs explicit WATCH", ok);
+    }
+    return bad;
+}
+static int watch_backpressure(void)
+{
+    int bad = 0, ok;
+    uint32_t i, at, before, read_before, kind, base;
+    uint32_t saved[SXQ];
+    uint8_t step[] = {2, 0};
+    uint8_t initial_step[] = {2, 1, 60, 0, 0, 0, ST_NOTE, 0, 70, 0, 0, 0, 100, 1, 8, 0};
+    uint8_t expected_step[sizeof initial_step];
+    /* Fill using the real packet producer, with complete frames. Leave the host
+     * stalled while main-loop pushes and newer local edits accumulate. */
+    static const uint8_t marker[] = {0xF0, ED_HDR0, ED_HDR1, ED_HDR2, ED_PING, 0, 0xF7};
+    /* Exercise each producer stage alone as well as together: a blocked step
+     * returns before selected/other-track comparisons, so a combined case alone
+     * cannot detect premature shadow updates in those later stages. */
+    for (kind = 0; kind < 4u; kind++) {
+        base = 300000u + kind * 1000u;
+        watch_start(base);
+        ok = watch_reply(ED_WATCH, 3);
+        request(ED_STEP_SET, initial_step, sizeof initial_step);
+        at = 0;
+        ok &= watch_frame(&at, ED_STEP_SET, initial_step, sizeof initial_step) && at == host_wire_n;
+        for (i = 0; i < SXQ / 3u; i++) ok &= !ota_wire_send(marker, sizeof marker);
+        before = so_w; read_before = so_r;
+        memcpy(saved, sx_out_q, sizeof saved);
+        for (i = 1; i <= 3u; i++) {
+            if (kind == 0u || kind == 3u) TSEL->step[2].vel = (uint8_t)(75u + i);
+            if (kind == 1u || kind == 3u) TSEL->p[P_LEVEL] = (int16_t)(65u + i);
+            if (kind == 2u || kind == 3u) trk[1].p[P_PAN] = (int16_t)(5u + i);
+            fm1_ms = base + i * 30u;
+            uint32_t now = fm1_ms;
+            ok &= !ed_service() && fm1_ms == now && !sx_busy;
+            ok &= so_w == before && so_r == read_before && !memcmp(saved, sx_out_q, sizeof saved);
+        }
+        bad += check("native WATCH: saturated queue returns without waiting, consuming or overwriting owned packets", ok);
+        host_wire_n = 0;
+        host_drain();
+        at = 0;
+        ok = 1;
+        for (i = 0; i < SXQ / 3u; i++) ok &= watch_frame(&at, ED_PING, marker + 5u, 1u);
+        ok &= at == host_wire_n;
+        bad += check("native WATCH: slow-host drain preserves every preexisting complete frame", ok);
+        ok = watch_service(base + 120u);
+        at = 0;
+        if (kind == 0u || kind == 3u) ok &= watch_frame(&at, ED_STEP_CHANGED, step, sizeof step);
+        if (kind == 1u || kind == 3u) ok &= watch_changed(&at, ED_CHANGED, 0, P_LEVEL, 68);
+        if (kind == 2u || kind == 3u) ok &= watch_changed(&at, ED_TRACK_CHANGED, 1, P_PAN, 8);
+        ok &= at == host_wire_n;
+        /* STEP_CHANGED is just index/track: retrieve the actual latest step and
+         * check the complete record, including fields unchanged by the edits. */
+        memcpy(expected_step, initial_step, sizeof expected_step);
+        if (kind == 0u || kind == 3u) expected_step[8] = 78;
+        request(ED_STEP_GET, step, 1u);
+        at = 0;
+        ok &= watch_frame(&at, ED_STEP_GET, expected_step, sizeof expected_step) && at == host_wire_n;
+        ok &= watch_service(base + 150u) && !host_wire_n;
+        bad += check(kind == 0u ? "native WATCH: drain resumes latest step notification once" :
+                     kind == 1u ? "native WATCH: drain resumes latest selected-track value once" :
+                     kind == 2u ? "native WATCH: drain resumes latest other-track value once" :
+                                  "native WATCH: drain resumes complete step/selected/other-track pushes with latest values, once", ok);
+    }
+    return bad;
+}
+
 /* #64: SysEx through the USB packet path (ep1_take) at full speed: a 256-byte BACKUP_PUT piece (293 pack7 bytes, 101
  * event packets, 7 USB packets) arrives whole; one request at a time always works, a frame sent before the reply
  * to the one before is dropped whole (no reply; never a partial frame) */
@@ -1528,7 +1743,7 @@ static int scale_protocol(void)
 int main(void)
 {
     int bad = scale_protocol() + backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
-              fm6_patches() + user_preset_roundtrip() + live_sync() + usb_burst() + menu_protocol() + drum_kit_retired() +
+              fm6_patches() + user_preset_roundtrip() + live_sync() + watch_lifecycle() + watch_backpressure() + usb_burst() + menu_protocol() + drum_kit_retired() +
               learn_protocol() + custom_palette()
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
               + macro_model_protocol()

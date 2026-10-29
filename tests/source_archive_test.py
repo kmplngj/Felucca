@@ -331,6 +331,43 @@ inputs = [root / "firmware/src/felucca.c", root / "firmware/engines/src/dsp.c"]
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(list(root.rglob("*.pyc")))
 
+    def test_actual_profile_uses_archived_identity_reference_and_verifies_its_bytes(self):
+        # A distinct, internally consistent fixture authority detects a hidden
+        # fallback to the developer checkout. This is resolver/archive coverage,
+        # not a firmware build or permission to rename an allocated production key.
+        original = Path(source.__file__).resolve().parents[1]
+        self.write(self.repo, "tools/profile.py", (original / "tools/profile.py").read_bytes())
+        for name in ("catalog.json", "standard.json", "engine-identities.json"):
+            self.write(self.repo, "profiles/" + name, (original / "profiles" / name).read_bytes())
+        catalog = json.loads((self.repo / "profiles/catalog.json").read_text())
+        reference = json.loads((self.repo / "profiles/engine-identities.json").read_text())
+        catalog["engines"][3]["key"] = "felucca.engine.archived-lofi"
+        reference["slots"][3]["key"] = "felucca.engine.archived-lofi"
+        self.write(self.repo, "profiles/catalog.json", json.dumps(catalog))
+        self.write(self.repo, "profiles/engine-identities.json", json.dumps(reference))
+        self.commit(self.repo)
+        root = self.unpack()
+        metadata = source.verify_tree(root)
+        self.assertIn("profiles/engine-identities.json", metadata["files"])
+        program = '''from pathlib import Path
+import sys
+sys.path.insert(0, "tools")
+import profile
+_, _, engines, _ = profile.validate_selection(Path.cwd(), "standard")
+key = next(e["key"] for e in engines if e["id"] == 3)
+if key != "felucca.engine.archived-lofi":
+    raise RuntimeError("resolver did not consume the archive's identity authority")
+'''
+        command = [sys.executable, "-B", "-c", program]
+        result = subprocess.run(command, cwd=root, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        path = root / "profiles/engine-identities.json"
+        path.write_text(path.read_text() + "\n")
+        rejected = subprocess.run(command, cwd=root, text=True, capture_output=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("missing or changed", rejected.stderr)
+        self.assertFalse(list(root.rglob("*.pyc")))
+
     def test_actual_entrypoints_do_not_import_unlisted_stdlib_shadow_modules(self):
         tooling = Path(__file__).resolve().parents[1] / "tools"
         for name in ("build.py", "build_report.py", "profile.py", "ci.py", "fm1pkg_make.py", "lz4blk.py", "fm1_install.py"):
