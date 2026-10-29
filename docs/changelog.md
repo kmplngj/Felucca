@@ -32,13 +32,102 @@ recorded in the linked reports, rather than every current build or device.
 
 ## Fork development
 
+### Fixed
+
+- The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
+  complete, valid key-latency group before reporting measured latency. Missing
+  older-firmware metrics remain unmeasured; malformed present known numeric fields,
+  including empty or colon-containing values, invalidate collection while retaining
+  raw evidence. USB audio packet deltas also require
+  unchanged supported sample-rate and setter evidence: observed rate boundaries
+  invalidate collection even when a reset count overtakes its old value. Missing
+  legacy rate evidence leaves packet deltas unavailable. No firmware or protocol
+  change.
+
 ### Added
+
+- Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
+  the latest validated main-branch PR merge; tagged packages require exact-commit device
+  test attestation and a linked report before publication. Both ship risk/recovery
+  guidance; tagged versions include the complete commit changelog since the previous
+  stable release. Dev notes stay short, and superseded Dev releases/tags are removed.
+
+
+- Default-off [raw render-stage evidence](render-stage-evidence.md) adds one
+  inclusive CPU0 mix-stage observer, empty controls and coherent optional `status`
+  snapshots with explicit rejection/error semantics. Release builds refuse the
+  diagnostic flag; target cost accounting and matched FM-1 acceptance remain
+  pending. This delivers instrumentation, without a DSP speedup claim.
+
+- **Standalone RAM-loader status:** waiting and package validation, verified
+  application-sector progress, native completion/restart and host retry guidance
+  work without an intact application. Bounded RAM-owned scanlines contain missing
+  or slow LCD completion while retaining in-flight sources and servicing USB and
+  the watchdog. Package, protocol and protected-storage policy are unchanged.
+  Physical FM-1 update/display/retry qualification remains pending; see
+  [screen meanings and limits](usb-rescue.md#standalone-ram-loader-screen).
+- **Native audio-window evidence:** optional developer tooling discovers and
+  qualifies a bounded held-key renderer window, repeats trace/PCM and compares
+  silent controls and the original native replay basis. See the
+  [capture guide](native-audio-window.md); no physical timing or optimization
+  result is supplied.
+
+- **Native guest hotspot attribution:** optional developer tooling revalidates
+  saved replay evidence and counts bounded windows by target function range and
+  emulator instruction class. See the [report guide](native-hotspots.md); no
+  firmware execution, physical timing or optimization result is supplied.
+
+- **Native emulator replay evidence:** optional developer tooling verifies matched
+  artifacts, repeated held-key/modeled-UART traces and PCM, and silent controls.
+  See the [bounded replay guide](native-emulator-replay.md); this supplies no
+  hotspot attribution, physical timing result or device qualification.
+
+- **Read-only boot clock evidence:** normal USB SERIAL diagnostics report seven
+  saved startup clock-register words without changing clock configuration.
+  The collector retains raw values and supports older firmware that omits them.
+  Real bootloader/reset-path readings and any correction decision remain pending;
+  see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
+
+- [Offline update-record survey](update-record-survey.md) reports native-loader
+  CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
+  and changes no storage policy; external SPL behavior remains unverified.
+
+- Optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
+  artifact evidence. Unsupported stack/ASM forms and unresolved calls stay explicit;
+  stack reservations and runtime behavior are unchanged. It is not a live watermark
+  or whole-stack fit result.
+
+- [Offline boot-area survey](boot-area-survey.md) checks saved dump/package
+  boot records, SPL CRCs, chip key and declared clock fields with bounded input
+  parsing. It accesses no device and changes no installer policy; live clocks,
+  bootloader compatibility and backup-first hardware survey remain pending.
+
+- [Offline factory-level audit tooling](loudness-audit.md) captures selected native
+  sounds, reports stereo loudness/headroom and retains fixed-scale audition WAVs.
+  It changes no factory levels; role assignment, listening decisions and physical
+  DAC/USB qualification remain separate.
+
+- Maintainer-only [immutable build bundles](build-bundles.md) bind an existing profile's
+  exact package/resource/source/reproduction evidence and optional build-time Wasm receipt.
+  A separate manual main-only workflow now orchestrates canonical builds, Git-free
+  reproduction and a mandatory matching simulator before uploading a verified bundle;
+  the same recipe has an explicit local maintainer mode for pre-merge evidence.
+  Offline verification checks artifact correspondence; full host/browser/device acceptance,
+  public build service and deployment remain separate.
+  Native target builds now refuse unsupported compiler search/configuration variables
+  such as `CPATH`, `LIBRARY_PATH` and `SDKROOT`; Docker target builds ignore these
+  unforwarded host values. Host loader injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+  `DYLD_LIBRARY_PATH`) is refused for both backends. `LD_LIBRARY_PATH` remains allowed
+  and is recorded only as a value hash; see [build-input identity](build-bundles.md#identity-and-immutability).
 
 - **Build metadata contracts:** canonical supported-profile exports include stable IDs,
   exact engine pins, dependencies, assets, licences and defaults. Successful target builds
   emit artifact-bound resource/stack reports, with stale-evidence verification using the
   existing build guards. This is the first stage of #465; cost prediction and a browser
-  builder remain pending. See [build evidence](build-profiles.md#machine-readable-build-evidence).
+  builder remain pending. A reviewed native font policy pins M8 inputs, metrics and shared
+  bitmap storage; target reports verify the 4,630 B text-font bound and separate named
+  keycap, icon, decoder and cache costs. This changes no font pixels or runtime behavior.
+  See [build evidence](build-profiles.md#machine-readable-build-evidence).
 - **Optional MACRO engine:** the `macro` profile adds 48 Braids-derived models and
   51 factory sounds alongside all thirteen standard engines, using stable engine
   ID 14. WAVE/FOLD/FBFM retain eight voices; the added models use one voice per part.
@@ -92,6 +181,45 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **USB controller retry:** local restart clears stale configuration and pending
+  control/stream state before reattachment, so bulk/audio endpoints wait for fresh host
+  configuration. Existing host-reset queue policy is preserved. Software-model
+  checks pass; physical USB recovery qualification remains pending. See
+  [test scope](../BUILDING.md#tests) and [counter interpretation](diagnostics.md#interpreting-a-report).
+
+- The offline USB tone checker rejects recordings without synchronized tone data,
+  unsupported rates and incomplete PCM, and reports matched frames accurately.
+  [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
+  qualification separate from the offline result.
+
+- PR-source cleanup protects reflog-only detached commits in the parent worktree
+  and its submodules, including commits retained only by an old-side HEAD-log entry.
+  It refuses removal with deinitialized or orphan private submodule repositories
+  and preserves history without automatic metadata repair. Unrelated checkouts'
+  reflogs do not block cleanup. See the
+  [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
+
+- Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
+  full commit provenance remain in release metadata; the UI regression gate now
+  exercises the generated Dev version before merge. This fixes the initial Dev
+  release's layout-test failure; no publication gate is relaxed.
+- Native replay source-change guards include consumed portable Engines sources
+  and generated include files, so changes during compilation cannot publish an
+  adapter or completed capture with stale input provenance. See
+  [interaction replay](interaction-replay.md).
+
+- **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
+  stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
+  update requests still renew the existing staging and writing idle budgets.
+  See [installer errors](../BUILDING.md#package-validation-and-file-errors).
+
+- **Native attribution:** ABOUT credits and the retained installer template now
+  distinguish PHASE/DRUM GPL-3.0-only from the author's Sample Pack CC0 1.0
+  dedication. The PHASE source comment agrees; synthesis and generated sounds
+  are unchanged. Native host rendering and scroll checks qualify this text change;
+  no physical display observation is claimed.
+  See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
+
 - **User-sample addressing:** SAMPLE, GRAIN, SLICE and the sample waveform read
   validated user-slot data through its own flash region, avoiding out-of-array
   factory-sample offsets. Stored samples, backups and decoder order are unchanged;
@@ -134,6 +262,13 @@ recorded in the linked reports, rather than every current build or device.
   pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
   See [implementation evidence and test procedure](midi-dsp-reliability.md).
 
+- Backport the remaining signed DSP arithmetic fixes from upstream 1.7.0:
+  ANALOG, LOFI, TRIO, WHEEL, NOISE and native PHASE retain their output while
+  avoiding undefined signed shifts and overflow. The fork's engine API,
+  zero-mix ANALOG path and per-part PHASE scratch remain intact. See the
+  [arithmetic follow-up](midi-dsp-reliability.md#upstream-170-arithmetic-follow-up)
+  for provenance and validation limits; FM-1 listening remains pending.
+
 - **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
   immediately when their brightness is changed without leaving the row. Physical
   brightness/readability checks remain pending; see [display controls](display-idle.md).
@@ -163,6 +298,18 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Changed
 
+- **Return to official firmware across bootloaders:** Felucca's update staging and
+  the Python installer accept M-VAVE's official V16 as well as V15, each only as the
+  exact reviewed file (whole-file SHA-256 on the host; flash image size and CRC16,
+  boot-area SHA-256 and chip key on the device), over whichever boot area the unit has. Before, V15 was
+  refused on a unit with V16's bootloader or m-bootloader, and V16 everywhere. M-VAVE's
+  FM1 Open firmware and m-bootloader's installer now get explicit explanations instead
+  of generic failures. The [offline boot-area survey](boot-area-survey.md), hardened
+  separately in #712 and retained here, checks saved dump/package CRCs and bounded
+  fields; declared clocks (V16's: 320 MHz, #618) are not live measurements. V16
+  return and crossed-bootloader transitions await FM-1 qualification; the browser installer keeps V15 until its
+  client update. See [return to official firmware](usb-rescue.md#return-to-official-firmware-and-the-boot-area-619)
+  and [compatible bootloaders](usb-rescue.md#boot-areas-and-other-firmware).
 - **Unified native reading:** value pages use a shared four-knob parameter bank
   and a stable larger current value while keeping full native graphs. Explicit
   scope feedback covers held-step locks, motion and temporary/kept edits; focus
@@ -228,6 +375,16 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- Native icons share identical complete 12 px compressed streams while preserving
+  icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
+  [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.
+
+- Docker target builds share one invocation-owned toolchain container across loader,
+  application and resource checks, reducing repeated container startup overhead.
+  Compiler arguments and firmware behavior are unchanged; the benefit depends on
+  host load and compiler time. Native Linux builds keep their existing path. See
+  [builder lifetime and fallback](../BUILDING.md#prerequisites-macos) and
+  [the controlled measurements](https://github.com/kmplngj/Felucca/pull/661).
 - **DSP and effects:** reorganized the PHYS modal resonator and integrated ANALOG,
   TOM and INSERT processing optimizations. Silent chorus, delay, HALL and SPRING
   paths skip work while preserving the tested audio/state behavior. See
@@ -241,7 +398,19 @@ recorded in the linked reports, rather than every current build or device.
   these are dated comparisons, not current whole-firmware totals.
 - **Development turnaround:** change-based CI selection, dependency caches,
   parallel independent host tests and reuse of automatic PR firmware artifacts
-  reduce repeated validation/build work. Required checks still gate merges;
-  see [CI scope and artifacts](../.github/CI.md). The host suite's opt-in
+  reduce repeated validation/build work. Classified draft changes use explicit
+  focused feedback, including matching test entry points, graphics and selected
+  DSP helpers; shared or unfamiliar files retain full validation. AI guidance uses
+  draft PRs and affected local units during iteration, with complete applicable
+  CI on the final ready candidate before merge and no identical local rerun
+  without a changed input or unresolved concern. Selector/helper-contract-only
+  changes use workflow/coverage checks without firmware or audio builds; workflow
+  YAML and shared test execution changes retain full validation. Full host work
+  runs across two runners with a source-derived aggregate rejecting missing,
+  duplicate or stale evidence. Standalone backup fixtures can reuse matching
+  verified receipts; firmware identity and releases stay fresh. Required checks
+  still gate merges; see [CI stages and artifacts](../.github/CI.md#feedback-and-merge-stages).
+  These are CI scheduling changes, not firmware CPU or hardware performance claims.
+  The host suite's opt-in
   [`--ai-output` mode](../BUILDING.md#tests) condenses console output while retaining
   full logs, failure exit codes and warning/skip hints; test coverage is unchanged.

@@ -1,0 +1,290 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+# Maintainer build bundles
+
+`tools/build_manifest.py` seals one already-built, clean, explicitly selected revision
+and existing canonical profile into a locally verifiable bundle. It includes the
+installable FWSC, exact resource report and declared native outputs, generated inputs,
+complete source archive, actual Git-free reproduction, notices and check receipts.
+An optional fresh Wasm receipt adds the simulator that was built to accompany that
+exact native report. This is maintainer staging: no public build service, deployment,
+installer change, new profile/default, compatibility guarantee or installation approval.
+
+Use the [build prerequisites](../BUILDING.md), [profile guide](build-profiles.md) and
+[resource verification](build-profiles.md#machine-readable-build-evidence) first. The
+JieLi tools/SDK remain necessary when creating a bundle; offline verification needs
+neither a compiler nor a device. New bundle tooling and runtime files must be committed
+before source export, because the complete archive contains committed blobs. Do not
+export an older tree and attach newer uncommitted helper code to it.
+
+## Maintainer orchestration
+
+The manual **Maintainer verified bundle** Actions workflow runs the existing producers
+for one of `standard`, `reduced-lofi` or `macro`. GitHub's maintainer dispatch access is
+the admission boundary; there is no public request endpoint. Dispatch on `main`, with
+`revision` set to that dispatch's full lowercase 40-character commit. The requested
+revision must equal both the immutable workflow SHA and source SHA. Checkout never uses
+the input as a ref. Other branches, forks, PR histories, tags, abbreviated/moving refs
+and historical revisions are outside this first allowlist. A later allowlist needs its
+own reviewed policy; this workflow does not infer permission from reachability alone.
+
+The workflow keeps `contents: read`, disables persisted checkout credentials, uses
+pinned Actions and has a 45-minute job limit. It installs the existing pinned Python,
+SDK and Emscripten prerequisites. It uses no request cache, public shelf or deployment.
+The JieLi downloader and v1 execution-environment limitations below remain unchanged;
+the bundle records the actual compiler/SDK identity rather than promising arbitrary
+host equivalence. Source builds receive no `GH_TOKEN`, `GITHUB_TOKEN` or Actions runtime
+credentials. Proxy/CA trust, supported toolchain/SDK selectors and loader paths remain
+available. Caller `FELUCCA_*` flags are replaced by the selected canonical profile;
+Node hooks and emulator-option overrides are refused rather than evaluated.
+
+`tools/maintainer_bundle.py` clones the exact clean source and pinned clean Engines
+locally into a fresh ignored run directory. It builds the native image, exports and
+verifies complete source, performs the real Git-free rebuild, prepares the SDK's normal
+no-ports runtime prerequisites, then performs a **fresh paired** runtime build. The
+preparation build is not accepted as a matching simulator. The paired producer freezes
+and checks SDK provenance. The driver then invokes the existing manifest sealer and
+offline verifier and checks that source/profile/runtime still match the request.
+Only after those checks does it promote `candidate-bundle` to `verified-bundle`.
+The source checkout and its existing build outputs are not regenerated or overwritten.
+
+The upload step runs only after success and uploads only `verified-bundle/`. Any build,
+reproduction, simulator, provenance, seal or final-verification failure prevents that
+upload; there is no native-only fallback in this workflow. Separate diagnostics contain
+only `RESULT.json` and command logs, never unverified firmware directories. A failed or
+interrupted run is not reusable: choose a new output directory. Abrupt termination can
+leave partial local trees/logs; runner cleanup or explicit owner cleanup is required,
+not a passing receipt. This workflow is staging, not full CI, browser behavior, physical
+FM-1 qualification, a release or an installation approval.
+
+Before merging or dispatching the workflow, a maintainer can exercise the same recipe
+on a **clean committed local candidate**, from its checkout root with the build and
+Emscripten prerequisites already configured:
+
+```sh
+revision=$(git rev-parse HEAD)
+uv run --locked --group build python tools/maintainer_bundle.py plan --mode local \
+  --revision "$revision" --profile standard --output build/maintainer-standard
+uv run --locked --group build python tools/maintainer_bundle.py run --mode local \
+  --revision "$revision" --profile standard --output build/maintainer-standard
+python3 tools/build_manifest.py verify build/maintainer-standard/verified-bundle
+```
+
+Planning checks admission, source/pin cleanliness, profile and destination without
+building. Local mode explicitly records a local maintainer request, with no GitHub
+review/CI attestation; it is refused inside Actions. The run's `RESULT.json` records
+each command and outcome without dumping the environment. Repeat each other intended
+canonical profile with a distinct new directory. Generated prerequisites and virtual
+environments stay outside the verified extraction. Reusing a destination, changing
+source/pins or presenting an unavailable/mismatched simulator must fail. The focused
+`python3 tests/maintainer_bundle_test.py` fixtures exercise those refusal paths using
+real local Git/source archives and simulated compiler/sealer processes; they do not
+replace the real local recipe above or matching CI.
+
+## Prepare the actual build and reproduction
+
+For a clean reviewed checkout on a local maintainer machine, the following example uses
+standard, the current source version and development product FM-1_900. Run under the
+applicable local storage/test guard and exclusive validation lock. Keep the same effective
+options and locked build dependencies for the original and reproduced build. CPU2=0 or a
+nonstandard profile must remain explicit through all commands; do not substitute another
+profile's package. No golden or budget updates are involved.
+
+```sh
+export FELUCCA_PROFILE=standard
+revision=$(git rev-parse HEAD)
+uv run --locked --group build ./build.sh
+python3 tools/source_archive.py export 1.6.1-bundle
+mkdir -p build/bundle-reproduce
+tar -xzf build/felucca-1.6.1-bundle-source.tar.gz -C build/bundle-reproduce
+```
+
+Build the actual extracted sources without Git. Keep the virtual environment outside
+that verified tree; see [archive environments](../BUILDING.md#python-environments).
+For example, select an external absolute environment path on your own machine:
+
+```sh
+export UV_PROJECT_ENVIRONMENT="$HOME/.cache/felucca-bundle-build-venv"
+(
+  cd build/bundle-reproduce/felucca-1.6.1-bundle-source
+  uv run --locked --group build ./build.sh
+)
+```
+
+Both environments must have identical generator versions and dependencies. `create`
+requires literal app/FWSC equality and equal effective configuration, resources and
+reserved stack spans. It preserves both exact resource reports: Git and verified-archive
+origin/inventory metadata can legitimately differ even when compiled bytes agree.
+The source archive label above names the source distribution; it does not change the
+firmware display version or create a release.
+
+## Optional matched simulator
+
+With Emscripten and its frozen installed SDK/cache prepared, build through the existing
+entry point, pointing to the exact native report:
+
+```sh
+uv run --locked --group build sh web/emu/build.sh --target-report build/resource-report.json
+```
+
+The runtime producer records the actual compiler/preprocessing arguments, source and
+generated inputs, profile/identity, tool/SDK fingerprints and the explicit logical
+configuration mapping. A successful matched build writes
+`build/emu/runtime-report.json` last, binding all Wasm/worklet/page/font/license files to
+the native report SHA256. Attempt logs are retained under `build/wasm-report/`.
+The paired driver refuses unsupported extra flags/compiler search-path injections,
+stale inputs, missing SDK provenance, output leftovers or source/tool changes during
+compilation. Configured SDK/cache roots and tool paths are resolved again after
+compilation; changed identities or contents prevent receipt publication, including
+retargeted symlinks. Included SDK inventories refuse nested directory symlinks and
+broken, cyclic or unsupported link targets; regular file aliases bind both their
+resolved identities and contents. Configured `COMPILER_WRAPPER` executables are
+unsupported for paired provenance rather than silently omitted from the tool closure.
+The SDK inventory walks identical resolved roots once and prunes nested roots that
+are inventoried separately. Emscripten's mutable test/cache exclusions also apply
+through an enclosing LLVM/Binaryen root; the explicitly selected cache's sysroot
+headers and installed libraries remain included, with `EM_FROZEN_CACHE=1` for paired
+builds. The manifest digest binds every configured root and resolved tool/configuration
+identity, including roots sharing a walk. Nested directory aliases remain refused.
+Paired builds also refuse extra configured Node arguments and nonempty `NODE_OPTIONS`
+or `NODE_PATH`; external preload/module dependencies are outside this bounded recipe.
+It does not stamp an existing Wasm as freshly built. A normal unpaired
+`sh web/emu/build.sh` stays available for development and does not claim a native match.
+Unsupported SDK provenance leaves that development build without a receipt.
+Stale generated profile or build identity after an edit, commit or profile-selection
+change also leaves an unpaired development build available using the existing generated
+inputs, with a freshness diagnostic and no receipt. It does not regenerate or qualify
+those inputs. The same stale state stops a paired build before compilation.
+If provenance changes during compilation or the final freshness checks, an unpaired
+build likewise keeps its completed outputs with a diagnostic and no receipt; a paired
+build fails before receipt publication. Missing, unsafe or changed required output
+files remain build failures in both modes. Producer-owned `build`, `build/emu` and
+`build/emu/fonts` directories are rechecked for aliases before compilation and at
+final output validation, including unavailable-receipt returns. Workspace aliases
+above the resolved source root remain supported. Extra developer files may remain
+only in unpaired output and prevent a receipt.
+
+Matching means source/profile/logical build correspondence, with documented simulator
+adapters. It does not mean equal target/Emscripten flags or device execution. The runtime
+has simulated flash, no real USB/editor/updates/TRS MIDI, and no second-core execution.
+For example, CPU2 configuration shape can match while worker operations remain stubbed.
+Native/Wasm oracles, the fresh browser gate and physical qualification remain distinct.
+A build receipt alone establishes none of those results.
+The browser retains its existing enabled simulated-ISR misuse assertions; the native
+target defaults to disabled assertions. The mapping records this deliberate difference
+and requires browser assertions to stay enabled, without changing compiler arguments.
+The shared audio observer `FELUCCA_RENDER_STAGE` and its header guard must match
+between native and runtime definitions. The normal browser observer is OFF; a
+native observer-enabled package cannot claim a match to that disabled runtime.
+
+## Seal and verify
+
+Use a new ignored destination. The source allowlist is one explicit full SHA from the
+reviewed checkout; the tool neither resolves moving remote refs nor changes Git state.
+The package name is selected by the native resource report, including its profile and
+product naming, rather than a FWSC glob.
+
+```sh
+uv run --locked --group build python3 tools/build_manifest.py create \
+  --root . --allow-revision "$revision" --profile "$FELUCCA_PROFILE" \
+  --source-archive build/felucca-1.6.1-bundle-source.tar.gz \
+  --reproduction-root build/bundle-reproduce/felucca-1.6.1-bundle-source \
+  --runtime-receipt build/emu/runtime-report.json --out build/bundles/reviewed
+python3 tools/build_manifest.py verify build/bundles/reviewed
+```
+
+`create` reruns the existing native report verifier, static target budget checker,
+package validator and source-archive verifier; it verifies the reproduced target report
+and compares its actual app/package/configuration/resources. Those native checks must
+pass before a complete destination is emitted. It does not rebuild either target.
+The offline `verify` command checks the sealed bytes and evidence relationships; its
+success is not fresh compiler, full-suite or device acceptance.
+
+For a deliberate native-only result omit `--runtime-receipt`. The manifest explicitly
+records `unavailable/not_requested` and advertises no simulator. After an actual runtime
+failure, use `--runtime-unavailable build_failed` (or `provenance_missing`) and retain the
+failure log with `--evidence PATH`. An absent/stale receipt never selects another Wasm.
+Do not use an unavailable-only result as completion of the successful matching-runtime
+implementation/validation stage of [#466](https://github.com/kmplngj/Felucca/issues/466).
+
+Repeat `--evidence PATH` to bind exact additional host/browser/diagnostic receipts. They
+are copied byte for byte; the tool does not reinterpret their outcomes. The manifest's
+broader acceptance remains host/browser **not evaluated**, physical **not performed**.
+Known local full-suite cost/strict failures stay failed in the accompanying handoff;
+a hosted run without PMU counters does not replace them. No bundle field claims full CI,
+live CPU/deadline, stack watermark, successful flashing or real-device acceptance.
+
+## Identity and immutability
+
+`manifest.json` is canonical JSON, schema version 1, kind `felucca-build-manifest`.
+Its `identity` binds the exact source/Engines inventory, profile/contract, generator input
+and compiled-header hashes, complete effective target configuration, compiler/header/SDK
+and generator provenance, and runtime configuration when recorded. Client payload is
+explicitly not included; GPL collection consumption remains unsupported under #360.
+If the producer exports #422 engine keys, their reviewed reference and selected metadata
+are bound as external inputs. Older producers remain explicitly without that metadata;
+this tool invents no runtime key, wire field or compatibility policy.
+
+The native header inventory covers the fixed JieLi4.0.1 roots
+`pi32v2/lib/clang/4.0.1/include` and `pi32v2/include`, including their content hashes.
+Missing roots/stdint.h and symlinked header paths fail before generation. Native target
+execution refuses unsupported nonempty compiler search/configuration variables at that
+initial capture; clearing them only when sealing cannot qualify an older native build.
+Docker target execution does not forward those host compiler search/configuration
+variables and does not bind their ignored values. A native-only Docker build or seal
+therefore does not promise that a paired host Wasm build is available under that same
+environment: the host Wasm compiler still refuses unsupported search/configuration
+variables. Preload/injection variables remain refused for both target backends.
+The inherited `LD_LIBRARY_PATH` needed by some Python installations is supported:
+`loader_environment_sha256` binds its nonempty value by hash before and after generation
+without exposing absolute paths. Paired runtime evidence binds the same map. Other
+injection variables remain refused. This records loader search configuration, not the
+contents of the selected system libraries.
+
+This is a declared-input identity, not a fingerprint of every execution dependency.
+`configuration.execution_environment` records native/Docker execution and the image
+reference when used; its system-runtime fingerprint is explicitly null. A floating
+Docker image can change runtime libraries without changing that reference. Actual image
+content IDs and host/system library closure are not bound by v1; cross-environment cache
+equivalence remains unresolved. Do not claim reproducibility under arbitrary Docker or
+host installations. The actual same-environment Git-free app/FWSC reproduction is still
+mandatory, and full execution-environment identity remains follow-up work.
+
+The configuration key is SHA256 of `felucca-build-key-v1` followed by a NUL byte and the
+canonical identity object. A profile name, display version or selection SHA alone is
+insufficient: CPU2 variants can share a selection SHA while their binaries differ.
+Canonical JSON sorts keys, uses compact separators and ASCII escapes, and refuses NaN,
+Infinity and duplicate keys. Source/archive provenance and final artifact/evidence hashes
+remain bound in the exact manifest, outside the configuration-key inputs.
+
+Detached `SHA256SUMS` covers all payload files plus the final manifest, excluding itself.
+No embedded self-hash or mutable index is introduced. Reuse requires the exact manifest
+content hash and every file to verify; a configuration-key match alone is insufficient.
+The same inputs can have different preserved diagnostic/origin records. Existing
+identical destinations are idempotent; a different destination inventory is never
+rewritten. Paths, symlinks, case aliases, extra files, wrong source/report/runtime pairs
+and borrowed reproduction receipts are rejected.
+
+A seal uses a destination-specific exclusive lock file and an adjacent temporary directory.
+On ordinary failure the destination is absent and the owned temporary evidence is retained
+as `.NAME.failed-*`; it is not a complete bundle. Process termination/power loss can leave
+an adjacent `.NAME.seal-lock` and staging directory. Do not remove a live owner's lock.
+A maintainer must establish that its creating process has stopped before explicitly
+removing that stale lock and choosing a new destination; the tool does not perform global
+cleanup or silently recover another owner's state.
+
+## User checks and remaining work
+
+After preparing the exact inputs above, create and verify a bundle, copy it to a new
+directory and verify again. On a disposable copy, change one FWSC, resource report,
+source archive, reproduced report, Wasm, worklet or font: verification must fail. Changing
+only an outer checksum must not make a wrong source/configuration pair valid. Preserve
+the original bundle and report the exact revision/profile, command and observed error.
+No device installation is required to test this tool. Real FM-1 install/recovery,
+audio deadlines, USB/TRS and panel behavior remain pending unless separately performed.
+
+Public authorization, request parsing/quotas, job cancellation, cache/index/retention,
+CORS/delivery and end-to-end explicit backup/install remain #466 work. Browser consumption
+belongs to #467, the editor-preview protocol adapter to #413, arbitrary profile estimates
+to #465, GPL source/pin integration to #360 and runtime compatibility policy/transport to
+#422. Existing release/PR workflows and site staging are unchanged; the separate manual
+maintainer workflow delivers only the first immutable-source orchestration stage.

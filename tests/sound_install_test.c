@@ -13,7 +13,6 @@
  * interrupt enabled before #298). An FM6 sound's SLOT (E8: main-loop state no render reads) is normalized after the
  * window by fm6_adopt, as before, and is left out of the comparison for FM6.
  *   cc -w -Ibuild/gen -Ifirmware/src -o build/host/sound_install_test tests/sound_install_test.c -lm */
-#define UI_TEST_NO_MAIN 1
 #include <stdint.h>
 #define HOST_IRQ_STUBS 1
 #define FM1_IRQ_TARGET 1
@@ -40,7 +39,7 @@ static void fm1_icfg_set(uint32_t f)
     else
         fm1_irq_on();
 }
-#include "ui_test.c"
+#include "ui_harness.h"
 
 /* what the audio side would read of a track: engine id, preset number, every value of the sound */
 typedef struct {

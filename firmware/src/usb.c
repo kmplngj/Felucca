@@ -483,6 +483,32 @@ static void uac_rate_set(uint32_t hz)
 }
 #endif
 
+/* A host bus reset and a local controller restart both abandon endpoint/control
+ * state. Application queues and completed SysEx frames have separate lifetimes. */
+static void usb_reset_state(void)
+{
+    usb.config = 0;
+    RING_PUBLISH();                                     /* the audio ISR reads usb.config (uac_render_start): store it first */
+    usb.suspended = 0;
+    usb.sx_on = 0;
+#if FELUCCA_OTA
+    sx_collect = 0;
+#endif
+    usb.e0_tx = 0;
+    usb.has_pend_addr = 0;
+    usb.rx_pend = 0;
+#if FELUCCA_CDC
+    cdc.dtr = 0;
+    cdc.e0_rx = 0;
+    cdc.rx_pend = 0;
+#endif
+#if FELUCCA_UAC
+    uac.e0_rx = 0;
+    uac_stream(0);
+    uac_rate_set(UAC_RATE);
+#endif
+}
+
 static void ep1_config(void)
 {
     fm1_usb_ep_txbuf(1, ep1tx);
@@ -1294,26 +1320,10 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
     if (iu & 0x04u) {                                   /* bus reset */
         usb.resets++;
         sie_wr(S_FADDR, 0);
-        usb.config = 0;
-        usb.suspended = 0;
+        usb_reset_state();
         mo_r = mo_w;                                    /* nothing stale for the next host */
-        usb.sx_on = 0;
 #if FELUCCA_OTA
         so_r = so_w;
-        sx_collect = 0;
-#endif
-        usb.e0_tx = 0;
-        usb.has_pend_addr = 0;
-        usb.rx_pend = 0;
-#if FELUCCA_CDC
-        cdc.dtr = 0;
-        cdc.e0_rx = 0;
-        cdc.rx_pend = 0;
-#endif
-#if FELUCCA_UAC
-        uac.e0_rx = 0;
-        uac_stream(0);
-        uac_rate_set(UAC_RATE);
 #endif
         fm1_usb_ep0_buf(ep0buf);
         sie_wr(S_INTRUSBE, 0x07);
@@ -1347,6 +1357,7 @@ static void usb_start(void)                             /* boot, or main-loop re
 {
     FM1_ASSERT_THREAD();                                /* it waits 25 ms (#428) */
     usb.timeouts = 0;
+    usb_reset_state();                                 /* no endpoints remain configured across local reset */
     fm1_usb_reset();                                    /* reset whatever the ROM left */
     fm1_delay_ms(25);
     fm1_usb_attach(ep0buf);

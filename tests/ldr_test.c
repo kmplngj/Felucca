@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "update_record_fixture.h"
 #define __attribute__(x)   /* (the sources' .pool sections: no Mach-O section names) */
 
 #define FELUCCA_ID "ota-FM-1_900"
@@ -17,8 +18,14 @@ static uint8_t nor[0x100000], *logical;
 static size_t logical_len;
 static uint8_t rx[1024];
 static uint32_t rx_len, rx_full, now_ms, requests, erases, bad_range, record_cleared, f0_asked;
+static uint32_t prog_fail, verify_fail, expected_flash_off;
+/* Count real hook calls and inject only the selected app-sector fault. Readback
+ * corruption changes the reported bytes, not NOR; partial programming obeys 1->0. */
+static uint32_t page_calls[0x100], sector_reads[0x100];
+static uint32_t fault_sector = 0xFFFFFFFFu, partial_page = 0xFFFFFFFFu, bad_readbacks;
 static uint32_t erase_n[0x100], prot_reads, rd_fail_off = 0xFFFFFFFFu, er_fail_off = 0xFFFFFFFFu;   /* per 4K sector; fault injection */
-static uint32_t flip_addr = 0xFFFFFFFFu, flip_seen, flip_on;   /* serve addr's flip_on-th reply with a byte changed */
+static uint32_t flip_addr = 0xFFFFFFFFu, flip_seen, flip_on, flip_persist;   /* serve addr's flip_on-th reply with a byte changed
+                                                                              * (flip_persist: that one and every later reply) */
 
 static uint32_t pack7(const uint8_t *in, uint32_t n, uint8_t *out)
 {
@@ -62,7 +69,7 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)
     } else {
         if (addr + len > logical_len) { printf("read past the package %#x\n", addr); exit(1); }
         memcpy(m + 14, logical + addr, len);
-        if (addr == flip_addr && ++flip_seen == flip_on)
+        if (addr == flip_addr && (++flip_seen == flip_on || (flip_persist && flip_seen > flip_on)))
             m[14 + len / 2u] ^= 0x10;                /* a transfer error the frame checksum does not see */
     }
     for (i = 6; i < 14 + len; i++) s += m[i];
@@ -81,6 +88,9 @@ static int ota_fread(uint32_t off, void *p, uint32_t n) { memcpy(p, nor + off, n
 static void ota_show(uint32_t step, int32_t code) { (void)step; (void)code; }
 static void ota_commit(const uint8_t *parm) { (void)parm; }
 #include "../firmware/src/ota.c"
+#include "ldr_screen_host.h"
+#define LDR_SCREEN_EMBEDDED 1
+#include "ldr_screen_test.c"
 
 /* Felucca's autosave pair and FM6 voice bank (storage.c, fm6_vbank.c): the loader must neither erase nor read them */
 #define PROT_LO 0xE5000u
@@ -90,6 +100,13 @@ static int ldr_fread(uint32_t off, void *p, uint32_t n)
     if (off < PROT_HI && off + n > PROT_LO) prot_reads++;
     if (rd_fail_off >= off && rd_fail_off < off + n) return -1;
     memcpy(p, nor + off, n);
+    if (off >= 0x4000u && off < 0x93000u && n == 0x1000u) {
+        sector_reads[off >> 12]++;
+        if (off == fault_sector && page_calls[off >> 12] && bad_readbacks) {
+            ((uint8_t *)p)[0] ^= 1;
+            bad_readbacks--;
+        }
+    }
     return 0;
 }
 static int ldr_erase(uint32_t off)
@@ -108,12 +125,47 @@ static int ldr_prog(uint32_t off, const void *p, uint32_t n)
     const uint8_t *s = p;
     uint32_t i;
     if (off < 0x4000u || off + n > 0x93000u || ((off & 0xFFu) + n) > 256u) bad_range++;
+    page_calls[off >> 12]++;
+    if (prog_fail) return -1;
+    if (off == partial_page) {
+        for (i = 0; i < n / 2u; i++) nor[off + i] &= s[i];
+        return -1;
+    }
     for (i = 0; i < n; i++) nor[off + i] &= s[i];
+    if (verify_fail && (off & 0xFFFu) == 0xF00u) nor[off] ^= 1;
     return 0;
 }
 static void ldr_record_clear(void) { record_cleared++; }
-static void ldr_progress(uint32_t done, uint32_t total) { (void)done; (void)total; }
+static uint32_t status_seen[6], progress_seen, progress_last, progress_bad;
+static void ldr_status(uint32_t state, int32_t code)
+{
+    status_seen[state]++;
+    if (state == LDR_VALIDATING) progress_last = progress_seen = 0;
+    ldr_screen_status(state, code);
+}
+static void ldr_progress(uint32_t done, uint32_t total)
+{
+    if (done != progress_last + 4096u || total != 0x8F000u || done > total) progress_bad++;
+    if (memcmp(nor + done + 0x4000u - 4096u, logical + expected_flash_off + done + 0x4000u - 4096u, 4096u)) progress_bad++;
+    progress_last = done;
+    progress_seen++;
+    ldr_screen_progress(done, total);
+}
 #include "../firmware/loader/ldr_core.c"
+
+static uint32_t restart_step, restart_calls;
+static void fm1_delay_ms(uint32_t ms)
+{
+    assert((restart_step == 0 && ms == 200u) || (restart_step == 2 && ms == 30u));
+    restart_step++;
+}
+static void usb_detach(void) { assert(restart_step == 1); restart_step++; }
+static void fm1_core_reset(void)
+{
+    assert(restart_step == 3 && ldr_screen_state == LDR_SUCCESS);
+    restart_calls++; restart_step = 0;
+}
+#include "../firmware/loader/ldr_install.c"
 
 /* the production storage objects (storage.c) on the same simulated flash: st_save writes the real layout (commit
  * record at sector + 0, payload at sector + 0x100). Its erases are not the loader's: erase_n counts only ldr_erase. */
@@ -186,7 +238,7 @@ static void set_fl_size(uint8_t *lg, uint32_t size)
 static int check(const char *what, int ok) { printf("%-56s %s\n", what, ok ? "ok" : "FAIL"); return ok ? 0 : 1; }
 
 /* ---- #418: the cleanup must not classify or erase the autosave pair and the voice bank ----
- * A record as the loader's cleanup (and the SPL's scan) recognises it: u16 at 0 = nonzero CRC16 of the next 78
+ * A record as the native loader's cleanup recognises it: u16 at 0 = nonzero CRC16 of the next 78
  * bytes, u16 0x5441 at +6. seed makes each one different. */
 static void make_record(uint8_t *r, uint32_t seed)
 {
@@ -313,6 +365,10 @@ static void reset_counters(void)
     memset(erase_n, 0, sizeof erase_n);
     prot_reads = 0; bad_range = 0; erases = 0; requests = 0;
     rd_fail_off = er_fail_off = 0xFFFFFFFFu;
+    memset(page_calls, 0, sizeof page_calls);
+    memset(sector_reads, 0, sizeof sector_reads);
+    fault_sector = partial_page = 0xFFFFFFFFu;
+    bad_readbacks = 0;
 }
 
 static int cleanup_case(const char *name, int v)
@@ -383,6 +439,158 @@ static int failure_cases(void)
     return bad;
 }
 
+/* #438: the same accepted UPF6 bytes survive the actual native loader. */
+static int update_record_upfm6_tests(void)
+{
+    static uint8_t payload[UPDATE_RECORD_UPFM6_SIZE], got[UPDATE_RECORD_UPFM6_SIZE], before[2][ST_SECTOR];
+    int bad = 0;
+    update_record_upfm6(payload);
+    bad += check("#438 fixture has production OTA CRC16 and loader marker predicate", looks_like_record(UPDATE_RECORD_FIXTURE) &&
+                 ota_crc16(UPDATE_RECORD_FIXTURE + 2, 78, 0) == 0xB71Du);
+    {
+        uint8_t altered[sizeof UPDATE_RECORD_FIXTURE];
+        memcpy(altered, UPDATE_RECORD_FIXTURE, sizeof altered);
+        altered[20] ^= 1u;
+        bad += check("#438 changed CRC-covered byte fails the production loader predicate", !looks_like_record(altered));
+        memcpy(altered, UPDATE_RECORD_FIXTURE, sizeof altered);
+        altered[6] ^= 1u;
+        ota_wr16(altered, ota_crc16(altered + 2, 78, 0));
+        bad += check("#438 changed marker fails predicate even with matching production CRC", !looks_like_record(altered));
+    }
+    bad += check("#438 production storage commits UPF6 fixture into both copies",
+                 st_save_to(OBJ_UPFM6, payload, sizeof payload, 0) == 0 &&
+                 st_save_to(OBJ_UPFM6, payload, sizeof payload, 1) == 0 &&
+                 st_load(OBJ_UPFM6, got, sizeof got) == (int)sizeof got && !memcmp(got, payload, sizeof got));
+    for (uint32_t copy = 0; copy < 2u; copy++)
+        memcpy(before[copy], nor + st_sector(OBJ_UPFM6, copy), ST_SECTOR);
+    for (uint32_t repeat = 0; repeat < 2u; repeat++) {
+        fixture_protected(V_BOTH_COPIES);
+        arm_outside();
+        reset_counters();
+        bad += check("#438 actual loader session/repeat completes with UPF6 record-shaped bytes", ldr_session() == 0);
+        for (uint32_t copy = 0; copy < 2u; copy++) {
+            uint32_t base = st_sector(OBJ_UPFM6, copy);
+            bad += check("#438 UPF6 whole sector unchanged and never erased by loader",
+                         !memcmp(before[copy], nor + base, ST_SECTOR) && erase_n[base >> 12] == 0 &&
+                         looks_like_record(nor + base + 0xF00u) &&
+                         !memcmp(nor + base + 0xF00u, UPDATE_RECORD_FIXTURE, sizeof UPDATE_RECORD_FIXTURE));
+        }
+        bad += check("#438 UPF6 remains loadable byte for byte after loader cleanup",
+                     st_load(OBJ_UPFM6, got, sizeof got) == (int)sizeof got && !memcmp(got, payload, sizeof got));
+        bad += check("#438 native staging/stock records cleaned; other protected windows unchanged",
+                     outside_cleaned() && erase_n[0xE4] == 1 && erase_n[0xE8] == 1 && bad_range == 0 &&
+                     !memcmp(nor + PROT_LO, prot_ref, sizeof prot_ref) && !protected_erases() && !prot_reads && user_kept());
+    }
+    /* Causal control for the actual cleanup branch, outside every protected
+     * data window. CRC or marker changes alone must change its erase decision. */
+    for (uint32_t variant = 0; variant < 3u; variant++) {
+        uint8_t altered[sizeof UPDATE_RECORD_FIXTURE];
+        memcpy(altered, UPDATE_RECORD_FIXTURE, sizeof altered);
+        if (variant == 1u) altered[20] ^= 1u;
+        if (variant == 2u) {
+            altered[6] ^= 1u;
+            ota_wr16(altered, ota_crc16(altered + 2, 78, 0));
+        }
+        memset(nor + 0x94000u, 0xFF, ST_SECTOR);
+        memcpy(nor + 0x94F00u, altered, sizeof altered);
+        reset_counters();
+        bad += check("#438 native cleanup control session succeeds", ldr_session() == 0);
+        bad += check("#438 actual cleanup erases only CRC-and-marker matching control",
+                     variant == 0u ? sector_blank(0x94000u) && erase_n[0x94] == 1u :
+                     erase_n[0x94] == 0u && !memcmp(nor + 0x94F00u, altered, sizeof altered));
+    }
+    return bad;
+}
+
+/* PR #713 covers permanent write errors and verified display progress. These
+ * cases additionally bind retry counts, partial-page NOR and record retention to
+ * the actual core, without claiming that a real SPL can resume after power loss. */
+static int write_retry_cases(void)
+{
+    enum { TARGET = 0x20000, PREFIX = TARGET - 0x1000, PAGE = TARGET + 0x600 };
+    static uint8_t before[sizeof nor], partial[0x1000];
+    const uint8_t *target = logical + expected_flash_off + TARGET;
+    uint32_t kind, i, cleared, finished, pages, app_erases;
+    int bad = 0, rc;
+    for (kind = 0; kind < 3u; kind++) {
+        /* Only two changed app sectors: everything earlier/later is already
+         * verified package data, so any extra erase/program is observable. */
+        memcpy(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, LDR_APP_HI - LDR_APP_LO);
+        for (i = PREFIX; i < TARGET + 0x1000u; i++) nor[i] ^= 0x5A;
+        fixture_protected(V_BOTH_COPIES);
+        arm_outside();
+        memcpy(before, nor, sizeof before);
+        reset_counters();
+        fault_sector = TARGET;
+        if (kind == 2u) partial_page = PAGE;
+        else bad_readbacks = kind + 1u;             /* transient once, persistent across both attempts */
+        cleared = record_cleared; finished = f0_asked;
+        bad += check("retry fixture: armed records and two changed app sectors",
+                     looks_like_record(nor + 0xE4F00u) && looks_like_record(nor + 0xE8F00u) &&
+                     memcmp(nor + TARGET, target, 0x1000u) && memcmp(nor + PREFIX, target - 0x1000u, 0x1000u));
+        rc = ldr_session();
+        pages = app_erases = 0;
+        for (i = 0; i < sizeof page_calls / sizeof *page_calls; i++) {
+            pages += page_calls[i];
+            if (i >= LDR_APP_LO >> 12 && i < LDR_APP_HI >> 12) app_erases += erase_n[i];
+        }
+        bad += check("retry prefix is written once; no unrelated app pages programmed",
+                     erase_n[PREFIX >> 12] == 1u && page_calls[PREFIX >> 12] == 16u &&
+                     pages == 16u + page_calls[TARGET >> 12] && app_erases == (kind == 2u ? 2u : 3u) &&
+                     !bad_range && !prot_reads);
+        if (kind == 0u) {
+            bad += check("one bad readback succeeds on exactly the second sector attempt",
+                         rc == 0 && erase_n[TARGET >> 12] == 2u && page_calls[TARGET >> 12] == 32u &&
+                         sector_reads[TARGET >> 12] == 3u && !bad_readbacks);
+            bad += check("transient readback success finishes once with exact app and protected bytes",
+                         record_cleared == cleared + 1u && f0_asked == finished + 1u &&
+                         !memcmp(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, LDR_APP_HI - LDR_APP_LO) &&
+                         !memcmp(nor, before, LDR_APP_LO) && !memcmp(nor + PROT_LO, prot_ref, sizeof prot_ref) &&
+                         user_kept() && outside_cleaned() && !progress_bad);
+            continue;
+        }
+        if (kind == 1u) {
+            bad += check("two bad readbacks stop at -11 after exactly two erase/program attempts",
+                         rc == -11 && erase_n[TARGET >> 12] == 2u && page_calls[TARGET >> 12] == 32u &&
+                         sector_reads[TARGET >> 12] == 3u && !bad_readbacks);
+        } else {
+            memset(partial, 0xFF, sizeof partial);
+            memcpy(partial, target, 0x680u);         /* six full pages, then half of the seventh */
+            bad += check("partial seventh page stops at -10 without readback or further pages",
+                         rc == -10 && erase_n[TARGET >> 12] == 1u && page_calls[TARGET >> 12] == 7u &&
+                         sector_reads[TARGET >> 12] == 1u && !memcmp(nor + TARGET, partial, sizeof partial) &&
+                         memcmp(nor + TARGET, target, sizeof partial));
+        }
+        bad += check("failed sector never finishes, clears a record or changes non-app NOR",
+                     record_cleared == cleared && f0_asked == finished &&
+                     !memcmp(nor, before, LDR_APP_LO) &&
+                     !memcmp(nor + LDR_APP_HI, before + LDR_APP_HI, sizeof nor - LDR_APP_HI) &&
+                     !memcmp(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, TARGET - LDR_APP_LO) &&
+                     !memcmp(nor + TARGET + 0x1000u, before + TARGET + 0x1000u, LDR_APP_HI - TARGET - 0x1000u) &&
+                     progress_last == TARGET - LDR_APP_LO && !progress_bad);
+        /* Keep the same partially installed NOR and records. Only clear fault
+         * controls/counters; do not rearm, restore, or reset the simulated device. */
+        reset_counters();
+        rc = ldr_session();
+        pages = app_erases = 0;
+        for (i = 0; i < sizeof page_calls / sizeof *page_calls; i++) {
+            pages += page_calls[i];
+            if (i >= LDR_APP_LO >> 12 && i < LDR_APP_HI >> 12) app_erases += erase_n[i];
+        }
+        bad += check("same NOR retry skips verified prefix and writes only an incomplete sector",
+                     rc == 0 && !erase_n[PREFIX >> 12] && !page_calls[PREFIX >> 12] &&
+                     erase_n[TARGET >> 12] == (kind == 2u ? 1u : 0u) &&
+                     pages == (kind == 2u ? 16u : 0u) && pages == page_calls[TARGET >> 12] &&
+                     app_erases == (kind == 2u ? 1u : 0u) && sector_reads[TARGET >> 12] == (kind == 2u ? 2u : 1u));
+        bad += check("same NOR retry converges, finishes once and preserves head/user/protected data",
+                     record_cleared == cleared + 1u && f0_asked == finished + 1u &&
+                     !memcmp(nor + LDR_APP_LO, logical + expected_flash_off + LDR_APP_LO, LDR_APP_HI - LDR_APP_LO) &&
+                     !memcmp(nor, before, LDR_APP_LO) && !memcmp(nor + PROT_LO, prot_ref, sizeof prot_ref) &&
+                     user_kept() && outside_cleaned() && !bad_range && !prot_reads && !progress_bad);
+    }
+    return bad;
+}
+
 int main(int argc, char **argv)
 {
     size_t olen;
@@ -391,10 +599,12 @@ int main(int argc, char **argv)
     uint32_t ofo, nfo, i;
     int bad = 0, rc;
     if (argc < 3) { printf("usage: ldr_test OLD.fwsc NEW.fwsc\n"); return 2; }
+    ldr_screen_contract_tests();
     old = load_logical(argv[1], &olen);
     logical = load_logical(argv[2], &logical_len);
     ofo = flash_off(old);
     nfo = flash_off(logical);
+    expected_flash_off = nfo;
     /* device: OLD installed, plus a valid update record at 0xE4F00 (Felucca's step 1) and 0xE8F00 (the stock
      * firmware's, a first install from it); user sample data in Felucca's store that looks like a record */
     memset(nor, 0xFF, sizeof nor);
@@ -446,11 +656,33 @@ int main(int argc, char **argv)
         logical[at] ^= 0x01;
         requests = 0;
     }
+    bad += check("validation failures publish failure before any verified progress", ldr_screen_state == LDR_FAILED &&
+                 ldr_screen_error == -12 && progress_seen == 0 && status_seen[LDR_WRITING] == 0);
+    /* the transfer re-read bound (ldr_core.c, again == 2u): a sector that stays damaged in transfer after the check
+     * (every read of it from the second on, so ldr_check's own read passed) is read exactly 3 times, then -13 and
+     * no erase or program of it or of any sector after it. Mutants again == 1u / 3u read it 2 / 4 times. */
+    {
+        uint32_t k, touched = 0;
+        flip_addr = nfo + 0x20000u; flip_on = 2; flip_seen = 0; flip_persist = 1;
+        memset(erase_n, 0, sizeof erase_n); memset(page_calls, 0, sizeof page_calls);
+        rc = ldr_session();
+        flip_addr = 0xFFFFFFFFu; flip_persist = 0;
+        for (k = 0x20000u >> 12; k < LDR_APP_HI >> 12; k++)
+            touched += erase_n[k] + page_calls[k];
+        bad += check("a sector that stays damaged in transfer: -13 after exactly 3 reads of it (plus the check's)",
+                     rc == -13 && flip_seen == 1u + 3u && ldr_screen_state == LDR_FAILED && ldr_screen_error == -13);
+        bad += check("... and neither it nor any sector after it was erased or programmed",
+                     touched == 0 && !memcmp(nor + 0x20000, old + ofo + 0x20000, 0x93000 - 0x20000));
+        requests = 0; erases = 0;
+    }
     /* a sector that comes in different the second time (a transfer error after the check) is read again */
     flip_addr = nfo + 0x20000u; flip_on = 2; flip_seen = 0;
     rc = ldr_session();
     printf("  rc %d, %u requests, %u sector erases\n", rc, requests, erases);
     bad += check("install completes (flash.bin exactly the app area, 0x93000)", rc == 0);
+    bad += check("retry validates, verifies every app sector then finishes successfully", ldr_screen_state == LDR_SUCCESS &&
+                 status_seen[LDR_VALIDATING] > 1 && status_seen[LDR_FINISHING] == 1 && progress_seen == LDR_NSEC &&
+                 progress_last == LDR_APP_HI - LDR_APP_LO && progress_bad == 0);
     bad += check("a sector changed in transfer after the check is read again", flip_seen == 3);
     flip_addr = 0xFFFFFFFFu;
     bad += check("app area == the new package's flash.bin", !memcmp(nor + 0x4000, logical + nfo + 0x4000, 0x93000 - 0x4000));
@@ -472,7 +704,53 @@ int main(int argc, char **argv)
     bad += cleanup_case("raw", V_RAW_SECTORS);
     bad += cleanup_case("production", V_PRODUCTION_BANK);
     bad += failure_cases();
+    bad += update_record_upfm6_tests();
     bad += check("app area still the new package's flash.bin", !memcmp(nor + 0x4000, logical + nfo + 0x4000, 0x93000 - 0x4000));
+    /* Actual native erase/program/verify failures never report a completed sector.
+     * The same real entry point retries without a reset or changed flash policy. */
+    for (uint32_t fault = 0; fault < 3u; fault++) {
+        nor[LDR_APP_LO + 4096u + 64u] ^= 1;
+        er_fail_off = fault == 0 ? LDR_APP_LO + 4096u : 0xFFFFFFFFu;
+        prog_fail = fault == 1;
+        verify_fail = fault == 2;
+        rc = ldr_session();
+        bad += check("write failure preserves only the previously verified prefix", rc == -(int)(9u + fault) &&
+                     ldr_screen_state == LDR_FAILED && ldr_screen_error == rc && progress_seen == 1 && progress_last == 4096u);
+        er_fail_off = 0xFFFFFFFFu; prog_fail = verify_fail = 0;
+        rc = ldr_session();
+        bad += check("same loader retries to successful verified completion", rc == 0 && ldr_screen_state == LDR_SUCCESS &&
+                     progress_seen == LDR_NSEC && progress_bad == 0);
+    }
+    bad += write_retry_cases();
+    /* Display failure during validation must leave USB/session/retry functional,
+     * retaining the exact borrowed source across all flash operations. */
+    display_reset();
+    display_stall_at = 6;                           /* first pixel row */
+    ldr_usb_started = 1;
+    rc = ldr_session();
+    bad += check("missing display completion does not prevent verified install", rc == 0 && ldr_lcd_failed &&
+                 display_active && display_cs && progress_seen == LDR_NSEC && display_usb && display_wdt);
+    {
+        uint32_t sends = display_sends;
+        nor[LDR_APP_LO + 64u] ^= 1;
+        er_fail_off = LDR_APP_LO;
+        rc = ldr_session();
+        er_fail_off = 0xFFFFFFFFu;
+        bad += check("missing LCD preserves error result and owned source", rc == -9 && display_sends == sends);
+        rc = ldr_session();
+        display_check();
+        bad += check("retry with permanently missing LCD still succeeds", rc == 0 && display_sends == sends &&
+                     display_active && progress_bad == 0);
+    }
+    display_reset();
+    display_delay = 24u * 1900u;
+    {
+        uint32_t start = display_ticks;
+        ldr_install();
+        bad += check("slow completing display returns actual session within aggregate deadline", ldr_lcd_failed &&
+                     display_ticks - start < 24u * (LDR_LCD_DRAW_US + 1000u) && display_sends < 240u);
+    }
+    bad += check("successful actual installer path sends reply then detaches and restarts", restart_calls == 1 && restart_step == 0);
     /* a package for another chip key is refused before any erase */
     {
         uint8_t save = logical[nfo + 0x4000 + 5];
@@ -481,8 +759,13 @@ int main(int argc, char **argv)
         erases = 0;
         rc = ldr_session();
         bad += check("foreign key / damaged app head refused, nothing erased", rc == -6 && erases == 0);
+        ldr_install();
+        bad += check("failed actual installer path returns for retry without restart", restart_calls == 1 && restart_step == 0 &&
+                     ldr_screen_state == LDR_FAILED && ldr_screen_error == -6);
         logical[nfo + 0x4000 + 5] = save;
     }
     printf("%s\n", bad ? "LOADER TEST FAILED" : "loader test passed");
+    free(old);
+    free(logical);
     return bad != 0;
 }

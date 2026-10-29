@@ -19,6 +19,8 @@
  * crash / UBOOT paths. Nothing of the firmware changes for this file.
  *   web/emu/build.sh  ->  build/emu/{felucca.wasm, worklet.js, index.html} */
 #include <stdint.h>
+#include "../../firmware/hal/fm1_input_contract.h"
+#include "../../firmware/hal/fm1_lcd_contract.h"
 
 #define FELUCCA_WEB 1
 #ifndef FELUCCA_CDC
@@ -32,7 +34,28 @@
 #define FELUCCA_VERSION "WEB"
 #endif
 
-static uint8_t nor[0x100000];            /* the SPI NOR (erased: 0xFF) */
+/* Reuse the host NOR's programming/page rules. The browser retains its own
+ * bounds, sector rounding and successful-operation counter below; no simulated
+ * power-cut controls are exported to the page. */
+#define st_read web_nor_read
+#define st_erase web_nor_erase_sector
+#define st_prog web_nor_program
+#ifdef __EMSCRIPTEN__
+#include <stdio.h>
+#include <stdlib.h>
+/* The standalone page has no WASI imports. A violated model page contract
+ * must trap locally rather than introduce printf/exit host dependencies. */
+#define printf(...) ((void)0)
+#define exit(status) __builtin_trap()
+#endif
+#include "../../tests/host_nor.h"
+#ifdef __EMSCRIPTEN__
+#undef printf
+#undef exit
+#endif
+#undef st_read
+#undef st_erase
+#undef st_prog
 #define SMP_USER_XIP(k) ((const uint8_t *)nor + SMP_USER_BASE + (k) * SMP_USER_SIZE)   /* eng_sample.c */
 #define main hostsim_main
 #include "../../tests/hostsim.c"
@@ -41,7 +64,9 @@ static uint8_t nor[0x100000];            /* the SPI NOR (erased: 0xFF) */
 /* ------------------------------------------------------------ the clock --- */
 #define FM1_TICKS_PER_US 24u             /* TIMER4: 24 MHz */
 static uint32_t web_ticks;
-static uint32_t fm1_ticks(void) { return web_ticks; }
+#define HOST_CLOCK_TICKS web_ticks
+#include "../../tests/host_clock.h"
+#undef HOST_CLOCK_TICKS
 
 /* ------------------------------------------------------ audio (ALNK0) --- */
 static uint32_t web_half;                /* the half the next render fills */
@@ -110,6 +135,7 @@ static int fm1_led_idle_on(void) { return fm1_led_anim_on() && web_anim_idle; }
 static void fm1_led_anim_stop(void) { web_anim_run = 0; }
 static uint32_t web_pressed, web_released, web_notes_pressed;
 static int32_t web_enc_steps[7];
+static fm1_input_edges_fn fm1_input_edges;
 static uint32_t fm1_input_edges(uint32_t *released)
 {
     uint32_t p = web_pressed;
@@ -118,7 +144,9 @@ static uint32_t fm1_input_edges(uint32_t *released)
     web_pressed = web_released = 0;
     return p;
 }
+static fm1_input_note_edges_fn fm1_input_note_edges;
 static uint32_t fm1_input_note_edges(void) { uint32_t n = web_notes_pressed; web_notes_pressed = 0; return n; }
+static fm1_enc_take_fn fm1_enc_take;
 static int32_t fm1_enc_take(uint32_t e) { int32_t s = web_enc_steps[e % 7u]; web_enc_steps[e % 7u] = 0; return s; }
 static void fm1_input_init(void) {}
 static void fm1_input_tick(void) {}
@@ -129,6 +157,7 @@ static void fm1_irq_on(void) {}
 /* ----------------------------------------------------------- the screen --- */
 static uint16_t web_fb[240 * 240];       /* RGB565 as the panel gets it (high byte first) */
 static uint32_t web_draws;
+static lcd_fill_fn lcd_fill;
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;
@@ -138,6 +167,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
             web_fb[(y + j) * 240u + x + i] = sw;
     web_draws++;
 }
+static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
     uint32_t i, j;
@@ -176,33 +206,28 @@ static int st_read(uint32_t off, void *dst, uint32_t n)
 {
     if (off >= sizeof nor || n > sizeof nor - off)
         return -1;
-    memcpy(dst, nor + off, n);
-    return 0;
+    return web_nor_read(off, dst, n);
 }
 static int st_erase(uint32_t off)
 {
     if (off >= sizeof nor || 4096u > sizeof nor - off)
         return -8;
-    memset(nor + (off & ~4095u), 0xFF, 4096);
-    web_flash_writes++;
-    return 0;
+    int rc = web_nor_erase_sector(off & ~4095u);
+    if (!rc)
+        web_flash_writes++;
+    return rc;
 }
 static int st_prog(uint32_t off, const void *src, uint32_t n)       /* NOR: a write only clears bits */
 {
-    const uint8_t *s = src;
-    uint32_t i;
     if (off >= sizeof nor || n > sizeof nor - off)
         return -8;
-    for (i = 0; i < n; i++)
-        nor[off + i] &= s[i];
-    web_flash_writes++;
-    return 0;
+    int rc = web_nor_program(off, src, n);
+    if (!rc)
+        web_flash_writes++;
+    return rc;
 }
-static uint32_t irq_save(void) { return 0; }
-static void irq_restore(uint32_t f) { (void)f; }
-static uint32_t fl_jedec_ram(void) { return 0x856014u; }             /* the FM-1's part (project.c) */
-static void fl_plain_window_init(void) {}
-#define FL_FAR(fn) (fn)
+#define HOST_FLASH_JEDEC 0x856014u                /* the FM-1's part (project.c persist_boot) */
+#include "../../tests/host_flash_context.h"
 #include "../../firmware/src/storage.c"
 #include "../../firmware/src/upreset.c"
 #include "../../firmware/src/project.c"
