@@ -366,6 +366,104 @@
       "requested_at": "2026-10-25",
       "source_name": "Matryoshka (Modular-1-derived nested modular synth; exact coefficient caches, partial LCD updates, A/B morphs and macro ranges)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/701",
+      "authorization": "User requested on 2026-10-26: analyse joakimeriksson/fm1-dock features and optimizations, create justified adoption issues and consider adding it to the firmware watcher. Source review recommends registration.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "e177e83e560483f419baad80511d9dd1acfdeffe"
+      },
+      "historical_total_at_setup": 40,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; verify repository identity/main/pin, fetch complete non-shallow DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. This source snapshot grants no per-commit coverage.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "e177e83e560483f419baad80511d9dd1acfdeffe"
+      },
+      "recent_frontiers": {
+        "main": "e177e83e560483f419baad80511d9dd1acfdeffe"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/699",
+        "https://github.com/kmplngj/Felucca/issues/700",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/38"
+      ],
+      "repository": "joakimeriksson/fm1-dock",
+      "repository_id": 1428799110,
+      "requested_at": "2026-10-26",
+      "source_name": "FM1 Dock (FM-1 firmware)",
+      "status": "pending_initialization"
+    },
+    {
+      "authorization": "User requested on 2026-10-27: analyse marksweiss/tastywaves firmware for useful optimizations absent from native code and existing issues, and add it to the firmware watcher.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "12d3499d056ae4c93908783748ca3ddb5d4d61fc"
+      },
+      "historical_total_at_setup": 133,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; reverify stable repository identity/canonical name/main/immutable pin, fetch complete non-shallow DAG and fresh tip, preserve existing intervals and journal, append initialized repository state, recalculate queues from complete DAGs and confirmed records, then remove this pending entry only after success. This topic snapshot grants no per-commit coverage; retain an explicit blocker on failure.",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "12d3499d056ae4c93908783748ca3ddb5d4d61fc"
+      },
+      "recent_frontiers": {
+        "main": "12d3499d056ae4c93908783748ca3ddb5d4d61fc"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/757",
+        "https://github.com/kmplngj/Felucca/issues/110"
+      ],
+      "repository": "marksweiss/tastywaves",
+      "repository_id": 1433738566,
+      "requested_at": "2026-10-27",
+      "source_name": "TastyWaves (Dinghy-derived FM-1 wavetable synth; active-FX modulation ramps and nonblocking MASTER ADC/LCD DMA scheduling)",
+      "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/762",
+      "authorization": "User requested on 2026-10-28: analyse Ravel_FM1 features, instruments and optimizations for our fork, make a plan and GitHub issues, and consider adding it to the watcher. Source review recommends registration.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "d7f51158f581050022fa35a691eddd4c078a9ab1"
+      },
+      "historical_total_at_setup": 105,
+      "initialization_policy": "Initialize at the start of the next audit run after ordinary reviewed registration reaches main and the state branch; verify repository identity/main/pin, fetch complete non-shallow DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. This source snapshot grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca-Engines-GPL/issues/39",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "d7f51158f581050022fa35a691eddd4c078a9ab1"
+      },
+      "recent_frontiers": {
+        "main": "d7f51158f581050022fa35a691eddd4c078a9ab1"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/762",
+        "https://github.com/kmplngj/Felucca/issues/763",
+        "https://github.com/kmplngj/Felucca/issues/459",
+        "https://github.com/kmplngj/Felucca/issues/17",
+        "https://github.com/kmplngj/Felucca/issues/179",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/39"
+      ],
+      "repository": "De-Pattern/Ravel_FM1",
+      "repository_id": 1425709397,
+      "requested_at": "2026-10-28",
+      "source_name": "Ravel (FM-1 main firmware; software branch excluded)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [

@@ -8,6 +8,37 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [Ravel adoption review](ravel-adoption-2026-10-28.md), tracked in
+[Felucca #762](https://github.com/kmplngj/Felucca/issues/762), registers
+`De-Pattern/Ravel_FM1` main as a pending source, repository ID `1425709397`,
+pinned at `d7f51158f581050022fa35a691eddd4c078a9ab1` (105 reachable commits
+in its complete non-shallow main DAG; zero credited assessments). The separate
+`software` branch is excluded. After ordinary review brings this registration
+to main and the canonical state registry, the existing runner must reverify
+identity, branch, immutable pin and full history before initialization.
+Pending registration is not active tracking or completed coverage; this adds
+no schedule or automation.
+
+The [TastyWaves optimization review](tastywaves-review-2026-10-27.md) registers
+`marksweiss/tastywaves` main as a pending source, repository ID `1433738566`, pinned
+at `12d3499d056ae4c93908783748ca3ddb5d4d61fc` (133 reachable commits in a complete
+non-shallow DAG, zero credited assessments). New MASTER ADC/LCD-DMA investigation
+[#757](https://github.com/kmplngj/Felucca/issues/757) is hardware-gated; chorus LFO
+ramps reuse [#110](https://github.com/kmplngj/Felucca/issues/110).
+After ordinary review brings this registration to main and the canonical state
+registry, the existing runner must reverify identity, branch, immutable pin and full
+history before initialization. Pending registration is not active tracking or
+completed review coverage; this changes no schedule or automation.
+
+The [fm1-dock adoption plan](https://github.com/kmplngj/Felucca/issues/701)
+registers `joakimeriksson/fm1-dock` main as a pending source, repository ID
+`1428799110`, pinned at `e177e83e560483f419baad80511d9dd1acfdeffe` (40 reachable
+commits in its complete non-shallow DAG, zero credited assessments). After ordinary
+review brings this registration to main and the canonical state registry, the existing
+runner must reverify identity, branch, immutable pin and full history before
+initialization. Pending registration is not active tracking or completed review
+coverage; this adds no schedule or automation.
+
 The [Matryoshka adoption review](matryoshka-adoption-plan-2026-10-25.md), tracked in
 [Felucca #672](https://github.com/kmplngj/Felucca/issues/672), proposes a pending
 `glvno/matryoshka` main registration at

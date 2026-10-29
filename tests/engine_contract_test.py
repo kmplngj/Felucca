@@ -28,10 +28,10 @@ class FirmwareEngineContract(unittest.TestCase):
         if not self.cc or shutil.which(self.cc[0]) is None:
             self.fail('configured host C compiler unavailable')
 
-    def compile(self, *flags):
+    def compile(self, *flags, fs=44100):
         return subprocess.run([*self.cc, '-std=c99', '-fsyntax-only', '-x', 'c',
                                '-I', str(self.root / 'firmware/src'), '-I', str(ROOT / 'build/gen'), *flags, '-'],
-                              input=('#define FS 44100\n#define CTL 32\n'
+                              input=(f'#define FS {fs}\n#define CTL 32\n'
                                      '#define __attribute__(x) /* target section placement, as in hostsim.c */\n'
                                      '#include "core.h"\nint main(void) { return 0; }\n'),
                               text=True, capture_output=True)
@@ -39,6 +39,13 @@ class FirmwareEngineContract(unittest.TestCase):
     def test_supported_real_firmware_host(self):
         result = self.compile()
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_library_rates_do_not_enable_unsupported_firmware_rates(self):
+        for fs in (32000, 48000, 96000, 192000):
+            with self.subTest(fs=fs):
+                result = self.compile(fs=fs)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Felucca firmware requires FS 44100', result.stderr)
 
     def test_incompatible_host_requirement_is_rejected(self):
         result = self.compile('-DFELUCCA_ENGINE_API_REQUIRED=2')

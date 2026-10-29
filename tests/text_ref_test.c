@@ -11,6 +11,7 @@
  * five M8 roles and a generic alpha phase array, THEME on SURF and TEXT on BG, in every palette: the end pen and every
  * pixel must be identical (GREY expands its gray with G = 2 R, the gray rule; the prototype's G = 2 R + R / 16
  * differed by one green LSB there, and that is the only difference to the prototype's renders). */
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -19,8 +20,7 @@
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) */
 static void lcd_wake_now(void) {}
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #include "../firmware/src/gfx.c"
 #include "font_metadata_reference.h"
 #include "ui_icons.h"                            /* the one shared non-font Huffman consumer */

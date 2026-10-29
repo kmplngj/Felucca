@@ -24,11 +24,25 @@ struct felucca_dbg {
 static volatile uint32_t audio_halves, audio_max_us;
 static volatile uint32_t t5_nested_ticks;              /* TIMER4 ticks TIMER5 spent nested in this ISR (main.c) */
 static uint32_t audio_cpu_rem;                         /* keep the fractional IIR step: no low-load bias */
+#include "render_stage.h"
 
 static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 -> 24 bit */
 {
     uint32_t i;
+#if FELUCCA_RENDER_STAGE
+    uint32_t empty_start, empty_end, start, end;
+    empty_start = fm1_ticks();
+    RING_PUBLISH();
+    empty_end = fm1_ticks();
+    start = fm1_ticks();
+    RING_PUBLISH();
+#endif
     mix_block(out, n);
+#if FELUCCA_RENDER_STAGE
+    RING_PUBLISH();
+    end = fm1_ticks();
+    render_stage_block(end - start, empty_end - empty_start);
+#endif
 #if FELUCCA_UAC
     uac_tap(out, n);                                    /* the USB audio input: the same master output */
 #endif
@@ -99,6 +113,9 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
 {
     uint8_t p;
     uint32_t t0;
+#if FELUCCA_RENDER_STAGE
+    uint32_t stage_t0, stage_nested0, stage_ambiguous;
+#endif
     FM1_ISR_SIM_ENTER();                        /* host: simulated interrupt context (isr_assert.h) */
     felucca_dbg.in_audio = 1;                   /* first: TIMER5 nests from here on (main.c) */
     p = fm1_audio_pending();
@@ -108,6 +125,12 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
     if (p & FM1_AUDIO_HALF) {
         uint32_t half = fm1_audio_free_half(), b, us;
         int32_t *o = &abuf[half * HALF_WORDS];
+#if FELUCCA_RENDER_STAGE
+        stage_nested0 = t5_nested_ticks;
+        stage_t0 = fm1_ticks();
+        stage_ambiguous = stage_nested0 != t5_nested_ticks;
+        render_stage_begin();
+#endif
         if (shed_req) {
             shed_req = 0;
             shed_voice();
@@ -123,7 +146,18 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         }
         fm1_audio_ack_half();
         audio_halves++;
+#if FELUCCA_RENDER_STAGE
+        {
+            uint32_t nested_before = t5_nested_ticks;
+            uint32_t end = fm1_ticks();
+            uint32_t nested_after = t5_nested_ticks;
+            us = shed_check(end - t0);                 /* legacy meter, its original start/reset semantics */
+            render_stage_publish(end - stage_t0, nested_before - stage_nested0,
+                                 stage_ambiguous || nested_before != nested_after);
+        }
+#else
         us = shed_check(fm1_ticks() - t0);
+#endif
         if (us > audio_max_us)
             audio_max_us = us;
         {

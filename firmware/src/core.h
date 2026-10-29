@@ -78,6 +78,9 @@ typedef char eng_ids_fit[NENGINES <= ENG_ID_MAX && ENG_ID_MAX < ENG_USER_WIRE ? 
  * vmod_t, preset_t with FX() / PAT(), engine_t, NELEM */
 /* The firmware implements portable engine contract v1. A new library version must be reviewed together
  * with its host; an old/unversioned dependency must not silently compile against changed shared layouts. */
+#if !defined(FS) || FS != 44100
+#error "Felucca firmware requires FS 44100; other engine-library rates are not supported by this host"
+#endif
 #if defined(FELUCCA_ENGINE_API_REQUIRED) && FELUCCA_ENGINE_API_REQUIRED != 1u
 #error "Felucca implements Felucca-Engines API v1; update the host before changing its requirement"
 #endif

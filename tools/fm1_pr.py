@@ -58,13 +58,49 @@ def check_worktree(source, path, repository, number, revision=None, removing=Fal
         raise ValueError("Worktree HEAD changed; keep or move your commits before cleanup/reuse")
     status = ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]
     if removing:
+        # foreach skips deinitialized repositories, whose private Git directories
+        # (and local history) would still be deleted with the worktree.
+        if any(line.startswith("-") for line in
+               git(path, "submodule", "status", "--recursive").splitlines()):
+            raise ValueError("Worktree has uninitialized submodules; restore/initialize the tracked submodules "
+                             "and preserve local work outside this worktree before retrying cleanup")
+        initialized = {Path(line).resolve() for line in git(
+            path, "submodule", "foreach", "--quiet", "--recursive",
+            "git rev-parse --absolute-git-dir").splitlines()}
+        # Removed gitlinks can leave orphan repositories invisible to status.
+        # Visit module-name directories and nested modules, never refs/objects/logs.
+        pending = [record.parent / "modules"]
+        while pending:
+            module = pending.pop()
+            if not module.is_dir():
+                continue
+            if (module / "config").is_file() and (module / "HEAD").is_file():
+                if module.resolve() not in initialized:
+                    raise ValueError("Worktree has inactive or orphaned submodule repositories; "
+                                     "preserve their history outside this worktree and resolve them before cleanup")
+                pending.append(module / "modules")
+            else:
+                pending.extend(child for child in module.iterdir()
+                               if child.is_dir() and not child.is_symlink())
         status.append("--ignored=matching")
         # Status deliberately hides files flagged assume-unchanged/skip-worktree.
-        # Refuse such indexes, and submodule-only refs/stashes that removal would lose.
+        # Refuse such indexes, and submodule commits/stashes (including reflog-only
+        # detached work) whose only repository copy removal would destroy.
         indexes = git(path, "ls-files", "-v") + "\n" + git(
             path, "submodule", "foreach", "--quiet", "--recursive", "git ls-files -v")
         local_refs = git(path, "submodule", "foreach", "--quiet", "--recursive",
-                         "git rev-list --all --not --remotes HEAD")
+                         "git rev-list --reflog --all --not --remotes HEAD")
+        # Removal also deletes this worktree's private HEAD reflog. Commits made and then
+        # abandoned by a detached checkout live only there; refuse unless a remote has them.
+        reflog = git(path, "reflog", "show", "--format=%H", "HEAD").split()
+        if reflog:
+            # Reflog display omits old objects; a retained checkout entry can be their only root.
+            # Read this private HEAD log only, never the source's shared branch/worktree logs.
+            reflog = {oid for line in (record.parent / "logs/HEAD").read_text().splitlines()
+                      for oid in line.split()[:2] if oid.strip("0")}
+        if reflog and git(path, "rev-list", *sorted(reflog), "--not", "--remotes", "HEAD"):
+            raise ValueError("Worktree has local parent commits reachable only from its HEAD reflog; "
+                             "push or otherwise preserve them outside this worktree first")
         if any(line and (line[0].islower() or line[0] == "S") for line in indexes.splitlines()) or local_refs:
             raise ValueError("Worktree has hidden index entries or local submodule commits/stashes; preserve them first")
     # The parent status omits ignored files inside submodules. Inspect those too.
