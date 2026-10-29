@@ -30,7 +30,7 @@ static void panel_setup(void) {}
 
 static uint8_t nor[0x100000], flash_ok = 1;
 static int erase_error, fail_after = -1;
-static uint32_t erases, as_erases, progs;        /* (as_erases: the autosave's two sectors, 0xE5000 / 0xE6000) */
+static uint32_t erases, as_erases;               /* (as_erases: the autosave's two sectors, 0xE5000 / 0xE6000) */
 static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
 static int st_erase(uint32_t off)
 {
@@ -42,7 +42,6 @@ static int st_erase(uint32_t off)
 }
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
-    progs++;
     const uint8_t *s = src;
     uint32_t i;
     if (fail_after == 0) return -9;
@@ -51,7 +50,17 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)
     return 0;
 }
 #include "host_flash_context.h"
+/* Observe storage program attempts without changing this fixture's NOR fake or
+ * reset policy. The count is monotonic; each passivity check takes a baseline. */
+static uint32_t session_program_attempts;
+static int session_counted_prog(uint32_t off, const void *src, uint32_t n)
+{
+    session_program_attempts++;
+    return st_prog(off, src, n);
+}
+#define st_prog session_counted_prog
 #include "../firmware/src/storage.c"
+#undef st_prog
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
 #include "../firmware/src/session_state.h"
@@ -94,8 +103,96 @@ static void reset(void)
     flash_ok = 1;
     erase_error = 0;
     fail_after = -1;
-    up_gen = erases = progs = 0;
+    up_gen = erases = 0;
     irq_start_race = irq_races = 0;
+}
+
+static int session_state_test(void)
+{
+    int bad = 0, ok;
+    uint32_t before;
+    session_state_t s;
+    reset();
+    ui_prefs |= PREF_RESTORE_OFF;                  /* an autosave refusal alone cannot inhibit other writers */
+    settings_save();
+    before = erases;
+    ml_toggle();
+    ml_knob(&trk[0], P_LEVEL);
+    ok = midi_learned(74, 96) && ml_heard == 75u;
+    s = session_state_read();
+    ok &= !song.playing && (ui_prefs & PREF_RESTORE_OFF) && s.learn == 15u && erases == before;
+    bad += check("session: stopped/autosave OFF still exposes a pending learned CC", ok);
+    {
+        /* A forbidden settings_unsaved() call exports into persist_tmp and
+         * normalizes settings.zoom. Make either side effect observable. */
+        memset(&persist_tmp, 0xA5, sizeof persist_tmp);
+        settings.zoom = 0xA5u;
+        persist_rec_t saved = persist_saved, tmp = persist_tmp;
+        project_store_t wire = proj_wire;
+        uint32_t was_progs = session_program_attempts, was_nor = st_crc32(nor, sizeof nor);
+        uint8_t saved_ui[sizeof ui], saved_settings[sizeof settings], ml[sizeof settings_ml], dev[sizeof settings_dev];
+        memcpy(saved_ui, &ui, sizeof ui);
+        memcpy(saved_settings, &settings, sizeof settings);
+        memcpy(ml, settings_ml, sizeof ml);
+        memcpy(dev, settings_dev, sizeof dev);
+        ok = 1;
+        for (uint32_t i = 0; i < 20u; i++) {
+            session_state_t again = session_state_read();
+            ok &= !memcmp(&s, &again, sizeof s);
+        }
+        ok &= !memcmp(saved_ui, &ui, sizeof ui) && !memcmp(saved_settings, &settings, sizeof settings) &&
+              !memcmp(ml, settings_ml, sizeof ml) && !memcmp(dev, settings_dev, sizeof dev) &&
+              !memcmp(&tmp, &persist_tmp, sizeof tmp) && !memcmp(&saved, &persist_saved, sizeof saved) &&
+              !memcmp(&wire, &proj_wire, sizeof wire) && erases == before && session_program_attempts == was_progs &&
+              st_crc32(nor, sizeof nor) == was_nor && !persist_pending;
+        bad += check("session: repeated observations preserve handoff, settings, staging and storage", ok);
+    }
+    ml_poll();
+    s = session_state_read();
+    bad += check("session: actual learn consumer writes later, observation never consumes it",
+                  erases > before && s.learn == 1u && ml_get(0) && !s.settings_pending);
+
+    before = erases;
+    settings.palette = (uint8_t)((settings.palette + 1u) % NPALETTES);
+    settings_later();
+    s = session_state_read();
+    ok = s.settings_later && !s.settings_pending;
+    ui.menu = 1;
+    song.playing = 1;
+    settings_later_poll();
+    s = session_state_read();
+    ok &= !s.settings_later && s.menu && s.settings_pending == PERSIST_REQUESTED && erases == before;
+    song.playing = 0;
+    erase_error = 1;
+    settings_poll();
+    s = session_state_read();
+    ok &= s.settings_pending == PERSIST_RETRY;
+    erase_error = 0;
+    fm1_ms += 1001u;
+    settings_poll();
+    s = session_state_read();
+    ok &= s.settings_pending == PERSIST_IDLE && erases > before;
+    bad += check("session: real deferred save, stopped retry and idle states are distinct", ok);
+#if FELUCCA_SLICE
+    /* The existing slice writer's mask is main-loop-owned. Empty slots cause
+     * no write; the actual service still defers and consumes its request. */
+    slc_man_save = 5u;
+    song.playing = 1;
+    slc_store_poll();
+    s = session_state_read();
+    ok = s.features == 3u && s.slice_pending == 5u;
+    before = erases;
+    song.playing = 0;
+    ui.menu = 0;
+    ui.home = 1;
+    slc_store_poll();
+    s = session_state_read();
+    bad += check("session: actual slice service retains then clears the observed slot mask",
+                  ok && !s.slice_pending && erases == before);
+#else
+    bad += check("session: no SLICE persistence is explicitly unavailable", s.features == 1u && !s.slice_pending);
+#endif
+    return bad;
 }
 
 /* ---- 1.0.3: the retired FM6 bank's patches move into the user presets on the first boot (up_fm6.c) ---- */
@@ -579,94 +676,6 @@ static int durability_test(void)
         bad += check("panel's deferred request cleared (playing, no flash): still QUEUED / RAM_ONLY, no erase", ok);
     }
     /* DUR_API_END */
-    return bad;
-}
-
-static int session_state_test(void)
-{
-    int bad = 0, ok;
-    uint32_t before;
-    session_state_t s;
-    reset();
-    ui_prefs |= PREF_RESTORE_OFF;                  /* an autosave refusal alone cannot inhibit other writers */
-    settings_save();
-    before = erases;
-    ml_toggle();
-    ml_knob(&trk[0], P_LEVEL);
-    ok = midi_learned(74, 96) && ml_heard == 75u;
-    s = session_state_read();
-    ok &= !song.playing && (ui_prefs & PREF_RESTORE_OFF) && s.learn == 15u && erases == before;
-    bad += check("session: stopped/autosave OFF still exposes a pending learned CC", ok);
-    {
-        /* A forbidden settings_unsaved() call exports into persist_tmp and
-         * normalizes settings.zoom. Make either side effect observable. */
-        memset(&persist_tmp, 0xA5, sizeof persist_tmp);
-        settings.zoom = 0xA5u;
-        persist_rec_t saved = persist_saved, tmp = persist_tmp;
-        project_store_t wire = proj_wire;
-        uint32_t was_progs = progs, was_nor = st_crc32(nor, sizeof nor);
-        uint8_t saved_ui[sizeof ui], saved_settings[sizeof settings], ml[sizeof settings_ml], dev[sizeof settings_dev];
-        memcpy(saved_ui, &ui, sizeof ui);
-        memcpy(saved_settings, &settings, sizeof settings);
-        memcpy(ml, settings_ml, sizeof ml);
-        memcpy(dev, settings_dev, sizeof dev);
-        ok = 1;
-        for (uint32_t i = 0; i < 20u; i++) {
-            session_state_t again = session_state_read();
-            ok &= !memcmp(&s, &again, sizeof s);
-        }
-        ok &= !memcmp(saved_ui, &ui, sizeof ui) && !memcmp(saved_settings, &settings, sizeof settings) &&
-              !memcmp(ml, settings_ml, sizeof ml) && !memcmp(dev, settings_dev, sizeof dev) &&
-              !memcmp(&tmp, &persist_tmp, sizeof tmp) && !memcmp(&saved, &persist_saved, sizeof saved) &&
-              !memcmp(&wire, &proj_wire, sizeof wire) && erases == before && progs == was_progs &&
-              st_crc32(nor, sizeof nor) == was_nor && !persist_pending;
-        bad += check("session: repeated observations preserve handoff, settings, staging and storage", ok);
-    }
-    ml_poll();
-    s = session_state_read();
-    bad += check("session: actual learn consumer writes later, observation never consumes it",
-                  erases > before && s.learn == 1u && ml_get(0) && !s.settings_pending);
-
-    before = erases;
-    settings.palette = (uint8_t)((settings.palette + 1u) % NPALETTES);
-    settings_later();
-    s = session_state_read();
-    ok = s.settings_later && !s.settings_pending;
-    ui.menu = 1;
-    song.playing = 1;
-    settings_later_poll();
-    s = session_state_read();
-    ok &= !s.settings_later && s.menu && s.settings_pending == PERSIST_REQUESTED && erases == before;
-    song.playing = 0;
-    erase_error = 1;
-    settings_poll();
-    s = session_state_read();
-    ok &= s.settings_pending == PERSIST_RETRY;
-    erase_error = 0;
-    fm1_ms += 1001u;
-    settings_poll();
-    s = session_state_read();
-    ok &= s.settings_pending == PERSIST_IDLE && erases > before;
-    bad += check("session: real deferred save, stopped retry and idle states are distinct", ok);
-#if FELUCCA_SLICE
-    /* The existing slice writer's mask is main-loop-owned. Empty slots cause
-     * no write; the actual service still defers and consumes its request. */
-    slc_man_save = 5u;
-    song.playing = 1;
-    slc_store_poll();
-    s = session_state_read();
-    ok = s.features == 3u && s.slice_pending == 5u;
-    before = erases;
-    song.playing = 0;
-    ui.menu = 0;
-    ui.home = 1;
-    slc_store_poll();
-    s = session_state_read();
-    bad += check("session: actual slice service retains then clears the observed slot mask",
-                  ok && !s.slice_pending && erases == before);
-#else
-    bad += check("session: no SLICE persistence is explicitly unavailable", s.features == 1u && !s.slice_pending);
-#endif
     return bad;
 }
 
