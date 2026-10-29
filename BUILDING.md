@@ -678,6 +678,12 @@ reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evid
 not physical service time, controller races or host-driver qualification. Existing
 UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
 
+The audio and click fixtures also check the [USB music routing
+matrix](docs/usb-audio-routing.md): MASTER/FIXED, stereo MASTER attenuation,
+DAC-only click and shared SPEAKER EQ, including release/FX tails and production
+UAC packet output at 44.1/48 kHz. Host routing and packet evidence remains
+separate from physical USB/analog capture.
+
 The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
 and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
 N/A tracks, retained project/preset/backup data, and serializers. Engine-memory switches
