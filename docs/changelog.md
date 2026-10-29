@@ -82,6 +82,12 @@ recorded in the linked reports, rather than every current build or device.
   See the [bounded replay guide](native-emulator-replay.md); this supplies no
   hotspot attribution, physical timing result or device qualification.
 
+- **Read-only boot clock evidence:** normal USB SERIAL diagnostics report seven
+  saved startup clock-register words without changing clock configuration.
+  The collector retains raw values and supports older firmware that omits them.
+  Real bootloader/reset-path readings and any correction decision remain pending;
+  see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.
@@ -174,6 +180,12 @@ recorded in the linked reports, rather than every current build or device.
   and checksums, and a repository-backed firmware-watch ledger for reviewing other forks.
 
 ### Fixed
+
+- **USB controller retry:** local restart clears stale configuration and pending
+  control/stream state before reattachment, so bulk/audio endpoints wait for fresh host
+  configuration. Existing host-reset queue policy is preserved. Software-model
+  checks pass; physical USB recovery qualification remains pending. See
+  [test scope](../BUILDING.md#tests) and [counter interpretation](diagnostics.md#interpreting-a-report).
 
 - The offline USB tone checker rejects recordings without synchronized tone data,
   unsupported rates and incomplete PCM, and reports matched frames accurately.
@@ -279,6 +291,18 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Changed
 
+- **Return to official firmware across bootloaders:** Felucca's update staging and
+  the Python installer accept M-VAVE's official V16 as well as V15, each only as the
+  exact reviewed file (whole-file SHA-256 on the host; flash image size and CRC16,
+  boot-area SHA-256 and chip key on the device), over whichever boot area the unit has. Before, V15 was
+  refused on a unit with V16's bootloader or m-bootloader, and V16 everywhere. M-VAVE's
+  FM1 Open firmware and m-bootloader's installer now get explicit explanations instead
+  of generic failures. The [offline boot-area survey](boot-area-survey.md), hardened
+  separately in #712 and retained here, checks saved dump/package CRCs and bounded
+  fields; declared clocks (V16's: 320 MHz, #618) are not live measurements. V16
+  return and crossed-bootloader transitions await FM-1 qualification; the browser installer keeps V15 until its
+  client update. See [return to official firmware](usb-rescue.md#return-to-official-firmware-and-the-boot-area-619)
+  and [compatible bootloaders](usb-rescue.md#boot-areas-and-other-firmware).
 - **Unified native reading:** value pages use a shared four-knob parameter bank
   and a stable larger current value while keeping full native graphs. Explicit
   scope feedback covers held-step locks, motion and temporary/kept edits; focus

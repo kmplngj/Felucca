@@ -82,13 +82,19 @@ qualification remains pending.
 | --- | --- | --- |
 | CRC-checked current FM-1 image, exact `0x93000` flash image, supported loader heads and initial `FELUCCA-LOADER-1` literal | `ota-FM-1_900` | Python, maintained browser |
 | Unmodified official V15, whole-file SHA-256 `db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a` | `ota-FM-1_015` | Python, maintained browser |
-| Unknown loader, wrong model or crossed pair | Refused before that loader's START/data | All |
+| Unmodified official V16, whole-file SHA-256 `d017fb65e70aca97ee29d944470c3515a74581df5c0576bf70de917c7b2b61d5` | `ota-FM-1_015` | Python; browser pending its client update |
+| Unknown loader, wrong model, crossed pair, another `FM-1_0NN` file | Refused before that loader's START/data | All |
+| m-bootloader's installer (`FM-1_099`), an FM1 Open package (`FM-1_8nnnnnn`) | Refused before MIDI, with their own explanation | Python |
 
 The custom firmware's update-record name `ota-FM-1_015` is an SPL handoff field;
 the custom loader's actual handshake is `ota-FM-1_900`. A `9xx` version or matching
 model alone is insufficient. Policy is checked for both resumed and newly staged
 loaders. A rejected fresh handoff may already have written staging, but sends no
 second-phase START/data to the incompatible loader.
+
+M-VAVE's update loader is byte-identical in V15 and V16, so both official files
+use the same handshake. A `FM-1_0NN` identity is no evidence of an official file:
+modified packages already reuse `FM-1_016`. Only the pinned files are accepted.
 
 Configured application products follow `tools/build.py` syntax; they do not rename
 the fixed loader or authorize a layout. Final application identity must match.
@@ -97,8 +103,108 @@ commit. Python `--force` is a deprecated compatibility option with no effect.
 Unknown package loader families fail file preflight before MIDI discovery or an
 installation prompt; the flag cannot override the classifier, CRCs or final identity.
 
-Original V15 return remains a separately validated Python/browser path. Its loader can write beyond the custom app-only
-region; package acceptance does not prove stored-data preservation.
+### Return to official firmware and the boot area (#619)
+
+Unlike Felucca's loader, M-VAVE's loader writes the whole `flash.bin`, **boot area
+included**, and the flash above Felucca's app area (V16's app area ends at `0xA9000`).
+Felucca's staging (`firmware/src/ota.c`, `OTA_STOCK`) therefore accepts M-VAVE's
+loader only with a reviewed official image: the `flash.bin` size and UFW data CRC16
+must match V15's or V16's, the SHA-256 of its 16 KiB boot area must be that image's
+(the digests `tools/fm1_bootarea.py` names them by), and the device's own chip key
+must be the image's (`0x980F`). CRC16s alone can be forged, so a changed boot area
+with matching CRCs is refused (−5) before anything is erased. A boot area byte for
+byte equal to the device's own is also accepted, since nothing in it changes. The
+hosts additionally pin each whole file by SHA-256. Before #619, the package's boot
+area had to equal the device's,
+so V15 was refused on a unit with V16's bootloader or m-bootloader and V16 was
+refused everywhere. Now either official file installs over any boot area, and its
+boot area replaces the one the unit had. Original V15 return remains a separately
+validated Python/browser path; V16 return and every crossed boot-area transition
+are not yet observed on our FM-1 (see [the survey](#boot-area-survey)). Package
+acceptance does not prove stored-data preservation.
+
+### Update result codes
+
+A refused or failed update shows **UPDATE FAILED -N** on the FM-1 for 1.5 s and
+Felucca continues; the Python installer then reports that the FM-1 stopped answering.
+Codes −1 to −7, −15 and −16 come before anything is erased.
+
+| Code | Meaning |
+| --- | --- |
+| −1, −2 | The package's UFW header or entry list could not be read or is damaged |
+| −3 | No `flash.bin` or no `ota.bin` |
+| −4, −6 | Reading the boot area or the loader from the host failed |
+| −5 | M-VAVE's loader with a flash image that is not a reviewed official one (its size or CRC16 is not pinned, or its boot area's SHA-256 is neither the pinned one nor the device's own boot area) |
+| −7 | Unknown or malformed update loader |
+| −8 … −12 | Staging the loader failed (erase, read, program, verify, head); staging is erased again |
+| −13 | The host did not confirm; staging is erased again |
+| −14 | The update record could not be written |
+| −15 | Felucca's loader with a `flash.bin` that is not this board's `0x93000` |
+| −16 | Official image, but this FM-1's chip key differs or cannot be read |
+
+## Boot areas and other firmware
+
+Felucca's loader never writes the boot area `[0, 0x4000)`, so Felucca runs with
+whichever bootloader the unit has. The current static evidence:
+
+| Boot area | Identification | What we know | Device status |
+| --- | --- | --- | --- |
+| M-VAVE V15 | SPL `0x3830` B, record CRC `0x71C8` | Felucca's reference platform; its `isd_config.ini` declares `SYS_CLK` 360 MHz | Felucca qualified on it |
+| M-VAVE V16 (2026-10-21) | SPL `0x3898` B, record CRC `0xDCC8` | Same chip key `0x980F` and app directory at `0x4000`; its `isd_config.ini` declares `SYS_CLK` **320 MHz** (11 % below V15) | Pending: install, boot, rescue, OTA and the clock reading (#618) |
+| m-bootloader 1.2 | `AC79BLID`, board `fm1` in the SPL | Keeps the rest of the boot area; checks every firmware file's CRC before starting it | Pending |
+
+`isd_config.ini`'s declared clock is static evidence, consistent with felucca-bsp's
+one 320 MHz reading after a bootloader change; whether a unit actually runs Felucca
+at 320 MHz under V16's bootloader is the measurement #618 asks for. Every CPU budget
+in [performance.md](performance.md) assumes 360 MHz.
+
+### m-bootloader
+
+[m-bootloader](https://github.com/jvitkauskas/m-bootloader) (MIT) replaces the boot
+area. Felucca's installers do not install or offer it, and refuse its installer
+package `FM-1_099` with an explanation. Its power-on keys are read before Felucca
+starts and do not overlap with Felucca's:
+
+| Held at power-on | Read by | Result |
+| --- | --- | --- |
+| PLAY | m-bootloader | Its recovery menu (also when the firmware cannot start); **Boot app** starts Felucca |
+| REC | m-bootloader | ROM USB download mode for M-Flasher: no MIDI port |
+| OCT− | Felucca | Early USB rescue (above) |
+| OCT− and OCT+ | Felucca | Panel calibration |
+
+The Python installer's "FM-1 not found" error mentions the PLAY/REC states. The
+menu's **Wipe user data** erases the settings areas the firmware declares and lists
+them first. Felucca's package declares VM `0x93000`–`0xE9000` (its sample store,
+OTA staging, autosave and FM6 bank), BTIF `0xE9000`–`0xEA000` and USR
+`0xEA000`–`0xFC000`: expect Felucca's stored data to go, and check the listed ranges
+before confirming. Installing official V15 or V16 replaces m-bootloader with
+M-VAVE's bootloader, as m-bootloader documents.
+
+### M-VAVE FM1 Open firmware
+
+M-VAVE's FM1 Open firmware answers the identity query as `FM1_OFFICIAL_OPEN`,
+`FM1_COMMUNITY_n` or `FM-1_8nnnnnn` (V12: `FM-1_8000012`). Its updater accepts
+only a package it was armed for first, which Felucca's installers do not do. The
+Python installer refuses it before the confirmation prompt (exit code 6) and
+explains the route: return the unit to official V15 with the FM1 Open updater
+(it offers the official V15), then install Felucca. FM1 Open packages are refused
+before MIDI. Arming the Open updater for Felucca packages is out of scope.
+
+### Boot-area survey
+
+Name a unit's boot area from a flash dump (for example FM-1 Transporter's or
+M-Flasher's 1 MiB read) or a package without touching the device:
+
+```sh
+python3 tools/fm1_bootarea.py --raw DUMP.bin
+```
+
+The [offline boot-area survey](boot-area-survey.md) reports V15/V16/m-bootloader/unknown,
+checks bounded boot records, SPL/config CRCs, chip key and declared clock fields.
+Use `--package FILE.fwsc` for a known package. Format hints and CRCs are not
+authentication, installer permission, a full backup or live clock measurements.
+A dump of the current boot area is part of every device check below. Record per
+unit: boot area, previous firmware, the transition, and the #618 clock readings.
 
 ## ROM recovery with existing M-Flasher
 

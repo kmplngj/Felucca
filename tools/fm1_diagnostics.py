@@ -17,6 +17,8 @@ import time
 
 COMMANDS = ("status", "dbg", "inp", "crash")
 MAX_RESPONSE = 65536
+CLOCK_FIELDS = tuple("boot_clock_" + address for address in
+                     ("10014", "1000c", "10008", "119a8", "119ac", "119a0", "119a4"))
 # con_inp's optional reset-on-read latency group, not cumulative counters.
 INPUT_LATENCY_FIELDS = ("key_presses", "key_press_avg_us", "key_press_max_us", "key_notes",
                         "key_noteon_avg_us", "key_noteon_max_us", "key_dac_avg_us", "key_dac_max_us")
@@ -40,6 +42,8 @@ SEMANTICS = {
     "latency": "Requires explicit confirmation of FM1_INPUT_LAT, complete valid key-latency fields and "
                "observed press/note samples; otherwise UNMEASURED.",
     "snapshots": "Commands and fields are read sequentially, not an atomic device snapshot.",
+    "boot_clock": "Optional seven raw clock words captured once at this boot, before normal initialization; "
+                  "not live clock readings or measured MHz. Absent on older/CDC-disabled firmware.",
     "uac_pkts": "Rate-epoch-local packet count; delta requires unchanged 44100/48000 Hz and unchanged "
                 "uac_rate_sets. A changed setter count may hide a rate reset, even at equal endpoint rates; "
                 "same-rate requests are conservatively rejected. Missing/unsupported markers leave delta unavailable.",
@@ -133,6 +137,8 @@ def parse_response(command, raw):
         numeric.add("boots")
     numeric |= {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
                 "crash": {"uptime_ms"}}[command]
+    if command == "status":
+        numeric.update(CLOCK_FIELDS)
     if command == "inp":
         numeric.update(INPUT_LATENCY_FIELDS)
     for line in raw.decode("utf-8", errors="replace").replace("\r", "").split("\n"):
@@ -188,6 +194,9 @@ def parse_response(command, raw):
     required = {"status": ("felucca", "uptime_ms"), "dbg": ("magic",),
                 "inp": ("window_ms",), "crash": ("record_present",)}[command]
     issues = ["missing " + key for key in required if key not in fields]
+    if command == "status":
+        if set(CLOCK_FIELDS) & fields.keys():
+            issues += ["missing " + key for key in CLOCK_FIELDS if key not in fields]
     for key in numeric & fields.keys():
         value = fields[key]
         if not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
