@@ -683,21 +683,39 @@ def objdump_data_row(line):
 def disassembly_rows(text, label, empty_ok=False):
     """Parsed address rows; an empty RAM section needs actual objdump header output."""
     rows, errors = [], []
+    ram = label in (".ram_text", ".c1_text")
+    conditional_blocks = []
     for line in text.splitlines():
         m = LINE.match(line)
         if m and m.group(3).strip():
-            if label in (".ram_text", ".c1_text") and re.match(r"^(?:\.\w+|\(bad\)|unknown\b)", m.group(3).strip(), re.I):
+            if ram and re.match(r"^(?:\.\w+|\(bad\)|unknown\b)", m.group(3).strip(), re.I):
                 errors.append(f"{label}: undecoded instruction row: {line.strip()}")
+            if ram and re.fullmatch(r"(?:if|ifs)\s+\(.+\)\s+\{", m.group(3).strip()):
+                conditional_blocks.append(False)
             rows.append(m)
+        elif ram and line.strip() in ("}", "} else {"):
+            # pi32v2 objdump prints these noninstruction annotations around
+            # decoded predicated blocks. Every body instruction still has bytes.
+            if not conditional_blocks or (line.strip() == "} else {" and conditional_blocks[-1]):
+                errors.append(f"{label}: unmatched conditional delimiter: {line.strip()}")
+            elif line.strip() == "}":
+                conditional_blocks.pop()
+            else:
+                conditional_blocks[-1] = True
         elif label == "app" and objdump_data_row(line):
             continue                # .text also holds tables; RAM flash-busy code must decode
         elif re.match(r"^\s*[0-9a-f]+:", line, re.I):
             errors.append(f"{label}: malformed instruction row: {line.strip()}")
-        elif label in (".ram_text", ".c1_text") and line.strip() and not (
+        elif ram and line.strip() and not (
                 re.fullmatch(r".*file format ELF32-pi32v2", line.strip()) or
                 line.strip() == f"Disassembly of section {label}:" or
                 re.fullmatch(r"(?:[0-9a-f]+ <[^>]+>|[^\s:]+):", line.strip(), re.I)):
             errors.append(f"{label}: malformed disassembly line: {line.strip()}")
+        elif ram and line.strip() and conditional_blocks:
+            errors.append(f"{label}: unclosed conditional block before {line.strip()}")
+            conditional_blocks.clear()
+    if conditional_blocks:
+        errors.append(f"{label}: unclosed conditional block")
     if not rows:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         header = any(re.fullmatch(r".*file format ELF32-pi32v2", line) for line in lines)

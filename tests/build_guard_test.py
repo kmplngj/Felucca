@@ -213,6 +213,28 @@ class AppGuards(unittest.TestCase):
             self.assertIn(".ram_text contains calls", " ".join(self.check(rt=ram.replace("ret", "call r0") + section)))
         self.assertIn("second-core code or data", " ".join(self.check(rt=ram + section)))
 
+    def test_predicated_ram_annotations_preserve_instruction_checks(self):
+        # Actual pi32v2 output from fl_wait_issued's late-return selection.
+        block = (" 1c00602: 17 e9 00 00 \tif (r7 >= r0) {\n"
+                 " 1c00606: 12 3c \tr2 = -4\n"
+                 "                               \t}\n")
+        for label in (".ram_text", ".c1_text"):
+            with self.subTest(section=label):
+                self.assertEqual(B.disassembly_rows(block, label)[1], [])
+                nested = block.replace("r2 = -4", "ifs (r0 > 0) {") + "}\n"
+                self.assertEqual(B.disassembly_rows(nested, label)[1], [])
+                alternative = block.replace("\t}\n", "\t} else {\n 1c00608: 00 00 \tr2 = 0\n}\n")
+                self.assertEqual(B.disassembly_rows(alternative, label)[1], [])
+                for damaged in ("}\n" + block, block + "}\n", block.rsplit("}", 1)[0],
+                                block.replace("if (r7 >= r0) {", "r7 = r0"),
+                                block.replace("r2 = -4", "unknown"),
+                                block.replace("}\n", "helper:\n}\n"),
+                                alternative.replace("}\n", "} else {\n}\n"),
+                                block.replace("}\n", "Disassembly of section .other:\n}\n")):
+                    self.assertTrue(B.disassembly_rows(damaged, label)[1], damaged)
+        self.assertEqual(self.check(rt=block), [])
+        self.assertIn(".ram_text contains calls", " ".join(self.check(rt=block.replace("r2 = -4", "call r0"))))
+
     def test_empty_flash_ram_with_second_core_needs_elf_proof(self):
         rt = ("build/felucca.elf:\tfile format ELF32-pi32v2\n\n"
               "Disassembly of section .c1_text:\nfm1_c1_main:\n 1c00000: 00 00 \tcall r0\n")

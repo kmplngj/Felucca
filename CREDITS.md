@@ -22,6 +22,9 @@ thanks the work below; each keeps its own licence (see [LICENSE](LICENSE), [LICE
   measurements and hardening after [Jangada](https://github.com/zednaked/jangada) by [zednaked](https://github.com/zednaked) (all GPL-3.0)
 - Browser emulator: after [X0X](https://github.com/charlesvestal/fm1-x0x) by [charlesvestal](https://github.com/charlesvestal) (GPL-3.0), a Felucca fork whose browser build showed the way
 - Package format and boot files: [JieLi AC79 SDK](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK) ([Apache-2.0](LICENSES/Apache-2.0.txt); three of its files are in every package, none in this tree)
+- Busy-safe flash completion: Julius Vitkauskas's
+  [felucca-bsp PR #12](https://github.com/hugelton/felucca-bsp/pull/12),
+  with the helper and adapted host fixture retaining [MPL-2.0](LICENSES/MPL-2.0-felucca-bsp.txt).
 - MIDI reliability and arithmetic hardening: [fgunited](https://github.com/fgunited)
   (nested TRS input and musical clock phase, upstream #258/#269),
   [ordenador](https://github.com/ordenador) (UART event handling and signed DSP, upstream #264/#265).

@@ -76,6 +76,23 @@ application identity. The screen does not prove visible LCD acknowledgment or
 recovery from a power interruption. Exact-package FM-1 display, update and retry
 qualification remains pending.
 
+### Flash completion and timeouts
+
+The application and RAM loader share the flash driver. After issuing a sector
+erase or page program, it keeps execution in RAM until the flash reports idle.
+The normal limits remain 500 ms for erase and 10 ms for program. A late finish
+returns the existing `-4` error only after the part is idle, so the caller can
+handle failure without fetching instructions from busy flash.
+
+If the part remains busy for 2 s during erase or 50 ms during program, the
+driver requests a chip reset from RAM instead of resuming flash execution.
+These are generic SPI NOR bounds, not measurements of this FM-1's flash. The
+boot ROM/SPL response to a part that is still busy after reset is unknown;
+automatic recovery is not established. Host fault injection covers the wait
+and reset decision, while real-device slow-part, reset and update/retry checks
+remain pending. Normal save/update controls and protected flash regions are
+unchanged.
+
 ## Package / loader matrix
 
 | Selected bytes | Actual accepted loader handshake | Installer |

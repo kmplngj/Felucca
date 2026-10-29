@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+ * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+ * Busy-safe completion adapted from felucca-bsp PR #12, aceed7e0095e9fa8da425f3ecf29e5213f4c5097.
+ * Copyright (c) 2026 Julius Vitkauskas; original contribution MPL-2.0. */
 /* FM-1 SPI NOR at runtime: erase / program / read. Used only when
  * FELUCCA_FLASH is 1.
  *
@@ -8,12 +10,15 @@
  * libcalls, no XIP-resident helpers. Call the fl_*_ram() entry points with
  * interrupts disabled. Same sequence as the AC79 SDK flash driver
  * (cpu.a/vm_sfc.c.o: enter_spi_code, norflash_erase, norflash_wait_ok, exit_spi_code).
+ * Erase/program completion stays in RAM until BUSY clears; a stuck part resets
+ * from RAM at the extended bound instead of returning to unavailable XIP.
  */
 #pragma once
 #include <stdint.h>
 #include "fm1_flash_context_contract.h"
 #include "fm1_flash_data_contract.h"
 #include "fm1_xip.h"
+#include "fm1_sys.h"
 
 #define RAMFN  __attribute__((section(".ram_text"), noinline, used))
 #define RAMINL static inline __attribute__((always_inline))
@@ -138,15 +143,13 @@ RAMINL void fl_inval(uint32_t off, uint32_t len)
         fl_cache_idle();
     }
 }
-RAMINL int fl_wait_ready(uint32_t max_us, uint32_t *took_us)
+/* The native always-inline reset holds CPU1 before boot reuses its RAM. It
+ * touches only SFRs and stack; boot behavior with a still-busy NOR is unknown. */
+RAMINL void fl_reset_busy(void)
 {
-    uint32_t t0 = T4_CNT, dt;
-    for (;;) {
-        dt = (T4_CNT - t0) / 24u;
-        if (!(fl_rdsr(0x05) & 1u)) { *took_us = dt; return 0; }
-        if (dt > max_us) { *took_us = dt; return -4; }
-    }
+    fm1_core_reset();
 }
+#include "fm1_flash_wait.h"
 
 /* ---- entry points: IRQs OFF, args/buffers in RAM ---- */
 
@@ -181,9 +184,10 @@ static RAMFN int fl_erase4k_ram(uint32_t off, uint32_t *took_us)
     fl_wren();
     if (!(fl_rdsr(0x05) & 2u)) rc = -3;           /* WEL did not set */
     else {
+        uint32_t issued = T4_CNT;
         fl_cs(0); fl_tx(0x20); fl_addr(off); fl_cs(1);
         fl_inval(off, 4096u);
-        rc = fl_wait_ready(500000u, took_us);     /* generic NOR max 400 ms */
+        rc = fl_wait_issued(issued, 500000u, 2000000u, took_us);     /* generic NOR max 400 ms */
     }
     fl_exit(&s);
     return rc;
@@ -199,11 +203,12 @@ static RAMFN int fl_prog_ram(uint32_t off, const uint8_t *src, uint32_t n, uint3
     fl_wren();
     if (!(fl_rdsr(0x05) & 2u)) rc = -3;
     else {
+        uint32_t issued = T4_CNT;
         fl_cs(0); fl_tx(0x02); fl_addr(off);
         for (i = 0; i < n; i++) fl_tx(src[i]);
         fl_cs(1);
         fl_inval(off, n);
-        rc = fl_wait_ready(10000u, took_us);      /* generic NOR max 3 ms */
+        rc = fl_wait_issued(issued, 10000u, 50000u, took_us);      /* generic NOR max 3 ms */
     }
     fl_exit(&s);
     return rc;

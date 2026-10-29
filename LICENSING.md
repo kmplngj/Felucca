@@ -23,6 +23,14 @@ Four source files are ports and keep the licence of their originals:
 header also retain MIT; see `assets/braids/README.md`. The firmware built with these
 components is GPL-3.0-only as a whole.
 
+The flash-completion helper `firmware/hal/fm1_flash_wait.h` and its adapted host
+fixture `tests/flash_wait_test.c` retain Julius Vitkauskas's MPL-2.0 notice from
+[felucca-bsp PR #12, commit `aceed7e0095e9fa8da425f3ecf29e5213f4c5097`](https://github.com/hugelton/felucca-bsp/pull/12).
+Their source remains available under MPL-2.0, with its full text in
+`LICENSES/MPL-2.0-felucca-bsp.txt`. The surrounding HAL integration and test runner
+remain GPL-3.0-only; the combined firmware remains GPL-3.0-only. This adoption
+does not change the licence of Felucca's existing USB or other HAL files.
+
 Five engines and the code they share are under the MIT licence, not the GPL. They are
 Hügelton Instruments' own work and live in their own repository, Felucca-Engines
 (<https://github.com/hugelton/Felucca-Engines>), included here as the git submodule
@@ -86,6 +94,7 @@ release/site packaging includes every `LICENSES/*.txt` notice with the package.
 
 | What | Licence | Where |
 | --- | --- | --- |
+| Busy-safe flash completion by Julius Vitkauskas, from felucca-bsp PR #12 | MPL-2.0 | `firmware/hal/fm1_flash_wait.h`, adapted `tests/flash_wait_test.c`, `LICENSES/MPL-2.0-felucca-bsp.txt` |
 | MIDI test music: Empacotatron by Fupi; Elytra and Xenon Phoenix (MIDI versions) by continuum.mid | CC0 1.0; original MIDI files retain CC0 independently of test code | `tests/fixtures/midi/`, provenance and checksums in `manifest.json`, `LICENSES/CC0-1.0.txt` |
 | External fm1-emu trace patch after Joakim Eriksson (2026); optional externally built CLI also includes its GPL-3.0-only USB source | MIT patch; combined CLI includes MIT and GPL-3.0-only | `tools/emulator_trace/retired-trace.patch`, `tools/emulator_trace/LICENSE-MIT-fm1-emu.txt`; source/build boundary in `docs/emulator-trace-prerequisite.md` |
 | Inter Tight font by The Inter Project Authors: documentation panel-diagram outlines only, outside the firmware asset closure; the font declares no Reserved Font Name | SIL OFL 1.1 | `docs/manual/fonts/InterTight[wght].ttf`, `docs/manual/fonts/OFL.txt`, `LICENSES/OFL-InterTight.txt` |
