@@ -22,6 +22,12 @@
 #ifndef FELUCCA_SCREEN_CAPTURE
 #define FELUCCA_SCREEN_CAPTURE 0 /* opt-in stopped/static LCD diagnostic capture (#562) */
 #endif
+#ifndef FELUCCA_MIDI_QUEUE
+#define FELUCCA_MIDI_QUEUE 0     /* opt-in consumer queue age/drain evidence (#551) */
+#endif
+#if FELUCCA_MIDI_QUEUE && !FELUCCA_CDC
+#error "FELUCCA_MIDI_QUEUE needs FELUCCA_CDC"
+#endif
 #ifndef FELUCCA_RENDER_STAGE
 #define FELUCCA_RENDER_STAGE 0 /* development-only raw TIMER4 mix-stage observer (#94) */
 #endif

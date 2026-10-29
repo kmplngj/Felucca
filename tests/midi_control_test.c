@@ -1171,9 +1171,116 @@ static int pc_test(void)
     bad += check("  MIDI LEARN waiting: a PC is not taken for a CC, it loads", ok);
     return bad;
 }
+#if FELUCCA_MIDI_QUEUE
+static uint32_t queue_inject_read, queue_reads;
+static void queue_arrival(void)
+{
+    if (++queue_reads == queue_inject_read) {
+        /* A TRS producer nested after observation entry, or after the loop's
+         * last empty check. Original live-index drain policy decides visibility. */
+        um_byte(0xB0); um_byte(1); um_byte(73);
+    }
+}
+static void queue_fresh(void)
+{
+    host_midi_queue_tick_hook = 0;
+    midi_test_reset();
+    memset((void *)&midi_queue, 0, sizeof midi_queue);
+    midi_queue_seq = host_midi_queue_ticks = 0;
+}
+static int queue_evidence_test(void)
+{
+    int bad = 0;
+    midi_queue_t s;
+    queue_fresh();
+    bad += check("queue observer: startup unavailable; bounded BSS fits 128 bytes",
+                 midi_queue_read(&s) && !s.calls && sizeof midi_queue + sizeof midi_queue_seq <= 128u);
+    for (uint32_t n = 63; n <= 65; n++) {
+        queue_fresh();
+        queued(0x90, 60, 100, 1);
+        for (uint32_t k = 0; k < n; k++) midi_enqueue(0x2A01B00Bu, 1u + (k & 1u));
+        events_block(CTL);
+        bad += check("queue observer: 63/64 drain; 65 rejects and counts original recovery flush",
+                     midi_queue_read(&s) && !s.error && mi_r == mi_w && !midi_in_overflow &&
+                     s.entry == (n > 64u ? 64u : n) && !s.arrivals && !s.residual &&
+                     s.dispatched == (n > 64u ? 0u : n) && s.flush == (n > 64u ? 64u : 0u) &&
+                     s.flushed == s.flush && s.recoveries == (n > 64u) &&
+                     (n < 65u ? gate_note(&trk[0], 60) : !gate_note(&trk[0], 60)));
+    }
+    queue_fresh();
+    mi_r = mi_w = 0xfffffffbu;
+    fm1_ms = 0xfffffffdu;
+    for (uint32_t src = 1; src <= 2; src++) {
+        midi_enqueue(0x643C9009u, src);   /* note on */
+        midi_enqueue(0x003C9009u, src);   /* velocity zero release */
+        midi_enqueue(0x7F40B00Bu, src);   /* sustain */
+        midi_enqueue(0x0000FC0Fu, src);   /* Stop */
+        midi_enqueue(0x0040E00Eu, src);   /* bend */
+    }
+    fm1_ms = 2;
+    host_midi_queue_ticks = 0xffffffffu;
+    events_block(CTL);
+    uint32_t ages_ok = 1;
+    for (uint32_t k = 0; k < 10; k++) ages_ok &= midi_queue.age_max[k] == 5u;
+    bad += check("queue observer: source/class association, note-on/0 and unsigned index/ms/tick wrap",
+                 midi_queue_read(&s) && !s.error && s.age_seen == 0x3ffu && ages_ok &&
+                 s.dispatched == 10u && s.drain_last == 1u && mi_r == 5u && mi_w == 5u);
+    queue_fresh(); midi_in_overflow = 1;
+    events_block(CTL);
+    bad += check("queue observer: recovery counts even when the broken queue already drained",
+                 midi_queue_read(&s) && !s.error && s.recoveries == 1u && !s.flushed && !s.dispatched);
+    for (uint32_t n = 0; n <= 63; n += 63) {
+        queue_fresh();
+        mi_r = mi_w = 0xfffffff0u;
+        for (uint32_t k = 0; k < n; k++) midi_enqueue(0x2A01B00Bu, 1);
+        queue_reads = 0; queue_inject_read = 1;
+        host_midi_queue_tick_hook = queue_arrival;
+        events_block(CTL);
+        host_midi_queue_tick_hook = 0;
+        bad += check("queue observer: nested TRS arrival joins live drain near empty/full and index wrap",
+                     midi_queue_read(&s) && !s.error && s.entry == n && s.arrivals == 1 &&
+                     s.dispatched == n + 1u && !s.residual && trk[0].mw == 73);
+    }
+    queue_fresh(); queue_reads = 0; queue_inject_read = 2;
+    host_midi_queue_tick_hook = queue_arrival;
+    events_block(CTL);
+    host_midi_queue_tick_hook = 0;
+    bad += check("queue observer: arrival after loop empty check remains queued with source/time",
+                 midi_queue_read(&s) && !s.error && !s.entry && s.arrivals == 1u &&
+                 !s.dispatched && s.residual == 1u && midi_in_source[mi_r % MQ] == 2u &&
+                 midi_in_ms[mi_r % MQ] == fm1_ms);
+    events_block(CTL);
+    bad += check("queue observer: residual dispatches exactly once on next call; read never clears",
+                 midi_queue_read(&s) && !s.error && s.entry == 1u && !s.arrivals &&
+                 s.dispatched == 1u && !s.residual && s.events == 1u && midi_queue_read(&s) && s.events == 1u);
+    midi_queue_seq++;
+    bad += check("queue observer: in-progress publication is unavailable", !midi_queue_read(&s));
+    midi_queue_seq++;
+    midi_queue.calls = 0xffffffffu;
+    events_block(CTL);
+    uint32_t calls = midi_queue.calls, ticks = host_midi_queue_ticks;
+    events_block(CTL);
+    bad += check("queue observer: exhaustion becomes sticky unavailable; musical dispatch continues",
+                 midi_queue_read(&s) && (s.error & MIDI_QUEUE_COUNT) && s.calls == calls && host_midi_queue_ticks == ticks);
+    queued(0x90, 62, 100, 1);
+    bad += check("queue observer: failure cannot suppress a note", gate_note(&trk[0], 62));
+    queue_fresh(); midi_queue_seq = 0xfffffffcu;
+    events_block(CTL);
+    bad += check("queue observer: publication sequence never wraps", midi_queue_read(&s) && s.error == MIDI_QUEUE_COUNT && midi_queue_seq == 0xfffffffeu);
+    queue_fresh(); fm1_ms = 1; midi_enqueue(0x643C9009u, 1); fm1_ms = 0;
+    events_block(CTL);
+    bad += check("queue observer: ambiguous/backward ms age is rejected without changing input",
+                 midi_queue_read(&s) && s.error == MIDI_QUEUE_RANGE && gate_note(&trk[0], 60));
+    return bad;
+}
+#endif
+
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
               arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
+#if FELUCCA_MIDI_QUEUE
+    bad += queue_evidence_test();
+#endif
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

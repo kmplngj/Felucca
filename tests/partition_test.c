@@ -100,6 +100,7 @@ typedef struct {
     uint32_t ring_ok, playing, gates, late72;
     int32_t pcm[NB * 2u * CTL];
 } res_t;
+static FILE *evidence; /* Optional exact PCM/result stream for matched build comparisons. */
 
 static uint64_t h64(uint64_t h, uint32_t v) { for (int i = 0; i < 4; i++) { h ^= (v >> (8 * i)) & 0xFFu; h *= 0x100000001B3ull; } return h; }
 static uint64_t h64_mem(uint64_t h, const void *p, size_t n)
@@ -220,6 +221,10 @@ static void render(res_t *r, uint32_t scen, uint32_t variant, uint32_t seed, con
     r->state_hash = h;
     r->playing = song.playing;
     r->ring_ok = mi_r == mi_w && !midi_in_overflow && !um.drops && !um.pend && !bad_adapter;
+#if FELUCCA_MIDI_QUEUE
+    midi_queue_t observation;
+    r->ring_ok &= midi_queue_read(&observation) && observation.calls && !observation.error;
+#endif
 }
 
 static res_t *run_child(uint32_t scen, uint32_t variant, uint32_t seed, const part_t *p)
@@ -229,6 +234,7 @@ static res_t *run_child(uint32_t scen, uint32_t variant, uint32_t seed, const pa
     if (pid == 0) { render(r, scen, variant, seed, p); _exit(0); }
     int st = 0; waitpid(pid, &st, 0);
     if (!WIFEXITED(st) || WEXITSTATUS(st)) { printf("partition: render child failed (status %d)\n", st); r->ring_ok = 0; r->peak = -1; }
+    if (evidence && fwrite(r, sizeof *r, 1, evidence) != 1) { perror("partition evidence"); exit(2); }
     return r;
 }
 
@@ -237,6 +243,8 @@ int main(int argc, char **argv)
 {
     static const uint32_t seeds[4] = {0x87u, 1u, 2u, 3u};
     uint32_t sd, sc, v, nseed = 4, only = 0; int bad = 0;
+    const char *path = getenv("FELUCCA_PARTITION_EVIDENCE");
+    if (path && !(evidence = fopen(path, "wb"))) { perror(path); return 2; }
     if (argc > 1) { only = (uint32_t)strtoul(argv[1], 0, 0); nseed = 1; }
     for (sd = 0; sd < nseed; sd++) {
         uint32_t seed = only ? only : seeds[sd];
@@ -265,5 +273,6 @@ int main(int argc, char **argv)
             munmap(a, sizeof *a); munmap(b, sizeof *b);
         }
     }
+    if (evidence && fclose(evidence)) { perror("partition evidence close"); return 2; }
     printf("%s\n", bad ? "MIDI PARTITION INVARIANCE TEST FAILED" : "MIDI partition invariance tests passed"); return bad != 0;
 }

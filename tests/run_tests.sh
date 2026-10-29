@@ -430,7 +430,12 @@ u_midi_partition() {
     # parsers, rendered with 4096-sample spans and with irregular small ones (events at the same CTL boundaries): same PCM, same state
     if [ -f build/gen/felucca_tables.h ]; then
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/partition_test" tests/partition_test.c -lm
-        run "MIDI partition invariance: USB / TRS / mixed schedule, large vs irregular partitions, negative self-checks" "$OUT/partition_test"
+        run "MIDI partition invariance: USB / TRS / mixed schedule, large vs irregular partitions, negative self-checks" \
+            env FELUCCA_PARTITION_EVIDENCE="$OUT/partition-off.raw" "$OUT/partition_test"
+        $CC -w -DFELUCCA_MIDI_QUEUE=1 -Ibuild/gen -Ifirmware/src -o "$OUT/partition_queue" tests/partition_test.c -lm
+        run "MIDI partitions with consumer observer enabled" \
+            env FELUCCA_PARTITION_EVIDENCE="$OUT/partition-on.raw" "$OUT/partition_queue"
+        run "MIDI observer OFF/ON: exact PCM and future musical state" cmp "$OUT/partition-off.raw" "$OUT/partition-on.raw"
         outcome native-partitions passed
     else
         echo "== skip MIDI partition invariance (run ./build.sh once)"
@@ -629,6 +634,8 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_midi_control() {
         $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_control_test" tests/midi_control_test.c -lm
         run "USB/TRS clock, bend, sustain, ownership and panic recovery" "$OUT/midi_control_test"
+        $CC -O1 -w -DFELUCCA_MIDI_QUEUE=1 -Ibuild/gen -Ifirmware/src -o "$OUT/midi_control_queue" tests/midi_control_test.c -lm
+        run "Opt-in MIDI queue observer: production dispatch, recovery, wrap and nested arrivals" "$OUT/midi_control_queue"
     }
     unit midi_control "" u_midi_control
 
@@ -1279,6 +1286,11 @@ else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    u_asan_midi_queue() {
+        $SCC -DFELUCCA_MIDI_QUEUE=1 -o "$A/midi_control_queue" tests/midi_control_test.c -lm
+        run "ASan/UBSan: enabled MIDI queue observer and production dispatch" "$A/midi_control_queue"
+    }
+    unit asan_midi_queue "midi_control" u_asan_midi_queue
     u_asan_icon_streams() {
         ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ibuild/gen -I"$OUT" \
             -o "$A/icon_stream_test" tests/icon_stream_test.c -lm

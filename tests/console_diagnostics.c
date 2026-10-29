@@ -16,7 +16,8 @@
 #endif
 #define FELUCCA_FLASH 1
 #define FELUCCA_VERSION "console-contract"
-#define RING_PUBLISH() ((void)0)
+static void observer_barrier(void);
+#define RING_PUBLISH() observer_barrier()
 #define CO_N 16384u
 #define CI_N 128u
 #define FM1_TICKS_PER_US 24u
@@ -26,6 +27,7 @@
 #define FM1_CRASH_MAGIC 0x43525348u
 #define G_BPM 0
 #define P_COUNT 1
+#define MQ 64u
 
 static uint8_t cdc_out[CO_N], cdc_in[CI_N];
 static uint32_t co_w, co_r, ci_w, ci_r;
@@ -109,9 +111,29 @@ static int st_read(uint32_t a, void *b, uint32_t n) { (void)a; (void)b; (void)n;
 
 #include "../firmware/src/console.c"
 
+#if FELUCCA_MIDI_QUEUE
+static uint32_t observer_interrupt;
+#endif
+static void observer_barrier(void)
+{
+    __asm__ volatile("" ::: "memory");
+#if FELUCCA_MIDI_QUEUE
+    if (observer_interrupt && !--observer_interrupt) {
+        midi_queue_seq++;
+        midi_queue_finish(0, 0, 0, 0, 0, 1, 0); /* Complete an audio publication mid-copy. */
+    }
+#endif
+}
+
 int main(int argc, char **argv)
 {
     size_t n;
+#if FELUCCA_MIDI_QUEUE
+    midi_queue_seq = 1;
+    midi_queue_age(1, 0x90, 100, 0);
+    midi_queue_age(2, 0x90, 0, 0x70000000u);
+    midi_queue_finish(63, 2, 64, 0, 1, 0x70000001u, 0);
+#endif
     fm1_boot_clock = (fm1_clock_snapshot_t){0x10014u, 0x1000Cu, 0x10008u,
                                           0x119A8u, 0x119ACu, 0x119A0u, 0xFFFFFFFFu, 1};
     if (argc < 2 || argc > 3 ||
@@ -140,6 +162,16 @@ int main(int argc, char **argv)
             fm1_boot_clock.valid = 0;
         else if (!strcmp(argv[2], "no-crash"))
             fm1_crash.magic = 0;
+#if FELUCCA_MIDI_QUEUE
+        else if (!strcmp(argv[2], "mq-active")) midi_queue_seq++;
+        else if (!strcmp(argv[2], "mq-error")) midi_queue.error = MIDI_QUEUE_COUNT;
+        else if (!strcmp(argv[2], "mq-unsampled")) midi_queue.calls = 0;
+        else if (!strcmp(argv[2], "mq-interrupt1") || !strcmp(argv[2], "mq-interrupt2")) {
+            midi_queue_t s;
+            observer_interrupt = !strcmp(argv[2], "mq-interrupt1") ? 1u : 2u;
+            if (midi_queue_read(&s) || !midi_queue_read(&s) || s.calls != 2u) return 3;
+        }
+#endif
 #if FELUCCA_UAC
         else if (!strncmp(argv[2], "uac-", 4)) {
             /* State-only rate epochs; output still uses production dispatch. */

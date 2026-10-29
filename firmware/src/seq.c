@@ -13,6 +13,7 @@
  * held length as TIE steps (rec_note, rec_hold, rec_release). With the ARP on, the notes the arp
  * plays are recorded, not the keys held (what plays back is what was heard). A key or MIDI note plays a
  * chord when the track's CHRD is on (chord.c): its notes go through the same input as so many keys. */
+#include "midi_queue.h"
 static const uint16_t SCALE_MASK[] = {
     0xFFF,                                   /* CHR */
     (1 << 0) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 7) | (1 << 9) | (1 << 11),   /* MAJ */
@@ -1357,6 +1358,10 @@ static int32_t click_beat_now(void)
 static void events_block(uint32_t n)
 {
     uint32_t i, pr, seq_n = n;
+#if FELUCCA_MIDI_QUEUE
+    uint32_t mq_w = 0, mq_r = 0, mq_flush = 0, mq_start = 0, mq_recovery = 0;
+    uint32_t mq_observe = !midi_queue.error;
+#endif
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     if (midi_clock.mode != clock_mode) {
         seq_stop();
@@ -1393,8 +1398,23 @@ static void events_block(uint32_t n)
     }
     pr = panic_req;
     panic_req = 0;
+#if FELUCCA_MIDI_QUEUE
+    if (mq_observe) {
+        midi_queue_seq++;
+        RING_PUBLISH();
+        if (midi_queue_seq >= 0xfffffffdu) midi_queue.error |= MIDI_QUEUE_COUNT;
+        mq_w = mi_w;
+        mq_r = mi_r;
+    }
+#endif
     if (midi_in_overflow) {                            /* a lost note-off must never leave a held note */
         mi_r = mi_w;
+#if FELUCCA_MIDI_QUEUE
+        if (mq_observe) {
+            mq_flush = mi_r - mq_r;
+            mq_recovery = 1;
+        }
+#endif
         memset(midi_sel_on, 0, sizeof midi_sel_on);
         memset(midi_ch, 0, sizeof midi_ch);
         memset(midi_owners, 0, sizeof midi_owners);
@@ -1430,11 +1450,20 @@ static void events_block(uint32_t n)
         t->aholdp = t->p[P_AHOLD];
     }
     keyboard_block();
+#if FELUCCA_MIDI_QUEUE
+    if (mq_observe) {
+        mq_start = fm1_ticks();
+        RING_PUBLISH();
+    }
+#endif
     while (mi_r != mi_w) {                            /* USB-MIDI (and TRS) in */
         uint32_t at = mi_r % MQ, pkt = midi_in_q[at], status = (pkt >> 8) & 0xFFu;
         uint32_t st = status & 0xF0u, ch = status & 0x0Fu;
         uint32_t d1 = (pkt >> 16) & 0x7Fu, d2 = (pkt >> 24) & 0x7Fu;
         uint32_t source = midi_in_source[at] ? midi_in_source[at] : 1u, ms = midi_in_ms[at];
+#if FELUCCA_MIDI_QUEUE
+        if (mq_observe) midi_queue_age(source, status, d2, fm1_ms - ms);
+#endif
         mi_r++;
         if (status >= 0xF8u) {
             if (clock_mode == source) {
@@ -1446,6 +1475,16 @@ static void events_block(uint32_t n)
         } else
             midi_event(st, ch, d1, d2);
     }
+#if FELUCCA_MIDI_QUEUE
+    if (mq_observe) {
+        uint32_t end, w;
+        RING_PUBLISH();
+        end = fm1_ticks();
+        w = mi_w;
+        midi_queue_finish(mq_w - mq_r, w - mq_w, mi_r - mq_r - mq_flush,
+                          mq_flush, w - mi_r, end - mq_start, mq_recovery);
+    }
+#endif
     if (clock_mode) {
         seq_n = 0;
         if (song.playing) {

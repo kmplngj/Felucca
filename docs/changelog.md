@@ -51,6 +51,10 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Default-off [MIDI consumer queue evidence](midi-queue-evidence.md) reports
+  conservation, enqueue-age maxima and inclusive raw drain ticks through existing
+  diagnostics. This partially delivers #551 without changing MIDI service policy;
+  physical timing and observer-overhead qualification remain pending.
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery
