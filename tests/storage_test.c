@@ -94,16 +94,6 @@ static int outside_is(uint32_t base, const uint8_t *before)
            !memcmp(nor + base + ST_SECTOR, before + base + ST_SECTOR, sizeof nor - base - ST_SECTOR);
 }
 
-/* Derive retry erase work from the persisted image: a cut can leave the
- * destination entirely blank, so its next save skips erase even while dead. */
-static int sector_blank(const uint8_t *image, uint32_t base)
-{
-    uint32_t i;
-    for (i = 0; i < ST_SECTOR; i++)
-        if (image[base + i] != 0xFFu) return 0;
-    return 1;
-}
-
 /* All object maps, both destination copies and lengths on either side of a
  * page boundary. Reboot recovery uses the real loader, with its RAM scratch lost. */
 static int transactions(void)
@@ -157,8 +147,9 @@ static int transactions(void)
                     if (cut < total) {
                         int committed = st_current(obj, &h) == (int)to;
                         uint32_t retry_base = st_sector(obj, committed ? 1u - to : to);
-                        uint32_t retry_erases = (uint32_t)!sector_blank(nor, retry_base);
-                        int dead_error = retry_erases ? -8 : -9;
+                        /* Both copies were used and an older commit survives: even a
+                         * blank-looking destination is not fresh (#721). Retry erases,
+                         * so dead power refuses it before programming. */
                         /* A not-yet-clocked trailing 0xFF can already equal the
                          * erased byte: an error may still leave a complete commit.
                          * Only the exact old or complete new payload may load. */
@@ -167,11 +158,11 @@ static int transactions(void)
                                    !memcmp(got, committed ? next : old, len);
                         memcpy(torn, nor + base, sizeof torn);
                         cut_bytes = -1;            /* a cleared injector does not restore power */
-                        sticky_ok &= st_save(obj, next, len) == dead_error && dead && erases == 1u && progs == cut &&
+                        sticky_ok &= st_save(obj, next, len) == -8 && dead && erases == 1u && progs == cut &&
                                      !memcmp(torn, nor + base, sizeof torn) && outside_is(base, before);
                         memcpy(retry_before, nor, sizeof nor);
                         nor_power_on();
-                        retry_ok &= st_save(obj, next, len) == 0 && erases == retry_erases && progs == total &&
+                        retry_ok &= st_save(obj, next, len) == 0 && erases == 1u && progs == total &&
                                     outside_is(retry_base, retry_before);
                     } else {
                         cuts_ok &= ok && rc == 0 && !dead;
@@ -190,15 +181,13 @@ static int transactions(void)
                 ok &= st_load(obj, got, sizeof got) == (int)len && !memcmp(got, old, len);
                 memcpy(torn, nor + base, sizeof torn);
                 cut_erase = -1;
-                {
-                    uint32_t retry_erases = (uint32_t)!sector_blank(nor, base);
-                    int dead_error = retry_erases ? -8 : -9;
-                    ok &= st_save(obj, next, len) == dead_error && dead && erases == 1u && !progs &&
-                          !memcmp(torn, nor + base, sizeof torn) && outside_is(base, before);
-                    nor_power_on();
-                    ok &= st_save(obj, next, len) == 0 && erases == retry_erases && progs == total &&
-                          outside_is(base, before);
-                }
+                /* A half erase may leave blank bytes, but the older commit still
+                 * marks this object used: both retries must attempt an erase. */
+                ok &= st_save(obj, next, len) == -8 && dead && erases == 1u && !progs &&
+                      !memcmp(torn, nor + base, sizeof torn) && outside_is(base, before);
+                nor_power_on();
+                ok &= st_save(obj, next, len) == 0 && erases == 1u && progs == total &&
+                      outside_is(base, before);
                 memset(st_buf, 0xCC, sizeof st_buf);
                 half_ok &= ok && st_load(obj, got, sizeof got) == (int)len && !memcmp(got, next, len);
 
