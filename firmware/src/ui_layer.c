@@ -21,7 +21,8 @@
  *              the selected track's engine's quick actions (EQA below: DRUM 1..8 its lanes' MUTE; other engines
  *              none yet, the keys dark)
  *   SEQ  SET   (1.2, on every page; up to 1.1.5 SEQ held opened SONG) TOOLS: the white keys from F3 the sequence tools
- *              (ui_tools.c: CLEAR, REVERSE, SHIFT < >, RANDOM, COOK, 1.5.5 EUCLID (F4) DOUBLE HALF (D5 E5); on a DRUM track BEAT and the
+ *              (ui_tools.c: CLEAR, REVERSE, SHIFT < >, RANDOM, COOK, EUCLID (F4), DOUBLE HALF (D5 E5), OCT DN/UP (F5 G5);
+ *              on a DRUM track BEAT and the
  *              lane's CLEAR REVERSE FILL RANDOM), black keys 1..8 the lane (DRUM); KNOB 1..4 LEN DIV SWING GATE (the
  *              PATTERN page's up to 1.1.5: the page is gone, they are here; EUCLID open: HITS STEPS ROT, OCT+ applies,
  *              OCT- cancels). Each action one undo (SAVE held), OCT- the track as the layer opened (tl_open)
@@ -90,10 +91,13 @@ static struct {
     uint8_t l, trk, loaded, oct;       /* SET: the layer and the track of the snapshot; EDIT: a sound loaded since
                                         * it opened (SEQ: a tool used); OCT- / OCT+ pressed in a SET layer (bits) */
     uint8_t cook;                      /* SEQ: COOK pressed since it opened */
+    uint8_t pitch;                     /* SEQ: octave edit used; entry restore also requires stopped transport */
+    uint8_t knob;                      /* SEQ: KNOB 1..4 turned since it opened (LEN DIV SWING GATE; OCT- puts back) */
     uint8_t rp_dirty;                  /* REC: a setting changed (settings_save when the layer lets go); FX: the key map */
     uint8_t fxk;                       /* FX: the white key pressed last in the layer (+ 1; 0 none): PRESETS assigns it */
     uint8_t mute[NPART];               /* EDIT: the DRUM lanes' mutes when it opened (eng_drum.c drum_mute; OCT-) */
     uint32_t eqh;                      /* EDIT: the keys (bits 0..26) of the HOLD quick actions held */
+    uint32_t project_epoch;            /* main-loop project identity of the entry snapshot */
     int16_t v[9];                      /* the values when it opened: GLO mutes, levels, BPM; SCL ROOT..TRN, CHRD VOIC;
                                         * SEQ LEN DIV SWING GATE; REC the settings (ui_rec_prefs) */
     uint32_t solo;                     /* GLO: the keys held that solo */
@@ -163,6 +167,8 @@ static void layer_arm(uint32_t pressed, uint32_t now)
  * opened, or a combo: KNOB 1..4 quiet for a while (#39: the knob still turning is not the page's) */
 static void layer_let_go(uint32_t quiet)
 {
+    if (lys.project_epoch != ui.project_epoch)
+        eu.on = 0;                                     /* a project replacement discarded the old preview */
     if (eu.on)                                          /* (SEQ TOOLS: an open EUCLID is applied) */
         eu_close(&trk[lys.trk % NTRK], 1);
     if (ui.ly == LAYER_FX && !perf_latch_on)
@@ -239,6 +245,9 @@ static void layer_opened(uint32_t l)
     lys.trk = song.sel;
     lys.loaded = 0;
     lys.cook = 0;
+    lys.pitch = 0;
+    lys.knob = 0;
+    lys.project_epoch = ui.project_epoch;
     if (l == LAYER_SEQ || l == LAYER_REC) {             /* the track as it is now (OCT-) */
         memcpy(tl_open.step, TSEL->step, sizeof tl_open.step);
         motion_snapshot_track(TSEL, &tl_open.mo);
@@ -383,6 +392,43 @@ static void glo_tap(void)
     }
 }
 
+/* The editor can select a track or replace the project with a layer held/locked. A replaced project: rebase, never
+ * copy old project data back. Another track: as before #687, OCT- puts back the layer's track only, so once that
+ * track was changed its entry snapshot stays (tools_gate refuses SEQ's keys on the new track until OCT- or the layer opens again); while
+ * it is unchanged the snapshot moves to the new track. Before any SEQ action, knob or restore */
+static void tools_sync(void)
+{
+    if (lys.project_epoch != ui.project_epoch) {
+        eu.on = 0;                                     /* its preview belonged to the replaced project */
+        layer_opened(LAYER_SEQ);
+    } else if (lys.trk != song.sel) {
+        if (eu.on)
+            eu_close(&trk[lys.trk % NTRK], 1);
+        if (!(lys.loaded | lys.knob))
+            layer_opened(LAYER_SEQ);
+    }
+}
+
+/* SEQ's keys this frame: none while the snapshot stays on another track (out of line: ui_input's branches are long) */
+static __attribute__((noinline)) uint32_t tools_gate(uint32_t keys)
+{
+    tools_sync();
+    if (!keys || lys.trk == song.sel)
+        return keys;
+    ui_message("REOPEN SEQ FIRST");                    /* (OCT- still belongs to the layer's track) */
+    return 0;
+}
+
+/* SEQ / REC OCT-: done; "SEQUENCE PUT BACK" only when the layer's track had changed */
+static __attribute__((noinline)) void tools_put_back(void)
+{
+    ui_message(lys.l == LAYER_REC ? "REC PUT BACK" : lys.loaded | lys.knob ? "SEQUENCE PUT BACK" : "NOTHING TO PUT BACK");
+    lys.loaded = 0;
+    lys.cook = 0;
+    lys.pitch = 0;
+    lys.knob = 0;
+}
+
 /* SEQ TOOLS: white key place p's action on the selected track (ui_tools.c), "STOP TO EDIT" while a song plays */
 static void tools_key(uint32_t p)
 {
@@ -392,6 +438,10 @@ static void tools_key(uint32_t p)
         return;
     if (chain_busy()) {
         ui_message("STOP TO EDIT");
+        return;
+    }
+    if (eu.on && (p == TL_OCTDN || p == TL_OCTUP)) {
+        ui_message("APPLY EUCLID FIRST");
         return;
     }
     if (eu.on) {                                        /* (EUCLID open: applied; F4 again does only that) */
@@ -412,6 +462,8 @@ static void tools_key(uint32_t p)
     }
     if (!(m = tl_do(TSEL, p, ui.lane)))
         return;
+    if (p == TL_OCTDN || p == TL_OCTUP)
+        lys.pitch = 1;
     if (p == TL_COOK && lys.cook < 99u) {               /* "COOKED 3": the third since the layer opened */
         lys.cook++;
         fmt_int(n, lys.cook);
@@ -683,6 +735,8 @@ static void layer_key(uint32_t l, uint32_t k)
 static void layer_keys(uint32_t keys)
 {
     uint32_t k, l = layer_open() ? layer_open() : ui.layer, s = 0;
+    if (l == LAYER_SEQ)
+        keys = tools_gate(keys);
     for (k = 0; keys && k < 27u; k++)
         if ((keys >> k) & 1u)
             layer_key(l, k);
@@ -704,6 +758,10 @@ static void layer_keys(uint32_t keys)
 static void layer_knob(uint32_t k, int32_t s)
 {
     uint32_t l = layer_open();
+    if (l == LAYER_SEQ) {
+        tools_sync();
+        lys.knob = 1;
+    }
     if (l == LAYER_FX) {                                /* perform.c perf_k, not recorded */
         if (k == 3u && !perf_harm_on())
             s = -s;                                     /* DEPTH (100 - perf_k[3]) rises to the right (#40: it fell) */
@@ -769,6 +827,8 @@ static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
     if (layer_set_open())
         lys.oct |= (uint8_t)(((pressed >> dn) & 1u) | ((pressed >> up) & 1u) << 1);
     mine = oct & lys.oct;
+    if (mine && lys.l == LAYER_SEQ)
+        tools_sync();
     if ((mine & 3u) && eu.on && lys.l == LAYER_SEQ) {   /* EUCLID open: OCT+ applies, OCT- cancels (only that) */
         eu_close(&trk[lys.trk % NTRK], mine & 2u);
         if (!(mine & 2u))
@@ -791,7 +851,8 @@ static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
                 ui_message("MUTES PUT BACK");
         } else if (lys.l == LAYER_SEQ || lys.l == LAYER_REC) {
             track_t *t = &trk[lys.trk % NTRK];
-            if (lys.loaded && chain_busy()) {
+            uint32_t guarded = lys.pitch, f = guarded ? motion_guard() : 0;
+            if ((lys.pitch && !tl_stopped()) || (lys.loaded && chain_busy())) {
                 ui_message("STOP TO EDIT");
             } else {
                 if (lys.loaded) {                       /* (SAVE held then: the tools / the clear again) */
@@ -808,10 +869,10 @@ static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
                     for (k = 0; k < 4u; k++)
                         t->p[P_SLEN + k] = lys.v[k];
                 }
-                lys.loaded = 0;
-                lys.cook = 0;
-                ui_message(lys.l == LAYER_REC ? "REC PUT BACK" : "SEQUENCE PUT BACK");
+                tools_put_back();
             }
+            if (guarded)
+                motion_unguard(f);
         } else if (lys.l == LAYER_GLO) {
             for (k = 0; k < NTRK; k++) {
                 trk[k].p[P_MUTE] = lys.v[k];
@@ -864,6 +925,8 @@ static uint32_t layer_leds(uint32_t *br)
         } else if (l == LAYER_SEQ) {                    /* the tools breathe (not while a song plays); DRUM: the lane */
             on = (b && p < NLANE && drum_track(TSEL) && p == ui.lane) || (!b && p == TL_EUCLID && eu.on);   /* lit, the */
             can = b ? p < NLANE && drum_track(TSEL) : tl_cell(TSEL, p) && !chain_busy();
+            if (!b && p >= TL_OCTDN)
+                can &= (uint32_t)tl_stopped() && !eu.on;
         } else if (l == LAYER_REC && !b && p < 4u) {    /* a setting on (LEVEL: the click on) lit, the rest breathe; */
             on = p == 1u ? rp_get(RP_CLICK) != 0u : p == 2u ? rp_get(RP_COUNTIN) != 0u :   /* CLEAR: something to */
                  p == 3u && rp_get(RP_CLICK) != 0u;    /* clear, not while a song plays */
@@ -1073,11 +1136,11 @@ static void layer_edit(void)                            /* the engines from F3, 
 
 /* SEQ TOOLS: the white keys' tools, 4 a row from F3 (the whole sequence; RANDOM COOK BEAT; the lane's), on a DRUM
  * track the lanes of black keys 1..8 under them (the selected one: the selection's fill). A melodic track: the two
- * rows of the sequence's tools only */
+ * rows of sequence tools, then DOUBLE/HALF and OCT DN/UP */
 static const uint8_t TL_ICON[TL_N] = {ICON_CLEAR, ICON_X_REVERSE, ICON_X_LEFT, ICON_X_RIGHT, ICON_PROB, ICON_W_SH,
-    ICON_DRUM, ICON_PULSE, ICON_CLEAR, ICON_X_REVERSE, ICON_STEPS, ICON_PROB, ICON_LENGTH, ICON_DIVISION};
+    ICON_DRUM, ICON_PULSE, ICON_CLEAR, ICON_X_REVERSE, ICON_STEPS, ICON_PROB, ICON_STEPS, ICON_DIVISION, ICON_OCTAVE, ICON_OCTAVE};
 static const char *const TL_NAME[TL_N] = {"CLEAR", "REVERSE", "SHIFT", "SHIFT", "RANDOM", "COOK", "BEAT", "EUCLID",
-    "CLR", "REV", "FILL", "RND", "DOUBLE", "HALF"};
+    "CLR", "REV", "FILL", "RND", "DOUBLE", "HALF", "OCT DN", "OCT UP"};
 /* EUCLID open (1.5.5): its cycle as cells, 16 a row (up to 4 rows), the hits filled; past it, inside LEN, the cells
  * of its repeats faint (DRUM: the lanes' row under them as always) */
 static void layer_euclid(void)
@@ -1112,7 +1175,16 @@ static void layer_seq(void)
         GFX_HOOK_ALIGN(x, 100, x + 18, 118, AL_HV, "tools lane cell name centred");
         cv_text_in(x, 100 + CAP_IN(S, 18), 18, &AF_S, drum_lane_abbr(TSEL, p), ink, fill);
     }
-    for (p = TL_DOUBLE; !eu.on && p < TL_N; p++) {     /* 1.5.5: D5 DOUBLE (x2), E5 HALF (/2) at the row's end, */
+    for (p = TL_DOUBLE; !eu.on && p < TL_N; p++) {
+        if (!tl_cell(TSEL, p))
+            continue;
+        n[0] = W_NOTE[p];
+        if (!drum) {                                   /* melodic: third row, D5/E5 resize, F5/G5 octave */
+            uint32_t state = p >= TL_OCTDN && (!tl_stopped() || eu.on) ? LS_DIM : st;
+            lcell(LC_X(p - TL_DOUBLE), 68, 28, n, TL_ICON[p], 0, TL_NAME[p], state, 0);
+            continue;
+        }
+        /* DRUM: D5 DOUBLE (x2), E5 HALF (/2) beside the lanes, */
         int32_t x = 168 + 35 * (int32_t)(p - TL_DOUBLE);   /* 31 px each (the lanes' row: no room for their names) */
         uint16_t ink, fill = lc_box(x, 100, 31, 18, lc_fill(st, &ink));
         n[0] = W_NOTE[p];
@@ -1251,6 +1323,7 @@ static void draw_layer(void)
         sig += (uint32_t)ui_rec_prefs * 31u + (uint32_t)chain_busy() * 3u + (uint32_t)rec_clearable() * 5u + song.sel * 977u;
     else if (l == LAYER_SEQ)
         sig += (uint32_t)drum_track(TSEL) * 31u + ui.lane * 5u + (uint32_t)chain_busy() * 3u + (uint32_t)TSEL->p[P_E0] * 131u + song.sel * 977u +
+               (uint32_t)tl_stopped() * 17u + (uint32_t)chord_kit(TSEL) * 19u +
                (eu.on ? 7u + eu.hits * 13u + eu.steps * 1031u + eu.rot * 65537u + (uint32_t)TSEL->p[P_SLEN] * 257u : 0u);
     else
         sig += snd_id() * 31u + (uint32_t)preset_favorite() * 5u + (uint32_t)chain_busy() * 3u + up_gen * 101u +

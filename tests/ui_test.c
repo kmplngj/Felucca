@@ -5019,7 +5019,11 @@ static int test_fm4_retired(void)
                  eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == eng_vis(NENG_SHOWN - 1u));
     {   /* the display order (engines.c ENGINE_ORDER): every engine one can pick once; the PRESETS list follows it */
         static const char *const ORDER[] = {"ANALOG", "FM6", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN",
-                                            "PHYS", "NOISE", "SLICE", "DRUM",
+                                            "PHYS", "NOISE",
+#if FELUCCA_SLICE
+                                            "SLICE",
+#endif
+                                            "DRUM",
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
                                             "MACRO",
 #endif
@@ -7592,6 +7596,232 @@ static int test_seq_tools(void)
     btn_up(B_SEQ); frame();
     chain.running = 0;
     bad += check("  while a song plays: STOP TO EDIT, nothing changes", ok);
+    return bad;
+}
+
+/* #687: exercise the real SEQ-held white-key route, its existing history and
+ * entry restore, including data that must never be interpreted as a pitch. */
+static int test_pattern_octave(void)
+{
+    static const uint8_t edge[] = {0, 11, 12, 115, 116, 127};
+    step_t before[NTRK][NSTEP], expected[NSTEP];
+    int16_t params[NTRK][P_COUNT];
+    motion_store_t mo;
+    uint8_t history[sizeof undo];
+    uint32_t i, k, d, sig;
+    int bad = 0, ok = 1;
+    ui_power_on(); tl_melody();
+    TSEL->step[0].n = 4;
+    TSEL->step[0].note[0] = 0; TSEL->step[0].note[1] = 11;
+    TSEL->step[0].note[2] = 12; TSEL->step[0].note[3] = 115;
+    TSEL->step[0].flags = SF_ACCENT | SF_SLIDE;
+    TSEL->step[0].vel = 37; step_set_ratchet(&TSEL->step[0], 4);
+    step_set_nudge(&TSEL->step[0], -8); step_set_chance_v(&TSEL->step[0], 103);
+    step_set_chance(&TSEL->step[3], 75);
+    /* Ignored payloads include out-of-range-if-shifted values. */
+    TSEL->step[1].n = 2; TSEL->step[1].note[0] = 127;
+    TSEL->step[2].n = 1; TSEL->step[2].note[0] = 127;
+    TSEL->step[4].time = ST_NOTE; TSEL->step[4].note[0] = 127;
+    TSEL->step[3].note[1] = 127; TSEL->step[20].note[0] = 127;
+    TSEL->p[P_TRANS] = 7; TSEL->p[P_QUANT] = QN_SEQT;
+    (void)motion_set_event(TSEL, 5, P_ED_FLT, 17);
+    tl_note(&trk[1].step[0], 116);
+    for (i = 0; i < NTRK; i++) {
+        memcpy(before[i], trk[i].step, sizeof before[i]);
+        memcpy(params[i], trk[i].p, sizeof params[i]);
+    }
+    mo = motion;
+    memcpy(expected, before[song.sel], sizeof expected);
+    expected[0].note[0] = 12; expected[0].note[1] = 23;
+    expected[0].note[2] = 24; expected[0].note[3] = 127;
+    expected[3].note[0] = 76; expected[5].note[0] = 79;
+    go_page(GR_ROLL); frame(); btn_down(B_SEQ); frame();
+    usb.config = 1; k = mo_w;
+    tl_key(TL_OCTUP);
+    ok = msg_is("OCTAVE UP") && !memcmp(TSEL->step, expected, sizeof expected) && !gates() && mo_w == k;
+    usb.config = 0;
+    for (i = 0; i < NTRK; i++) {
+        ok &= !memcmp(params[i], trk[i].p, sizeof params[i]);
+        if (i != song.sel) ok &= !memcmp(before[i], trk[i].step, sizeof before[i]);
+    }
+    ok &= !memcmp(&mo, &motion, sizeof mo);
+    bad += check("#687 G5 OCT UP: note0/chord +12 only; TIE/REST/empty/unused slots, metadata, tail, other tracks and motion stay", ok);
+    btn_up(B_SEQ); frame(); hold(B_SAVE);
+    ok = !memcmp(TSEL->step, before[song.sel], sizeof expected) && !memcmp(&mo, &motion, sizeof mo);
+    hold(B_SAVE);
+    ok &= !memcmp(TSEL->step, expected, sizeof expected);
+    bad += check("  SAVE held: one exact octave undo and redo, including note0 and motion", ok);
+    btn_down(B_SEQ); frame(); tl_key(TL_OCTDN);
+    ok = msg_is("OCTAVE DOWN") && !memcmp(TSEL->step, before[song.sel], sizeof expected);
+    tl_key(TL_OCTUP); oct_back();
+    ok &= !memcmp(TSEL->step, expected, sizeof expected) && msg_is("SEQUENCE PUT BACK") && song.octave == 0;
+    btn_up(B_SEQ); frame();
+    bad += check("  F5 OCT DN: -12; OCT- still restores this layer's entry snapshot, never transposes", ok);
+
+    /* Last note of a chord fails after earlier valid notes: no partial transform
+     * or history replacement. Both directions cover exact MIDI boundaries. */
+    ok = 1;
+    for (d = 0; d < 2u; d++) for (k = 0; k < sizeof edge; k++) {
+        int allowed = d ? edge[k] <= 115 : edge[k] >= 12;
+        ui_power_on(); tl_melody();
+        TSEL->step[7].time = ST_NOTE; TSEL->step[7].n = 2;
+        TSEL->step[7].note[0] = 60; TSEL->step[7].note[1] = edge[k];
+        tl_undo_take(&trk[1]); memcpy(history, &undo, sizeof history);
+        memcpy(expected, TSEL->step, sizeof expected); sig = track_sig(TSEL); mo = motion;
+        btn_down(B_SEQ); frame(); tl_key(d ? TL_OCTUP : TL_OCTDN);
+        if (allowed) {
+            ok &= msg_is(d ? "OCTAVE UP" : "OCTAVE DOWN") &&
+                  TSEL->step[7].note[1] == (uint8_t)((int32_t)edge[k] + (d ? 12 : -12));
+            btn_up(B_SEQ); frame(); hold(B_SAVE);
+            ok &= !memcmp(expected, TSEL->step, sizeof expected);
+        } else {
+            ok &= msg_is("OUT OF RANGE") && !memcmp(expected, TSEL->step, sizeof expected) &&
+                  !memcmp(history, &undo, sizeof history) && sig == track_sig(TSEL) && !lys.loaded;
+            btn_up(B_SEQ); frame();
+        }
+        ok &= !memcmp(&mo, &motion, sizeof mo);
+    }
+    bad += check("  0/11/12/115/116/127 in both directions: inclusive bounds, whole-chord refusal, prior undo/dirty identity kept", ok);
+
+    ui_power_on(); tl_melody();
+    for (i = 0; i < 8u; i++) step_clear(&TSEL->step[i]);
+    TSEL->step[0].time = ST_NOTE; TSEL->step[0].note[0] = 127;
+    tl_tie(&TSEL->step[1]); TSEL->step[1].n = 1; TSEL->step[1].note[0] = 127;
+    TSEL->step[2].n = 1; TSEL->step[2].note[0] = 127;
+    tl_undo_take(&trk[1]); memcpy(history, &undo, sizeof history); sig = track_sig(TSEL);
+    btn_down(B_SEQ); frame(); tl_key(TL_OCTUP); tl_key(TL_OCTDN);
+    ok = msg_is("NO NOTES TO TRANSPOSE") && sig == track_sig(TSEL) && !lys.loaded && !memcmp(history, &undo, sizeof history);
+    btn_up(B_SEQ); frame();
+    bad += check("  empty NOTE/TIE/REST and notes past LEN: no mutation or history entry", ok);
+
+    ui_power_on(); tl_melody(); TSEL->p[P_SLEN] = 1;
+    TSEL->step[0].note[0] = 0; TSEL->step[63].time = ST_NOTE;
+    TSEL->step[63].n = 1; TSEL->step[63].note[0] = 115;
+    btn_down(B_SEQ); frame(); tl_key(TL_OCTUP);
+    ok = TSEL->step[0].note[0] == 12 && TSEL->step[63].note[0] == 115;
+    TSEL->p[P_SLEN] = 64; tl_key(TL_OCTUP);
+    ok &= TSEL->step[0].note[0] == 24 && TSEL->step[63].note[0] == 127;
+    memcpy(expected, TSEL->step, sizeof expected); memcpy(history, &undo, sizeof history);
+    tl_key(TL_OCTUP);
+    ok &= msg_is("OUT OF RANGE") && !memcmp(expected, TSEL->step, sizeof expected) && !memcmp(history, &undo, sizeof history);
+    btn_up(B_SEQ); frame();
+    bad += check("  LEN 1/64: exact active span, final step included at full length, full-length refusal stays atomic", ok);
+
+    /* These states can exist immediately before UI handles a key. Keep the
+     * pending request untouched instead of forcing it through an audio frame. */
+    ok = 1;
+    for (k = 0; k < 7u; k++) {
+        ui_power_on(); tl_melody(); btn_down(B_SEQ); frames(500);
+        tl_undo_take(&trk[1]); memcpy(history, &undo, sizeof history); sig = track_sig(TSEL);
+        if (k == 0u) song.playing = 1;
+        else if (k == 1u) chain.running = 1;
+        else if (k == 2u) chain.armed = 1;
+        else if (k == 3u) cin_left = 1;
+        else transport_req = (uint8_t)(k - 3u);   /* start, stop still pending, restart */
+        tools_key(TL_OCTUP);
+        ok &= msg_is("STOP TO EDIT") && sig == track_sig(TSEL) && !lys.loaded && !memcmp(history, &undo, sizeof history);
+        song.playing = chain.running = chain.armed = cin_left = transport_req = 0;
+        btn_up(B_SEQ); frame();
+    }
+    bad += check("  playing/SONG running or armed/count-in/pending start, stop and restart: refusal preserves prior undo", ok);
+
+    ui_power_on(); tl_melody(); btn_down(B_SEQ); frame(); tl_key(TL_OCTUP);
+    memcpy(expected, TSEL->step, sizeof expected); memcpy(history, &undo, sizeof history);
+    song.playing = 1; oct_back();
+    ok = msg_is("STOP TO EDIT") && !memcmp(expected, TSEL->step, sizeof expected) && !memcmp(history, &undo, sizeof history);
+    song.playing = 0; oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && TSEL->step[0].note[0] == 60;
+    btn_up(B_SEQ); frame();
+    bad += check("  octave layer restore also waits for stop; refusal keeps entry snapshot and history for retry", ok);
+
+    ui_power_on(); tl_melody(); btn_down(B_SEQ); frame(); tl_key(TL_EUCLID);
+    memcpy(expected, TSEL->step, sizeof expected); memcpy(history, &undo, sizeof history); mo = motion;
+    tl_key(TL_OCTUP);
+    ok = eu.on && msg_is("APPLY EUCLID FIRST") && !memcmp(expected, TSEL->step, sizeof expected) &&
+         !memcmp(history, &undo, sizeof history) && !memcmp(&mo, &motion, sizeof mo);
+    oct_back(); btn_up(B_SEQ); frame();
+    bad += check("  an open EUCLID preview must be applied/cancelled first; octave refusal cannot commit it", ok);
+
+    ui_power_on(); tl_melody();
+    tl_note(&trk[1].step[0], 84); trk[1].p[P_SLEN] = 8;
+    btn_down(B_SEQ); frame(); tl_key(TL_OCTUP); track_select(1); tl_key(TL_OCTDN);
+    ok = msg_is("REOPEN SEQ FIRST") && trk[0].step[0].note[0] == 72 && trk[1].step[0].note[0] == 84;
+    oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && trk[0].step[0].note[0] == 60 && trk[1].step[0].note[0] == 84;
+    tl_key(TL_OCTDN);                                   /* (T1 as it opened: the snapshot moves to T2) */
+    ok &= msg_is("OCTAVE DOWN") && trk[1].step[0].note[0] == 72;
+    oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && trk[1].step[0].note[0] == 84 && trk[0].step[0].note[0] == 60;
+    btn_up(B_SEQ); frame(); hold(B_SAVE);
+    ok &= trk[1].step[0].note[0] == 72 && trk[0].step[0].note[0] == 60;
+    bad += check("  editor track change while held: OCT- restores the layer's track, new-track tools refused until then", ok);
+
+    /* Review repro: SHIFT x2 on T1, the editor selects T2, OCT- puts T1 back and SAVE held still has T1's edit */
+    ui_power_on(); tl_melody(); trk[1].p[P_SLEN] = 8; tl_note(&trk[1].step[0], 84);
+    memcpy(expected, trk[0].step, sizeof expected);
+    btn_down(B_SEQ); frame(); tl_key(TL_RIGHT); tl_key(TL_RIGHT);
+    memcpy(before[0], trk[0].step, sizeof expected);
+    ok = memcmp(expected, trk[0].step, sizeof expected) != 0;
+    track_select(1); oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && !memcmp(expected, trk[0].step, sizeof expected) && trk[1].step[0].note[0] == 84;
+    btn_up(B_SEQ); frame(); hold(B_SAVE);
+    ok &= !memcmp(before[0], trk[0].step, sizeof expected);
+    bad += check("  SHIFT x2 on T1, editor selects T2, OCT-: T1 put back, its edits still one SAVE-held undo away", ok);
+
+    /* KNOB 1 LEN on T1 counts as a change: kept for OCT-; untouched: the snapshot moves, OCT- says nothing restored */
+    ui_power_on(); tl_melody(); trk[1].p[P_SLEN] = 8; tl_note(&trk[1].step[0], 84);
+    btn_down(B_SEQ); frame(); turn(EN_K1, -2);
+    ok = trk[0].p[P_SLEN] == 6;
+    track_select(1); oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && trk[0].p[P_SLEN] == 8 && trk[1].p[P_SLEN] == 8;
+    oct_back();
+    ok &= msg_is("NOTHING TO PUT BACK") && trk[1].step[0].note[0] == 84;
+    btn_up(B_SEQ); frame();
+    bad += check("  T1 LEN changed then T2 selected: OCT- puts T1's LEN back; again: NOTHING TO PUT BACK", ok);
+
+    ui_power_on(); tl_melody();
+    TSEL->step[0].note[0] = 84; project_save(1);
+    TSEL->step[0].note[0] = 60; project_save(0);
+    btn_down(B_SEQ); frame(); tl_key(TL_OCTUP);
+    project_load(1); oct_back();
+    ok = TSEL->step[0].note[0] == 84 && !undo.trk;
+    tl_key(TL_LEFT); oct_back();
+    ok &= TSEL->step[0].note[0] == 84 && TSEL->step[7].time == ST_REST;
+    btn_up(B_SEQ); frame();
+    bad += check("  project load while held invalidates old entry snapshot for cancel and other SEQ tools", ok);
+
+    ui_power_on(); tl_melody(); btn_down(B_SEQ); frame(); tl_key(TL_OCTUP);
+    btn_up(B_SEQ); frame(); project_save(1); project_load(1);
+    ok = TSEL->step[0].note[0] == 72 && TSEL->step[1].time == ST_TIE && tl_lock_at(3) && !undo.trk;
+    bad += check("  project save/load stores deliberate transposed notes, existing ties/locks, no new persistent transpose", ok);
+
+    /* Mapping identity comes from the requested engine, including a user preset
+     * of a kit and SLICE with a user source. Pitched SAMPLE remains eligible. */
+    ok = 1;
+    for (k = 0; k < 4u; k++) {
+        if (k >= 2u && !eng_ok(ENGI_SLICE))
+            continue;
+        ui_power_on(); tl_melody();
+        if (k < 2u) {
+            set_engine_of(TSEL, ENGI_DRUM);
+            if (k == 1u) { up_store(0, "USER KIT"); set_engine_of(TSEL, 0); up_load(0); }
+        } else {
+            set_engine_of(TSEL, ENGI_SLICE);
+            TSEL->p[P_E0] = k == 3u ? SMP_NSETS : 0;
+        }
+        sig = track_sig(TSEL); tl_undo_take(&trk[1]); memcpy(history, &undo, sizeof history);
+        btn_down(B_SEQ); frame(); tl_key(TL_OCTUP); tl_key(TL_OCTDN);
+        ok &= chord_kit(TSEL) && !tl_cell(TSEL, TL_OCTUP) && !tl_cell(TSEL, TL_OCTDN) &&
+              sig == track_sig(TSEL) && !memcmp(history, &undo, sizeof history) && !lys.loaded;
+        btn_up(B_SEQ); frame();
+    }
+    bad += check(eng_ok(ENGI_SLICE) ? "  DRUM, user DRUM kit, SLICE PIANO and user SLICE: no octave cells, mutation or history" :
+                 "  DRUM and user DRUM kit: no octave cells, mutation or history (SLICE unavailable)", ok);
+    ui_power_on(); tl_melody(); set_engine_of(TSEL, ENGI_SAMPLE); TSEL->p[P_E0] = SMP_NSETS;
+    btn_down(B_SEQ); frame(); tl_key(TL_OCTUP);
+    ok = !chord_kit(TSEL) && tl_cell(TSEL, TL_OCTUP) && TSEL->step[0].note[0] == 72;
+    btn_up(B_SEQ); frame();
+    bad += check("  pitched SAMPLE user zones stay melodic (native keys/chord predicate, no engine-number exclusion)", ok);
     return bad;
 }
 
@@ -11360,6 +11590,7 @@ int main(int argc, char **argv)
     bad += test_layer_lock();
     bad += test_rec_layer();
     bad += test_seq_tools();
+    bad += test_pattern_octave();
     bad += test_edit_quick_actions();
     bad += test_menu_prefs();
     bad += test_style();

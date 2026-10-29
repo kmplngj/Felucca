@@ -251,6 +251,7 @@ static struct {
     } ml;
     volatile uint8_t mpc[NTRK];  /* MIDI Program Change per track, 0x80 | program, 0 none (midi_control.c mpc_io: here
                                   * for the same reason as ml.io; midi_pc_poll) */
+    uint32_t project_epoch;      /* main loop: successful project replacements invalidate layer snapshots */
 } ui;
 
 enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PAT,

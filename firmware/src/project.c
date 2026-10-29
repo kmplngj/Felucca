@@ -1048,6 +1048,7 @@ static int project_restore_runtime(const project_t *input)
     project_t *p = &proj_scratch;
     uint32_t i, k;
     if (!proj_ok(input) || !proj_engines_ok(input)) return 1;
+    ui.project_epoch++;                                /* SEQ TOOLS must not restore another project's snapshot */
     mom_back(0);                                  /* (ui_input.c MOMENTARY: the values as they were, then the load) */
     memset(drum_mute, 0, sizeof drum_mute);       /* (1.4.1: the DRUM lanes' mutes, performance state) */
     if (p != input) memcpy(p, input, sizeof *p);

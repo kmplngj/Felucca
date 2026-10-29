@@ -46,6 +46,14 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Stored-pattern octave tools:** hold SEQ and use F5/G5 to move the selected
+  melodic pattern down/up one octave, with whole-edit MIDI range refusal and the
+  existing one-action undo. Kit/SLICE mappings are exempt; editing requires
+  stopped transport. OCT− still restores the layer's original track after an
+  editor track change; a project load discards the old snapshot.
+  [Controls and limitations](fork-features.md#stored-pattern-octave-tools);
+  real FM-1 panel and audition checks remain pending.
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery
