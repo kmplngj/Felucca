@@ -567,15 +567,16 @@ static void ep0_service(void)
     uint32_t csr, i;
     uint16_t wvalue, wlength;
     uint8_t *s = usb.last_setup;
-    if (usb.has_pend_addr) {
-        sie_wr(S_FADDR, usb.pend_addr);
-        usb.has_pend_addr = 0;
-    }
     sie_wr(S_INDEX, 0);
+    if (usb.timeouts || !fm1_usb_sie_on())
+        return;                                         /* a failed selection cannot identify EP0 status */
     csr = sie_rd(S_CSR0);
+    if (usb.timeouts || !fm1_usb_sie_on())
+        return;                                         /* failed reads return zero, not a completion */
     if (csr & 0x04u) {                                  /* SentStall */
         sie_wr(S_CSR0, 0);
         usb.e0_tx = 0;
+        usb.has_pend_addr = 0;
 #if FELUCCA_CDC
         cdc.e0_rx = 0;
 #endif
@@ -587,12 +588,17 @@ static void ep0_service(void)
     if (csr & 0x10u) {                                  /* SetupEnd: the host abandoned the transfer */
         sie_wr(S_CSR0, 0x80);
         usb.e0_tx = 0;
+        usb.has_pend_addr = 0;
 #if FELUCCA_CDC
         cdc.e0_rx = 0;                                  /* else the next SETUP is taken as line coding */
 #endif
 #if FELUCCA_UAC
         uac.e0_rx = 0;
 #endif
+    }
+    if (usb.has_pend_addr) {                            /* the EP0 interrupt completes status unless aborted */
+        sie_wr(S_FADDR, usb.pend_addr);
+        usb.has_pend_addr = 0;
     }
     if (usb.e0_tx) {
         if (!(csr & 0x02u))
