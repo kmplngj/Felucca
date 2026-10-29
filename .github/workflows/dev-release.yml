@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: Latest Dev
+run-name: Latest Dev @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+# Build each merge; serialize only the rolling-release writer below.
+concurrency:
+  group: dev-release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  revision:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      pr: ${{ steps.resolve.outputs.pr }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Identify merged PR (merge, squash or rebase)
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/release_notes.py resolve-dev
+  validate:
+    needs: revision
+    if: needs.revision.outputs.pr != ''
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.revision.outputs.version }}
+  publish:
+    needs: [revision, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Never cancel a release swap halfway through. A stale build is rejected again
+    # immediately before promotion, so an older run cannot replace a newer merge.
+    concurrency:
+      group: latest-dev-publisher
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      VERSION: ${{ needs.revision.outputs.version }}
+      PR_NUMBER: ${{ needs.revision.outputs.pr }}
+      CHANNEL: dev
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ github.run_id }}
+          path: downloaded
+      - name: Verify and replace the single Dev prerelease
+        run: |
+          set -euo pipefail
+          mv "downloaded/release-$VERSION" release
+          python3 tools/ci.py stage-release "$VERSION"
+          (cd release-assets && sha256sum -c SHA256SUMS)
+          python3 tools/release_notes.py notes
+          python3 tools/dev_release.py

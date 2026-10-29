@@ -11,6 +11,8 @@
  */
 #pragma once
 #include <stdint.h>
+#include "fm1_flash_context_contract.h"
+#include "fm1_flash_data_contract.h"
 #include "fm1_xip.h"
 
 #define RAMFN  __attribute__((section(".ram_text"), noinline, used))
@@ -148,6 +150,7 @@ RAMINL int fl_wait_ready(uint32_t max_us, uint32_t *took_us)
 
 /* ---- entry points: IRQs OFF, args/buffers in RAM ---- */
 
+static fl_jedec_ram_fn fl_jedec_ram;
 static RAMFN uint32_t fl_jedec_ram(void)                 /* expect 0x856014 */
 {
     fl_saved_t s; uint32_t id;
@@ -168,6 +171,7 @@ static RAMFN uint32_t fl_status_ram(void)                /* SR1 | SR2 << 8 */
     return v;
 }
 
+static fl_erase4k_ram_fn fl_erase4k_ram;
 static RAMFN int fl_erase4k_ram(uint32_t off, uint32_t *took_us)
 {
     fl_saved_t s; int rc;
@@ -185,6 +189,7 @@ static RAMFN int fl_erase4k_ram(uint32_t off, uint32_t *took_us)
     return rc;
 }
 
+static fl_prog_ram_fn fl_prog_ram;
 static RAMFN int fl_prog_ram(uint32_t off, const uint8_t *src, uint32_t n, uint32_t *took_us)
 {
     fl_saved_t s; int rc; uint32_t i;
@@ -204,6 +209,7 @@ static RAMFN int fl_prog_ram(uint32_t off, const uint8_t *src, uint32_t n, uint3
     return rc;
 }
 
+static fl_read_ram_fn fl_read_ram;
 static RAMFN int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)   /* 0x0B fast read */
 {
     fl_saved_t s; uint32_t i;
@@ -219,6 +225,7 @@ static RAMFN int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)   /* 0x0B f
 
 /* Once at boot, before any XIP read of the data region: map the data area
  * as an unencrypted XIP window (as the SDK's IOCTL_SET_VM_INFO does). */
+static fl_plain_window_init_fn fl_plain_window_init;
 static void fl_plain_window_init(void)
 {
     SFCENC_CON &= (uint8_t)~2u;
@@ -230,9 +237,12 @@ static void fl_plain_window_init(void)
     __asm__ volatile("csync\n\tsti" ::: "memory");
 }
 
+static irq_save_fn irq_save;
 static inline uint32_t irq_save(void) { __asm__ volatile("cli" ::: "memory"); return 0; }
+static irq_restore_fn irq_restore;
 static inline void irq_restore(uint32_t f) { (void)f; __asm__ volatile("csync\n\tsti" ::: "memory"); }
 
+static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took_us)
 {
     uint32_t f = irq_save();
@@ -241,6 +251,7 @@ static int fl_erase4k(uint32_t off, uint32_t *took_us)
     return rc;
 }
 
+static fl_write_fn fl_write;
 static int fl_write(uint32_t off, const uint8_t *src_ram, uint32_t n)
 {
     uint32_t took;

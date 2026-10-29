@@ -83,6 +83,34 @@ or writing another adoption plan. For research-only requests, deliver the reques
 analysis. If access or a decision blocks one package, keep its status explicit and
 continue independent work within scope.
 
+## Deepen the method within scope
+
+Use this check when the user explicitly asks for deeper investigation, or when
+uncertainty or interacting constraints make a task require more than the routine
+delivery steps. A report, plan or issue title alone is not a trigger. Simple edits,
+clear commands and continuation of an approved plan need no extra rewrite or
+confirmation; revisit only a new uncertainty that affects correctness or acceptance.
+
+Before choosing the solution, identify:
+
+- **Assumption:** which belief the solution depends on, and what could refute it.
+- **Source and method:** the available source, trace, data or measurement that can
+  test that assumption, and the concrete procedure to use. Start with summaries,
+  then inspect the relevant original evidence; do not load all raw logs by default.
+- **Observable result:** the check that establishes the requested behavior, keeping
+  measured results, model-review findings and pending human/device checks distinct.
+
+Reuse answers already established in the run. State only material assumptions,
+method choices and evidence gaps; no mandatory rewrite block or bypass message is
+needed. If evidence is unavailable, name the limitation rather than inventing a
+measurement or treating another model's agreement as proof.
+
+Keep the original deliverables, acceptance targets and explicit limits. Sharpening
+the method within authorized scope does not need renewed approval. Put optional
+features, broader audits and recurring automation in follow-ups. If a necessary
+prerequisite would exceed that scope, finish useful authorized work and present
+the concrete decision under the existing permission rules.
+
 ## Choose a bounded package
 
 Prioritize relevant regressions, impactful bugs and enabling prerequisites using
