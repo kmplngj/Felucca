@@ -303,9 +303,10 @@ Use a disposable project, transport stopped, CPU2 OFF, headphones/output and an
 external MIDI keyboard sending channel 1 through USB or TRS. Keep a backup of any
 project you intend to overwrite.
 
-1. Select T1 with SELECT, choose an ANALOG preset using ALGORITHM/PRESETS; select
-   T2 and choose a contrasting preset. Tap HOME to reach HOME, then tap HOME for
-   MIXER; set T1/T2 levels with knobs 1/2, starting quietly.
+1. Turn ALGORITHM left until T1 is selected, then choose a sound with PRESETS.
+   Turn ALGORITHM one detent right to T2 and choose a contrasting sound with PRESETS.
+   Tap HOME until MIXER appears (HOME → MIXER → CLOCK). Select each part with ALGORITHM and set its LEVEL
+   with KNOB 1, starting quietly. Use sustained sounds for the pedal checks.
 2. Hold HOME to open MENU. Select the MIDI tab with ALGORITHM and the MIDI IN row
    with PRESETS; turn KNOB 1 to TRACK. Set T1 CHANNEL and T2 CHANNEL to 1 using
    the same row/value controls. Keep T3/T4 on their default channels 3/4. Tap HOME

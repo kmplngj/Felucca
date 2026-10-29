@@ -446,6 +446,119 @@ try {
       return { params: restored.params, sectors: Object.keys(JSON.parse(saved)).length, audio };
     });
   }
+  // Start from erased browser flash. All setup uses the real panel and the
+  // page's Web MIDI handler; the worklet probe only observes state and PCM.
+  const turnLayer = async (name, delta) => {
+    const slider = page.getByRole("slider", { name, exact: true });
+    for (let i = 0; i < Math.abs(delta); i++) {
+      // MENU consumes the sign of an encoder batch. Wait for each applied
+      // row/tab/value change before sending the next detent.
+      const before = await page.evaluate(() => __feluccaTest.layer);
+      await slider.press(delta > 0 ? "ArrowUp" : "ArrowDown");
+      if (before.menu !== 0xFFFFFFFF)
+        await waitFor((old) => JSON.stringify(__feluccaTest.layer) !== old, JSON.stringify(before));
+    }
+  };
+  const midiLayer = (data) => page.evaluate((d) => __feluccaTest.midi(d), data);
+  const layerState = () => page.evaluate(() => __feluccaTest.layer);
+  const layerMenu = async () => {
+    const home = page.getByRole("button", { name: "HOME", exact: true });
+    await home.focus(); await page.keyboard.down("Enter");
+    await page.waitForTimeout(800); await page.keyboard.up("Enter");
+    await page.waitForTimeout(100);
+  };
+  const layerAudio = async (left, right) => {
+    const after = await page.evaluate(() => __feluccaTest.samples);
+    return waitFor(({ after, left, right }) => {
+      const p = __feluccaTest, a = p.latest;
+      // MIDI PAN max is +63, so the right-hand part retains 1/64
+      // left leakage. Require isolation relative to the sounding side;
+      // when both parts are muted, require absolute silence on both sides.
+      const matches = (value, other, on, otherOn) => on ? value > 0.001 :
+        value < (otherOn ? Math.max(0.0001, other / 32) : 0.0001);
+      return p.samples > after + 8192 && a?.finite &&
+        matches(a.left_rms, a.right_rms, left, right) && matches(a.right_rms, a.left_rms, right, left) && a;
+    }, { after, left, right });
+  };
+  await check("Web MIDI layer: two distinct sounds produce independent stereo PCM", async () => {
+    messages.push(...await page.evaluate(() => __feluccaTest.errors));
+    await page.evaluate(() => localStorage.clear());
+    capturedAudio = null;
+    await page.reload();
+    await page.getByRole("button", { name: "Switch on", exact: true }).click();
+    await page.locator("#start").waitFor({ state: "hidden" });
+    await waitFor(() => __feluccaTest.frames > 5 && (__feluccaTest.leds[0] & (1 << 6)));
+    await page.evaluate(() => __feluccaTest.listen());
+    // Program each part separately before sharing channel 1. Dry panning
+    // separates their contributions; level and route edits isolate each part.
+    for (const ch of [0, 1]) {
+      await midiLayer([0xC0 | ch, ch ? 4 : 0]);          // ANALOG SAW LEAD + sustained FM6 PAD
+      // Program Change is deferred. Its sound install restores preset sends,
+      // so wait for it before applying the dry stereo setup.
+      await waitFor(({ ch, sound }) => __feluccaTest.layer.tracks[ch].sound === sound,
+        { ch, sound: ch ? (12 << 8) | 4 : 0 });
+      await page.waitForTimeout(100);
+      for (const [cc, value] of [[7, 100], [10, ch ? 127 : 0], [72, 0], [73, 0], [91, 0], [93, 0], [94, 0]])
+        await midiLayer([0xB0 | ch, cc, value]);
+    }
+    await waitFor(() => __feluccaTest.layer?.tracks.slice(0, 2).every((t) => t.level === 100));
+    assert.notEqual((await layerState()).tracks[0].sound, (await layerState()).tracks[1].sound);
+    await layerMenu();
+    await turnLayer("ALGORITHM", 3);                  // DISPLAY -> MIDI, first row MIDI IN
+    await turnLayer("KNOB 1", 5);
+    await waitFor(() => __feluccaTest.layer.route === 5);
+    await turnLayer("PRESETS", 2);                    // T2 CHANNEL
+    await turnLayer("KNOB 1", -1);
+    await waitFor(() => __feluccaTest.layer.tracks[1].channel === 0);
+    await tap("HOME"); await tap("HOME");            // close MENU, then HOME -> MIXER
+    await midiLayer([0x90, 60, 100]);
+    await waitFor(() => __feluccaTest.layer.tracks.slice(0, 2).every((t) => t.owners === 1 && t.gates > 0));
+    const audio = await layerAudio(true, true);
+    await screen("midi-layer-mixer");
+    return { state: await layerState(), audio, input: "virtual Web MIDI port -> page -> AudioWorklet -> firmware" };
+  });
+  await check("MIDI layer mixer: each part can be silenced independently", async () => {
+    await turnLayer("KNOB 1", -127);
+    await waitFor(() => __feluccaTest.layer.tracks[0].level === 0);
+    const onlyT2 = await layerAudio(false, true);
+    await turnLayer("ALGORITHM", 1);                   // MIXER LEVEL is KNOB 1 of the selected part
+    await waitFor(() => __feluccaTest.macro.engine === 12);
+    await turnLayer("KNOB 1", -127);
+    await waitFor(() => __feluccaTest.layer.tracks[1].level === 0);
+    const neither = await layerAudio(false, false);
+    await turnLayer("ALGORITHM", -1);
+    await waitFor(() => __feluccaTest.macro.engine === 0);
+    await midiLayer([0xB0, 7, 100]);                    // shared-channel CC reaches both parts
+    await waitFor(() => __feluccaTest.layer.tracks.slice(0, 2).every((t) => t.level === 100));
+    const both = await layerAudio(true, true);
+    return { onlyT2, neither, both };
+  });
+  await check("MIDI layer sustain and held-note channel removal preserve the remaining sound", async () => {
+    await midiLayer([0xB0, 64, 127]); await midiLayer([0x80, 60, 0]);
+    await layerAudio(true, true);
+    assert((await layerState()).tracks.slice(0, 2).every((t) => t.owners === 1 && t.gates > 0));
+    await layerMenu();                               // MIDI tab and T2 CHANNEL row retained
+    await turnLayer("KNOB 1", 1);
+    await waitFor(() => __feluccaTest.layer.tracks[1].channel === 1 && __feluccaTest.layer.tracks[1].owners === 0);
+    const onlyT1 = await layerAudio(true, false);
+    assert.equal((await layerState()).tracks[0].owners, 1);
+    await midiLayer([0xB0, 64, 0]);
+    const released = await layerAudio(false, false);
+    await waitFor(() => __feluccaTest.layer.tracks.slice(0, 2).every((t) => t.owners === 0 && t.gates === 0));
+    await turnLayer("KNOB 1", -1);
+    await waitFor(() => __feluccaTest.layer.tracks[1].channel === 0);
+    await tap("HOME");
+    return { onlyT1, released, state: await layerState() };
+  });
+  await check("MIDI layer rejoins and velocity-zero releases both audible parts", async () => {
+    await midiLayer([0x90, 64, 100]);
+    const sounding = await layerAudio(true, true);
+    capturedAudio = await page.evaluate(() => ({ blocks: __feluccaTest.audio, rate: __feluccaTest.context.sampleRate }));
+    await midiLayer([0x90, 64, 0]);
+    const released = await layerAudio(false, false);
+    await waitFor(() => __feluccaTest.layer.tracks.slice(0, 2).every((t) => t.owners === 0 && t.gates === 0));
+    return { sounding, released };
+  });
   await check("no browser or worklet errors", async () => {
     messages.push(...await page.evaluate(() => __feluccaTest.errors));
     assert.deepEqual(messages, []);
@@ -456,6 +569,7 @@ try {
   // Startup/input failures can precede the normal error check. Keep the worklet's
   // actual cause in the small report even when the visible failure is a timeout.
   const probeErrors = page ? await page.evaluate(() => globalThis.__feluccaTest?.errors || []).catch(() => []) : [];
+  report.layer = page ? await page.evaluate(() => globalThis.__feluccaTest?.layer || null).catch(() => null) : null;
   report.errors = [...new Set([...probeErrors, ...messages])].slice(0, 20).map((s) => String(s).slice(0, 1000));
 } finally {
   if (page && (report.status === "fail" || keepMedia)) {

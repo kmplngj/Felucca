@@ -47,6 +47,11 @@ isolated browser context, then closes the browser and server. It tests:
 - A playable key in the portrait layout.
 - Panel save reaching localStorage, saved sectors reaching the restarted worklet,
   and loading USER slot 1 restoring the edited attack's exact envelope graph.
+- Native MIDI layers through a virtual Web MIDI input and the page's normal handler:
+  two distinct sounds, stereo PCM, independent LVL edits, shared CC7, sustain,
+  held-note channel removal, rejoining and velocity-zero release. Setup uses real
+  panel controls; read-only worklet observations confirm routing and note ownership.
+  Channel-isolation checks allow the existing MIDI PAN=63 opposite-side leakage.
 - Browser, network, console and AudioWorklet errors.
 
 The test-only probe observes the existing worklet's messages and taps its actual
