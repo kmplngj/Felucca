@@ -205,13 +205,27 @@ try {
     const key = page.getByRole("button", { name: "F3", exact: true });
     const other = page.getByRole("button", { name: "G3", exact: true });
     await key.focus();
-    await key.evaluate((el) => el.click());                 // click-only DOM activation, not a real AT test
-    assert.equal(await key.getAttribute("aria-pressed"), "true");
-    await freshAudio(true);
+    const click = await key.evaluate((el) => {
+      const after = __feluccaTest.samples;                  // snapshot before the click in this same browser task
+      el.click();                                           // click-only DOM activation, not a real AT test
+      return { after, pressed: el.getAttribute("aria-pressed") };
+    });
+    assert.equal(click.pressed, "true");
+    await page.waitForTimeout(500);                          // retained PCM must survive the short note's release
+    await waitFor((after) => {
+      const p = __feluccaTest, size = 2048;
+      const first = p.samples - p.audio.length * size;
+      if (first > after) throw new Error("click audio window expired from the PCM tap");
+      return p.audio.some((block, i) => {
+        if (first + (i + 1) * size <= after) return false;
+        return [block.left, block.right].every((channel) =>
+          channel.every(Number.isFinite) && Math.sqrt(channel.reduce((sum, x) => sum + x*x, 0) / channel.length) > 0.001);
+      });
+    }, click.after);
     await waitFor(() => document.querySelector('[aria-label="F3"]').getAttribute("aria-pressed") === "false");
     await freshAudio(false);
-    await key.evaluate((el) => el.click());
-    assert.equal(await key.getAttribute("aria-pressed"), "true");
+    const pressedBeforeBlur = await key.evaluate((el) => { el.click(); return el.getAttribute("aria-pressed"); });
+    assert.equal(pressedBeforeBlur, "true");
     await other.focus();
     assert.equal(await key.getAttribute("aria-pressed"), "false", "blur left virtual note held");
     await freshAudio(false);
@@ -229,6 +243,20 @@ try {
     });
     assert.equal(await key.getAttribute("aria-pressed"), "false", "follow-on keyboard click duplicated note");
     await freshAudio(false);
+    await key.focus();
+    await page.keyboard.down("Enter");
+    const previousKey = await key.elementHandle();
+    // Model browsers that omit blur on target removal, even if this one emits it.
+    await previousKey.evaluate((el) => el.addEventListener("blur", (e) => e.stopImmediatePropagation(), { capture: true, once: true }));
+    await page.setViewportSize({ width: 390, height: 844 }); // rebuild removes the focused key while held
+    await waitFor((el) => !el.isConnected, previousKey);
+    await previousKey.dispose();
+    await page.keyboard.up("Enter");
+    const afterRebuild = await key.evaluate((el) => { el.click(); return el.getAttribute("aria-pressed"); });
+    assert.equal(afterRebuild, "true", "layout rebuild left the virtual-click guard set");
+    await waitFor(() => document.querySelector('[aria-label="F3"]').getAttribute("aria-pressed") === "false");
+    await freshAudio(false);
+    await page.setViewportSize({ width: 1200, height: 900 });
     return { click_only: true, timed_release: true, blur_release: true, physical_click_suppressed: true };
   });
   await check("pointer opens ENV and encoder redraws LCD", async () => {

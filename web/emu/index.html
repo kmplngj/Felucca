@@ -166,6 +166,7 @@ const send = (m) => { if (node) node.port.postMessage(m); };
 
 function build(name) {
   const L = LAYOUTS[name];
+  physicalKeyActivations.clear();                    // removed focused targets need not receive blur or keyup
   layout = name;
   svg.innerHTML = "";
   svg.setAttribute("viewBox", `0 0 ${L.w} ${L.h}`);
