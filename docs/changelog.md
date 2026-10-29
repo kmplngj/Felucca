@@ -220,6 +220,11 @@ recorded in the linked reports, rather than every current build or device.
   no physical display observation is claimed.
   See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
 
+- **User-sample addressing:** SAMPLE, GRAIN, SLICE and the sample waveform read
+  validated user-slot data through its own flash region, avoiding out-of-array
+  factory-sample offsets. Stored samples, backups and decoder order are unchanged;
+  exact-revision FM-1 upload, playback and restore qualification remains pending.
+
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
   built-in palettes. Mute marks and inactive graphics keep their distinct state.

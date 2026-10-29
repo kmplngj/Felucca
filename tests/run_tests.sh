@@ -1352,8 +1352,18 @@ else
 
     u_asan_record() {
         t=$1
-        $SCC -o "$A/$t" tests/$t.c -lm -lpthread
-        run "ASan/UBSan: $t" "$A/$t"
+        case "$t" in
+            editor_test|backup_test|robust_test)
+                # User-sample publication and decode must retain factory/user bounds checks (#638).
+                ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all \
+                    -Ibuild/gen -Ifirmware/src -o "$A/$t" tests/$t.c -lm -lpthread
+                run "ASan/UBSan (all checks): $t" "$A/$t"
+                ;;
+            *)
+                $SCC -o "$A/$t" tests/$t.c -lm -lpthread
+                run "ASan/UBSan: $t" "$A/$t"
+                ;;
+        esac
     }
     for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test engid_test autosave_audio_test fm6_eff_test; do
         unit "asan_$t" "" u_asan_record "$t"

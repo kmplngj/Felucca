@@ -377,10 +377,6 @@ int main(int argc, char **argv)
         printf("slice: no user loop (%s.hdr / .bin / .hits: tests/slice_loop.py + fm1_sample_upload.py build)\n", loop);
         return 1;
     }
-    if ((uintptr_t)host_slots < (uintptr_t)SMP_DATA || (uintptr_t)host_slots - (uintptr_t)SMP_DATA > 0xF0000000u) {
-        printf("slice: the slot image must lie above SMP_DATA within 4 GiB (32-bit offsets)\n");
-        return 1;
-    }
     smp_user_scan(0);
     check("USR1: valid after smp_user_scan, slice table built", usr_nz[0] && slc_usr[0].len && slc_get(1) != 0,
           "%u zones, %u samples", usr_nz[0], slc_usr[0].len);
