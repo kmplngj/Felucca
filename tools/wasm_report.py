@@ -165,6 +165,10 @@ def logical_mapping(native, runtime, native_constants, runtime_constants):
         a, b = native.get(name), runtime.get(name)
         if name == 'FELUCCA_ISR_ASSERT':
             rule = 'browser simulated interrupt-depth assertions enabled; native diagnostic recorded'
+        elif name == 'FELUCCA_TESTS_HOST_NOR_H':
+            if a is not None or b != '':
+                raise ValueError('invalid browser NOR include guard')
+            rule = 'browser-only shared NOR header guard; no configuration value'
         elif name in ADAPTER:
             if b != ADAPTER[name]:
                 raise ValueError(f'wrong browser adapter macro: {name}')

@@ -3,6 +3,7 @@
  * black and white in every token (one grey: DIM LINE RAISE LANE) and neutral in every blend,
  * every palette's text contrast, the alpha blend, the ramp cache, the fonts' metrics and the ellipsis.
  * Optional: a palette sheet (PPM). */
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
@@ -12,8 +13,7 @@
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }   /* (MENU > SCREEN OFF: lcd.c) */
 static void lcd_wake_now(void) {}
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #include "../firmware/src/gfx.c"
 
 #define SHEET_W 960u

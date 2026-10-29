@@ -6,10 +6,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import wave
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +22,73 @@ BASE = json.loads((ROOT / "tests/scenarios/interaction.json").read_text())
 
 
 class ValidationTests(unittest.TestCase):
+    def test_engine_and_generated_include_changes_native_replay_inputs(self):
+        paths = ("firmware/engines/src/dsp.c", "firmware/engines/src/felucca_engine.h",
+                 "firmware/engines/src/eng_analog.c", "build/gen/engine_registry.inc")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in paths:
+                dependency = root / name
+                dependency.parent.mkdir(parents=True, exist_ok=True)
+                dependency.write_text("/* original dependency */\n")
+            with mock.patch.object(replay, "ROOT", root):
+                original = replay.source_inputs()
+                for name in paths:
+                    with self.subTest(dependency=name):
+                        self.assertIn(name, original)
+                        dependency = root / name
+                        dependency.write_text("/* changed dependency */\n")
+                        changed = replay.source_inputs()
+                        self.assertNotEqual(original[name], changed[name])
+                        dependency.write_text("/* original dependency */\n")
+
+    def test_changed_compile_dependency_is_not_published_or_replayed(self):
+        for name in ("firmware/engines/src/dsp.c", "build/gen/engine_registry.inc"):
+            with self.subTest(dependency=name), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                generated = root / "build/gen"
+                generated.mkdir(parents=True)
+                (generated / "felucca_tables.h").write_text("/* generated tables */\n")
+                (generated / "build-identity.json").write_text("{}\n")
+                dependency = root / name
+                dependency.parent.mkdir(parents=True, exist_ok=True)
+                dependency.write_text("/* original dependency */\n")
+
+                def compile_then_change(command, **kwargs):
+                    if "-o" in command:
+                        Path(command[command.index("-o") + 1]).write_bytes(b"linked adapter")
+                        dependency.write_text("/* dependency changed after compiler read */\n")
+
+                with mock.patch.object(replay, "ROOT", root), \
+                     mock.patch.object(replay.subprocess, "run", side_effect=compile_then_change), \
+                     mock.patch.object(replay.subprocess, "check_output",
+                                       side_effect=lambda command, **kwargs: "fixture cc\n" if kwargs.get("text") else b""), \
+                     mock.patch.object(replay, "git", return_value=""), \
+                     mock.patch.dict(os.environ, {"CC": "cc"}):
+                    provenance = {"inputs": replay.source_inputs()}
+                    with self.assertRaisesRegex(ValueError, "changed during native compilation"):
+                        replay.build_adapter()
+                    self.assertFalse(list((root / "build/replay-native").glob("adapter-*.so")))
+                    out = root / "build/capture"
+                    with mock.patch.object(replay, "Adapter") as adapter:
+                        with self.assertRaisesRegex(ValueError, "changed before replay"):
+                            replay.replay({}, b"", out, root / "unused.so", provenance, 0)
+                        adapter.assert_not_called()
+                    self.assertFalse(out.exists())
+
+    def test_shared_nor_changes_native_replay_inputs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            header = root / "tests/host_nor.h"
+            header.parent.mkdir()
+            header.write_text("/* first NOR implementation */\n")
+            with mock.patch.object(replay, "ROOT", root):
+                first = replay.source_inputs()
+                self.assertIn("tests/host_nor.h", first)
+                header.write_text("/* changed NOR implementation */\n")
+                second = replay.source_inputs()
+            self.assertNotEqual(first["tests/host_nor.h"], second["tests/host_nor.h"])
+
     def setUp(self):
         build = ROOT / "build"
         build.mkdir(exist_ok=True)
@@ -124,6 +193,16 @@ class NativeReplayTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.temp.cleanup()
+
+    def test_consumed_dependencies_are_fingerprinted(self):
+        compiler = shlex.split(os.environ.get("CC", "cc"))
+        output = subprocess.check_output([*compiler, *replay.FLAGS, "-MM", "tools/replay_native.c"],
+                                         cwd=ROOT, text=True)
+        dependencies = shlex.split(output.replace("\\\n", " ").split(":", 1)[1])
+        consumed = {str((ROOT / name).resolve().relative_to(ROOT)) for name in dependencies}
+        missing = consumed - replay.source_inputs().keys()
+        self.assertTrue(consumed)
+        self.assertFalse(missing, f"unfingerprinted compiler inputs: {sorted(missing)}")
 
     def run_scenario(self, data, success=True):
         type(self).serial += 1

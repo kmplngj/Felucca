@@ -19,6 +19,9 @@ COMMANDS = ("status", "dbg", "inp", "crash")
 MAX_RESPONSE = 65536
 CLOCK_FIELDS = tuple("boot_clock_" + address for address in
                      ("10014", "1000c", "10008", "119a8", "119ac", "119a0", "119a4"))
+# con_inp's optional reset-on-read latency group, not cumulative counters.
+INPUT_LATENCY_FIELDS = ("key_presses", "key_press_avg_us", "key_press_max_us", "key_notes",
+                        "key_noteon_avg_us", "key_noteon_max_us", "key_dac_avg_us", "key_dac_max_us")
 PROMPT = re.compile(rb"(?:^|\n)> $")
 COUNTERS = {
     "status": ("audio_late", "voices_shed", "voices_given_up", "usb_resets", "usb_sof",
@@ -36,10 +39,14 @@ SEMANTICS = {
     "maxima": "audio_max_us / dbg.max_us share a cumulative maximum reset at startup in current firmware; "
               "never interval maxima. Older firmware may differ; retain its revision and reset semantics.",
     "inp": "Reset on read except timer_irqs/nested; first window discarded; later windows checked against interval.",
-    "latency": "Requires explicit confirmation of FM1_INPUT_LAT and observed key samples; otherwise UNMEASURED.",
+    "latency": "Requires explicit confirmation of FM1_INPUT_LAT, complete valid key-latency fields and "
+               "observed press/note samples; otherwise UNMEASURED.",
     "snapshots": "Commands and fields are read sequentially, not an atomic device snapshot.",
     "boot_clock": "Optional seven raw clock words captured once at this boot, before normal initialization; "
                   "not live clock readings or measured MHz. Absent on older/CDC-disabled firmware.",
+    "uac_pkts": "Rate-epoch-local packet count; delta requires unchanged 44100/48000 Hz and unchanged "
+                "uac_rate_sets. A changed setter count may hide a rate reset, even at equal endpoint rates; "
+                "same-rate requests are conservatively rejected. Missing/unsupported markers leave delta unavailable.",
 }
 
 
@@ -125,6 +132,15 @@ def scalar(value):
 def parse_response(command, raw):
     """Keep extensible fields and verbatim unknown lines; never invent missing zeros."""
     fields, extra, duplicates = {}, [], []
+    numeric = set(COUNTERS.get(command, ()))
+    if command in ("status", "dbg"):
+        numeric.add("boots")
+    numeric |= {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
+                "crash": {"uptime_ms"}}[command]
+    if command == "status":
+        numeric.update(CLOCK_FIELDS)
+    if command == "inp":
+        numeric.update(INPUT_LATENCY_FIELDS)
     for line in raw.decode("utf-8", errors="replace").replace("\r", "").split("\n"):
         line = line.strip()
         if not line or line in (command, ">", "> " + command):
@@ -135,7 +151,12 @@ def parse_response(command, raw):
         if line == "no crash record":
             fields["record_present"] = False
             continue
-        if ":" in line:
+        words = line.split(None, 1)
+        if len(words) == 2 and words[0] in numeric:
+            # Recognize known scalar fields before colon records: a malformed
+            # value such as "1:2" must not disguise the field as an unknown key.
+            key, value = words[0], scalar(words[1])
+        elif ":" in line:
             key, value = line.split(":", 1)
             if key == "enc moves/lost/detent state":
                 value = [[scalar(v) for v in item.split("/")] for item in value.split()]
@@ -145,9 +166,14 @@ def parse_response(command, raw):
             match = re.fullmatch(r"([A-Za-z_][A-Za-z_0-9]*) (.+)", line)
             if not match:
                 extra.append(line)
-                continue
-            key, value = match.groups()
-            value = scalar(value)
+                if line not in numeric:
+                    continue
+                # A known field with no value is malformed evidence, not a
+                # legacy reply that omits the field. Retain the original line.
+                key, value = line, ""
+            else:
+                key, value = match.groups()
+                value = scalar(value)
         if key in fields:
             duplicates.append(key)
         fields[key] = value
@@ -168,13 +194,7 @@ def parse_response(command, raw):
     required = {"status": ("felucca", "uptime_ms"), "dbg": ("magic",),
                 "inp": ("window_ms",), "crash": ("record_present",)}[command]
     issues = ["missing " + key for key in required if key not in fields]
-    numeric = set(COUNTERS.get(command, ()))
-    if command in ("status", "dbg"):
-        numeric.add("boots")
-    numeric |= {"status": {"uptime_ms"}, "dbg": {"magic"}, "inp": {"window_ms"},
-                "crash": {"uptime_ms"}}[command]
     if command == "status":
-        numeric.update(CLOCK_FIELDS)
         if set(CLOCK_FIELDS) & fields.keys():
             issues += ["missing " + key for key in CLOCK_FIELDS if key not in fields]
     for key in numeric & fields.keys():
@@ -254,6 +274,21 @@ def compare(start, end):
         reasons.append("uptime unavailable")
     elif b["uptime_ms"] <= a["uptime_ms"]:
         reasons.append("uptime reset/wrap/stopped")
+    # Firmware resets pkts on effective rate changes. A reset can overtake the
+    # old count, and two changes can restore the endpoint rate between samples.
+    # SET_CUR counts requests, including harmless same-rate requests; it does
+    # not prove that every request reset the packet counter.
+    rates = (a.get("uac_hz"), b.get("uac_hz"))
+    setters = (a.get("uac_rate_sets"), b.get("uac_rate_sets"))
+    known_rates = all(type(rate) is int and rate in (44100, 48000) for rate in rates)
+    known_setters = all(type(count) is int and 0 <= count <= 0xFFFFFFFF for count in setters)
+    packets_present = "uac_pkts" in a and "uac_pkts" in b
+    if packets_present:
+        if known_rates and rates[0] != rates[1]:
+            reasons.append("UAC rate changed")
+        if known_setters and setters[0] != setters[1]:
+            reasons.append("UAC rate configuration changed; packet epoch uncertain")
+    packet_epoch = known_rates and rates[0] == rates[1] and known_setters and setters[0] == setters[1]
     deltas = {}
     for command, keys in COUNTERS.items():
         old, new = fields(start, command), fields(end, command)
@@ -264,6 +299,8 @@ def compare(start, end):
                 if y < x:
                     reasons.append("counter reset/wrap: " + command + "." + key)
                 deltas[command][key] = y - x
+                if command == "status" and key == "uac_pkts" and not packet_epoch:
+                    deltas[command][key] = None
             else:
                 deltas[command][key] = None
     if reasons:
@@ -286,7 +323,11 @@ def input_window(snapshot, interval, first, continuous, latency):
     if not isinstance(window, int) or abs(window - interval * 1000) > max(20, interval * 50):
         reasons.append("unequal input window")
     presses, notes = values.get("key_presses"), values.get("key_notes")
-    measured = latency == "enabled" and isinstance(presses, int) and presses > 0 and isinstance(notes, int) and notes > 0
+    # Legacy firmware may omit some or all latency metrics. Keep the window's
+    # continuity evidence, but never turn a partial group into measured latency.
+    complete = all(key in values for key in INPUT_LATENCY_FIELDS)
+    measured = (latency == "enabled" and complete and isinstance(presses, int) and presses > 0
+                and isinstance(notes, int) and notes > 0)
     return {"validity": "INVALID" if reasons else "VALID", "reasons": reasons,
             "latency": "MEASURED" if measured and not reasons else "UNMEASURED",
             "instrumentation_supplied": latency, "fields": values}
