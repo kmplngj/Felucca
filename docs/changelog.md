@@ -51,6 +51,14 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Three appended scales:** Phrygian dominant (PHDOM), Hungarian minor (HUNG) and
+  double harmonic (DHARM) extend SCL without renumbering its original sixteen
+  values. The SEL quick layer follows the selected scale across two bounded pages;
+  the editor discovers every choice from firmware descriptors. The preceding sixteen-scale firmware
+  plays new values as DIMWH; keep an untouched backup before downgrading.
+  FM-1 listening, panel and I/O qualification remains pending. See
+  [scale controls and compatibility](fork-features.md#appended-twelve-tone-scales-634).
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery

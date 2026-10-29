@@ -1020,16 +1020,21 @@ static void layer_glo(void)
         lcell(LC_X(e), LM_Y, LM_H, n, ICON_MUTE, trk_icon(e, 0), 0, trk[e].p[P_MUTE] ? LS_MUTE : LS_OFF, 0);
     }
 }
-static void layer_scl(void)                             /* KNOB 2's scales, 4 x 4, the one now selected */
+static void layer_scl(void)                             /* KNOB 2's scales: selected page, at most 4 x 4 cells */
 {
-    uint32_t i, sc = (uint32_t)TSEL->p[P_SCALE];
-    for (i = 0; i < 16u && i <= (uint32_t)TP[P_SCALE].max; i++) {
-        int32_t x = LC_X(i % 4u), y = 4 + 29 * (int32_t)(i / 4u);
-        uint16_t ink, fill = lc_fill(i == sc ? LS_SEL : LS_OFF, &ink);
-        fill = lc_box(x, y, LC_W, 25, fill);
-        GFX_HOOK_ALIGN(x, y, x + LC_W, y + 25, AL_HV, "scale cell name centred");
-        cv_text_in(x, y + CAP_IN(S, 25), LC_W, &AF_S, TP[P_SCALE].names[i], ink, fill);
+    uint32_t i, sc = (uint32_t)clamp(TSEL->p[P_SCALE], 0, TP[P_SCALE].max), base = sc / 16u * 16u;
+    char state[24] = "KNOB 2  PAGE ";
+    for (i = 0; i < 16u && base + i <= (uint32_t)TP[P_SCALE].max; i++) {
+        int32_t x = LC_X(i % 4u), y = 4 + 25 * (int32_t)(i / 4u);
+        uint16_t ink, fill = lc_fill(base + i == sc ? LS_SEL : LS_OFF, &ink);
+        fill = lc_box(x, y, LC_W, 21, fill);
+        GFX_HOOK_ALIGN(x, y, x + LC_W, y + 21, AL_HV, "scale cell name centred");
+        cv_text_in(x, y + CAP_IN(S, 21), LC_W, &AF_S, TP[P_SCALE].names[base + i], ink, fill);
     }
+    fmt_int(state + str_len(state), (int32_t)(base / 16u + 1u));
+    str_cpy(state + str_len(state), "/", 2);
+    fmt_int(state + str_len(state), TP[P_SCALE].max / 16 + 1);
+    cv_text_in(6, 105 + CAP_IN(S, 17), 228, &AF_S, state, T_MID, T_SURF);
 }
 /* 1.4.1: the engine's quick actions (black keys 1..n) in a row of n cells under the engines, 18 px high, 4 px apart
  * (8: 25 px, as SEQ TOOLS' lanes; 11: 17 px): the name; SET EQ_SHOW_MUTE: off a muted track's KEY; a HOLD one's
