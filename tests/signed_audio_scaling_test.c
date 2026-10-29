@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Adapted from ordenador/Felucca, upstream PRs #264/#265 (2026). */
 /* Fixed arithmetic vectors from 1.6.1, also run with strict UBSan. Negative
- * DC/lowcut feedback and FM6 velocity scaling must retain their exact values. */
+ * DC/lowcut feedback, FM6 velocity scaling and PHASE output keep their exact values. */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -12,9 +12,48 @@ static void expect(const char *name, int ok)
     printf("signed scaling: %-58s %s\n", name, ok ? "PASS" : "FAIL");
     failures += !ok;
 }
+
+/* Frozen before the 1.7.0 arithmetic backport. Exercise the public PHASE callbacks
+ * with both output signs, every wave and low/middle/high notes, FOLD off and on.
+ * Strict UBSan rejects the former output shift on the first negative sample. */
+static void phase_signed_output(void)
+{
+    uint64_t hash = UINT64_C(14695981039346656037);
+    uint32_t negative = 0, positive = 0;
+    static const uint32_t folds[] = {0, 1, 127}, notes[] = {36, 69, 108};
+    track_t *t = &trk[0];
+    for (uint32_t wave = 0; wave < 8; wave++)
+        for (uint32_t f = 0; f < NELEM(folds); f++)
+            for (uint32_t note = 0; note < NELEM(notes); note++) {
+                voice_t v = {0};
+                vmod_t m = {0};
+                memset(t, 0, sizeof *t);
+                t->p[P_E0] = (int16_t)wave;
+                t->p[P_E2] = 64; t->p[P_E3] = 48; t->p[P_E6] = 127;
+                t->p[P_E7] = (int16_t)folds[f];
+                m.pitch16 = (int32_t)notes[note] * 16;
+                m.inc = pitch_inc((uint32_t)m.pitch16);
+                m.shape = 64 * 256;
+                m.amp0 = m.amp1 = m.envq15 = 32767;
+                ENG_PHASE.note_on(t, &v);
+                for (uint32_t block = 0; block < 16; block++) {
+                    int32_t out[CTL] = {0};
+                    ENG_PHASE.render(t, &v, out, CTL, &m);
+                    for (uint32_t i = 0; i < CTL; i++) {
+                        negative += out[i] < 0;
+                        positive += out[i] > 0;
+                        hash = (hash ^ (uint32_t)out[i]) * UINT64_C(1099511628211);
+                    }
+                }
+            }
+    expect("PHASE signed output, all waves and FOLD extremes",
+           negative && positive && hash == UINT64_C(0xbe19079679d9c71d));
+}
+
 int main(int argc, char **argv)
 {
     if (!(argc == 2 && !strcmp(argv[1], "--fm6"))) {
+        phase_signed_output();
         int32_t dc = 10000, err = 0;
         int32_t out = dc_block(0, &dc, &err);
         expect("DC negative feedback remainder", out == -156 && dc == 9997 && err == 2288);
