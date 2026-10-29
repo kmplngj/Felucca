@@ -44,7 +44,8 @@ def capture(link, directory, phase='startup', *, clock=time.monotonic, sleep=tim
     """Read an already owned loader link; never open/close it or send upgrade/data.
 
     Requires an idle startup window, or the diagnostic post-success window.
-    No transport retries. Failed/partial captures remain on disk and are rejected.
+    Readiness uses at most three bounded polls; calibration/records are one-shot.
+    Failed/partial captures remain on disk and are rejected; no flash retries.
     """
     if phase not in ('startup', 'success'):
         raise ValueError('Unknown observation phase')
@@ -59,7 +60,7 @@ def capture(link, directory, phase='startup', *, clock=time.monotonic, sleep=tim
               'limits': ['Instrumented variant, not unmodified production timing',
                          'No physical LCD pixel/readability, DMA-source, live-stack or fault proof']}
 
-    def query(index):
+    def query(index, purpose='record'):
         nonlocal nonce, count
         if clock() - started >= 2.5:
             raise TimeoutError('Whole diagnostic capture deadline')
@@ -67,7 +68,7 @@ def capture(link, directory, phase='startup', *, clock=time.monotonic, sleep=tim
         request = bytes((1, nonce & 255, nonce >> 8, index))
         request_wire = packet(request)
         sent = clock()                              # before synchronous transport send
-        event = {'index': index, 'nonce': nonce, 'sent': sent, 'request_hex': request_wire.hex()}
+        event = {'index': index, 'purpose': purpose, 'nonce': nonce, 'sent': sent, 'request_hex': request_wire.hex()}
         events.append(event)
         if not link.send(request_wire):
             raise ConnectionError('Diagnostic send failed')
@@ -94,10 +95,23 @@ def capture(link, directory, phase='startup', *, clock=time.monotonic, sleep=tim
                 raise ValueError('Trace changed during readout')
             event.update(received=received, wire_hex=wire.hex())
             return payload, sent, received
-        raise TimeoutError('Diagnostic query deadline; no automatic retry')
+        event['timed_out'] = True
+        raise TimeoutError('Diagnostic query deadline')
 
     try:
-        first, tx0, rx0 = query(255)
+        # FINISH_WRITE can arrive before SUCCESS has finished drawing. A
+        # separate round trip establishes the outer-loop readout window; its
+        # wait and timer sample must never enter the calibration interval.
+        # A request sent while the previous native reply is pending may be
+        # dropped. Only readiness may poll again, always with a fresh nonce.
+        for attempt in range(3):
+            try:
+                query(255, 'readiness')
+                break
+            except TimeoutError:
+                if attempt == 2:
+                    raise
+        first, tx0, rx0 = query(255, 'calibration-start')
         for index in range(count):
             payload, _, _ = query(index)
             start, end, meta, outcome, code, percent = struct.unpack('<6I', payload[8:])
@@ -113,7 +127,7 @@ def capture(link, directory, phase='startup', *, clock=time.monotonic, sleep=tim
         gap = .5 - (clock() - rx0)
         if gap > 0:
             sleep(gap)
-        last, tx1, rx1 = query(255)
+        last, tx1, rx1 = query(255, 'calibration-end')
         ticks0, declared0 = struct.unpack('<2I', first[8:16])
         ticks1, declared1 = struct.unpack('<2I', last[8:16])
         if declared0 != 24 or declared1 != 24 or any(first[16:]) or any(last[16:]):

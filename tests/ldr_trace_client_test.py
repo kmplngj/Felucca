@@ -32,21 +32,26 @@ def records():
 
 
 class Link:
-    def __init__(self, clock, rows=None, hz=24_000_000, flags=0, stale=False):
+    def __init__(self, clock, rows=None, hz=24_000_000, flags=0, stale=False, first_delay=0, drop_first=False, drop_all=False):
         self.clock, self.rows, self.hz, self.flags, self.stale = clock, records() if rows is None else rows, hz, flags, stale
+        self.first_delay, self.drop_first, self.drop_all, self.delivery_delay = first_delay, drop_first, drop_all, 0
         self.pending, self.sent = [], []
     def send(self, wire):
         raw = trace.install.unpack7(wire[1:-1]); assert raw[:6] == b'\x00\x59\x3e\x04\x00\x00'
         request = raw[6:-1]; assert trace.packet(request) == wire  # only read-only query frames
         index = request[3]; self.sent.append(wire)
+        if self.drop_all or (len(self.sent) == 1 and self.drop_first):
+            return True                            # request dropped while prior native reply was pending
+        self.delivery_delay = self.first_delay if len(self.sent) == 1 else 0
         payload = bytes((1, index, len(self.rows), self.flags, request[1] ^ int(self.stale), request[2], 24, 0))
         if index == 255:
-            data = struct.pack('<6I', int((self.clock.now+.0005)*self.hz) & 0xFFFFFFFF, 24, 0, 0, 0, 0)
+            data = struct.pack('<6I', int((self.clock.now+self.delivery_delay+.0005)*self.hz) & 0xFFFFFFFF, 24, 0, 0, 0, 0)
         else:
             data = self.rows[index]
         self.pending.append(trace.packet(payload+data)); return True
     def read(self, timeout):
-        self.clock.now += .001 if self.pending else timeout
+        self.clock.now += self.delivery_delay+.001 if self.pending else timeout
+        self.delivery_delay = 0
         return self.pending.pop(0) if self.pending else None
 
 
@@ -67,6 +72,22 @@ def main():
         result, link = capture('good')
         assert result['status'] == 'ACCEPTED_DIAGNOSTIC_OBSERVATION' and result['count'] == 7
         assert all(row['ticks'] > 0 for row in result['records'])  # records cross TIMER4 wrap
+        result, _ = capture('success-frame-delay', first_delay=.080)
+        assert result['status'] == 'ACCEPTED_DIAGNOSTIC_OBSERVATION', 'SUCCESS redraw delay contaminated calibration'
+        assert result['events'][0]['purpose'] == 'readiness'
+        assert result['events'][0]['received'] - result['events'][0]['sent'] > .080
+        assert result['events'][1]['purpose'] == 'calibration-start'
+        result, link = capture('dropped-readiness', drop_first=True)
+        assert result['status'] == 'ACCEPTED_DIAGNOSTIC_OBSERVATION'
+        assert sum(e['purpose'] == 'readiness' for e in result['events']) == 2
+        assert len({e['nonce'] for e in result['events']}) == len(link.sent)
+        clock = Clock(); link = Link(clock, drop_all=True)
+        try: trace.capture(link, work/'never-ready', 'success', clock=clock, sleep=clock.sleep)
+        except TimeoutError: pass
+        else: raise AssertionError('Unavailable readout accepted')
+        saved = json.loads((work/'never-ready'/'trace.json').read_text())
+        assert saved['status'] == 'INCOMPLETE' and len(link.sent) == 3 and clock.now-1 <= 2.5
+        assert all(e['timed_out'] and e['purpose'] == 'readiness' for e in saved['events'])
         result, _ = capture('wrong-clock', hz=12_000_000)
         assert result['status'] == 'INCONCLUSIVE' and not result['timer_calibration']['within_nominal_1pct']
         rows = records(); rows[0] = record(1, 0, 0, 240, 200)

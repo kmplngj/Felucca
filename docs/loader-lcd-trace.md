@@ -97,7 +97,7 @@ The inherited `install()` still performs package-family/model validation and
 post-install identity verification. The maintainer must bind the exact reviewed
 package hash/resource report before opening MIDI, preserve current data/recovery
 backups, and retain one transport owner. Call that validated `install()` entry
-point, never the internal `write()` method directly. No new automatic retry or
+point, never the internal `write()` method directly. No new automatic flash retry or
 fallback to ROM is introduced.
 
 Startup observation must be accepted before app-writing starts. A post-success
@@ -120,7 +120,14 @@ production deadline failure or permission to change thresholds after a run.
 Startup requires WAITING and DISPON. A successful full-session observation also
 requires VALIDATING, WRITING, FINISHING, SUCCESS and at least one 18-row progress
 strip. Partial/error records remain visible and are never counted as completed
-frames. Per-query and whole-capture deadlines are 0.7 s and 2.5 s, without retries.
+frames. Per-query and whole-capture deadlines are 0.7 s and 2.5 s. A separate
+readiness round trip waits for the outer-loop readout window after SUCCESS has
+finished drawing; its sample and latency are discarded before two fresh timer
+queries establish calibration. Readiness alone may poll up to three times with
+fresh nonces to tolerate a request dropped while the preceding native reply is
+pending. Calibration and record queries are one-shot. Every attempt stays in the
+query ledger; unavailable or exhausted windows remain INCOMPLETE. This never
+retries a flash operation.
 
 **Pending real-device validation:** after exact-candidate full applicable CI,
 review and package/resource checks, run the maintainer-controlled install from
