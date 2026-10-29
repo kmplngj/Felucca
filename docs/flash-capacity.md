@@ -395,9 +395,10 @@ Every persistent object, in this order of decision:
    below 32; never renumber. Give each new type its own case in `st_sector()` *before* the generic `obj >= OBJ_UPRESET0`
    branch (which would place an appended type in the user-preset banks), and update the layout assertions in
    `tests/storage_test.c` (they assume `OBJ_UPFM6 == OBJ_COUNT - 2`, that the autosave is the last object, and
-   check its sectors against every earlier type). List it in the raw store export too (`editor_backup.c`
-   `ED_RAW_IDS` and its classification, `web/EDITOR_PROTOCOL.md` "Raw store export", #456); a static assert there
-   fails when `OBJ_COUNT` changes.
+   check its sectors against every earlier type). Give it a row in the stored record kinds (`editor_backup.c`
+   `SK_KINDS`, `store_kind.h`, #310: its lengths, validation, install, export and raw-export state; then
+   `web/EDITOR_PROTOCOL.md` "Raw store export", #456); a static assert there fails when `OBJ_COUNT` changes, and
+   `tests/backup_test.c` fails while a storage type has no row.
    Keep the `FL_STORE_OK` / `FL_RANGE_OK` windows and the loader windows unchanged; an object outside the
    current windows is a hardware-and-loader decision, not a map edit.
 3. **Versioning.** Every payload starts with a magic, a version and the element size and count, and a

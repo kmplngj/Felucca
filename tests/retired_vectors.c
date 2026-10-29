@@ -215,7 +215,7 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
         in = old;
     }
     if (!proj_decode(&post, in, (int)inlen))          /* the load path: import + proj_fm4, proj_perc + proj_bound */
-        rv_die("proj_decode", c->name);               /* (proj_fetch, project_load, autosave_boot, ed_bk_commit) */
+        rv_die("proj_decode", c->name);               /* (proj_fetch, project_load, autosave_boot, sk_proj_check) */
     if (!proj_encode(&out10, &post))
         rv_die("proj_encode of the output", c->name);
     rv_sep(&pv_n);

@@ -272,7 +272,7 @@ int proj_encode(project_store_t *out, const project_t *q)
 
 /* Every stored format, by its identification: length (= the size word), magic, FNV-1a in the last 4 bytes. The first
  * PROJ_SERIAL are serialized (the parameter count at byte 66); the first PROJ_PUT are the lengths BACKUP_PUT takes
- * (FUN6 shares FUN7's). One table for the raw export (editor_backup.c ed_raw_kind), the decode and the backup */
+ * (FUN6 shares FUN7's). One table for the raw export (editor_backup.c sk_proj_state), the decode and the backup */
 #define PROJ_SERIAL 4u
 #define PROJ_PUT 4u
 static const uint32_t PROJ_FORMATS[10][2] = {{PROJ_STORE_SIZE, PROJ_MAGIC}, {PROJ_STORE_V9, PROJ_MAGIC_V9},
