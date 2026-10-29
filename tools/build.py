@@ -458,6 +458,8 @@ def generate():
             failed.append(c[0].name)
     if failed:
         raise SystemExit(f"build: {', '.join(failed)} failed")
+    from build_report import write_generated_inputs
+    write_generated_inputs(SRC, GEN)
 
 
 # ---- update loader

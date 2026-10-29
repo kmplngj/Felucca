@@ -496,6 +496,16 @@ unsigned wrap and the actual frame/turn/browser scheduling paths. It does not
 qualify wall-clock accuracy, target timer hardware or audio deadlines. Replay
 fingerprints include the shared clock header and the existing HAL inventory.
 
+The `sound_install` unit also runs `tests/module_boundary_test.py` against checked-in
+owners and the actual generated header declarations. Host-only `build.generate()`
+and target builds both write `build/gen/generated-inputs.json`; no JieLi toolchain,
+SDK, target binary or resource report is needed for this source check. To prepare
+host assets, run `uv run --locked --group build python -c 'from tools import build; build.generate()'`.
+Missing headers/manifest or stale generated/producer hashes fail explicitly. The
+manifest reuses the input collector for tools, assets, profiles, engine sources and
+dependency locks. Stale/missing tables never become an empty inventory. The portable
+unit remains independent of generated assets.
+
 The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
 their sanitizer builds. This existing NOR model only clears programmed bits, rejects
 256-byte page wrapping, and models sticky power cuts during programming or half an

@@ -128,6 +128,14 @@ still be compared at each integration. The original zero-byte measurement below 
   the two headers declare. A function or object defined by another file (including `core.h`'s `trk`, `song`,
   `swing_step_len`, and macros that expand to them such as `TSEL`) fails the check. It ships with fixtures,
   mutations of `sound.c` that must be rejected.
+  The inventory includes every declarator in a comma-separated declaration and the actual generated `.h`/`.inc`
+  files, so generated FM6/sample tables are private dependencies too. The check runs in the existing
+  asset-dependent `sound_install` unit. `build.generate()` seals the headers in `build/gen/generated-inputs.json`
+  for both host-only preparation and target builds; no target binary, SDK or resource report is required.
+  Missing headers/manifest or a generated-file/producer-input hash mismatch fails explicitly. The manifest
+  reuses the existing input collector for tools, assets, profiles, engine sources and dependency locks; stale output is not
+  accepted as an empty inventory. This source heuristic follows the repository's file-scope layout conventions;
+  it is not a complete C parser.
 - The mechanism for building a module as its own unit stays, dormant and tested: `build.py` `SEPARATE` is empty
   (`("sound",)` turns it on and makes `felucca.c` skip `sound.c` through `SOUND_SEPARATE`); `FELUCCA_OWN_UNIT`
   (the `core.h` state guards), `separate_check`, `size_fns.py --module` and the ISR-reachability check cost

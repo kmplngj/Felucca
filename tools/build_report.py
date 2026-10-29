@@ -82,6 +82,30 @@ def input_hashes(root, *, include_generated=True):
     return {name: digest(root / name) for name in sorted(names) if (root / name).is_file()}
 
 
+def generated_input_hashes(root, gen=None):
+    """Host-generator inputs and outputs; independent of target/compiler artifacts."""
+    gen = root / 'build/gen' if gen is None else gen
+    source = input_hashes(root, include_generated=False)
+    required = ('tools/build.py', 'tools/gen_tables.py', 'tools/gen_fm6_patches.py', 'tools/gen_samples.py', 'uv.lock')
+    if any(name not in source for name in required):
+        raise ValueError('missing generated-input source inventory')
+    result = {p: h for p, h in source.items() if
+              p.startswith(('tools/', 'assets/', 'profiles/', 'firmware/engines/')) or p in ('pyproject.toml', 'uv.lock')}
+    result.update({'build/gen/' + p.relative_to(gen).as_posix(): digest(p) for p in gen.rglob('*')
+                   if p.is_file() and p.suffix in {'.h', '.inc', '.json'} and p.name != 'generated-inputs.json'})
+    return result
+
+
+def write_generated_inputs(root, gen=None):
+    """Seal a successful generate() without requiring a target build or SDK."""
+    gen = root / 'build/gen' if gen is None else gen
+    inputs = generated_input_hashes(root, gen)
+    report = {'schema': 1, 'kind': 'felucca-generated-inputs', 'input_sha256': inputs,
+              'inputs_sha256': hashlib.sha256(canonical(inputs)).hexdigest()}
+    (gen / 'generated-inputs.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+    return report
+
+
 def generator_runtime(root):
     """Record the environment that generates the bound headers, not the sealing process's environment."""
     def version(distribution):
