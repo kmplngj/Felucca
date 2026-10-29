@@ -571,6 +571,30 @@ class Worktrees(unittest.TestCase):
         self.assertFalse(private.exists())
         self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "detached local work")
 
+    def test_cleanup_preserves_reflog_only_parent_commits_until_pushed(self):
+        self.prepare()
+        (self.path / "tracked").write_text("detached parent work\n")
+        self.commit(self.path)
+        local = self.git(self.path, "rev-parse", "HEAD")
+        self.git(self.path, "checkout", "--detach", self.revision)
+        private = Path(self.git(self.path, "rev-parse", "--absolute-git-dir"))
+        self.assertEqual(self.git(self.path, "rev-parse", "HEAD"), self.revision)
+        self.assertEqual(self.git(self.path, "status", "--porcelain"), "")
+        retained = {file: file.read_bytes() for file in (private / "HEAD", private / "logs/HEAD")}
+        with self.assertRaisesRegex(ValueError, "parent commits"):
+            self.remove()
+        self.assertTrue(self.path.is_dir())
+        self.assertTrue(private.is_dir())
+        for file, content in retained.items():
+            self.assertEqual(file.read_bytes(), content)
+        self.assertEqual(self.git(self.path, "show", f"{local}:tracked"), "detached parent work")
+
+        backup = self.preserve_commit(self.path, local)
+        self.remove()
+        self.assertFalse(self.path.exists())
+        self.assertFalse(private.exists())
+        self.assertEqual(self.git(backup, "show", "refs/heads/kept:tracked"), "detached parent work")
+
     def check_deinitialized_submodule_cleanup(self, target):
         self.prepare()
         nested = self.path / "engine/nested"
