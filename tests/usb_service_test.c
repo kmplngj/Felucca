@@ -62,6 +62,7 @@ static struct {
     uint8_t common[16], ep[5][24], selected, data;
     uint32_t on, sof_each_poll, starts, checks, data_reads, delay, missing;
     uint32_t pending_r, pending_v, pending_read, completed, polls;
+    uint32_t fault_r, fault_read, fault_count, pending_missing;
     uint32_t resets, attaches, offs, delay_calls, delay_ms;
     void *rx[5], *tx[5];
     uint8_t staged[5][196];
@@ -135,6 +136,8 @@ static void host_command(uint32_t r, uint32_t v, uint32_t read)
     CHECK(host.on && r < 24u && ++host.operations <= 128u);
     host.starts++;
     host.pending_r = r; host.pending_v = v; host.pending_read = read;
+    host.pending_missing = host.fault_count && host.fault_r == r && host.fault_read == read;
+    if (host.pending_missing) host.fault_count--;
     host.polls = host.completed = 0;
 }
 static void host_write(uint32_t r, uint32_t v) { host_command(r, v, 0); }
@@ -144,7 +147,7 @@ static uint32_t host_done(void)
 {
     CHECK(host.starts && ++host.polls <= 20000u);
     host.checks++;
-    if (host.missing || host.polls <= host.delay) return 0;
+    if (host.missing || host.pending_missing || host.polls <= host.delay) return 0;
     if (!host.completed) {
         if (host.pending_read) host_apply_read(host.pending_r);
         else host_apply_write(host.pending_r, host.pending_v);
@@ -471,6 +474,65 @@ static void stream_transitions(uint32_t hz)
     CHECK(uac.go && uac.ring48 == (other == 48000u));
     CHECK(host_in(4) && !uac.underruns && !uac.overruns && !uac.missed);
     puts("queued EP4: alt stop/start flush and streaming rate re-prime passed");
+}
+static void address_recovery(void)
+{
+    reset_model();
+    host.common[S_FADDR] = 9u;
+    setup(0x0005, 42, 0, 0);
+    CHECK(usb.has_pend_addr && usb.pend_addr == 42u && host.common[S_FADDR] == 9u);
+    /* Abandon SET_ADDRESS before its status completion. SetupEnd may arrive
+     * alone or together with the superseding SETUP; neither commits 42. */
+    host.ep[0][S_CSR0] |= 0x10u;
+    host.common[S_INTRTX1] |= 1u; service(0);
+    CHECK(!usb.has_pend_addr && host.common[S_FADDR] == 9u);
+    setup(0x8008, 0, 0, 1); CHECK(host_in(0));
+    CHECK(host.common[S_FADDR] == 9u);
+    setup(0x0005, 42, 0, 0);
+    host.ep[0][S_CSR0] |= 0x10u;
+    setup(0x0005, 0, 0, 0);
+    CHECK(usb.has_pend_addr && usb.pend_addr == 0u && host.common[S_FADDR] == 9u);
+    /* Supply the controller's status-IN completion interrupt. This finite HAL
+     * input assumes the host ACK; it does not model wire-level status packets.
+     * Zero is legitimate: the pending flag, not its value, owns this stage. */
+    host.common[S_INTRTX1] |= 1u; service(0);
+    CHECK(!usb.has_pend_addr && host.common[S_FADDR] == 0u);
+    setup(0x0005, 43, 0, 0);
+    CHECK(usb.has_pend_addr && host.common[S_FADDR] == 0u);
+    host.common[S_INTRTX1] |= 1u; service(0);
+    CHECK(!usb.has_pend_addr && host.common[S_FADDR] == 43u);
+    /* A stalled status stage also discards the deferred address. */
+    setup(0x0005, 42, 0, 0);
+    host.ep[0][S_CSR0] |= 4u;
+    host.common[S_INTRTX1] |= 1u; service(0);
+    CHECK(!usb.has_pend_addr && host.common[S_FADDR] == 43u);
+    setup(0x8008, 0, 0, 1); CHECK(host_in(0));
+    CHECK(host.common[S_FADDR] == 43u);
+    setup(0x0005, 42, 0, 0);
+    host.common[S_INTRUSB] |= 4u; service(0);
+    CHECK(!usb.has_pend_addr && host.common[S_FADDR] == 0u);
+    /* Fail only the EP0 selection or CSR read, then make the following SIE
+     * command healthy. A later successful command must not hide the failure
+     * and publish a pending address from an unknown endpoint/status value. */
+    for (uint32_t read = 0; read < 2u; read++) {
+        setup(0x0005, 42, 0, 0);
+        host.selected = 1;
+        host.fault_r = read ? S_CSR0 : S_INDEX;
+        host.fault_read = read; host.fault_count = 1;
+        host.operations = 0;
+        ep0_service();
+        CHECK(!host.fault_count && usb.timeouts == 1u && usb.has_pend_addr && host.common[S_FADDR] == 0u);
+        host.operations = 0;
+        host.ep[0][S_CSR0] |= 0x10u;
+        ep0_service();
+        CHECK(!usb.timeouts && !usb.has_pend_addr && host.common[S_FADDR] == 0u);
+    }
+    setup(0x0005, 42, 0, 0);
+    host.on = 0;
+    host.operations = 0;
+    ep0_service();
+    CHECK(!host.operations && usb.has_pend_addr && host.common[S_FADDR] == 0u);
+    puts("SET_ADDRESS: abandoned/stalled status, replacement, zero, success and reset passed");
 }
 static void control_recovery(uint32_t hz)
 {
@@ -842,6 +904,7 @@ static void suspend_lifecycle(uint32_t hz)
 int main(void)
 {
     sie_failures(); retry_lifecycle();
+    address_recovery();
     for (uint32_t hz = 44100u; hz <= 48000u; hz += 3900u) {
         composite(hz, 0); composite(hz, 1); stream_transitions(hz); control_recovery(hz);
         suspend_lifecycle(hz); configured_retry(hz);

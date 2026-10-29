@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- USB control recovery discards a deferred device address when the host abandons
+  or stalls its status stage. Failed EP0 selection/status reads no longer count
+  as completion. Host regressions cover replacement requests, address zero and
+  reset; physical host/controller abort timing remains pending.
+
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed present known numeric fields,
