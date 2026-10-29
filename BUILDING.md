@@ -678,6 +678,12 @@ reject corruption/loss. Packet/ring/SIE-operation bounds are software-model evid
 not physical service time, controller races or host-driver qualification. Existing
 UAC drift/FIR and MIDI partition tests remain their respective correctness oracles.
 
+The same fixture covers deferred `SET_ADDRESS`: an abandoned or stalled status
+stage discards its pending address, including when a replacement SETUP arrives.
+Failed EP0 selection/status reads cannot establish completion. Successful address
+zero and nonzero status events and bus-reset cancellation remain covered. These
+are modeled controller events; physical enumeration/abort timing remains separate.
+
 The engine-ID matrix also builds sparse host catalogs with DRUM (10), NOISE (11), FM6 (12)
 and SLICE (13) omitted, plus `FELUCCA_SLICE=0`. It checks unavailable controls and silent
 N/A tracks, retained project/preset/backup data, and serializers. Engine-memory switches
