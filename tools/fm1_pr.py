@@ -93,7 +93,12 @@ def check_worktree(source, path, repository, number, revision=None, removing=Fal
         # Removal also deletes this worktree's private HEAD reflog. Commits made and then
         # abandoned by a detached checkout live only there; refuse unless a remote has them.
         reflog = git(path, "reflog", "show", "--format=%H", "HEAD").split()
-        if reflog and git(path, "rev-list", *reflog, "--not", "--remotes", "HEAD"):
+        if reflog:
+            # Reflog display omits old objects; a retained checkout entry can be their only root.
+            # Read this private HEAD log only, never the source's shared branch/worktree logs.
+            reflog = {oid for line in (record.parent / "logs/HEAD").read_text().splitlines()
+                      for oid in line.split()[:2] if oid.strip("0")}
+        if reflog and git(path, "rev-list", *sorted(reflog), "--not", "--remotes", "HEAD"):
             raise ValueError("Worktree has local parent commits reachable only from its HEAD reflog; "
                              "push or otherwise preserve them outside this worktree first")
         if any(line and (line[0].islower() or line[0] == "S") for line in indexes.splitlines()) or local_refs:

@@ -192,9 +192,11 @@ recorded in the linked reports, rather than every current build or device.
   [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
   qualification separate from the offline result.
 
-- PR-source cleanup protects reflog-only detached commits and refuses removal with
-  deinitialized or orphan private submodule repositories. It preserves history
-  without automatic metadata repair. See the
+- PR-source cleanup protects reflog-only detached commits in the parent worktree
+  and its submodules, including commits retained only by an old-side HEAD-log entry.
+  It refuses removal with deinitialized or orphan private submodule repositories
+  and preserves history without automatic metadata repair. Unrelated checkouts'
+  reflogs do not block cleanup. See the
   [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
 
 - Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
