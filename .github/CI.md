@@ -417,7 +417,7 @@ from published tag releases; access and retention are described under
 The package digest in `build/ci/package.sha256` names the CI build path, so compare it with the
 digest of the downloaded `.fwsc` rather than use the release-manifest commands unchanged.
 
-Manual `Release` dispatch produces artifacts without publishing. Tag release publication
+Manual `Release` dispatch defaults to artifacts without publishing. Approved tag release publication
 does not flash a device or deploy the Pages site. Fork-site publication follows the
 separate process below.
 
@@ -539,26 +539,26 @@ required-check behavior changes, and no new firmware build is requested.
 
 ## Releasing
 
-Push a `vX.Y`, `vX.Y.Z`, `vX.Y.Z.W` or `vX.Y-suffix` tag; each numeric component
-must be one digit because the existing package product identity has that limit.
-The workflow validates the version, builds the versioned target, exercises that
-exact FWSC with the existing loader/update tests, reproduces the package, then
-verifies the complete release directory. No tag is created by CI.
+There are two [release channels](../docs/releases.md):
 
-A separate job downloads and checks the validated bundle before receiving
-`contents: write` publication privileges. It publishes the FWSC, app,
-`SHA256SUMS`, provenance, attribution, license documents and a tar.gz containing
-all files and third-party license texts. The archive has its own `.sha256` file.
-Every third-party license is also uploaded as a standalone release asset. GitHub
-flattens asset filenames, so the release-page `SHA256SUMS` covers those flat names,
-including the archive and sidecar. The manifest inside the archive instead covers
-the unpacked directory structure, including `LICENSES/` paths.
-Suffix versions become prereleases; an existing release is preserved without
-replacing its assets. Nothing flashes a device or publishes an installer/Pages.
+- **Latest Dev** runs full release validation after a merged PR reaches `main`, then
+  replaces the single `latest-dev` prerelease with PR number and commit. Direct pushes do not
+  publish. Older runs cannot roll it back; superseded Dev releases/tags are removed.
+  Dev notes are brief and omit commit history. Dev never changes the stable Latest marker.
+- **Release** validates a pushed `vVERSION` tag and retains candidate artifacts.
+  Publication requires a manual dispatch **on that tag**, `publish=true`, its exact
+  `tested_commit`, `tested_package_sha256`, `hardware_tested=true`, and an HTTPS `test_evidence` report after
+  the documented FM-1 checklist. The publisher reruns full validation before upload.
+  Default manual dispatch remains artifact-only. Numeric versions become Latest;
+  suffix versions stay prereleases.
 
-To rehearse, manually dispatch `Release` with a version such as `1.6-rc1` from
-the desired source branch. It runs all checks and produces release artifacts
-without executing the publisher. Do not push a tag merely to test CI.
+The [release procedure and device checklist](../docs/releases.md) define version
+syntax, test evidence, risks, backup and recovery prerequisites. Both channels use
+the existing release packaging: verified FWSC, app, provenance, licenses, full source
+archive, checksums and reproducibility checks. The read-only reusable build must
+succeed before a separate publisher receives `contents: write`. Existing releases
+for tagged versions are preserved. The single Dev package is deliberately replaced. Nothing flashes a device
+or deploys an installer/Pages.
 
 ## Sources of the design
 

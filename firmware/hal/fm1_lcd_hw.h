@@ -8,6 +8,7 @@
  *   fm1_lcd_baud(b)            SPI1 clock = lsb / (b + 1)
  *   fm1_lcd_send_cmd(c)        D/C low, CS low, one byte (then fm1_lcd_wait)
  *   fm1_lcd_send_data(p, n)    D/C high, CS low, DMA n bytes from RAM p
+ *   fm1_lcd_done()             read-only completion; does not acknowledge
  *   fm1_lcd_complete()         nonblocking completion; acknowledge only when done
  *   fm1_lcd_wait()             1: complete; 0: timeout, source is STILL owned
  *   fm1_lcd_deselect()         CS high
@@ -62,6 +63,10 @@ FM1_INLINE void fm1_lcd_backlight(uint32_t on)
 }
 
 FM1_INLINE void fm1_lcd_baud(uint32_t b) { FM1_LCD_SPI_BAUD = b; }
+
+/* Read-only completion: send_cmd/send_data clear pending before submission.
+ * A false result never releases a borrowed DMA source. */
+FM1_INLINE uint32_t fm1_lcd_done(void) { return (FM1_LCD_SPI_CON & 0x8000u) != 0; }
 
 FM1_INLINE int fm1_lcd_complete(void)
 {

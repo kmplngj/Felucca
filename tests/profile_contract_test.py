@@ -45,10 +45,20 @@ class Contract(unittest.TestCase):
         self.assertTrue(all(s['status']=='reserved' and s['key'] is None for s in identities[15:]))
         for recipe in recipes.values():
             resolved=recipe['resolved']
+            self.assertEqual(resolved['profile_engine_ids'],recipe['recipe']['engines'])
+            self.assertEqual(set(resolved['collections']),{'firmware','portable-mit'})
+            self.assertEqual(resolved['provider_dependencies'],
+                             sorted([p for p in value['registry']['providers'] if p['id'] in resolved['providers']],key=lambda p:p['id']))
+            self.assertEqual(resolved['collections']['portable-mit']['revision'],value['source_pins']['engines_gitlink'])
+            self.assertEqual(resolved['collections']['portable-mit']['api']['actual'],
+                             resolved['collections']['portable-mit']['api']['required'])
             self.assertEqual([e['id'] for e in resolved['engine_identities']],resolved['engine_ids'])
             for engine in resolved['engine_identities']:
                 self.assertEqual(engine['key'],identities[engine['id']]['key'])
             self.assertEqual(resolved['engine_identity_reference']['sha256'],resolved['input_sha256'][profile.IDENTITY_REFERENCE])
+        self.assertFalse(value['validation']['profiles_may_select_retired_engines'])
+        self.assertTrue(value['validation']['source_paths_must_match_collection_owner'])
+        self.assertTrue(value['validation']['portable_api_must_match_firmware_requirement'])
         for fm4 in ('0','1'):
             resolved=json.loads(profile.generated(ROOT,'standard',feature_flags={'FELUCCA_FM4':fm4,'FELUCCA_SLICE':'1'})['resolved-profile.json'])
             self.assertEqual(any(e['id']==1 and e['status']=='retired' for e in resolved['engine_identities']),fm4=='1')
