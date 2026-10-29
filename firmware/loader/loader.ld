@@ -16,6 +16,10 @@ SECTIONS
     } > LDR
     .bss (NOLOAD) : { _bss_start = .; *(.bss*) *(.sbss*) *(COMMON) . = ALIGN(4); _bss_end = .; } > LDR
     _stack_top = 0x01C70000;
+    _stack_bottom = _stack_top - 0x2000; /* retain 8 KiB private main stack */
     _sstack_top = 0x01C72000;
+    ASSERT(_image_end <= ORIGIN(LDR) + LENGTH(LDR), "loader image exceeds RAM window")
+    ASSERT(_bss_end <= ORIGIN(LDR) + LENGTH(LDR), "loader BSS exceeds RAM window")
+    ASSERT(_bss_end <= _stack_bottom, "loader overlaps private stack reserve")
     /DISCARD/ : { *(.comment) *(.note*) *(.noinit*) }
 }

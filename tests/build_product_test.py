@@ -31,9 +31,9 @@ class Resolve(unittest.TestCase):
         self.addCleanup(environment.stop)
 
     def test_release_refuses_diagnostic_builds(self):
-        """Diagnostic images, including explicit chip probes, are development builds only."""
-        self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO",
-                                       "FELUCCA_SCREEN_CAPTURE", "FELUCCA_CHIP_PROBES"))
+        """Every opt-in diagnostic build, including explicit chip probes, is refused by the release resolver."""
+        self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE",
+                                       "FELUCCA_CHIP_PROBES", "FELUCCA_RENDER_STAGE"))
         for flag in B.DIAG_FLAGS:
             with patch.dict(os.environ, {flag: "1"}):
                 with self.assertRaises(SystemExit) as raised:
@@ -97,7 +97,7 @@ class Resolve(unittest.TestCase):
             B.PRODUCT = B.DEV_PRODUCT
 
     def test_valid(self):
-        for p in ("FM-1_900", "FM-1_ACME", "FM-1_A.B-C_9", "FM-1_" + "X" * 15):
+        for p in ("FM-1_900", "FM-1_ACME", "FM-1_A.B-C_9", "FM-1_" + "X" * 15, "FM-1_0150", "FM-1_800001"):
             with self.subTest(p=p):
                 B.check_product(p)
 
@@ -105,7 +105,8 @@ class Resolve(unittest.TestCase):
         bad = ["", "FM-1_", "FM-1_" + "x" * 16, "fm-1_abc", "FM-1_acme", "FM-1_Acme", "FM-2_abc", "ACME", "FM-1_a b", "FM-1_a\"b", "FM-1_a'b",
                "FM-1_a\\b", "FM-1_a\nb", "FM-1_a\tb", "FM-1_a\x00b", "FM-1_ä", "FM-1_a\u200b", " FM-1_abc",
                "FM-1_abc\n", "FM-1_a/b", "FM-1_a;b", "ota-FM-1_900", "ota-FM-1_015",
-               "FM-1_015"]       # the stock identity
+               "FM-1_015", "FM-1_016", "FM-1_099", "FM-1_000",   # M-VAVE's identities (#619)
+               "FM-1_8000012"]                                     # its FM1 Open firmware
         for p in bad:
             with self.subTest(p=p), self.assertRaises(SystemExit):
                 B.check_product(p)

@@ -7,19 +7,19 @@
  * B1..B32 loading the exact records, bank slots without a voice skipped by the knob and refused elsewhere, a new
  * bank leaving a track's voice its own, projects and user presets keeping a bank voice whatever the bank holds later,
  * and the SLOT values stored before 1.4.1 (projects, user presets, motion) loading exactly as before. */
+#include "../firmware/hal/fm1_lcd_contract.h"
 #include "host_nor.h"
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
 
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
+#include "host_encoder_noop.h"
 static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }
 static void lcd_wake_now(void) {}
-static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
-{ (void)x; (void)y; (void)w; (void)h; (void)p; }
+#include "host_lcd_blit_noop.h"
 #define FELUCCA_FLASH 1
 #include "../firmware/src/gfx.c"
 #include "../firmware/src/panel.c"
@@ -28,11 +28,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 static void panel_setup(void) {}
 
 static uint8_t flash_ok = 1;
-static uint32_t irq_save(void) { return 0; }
-static void irq_restore(uint32_t f) { (void)f; }
-static uint32_t fl_jedec_ram(void) { return 0; }
-static void fl_plain_window_init(void) {}
-#define FL_FAR(fn) (fn)
+#include "host_flash_context.h"
 #include "../firmware/src/storage.c"
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"

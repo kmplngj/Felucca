@@ -3,7 +3,7 @@
 Felucca is free software, licensed under the GNU General Public License, version 3 only
 (`GPL-3.0-only`, full text in `LICENSE`) as a whole. Individual components and assets
 keep their own terms below, including the CC0 Hügelton Sample Pack. Their licence
-texts are in `LICENSES/`.
+texts are in `LICENSES/` and the component paths listed below.
 
 Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 
@@ -12,7 +12,7 @@ Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header:
 
 - the firmware: `firmware/` (app, HAL, update loader; not `firmware/engines/`, MIT: below)
-- the build script and tools: `build.sh`, `tools/` (except the CC0 `tools/gen_waves.py` generator below)
+- the build script and tools: `build.sh`, `tools/` (except the CC0 `tools/gen_waves.py` generator and MIT external-emulator patch below)
 - the web pages (installer, editor, the browser emulator `web/emu/`) and their tests: `web/` (not the Fukiai and DotGothic16 fonts, below)
 - the host tests: `tests/`
 
@@ -31,6 +31,9 @@ Hügelton Instruments' own work and live in their own repository, Felucca-Engine
 (`felucca_engine.h`), the shared DSP helpers (`dsp.c`) and the generator of their tables
 (`SPDX-License-Identifier: MIT`, `firmware/engines/LICENSE`, also
 `LICENSES/MIT-Felucca-Engines.txt`). The firmware built with them is GPL-3.0-only as a whole.
+The pinned collection also includes MIT PHASE source, which this firmware does not
+compile. The firmware retains its native GPL-3.0-only PHASE implementation and
+per-part crossfade storage in `firmware/src/eng_phase.c`.
 Felucca's complete source includes that submodule: clone with `--recurse-submodules`, and
 give it along with the rest when you share the source. Releases produced by our
 complete-source workflow also carry `felucca-VERSION-source.tar.gz`, which includes the
@@ -83,8 +86,10 @@ release/site packaging includes every `LICENSES/*.txt` notice with the package.
 
 | What | Licence | Where |
 | --- | --- | --- |
+| MIDI test music: Empacotatron by Fupi; Elytra and Xenon Phoenix (MIDI versions) by continuum.mid | CC0 1.0; original MIDI files retain CC0 independently of test code | `tests/fixtures/midi/`, provenance and checksums in `manifest.json`, `LICENSES/CC0-1.0.txt` |
+| External fm1-emu trace patch after Joakim Eriksson (2026); optional externally built CLI also includes its GPL-3.0-only USB source | MIT patch; combined CLI includes MIT and GPL-3.0-only | `tools/emulator_trace/retired-trace.patch`, `tools/emulator_trace/LICENSE-MIT-fm1-emu.txt`; source/build boundary in `docs/emulator-trace-prerequisite.md` |
 | Inter Tight font by The Inter Project Authors: documentation panel-diagram outlines only, outside the firmware asset closure; the font declares no Reserved Font Name | SIL OFL 1.1 | `docs/manual/fonts/InterTight[wght].ttf`, `docs/manual/fonts/OFL.txt`, `LICENSES/OFL-InterTight.txt` |
-| M8Stealth57 / M8Stealth89 by Trash80, with embedded ancestry credits including Matthias Tellen: native UI text and keycap/badge legend ink, rasterised and packed at build time; ten additional bitmap marks are local adaptations | CC BY-SA 3.0; font data and adaptations retain these terms | `assets/fonts/m8stealth/README.md`, `LICENSES/CC-BY-SA-3.0-M8Stealth.txt` |
+| M8Stealth57 / M8Stealth89 by Trash80, with embedded ancestry credits including Matthias Tellen: native UI text and keycap/badge legend ink, rasterised and packed at build time; the standalone RAM loader uses a native uppercase/digit subset; ten additional UI bitmap marks are local adaptations | CC BY-SA 3.0; font data and adaptations retain these terms | `assets/fonts/m8stealth/README.md`, `LICENSES/CC-BY-SA-3.0-M8Stealth.txt` |
 | Instrument samples (Versilian Studios VSCO-2 Community Edition, VCSL): the SAMPLE sets, also the SLICE engine's PIANO (the PIANO set's middle C) | CC0 1.0 | `assets/samples-cc0/`, provenance in `ATTRIBUTION.txt` there |
 | DaisySP by Electrosmith, Corp and Emilie Gillet (<https://github.com/electro-smith/DaisySP>): the PHYS engine's modal and string models and the resonator, ported to fixed point | MIT | `firmware/src/phys_dsp.c`, `LICENSES/MIT-DaisySP.txt` |
 | Rings by Emilie Gillet (<https://github.com/pichenettes/eurorack>): the PHYS engine's sympathetic strings, ported to fixed point | MIT | `firmware/src/phys_symp.c`, `LICENSES/MIT-Rings.txt` |

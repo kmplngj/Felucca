@@ -425,6 +425,19 @@ class LoaderGuards(unittest.TestCase):
         self.assertEqual(B.loader_check(self.hdr, symbols(self.values)), [])
         self.assertEqual(B.loader_check(self.hdr + " 4 .empty 00000000 02000000 DATA\n", symbols(self.values)), [])
 
+    def test_wrapped_loader_fits_native_staging_reserve(self):
+        for image in (b"", b"x" * (0x14000 + 1)):
+            with self.assertRaisesRegex(SystemExit, "image empty or too big"):
+                B.ldr_wrap(image)
+        # A compressible RAM image fits even when larger than staging; an
+        # incompressible one must be refused before packaging/staging it.
+        self.assertLessEqual(len(B.ldr_wrap(bytes(0x14000))) - 32, 0x4E00)
+        with patch.object(B.lz4blk, "compress", side_effect=lambda raw: raw), \
+                patch.object(B.lz4blk, "decompress", side_effect=lambda raw: raw):
+            self.assertLessEqual(len(B.ldr_wrap(bytes(0x4000))) - 32, 0x4E00)
+            with self.assertRaisesRegex(SystemExit, "exceeds native staging"):
+                B.ldr_wrap(bytes(0x5000))
+
     def test_section_window_boundaries(self):
         for addr, size, bad in ((self.lo, 1, False), (self.hi - 1, 1, False),
                                 (self.lo - 1, 1, True), (self.hi - 1, 2, True),

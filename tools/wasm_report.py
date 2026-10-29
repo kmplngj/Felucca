@@ -83,7 +83,8 @@ TARGET_ONLY = {
 SHARED = set(('ARENA_CHECK BUILD_COMMIT BUILD_DIRTY BUILD_ID BUILD_PR BOOT_POLICY_H '
               'ENGINE_API_REQUIRED ENGINE_API_VERSION ENGINE_H ENG_OMIT ENG_TEST14 '
               'FM4 ICONS CPU2 CDC SLICE SOURCE_REPOSITORY SPLASH_ID VERSION '
-              'BUILD_IDENTITY_H UNION_CONTROL_MASK CATEGORY FAVORITES').split())
+              'BUILD_IDENTITY_H UNION_CONTROL_MASK CATEGORY FAVORITES '
+              'RENDER_STAGE RENDER_STAGE_H').split())
 SHARED = {'FELUCCA_' + name for name in SHARED}
 
 
@@ -165,6 +166,10 @@ def logical_mapping(native, runtime, native_constants, runtime_constants):
         a, b = native.get(name), runtime.get(name)
         if name == 'FELUCCA_ISR_ASSERT':
             rule = 'browser simulated interrupt-depth assertions enabled; native diagnostic recorded'
+        elif name == 'FELUCCA_TESTS_HOST_NOR_H':
+            if a is not None or b != '':
+                raise ValueError('invalid browser NOR include guard')
+            rule = 'browser-only shared NOR header guard; no configuration value'
         elif name in ADAPTER:
             if b != ADAPTER[name]:
                 raise ValueError(f'wrong browser adapter macro: {name}')

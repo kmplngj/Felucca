@@ -297,9 +297,24 @@ def verify(root, report, *, config, measured, fonts=None):
         raise ValueError('stale resource report build identity')
 
 
+def frame_output_path(root, requested, report, report_path):
+    """Keep this optional analysis outside verified inputs, including symlink aliases."""
+    path = requested.resolve()
+    if (not path.is_relative_to((root / 'build').resolve())
+            or path.is_relative_to((root / 'build/gen').resolve())):
+        raise ValueError('frame output must be inside build/, outside build/gen/')
+    protected = {report_path.resolve()} | {
+        (root / name).resolve() for name in set(report['input_sha256']) | set(report['artifact_sha256'])}
+    if path in protected or (path.exists() and any(p.exists() and path.samefile(p) for p in protected)):
+        raise ValueError('frame output would overwrite verified evidence or input')
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify', type=Path, required=True, metavar='REPORT')
+    parser.add_argument('--frame-output', type=Path, metavar='JSON',
+                        help='after verification, write observed entry frames (no stack bound) inside build/')
     args = parser.parse_args()
     # Standalone verification needs the same unset/empty defaults as build.sh.
     # Apply them only at the CLI entry point, never when the build imports us.
@@ -308,7 +323,8 @@ def main():
             _source_os.environ[name] = str(Path.home() / default)
     try:
         import build
-        report = json.loads(args.verify.read_text())
+        report_bytes = args.verify.read_bytes()
+        report = json.loads(report_bytes)
         if not isinstance(report, dict):
             raise ValueError('invalid resource report object')
         # Restore identity inputs from evidence, then recompute actual flags/macros
@@ -337,6 +353,13 @@ def main():
             from font_resources import linked
             fonts = linked(build.SRC, build.GEN, syms)
         verify(build.SRC, report, config=configuration(build), measured=resources(build, evidence), fonts=fonts)
+        if args.frame_output is not None:
+            destination = frame_output_path(build.SRC, args.frame_output, report, args.verify)
+            from target_frames import evidence as frame_evidence
+            frames = frame_evidence(report, report_bytes, syms, dis)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(frames, indent=2, sort_keys=True) + '\n')
+            print('target entry frames: ' + str(destination) + ' (no call-path or live stack bound)')
         print('resource report: artifacts, inputs and configuration match')
     except (KeyError, TypeError, OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.error(str(error))

@@ -345,7 +345,7 @@ class ResourceReport(unittest.TestCase):
             root = base / 'source'
             tools = root / 'tools'
             tools.mkdir(parents=True)
-            for name in ('build_report.py', 'build.py', 'fm1pkg_make.py', 'lz4blk.py'):
+            for name in ('build_report.py', 'build.py', 'fm1pkg_make.py', 'lz4blk.py', 'target_frames.py'):
                 shutil.copyfile(ROOT / 'tools' / name, tools / name)
             (tools / 'profile.py').write_text(
                 "def generated(root, name):\n"
@@ -363,7 +363,9 @@ class ResourceReport(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('{}\n' if 'build-identity' in name else name)
-            evidence = self.evidence()
+            evidence = list(self.evidence())
+            evidence[2] += '02000120 l F .text 00000004 frame_fixture\n'
+            evidence[3] = ' 2000120: e2 9e \tsp += -8\n 2000122: 80 00 \trts\n'
             (root / 'build/felucca.bin').write_bytes(evidence[0])
             (root / 'build/felucca.dis').write_text(evidence[3])
             (root / 'build/profile-contract.json').write_text('contract\n')
@@ -416,6 +418,30 @@ class ResourceReport(unittest.TestCase):
                                             text=True, capture_output=True)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn('artifacts, inputs and configuration match', result.stdout)
+            frames_path = root / 'build/frames.json'
+            frame_command = command + ['--frame-output', str(frames_path)]
+            result = subprocess.run(frame_command, cwd=root, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            frames = json.loads(frames_path.read_text())
+            self.assertEqual(frames['functions'][0]['own_entry_bytes'], 8)
+            self.assertNotIn('worker_supervisor', frames['stack_reservations'])
+            self.assertEqual(frames['binding']['elf_sha256'], R.digest(root/'build/felucca.elf'))
+            for protected in (root/'build/resource-report.json', root/'build/felucca.elf'):
+                original = protected.read_bytes()
+                refused = subprocess.run(command + ['--frame-output', str(protected)], cwd=root,
+                                         env=env, text=True, capture_output=True)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn('overwrite verified evidence', refused.stderr)
+                self.assertEqual(protected.read_bytes(), original)
+            source = root/'firmware/app.ld'
+            original = source.read_bytes()
+            source.write_bytes(original + b'\n/* stale input */\n')
+            frames_path.unlink()
+            refused = subprocess.run(frame_command, cwd=root, env=env, text=True, capture_output=True)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn('stale resource report', refused.stderr)
+            self.assertFalse(frames_path.exists())
+            source.write_bytes(original)
             # Existing overrides with different bytes must still invalidate evidence.
             (custom_tc / 'pi32v2/bin/clang').write_text(compiler + '# different toolchain\n')
             (custom_sdk / 'cpu/wl82/tools/cfg_tool.bin').write_bytes(b'different SDK')

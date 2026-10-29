@@ -8,6 +8,11 @@ Re-read them if their behavior changes. Dated resource figures below precede the
 support while its runtime preference stays OFF; measure both that build and `FELUCCA_CPU2=0`
 under the current [modularity direction](modularity.md).
 
+Normal CDC builds expose [raw boot clock words](diagnostics.md#boot-clock-evidence)
+for comparing known bootloader/reset paths. These saved registers are neither a
+live frequency measurement nor clock correction; record the available words and
+actual boot path alongside device timing, without inferring MHz from an identity.
+
 ## Establish a comparable baseline
 
 1. Record the revision and local diff, target and host compiler versions, SDK revision,
@@ -132,6 +137,30 @@ CPU_FILE `-` means CPU budgets are not checked. PCM/state observations do not
 establish a retirement policy, target timing or device behavior. Use the focused
 guide's pinned inputs, prerequisites and reproduction steps.
 
+### External guest trace prerequisite
+
+The optional [pinned guest-trace check](emulator-trace-prerequisite.md) corrects
+external emulator IRQ attribution, retirement rows and halt status before a native
+hotspot adapter can consume them. It verifies synthetic guest workloads and build
+receipts; physical timing remains a separate device measurement.
+
+The [bounded native replay evidence](native-emulator-replay.md) checks matched
+native artifacts, repeated traces/PCM, modeled input delivery and no-input controls.
+Its wall-time observations apply to that small trace window and host run; they do
+not establish physical deadlines or a general tracing cost.
+
+The [native hotspot reporter](native-hotspots.md) revalidates that saved evidence
+and attributes the declared windows to sized target function ranges and emulator
+instruction classes. Unknown or ambiguous coverage remains unavailable; entry-PC
+hits are not call counts. It executes no firmware and supplies no physical timing
+or optimization result.
+
+The [native audio-window capture](native-audio-window.md) additionally discovers
+and verifies a held-key renderer window in the supported native baseline. Actual
+post-dispatch PCs and modeled IRQ state qualify the declared partial window;
+repeats, silent controls and original-basis PCM must agree. These are guest
+instruction observations, not a full ISR cost, nested-load bound or device timing.
+
 ### Target regression
 
 ```sh
@@ -160,6 +189,20 @@ outlined: otherwise JieLi folds them into `fm1_input_tick`, changing its isolate
 score from 14 to 220. With the boundaries preserved, the default build retains
 the original 344/137/82 total instructions and 14/134/204 scores for those three
 functions, with no budget changes.
+
+The outlined hot USB callees also have independent optional budgets:
+`uac_service` 13, `sie_rd` 5 and `sie_wr` 5. Clean native builds at
+`3015b2bcaa28d458130a962591daef13b2cb4e24`, with JieLi Clang 4.0.1, SDK
+AC79NN 1.2.1 and selective size enabled, measure 11/5/5 for standard and MACRO,
+13/5/5 for CPU2-off, and absent/5/5 for UAC-off. The unchanged listings retain their
+hash-bound profile sidecars. These are loop-span heuristic scores; callers do not
+include callee bodies.
+The fixtures keep the USB/TIMER5 callers fixed and grow only one callee past 10%
+(15/6/6), requiring that callee's failure without rewriting budgets. Absent symbols
+remain permitted for disabled/inlined configurations; straight-line work outside
+backward spans is still outside this metric. No runtime annotation, caller/engine
+budget, loader or device behavior changes. This coverage does not establish USB
+service time, cycles, scan/deadline margins or a physical speedup.
 
 The combined optimization integration calibrates only the optional `mix_part`
 score from 2,800 to 3,549. Against unchanged main `0b407accd60f755e96a26a58419ebdd218090419`,
@@ -304,8 +347,12 @@ Optimize by proven lifetimes and multiplicative cost. `ENG_MEM_PART` grows once 
 channel. `eng_mem` already shares mutually exclusive engine state; verify every switch
 with `union_test` before claiming further reuse. Keep immutable tables/assets in XIP.
 Large automatic arrays and recursion spend stack even when static section sizes stay flat.
-The hardware guards detect violations, not stack high-water usage; watermark measurement
-would require separate instrumentation and nested-interrupt stress.
+The hardware guards detect violations, not stack high-water usage. CPU0 watermark
+measurement requires separate instrumentation and nested-interrupt stress. Existing
+`status` `cpu2_stack` covers only the worker's user allocation since its latest
+start attempt; see [diagnostic scope](diagnostics.md#interpreting-a-report).
+An optional [target entry-frame inventory](stack-frame-evidence.md) reuses verified
+ELF evidence and exposes unsupported cases; it supplies no stack fit or live peak.
 
 Engine-arena owner checks (host only): `-DFELUCCA_ARENA_CHECK=1` turns `ENG_MEM_OF`
 (`engines.c`) into a checked accessor for GRAIN (`gr_of`), PHYS (`phys_slot_of`), DRUM
