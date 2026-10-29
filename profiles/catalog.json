@@ -541,5 +541,25 @@
     "tests/midi_control_test.c",
     "tests/union_test.c",
     "tests/arena_test.c"
-  ]
+  ],
+  "collections": {
+    "firmware": {
+      "path": ".",
+      "repository": "https://github.com/kmplngj/Felucca",
+      "license": "GPL-3.0-only",
+      "licenses": [
+        "LICENSE"
+      ],
+      "requires": []
+    },
+    "portable-mit": {
+      "path": "firmware/engines",
+      "repository": "https://github.com/kmplngj/Felucca-Engines",
+      "license": "MIT",
+      "licenses": [
+        "firmware/engines/LICENSE"
+      ],
+      "requires": []
+    }
+  }
 }
