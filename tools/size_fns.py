@@ -7,7 +7,11 @@ the main loop) keeps -Os. The JieLi clang 4 has no '#pragma clang attribute' and
 attribute is an error on variables, so build.py compiles felucca.c to LLVM IR without the
 optimizer, this script adds 'minsize' to those definitions, and the IR is then compiled at -Os
 (without the edit, that round trip is byte-identical to compiling felucca.c directly).
-  size_fns.py IN.ll OUT.ll"""
+A module compiled as its own translation unit (build.py SEPARATE, #454) is annotated with --module: it holds no
+interrupt root, and felucca.c's own run fails if interrupt-reachable code calls a function defined outside it, so
+nothing in such a module can be ISR code.
+  size_fns.py [--module] IN.ll OUT.ll
+  size_fns.py --check IN.ll        (analysis only, nothing written: the ISR boundary check of a FELUCCA_SIZE=0 build)"""
 import re
 import sys
 from pathlib import Path
@@ -22,7 +26,7 @@ SIZE_FILES = ["ui.c", "favorites.c", "menu_items.c", "icons.c", "ui_graph.c", "u
               "editor.c", "editor_preferences.c", "editor_backup.c", "editor_menu.c", "console.c",
               "usb.c", "midi_uart.c", "midi_control.c", "midi_clock.c", "seq.c", "song_chain.c", "chord.c", "motion.c",
               "panel.c", "lcd.c", "screen_capture.c", "gfx.c", "ota.c", "ota_hw.c", "up_fm6.c", "slice_store.c", "params.c", "editor_fm6.c",
-              "ui_layer.c", "ui_name.c", "ui_slice.c", "ui_events.c", "ui_bank.c", "ui_menu_reading.c", "main.c", "rescue.c", "libc.c", "storage_hw.c", "engines.c", "fm4_convert.c", "sound.c"]
+              "ui_layer.c", "ui_name.c", "ui_slice.c", "ui_events.c", "ui_bank.c", "ui_menu_reading.c", "main.c", "rescue.c", "libc.c", "storage_hw.c", "engines.c", "fm4_convert.c", "sound.c", "sound_port.c"]
 ISR_ROOTS = ("fm1_alnk0_irq", "fm1_timer5_irq")      # hal/fm1_isr.S: the audio ISR, the key / LED scan (+ USB poll)
 DEF = re.compile(r"^(?:static|void|int|uint\w*|int\w*|const)\b[^;=(]*?\b([A-Za-z_]\w*)\s*\(", re.M)
 IR_NAME = r'(\"(?:\\.|[^\"])*\"|[-\w.$]+)'
@@ -53,6 +57,7 @@ def size_names():
     return names
 
 
+IR_DECL = re.compile(r"^declare [^\n]*?@" + IR_NAME + r"\(", re.M)
 IR_BODY = re.compile(r"^define [^\n]*?@" + IR_NAME + r"\([^\n]*\)[^\n]*\{\n(.*?)^\}", re.M | re.S)
 IR_REF = re.compile(r"@" + IR_NAME)
 IR_GLOBAL = re.compile(r"^@" + IR_NAME + r"\s*=(.*?)(?=^(?:@|define |declare |attributes |!|%|source_filename |target |;)|\Z)",
@@ -135,6 +140,7 @@ def isr_reach(ir, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
     if missing:
         raise ValueError(f"missing ISR roots: {', '.join(sorted(missing))}")
     globals_ = {m[1].strip('"'): m[2] for m in IR_GLOBAL.finditer(ir)}
+    declared = {m[1].strip('"') for m in IR_DECL.finditer(ir)}
     edges = {name: references(text) for name, text in {**globals_, **body}.items()}
     seen, todo = set(), list(roots)
     while todo:
@@ -165,6 +171,10 @@ def isr_reach(ir, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
                         raise ValueError(f"{f}: indirect ISR target {target} has no defined callbacks")
                 todo += list(targets - seen)
         todo += list(edges.get(f, set()) - seen)
+    outside = sorted(n for n in seen & declared if not n.startswith("llvm."))
+    if outside:
+        raise ValueError(f"ISR-reachable code calls {', '.join(outside)}, defined outside this translation unit "
+                         "(a separately compiled module is main-loop only: docs/modules.md)")
     return seen & body.keys()
 
 
@@ -186,19 +196,30 @@ def annotate(ir, candidates, roots=ISR_ROOTS, indirect=ISR_INDIRECT):
     return IR_DEF.sub(mark, ir), hit, protected
 
 
-def main(src, dst):
+def main(src, dst=None, module=False):
     ir = Path(src).read_text()
     candidates = size_names()
-    annotated, hit, isr = annotate(ir, candidates)
+    if dst is None:                       # --check: the reachability / boundary analysis only, no minsize applied
+        isr = isr_reach(ir) if not module else set()
+        print(f"size: {Path(src).stem}: ISR boundary check passed ({len(isr)} interrupt-reachable functions)")
+        return 0
+    annotated, hit, isr = annotate(ir, candidates, roots=() if module else ISR_ROOTS)
     names = candidates - isr
     Path(dst).write_text(annotated)
+    if module:
+        print(f"size: {Path(src).stem}: {len(hit)} main-loop functions built for size (own unit, no interrupt roots)")
+        return 0
     print(f"size: {len(hit)} main-loop functions built for size ({len(names) - len(hit)} not in this build; "
           f"{len(candidates & isr)} reached from an interrupt kept -Os)")
     return 0
 
 
 if __name__ == "__main__":
+    args = sys.argv[1:]
+    module = args[:1] == ["--module"]
+    check = args[:1] == ["--check"]          # one file: analysis only
     try:
-        sys.exit(main(*sys.argv[1:3]))
+        sys.exit(main(*args[check:check + 1], None, module=False) if check else
+                 main(*args[module:module + 2], module=module))
     except (OSError, ValueError) as e:
         sys.exit(f"size: {e}")

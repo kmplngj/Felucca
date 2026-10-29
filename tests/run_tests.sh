@@ -717,9 +717,18 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     unit ui "" u_ui
 
     u_sound_install() {
+        run "module boundaries (#454): source and fresh generated inventories, rejected dependency fixtures" python3 tests/module_boundary_test.py
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/sound_install_test" tests/sound_install_test.c -lm
         run "Sound install (#298): every sound load publishes engine, preset and values in one interrupt-off window" \
             "$OUT/sound_install_test"
+        # #454: sound.c can also be built as its own unit (build.py SEPARATE, not adopted): kept working (sound.h / sound_port.h only; no state of its own)
+        $CC -Wextra -Ifirmware/src -DFELUCCA_OWN_UNIT=1 -c firmware/src/sound.c -o "$OUT/sound_unit.o"
+        run "Sound install as its own unit: no data or bss of its own" sh -c \
+            "! nm '$OUT/sound_unit.o' | grep -E ' [BbDdCc] '"
+        $CC -w -Ibuild/gen -Ifirmware/src -DSOUND_SEPARATE=1 -o "$OUT/sound_install_test_unit" tests/sound_install_test.c \
+            "$OUT/sound_unit.o" -lm
+        run "Sound install (#298) with sound.c linked as its own unit (#454): the same one-window publication" \
+            "$OUT/sound_install_test_unit"
     }
     unit sound_install "" u_sound_install
 

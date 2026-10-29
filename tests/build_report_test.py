@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Exact resource extraction, authoritative boundary failures and stale-evidence refusal."""
 import copy
+import contextlib
 import hashlib
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -210,6 +213,127 @@ class ResourceReport(unittest.TestCase):
                 self.assertEqual(set(R.input_hashes(root)), {'source.c', 'build/gen/generated.h'})
                 source.write_text('changed during generation')
                 self.assertNotEqual(initial, R.input_hashes(root, include_generated=False))
+
+    def host_asset_fixture(self, root):
+        sources = ('tools/build.py', 'tools/build_report.py', 'tools/gen_tables.py', 'tools/gen_fm6_patches.py',
+                   'tools/gen_samples.py', 'tools/sampleio.py', 'assets/sample.wav', 'profiles/standard.json',
+                   'firmware/engines/src/dsp.c', 'pyproject.toml', 'uv.lock', 'unrelated.md')
+        for name in sources:
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(name + '\n')
+        gen = root / 'build/gen'
+        gen.mkdir(parents=True)
+        headers = {'felucca_tables.h': '#define FS 44100\n',
+                   'felucca_fm6.h': 'static const unsigned char FM6_FACTORY[1][1] = {{0}};\n',
+                   'felucca_samples.h': 'static const unsigned char SMP_SET_ORIG[1] = {0};\n',
+                   'nested/private.h': 'static const unsigned char NESTED_GENERATED[1] = {0};\n'}
+        for name, text in headers.items():
+            (gen / name).parent.mkdir(parents=True, exist_ok=True)
+            (gen / name).write_text(text)
+        # As in the source-inventory fixture above, only repository enumeration
+        # is simulated. The collector hashes real fixture inputs and outputs.
+        inventory = b''.join(name.encode() + b'\0' for name in sources)
+        return gen, headers, lambda command: inventory if '--recurse-submodules' in command else b''
+
+    def boundary_module(self):
+        spec = importlib.util.spec_from_file_location('module_boundary_fixture', ROOT / 'tests/module_boundary_test.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_host_generate_seals_and_validates_without_target_artifacts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            gen, headers, inventory = self.host_asset_fixture(root)
+            boundary = self.boundary_module()
+
+            class Completed:
+                returncode = 0
+                def communicate(self):
+                    return 'fixture generator\n', None
+
+            def emit(command, **kwargs):
+                destination = Path(command[-1])
+                destination.write_text(headers.get(destination.name, '/* fixture header */\n'))
+                return Completed()
+
+            def identity(_root, directory, *args):
+                (directory / 'build-identity.json').write_text('{}\n')
+
+            outputs = {'resolved-profile.json': '{"engine_ids": []}\n', 'felucca_profile.h': '/* profile */\n'}
+            with patch.object(R.subprocess, 'check_output', side_effect=inventory), \
+                    patch.object(B, 'SRC', root), patch.object(B, 'GEN', gen), \
+                    patch.object(B.subprocess, 'Popen', side_effect=emit), \
+                    patch('profile.generated', return_value=outputs), patch('build_identity.write', side_effect=identity), \
+                    patch.object(B, 'tc', side_effect=AssertionError('host preparation called target tools')), \
+                    patch.object(R, 'tool_fingerprints', side_effect=AssertionError('host preparation required SDK')), \
+                    patch.object(boundary, 'ROOT', root), patch.object(boundary, 'SRC', root / 'firmware/src'), \
+                    patch.object(boundary, 'GEN', gen), \
+                    patch.dict(os.environ, {'JIELI_TOOLCHAIN': '/not-installed', 'AC79_SDK': '/not-installed',
+                                            'FELUCCA_FONT': 'm8stealth', 'FELUCCA_PROFILE': 'standard'}):
+                B.generate()
+                manifest = gen / 'generated-inputs.json'
+                before = manifest.read_bytes()
+                recorded = json.loads(before)
+                self.assertEqual(recorded['kind'], 'felucca-generated-inputs')
+                self.assertIn('tools/sampleio.py', recorded['input_sha256'])
+                self.assertIn('assets/sample.wav', recorded['input_sha256'])
+                self.assertNotIn('unrelated.md', recorded['input_sha256'])
+                self.assertNotIn('build/gen/generated-inputs.json', recorded['input_sha256'])
+                files = boundary.generated_files()
+                self.assertTrue({gen / name for name in headers}.issubset(set(files)))
+                self.assertEqual(recorded['input_sha256']['build/gen/nested/private.h'], R.digest(gen / 'nested/private.h'))
+                self.assertIn('NESTED_GENERATED', boundary.forbidden_set('sound', files))
+                R.write_generated_inputs(root, gen)
+                self.assertEqual(before, manifest.read_bytes())
+                self.assertFalse((root / 'build/resource-report.json').exists())
+                self.assertFalse((root / 'build/felucca.elf').exists())
+
+    def test_host_manifest_missing_header_and_changed_producer_are_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            gen, headers, inventory = self.host_asset_fixture(root)
+            boundary = self.boundary_module()
+            with patch.object(R.subprocess, 'check_output', side_effect=inventory), \
+                    patch.object(boundary, 'ROOT', root), patch.object(boundary, 'GEN', gen):
+                R.write_generated_inputs(root, gen)
+                manifest = gen / 'generated-inputs.json'
+                before = manifest.read_bytes()
+                manifest.unlink()
+                with self.assertRaises(FileNotFoundError):
+                    boundary.generated_files()
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertEqual(boundary.main(), 1)
+                self.assertIn('generated-inputs.json', stderr.getvalue())
+                manifest.write_bytes(before)
+                header = gen / 'felucca_fm6.h'
+                header.unlink()
+                with self.assertRaisesRegex(ValueError, 'felucca_fm6.h'):
+                    boundary.generated_files()
+                header.write_text(headers[header.name])
+                header.write_text(headers[header.name] + '/* stale output */\n')
+                with self.assertRaisesRegex(ValueError, 'felucca_fm6.h'):
+                    boundary.generated_files()
+                header.write_text(headers[header.name])
+                producer = root / 'tools/sampleio.py'
+                producer.write_text('changed producer input\n')
+                with self.assertRaisesRegex(ValueError, 'tools/sampleio.py'):
+                    boundary.generated_files()
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertEqual(boundary.main(), 1)
+                self.assertIn('tools/sampleio.py', stderr.getvalue())
+
+    def test_host_manifest_cannot_seal_a_missing_source_inventory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            gen, _, _ = self.host_asset_fixture(root)
+            with patch.object(R.subprocess, 'check_output', return_value=b''):
+                with self.assertRaisesRegex(ValueError, 'missing generated-input source inventory'):
+                    R.write_generated_inputs(root, gen)
+            self.assertFalse((gen / 'generated-inputs.json').exists())
 
     def test_effective_flags_preprocess_only_and_normalize_compiler_directory(self):
         with tempfile.TemporaryDirectory() as folder:
