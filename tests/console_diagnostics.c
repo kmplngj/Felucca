@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../firmware/hal/fm1_clock.h"
 
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1
@@ -111,6 +112,8 @@ static int st_read(uint32_t a, void *b, uint32_t n) { (void)a; (void)b; (void)n;
 int main(int argc, char **argv)
 {
     size_t n;
+    fm1_boot_clock = (fm1_clock_snapshot_t){0x10014u, 0x1000Cu, 0x10008u,
+                                          0x119A8u, 0x119ACu, 0x119A0u, 0xFFFFFFFFu, 1};
     if (argc < 2 || argc > 3 ||
         (strcmp(argv[1], "status") && strcmp(argv[1], "dbg") &&
          strcmp(argv[1], "inp") && strcmp(argv[1], "crash")))
@@ -133,7 +136,9 @@ int main(int argc, char **argv)
     }
 #endif
     if (argc == 3) {
-        if (!strcmp(argv[2], "no-crash"))
+        if (!strcmp(argv[2], "no-clock"))
+            fm1_boot_clock.valid = 0;
+        else if (!strcmp(argv[2], "no-crash"))
             fm1_crash.magic = 0;
 #if FELUCCA_UAC
         else if (!strncmp(argv[2], "uac-", 4)) {

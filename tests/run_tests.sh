@@ -474,8 +474,9 @@ u_loader() {
     run "early rescue: real input HAL, shift register, delayed rows, OCT combinations and timer wrap" "$OUT/rescue_input_test"
     $CC -o "$OUT/rescue_test" tests/rescue_test.c
     run "early USB rescue: real OTA staging, zero idle writes, unsupported flash, timer wrap and reconnect" "$OUT/rescue_test" "$FWSC"
+    python3 tests/ota_stock_fixtures.py "$OUT/ota-stock"
     $CC -DOWN_PKG=1 -o "$OUT/ota_test" tests/ota_test.c
-    run "M-UPGRADE entry (own loader)" "$OUT/ota_test" "$FWSC"
+    run "M-UPGRADE entry (own loader; pinned official images over other boot areas, #619)" "$OUT/ota_test" "$FWSC" "$OUT/ota-stock"
 
     head -c 200000 build/felucca.bin > "$OUT/old_app.bin"
     python3 tools/fm1pkg_make.py "$OUT/old_app.bin" build/loader/ota.bin "$OUT/old.fwsc" >/dev/null
@@ -1293,6 +1294,13 @@ else
     }
     unit asan_libc "" u_asan_libc
 
+    u_asan_boot_clock() {
+        ${CC%% *} -std=c99 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined \
+            -fno-sanitize-recover=all -o "$A/boot_clock_test" tests/boot_clock_test.c
+        run "Boot clock: ordered reads and immutable publication (ASan/UBSan)" "$A/boot_clock_test"
+    }
+    unit asan_boot_clock "" u_asan_boot_clock
+
     u_asan_lcd_power() {
         ${CC%% *} -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
             -o "$A/lcd_power_test" tests/lcd_power_test.c
@@ -1338,7 +1346,7 @@ else
         $SCC -o "$A/ldr_test" tests/ldr_test.c
         run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" "$FWSC"
         $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
-        run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" "$FWSC"
+        run "ASan/UBSan: M-UPGRADE entry (own loader, pinned official images)" "$A/ota_test" "$FWSC" "$OUT/ota-stock"
     }
     unit asan_loader "loader" u_asan_loader
 

@@ -117,7 +117,9 @@ context small while retaining the required evidence and validation.
   [fork web installer](https://kmplngj.github.io/Felucca/webapp/installer/) in Chrome or Edge, or follow the
   [command-line instructions](BUILDING.md#install). Raw `.bin` files are build material.
   Installation is at your own risk; M-VAVE's updater or the installer's
-  **Return to official V15** restores stock firmware.
+  **Return to official V15** restores stock firmware (the command-line installer also
+  takes the exact official V16). See [compatible bootloaders and firmware](docs/usb-rescue.md#boot-areas-and-other-firmware)
+  for V16's bootloader, m-bootloader and M-VAVE's FM1 Open firmware.
 - **Explore:** try the [fork browser demo](https://kmplngj.github.io/Felucca/webapp/try/)
   or [fork web editor](https://kmplngj.github.io/Felucca/webapp/editor/).
 - **Build and test:** start with [BUILDING.md](BUILDING.md), including

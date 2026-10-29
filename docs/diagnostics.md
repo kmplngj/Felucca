@@ -12,9 +12,11 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | --- | --- | --- |
 | Build identity | Startup, ABOUT, INFO | Normal firmware identifies the version, commit or PR and fork source; see [build identity](../BUILDING.md#build-revision-and-pr-identity). |
 | Health, input and retained crashes | USB SERIAL `status`, `dbg`, `inp`, `crash`; `tools/fm1_diagnostics.py` | Normal CDC builds. The read-only collector retains raw replies, JSONL and summary counter deltas; [collection and interpretation](#collect-diagnostics) are described below. Input latency requires confirmed `FM1_INPUT_LAT` instrumentation; render load is not whole-chip CPU use. |
+| Boot clock registers | USB SERIAL `status` keys `boot_clock_*`; the same read-only collector | Normal CDC builds, captured once before normal initialization. Seven raw words help compare boot paths; they neither measure MHz nor correct clocks. See [boot clock evidence](#boot-clock-evidence). |
 | Interrupt misuse | `status` keys `isr_misuse`, `isr_misuse_pc` | Opt-in `FELUCCA_ISR_ASSERT=1` on the FM-1, default `0`. Counts guarded main-loop calls made in interrupt context; [target and host behavior differ](#interrupt-context-assertion-felucca_isr_assert). |
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
+| Boot area and declared clock | `tools/fm1_bootarea.py --raw DUMP.bin` | Offline and read-only, any firmware: names a flash dump's or package's boot area (M-VAVE V15/V16, m-bootloader, unknown), checks its record and SPL CRCs, and reads the chip key and `isd_config.ini` clock fields. Needs a dump from FM-1 Transporter or M-Flasher; it does not read live clock registers (#618). See the [offline boot-area survey](boot-area-survey.md) for bounded input checks, formats and interpretation. |
 | Rendered-screen screenshots | USB SERIAL `screen` commands; `tools/fm1_screenshot.py` | Development-only `FELUCCA_SCREEN_CAPTURE=1`, default `0`. Stopped static HOME/menu pixels become a verified PNG/JSON. Default capture requires an awake display; explicit `--wake` silently wakes, awaits redraw and holds awake for the bounded session. See [capture setup, bounded memory and failure modes](screen-capture.md); physical LCD colours/backlight are outside its scope. |
 | USB test-tone continuity | Existing stereo WAV files; `tools/uac_tone_check.py` | Offline checker for a known `FELUCCA_UAC_TONE=1` build; tone mode defaults off. Requires complete 16-bit stereo PCM at the configured 44.1/48 kHz rate and actual tone synchronization. See [recording interpretation](#usb-test-tone-recordings); this is separate from CDC collection and does not qualify physical USB or measure diagnostic overhead. |
 | Raw render-stage evidence | Optional `status` `stage_*` fields; existing read-only collector | Development-only `FELUCCA_RENDER_STAGE=1`, default `0`. Inclusive CPU0 mix-call sums, empty controls and an observer window with matching nested ticks; rejected/invalid snapshots remain unavailable. See [units, lifetimes, resource limits and matched FM-1 procedure](render-stage-evidence.md). Raw TIMER4 ticks establish no frequency, exclusive CPU cost or measured overhead; hardware acceptance is pending. |
@@ -29,6 +31,61 @@ collector does not run a reproducer, enable instrumentation or capture screensho
 it only reads fields supplied by the installed build. Record the exact build, flags,
 workload and hardware observations with each result. See the linked guides for resource
 costs and distinguish host/emulator coverage from real FM-1 observations.
+
+## Boot clock evidence
+
+With `FELUCCA_CDC=1` (the normal default), startup reads these seven 32-bit
+registers, in order, after the existing CPU1 hold when compiled in and before TIMER4/reset/peripheral
+initialization. Their values survive RAM initialization through a startup-stack
+snapshot and are copied into a 32-byte target POOL record. Nothing is added to
+NOINIT or persistent storage. The status handler reads the saved words, never the
+live clock registers; polling does not add clock-register accesses.
+
+| Status key | Register address |
+| --- | --- |
+| `boot_clock_10014` | `0x10014`, including the low-eight-bit system-clock selector and the other original bits |
+| `boot_clock_1000c` | `0x1000C` |
+| `boot_clock_10008` | `0x10008` |
+| `boot_clock_119a8` | `0x119A8` |
+| `boot_clock_119ac` | `0x119AC` |
+| `boot_clock_119a0` | `0x119A0` |
+| `boot_clock_119a4` | `0x119A4` |
+
+These hexadecimal words are observations, not counters. The collector preserves
+them in each status snapshot in JSONL and the summary's start/end snapshots; it
+does not subtract them, classify the bootloader, infer MHz or label a clock safe.
+Older firmware may omit all seven. A partial group or malformed/out-of-range word
+invalidates that reply; absence is unavailable evidence, never seven zero values.
+CDC-disabled builds omit capture and storage. Early MMIO capture is target-only;
+native replay and browser emulation do not read these hardware addresses.
+MIDI-only rescue has no CDC console;
+returning to normal startup captures a new boot, not the earlier rescue state.
+
+The added workload is seven sequential volatile reads once at boot, the POOL
+record and seven formatted lines per status reply. The startup caller does not
+return while the application runs: its enlarged frame remains active rather than
+being reclaimed after publication. There is no added audio/TIMER5 operation,
+PLL/clock write, delay or corrective path.
+Use matched polling/no-polling runs when assessing the extra reply traffic. Exact
+linked region/frame costs belong to the candidate's target resource report.
+A controlled standard-profile comparison against `29ad24fd` measured +324 bytes
+app and +32 bytes POOL, unchanged ordinary RAM/RAMTEXT/NOINIT, and a startup
+caller frame of 32 rather than 8 bytes (+24 bytes, persistent). Protected interrupt
+function sizes/frames and static budget metrics matched that baseline; relocated
+addresses change machine bytes. This is static build evidence, not device timing
+or a complete stack bound; final committed-package results are recorded in the PR.
+
+For a device comparison, follow the idle setup below on an already installed,
+identified candidate and collect one run per available bootloader/reset path.
+Record known bootloader identity, cold versus warm start, firmware/package hash
+and all seven words. Do not switch bootloaders or interrupt updates merely to
+collect another row. Host fake-register/parser tests establish ordering and format
+only. [Recorded device observations](https://github.com/kmplngj/Felucca/pull/761#issuecomment-6490745576)
+cover V15/V16 and m-bootloader 1.2 cold starts and OTA returns on the earlier
+standalone #648 and integrated `526824f3` builds. They do not qualify this merged
+revision. Its reset-path checks, loaded polling comparisons and live stack evidence
+remain pending. [#618](https://github.com/kmplngj/Felucca/issues/618) owns the later
+retain/defer decision; no clock correction is enabled by this diagnostic.
 
 ## USB test-tone recordings
 
@@ -204,6 +261,14 @@ counters is normalized, so `2147483647` to `-2147483648` is continuous; uint32 w
 invalid. Crash-record uptime is historic and is never compared with current uptime.
 Older firmware without boot-count evidence cannot establish continuity. Unknown future
 fields are preserved but do not acquire guessed counter/delta semantics.
+
+`usb_retries` counts local controller restarts; `usb_resets` counts host bus resets.
+A local restart abandons configuration and pending control/CDC/UAC session state
+before reattachment, then waits for fresh host configuration. It retains data
+still in application rings at restart; a later host bus reset keeps the existing
+MIDI/SysEx output-drop policy. Neither counter establishes packet delivery or
+physical recovery. Check host re-enumeration, stream behavior and error deltas
+alongside the retained report.
 
 Present known numeric fields are validated before generic colon records. For
 example, `audio_late 1:2` is malformed counter evidence, rather than an unknown

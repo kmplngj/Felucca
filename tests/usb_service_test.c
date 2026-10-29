@@ -707,6 +707,84 @@ static void retry_lifecycle(void)
     CHECK(!mi_r && mi_w == 1u && mo_r == mo_w && so_r == so_w);
     puts("USB lifecycle: actual startup, failed/healthy retry, interval/wrap and intentional detach passed");
 }
+/* A local SIE reset is not a host bus-reset event. Restart from a genuinely
+ * configured session; unlike retry_lifecycle, do not force config=0 in the fixture. */
+static void configured_retry(uint32_t hz)
+{
+    static uint32_t retry_at = 1500u;               /* prior lifecycle's final attempt was at 500 */
+    static const uint8_t complete[] = {4, 0xF0, 0x7D, 0x12, 6, 0x34, 0xF7, 0};
+    static const uint8_t partial[] = {4, 0xF0, 0x7D, 0x56};
+    uint32_t source_frame, before[5], rate_sets, retry_count;
+    const uint8_t *frame;
+    uint32_t frame_len;
+    /* Rate data, descriptor continuation and pending address are independent
+     * EP0 owners. CDC adds its own line-coding data stage. */
+    for (uint32_t stage = 0; stage < 3u + T_CDC; stage++) {
+        reset_fixture(hz);
+        source_frame = 0;
+        CHECK(host_in(4)); service(0); CHECK(host_in(4)); render(&source_frame); service(0);
+        CHECK(uac.alt && uac.go && uac.flowing);
+        if (!stage) {
+            host_out(1, complete, sizeof complete); service(0);
+            CHECK(ota_frame_get(&frame, &frame_len) && frame_len == 3u && !memcmp(frame, "\x7D\x12\x34", 3));
+        }
+        host_out(1, partial, sizeof partial); service(0);
+        CHECK(usb.sx_on && (stage ? sx_collect : sx_ready));
+        if (!stage) {
+            setup(0x2201, 0x0100, 0x84, 3); CHECK(uac.e0_rx);
+        } else if (stage == 1u) {
+            setup(0x8006, 0x0200, 0, 0xFFFF); CHECK(usb.e0_tx);
+        } else if (stage == 2u) {
+            setup(0x0005, 37, 0, 0); CHECK(usb.has_pend_addr);
+#if T_CDC
+        } else {
+            setup(0x2120, 0, CDC_IF_CDC, 7); CHECK(cdc.e0_rx);
+#endif
+        }
+        seed_application();                       /* accepted queues; no poll may drain them before failure */
+        rate_sets = uac.rate_sets; retry_count = usb.retries;
+        host.missing = 1;
+        for (uint32_t i = 0; i < 51u; i++) {
+            host.operations = 0;
+            (void)sie_rd(S_POWER);
+        }
+        CHECK(!usb.up && usb.config == 1u && usb.timeouts == 51u);
+        host.missing = 0;
+        usb_retry(retry_at); retry_at += 1000u;
+        CHECK(usb.up && !usb.timeouts && usb.retries == retry_count + 1u && host.resets == 1u);
+        for (uint32_t ep = 0; ep < 5u; ep++) before[ep] = host.sends[ep];
+        service(0); service(1);
+        /* No host bus reset or SET_CONFIGURATION has happened since local
+         * restart. Stale bulk/audio state must not consume accepted queues. */
+        if (usb.config)
+            fprintf(stderr, "configured retry CDC%u %uHz stage%u: config=%u sends1=%u sends4=%u mo=%u/%u so=%u/%u\n",
+                    T_CDC, hz, stage, usb.config, host.sends[1] - before[1], host.sends[4] - before[4],
+                    mo_r, mo_w, so_r, so_w);
+        CHECK(host.sends[1] == before[1] && host.sends[4] == before[4]);
+#if T_CDC
+        CHECK(host.sends[3] == before[3] && !cdc.dtr && !cdc.e0_rx && !cdc.rx_pend);
+#endif
+        CHECK(!usb.config && !usb.e0_tx && !usb.has_pend_addr && !usb.rx_pend && !usb.sx_on && !sx_collect);
+        CHECK(!uac.alt && !uac.go && !uac.r48 && !uac.e0_rx && !uac.queued && !uac.flowing);
+        application_pending();
+        if (!stage) CHECK(ota_frame_get(&frame, &frame_len) && frame_len == 3u && !memcmp(frame, "\x7D\x12\x34", 3));
+        else CHECK(!sx_ready);
+        /* The first new SETUP must not become old rate/line data or continue
+         * an abandoned descriptor. Nor may an old SET_ADDRESS be applied. */
+        setup(0x8006, 0x0100, 0, 18);
+        CHECK(host_in(0) && host.lengths[0][host.npackets[0] - 1u] == 18u);
+        CHECK(!memcmp(host.bytes[0] + host.nbytes[0] - 18u, DEV_DESC, 18));
+        CHECK(!host.common[S_FADDR] && uac.rate_sets == rate_sets);
+        configure(hz);
+        CHECK(usb.config == 1u && host.rx[1] == ep1rx && host.tx[1] == ep1tx && host.tx[4] == ep4tx);
+        application_delivered();
+        CHECK(host_in(4)); service(0); render(&source_frame); service(0);
+        CHECK(uac.go && uac.ring48 == (hz == 48000u) && !uac.underruns && !uac.overruns && !uac.missed);
+        if (!stage) ota_frame_done();
+    }
+    puts("configured SIE restart: queues/frames preserved, stale control/audio state aborted and fresh configuration rearmed");
+}
+
 static void frame_progress(uint32_t frame)
 {
     uint32_t polls = 0;
@@ -766,7 +844,7 @@ int main(void)
     sie_failures(); retry_lifecycle();
     for (uint32_t hz = 44100u; hz <= 48000u; hz += 3900u) {
         composite(hz, 0); composite(hz, 1); stream_transitions(hz); control_recovery(hz);
-        suspend_lifecycle(hz);
+        suspend_lifecycle(hz); configured_retry(hz);
     }
     puts("USB service model: all finite contracts passed (no physical timing claim)");
     return 0;
