@@ -68,9 +68,11 @@ button or rescue route. A partially installed application may not boot normally 
 Package acceptance, protected storage and official-return policy are unchanged.
 
 The loader bounds each LCD transfer and each complete redraw, feeding the watchdog
-and polling USB while waiting. A failed or unusually slow display stops further
-display work until reset. It retains any in-flight source rather than treating a
-timeout as a safe DMA abort. USB and installer/retry service continue, but the
+and polling USB while waiting. A transfer that times out stops further display work
+until reset; a slow display whose transfers all complete is not a failure, and a
+redraw that runs past its budget is abandoned for the next status change.
+Progress updates repaint only the percentage. The loader retains any in-flight
+source rather than treating a timeout as a safe DMA abort. USB and installer/retry service continue, but the
 image may remain black, partial or stale; rely on the host result and returned
 application identity. The screen does not prove visible LCD acknowledgment or
 recovery from a power interruption. Exact-package FM-1 display, update and retry

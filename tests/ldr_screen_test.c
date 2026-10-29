@@ -7,7 +7,7 @@
 #endif
 static void ldr_screen_contract_tests(void)
 {
-    uint32_t sends, feeds, polls;
+    uint32_t sends, feeds, polls, rows, bytes, dispon, total;
     ldr_screen_init();
     assert(display_init == 1 && !ldr_lcd_failed && !display_active && !display_cs);
     assert(ldr_screen_state == LDR_WAITING && display_wdt && !display_usb);
@@ -24,10 +24,23 @@ static void ldr_screen_contract_tests(void)
     display_ticks += 250u * 1000u * 24u;
     ldr_screen_progress(4096u, 0x8F000u);
     assert(ldr_screen_percent == 0);
+    assert(ldr_screen_framed);
+    rows = display_rows; bytes = display_row_bytes;
     ldr_screen_progress(0x47000u, 0x8F000u);
     assert(ldr_screen_percent == 49);
+    /* Progress repaints only the percentage strip: 18 rows, not 240. */
+    assert(display_rows - rows == LDR_STRIP_END - LDR_STRIP_TOP && display_rows - rows == 18u);
+    assert(display_row_bytes - bytes == 18u * 480u);
+    assert(display_raset[0] == LDR_STRIP_TOP && display_raset[1] == LDR_STRIP_END - 1u);
+    rows = display_rows;
+    ldr_screen_progress(0x47000u, 0x8F000u);          /* unchanged percent: nothing sent */
+    assert(display_rows == rows);
+    display_ticks += 250u * 1000u * 24u;
     ldr_screen_progress(0x8F000u, 0x8F000u);
-    assert(ldr_screen_percent == 100);
+    assert(ldr_screen_percent == 100 && display_rows - rows == 18u);
+    rows = display_rows;
+    ldr_screen_status(LDR_FINISHING, 0);              /* state changes keep the full redraw */
+    assert(display_rows - rows == 240u && display_raset[0] == 0 && display_raset[1] == 239u);
     ldr_screen_status(LDR_FINISHING, 0);
     ldr_screen_status(LDR_SUCCESS, 0);
     assert(ldr_screen_state == LDR_SUCCESS);
@@ -40,18 +53,60 @@ static void ldr_screen_contract_tests(void)
     ldr_screen_status(LDR_WRITING, 0);
     assert(!ldr_lcd_failed && display_wdt > feeds && display_usb > polls);
     display_reset();
+    display_delay = 24u * 400u;                      /* 400us/row: a full frame outlasts the old 100ms budget */
+    assert(LDR_LCD_DRAW_US >= 250000u);
+    feeds = display_ticks; rows = display_rows; dispon = display_dispon;
+    ldr_screen_init();
+    assert(display_ticks - feeds > 24u * (350u * 1000u + 100000u)); /* delays + frame beyond 100ms */
+    assert(!ldr_lcd_failed && display_rows - rows == 240u && display_dispon - dispon == 1u);
+    assert(ldr_screen_framed && !display_active && !display_cs);
+    rows = display_rows;
+    ldr_screen_status(LDR_WRITING, 0);               /* and a state change completes at that latency too */
+    assert(!ldr_lcd_failed && display_rows - rows == 240u);
+    display_reset();
     display_delay = 24u * 1900u;                     /* every transfer completes within its own deadline */
-    feeds = display_ticks;
-    polls = display_usb;
+    feeds = display_ticks; polls = display_usb; rows = display_rows;
     ldr_screen_status(LDR_WRITING, 0);
-    assert(ldr_lcd_failed && display_ticks - feeds < 24u * (LDR_LCD_DRAW_US + 1000u));
+    /* Aggregate overrun abandons the redraw between transfers; it is not a failure. */
+    assert(!ldr_lcd_failed && !display_active && !display_cs);
+    assert(display_rows - rows < 240u && display_rows - rows > 100u);
+    assert(display_ticks - feeds < 24u * (LDR_LCD_DRAW_US + 1000u));
     assert(display_usb > polls && display_usb_gap < 24u * 600u); /* bounded protocol polling */
     display_check();
+    /* A slow panel is not asked for the whole frame again on every progress step:
+     * progress stays on the strip and only a state change repaints everything. */
+    rows = display_rows;
+    ldr_screen_progress(0x47000u, 0x8F000u);
+    assert(!ldr_lcd_failed && display_rows - rows <= LDR_STRIP_END - LDR_STRIP_TOP);
+    display_delay = 24u * 20u;
+    rows = display_rows;
+    ldr_screen_status(LDR_WRITING, 0);
+    assert(!ldr_lcd_failed && display_rows - rows == 240u);
     display_reset();
-    display_delay = 24u * 1900u;
-    feeds = display_ticks;
+    display_delay = 24u * 1900u;                     /* first draw overruns: DISPON still gets its own deadline */
+    feeds = display_ticks; rows = display_rows; dispon = display_dispon;
     ldr_screen_init();
-    assert(ldr_lcd_failed && display_ticks - feeds < 24u * LDR_LCD_INIT_US);
+    assert(!ldr_lcd_failed && display_rows - rows < 240u && display_dispon - dispon == 1u);
+    assert(display_ticks - feeds < 24u * (LDR_LCD_INIT_US + LDR_LCD_DRAW_US + 10000u));
+    display_reset();
+    display_delay = 24u * 2500u;                     /* a real per-transfer timeout still latches */
+    feeds = display_ticks; sends = display_sends; dispon = display_dispon;
+    ldr_screen_status(LDR_WRITING, 0);
+    assert(ldr_lcd_failed && display_active && display_cs && display_sends - sends == 1u);
+    assert(display_ticks - feeds < 24u * 3000u);
+    sends = display_sends;
+    ldr_screen_progress(0x47000u, 0x8F000u);
+    ldr_screen_status(LDR_VALIDATING, 0);
+    assert(display_sends == sends && display_dispon == dispon);
+    display_reset();
+    ldr_screen_init();                               /* learn the DISPON transfer index of a clean init */
+    total = display_sends;
+    assert(display_dispon && !ldr_lcd_failed);
+    display_reset();
+    display_stall_at = total;                        /* DISPON itself never completes */
+    dispon = display_dispon;
+    ldr_screen_init();
+    assert(ldr_lcd_failed && display_dispon - dispon == 1u && display_active && display_cs);
     /* A command, borrowed window args and an independently consumed pixel row
      * can each stall. A late completion is deliberately never treated as retry. */
     for (uint32_t at = 1; at <= 6; at++) {
