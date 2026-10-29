@@ -28,6 +28,15 @@
 #if FELUCCA_RENDER_STAGE != 0 && FELUCCA_RENDER_STAGE != 1
 #error "FELUCCA_RENDER_STAGE must be 0 or 1"
 #endif
+#ifndef FELUCCA_BOOT_CLOCK
+#define FELUCCA_BOOT_CLOCK 0     /* opt-in diagnostic: seven raw boot clock words captured at startup, `status` boot_clock_* (#618) */
+#endif
+#if FELUCCA_BOOT_CLOCK != 0 && FELUCCA_BOOT_CLOCK != 1
+#error "FELUCCA_BOOT_CLOCK must be 0 or 1"
+#endif
+#if FELUCCA_BOOT_CLOCK && !FELUCCA_CDC
+#error "FELUCCA_BOOT_CLOCK needs FELUCCA_CDC"
+#endif
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1            /* USB audio input: the master output, 16-bit stereo 44.1 kHz (usb.c) */
 #endif
@@ -64,7 +73,7 @@
 #include <stdint.h>
 #include "fm1_time.h"
 #include "fm1_sys.h"
-#if FELUCCA_CDC
+#if FELUCCA_BOOT_CLOCK
 #include "fm1_clock.h"
 #endif
 #include "fm1_irq.h"

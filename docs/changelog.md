@@ -87,9 +87,11 @@ recorded in the linked reports, rather than every current build or device.
   See the [bounded replay guide](native-emulator-replay.md); this supplies no
   hotspot attribution, physical timing result or device qualification.
 
-- **Read-only boot clock evidence:** normal USB SERIAL diagnostics report seven
-  saved startup clock-register words without changing clock configuration.
-  The collector retains raw values and supports older firmware that omits them.
+- **Read-only boot clock evidence (opt-in):** `FELUCCA_BOOT_CLOCK=1` (default `0`,
+  needs `FELUCCA_CDC`, refused with `--release`) makes USB SERIAL diagnostics report seven
+  saved startup clock-register words without changing clock configuration. Default
+  builds no longer carry the capture, POOL record, larger startup frame or `status`
+  lines. The collector retains raw values and supports firmware that omits them.
   Real bootloader/reset-path readings and any correction decision remain pending;
   see [diagnostic scope and setup](diagnostics.md#boot-clock-evidence).
 

@@ -228,6 +228,7 @@ static void con_status(void)
     con_puts(FELUCCA_VERSION);
     con_puts("\r\n");
     con_kv("uptime_ms", (int32_t)fm1_ms);
+#if FELUCCA_BOOT_CLOCK
     if (fm1_boot_clock.valid) {
         con_kx("boot_clock_10014", fm1_boot_clock.r10014);
         con_kx("boot_clock_1000c", fm1_boot_clock.r1000c);
@@ -237,6 +238,7 @@ static void con_status(void)
         con_kx("boot_clock_119a0", fm1_boot_clock.r119a0);
         con_kx("boot_clock_119a4", fm1_boot_clock.r119a4);
     }
+#endif
     con_kv("cpu_pct", (int32_t)(song.cpu_q8 * 100u / 256u));
     con_kv("audio_max_us", (int32_t)felucca_dbg.max_us);
 #if FELUCCA_RENDER_STAGE

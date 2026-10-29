@@ -12,7 +12,7 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | --- | --- | --- |
 | Build identity | Startup, ABOUT, INFO | Normal firmware identifies the version, commit or PR and fork source; see [build identity](../BUILDING.md#build-revision-and-pr-identity). |
 | Health, input and retained crashes | USB SERIAL `status`, `dbg`, `inp`, `crash`; `tools/fm1_diagnostics.py` | Normal CDC builds. The read-only collector retains raw replies, JSONL and summary counter deltas; [collection and interpretation](#collect-diagnostics) are described below. Input latency requires confirmed `FM1_INPUT_LAT` instrumentation; render load is not whole-chip CPU use. |
-| Boot clock registers | USB SERIAL `status` keys `boot_clock_*`; the same read-only collector | Normal CDC builds, captured once before normal initialization. Seven raw words help compare boot paths; they neither measure MHz nor correct clocks. See [boot clock evidence](#boot-clock-evidence). |
+| Boot clock registers | USB SERIAL `status` keys `boot_clock_*`; the same read-only collector | Opt-in `FELUCCA_BOOT_CLOCK=1` (needs `FELUCCA_CDC`), default `0`; absent from default builds. Captured once before normal initialization. Seven raw words help compare boot paths; they neither measure MHz nor correct clocks. See [boot clock evidence](#boot-clock-evidence). |
 | Interrupt misuse | `status` keys `isr_misuse`, `isr_misuse_pc` | Opt-in `FELUCCA_ISR_ASSERT=1` on the FM-1, default `0`. Counts guarded main-loop calls made in interrupt context; [target and host behavior differ](#interrupt-context-assertion-felucca_isr_assert). |
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
@@ -26,7 +26,7 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | Native audio-window evidence | Explicit `tools/native_audio_window.py` host run | Off unless invoked. Uses seven bounded emulator children and a verified retained replay basis to qualify a partial renderer window, repeated trace/PCM and silent controls. Builds no firmware and opens no device. See the [source-qualified recipe and limits](native-audio-window.md); modeled IRQ state and guest counts are not physical timing. |
 | Factory-sound digital levels | Explicit `tools/loudness_audit.py` host run with the optional `audit` dependency group | Off unless invoked. Renders 1–8 selected standard-profile cases with isolated generated inputs; retains pre/post-master stereo raw data, JSON metrics and fixed-scale WAVs under ignored `build/`. No device transport, firmware flag, target resource reservation or automatic level trim. Native arithmetic failures stop capture. See the [bounded workflow and meter/listening limits](loudness-audit.md); host levels do not calibrate physical DAC/USB output. |
 
-The four development-only flags above are refused with `--release`. The four-command
+The five diagnostic flags above (`FELUCCA_CRASH_CTX`, `FELUCCA_MUL64_REPRO`, `FELUCCA_SCREEN_CAPTURE`, `FELUCCA_RENDER_STAGE`, `FELUCCA_BOOT_CLOCK`) are refused with `--release`. The four-command
 collector does not run a reproducer, enable instrumentation or capture screenshots;
 it only reads fields supplied by the installed build. Record the exact build, flags,
 workload and hardware observations with each result. See the linked guides for resource
@@ -34,7 +34,10 @@ costs and distinguish host/emulator coverage from real FM-1 observations.
 
 ## Boot clock evidence
 
-With `FELUCCA_CDC=1` (the normal default), startup reads these seven 32-bit
+Boot-clock evidence is opt-in: build with `FELUCCA_BOOT_CLOCK=1` (default `0`; it needs
+`FELUCCA_CDC=1` and is refused with `--release`). Default builds contain none of the code,
+storage or `status` lines below, and the collector accepts their absence. With the flag on,
+startup reads these seven 32-bit
 registers, in order, after the existing CPU1 hold when compiled in and before TIMER4/reset/peripheral
 initialization. Their values survive RAM initialization through a startup-stack
 snapshot and are copied into a 32-byte target POOL record. Nothing is added to
@@ -56,7 +59,7 @@ them in each status snapshot in JSONL and the summary's start/end snapshots; it
 does not subtract them, classify the bootloader, infer MHz or label a clock safe.
 Older firmware may omit all seven. A partial group or malformed/out-of-range word
 invalidates that reply; absence is unavailable evidence, never seven zero values.
-CDC-disabled builds omit capture and storage. Early MMIO capture is target-only;
+Default (flag-off) and CDC-disabled builds omit capture and storage. Early MMIO capture is target-only;
 native replay and browser emulation do not read these hardware addresses.
 MIDI-only rescue has no CDC console;
 returning to normal startup captures a new boot, not the earlier rescue state.
@@ -68,7 +71,9 @@ being reclaimed after publication. There is no added audio/TIMER5 operation,
 PLL/clock write, delay or corrective path.
 Use matched polling/no-polling runs when assessing the extra reply traffic. Exact
 linked region/frame costs belong to the candidate's target resource report.
-A controlled standard-profile comparison against `29ad24fd` measured +324 bytes
+These costs apply only to `FELUCCA_BOOT_CLOCK=1` builds; with the flag off (the default) the
+capture, POOL record, startup-frame growth and status lines are absent. A controlled
+standard-profile comparison against `29ad24fd` measured +324 bytes
 app and +32 bytes POOL, unchanged ordinary RAM/RAMTEXT/NOINIT, and a startup
 caller frame of 32 rather than 8 bytes (+24 bytes, persistent). Protected interrupt
 function sizes/frames and static budget metrics matched that baseline; relocated

@@ -33,7 +33,7 @@ class Resolve(unittest.TestCase):
     def test_release_refuses_diagnostic_builds(self):
         """Every opt-in diagnostic build is refused by the release resolver."""
         self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE",
-                                       "FELUCCA_RENDER_STAGE"))
+                                       "FELUCCA_RENDER_STAGE", "FELUCCA_BOOT_CLOCK"))
         for flag in B.DIAG_FLAGS:
             with patch.dict(os.environ, {flag: "1"}):
                 with self.assertRaises(SystemExit) as raised:

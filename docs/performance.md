@@ -8,7 +8,7 @@ Re-read them if their behavior changes. Dated resource figures below precede the
 support while its runtime preference stays OFF; measure both that build and `FELUCCA_CPU2=0`
 under the current [modularity direction](modularity.md).
 
-Normal CDC builds expose [raw boot clock words](diagnostics.md#boot-clock-evidence)
+Opt-in `FELUCCA_BOOT_CLOCK=1` builds (default `0`, needs CDC) expose [raw boot clock words](diagnostics.md#boot-clock-evidence)
 for comparing known bootloader/reset paths. These saved registers are neither a
 live frequency measurement nor clock correction; record the available words and
 actual boot path alongside device timing, without inferring MHz from an identity.

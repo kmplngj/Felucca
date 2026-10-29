@@ -7,7 +7,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if FELUCCA_BOOT_CLOCK
 #include "../firmware/hal/fm1_clock.h"
+#endif
 
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1
