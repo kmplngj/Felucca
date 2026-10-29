@@ -22,6 +22,10 @@ CLOCK_FIELDS = tuple("boot_clock_" + address for address in
 # con_inp's optional reset-on-read latency group, not cumulative counters.
 INPUT_LATENCY_FIELDS = ("key_presses", "key_press_avg_us", "key_press_max_us", "key_notes",
                         "key_noteon_avg_us", "key_noteon_max_us", "key_dac_avg_us", "key_dac_max_us")
+SESSION_CORE_FIELDS = ("session_schema", "session_features", "session_learn",
+                       "session_settings_later", "session_menu")
+SESSION_LIMITS = dict(zip(SESSION_CORE_FIELDS, (1, 3, 15, 1, 1)),
+                      session_settings_pending=2, session_slice_pending=7)
 PROMPT = re.compile(rb"(?:^|\n)> $")
 COUNTERS = {
     "status": ("audio_late", "voices_shed", "voices_given_up", "usb_resets", "usb_sof",
@@ -47,6 +51,8 @@ SEMANTICS = {
     "uac_pkts": "Rate-epoch-local packet count; delta requires unchanged 44100/48000 Hz and unchanged "
                 "uac_rate_sets. A changed setter count may hide a rate reset, even at equal endpoint rates; "
                 "same-rate requests are conservatively rejected. Missing/unsupported markers leave delta unavailable.",
+    "session": "Optional versioned instantaneous main-loop state; feature-disabled fields are unavailable. "
+               "No safety verdict, persistence inhibition or reservation between polls; never subtract these fields.",
 }
 
 
@@ -139,6 +145,7 @@ def parse_response(command, raw):
                 "crash": {"uptime_ms"}}[command]
     if command == "status":
         numeric.update(CLOCK_FIELDS)
+        numeric.update(SESSION_LIMITS)
     if command == "inp":
         numeric.update(INPUT_LATENCY_FIELDS)
     for line in raw.decode("utf-8", errors="replace").replace("\r", "").split("\n"):
@@ -201,6 +208,23 @@ def parse_response(command, raw):
         value = fields[key]
         if not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
             issues.append("invalid uint32 " + key)
+    if command == "status" and SESSION_LIMITS.keys() & fields.keys():
+        issues += ["missing " + key for key in SESSION_CORE_FIELDS if key not in fields]
+        for key in SESSION_LIMITS.keys() & fields.keys():
+            value = fields[key]
+            if type(value) is not int or not 0 <= value <= SESSION_LIMITS[key]:
+                issues.append("invalid session field " + key)
+        if fields.get("session_schema") != 1:
+            issues.append("unsupported session schema")
+        features = fields.get("session_features")
+        if type(features) is not int or features not in (0, 1, 3):
+            issues.append("invalid session features")
+        else:
+            for key, feature in (("session_settings_pending", 1), ("session_slice_pending", 2)):
+                if features & feature and key not in fields:
+                    issues.append("missing " + key)
+                elif not features & feature and key in fields:
+                    issues.append("unavailable session field " + key)
     issues += ["duplicate " + key for key in duplicates]
     return {"fields": fields, "unknown_lines": extra, "issues": issues}
 

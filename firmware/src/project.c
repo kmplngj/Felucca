@@ -1137,7 +1137,8 @@ static persist_rec_t persist_saved __attribute__((section(".pool")));   /* the r
 /* main-loop scratch for a whole settings record (#212: PER6 is 2.7 KB, too much for the stack): persist_boot,
  * settings_poll, settings_unsaved. Each fills and uses it within the call; none calls another of them */
 static persist_rec_t persist_tmp __attribute__((section(".pool")));
-/* settings_poll's queue (#296: read only by project.c's settings functions; editor_backup.c clears it with a restore) */
+/* settings_poll's queue (#296: main-loop-owned; the read-only session diagnostics
+ * also observe it, and editor_backup.c clears it with a restore) */
 enum { PERSIST_IDLE, PERSIST_REQUESTED, PERSIST_RETRY };   /* RETRY: a flash error, polled again after 1000 ms */
 static uint8_t persist_pending;                 /* PERSIST_*: 1 requested, 2 waiting after a flash error */
 static uint32_t persist_retry_ms;

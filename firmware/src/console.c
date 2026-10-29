@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 #include "isr_assert.h"                    /* FM1_ASSERT_THREAD / FM1_ISR_SIM_* (#428) */
+#include "session_state.h"
 /* Serial console on the CDC-ACM function (FELUCCA_CDC=1): read-only
  * diagnostics. Runs in the main loop (cdc_task); usb_poll moves the bytes.
  * The baud rate is ignored. Nothing here writes memory or flash; `uboot`
@@ -223,11 +224,25 @@ static void con_uac(void)                              /* USB audio input: strea
 
 static void con_status(void)
 {
+    /* Collect before the first output: con_puts may wait for host-paced USB.
+     * The copied observations never acquire a session-wide quiescence meaning. */
+    session_state_t session = session_state_read();
     const engine_t *e = eng_of(TSEL->eng_req);
     con_puts("felucca ");
     con_puts(FELUCCA_VERSION);
     con_puts("\r\n");
     con_kv("uptime_ms", (int32_t)fm1_ms);
+    con_kv("session_schema", 1);
+    con_kv("session_features", session.features);
+    con_kv("session_learn", session.learn);
+    con_kv("session_settings_later", session.settings_later);
+    con_kv("session_menu", session.menu);
+#if FELUCCA_FLASH
+    con_kv("session_settings_pending", session.settings_pending);
+#if FELUCCA_SLICE
+    con_kv("session_slice_pending", session.slice_pending);
+#endif
+#endif
     if (fm1_boot_clock.valid) {
         con_kx("boot_clock_10014", fm1_boot_clock.r10014);
         con_kx("boot_clock_1000c", fm1_boot_clock.r1000c);

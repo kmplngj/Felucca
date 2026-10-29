@@ -70,6 +70,14 @@ sp 0x01C60000
 uptime_ms 50
 early 0
 """
+SESSION = """session_schema 1
+session_features 3
+session_learn 0
+session_settings_later 0
+session_menu 0
+session_settings_pending 0
+session_slice_pending 0
+"""
 
 
 def reply(command, text):
@@ -221,6 +229,14 @@ class ConsoleContractTests(unittest.TestCase):
             "-DFELUCCA_RENDER_STAGE=1", str(root / "tests/console_diagnostics.c"),
             "-o", str(binary)], check=True, timeout=30)
         cls.binaries["stage"] = binary
+        for name, flags in (("no-flash", ["-DFELUCCA_FLASH=0"]),
+                            ("no-slice", ["-DFELUCCA_SLICE=0"])):
+            binary = Path(cls.directory.name) / ("console-" + name)
+            subprocess.run(shlex.split(os.environ.get("CC", "cc")) + [
+                "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+                *flags, str(root / "tests/console_diagnostics.c"), "-o", str(binary)],
+                check=True, timeout=30)
+            cls.binaries[name] = binary
 
     def response(self, command, features=True, *arguments):
         raw = subprocess.check_output([str(self.binaries[features]), command, *arguments], timeout=5)
@@ -233,6 +249,27 @@ class ConsoleContractTests(unittest.TestCase):
     def test_counter_membership(self):
         self.assertEqual(set(diag.COMMANDS), set(EXPECTED_COUNTERS))
         self.assertEqual({command: set(names) for command, names in diag.COUNTERS.items()}, EXPECTED_COUNTERS)
+
+    def test_session_observations_and_disabled_variants(self):
+        for variant, features in ((True, 3), ("no-slice", 1), ("no-flash", 0)):
+            with self.subTest(variant=variant):
+                f = self.response("status", variant, "session-pending")
+                self.assertEqual(f["session_schema"], 1)
+                self.assertEqual(f["session_features"], features)
+                self.assertEqual(f["session_learn"], 15)
+                self.assertEqual(f["session_settings_later"], 1)
+                self.assertEqual(f["session_menu"], 1)
+                if features & 1:
+                    self.assertEqual(f["session_settings_pending"], 2)
+                else:
+                    self.assertNotIn("session_settings_pending", f)
+                if features & 2:
+                    self.assertEqual(f["session_slice_pending"], 5)
+                else:
+                    self.assertNotIn("session_slice_pending", f)
+                # eng_of injects a later ISR update before the first output.
+                # The command retains its original snapshot and queued byte.
+                self.assertEqual(self.response("status", variant, "session-later")["session_learn"], 7)
 
     def test_boot_clock_reader(self):
         root = Path(__file__).resolve().parents[1]
@@ -407,6 +444,35 @@ class ConsoleContractTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_session_group_optional_complete_and_strict(self):
+        legacy = diag.parse_response("status", reply("status", STATUS))
+        self.assertEqual(legacy["issues"], [])
+        self.assertTrue(diag.SESSION_LIMITS.keys().isdisjoint(legacy["fields"]))
+        for features in (0, 1, 3):
+            text = SESSION.replace("session_features 3", "session_features " + str(features))
+            for key, bit in (("session_settings_pending", 1), ("session_slice_pending", 2)):
+                if not features & bit:
+                    text = re.sub(r"(?m)^" + key + r" .*\n", "", text)
+            self.assertEqual(diag.parse_response("status", reply("status", STATUS + text))["issues"], [])
+            for key in diag.parse_response("status", text.encode())["fields"]:
+                with self.subTest(features=features, missing=key):
+                    bad = re.sub(r"(?m)^" + key + r" .*\n", "", text)
+                    self.assertTrue(diag.parse_response("status", reply("status", STATUS + bad))["issues"])
+        for key, limit in diag.SESSION_LIMITS.items():
+            for value in ("", "1:2", "-1", str(limit + 1), "4294967296"):
+                with self.subTest(key=key, value=value):
+                    text = re.sub(r"(?m)^" + key + r" .*", key + " " + value, SESSION)
+                    self.assertTrue(diag.parse_response("status", reply("status", STATUS + text))["issues"])
+            duplicate = diag.parse_response("status", reply("status", STATUS + SESSION + key + " 0\n"))
+            self.assertIn("duplicate " + key, duplicate["issues"])
+        for bad in (SESSION.replace("session_schema 1", "session_schema 0"),
+                    SESSION.replace("session_features 3", "session_features 2"),
+                    SESSION.replace("session_features 3", "session_features 0")):
+            self.assertTrue(diag.parse_response("status", reply("status", STATUS + bad))["issues"])
+        unknown = diag.parse_response("status", reply("status", STATUS + SESSION + "future_session: 1 2\n"))
+        self.assertEqual(unknown["issues"], [])
+        self.assertEqual(unknown["fields"]["future_session"], [1, 2])
+
     def test_all_known_numeric_fields_reject_disguised_or_empty_values(self):
         texts = {"status": STATUS, "dbg": DBG, "inp": INP, "crash": CRASH}
         for command, names in EXPECTED_NUMERIC.items():
@@ -774,6 +840,28 @@ class SessionTests(unittest.TestCase):
         summary = diag.collect(console, 2, 1, {"scenario": "simulated", "input_latency": input_latency},
                                events.append, clock=clock, sleep=clock.sleep)
         return summary, events, transport
+
+    def test_malformed_session_group_stops_and_retains_raw(self):
+        bad_groups = (SESSION.replace("session_schema 1", "session_schema 2"),
+                      SESSION.replace("session_learn 0", "session_learn 1:2"),
+                      SESSION.replace("session_settings_pending 0\n", ""),
+                      SESSION.replace("session_slice_pending 0", "session_slice_pending 8"),
+                      SESSION.replace("session_features 3", "session_features 2"))
+        for group in bad_groups:
+            with self.subTest(group=group), tempfile.TemporaryDirectory() as tmp:
+                capture = diag.Capture(Path(tmp) / "capture")
+                clock = Clock()
+                middle = STATUS.replace("uptime_ms 10000", "uptime_ms 11000").replace(
+                    "audio_late 7", "audio_late 9").replace("usb_sof 8000", "usb_sof 9000")
+                transport = SessionTransport(clock, command_texts={(1, "status"): middle + group})
+                summary = diag.collect(diag.Console(transport, clock=clock), 2, 1, {}, capture.emit,
+                                       clock=clock, sleep=clock.sleep)
+                capture.close()
+                self.assertEqual(summary["validity"], "INVALID")
+                self.assertTrue(all(v is None for c in summary["deltas"].values() for v in c.values()))
+                self.assertIn(group.replace("\n", "\r\n").encode(), (Path(tmp) / "capture/console.raw").read_bytes())
+                self.assertEqual(json.loads((Path(tmp) / "capture/summary.json").read_text())["validity"], "INVALID")
+                self.assertEqual(transport.writes[-1], b"status\r")
 
     def test_malformed_known_scalars_stop_and_persist_invalid_session(self):
         cases = (("status", "audio_late", STATUS), ("status", "boots", STATUS),
