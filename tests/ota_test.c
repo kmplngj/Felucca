@@ -25,6 +25,12 @@ static uint8_t *logical;
 static size_t logical_len;
 static uint8_t rx[1024];                 /* one pending host frame (7-bit bytes) */
 static uint32_t rx_len, rx_full;
+#ifdef LDR_TRACE_TEST
+static uint8_t trace_wire_reply[32];
+static uint32_t trace_wire_replies;
+static uint8_t trace_wire_packet[50];
+static uint32_t trace_wire_packet_len;
+#endif
 static uint32_t now_ms, requests, ident_replies, mute_after = 0xFFFFFFFFu, bad_erase, erases;
 static int committed;
 static uint8_t committed_parm[112];
@@ -68,6 +74,17 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)
     if (p[0] != 0xF0 || p[n - 1] != 0xF7) { printf("bad wire framing\n"); exit(1); }
     d = unpack7h(p + 1, n - 2, u);
     if (u[2] == 0x11) { ident_replies++; return 0; }
+#ifdef LDR_TRACE_TEST
+    if (u[2] == 0x3Eu) {
+        if (d != 39u || u[3] != 32u) abort();
+        memcpy(trace_wire_reply, u + 6, 32);
+        if (n > sizeof trace_wire_packet) abort();
+        memcpy(trace_wire_packet, p, n);
+        trace_wire_packet_len = n;
+        trace_wire_replies++;
+        return 0;
+    }
+#endif
     if (d != 15 || u[2] != 0x30) { printf("unexpected device msg cmd %02x len %u\n", u[2], d); exit(1); }
     addr = u[7] | u[8] << 8 | u[9] << 16 | (uint32_t)u[10] << 24;
     len = u[11] | u[12] << 8 | u[13] << 16;

@@ -1322,3 +1322,7 @@ It needs the configured target tools and SDK but does not compile firmware. Sour
 artifact hashes bind actual working bytes; a recorded dirty checkout is not identified
 by its commit alone. Releases and CI artifacts include both JSON sidecars; local release
 `SHA256SUMS` covers them. These reports do not measure live stack use or FM-1 deadlines.
+
+### Developer-only loader LCD observations
+
+`FELUCCA_LDR_LCD_TRACE=1` enables a bounded RAM trace and read-only native query in the update loader, plus a three-second post-success read window. Default is0; release builds refuse1. Keep active timing separate from production evidence. See [the exact build, wire contract, client and pending device procedure](docs/loader-lcd-trace.md).

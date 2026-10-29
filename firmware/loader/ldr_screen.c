@@ -34,6 +34,7 @@ static uint8_t ldr_args[4] __attribute__((aligned(4)));
 static uint32_t ldr_screen_state, ldr_screen_percent, ldr_screen_next;
 static int32_t ldr_screen_error;
 static uint32_t ldr_lcd_budget_start, ldr_lcd_budget_us;
+#include "ldr_screen_trace.h"
 
 static void ldr_lcd_arm(uint32_t us)
 {
@@ -158,30 +159,38 @@ static void ldr_screen_draw(uint32_t first, uint32_t last)
         if (ldr_screen_state == LDR_FAILED)
             ldr_row_text(y, 212, 0, 1, "KEEP POWER AND USB ON");
         if (!ldr_lcd_data(ldr_line, sizeof ldr_line)) return;
+        LDR_TRACE_ROW();
         ldr_poll();
     }
 }
 static void ldr_screen_status(uint32_t state, int32_t code)
 {
+    LDR_TRACE_T0;
+    LDR_TRACE_BEGIN(1u, 0u, 240u);
     ldr_screen_state = state;
     ldr_screen_error = code;
     ldr_screen_percent = 0;
-    if (ldr_lcd_failed) return;
+    if (ldr_lcd_failed) { LDR_TRACE_END(-1); return; }
     ldr_screen_next = ldr_ms() + 250u;
     ldr_screen_draw(0, 240u);
+    LDR_TRACE_END(-1);
 }
 static void ldr_screen_progress(uint32_t done, uint32_t total)
 {
     uint32_t percent;
+    LDR_TRACE_T0;
     if (ldr_lcd_failed || !total || done > total) return;
     percent = done * 100u / total;                   /* app span is < 2^32 / 100 */
     if (percent == ldr_screen_percent || (done < total && (int32_t)(ldr_ms() - ldr_screen_next) < 0)) return;
+    LDR_TRACE_BEGIN(2u, ldr_screen_state == LDR_WRITING && ldr_screen_framed ? LDR_STRIP_TOP : 0u,
+                    ldr_screen_state == LDR_WRITING && ldr_screen_framed ? LDR_STRIP_END : 240u);
     ldr_screen_percent = percent;
     ldr_screen_next = ldr_ms() + 250u;
     if (ldr_screen_state == LDR_WRITING && ldr_screen_framed)
         ldr_screen_draw(LDR_STRIP_TOP, LDR_STRIP_END);   /* only the number changed */
     else
         ldr_screen_draw(0, 240u);
+    LDR_TRACE_END(-1);
 }
 static void ldr_screen_init(void)
 {
@@ -198,6 +207,17 @@ static void ldr_screen_init(void)
     ldr_args[0] = 0;
     if (!ldr_lcd_data(ldr_args, 1) || !ldr_lcd_cmd(0x21) || !ldr_lcd_cmd(0x13)) return;
     ldr_screen_status(LDR_WAITING, 0);
+#if FELUCCA_LDR_LCD_TRACE
+    {
+        int completed;
+        LDR_TRACE_T0;
+        LDR_TRACE_BEGIN(3u, 0u, 0u);
+        ldr_lcd_arm(LDR_LCD_WAIT_US);
+        completed = ldr_lcd_cmd(0x29);
+        LDR_TRACE_END(completed);
+    }
+#else
     ldr_lcd_arm(LDR_LCD_WAIT_US);                    /* not the first draw's leftover budget */
     ldr_lcd_cmd(0x29);
+#endif
 }
