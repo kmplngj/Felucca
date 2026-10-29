@@ -289,6 +289,46 @@ static void usb_clean(void)
     }
 }
 
+/* #775: isolate the click from musical energy. Both stereo channels must stay
+ * out of USB in FIXED too, and MASTER zero must mute the entire DAC signal. */
+static void usb_click_matrix(void)
+{
+    static const uint32_t master[3] = {0, 1024, 4096};
+    static int32_t full[100u * 2u * CTL];
+    uint32_t eq, fixed, m, on, b, i;
+    int32_t out[2u * CTL];
+    char label[120];
+    for (eq = 0; eq < 3u; eq++) {
+        fresh(); grid_track(); fx_lowcut = (uint8_t)eq;
+        click_mode = CLICK_ON; transport_req = 1;
+        for (b = 0; b < 100u; b++) {
+            audio_block(out, CTL);
+            for (i = 0; i < 2u * CTL; i++) full[b * 2u * CTL + i] = out[i] / (1 << OUT_SHIFT);
+        }
+        for (fixed = 0; fixed < 2u; fixed++)
+            for (m = 0; m < 3u; m++)
+                for (on = 0; on < 2u; on++) {
+                    int ok = 1, heard[2] = {0, 0};
+                    fresh(); grid_track(); fx_lowcut = (uint8_t)eq;
+                    fx_usb_fixed = (uint8_t)fixed; song.master_q12 = master[m];
+                    click_mode = on ? CLICK_ON : CLICK_OFF; transport_req = 1;
+                    for (b = 0; b < 100u; b++) {
+                        audio_block(out, CTL);
+                        for (i = 0; i < 2u * CTL; i++) {
+                            int32_t dac = out[i] / (1 << OUT_SHIFT);
+                            int32_t want = on ? (full[b * 2u * CTL + i] * (int32_t)master[m]) >> 12 : 0;
+                            ok &= !tap_blk[i] && dac == want;
+                            heard[i & 1u] |= dac != 0;
+                        }
+                    }
+                    snprintf(label, sizeof label, "EQ %u %s MASTER %u CLICK %s: stereo DAC level, USB silent", eq,
+                             fixed ? "FIXED" : "MASTER", master[m], on ? "ON" : "OFF");
+                    check(label, ok && heard[0] == (on && master[m]) && heard[1] == (on && master[m]));
+                }
+    }
+    fx_usb_fixed = fx_lowcut = 0;
+}
+
 /* 1.2 (Discussion #165): MENU > SCOPE. OUT (the default) the HOME scope reads the music after MASTER (audio.c, before
  * the click); MIX the mix before MASTER (fx.c scope_take_mix): the same picture at any MASTER. The click in neither */
 static int16_t scope_run(uint32_t mix, int32_t master, uint32_t click)
@@ -506,6 +546,7 @@ int main(void)
     sound();
     modes();
     usb_clean();
+    usb_click_matrix();
     scope();
     count_in();
     count_in_notes();
