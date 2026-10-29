@@ -39,11 +39,15 @@ static void curve_guide(int32_t x, int32_t y0, int32_t y1)
 }
 /* id: ATK DEC SUS REL; fi: the one in focus (0..3; else none), its marker (curve_marker; hot: the knob turns);
  * labels: A D S R under the baseline (room for S capitals: graph_ht's 12 % under the curve) */
-static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint32_t fi, int hot, int labels)
+static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint32_t fi, int hot, int labels,
+                          const int16_t *values)
 {
     int32_t mx = -1, my = 0, mbot = -1;
-    int32_t a = 4 + t->p[id[0]] * 50 / 127, d = 6 + t->p[id[1]] * 50 / 127, r = 6 + t->p[id[3]] * 60 / 127;
-    int32_t top = 8 * graph_ht / 100, bot = 88 * graph_ht / 100, sus = t->p[id[2]] * 1000 / 127;   /* 0..1000; (8 %:
+    int32_t a = 4 + (values ? values[0] : t->p[id[0]]) * 50 / 127;
+    int32_t d = 6 + (values ? values[1] : t->p[id[1]]) * 50 / 127;
+    int32_t r = 6 + (values ? values[3] : t->p[id[3]]) * 60 / 127;
+    int32_t top = 8 * graph_ht / 100, bot = 88 * graph_ht / 100;
+    int32_t sus = (values ? values[2] : t->p[id[2]]) * 1000 / 127;   /* 0..1000; (8 %:
                                                        * the attack peak's marker stub clear of the top) */
     int32_t x0 = 12, x1 = x0 + a, x3 = 226 - r, i, px, py;
     int32_t e = 32768;                                                  /* exp(-4.6 u), Q15 */
@@ -91,9 +95,9 @@ static void graph_adsr_of(const track_t *t, uint16_t c, const uint8_t *id, uint3
         curve_marker(mx, my, mbot, hot);
 #undef EGY
 }
-static void graph_adsr(const track_t *t, uint16_t c)
+static void graph_adsr(const track_t *t, uint16_t c, const int16_t *values)
 {
-    graph_adsr_of(t, c, cur_page()->id, ui.read_bank.focus, ui.hot_t && ui.hot_col == ui.read_bank.focus, 1);
+    graph_adsr_of(t, c, cur_page()->id, ui.read_bank.focus, ui.hot_t && ui.hot_col == ui.read_bank.focus, 1, values);
 }
 
 static void graph_lfo(const track_t *t, uint16_t c)
@@ -169,6 +173,7 @@ static uint32_t curve_sig(const track_t *t, uint32_t k)
 {
     int32_t cut = filter_cut_id(t), res = filter_res_id(t, cut);
     uint32_t h = k * 2654435761u + (uint32_t)(ui.hot_t && ui.hot_col == ui.read_bank.focus) * 40503u;
+    h = (h ^ ui.read_bank.focus) * 16777619u;         /* the curve marker follows the focused knob */
     h = (h ^ (uint32_t)(cut >= 0 ? t->p[cut] : 0)) * 16777619u;
     h = (h ^ (uint32_t)(res >= 0 ? t->p[res] : 0)) * 16777619u;
     h = (h ^ (uint32_t)t->p[P_FTYPE]) * 16777619u;
@@ -1432,33 +1437,39 @@ static uint32_t scope_prepare(uint32_t height);
 
 /* Keep the two checks in draw_graph's shared stack frame: outlining this
  * function reserves SONG's layout scratch even for a melodic roll. */
-static inline __attribute__((always_inline)) uint32_t graph_signature(void)
+static inline __attribute__((always_inline)) uint32_t graph_signature_of(const int16_t *adsr)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
     uint32_t h = 2166136261u, i;
-    if (ui.home) {                                   /* hash the trace that graph_scope will draw; the curve's state */
+    if (!adsr && ui.home) {                          /* a non-NULL snapshot is ordinary ADSR, never HOME */
         uint32_t k = panel_curve(t);
         if (k == CK_NONE)
             return scope_prepare(graph_h());
         return curve_sig(t, k) ^ (graph_mode() == GM_CURVE ? scope_prepare(SCOPE_STRIP_H) : 0u);
     }
     h ^= (uint32_t)pg->graph * 131u + TSEL->eng_req + song.sel * 7777u + ui.page * 1291u;
-    if ((pg->graph == GR_NONE && !macro_page()) || pg->graph == GR_ARP) {
+    if (!adsr && ((pg->graph == GR_NONE && !macro_page()) || pg->graph == GR_ARP)) {
         uint32_t k = panel_curve(t);                 /* (#572: the curve in the scope's place, still in STILL) */
         h ^= (k == CK_NONE || graph_mode() == GM_CURVE ? ui.frame / 2u : 0u) + curve_sig(t, k);
     }
-    for (i = 0; i < P_COUNT; i++)
-        h = (h ^ (uint32_t)t->p[i]) * 16777619u;
+    for (i = 0; i < P_COUNT; i++) {
+        int32_t value = t->p[i];
+        if (adsr) {
+            for (uint32_t k = 0; k < 4u; k++)
+                if (i == pg->id[k]) { value = adsr[k]; break; }
+        }
+        h = (h ^ (uint32_t)value) * 16777619u;
+    }
     h ^= (uint32_t)TSEL->preset * 7u + (uint32_t)song.g[G_SLOT] * 13u + TSEL->user * 257u + up_gen * 7919u + ui.uslot * 104729u +
          ui.ppick * 1299709u;
-    if (pg->graph == GR_CHORD) {                     /* the last chord played */
+    if (!adsr && pg->graph == GR_CHORD) {            /* the last chord played */
         h = (h ^ (chord_last[song.sel].root + 131u * chord_last[song.sel].mask)) * 16777619u;
         for (i = 0; i < CHORD_MAX; i++)
             h = (h ^ chord_last[song.sel].note[i]) * 16777619u;
         h ^= (uint32_t)t->engine * 389u;             /* (MONO and kits follow the sounding engine) */
     }
-    if (pg->graph == GR_SONG) {
+    if (!adsr && pg->graph == GR_SONG) {
         h ^= ui.song_row * 40503u + chain_config.count * 7919u + ui.song_trk * 3571u;
         h = fnv(h, chain_config.row, sizeof chain_config.row);
         h ^= chain.running ? (chain.row + 1u) * 104729u + chain.remaining * 1299709u : 0u;
@@ -1473,20 +1484,20 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
     }
     if (pg->graph == GR_ADSR)                        /* (#572: the focused stage's dot, the accent while it turns) */
         h ^= (ui.read_bank.focus + 1u) * 2246822519u + (uint32_t)(ui.hot_t && ui.hot_col == ui.read_bank.focus) * 3266489917u;
-    if (pg->graph == GR_MOD)
+    if (!adsr && pg->graph == GR_MOD)
         h ^= (mod_ui_slot + 1u) * 40503u;
-    if (pg->graph == GR_SLCR && t->p[P_SLCR])        /* the SLICER's step playing */
+    if (!adsr && pg->graph == GR_SLCR && t->p[P_SLCR]) /* the SLICER's step playing */
         h ^= (sl[song.sel].idx + 1u) * 2654435761u;
-    if (pg->graph == GR_SLOTS) {                     /* (a checksum over each slot) */
+    if (!adsr && pg->graph == GR_SLOTS) {            /* (a checksum over each slot) */
         for (i = 0; i < 4u; i++)
             h ^= (uint32_t)graph_project_used(i) << (20u + i);
         h += graph_pname_sig;
     }
-    if (pg->graph == GR_EVENTS)                      /* AUTOMATION: the rows, the one selected, + ADD's place, PLAY,
+    if (!adsr && pg->graph == GR_EVENTS)             /* AUTOMATION: the rows, the one selected, + ADD's place, PLAY,
                                                       * QUANTIZE */
         h = (h ^ ev_sig()) * 16777619u;
 #if FELUCCA_SLICE
-    if (pg->graph == GR_SLICES && slice_page_ok()) h ^= slice_sig();
+    if (!adsr && pg->graph == GR_SLICES && slice_page_ok()) h ^= slice_sig();
 #endif
     if (pg->scope == SC_ENGINE && (eng_of(t->eng_req) == &ENG_WHEEL || eng_is(t->eng_req, ENGI_FM6) ||
                                    (FELUCCA_FM4 && t->eng_req == ENGI_DIGITAL)))
@@ -1495,7 +1506,7 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
                                                      * levels, FB; the operator pages: the operator, the stage) */
         h ^= (fm6_pgen[(t - trk) % NTRK] + 1u) * 2246822519u + (fop_op + 1u) * 40503u + (fop_stg + 1u) * 7919u;
     if (pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_SAMPLE) h ^= sample_wave.pos * 13u + sample_wave.key;
-    if (pg->graph == GR_ROLL) {
+    if (!adsr && pg->graph == GR_ROLL) {
         uint32_t ph = pr_playhead(t);
         if (!detail_on() && !drum_track(t)) {
             ph = 0;                                  /* melodic roll: playhead tracked separately */
@@ -1516,6 +1527,10 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
         }
     }
     return h;
+}
+static inline __attribute__((always_inline)) uint32_t graph_signature(void)
+{
+    return graph_signature_of(0);
 }
 /* 4-letter engine tags of the preset list */
 static const char *eng_abbr(uint32_t e)
@@ -2215,7 +2230,7 @@ static void panel_scope(const track_t *t, uint16_t c)
         int32_t ht = graph_ht;
         graph_ht = bot * 100 / 88;                   /* (graph_adsr_of: its baseline at 88 % of graph_ht) */
         int32_t id = column_param(ui.read_bank.focus);
-        graph_adsr_of(t, c, AMP_ENV, id >= P_ATK && id <= P_REL ? (uint32_t)(id - P_ATK) : 4u, hot, !strip);
+        graph_adsr_of(t, c, AMP_ENV, id >= P_ATK && id <= P_REL ? (uint32_t)(id - P_ATK) : 4u, hot, !strip, 0);
         graph_ht = ht;
     }
     if (strip)
@@ -2523,6 +2538,8 @@ static void draw_graph(void)
     const track_t *t = TSEL;
     uint16_t c = ACC;
     uint32_t sig, ph = NSTEP, old_ph = pr_shown;
+    int16_t adsr_values[4];
+    int adsr = !ui.home && !ui.layer && !page_over && pg->graph == GR_ADSR;
     int roll = !ui.home && pg->graph == GR_ROLL && !detail_on() && !drum_track(t);
     int damage;
     if (roll) ph = pr_playhead(t);
@@ -2545,6 +2562,14 @@ static void draw_graph(void)
              (ph + 1u == old_ph || old_ph + 1u == ph);  /* start/stop, wrap and skipped steps: full fallback */
     ui.graph_sig = sig;
     cv_begin(240, graph_h(), T_BG);
+    if (adsr) {
+        /* lcd_sync may have let automation advance. Hash and plot the same
+         * four-value snapshot; keep raster work outside the short IRQ guard. */
+        uint32_t f = motion_guard();
+        for (uint32_t k = 0; k < 4u; k++) adsr_values[k] = t->p[pg->id[k]];
+        motion_unguard(f);
+        sig = graph_signature_of(adsr_values);
+    }
     cv_rrect(3, 0, 234, graph_h(), 5, T_SURF, T_BG);   /* full native panel */
     cv_bg = T_SURF;                                  /* (text drawn with cv_text lands on it) */
     cv_oy = GOY;                                     /* graphs on a 100 px scale */
@@ -2553,7 +2578,7 @@ static void draw_graph(void)
     } else {
         switch (pg->graph) {
         case GR_ADSR:
-            graph_adsr(t, c);
+            graph_adsr(t, c, adsr ? adsr_values : 0);
             break;
         case GR_LFO:
             graph_lfo(t, c);
@@ -2655,4 +2680,5 @@ static void draw_graph(void)
         cv_blit(0, graph_y());
     pr_shown = ph;
     pr_valid = (uint8_t)roll;
+    if (adsr) ui.graph_sig = sig;                    /* the values submitted, even if a later ISR changed t->p */
 }

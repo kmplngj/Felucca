@@ -108,8 +108,8 @@ fixed blends (`firmware/src/gfx.c palette_set`). Direction A draws on BG only (S
 - **THEME** values, curves and the palette's identity.
 - **ACCENT** the one active thing: the knob turning now (its rule, numeral and curve dot), the step edited,
   the tab underline. Never on a resting label.
-- GREY and MONO are strictly neutral (a test enforces it); in MONO, where accent equals theme, a turning
-  knob also inverts its state text.
+- GREY and MONO are strictly neutral (a test enforces it). In every palette a turning knob also inverts
+  its state text, a cue that remains where the accent matches the theme or MID.
 - Built-in palettes keep every emitted text pair at or above 4.5:1. CUSTOM is user-controlled.
 
 ## Typography
