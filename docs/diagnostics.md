@@ -80,7 +80,10 @@ identified candidate and collect one run per available bootloader/reset path.
 Record known bootloader identity, cold versus warm start, firmware/package hash
 and all seven words. Do not switch bootloaders or interrupt updates merely to
 collect another row. Host fake-register/parser tests establish ordering and format
-only; real M-VAVE V15/V16, m-bootloader, warm-reset and OTA-return observations
+only. [Recorded device observations](https://github.com/kmplngj/Felucca/pull/761#issuecomment-6490745576)
+cover V15/V16 and m-bootloader 1.2 cold starts and OTA returns on the earlier
+standalone #648 and integrated `526824f3` builds. They do not qualify this merged
+revision. Its reset-path checks, loaded polling comparisons and live stack evidence
 remain pending. [#618](https://github.com/kmplngj/Felucca/issues/618) owns the later
 retain/defer decision; no clock correction is enabled by this diagnostic.
 

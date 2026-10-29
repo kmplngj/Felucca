@@ -435,6 +435,12 @@ unit fixture "" u_fixture
                          {f"catalog_{i}" for i in (10, 11, 12, 13)})
         self.assertIn('asan_fuzz_ed', plan)
         self.assertIn('sanitizer', plan['asan_fuzz_ed']['needs'])
+        self.assertEqual(plan['diagnostics']['needs'], [])
+        self.assertEqual(plan['asan_boot_clock']['dependencies'], ['diagnostics'])
+        self.assertEqual(plan['asan_boot_clock']['needs'], ['assets', 'sanitizer'])
+        self.assertEqual([unit['name'] for unit in test_jobs.coverage.select_plan(
+            list(plan.values()), dict(kind='focused', selected=['asan_boot_clock']))],
+            ['asan_boot_clock', 'diagnostics'])
         self.assertEqual(plan['regression']['producers'],
                          ['regress', 'regress_os', 'regress_cpu2_0', 'regress_c1',
                           'tests/regress_counter_test.py'])
