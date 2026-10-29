@@ -48,4 +48,3 @@ Planning/source inspection only: no firmware changes, benchmarks, target builds,
 - Portable instruments: [Engines-GPL #39](https://github.com/kmplngj/Felucca-Engines-GPL/issues/39).
 - Native integration: #763.
 - Existing optimization owners #459, #17 and #179 now contain pinned Ravel implementation evidence; no duplicate optimization issues created.
-
