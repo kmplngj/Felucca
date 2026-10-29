@@ -1299,7 +1299,7 @@ else
             -fno-sanitize-recover=all -o "$A/boot_clock_test" tests/boot_clock_test.c
         run "Boot clock: ordered reads and immutable publication (ASan/UBSan)" "$A/boot_clock_test"
     }
-    unit asan_boot_clock "diagnostics" u_asan_boot_clock
+    unit asan_boot_clock "" u_asan_boot_clock
 
     u_asan_lcd_power() {
         ${CC%% *} -std=c11 -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all \
