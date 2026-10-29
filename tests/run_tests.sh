@@ -344,6 +344,7 @@ u_portable() {
     $CC -O2 -fstrict-aliasing -fno-builtin -o "$OUT/libc_test" tests/libc_test.c
     run "firmware libc: copy/fill sizes, alignments, sentinels and typed objects" "$OUT/libc_test"
     run "exact PR firmware: selection, download integrity and installer handoff" python3 tests/fm1_pr_test.py
+    run "USB tone recordings: synchronization, matched-frame counts and complete WAV evidence" python3 tests/uac_tone_check_test.py
 }
 unit portable "" u_portable
 

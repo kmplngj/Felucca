@@ -41,7 +41,7 @@ static void fm1_wdt_feed(void)
 }
 static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
+#include "host_encoder_noop.h"
 static void lcd_sync(void) {}
 static void lcd_power(uint32_t s) { (void)s; }
 static void lcd_wake_now(void) {}

@@ -32,6 +32,18 @@ recorded in the linked reports, rather than every current build or device.
 
 ## Fork development
 
+### Fixed
+
+- The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
+  complete, valid key-latency group before reporting measured latency. Missing
+  older-firmware metrics remain unmeasured; malformed present known numeric fields,
+  including empty or colon-containing values, invalidate collection while retaining
+  raw evidence. USB audio packet deltas also require
+  unchanged supported sample-rate and setter evidence: observed rate boundaries
+  invalidate collection even when a reset count overtakes its old value. Missing
+  legacy rate evidence leaves packet deltas unavailable. No firmware or protocol
+  change.
+
 ### Added
 
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
@@ -163,6 +175,16 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- The offline USB tone checker rejects recordings without synchronized tone data,
+  unsupported rates and incomplete PCM, and reports matched frames accurately.
+  [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
+  qualification separate from the offline result.
+
+- PR-source cleanup protects reflog-only detached commits and refuses removal with
+  deinitialized or orphan private submodule repositories. It preserves history
+  without automatic metadata repair. See the
+  [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
+
 - Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
   full commit provenance remain in release metadata; the UI regression gate now
   exercises the generated Dev version before merge. This fixes the initial Dev
@@ -220,6 +242,13 @@ recorded in the linked reports, rather than every current build or device.
   behavior remain covered by regressions. The [device results](midi-dsp-device-results-2026-10-21.md)
   pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
   See [implementation evidence and test procedure](midi-dsp-reliability.md).
+
+- Backport the remaining signed DSP arithmetic fixes from upstream 1.7.0:
+  ANALOG, LOFI, TRIO, WHEEL, NOISE and native PHASE retain their output while
+  avoiding undefined signed shifts and overflow. The fork's engine API,
+  zero-mix ANALOG path and per-part PHASE scratch remain intact. See the
+  [arithmetic follow-up](midi-dsp-reliability.md#upstream-170-arithmetic-follow-up)
+  for provenance and validation limits; FM-1 listening remains pending.
 
 - **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
   immediately when their brightness is changed without leaving the row. Physical

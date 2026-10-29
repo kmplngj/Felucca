@@ -442,11 +442,20 @@ bounded audition files. Host levels do not qualify physical DAC/USB levels or
 authorize changing factory sounds.
 
 The `input` unit also runs `python3 tests/input_contract_test.py`. It compiles
-the actual hardware, UI-test, settings-test and browser input adapters against the
-shared button-edge, note-edge and encoder function types they implement. Negative
-fixtures require incompatible signatures across the UI, settings and browser
-adapters to fail compilation. The UI fake supplies press edges only; this check
-does not add release simulation or qualify physical input timing.
+the actual hardware, UI-test and browser input adapters against the shared
+button-edge, note-edge and encoder function types they implement. Seven partial
+host adapters (backup, FM6-bank, FM6-effective-patch, engine-ID, editor, persistence
+and settings) share `tests/host_encoder_noop.h`, which always returns zero steps
+without accumulating input or modeling timing. Actual-source checks compile all
+seven consumers; incompatible encoder return and parameter types must fail and
+compile only after removing the shared typed declaration. UI and browser signature
+checks remain independent, as do their delayed and accumulated encoder models.
+The UI fake supplies press edges only; this check does not add release simulation
+or qualify physical input timing.
+
+The portable unit also checks the offline USB diagnostic-tone verifier with
+`python3 tests/uac_tone_check_test.py`. See [recording requirements and interpretation](docs/diagnostics.md#usb-test-tone-recordings).
+Synthetic WAV tests check evidence handling; they do not qualify an FM-1 recording.
 
 The `lcd_contract` unit runs `python3 tests/lcd_contract_test.py` after its
 `icon_streams` prerequisite generates the actual icon fixture's reference header.
@@ -1085,6 +1094,18 @@ worktrees, changed HEADs, local edits, and additional files, including ignored
 build output and files inside nested submodules. Preserve or remove those files
 yourself before retrying; it does not automatically clean or stash them. Keep
 firmware artifacts outside the disposable worktree if you need them later.
+Submodule commits retained only in a reflog are protected too, including detached
+work followed by a return to the pinned commit. Deleting a local branch does not
+remove that protection. Push the work to an independent repository, or export and
+verify it outside the disposable worktree, before resolving the local history and
+retrying; a branch inside its private submodule Git directory is not an external
+backup. The helper does not expire reflogs or discard commits for you.
+Removal also refuses deinitialized tracked submodules and inactive/orphan private
+submodule repositories that recursive working-tree checks cannot inspect. Restore
+and initialize tracked submodules explicitly, inspect and preserve their history,
+then retry. Preserve and resolve orphan repositories manually; an external backup
+alone does not make the helper remove their metadata. Cleanup never initializes
+submodules or resolves inactive/orphan metadata automatically.
 Returning to your original directory or removing PR sources does **not** revert
 the FM-1: reinstall the previously saved firmware package to restore that build.
 

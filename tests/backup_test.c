@@ -12,7 +12,7 @@
 #include "hostsim.c"
 #undef main
 
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
+#include "host_encoder_noop.h"
 static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
 static void lcd_sync(void) {}

@@ -6,7 +6,7 @@
 #include "hostsim.c"
 #undef main
 
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
+#include "host_encoder_noop.h"
 static uint32_t irq_start_race, irq_races;
 static void fm1_irq_off(void)
 {

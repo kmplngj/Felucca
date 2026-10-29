@@ -16,6 +16,7 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
 | Rendered-screen screenshots | USB SERIAL `screen` commands; `tools/fm1_screenshot.py` | Development-only `FELUCCA_SCREEN_CAPTURE=1`, default `0`. Stopped static HOME/menu pixels become a verified PNG/JSON. Default capture requires an awake display; explicit `--wake` silently wakes, awaits redraw and holds awake for the bounded session. See [capture setup, bounded memory and failure modes](screen-capture.md); physical LCD colours/backlight are outside its scope. |
+| USB test-tone continuity | Existing stereo WAV files; `tools/uac_tone_check.py` | Offline checker for a known `FELUCCA_UAC_TONE=1` build; tone mode defaults off. Requires complete 16-bit stereo PCM at the configured 44.1/48 kHz rate and actual tone synchronization. See [recording interpretation](#usb-test-tone-recordings); this is separate from CDC collection and does not qualify physical USB or measure diagnostic overhead. |
 | Raw render-stage evidence | Optional `status` `stage_*` fields; existing read-only collector | Development-only `FELUCCA_RENDER_STAGE=1`, default `0`. Inclusive CPU0 mix-call sums, empty controls and an observer window with matching nested ticks; rejected/invalid snapshots remain unavailable. See [units, lifetimes, resource limits and matched FM-1 procedure](render-stage-evidence.md). Raw TIMER4 ticks establish no frequency, exclusive CPU cost or measured overhead; hardware acceptance is pending. |
 | Voice-retirement/LFO observation | Explicit `tools/retirement_measure.py` host run | Off unless invoked. Exports pinned source and applies guarded instrumentation only to ignored host copies; no device transport, firmware flag or target resource reservation. Observer file IO invalidates timing comparisons. See the [host measurement and reproduction](voice-retirement-measurement.md) and [performance scope](performance.md#host-retirement-observation). |
 | Native emulator replay evidence | Explicit `tools/native_emulator_replay.py` host run | Off unless invoked. Requires matched existing native artifacts and a corrected pinned-emulator receipt; retains bounded repeated trace/PCM, modeled-UART delivery and silent controls. Builds no firmware and changes no target resource reservation or device state. See the [reproduction and limits](native-emulator-replay.md); this is not a hotspot or physical-timing report. |
@@ -28,6 +29,36 @@ collector does not run a reproducer, enable instrumentation or capture screensho
 it only reads fields supplied by the installed build. Record the exact build, flags,
 workload and hardware observations with each result. See the linked guides for resource
 costs and distinguish host/emulator coverage from real FM-1 observations.
+
+## USB test-tone recordings
+
+For an existing recording from a known `FELUCCA_UAC_TONE=1` build, run:
+
+```sh
+python3 tools/uac_tone_check.py recording.wav
+```
+
+Record the firmware revision/flags, configured USB rate, recorder rate and host
+setup alongside the WAV. Tone mode supplies fixed diagnostic triangles on the USB
+capture stream; an ordinary musical recording is not a tone fixture. The checker
+accesses no device and changes no firmware or settings.
+
+Leading silence is allowed. The first non-silent data must synchronize with a
+pair of consecutive tone frames; unrelated data, a nonzero invalid prefix,
+unsupported rates and incomplete PCM fail. The reported checked-frame count
+includes only matched frames. A discontinuity in the expected tone sequence
+produces a break; resynchronization does not make that file pass. The pattern
+repeats every 100 frames, so loss or repetition of a complete pattern period can
+be indistinguishable from a shorter or longer valid recording. WAV checks alone
+cannot detect those cases. Every complete
+final frame is checked once synchronized, but file boundaries cannot establish
+continuity outside the recording. Each file is reported even if another input
+is malformed; the command exits 1 if any file fails.
+
+A passing WAV establishes this pattern's continuity only over the checked samples.
+Physical USB qualification still needs matched device counters, recorder error
+status, workload/build identity and repeated captures. This checker does not measure
+clock accuracy, instrumentation overhead or real-device audio deadlines.
 
 ## Collect diagnostics
 
@@ -169,6 +200,23 @@ invalid. Crash-record uptime is historic and is never compared with current upti
 Older firmware without boot-count evidence cannot establish continuity. Unknown future
 fields are preserved but do not acquire guessed counter/delta semantics.
 
+Present known numeric fields are validated before generic colon records. For
+example, `audio_late 1:2` is malformed counter evidence, rather than an unknown
+record; empty known fields and duplicate valid/malformed occurrences also
+invalidate collection. Optional fields omitted by older firmware remain absent.
+
+`status.uac_pkts` is local to a USB audio sample-rate epoch: firmware resets it on
+an effective rate change. With packet counts at both endpoints, an observed rate
+or `uac_rate_sets` change invalidates the interval, even if a reset count has
+already overtaken its previous value. `uac_rate_sets` counts SET_CUR requests,
+including harmless same-rate requests; the collector conservatively rejects those
+ambiguous boundaries too. A packet delta requires unchanged 44100/48000 Hz and an
+unchanged valid setter count. Missing packet endpoints or missing/unsupported rate
+markers leave that delta `null`; other continuous legacy evidence remains usable.
+The status fields are read sequentially, so this rejects observed boundaries rather
+than proving that no rate reset occurred between individual field reads. Keep the
+rate fixed for a workload capture and retain the raw replies.
+
 In builds with second-core support (`FELUCCA_CPU2=1`), `crash` includes `core 0` for
 the main core or `core 1` for the worker. This identifies the retained crash's origin,
 even after the device falls back to one core; current `status` worker state describes
@@ -216,8 +264,17 @@ collection-interval maximum, subtract samples, or infer CPU0 stack use from it.
 `timer_irqs` and `nested` fields are cumulative and receive separate deltas. Later input
 windows are checked against the requested equal interval and reported separately as valid
 or invalid; an invalid later window also invalidates the session. Key latency remains
-`UNMEASURED` without confirmed instrumentation, a valid window and observed presses/notes.
-Raw zeros are retained without being presented as measured latency.
+`UNMEASURED` without confirmed instrumentation, a valid window, observed presses/notes
+and the complete key-latency group: `key_presses`, `key_press_avg_us`,
+`key_press_max_us`, `key_notes`, `key_noteon_avg_us`, `key_noteon_max_us`,
+`key_dac_avg_us` and `key_dac_max_us`. Older replies missing some or all of these
+fields still provide continuity evidence, but no measured latency. Every present
+known latency field must be a nonnegative 32-bit integer; malformed, negative or
+out-of-range values invalidate the response and session while retaining the raw
+reply. Unknown future fields are preserved. Zero press/note counts mean no samples
+and remain `UNMEASURED`; valid sampled times may round to zero microseconds.
+Malformed colon values such as `key_press_max_us 1:2` also invalidate collection;
+they cannot disguise a known latency scalar as an unknown colon record.
 
 ## Interrupt-context assertion (`FELUCCA_ISR_ASSERT`)
 
