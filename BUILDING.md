@@ -370,6 +370,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_CRASH_CTX` | 0 | diagnostic build: the crash record keeps r0..r15, usp and ssp (+76 B NOINIT, below the 100 B floor; [diagnostics](docs/diagnostics.md#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro)); refused with `--release` |
 | `FELUCCA_MUL64_REPRO` | 0 | diagnostic build: the #425 synthetic reproducer runs in the main loop's idle time ([audit, phase 2](docs/mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak)); refused with `--release` |
 | `FELUCCA_SCREEN_CAPTURE` | 0 | diagnostic build: bounded static HOME/menu RGB565 capture over USB SERIAL, exported as PNG/JSON by the [host tool](docs/screen-capture.md); explicit `--wake` silently wakes and holds the view during capture; refused with `--release` |
+| `FELUCCA_RENDER_STAGE` | 0 | diagnostic build: inclusive raw TIMER4 mix-stage/observer-window evidence and empty controls in `status`, with coherent snapshots and explicit unavailable/error states; [scope, resource accounting and matched device checks](docs/render-stage-evidence.md); refused with `--release` |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/src/usb.c`.
@@ -441,11 +442,37 @@ bounded audition files. Host levels do not qualify physical DAC/USB levels or
 authorize changing factory sounds.
 
 The `input` unit also runs `python3 tests/input_contract_test.py`. It compiles
-the actual hardware, UI-test, settings-test and browser input adapters against the
-shared button-edge, note-edge and encoder function types they implement. Negative
-fixtures require incompatible signatures across the UI, settings and browser
-adapters to fail compilation. The UI fake supplies press edges only; this check
-does not add release simulation or qualify physical input timing.
+the actual hardware, UI-test and browser input adapters against the shared
+button-edge, note-edge and encoder function types they implement. Seven partial
+host adapters (backup, FM6-bank, FM6-effective-patch, engine-ID, editor, persistence
+and settings) share `tests/host_encoder_noop.h`, which always returns zero steps
+without accumulating input or modeling timing. Actual-source checks compile all
+seven consumers; incompatible encoder return and parameter types must fail and
+compile only after removing the shared typed declaration. UI and browser signature
+checks remain independent, as do their delayed and accumulated encoder models.
+The UI fake supplies press edges only; this check does not add release simulation
+or qualify physical input timing.
+
+The portable unit also checks the offline USB diagnostic-tone verifier with
+`python3 tests/uac_tone_check_test.py`. See [recording requirements and interpretation](docs/diagnostics.md#usb-test-tone-recordings).
+Synthetic WAV tests check evidence handling; they do not qualify an FM-1 recording.
+
+The `lcd_contract` unit runs `python3 tests/lcd_contract_test.py` after its
+`icon_streams` prerequisite generates the actual icon fixture's reference header.
+The real LCD driver and UI, browser and rescue fakes declare `lcd_fill_fn`; all
+14 blit adapter entries use `lcd_blit_fn`, preserving the const pixel-buffer
+type. Eleven non-rendering fixtures share `tests/host_lcd_blit_noop.h`; the real
+driver, UI framebuffer and browser retain their distinct implementations, giving
+four definition owners. The shared no-op reads no pixels and adds no output,
+synchronization, counters or DMA model. Default and CPU2-off builds are checked,
+including incompatible
+definitions that compile only after removing their typed declaration. The
+`lcd_power` unit retains its independent delayed-DMA controller runtime check.
+
+`firmware/hal/fm1_lcd_contract.h` preserves unsigned 32-bit coordinates,
+16-bit RGB565 fill colours and const RGB565 pixel buffers. The compile checks
+include the rescue fill types corrected by the earlier contract work. Delayed
+DMA, pixel output and physical LCD behavior remain separate checks.
 
 The native UI tests and their consumers share `tests/ui_harness.h`: the real
 firmware UI/sound sources, input/clock fakes, RGB565 screen, delayed LCD DMA and
@@ -455,6 +482,19 @@ entry point stays in `tests/ui_test.c` and alone enables `UI_HARNESS_BLIT_TRACE`
 for its LCD-submission ordering assertions. Consumers include the harness directly;
 they do not compile the UI scenario body or use `UI_TEST_NO_MAIN`.
 
+The UI and browser adapters share the passive `fm1_ticks()` accessor in
+`tests/host_clock.h`, selecting their existing `host_ticks`/`web_ticks` state.
+Each adapter still owns its units, advancement and reset policy: UI ticks are
+microseconds, while browser ticks run at 24 ticks per microsecond. Reading the
+accessor does not advance either clock. Audio/rescue and input-bus clocks retain
+their intentional read-side effects; scheduled TIMER5 and constant console/click
+clocks also remain separate. `fm1_ms` remains independently owned.
+The `clock_contract` unit checks actual HAL/UI/browser signatures against
+`firmware/hal/fm1_time_contract.h`, incompatible definitions, passive reads,
+unsigned wrap and the actual frame/turn/browser scheduling paths. It does not
+qualify wall-clock accuracy, target timer hardware or audio deadlines. Replay
+fingerprints include the shared clock header and the existing HAL inventory.
+
 The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
 their sanitizer builds. This existing NOR model only clears programmed bits, rejects
 256-byte page wrapping, and models sticky power cuts during programming or half an
@@ -462,8 +502,37 @@ erase. Its program counter counts completed bytes; its erase counter excludes re
 refused before work. Reads remain available for recovery after a cut. The user-preset
 fixture checks every payload/header byte-cut boundary, interrupted/refused erases
 and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. Storage and persistence tests retain their different retry
-and operation-counting models.
+`up_put` mirror rollback. The browser emulator also uses this model behind its
+existing bounds, sector-rounding and successful-operation counters. It exports no
+fault controls. A page-contract violation terminates the native adapter and traps
+in standalone Wasm without adding host imports. Native replay fingerprints include
+the shared NOR header so changes invalidate cached adapters and capture provenance.
+The `emulator_partitions` unit checks bounds, page failures and a panel save restored
+in a fresh process; with Emscripten it also checks the actual Wasm trap and empty
+import list. Storage and persistence tests retain their different retry and
+operation-counting models.
+
+The backup, FM6-bank, persistence and browser adapters also share
+`tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,
+the direct `FL_FAR` call and a selected JEDEC value. Host fixtures retain zero;
+the browser selects `0x856014` for its actual boot/persistence path. Rescue retains
+its dynamic chip fake. The `flash_context_contract` unit compiles the real HAL,
+shared host group, four actual consumers and the dynamic rescue JEDEC adapter
+against `firmware/hal/fm1_flash_context_contract.h`. Incompatible definitions and
+`FL_FAR` call types must fail the compile checks. The contract declares function
+types only; it does not model physical interrupt/flash timing or change the NOR
+program/read/erase adapters. Replay fingerprints include the shared host header;
+the HAL contract is covered by the existing HAL input inventory.
+
+The `flash_data_contract` unit checks the real HAL and partial rescue, editor,
+FM6-effective-patch and engine-ID adapters against
+`firmware/hal/fm1_flash_data_contract.h`. It covers RAM erase/program/read and the
+erase/write wrappers, including byte-buffer types and `FL_FAR` calls. The six
+former generic-pointer fake signatures now match the HAL; their bodies and error
+models are unchanged. Object-buffer `st_*` hooks remain owned by `storage.c`,
+with `storage_hw.c` bridging to the byte-oriented HAL. This is compile/host
+coverage, not physical flash timing or power-loss qualification. The existing HAL
+replay input inventory covers this header.
 
 Independent compile-and-test units run concurrently, using up to four workers by
 default (fewer on a host with fewer CPUs). Set
@@ -735,7 +804,22 @@ adapters and instruction counts remain follow-ups. The full host runner includes
 For the optional external emulator trace prerequisite, use the
 [pinned source/build and executable controls](docs/emulator-trace-prerequisite.md).
 It needs a separate Rust toolchain; its portable refusal tests run in the normal
-host suite without Rust. Native hotspot attribution remains a follow-up.
+host suite without Rust.
+
+With an existing verified native build and corrected emulator receipt, the
+[native replay evidence guide](docs/native-emulator-replay.md) covers repeated
+held-key and modeled-UART captures, silent controls and bounded trace/PCM checks.
+It builds no firmware and makes no device-timing or hotspot claim.
+
+The [native hotspot guide](docs/native-hotspots.md) attributes those retained
+windows to verified target function ranges and emulator instruction classes.
+It rechecks saved evidence without executing firmware; counts apply only to the
+declared windows and do not establish physical cycles or deadlines.
+
+The [native audio-window guide](docs/native-audio-window.md) adds a source-qualified
+held-key recipe: seven bounded emulator children discover and verify an audio
+renderer window, repeat traces/PCM and compare matched silent controls and the
+original replay basis. It builds no firmware and makes no physical timing claim.
 
 ### Emulator partition regression
 
@@ -1010,6 +1094,18 @@ worktrees, changed HEADs, local edits, and additional files, including ignored
 build output and files inside nested submodules. Preserve or remove those files
 yourself before retrying; it does not automatically clean or stash them. Keep
 firmware artifacts outside the disposable worktree if you need them later.
+Submodule commits retained only in a reflog are protected too, including detached
+work followed by a return to the pinned commit. Deleting a local branch does not
+remove that protection. Push the work to an independent repository, or export and
+verify it outside the disposable worktree, before resolving the local history and
+retrying; a branch inside its private submodule Git directory is not an external
+backup. The helper does not expire reflogs or discard commits for you.
+Removal also refuses deinitialized tracked submodules and inactive/orphan private
+submodule repositories that recursive working-tree checks cannot inspect. Restore
+and initialize tracked submodules explicitly, inspect and preserve their history,
+then retry. Preserve and resolve orphan repositories manually; an external backup
+alone does not make the helper remove their metadata. Cleanup never initializes
+submodules or resolves inactive/orphan metadata automatically.
 Returning to your original directory or removing PR sources does **not** revert
 the FM-1: reinstall the previously saved firmware package to restore that build.
 
@@ -1072,6 +1168,15 @@ provides saved-file inspection and a separate device backup/recovery procedure.
 File-only checks open no device; live ROM sessions may upload a RAM loader and
 need host permissions. A unit with no reachable USB route can still need
 [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
+The standalone RAM loader displays waiting, package validation, verified app-sector
+progress, completion/restart and native-error retry guidance. Its writing percentage
+is verified application work, not confirmation of a complete install. If it reports
+**UPDATE STOPPED**, keep power and USB connected and retry the same reviewed
+compatible package with the supported installer after the host operation returns.
+A display failure may leave a stale image while USB/retry continues. Check the
+host's final application identity; see [loader screen meanings and limits](docs/usb-rescue.md#standalone-ram-loader-screen).
+Physical FM-1 qualification of the new loader screen remains pending.
 
 ### Package validation and file errors
 
