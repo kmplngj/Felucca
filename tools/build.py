@@ -75,7 +75,7 @@ NOINIT_SPARE_MIN = 100              # B of app.ld's NOINIT region left unallocat
 # FELUCCA_CRASH_CTX=1 (hal/fm1_irq.h, #428): a diagnostic build whose crash record also keeps r0..r15, usp, ssp and
 # their key (19 words). Only that build may take these bytes out of the floor; release and standard builds keep 100 B
 CRASH_CTX_NOINIT = 76
-DIAG_FLAGS = ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE")  # development diagnostics, never a release
+DIAG_FLAGS = ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE", "FELUCCA_RENDER_STAGE")  # development diagnostics, never a release
 LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
@@ -472,6 +472,8 @@ def ldr_head(dcrc, a, b, attr, name):
 def ldr_wrap(image):
     """ota.bin = outer JLFS head (32 B) + inner head (32 B, load address) +
     blocks [clen u32][dlen u32][LZ4 block], dlen 4096 except the last"""
+    if not image or len(image) > 0x14000:
+        raise SystemExit("loader: image empty or too big")
     blocks = bytearray()
     for i in range(0, len(image), 4096):
         raw = image[i:i + 4096]
@@ -481,6 +483,10 @@ def ldr_wrap(image):
         blocks += struct.pack("<II", len(c), len(raw)) + c
     inner = ldr_head(crc16(image), len(image), LOADER_LOAD, 0, LOADER_NAME)
     body = inner + bytes(blocks)
+    # ota.c accepts at most OTA_AREA_LEN - 0x200 for the staged body.
+    # Keep the wrapper/header and update-record reserve out of that area.
+    if len(body) > 0x5000 - 0x200:
+        raise SystemExit("loader: wrapped body exceeds native staging area")
     return ldr_head(crc16(body), 0x20, len(body), 0x41, LOADER_NAME) + body
 
 
@@ -585,7 +591,7 @@ def app_flags():
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
                  "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2", "FELUCCA_ISR_ASSERT",
-                 "FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE"):
+                 "FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE", "FELUCCA_RENDER_STAGE"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")

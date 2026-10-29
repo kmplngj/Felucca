@@ -46,6 +46,27 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
+  the latest validated main-branch PR merge; tagged packages require exact-commit device
+  test attestation and a linked report before publication. Both ship risk/recovery
+  guidance; tagged versions include the complete commit changelog since the previous
+  stable release. Dev notes stay short, and superseded Dev releases/tags are removed.
+
+
+- Default-off [raw render-stage evidence](render-stage-evidence.md) adds one
+  inclusive CPU0 mix-stage observer, empty controls and coherent optional `status`
+  snapshots with explicit rejection/error semantics. Release builds refuse the
+  diagnostic flag; target cost accounting and matched FM-1 acceptance remain
+  pending. This delivers instrumentation, without a DSP speedup claim.
+
+- **Standalone RAM-loader status:** waiting and package validation, verified
+  application-sector progress, native completion/restart and host retry guidance
+  work without an intact application. Bounded RAM-owned scanlines contain missing
+  or slow LCD completion while retaining in-flight sources and servicing USB and
+  the watchdog. Package, protocol and protected-storage policy are unchanged.
+  Physical FM-1 update/display/retry qualification remains pending; see
+  [screen meanings and limits](usb-rescue.md#standalone-ram-loader-screen).
+
 - [Offline update-record survey](update-record-survey.md) reports native-loader
   CRC/marker matches and coverage in saved raw flash bytes. It accesses no device
   and changes no storage policy; external SPL behavior remains unverified.
@@ -139,6 +160,25 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- The offline USB tone checker rejects recordings without synchronized tone data,
+  unsupported rates and incomplete PCM, and reports matched frames accurately.
+  [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
+  qualification separate from the offline result.
+
+- PR-source cleanup protects reflog-only detached commits and refuses removal with
+  deinitialized or orphan private submodule repositories. It preserves history
+  without automatic metadata repair. See the
+  [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
+
+- Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
+  full commit provenance remain in release metadata; the UI regression gate now
+  exercises the generated Dev version before merge. This fixes the initial Dev
+  release's layout-test failure; no publication gate is relaxed.
+- Native replay source-change guards include consumed portable Engines sources
+  and generated include files, so changes during compilation cannot publish an
+  adapter or completed capture with stale input provenance. See
+  [interaction replay](interaction-replay.md).
+
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
   update requests still renew the existing staging and writing idle budgets.
@@ -187,6 +227,13 @@ recorded in the linked reports, rather than every current build or device.
   behavior remain covered by regressions. The [device results](midi-dsp-device-results-2026-10-21.md)
   pass USB pulse-count phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
   See [implementation evidence and test procedure](midi-dsp-reliability.md).
+
+- Backport the remaining signed DSP arithmetic fixes from upstream 1.7.0:
+  ANALOG, LOFI, TRIO, WHEEL, NOISE and native PHASE retain their output while
+  avoiding undefined signed shifts and overflow. The fork's engine API,
+  zero-mix ANALOG path and per-part PHASE scratch remain intact. See the
+  [arithmetic follow-up](midi-dsp-reliability.md#upstream-170-arithmetic-follow-up)
+  for provenance and validation limits; FM-1 listening remains pending.
 
 - **LED brightness feedback:** the DISPLAY menu now redraws INV, INV LO and INV HI
   immediately when their brightness is changed without leaving the row. Physical

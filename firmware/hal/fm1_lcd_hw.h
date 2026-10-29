@@ -62,6 +62,10 @@ FM1_INLINE void fm1_lcd_backlight(uint32_t on)
 
 FM1_INLINE void fm1_lcd_baud(uint32_t b) { FM1_LCD_SPI_BAUD = b; }
 
+/* Read-only completion: send_cmd/send_data clear pending before submission.
+ * A false result never releases a borrowed DMA source. */
+FM1_INLINE uint32_t fm1_lcd_done(void) { return (FM1_LCD_SPI_CON & 0x8000u) != 0; }
+
 static void fm1_lcd_wait(void)
 {
     uint32_t n;
