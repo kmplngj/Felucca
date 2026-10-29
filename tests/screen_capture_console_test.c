@@ -34,6 +34,15 @@ static struct { uint8_t dtr; } cdc = {1};
 static uint32_t fm1_ms = 10000;
 static uint32_t shed_count = 12, voice_kills = 13;
 static struct { uint32_t cpu_q8, sel, batt_raw, g[1], playing; } song = {64, 0, 620, {120}, 0};
+static struct {
+    struct { uint8_t on, pick; volatile uint8_t io[2]; } ml;
+    uint32_t page, home, menu;
+} ui = {.home = 1, .menu = 1};
+static struct { uint8_t on; } set_later;
+static uint8_t persist_pending;
+#if FELUCCA_SLICE
+static uint8_t slc_man_save;
+#endif
 static struct { uint32_t eng_req, preset; int32_t p[P_COUNT]; } track;
 #define TSEL (&track)
 typedef struct { const char *name; } preset_t;
@@ -117,7 +126,6 @@ static int st_read(uint32_t a, void *b, uint32_t n) { (void)a; (void)b; (void)n;
 #include "../firmware/src/screen_capture.c"
 enum { SCR_ON, SCR_OFF, SCR_WAKE, SCR_SLPOUT, SCR_SHOW };
 static struct { uint32_t st, led_off, idle; } scrn = {SCR_ON, 0, 10000};
-static struct { uint32_t page, home, menu; } ui = {0, 1, 1};
 static uint32_t scap_input_time;
 static int fixture_supported = 1;
 static int scap_start(uint8_t wake)

@@ -14,7 +14,12 @@
 #ifndef FELUCCA_UART
 #define FELUCCA_UART 1
 #endif
+#ifndef FELUCCA_FLASH
 #define FELUCCA_FLASH 1
+#endif
+#ifndef FELUCCA_SLICE
+#define FELUCCA_SLICE 1
+#endif
 #define FELUCCA_VERSION "console-contract"
 #define RING_PUBLISH() ((void)0)
 #define CO_N 16384u
@@ -33,13 +38,27 @@ static struct { uint8_t dtr; } cdc = {1};
 static uint32_t fm1_ms = 10000;
 static uint32_t shed_count = 12, voice_kills = 13;
 static struct { uint32_t cpu_q8, sel, batt_raw, g[1], playing; } song = {64, 0, 620, {120}, 0};
+static struct { struct { uint8_t on, pick; volatile uint8_t io[2]; } ml; uint8_t menu; } ui;
+static struct { uint8_t on; } set_later;
+#if FELUCCA_FLASH
+static uint8_t persist_pending;
+#if FELUCCA_SLICE
+static uint8_t slc_man_save;
+#endif
+#endif
+static uint8_t later_heard;
 static struct { uint32_t eng_req, preset; int32_t p[P_COUNT]; } track;
 #define TSEL (&track)
 typedef struct { const char *name; } preset_t;
 typedef struct { const char *name; uint32_t npresets; const preset_t *presets; } engine_t;
 static const preset_t presets[] = {{"BRASS ENSEMBLE"}};
 static const engine_t engine = {"FM6", 1, presets};
-static const engine_t *eng_of(uint32_t id) { (void)id; return &engine; }
+static const engine_t *eng_of(uint32_t id)
+{
+    (void)id;
+    if (later_heard) ui.ml.io[1] = later_heard; /* ISR byte arrives after status copied its observations. */
+    return &engine;
+}
 
 /* Layout consumed by con_dbg, matching audio.c's 19 uint32_t words. */
 static struct {
@@ -104,7 +123,9 @@ static void fm1__unlock(uint32_t key) { (void)key; }
 static void fm1_wdt_feed(void) { fputs("console output exceeded fixture ring\n", stderr); exit(2); }
 static int fm1_mem_readable(uint32_t a, uint32_t n) { (void)a; (void)n; return 0; }
 static uint8_t fm1_peek8(uint32_t a) { (void)a; abort(); }
+#if FELUCCA_FLASH
 static int flash_ok;
+#endif
 static int st_read(uint32_t a, void *b, uint32_t n) { (void)a; (void)b; (void)n; abort(); }
 
 #include "../firmware/src/console.c"
@@ -136,7 +157,21 @@ int main(int argc, char **argv)
     }
 #endif
     if (argc == 3) {
-        if (!strcmp(argv[2], "no-clock"))
+        if (!strcmp(argv[2], "session-pending")) {
+            ui.ml.on = ui.ml.pick = ui.ml.io[0] = 1;
+            ui.ml.io[1] = 75;
+            ui.menu = 4;
+            set_later.on = 1;
+#if FELUCCA_FLASH
+            persist_pending = 2;
+#if FELUCCA_SLICE
+            slc_man_save = 5;
+#endif
+#endif
+        } else if (!strcmp(argv[2], "session-later")) {
+            ui.ml.on = ui.ml.pick = ui.ml.io[0] = 1;
+            later_heard = 75;
+        } else if (!strcmp(argv[2], "no-clock"))
             fm1_boot_clock.valid = 0;
         else if (!strcmp(argv[2], "no-crash"))
             fm1_crash.magic = 0;
@@ -181,6 +216,20 @@ int main(int argc, char **argv)
         else
             return 2;
     }
+    if (argc == 3 && !strcmp(argv[2], "session-pending")) {
+        uint8_t was_ui[sizeof ui];
+        session_state_t was = session_state_read();
+        memcpy(was_ui, &ui, sizeof ui);
+        for (uint32_t i = 0; i < 20u; i++) {
+            session_state_t after;
+            con_status();                            /* actual formatter, not only the reader */
+            after = session_state_read();
+            if (con.stalled || co_w >= CO_N || memcmp(was_ui, &ui, sizeof ui) ||
+                memcmp(&was, &after, sizeof was))
+                return 2;
+            co_w = co_r = 0;                          /* host consumed this finite response */
+        }
+    }
     /* Skip only the connection banner, not command echo or dispatch. */
     con.dtr_seen = 1;
     n = strlen(argv[1]);
@@ -188,6 +237,8 @@ int main(int argc, char **argv)
     cdc_in[n] = '\r';
     ci_w = (uint32_t)n + 1u;
     cdc_task();
+    if (later_heard && ui.ml.io[1] != later_heard)
+        return 2;                                      /* observation never consumes the handoff */
     if (con.stalled || co_w >= CO_N)
         return 2;
     return fwrite(cdc_out, 1, co_w, stdout) == co_w ? 0 : 2;
