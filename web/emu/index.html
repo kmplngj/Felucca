@@ -256,7 +256,11 @@ function syncKeys(redraw) {
   for (const k of keyBy.values()) m |= 1 << k;
   if (m !== keyMask) { keyMask = m; send({ type: "keys", mask: m }); }
   else if (!redraw) return;
-  keys.forEach((k, i) => k.g.classList.toggle("held", !!(m & (1 << i))));
+  keys.forEach((k, i) => {
+    const on = !!(m & (1 << i));
+    k.g.classList.toggle("held", on);
+    k.hit.setAttribute("aria-pressed", on);
+  });
 }
 function bindButton(b) {
   b.hit.addEventListener("pointerdown", (e) => {
@@ -277,6 +281,17 @@ function bindKey(k, i) {
     e.preventDefault();
     k.hit.setPointerCapture(e.pointerId);
     keyBy.set("p" + e.pointerId, i);
+    syncKeys();
+  });
+  k.hit.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault(); e.stopPropagation();
+    if (e.repeat || !node) return;
+    keyBy.set("f" + e.code, i);
+    syncKeys();
+  });
+  k.hit.addEventListener("blur", () => {
+    for (const [id, key] of keyBy) if (id[0] === "f" && key === i) keyBy.delete(id);
     syncKeys();
   });
 }
@@ -362,6 +377,7 @@ addEventListener("keydown", (e) => {
 addEventListener("keyup", (e) => {
   const id = "k" + e.code;
   if (keyBy.delete(id)) syncKeys();
+  if (keyBy.delete("f" + e.code)) syncKeys();    // release even if focus or layout changed while held
   if (btnBy.delete(id)) syncButtons();
 });
 addEventListener("blur", () => {

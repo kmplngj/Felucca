@@ -164,12 +164,43 @@ try {
   await check("desktop wrapper text contrast", wrapperContrast);
   await check("keyboard note produces stereo PCM", async () => {
     await page.keyboard.down("z");
+    assert.equal(await page.getByRole("button", { name: "F3", exact: true }).getAttribute("aria-pressed"), "true");
     const observed = await freshAudio(true);
     assert(observed.peak <= 1, `out-of-range audio: ${observed.peak}`);
     await page.keyboard.up("z");
+    assert.equal(await page.getByRole("button", { name: "F3", exact: true }).getAttribute("aria-pressed"), "false");
     return observed;
   });
   await check("note release becomes quiet", () => freshAudio(false));
+  await check("focused note keys support Enter, Space and blur release", async () => {
+    const key = page.getByRole("button", { name: "F3", exact: true });
+    const other = page.getByRole("button", { name: "G3", exact: true });
+    for (const code of ["Enter", "Space", "NumpadEnter"]) {
+      await key.focus();
+      const scroll = await page.evaluate(() => scrollY);
+      await page.keyboard.down(code);
+      assert.equal(await key.getAttribute("aria-pressed"), "true");
+      await freshAudio(true);
+      await page.keyboard.down(code);                    // auto-repeat must keep the same held note
+      assert.equal(await key.getAttribute("aria-pressed"), "true");
+      assert.equal(await page.evaluate(() => scrollY), scroll, `${code} scrolled the page`);
+      await page.keyboard.up(code);
+      assert.equal(await key.getAttribute("aria-pressed"), "false");
+      await freshAudio(false);
+    }
+    await key.focus();
+    await page.keyboard.down("NumpadEnter");
+    await page.keyboard.down("Space");
+    await freshAudio(true);
+    await page.keyboard.up("Space");
+    assert.equal(await key.getAttribute("aria-pressed"), "true", "NumpadEnter still owns the held key");
+    await other.focus();
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "blur left the key pressed");
+    await freshAudio(false);
+    await page.keyboard.up("NumpadEnter");
+    assert.equal(await other.getAttribute("aria-pressed"), "false", "focus transfer pressed another key");
+    return { activation: ["Enter", "Space", "NumpadEnter"], repeat_held: true, blur_released: true };
+  });
   await check("pointer opens ENV and encoder redraws LCD", async () => {
     await page.getByRole("button", { name: "SEL", exact: true }).click();
     await waitFor(() => (__feluccaTest.leds[0] & (1 << 1)) !== 0);
@@ -224,8 +255,10 @@ try {
     assert(box && box.width > 0 && box.x >= 0 && box.x + box.width <= 391, "key outside portrait viewport");
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
+    assert.equal(await key.getAttribute("aria-pressed"), "true");
     const observed = await freshAudio(true);
     await page.mouse.up();
+    assert.equal(await key.getAttribute("aria-pressed"), "false");
     await freshAudio(false);
     await screen("portrait");
     return observed;
