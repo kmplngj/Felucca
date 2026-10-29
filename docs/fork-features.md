@@ -112,8 +112,14 @@ Playback, count-in, pending transport changes and an armed/running SONG require
 Hold **SAVE** after releasing SEQ to undo the last successful tool; hold it again
 to redo. While SEQ remains held, **OCT−** retains its existing meaning: restore
 the pattern and controls from entry into this layer. After an octave edit this
-restore also requires stopped transport. A track selection change starts a fresh
-layer snapshot on that track; loading another project discards the old snapshot.
+restore also requires stopped transport. If the editor selects another track
+while SEQ is held or locked, OCT− still puts back only the track the layer opened
+on. Once that track was changed (a tool, EUCLID or KNOB 1–4), its snapshot stays:
+SEQ's keys on the new track say **REOPEN SEQ FIRST** until OCT− puts the original
+track back or the layer opens again. If nothing was changed yet, the snapshot
+moves to the new track. **SEQUENCE PUT BACK** appears only when something was
+restored; otherwise OCT− says **NOTHING TO PUT BACK**. Loading another project
+discards the old snapshot.
 Saved projects and backups store the edited notes using the existing format.
 Physical panel/LCD, audition and USB/MIDI acceptance remain pending.
 

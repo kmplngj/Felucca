@@ -7745,11 +7745,39 @@ static int test_pattern_octave(void)
     ui_power_on(); tl_melody();
     tl_note(&trk[1].step[0], 84); trk[1].p[P_SLEN] = 8;
     btn_down(B_SEQ); frame(); tl_key(TL_OCTUP); track_select(1); tl_key(TL_OCTDN);
-    ok = trk[0].step[0].note[0] == 72 && TSEL->step[0].note[0] == 72;
-    oct_back(); ok &= TSEL->step[0].note[0] == 84 && trk[0].step[0].note[0] == 72;
+    ok = msg_is("REOPEN SEQ FIRST") && trk[0].step[0].note[0] == 72 && trk[1].step[0].note[0] == 84;
+    oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && trk[0].step[0].note[0] == 60 && trk[1].step[0].note[0] == 84;
+    tl_key(TL_OCTDN);                                   /* (T1 as it opened: the snapshot moves to T2) */
+    ok &= msg_is("OCTAVE DOWN") && trk[1].step[0].note[0] == 72;
+    oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && trk[1].step[0].note[0] == 84 && trk[0].step[0].note[0] == 60;
     btn_up(B_SEQ); frame(); hold(B_SAVE);
-    ok &= TSEL->step[0].note[0] == 72 && trk[0].step[0].note[0] == 72;
-    bad += check("  editor track change while held: next tool and entry cancel belong to new track; undo stays on its owner", ok);
+    ok &= trk[1].step[0].note[0] == 72 && trk[0].step[0].note[0] == 60;
+    bad += check("  editor track change while held: OCT- restores the layer's track, new-track tools refused until then", ok);
+
+    /* Review repro: SHIFT x2 on T1, the editor selects T2, OCT- puts T1 back and SAVE held still has T1's edit */
+    ui_power_on(); tl_melody(); trk[1].p[P_SLEN] = 8; tl_note(&trk[1].step[0], 84);
+    memcpy(expected, trk[0].step, sizeof expected);
+    btn_down(B_SEQ); frame(); tl_key(TL_RIGHT); tl_key(TL_RIGHT);
+    memcpy(before[0], trk[0].step, sizeof expected);
+    ok = memcmp(expected, trk[0].step, sizeof expected) != 0;
+    track_select(1); oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && !memcmp(expected, trk[0].step, sizeof expected) && trk[1].step[0].note[0] == 84;
+    btn_up(B_SEQ); frame(); hold(B_SAVE);
+    ok &= !memcmp(before[0], trk[0].step, sizeof expected);
+    bad += check("  SHIFT x2 on T1, editor selects T2, OCT-: T1 put back, its edits still one SAVE-held undo away", ok);
+
+    /* KNOB 1 LEN on T1 counts as a change: kept for OCT-; untouched: the snapshot moves, OCT- says nothing restored */
+    ui_power_on(); tl_melody(); trk[1].p[P_SLEN] = 8; tl_note(&trk[1].step[0], 84);
+    btn_down(B_SEQ); frame(); turn(EN_K1, -2);
+    ok = trk[0].p[P_SLEN] == 6;
+    track_select(1); oct_back();
+    ok &= msg_is("SEQUENCE PUT BACK") && trk[0].p[P_SLEN] == 8 && trk[1].p[P_SLEN] == 8;
+    oct_back();
+    ok &= msg_is("NOTHING TO PUT BACK") && trk[1].step[0].note[0] == 84;
+    btn_up(B_SEQ); frame();
+    bad += check("  T1 LEN changed then T2 selected: OCT- puts T1's LEN back; again: NOTHING TO PUT BACK", ok);
 
     ui_power_on(); tl_melody();
     TSEL->step[0].note[0] = 84; project_save(1);

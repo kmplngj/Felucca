@@ -614,8 +614,9 @@ static const char *tl_octave(track_t *t, int32_t delta)
 }
 
 /* ------------------------------------------------------------ actions --- */
-/* the action of place p on track t (lane l): its message; 0 = nothing done (said why) */
-static const char *tl_do(track_t *t, uint32_t p, uint32_t l)
+/* the action of place p on track t (lane l): its message; 0 = nothing done (said why). Out of line: inlined into
+ * ui_input its tools lengthened that function's branches (MACRO's app slot is tight) */
+static __attribute__((noinline)) const char *tl_do(track_t *t, uint32_t p, uint32_t l)
 {
     if (p == TL_OCTDN || p == TL_OCTUP)
         return tl_octave(t, p == TL_OCTUP ? 12 : -12);

@@ -92,6 +92,7 @@ static struct {
                                         * it opened (SEQ: a tool used); OCT- / OCT+ pressed in a SET layer (bits) */
     uint8_t cook;                      /* SEQ: COOK pressed since it opened */
     uint8_t pitch;                     /* SEQ: octave edit used; entry restore also requires stopped transport */
+    uint8_t knob;                      /* SEQ: KNOB 1..4 turned since it opened (LEN DIV SWING GATE; OCT- puts back) */
     uint8_t rp_dirty;                  /* REC: a setting changed (settings_save when the layer lets go); FX: the key map */
     uint8_t fxk;                       /* FX: the white key pressed last in the layer (+ 1; 0 none): PRESETS assigns it */
     uint8_t mute[NPART];               /* EDIT: the DRUM lanes' mutes when it opened (eng_drum.c drum_mute; OCT-) */
@@ -245,6 +246,7 @@ static void layer_opened(uint32_t l)
     lys.loaded = 0;
     lys.cook = 0;
     lys.pitch = 0;
+    lys.knob = 0;
     lys.project_epoch = ui.project_epoch;
     if (l == LAYER_SEQ || l == LAYER_REC) {             /* the track as it is now (OCT-) */
         memcpy(tl_open.step, TSEL->step, sizeof tl_open.step);
@@ -390,8 +392,10 @@ static void glo_tap(void)
     }
 }
 
-/* The editor can select a track or replace the project with a layer held/locked.
- * Rebase before any SEQ action, knob or restore; never copy old project data back. */
+/* The editor can select a track or replace the project with a layer held/locked. A replaced project: rebase, never
+ * copy old project data back. Another track: as before #687, OCT- puts back the layer's track only, so once that
+ * track was changed its entry snapshot stays (tools_gate refuses SEQ's keys on the new track until OCT- or the layer opens again); while
+ * it is unchanged the snapshot moves to the new track. Before any SEQ action, knob or restore */
 static void tools_sync(void)
 {
     if (lys.project_epoch != ui.project_epoch) {
@@ -400,8 +404,29 @@ static void tools_sync(void)
     } else if (lys.trk != song.sel) {
         if (eu.on)
             eu_close(&trk[lys.trk % NTRK], 1);
-        layer_opened(LAYER_SEQ);
+        if (!(lys.loaded | lys.knob))
+            layer_opened(LAYER_SEQ);
     }
+}
+
+/* SEQ's keys this frame: none while the snapshot stays on another track (out of line: ui_input's branches are long) */
+static __attribute__((noinline)) uint32_t tools_gate(uint32_t keys)
+{
+    tools_sync();
+    if (!keys || lys.trk == song.sel)
+        return keys;
+    ui_message("REOPEN SEQ FIRST");                    /* (OCT- still belongs to the layer's track) */
+    return 0;
+}
+
+/* SEQ / REC OCT-: done; "SEQUENCE PUT BACK" only when the layer's track had changed */
+static __attribute__((noinline)) void tools_put_back(void)
+{
+    ui_message(lys.l == LAYER_REC ? "REC PUT BACK" : lys.loaded | lys.knob ? "SEQUENCE PUT BACK" : "NOTHING TO PUT BACK");
+    lys.loaded = 0;
+    lys.cook = 0;
+    lys.pitch = 0;
+    lys.knob = 0;
 }
 
 /* SEQ TOOLS: white key place p's action on the selected track (ui_tools.c), "STOP TO EDIT" while a song plays */
@@ -409,7 +434,6 @@ static void tools_key(uint32_t p)
 {
     const char *m;
     char n[4];
-    tools_sync();
     if (!tl_cell(TSEL, p))
         return;
     if (chain_busy()) {
@@ -712,7 +736,7 @@ static void layer_keys(uint32_t keys)
 {
     uint32_t k, l = layer_open() ? layer_open() : ui.layer, s = 0;
     if (l == LAYER_SEQ)
-        tools_sync();
+        keys = tools_gate(keys);
     for (k = 0; keys && k < 27u; k++)
         if ((keys >> k) & 1u)
             layer_key(l, k);
@@ -734,8 +758,10 @@ static void layer_keys(uint32_t keys)
 static void layer_knob(uint32_t k, int32_t s)
 {
     uint32_t l = layer_open();
-    if (l == LAYER_SEQ)
+    if (l == LAYER_SEQ) {
         tools_sync();
+        lys.knob = 1;
+    }
     if (l == LAYER_FX) {                                /* perform.c perf_k, not recorded */
         if (k == 3u && !perf_harm_on())
             s = -s;                                     /* DEPTH (100 - perf_k[3]) rises to the right (#40: it fell) */
@@ -843,10 +869,7 @@ static uint32_t layer_oct(uint32_t pressed, uint32_t oct)
                     for (k = 0; k < 4u; k++)
                         t->p[P_SLEN + k] = lys.v[k];
                 }
-                lys.loaded = 0;
-                lys.cook = 0;
-                lys.pitch = 0;
-                ui_message(lys.l == LAYER_REC ? "REC PUT BACK" : "SEQUENCE PUT BACK");
+                tools_put_back();
             }
             if (guarded)
                 motion_unguard(f);

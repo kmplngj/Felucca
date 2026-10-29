@@ -37,7 +37,8 @@ recorded in the linked reports, rather than every current build or device.
 - **Stored-pattern octave tools:** hold SEQ and use F5/G5 to move the selected
   melodic pattern down/up one octave, with whole-edit MIDI range refusal and the
   existing one-action undo. Kit/SLICE mappings are exempt; editing requires
-  stopped transport. Track/project changes refresh layer snapshots safely.
+  stopped transport. OCT− still restores the layer's original track after an
+  editor track change; a project load discards the old snapshot.
   [Controls and limitations](fork-features.md#stored-pattern-octave-tools);
   real FM-1 panel and audition checks remain pending.
 
