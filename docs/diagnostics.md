@@ -197,6 +197,23 @@ invalid. Crash-record uptime is historic and is never compared with current upti
 Older firmware without boot-count evidence cannot establish continuity. Unknown future
 fields are preserved but do not acquire guessed counter/delta semantics.
 
+Present known numeric fields are validated before generic colon records. For
+example, `audio_late 1:2` is malformed counter evidence, rather than an unknown
+record; empty known fields and duplicate valid/malformed occurrences also
+invalidate collection. Optional fields omitted by older firmware remain absent.
+
+`status.uac_pkts` is local to a USB audio sample-rate epoch: firmware resets it on
+an effective rate change. With packet counts at both endpoints, an observed rate
+or `uac_rate_sets` change invalidates the interval, even if a reset count has
+already overtaken its previous value. `uac_rate_sets` counts SET_CUR requests,
+including harmless same-rate requests; the collector conservatively rejects those
+ambiguous boundaries too. A packet delta requires unchanged 44100/48000 Hz and an
+unchanged valid setter count. Missing packet endpoints or missing/unsupported rate
+markers leave that delta `null`; other continuous legacy evidence remains usable.
+The status fields are read sequentially, so this rejects observed boundaries rather
+than proving that no rate reset occurred between individual field reads. Keep the
+rate fixed for a workload capture and retain the raw replies.
+
 In builds with second-core support (`FELUCCA_CPU2=1`), `crash` includes `core 0` for
 the main core or `core 1` for the worker. This identifies the retained crash's origin,
 even after the device falls back to one core; current `status` worker state describes
@@ -244,8 +261,17 @@ collection-interval maximum, subtract samples, or infer CPU0 stack use from it.
 `timer_irqs` and `nested` fields are cumulative and receive separate deltas. Later input
 windows are checked against the requested equal interval and reported separately as valid
 or invalid; an invalid later window also invalidates the session. Key latency remains
-`UNMEASURED` without confirmed instrumentation, a valid window and observed presses/notes.
-Raw zeros are retained without being presented as measured latency.
+`UNMEASURED` without confirmed instrumentation, a valid window, observed presses/notes
+and the complete key-latency group: `key_presses`, `key_press_avg_us`,
+`key_press_max_us`, `key_notes`, `key_noteon_avg_us`, `key_noteon_max_us`,
+`key_dac_avg_us` and `key_dac_max_us`. Older replies missing some or all of these
+fields still provide continuity evidence, but no measured latency. Every present
+known latency field must be a nonnegative 32-bit integer; malformed, negative or
+out-of-range values invalidate the response and session while retaining the raw
+reply. Unknown future fields are preserved. Zero press/note counts mean no samples
+and remain `UNMEASURED`; valid sampled times may round to zero microseconds.
+Malformed colon values such as `key_press_max_us 1:2` also invalidate collection;
+they cannot disguise a known latency scalar as an unknown colon record.
 
 ## Interrupt-context assertion (`FELUCCA_ISR_ASSERT`)
 
