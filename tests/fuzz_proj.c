@@ -112,12 +112,12 @@ int main(int argc, char **argv)
     static union { uint32_t align; uint8_t raw[4096]; project_store_t st; } in;
     static project_store_t st2;
     static const uint32_t LEN[11] = {3840u, 3648u, 3584u, 3388u, 3352u, 2680u, 2584u, 2552u, 688u, 3839u, 3841u};
-    uint32_t iters = argc > 1 ? (uint32_t)atoi(argv[1]) : 20000u, i, j, k, n, decoded = 0, current = 0, packed = 0;
+    uint32_t iters = argc > 1 ? (uint32_t)atoi(argv[1]) : 20000u, i, j, k, n, decoded = 0, current = 0, packed = 0, legacy_decoded = 0;
     if (argc > 2) rs = (uint32_t)atoi(argv[2]) | 1u;
     for (n = 0; n < 4000u; n++)
         need(proj_accepts_length(n) == (n == 3840u || n == 3648u || n == 3584u || n == 3388u), "proj_accepts_length", n);
     for (i = 0; i < iters; i++) {
-        uint32_t mode = rnd() % 8u, fix;
+        uint32_t mode = rnd() % 8u, fix, legacy = 0;
         memset(in.raw, 0, sizeof in.raw);
         random_project(&a);
         if (mode == 0) {                                        /* random bytes under a format's magic */
@@ -134,6 +134,7 @@ int main(int argc, char **argv)
             n = old_pack(in.raw, &a, m, np);
             if (!n) continue;
             packed++;
+            legacy = 1;
         } else {
             if (!proj_encode(&in.st, &a)) { need(0, "a valid project encodes", i); continue; }
             n = PROJ_STORE_SIZE;
@@ -160,6 +161,7 @@ int main(int argc, char **argv)
             if (cl == PROJ_CURRENT) current++;
             if (!ok) continue;
             decoded++;
+            if (legacy) legacy_decoded++;
             need(bounded(&c), "decoded: every field and value inside its range", i);
             need(proj_encode(&st2, &c), "decoded: proj_encode stores it", i);
             need(proj_classify(&st2, sizeof st2) == PROJ_CURRENT, "encoded: CURRENT", i);
@@ -167,6 +169,7 @@ int main(int argc, char **argv)
         }
     }
     need(iters < 400u || packed > iters / 8u, "legacy packs must not silently disappear", iters);
+    need(iters < 400u || legacy_decoded > 0u, "legacy packs must decode", iters);
     printf("fuzz_proj %s: %u iterations, %u decoded (%u CURRENT), %u legacy packs, %u failures\n",
            fails ? "FAILED" : "ok", iters, decoded, current, packed, fails);
     return fails != 0;

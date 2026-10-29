@@ -16,6 +16,70 @@ neither a compiler nor a device. New bundle tooling and runtime files must be co
 before source export, because the complete archive contains committed blobs. Do not
 export an older tree and attach newer uncommitted helper code to it.
 
+## Maintainer orchestration
+
+The manual **Maintainer verified bundle** Actions workflow runs the existing producers
+for one of `standard`, `reduced-lofi` or `macro`. GitHub's maintainer dispatch access is
+the admission boundary; there is no public request endpoint. Dispatch on `main`, with
+`revision` set to that dispatch's full lowercase 40-character commit. The requested
+revision must equal both the immutable workflow SHA and source SHA. Checkout never uses
+the input as a ref. Other branches, forks, PR histories, tags, abbreviated/moving refs
+and historical revisions are outside this first allowlist. A later allowlist needs its
+own reviewed policy; this workflow does not infer permission from reachability alone.
+
+The workflow keeps `contents: read`, disables persisted checkout credentials, uses
+pinned Actions and has a 45-minute job limit. It installs the existing pinned Python,
+SDK and Emscripten prerequisites. It uses no request cache, public shelf or deployment.
+The JieLi downloader and v1 execution-environment limitations below remain unchanged;
+the bundle records the actual compiler/SDK identity rather than promising arbitrary
+host equivalence. Source builds receive no `GH_TOKEN`, `GITHUB_TOKEN` or Actions runtime
+credentials. Proxy/CA trust, supported toolchain/SDK selectors and loader paths remain
+available. Caller `FELUCCA_*` flags are replaced by the selected canonical profile;
+Node hooks and emulator-option overrides are refused rather than evaluated.
+
+`tools/maintainer_bundle.py` clones the exact clean source and pinned clean Engines
+locally into a fresh ignored run directory. It builds the native image, exports and
+verifies complete source, performs the real Git-free rebuild, prepares the SDK's normal
+no-ports runtime prerequisites, then performs a **fresh paired** runtime build. The
+preparation build is not accepted as a matching simulator. The paired producer freezes
+and checks SDK provenance. The driver then invokes the existing manifest sealer and
+offline verifier and checks that source/profile/runtime still match the request.
+Only after those checks does it promote `candidate-bundle` to `verified-bundle`.
+The source checkout and its existing build outputs are not regenerated or overwritten.
+
+The upload step runs only after success and uploads only `verified-bundle/`. Any build,
+reproduction, simulator, provenance, seal or final-verification failure prevents that
+upload; there is no native-only fallback in this workflow. Separate diagnostics contain
+only `RESULT.json` and command logs, never unverified firmware directories. A failed or
+interrupted run is not reusable: choose a new output directory. Abrupt termination can
+leave partial local trees/logs; runner cleanup or explicit owner cleanup is required,
+not a passing receipt. This workflow is staging, not full CI, browser behavior, physical
+FM-1 qualification, a release or an installation approval.
+
+Before merging or dispatching the workflow, a maintainer can exercise the same recipe
+on a **clean committed local candidate**, from its checkout root with the build and
+Emscripten prerequisites already configured:
+
+```sh
+revision=$(git rev-parse HEAD)
+uv run --locked --group build python tools/maintainer_bundle.py plan --mode local \
+  --revision "$revision" --profile standard --output build/maintainer-standard
+uv run --locked --group build python tools/maintainer_bundle.py run --mode local \
+  --revision "$revision" --profile standard --output build/maintainer-standard
+python3 tools/build_manifest.py verify build/maintainer-standard/verified-bundle
+```
+
+Planning checks admission, source/pin cleanliness, profile and destination without
+building. Local mode explicitly records a local maintainer request, with no GitHub
+review/CI attestation; it is refused inside Actions. The run's `RESULT.json` records
+each command and outcome without dumping the environment. Repeat each other intended
+canonical profile with a distinct new directory. Generated prerequisites and virtual
+environments stay outside the verified extraction. Reusing a destination, changing
+source/pins or presenting an unavailable/mismatched simulator must fail. The focused
+`python3 tests/maintainer_bundle_test.py` fixtures exercise those refusal paths using
+real local Git/source archives and simulated compiler/sealer processes; they do not
+replace the real local recipe above or matching CI.
+
 ## Prepare the actual build and reproduction
 
 For a clean reviewed checkout on a local maintainer machine, the following example uses
@@ -108,6 +172,9 @@ A build receipt alone establishes none of those results.
 The browser retains its existing enabled simulated-ISR misuse assertions; the native
 target defaults to disabled assertions. The mapping records this deliberate difference
 and requires browser assertions to stay enabled, without changing compiler arguments.
+The shared audio observer `FELUCCA_RENDER_STAGE` and its header guard must match
+between native and runtime definitions. The normal browser observer is OFF; a
+native observer-enabled package cannot claim a match to that disabled runtime.
 
 ## Seal and verify
 
@@ -219,4 +286,5 @@ Public authorization, request parsing/quotas, job cancellation, cache/index/rete
 CORS/delivery and end-to-end explicit backup/install remain #466 work. Browser consumption
 belongs to #467, the editor-preview protocol adapter to #413, arbitrary profile estimates
 to #465, GPL source/pin integration to #360 and runtime compatibility policy/transport to
-#422. Existing release/PR workflows and site staging are unchanged.
+#422. Existing release/PR workflows and site staging are unchanged; the separate manual
+maintainer workflow delivers only the first immutable-source orchestration stage.

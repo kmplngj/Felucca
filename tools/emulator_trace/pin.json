@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/joakimeriksson/fm1-emu.git",
+  "commit": "eef6d957aa94d3dfa74551688d707b984b792922",
+  "rust_toolchain": "1.99.1",
+  "crates": [
+    "fm1-emu",
+    "fm1-core",
+    "fm1-isa",
+    "fm1-soc"
+  ],
+  "source_sha256": {
+    "Cargo.toml": "d732cf692821f722bc29948c1259d177e62dc47bddb6adcbd97386cc65144042",
+    "LICENSE": "de303af17a9bed9ac5ab105f33ef72b3aa5c658d30132d13609db45f7fc7f257",
+    "crates/fm1-core/Cargo.toml": "80bfcef5e21693097257e61b21d56ea43a483911213b49fb07b7afb07a3f723e",
+    "crates/fm1-core/build.rs": "834c8faa5994af1af79712de8596d8ff07962465190057e731c5daa4af190f26",
+    "crates/fm1-core/src/jit.rs": "992a4a5c48a38873345dc4e8eace262d7e0d04af06e82d4415300bcd7beeca59",
+    "crates/fm1-core/src/jit/x64.rs": "537c0dcf44bd3b36839af5fbd6f389f9258e720e81ec85e8d91b70e41c154578",
+    "crates/fm1-core/src/jit_a64.rs": "2c1615b3f91c34dcfe3c77ffbb2b0a897060abd3e590073a28ec0465bc4dfeeb",
+    "crates/fm1-core/src/jit_wasm.rs": "f03f1546903a939ef8e0d774cb3c53126790411cd30a5ff01047726bba49eb66",
+    "crates/fm1-core/src/jit_x64.rs": "790b9a1ef6da22287bdb4d85612e00ae8723ac0585acdd78e266c2e284f856d2",
+    "crates/fm1-core/src/lib.rs": "f3e19b1ba2b113a9b87358ccca733c07ae096b0fe18d2f9e93d50509019c50cd",
+    "crates/fm1-emu/Cargo.toml": "6d6896b515b4669a01170d52068a5794f13f9803a777c63be9b618db10c6641c",
+    "crates/fm1-emu/build.rs": "495ba4916a36fca32aa43c65454089094fe22eea3aa51917dd92c469d3091849",
+    "crates/fm1-emu/src/buildinfo.rs": "d47b9e29f42d3e32571ef5c5eb3df17d52caa65c4c83eef74e23ad70baeb21ad",
+    "crates/fm1-emu/src/main.rs": "83bb82f5eabcf1b62c0a1f0a4b4bf15090b2b76f62a4e6ec0220d569faa37f10",
+    "crates/fm1-isa/Cargo.toml": "3889ecda35f93e62021b4e5330a39aa00e8648c43e3e4455c55bfbde1a631a73",
+    "crates/fm1-isa/src/fpu.rs": "3ffd450a3a80aadecfbbee288aebf6792a6a1ddfdd3e601d2234fade80f3d477",
+    "crates/fm1-isa/src/generated_isa.rs": "42f5a32abc5223916387e31a90402a21b23d4a02ff288321251f499bbf5b2a3e",
+    "crates/fm1-isa/src/lib.rs": "728956cac521e4dde273ac309ead0c46120876ea029d3a544377d77cf23c76fb",
+    "crates/fm1-soc/Cargo.toml": "f28133c7c313de7d6c6132c14734810c08e1a3aac36bce70c2c38a7ac5446a55",
+    "crates/fm1-soc/src/flaky.rs": "b54841a9de92bf1cc1ab9e73bd89a7689778a18908bd0e429743caa191b0a7d3",
+    "crates/fm1-soc/src/fwsc.rs": "1d6366d790b7b7a0dc7ec978d42cb9c91efc1256b26e87ed972d15a0e0e931d0",
+    "crates/fm1-soc/src/lcd.rs": "f50418d6a45da15da8cc0f5b514ee35889f65b780062f3d8deba6f0f5859521d",
+    "crates/fm1-soc/src/lib.rs": "ab062a43d5907a551322bf21d488816f1206c97c35528ee70f735fc8fbf9350c",
+    "crates/fm1-soc/src/machine.rs": "d95d3ea03600dc05961a80136b99ea0801cabd20ab22e353a0500a0d7f74262d",
+    "crates/fm1-soc/src/p33.rs": "21fde11baba37155cd45c7be71054516836cc01fc72114579c8cc37cf0775145",
+    "crates/fm1-soc/src/periph.rs": "25503467028aaf65d38f5077ed4474c8464adabf4e04aaebceec577a489b5ed1",
+    "crates/fm1-soc/src/ram.rs": "a6ee50c0130de3a22d1c3eb63a82cb85c5c82ed60f6dbb125602027c9accdb00",
+    "crates/fm1-soc/src/script.rs": "732e757221c10b54e173ee5e3b5843c3bcfb0e533394df7b8da7cf9752792aca",
+    "crates/fm1-soc/src/smk.rs": "9077aa2cb10b3f055a385a35b125126c7001191a0664954703ddfee6d4388b15",
+    "crates/fm1-soc/src/spiflash.rs": "35d22f57b59b8ada4e0e52f17b644d6443edae81519f82ac9d8a737602a558f2",
+    "crates/fm1-soc/src/usb.rs": "05747ae464788261427f0331fecae265130059961a6d73a5396f2d69f410ebc1"
+  },
+  "patch_sha256": "67ad4c37b09b5d49d7d47cdec848005b55f4a47166a76999e4c296ac649656c2",
+  "licenses": {
+    "MIT": {
+      "notice": "LICENSE-MIT-fm1-emu.txt",
+      "files": "Selected source except the file below; upstream workspace declares MIT."
+    },
+    "GPL-3.0-only": {
+      "files": [
+        "crates/fm1-soc/src/usb.rs"
+      ],
+      "notice": "../../LICENSE",
+      "evidence": "SPDX declaration at usb.rs:36; module compiled unconditionally by fm1-soc."
+    }
+  },
+  "effective_main_sha256": "e5485a006f834a1d03a82d769c6042f5dae98111c6af3c601ed3a8d62101c5ab"
+}

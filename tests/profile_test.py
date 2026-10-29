@@ -96,7 +96,7 @@ class ResolverTests(unittest.TestCase):
                 profile.resolve(self.catalog,self.standard,reference)
 
     def test_display_and_source_metadata_are_not_engine_identity(self):
-        self.catalog['engines'][3].update(name='DISPLAY',symbol='ENG_RELOCATED',source='elsewhere/lofi.c')
+        self.catalog['engines'][3].update(name='DISPLAY',symbol='ENG_RELOCATED',source='firmware/engines/src/relocated-lofi.c')
         engines,_=profile.resolve(self.catalog,self.standard,self.reference)
         self.assertEqual(next(e for e in engines if e['id']==3)['key'],'felucca.engine.lofi')
 
@@ -138,6 +138,103 @@ class ResolverTests(unittest.TestCase):
     def test_metadata_is_required(self):
         for key in ['tag','icon','cc','category','preset_categories','order','union_control']:
             c=copy.deepcopy(self.catalog);del c['engines'][3][key];self.fails('metadata',c=c)
+
+    def test_profiles_reject_retired_and_noninteger_ids(self):
+        self.standard['engines'].append(1);self.fails('retired')
+        self.standard['engines'].pop()
+        for value in (False, 0.0, '0'):
+            p=copy.deepcopy(self.standard);p['engines'][0]=value
+            self.fails('must be integers',p=p)
+            p=copy.deepcopy(self.standard);p['exclude']=[value]
+            self.fails('must be integers',p=p)
+        c=copy.deepcopy(self.catalog);c['engines'][0]['id']=False
+        self.fails('stable range',c=c)
+
+    def test_source_paths_cannot_escape_collection_ownership(self):
+        for source in ('', '.', '/firmware/engines/src/eng_analog.c',
+                       'firmware/engines/../src/eng_fm6.c', 'firmware/engines/./src/eng_analog.c',
+                       'firmware//engines/src/eng_analog.c', 'firmware/engines/src/eng_analog.c/',
+                       'firmware\\engines\\src\\eng_analog.c'):
+            c=copy.deepcopy(self.catalog);c['engines'][0]['source']=source
+            self.fails('invalid source path',c=c)
+        for i,source in ((0,'firmware/src/eng_fm6.c'),(2,'firmware/engines/src/eng_analog.c')):
+            c=copy.deepcopy(self.catalog);c['engines'][i]['source']=source
+            self.fails('source differs',c=c)
+        c=copy.deepcopy(self.catalog);c['engines'][0]['owner']='unknown'
+        self.fails('unknown collection',c=c)
+
+    def test_collection_boundaries_and_dependencies(self):
+        c=copy.deepcopy(self.catalog);c['collections']['other']=copy.deepcopy(c['collections']['portable-mit'])
+        self.fails('unsupported collection',c=c)
+        c=copy.deepcopy(self.catalog);c['collections']['portable-mit']['path']='firmware/elsewhere'
+        self.fails('unsupported collection',c=c)
+        c=copy.deepcopy(self.catalog);c['collections']['portable-mit']['requires']=['absent']
+        self.fails('unknown dependency',c=c)
+        c=copy.deepcopy(self.catalog);c['collections']['firmware']['requires']=['portable-mit']
+        c['collections']['portable-mit']['requires']=['firmware']
+        self.fails('collection dependency cycle',c=c)
+
+    def test_synthetic_gpl_owner_reuses_mit_and_cannot_enable_checkout(self):
+        c=copy.deepcopy(self.catalog);p=copy.deepcopy(self.standard);r=copy.deepcopy(self.reference)
+        c['collections']['portable-gpl']=dict(path='firmware/engines-gpl',repository='https://example.invalid/fixture',
+            license='GPL-3.0-only',licenses=['firmware/engines-gpl/LICENSE'],requires=['portable-mit'])
+        e=copy.deepcopy(c['engines'][-1]);e.update(id=15,key='felucca.engine.gpl-fixture',name='FIXTURE',order=15,
+            owner='portable-gpl',source='firmware/engines-gpl/src/fixture.c',requires=['portable-dsp'])
+        c['engines'].append(e);p['engines'].append(15);r['slots'][15].update(key=e['key'],status='active')
+        engines,providers=profile.resolve(c,p,r)
+        self.assertEqual(engines[-1]['owner'],'portable-gpl')
+        self.assertIn('portable-dsp',[p['id'] for p in providers])
+        with patch.object(profile,'validate_selection',return_value=(c,p,engines,providers)):
+            with self.assertRaisesRegex(ValueError,'not integrated.*#360'):profile.generated(ROOT,'standard')
+        c['collections']['firmware']['requires']=['portable-gpl']
+        with self.assertRaisesRegex(ValueError,'requires another collection'):
+            profile.resolve(c,self.standard,r)
+
+    def test_collection_provenance_and_head_independent_selection(self):
+        output=profile.generated(ROOT,'standard');resolved=json.loads(output['resolved-profile.json'])
+        self.assertEqual(set(resolved['collections']),{'firmware','portable-mit'})
+        mit=resolved['collections']['portable-mit'];native=resolved['collections']['firmware']
+        self.assertEqual(mit['revision'],resolved['source_pins']['engines_gitlink'])
+        self.assertEqual(native['revision'],resolved['source_pins']['firmware_revision'])
+        self.assertEqual(mit['api']['required'],mit['api']['actual'])
+        self.assertIn('native-core',mit['dependencies'])
+        self.assertIn(profile.IDENTITY_REFERENCE,native['input_sha256'])
+        self.assertIn('firmware/engines/LICENSE',mit['input_sha256'])
+        self.assertIn('firmware/src/core.h',native['input_sha256'])
+        inputs=[set(c['input_sha256']) for c in resolved['collections'].values()]
+        self.assertFalse(inputs[0]&inputs[1]);self.assertEqual(set.union(*inputs),set(resolved['input_sha256']))
+        pins=dict(resolved['source_pins'],firmware_revision='f'*40)
+        with patch.object(profile,'source_pins',return_value=pins):changed=profile.generated(ROOT,'standard')
+        self.assertEqual(resolved['selection_sha256'],json.loads(changed['resolved-profile.json'])['selection_sha256'])
+        for name in profile.OUTPUTS:
+            if name!='resolved-profile.json':self.assertEqual(output[name],changed[name])
+
+    def test_api_and_license_inputs_affect_freshness(self):
+        outputs=profile.generated(ROOT,'standard');resolved=json.loads(outputs['resolved-profile.json'])
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            for rel in resolved['input_sha256']:
+                dest=root/rel;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy(ROOT/rel,dest)
+            with patch.object(profile,'source_pins',return_value=resolved['source_pins']):
+                for rel in ('LICENSE','firmware/engines/LICENSE','firmware/engines/src/felucca_engine.h','firmware/src/core.h'):
+                    original=(root/rel).read_text();(root/rel).write_text(original+'\n')
+                    changed=profile.generated(root,'standard')
+                    self.assertNotEqual(outputs,changed)
+                    (root/rel).write_text(original)
+                for rel,old,new in (('firmware/engines/src/felucca_engine.h','FELUCCA_ENGINE_API_VERSION 1u','FELUCCA_ENGINE_API_VERSION 2u'),
+                                    ('firmware/src/core.h','FELUCCA_ENGINE_API_REQUIRED 1u','FELUCCA_ENGINE_API_REQUIRED 2u')):
+                    original=(root/rel).read_text();self.assertIn(old,original)
+                    (root/rel).write_text(original.replace(old,new))
+                    with self.assertRaisesRegex(ValueError,'incompatible portable API'):profile.generated(root,'standard')
+                    (root/rel).write_text(original)
+
+    def test_legacy_flags_distinguish_recipe_constraints_from_effective_engines(self):
+        resolved=json.loads(profile.generated(ROOT,'standard',feature_flags={'FELUCCA_FM4':'1','FELUCCA_SLICE':'0'})['resolved-profile.json'])
+        self.assertIn(1,resolved['engine_ids']);self.assertNotIn(1,resolved['profile_engine_ids'])
+        self.assertIn(13,resolved['profile_engine_ids']);self.assertNotIn(13,resolved['engine_ids'])
+        self.assertEqual({e['id'] for e in resolved['engine_identities']},set(resolved['engine_ids']))
+        self.assertIn('firmware/src/eng_digital.c',resolved['input_sha256'])
+        self.assertNotIn('firmware/src/eng_slice.c',resolved['input_sha256'])
     def test_target_budget_render_coverage_is_complete(self):
         import ast
         module=ast.parse((ROOT/'tests/target_budget.py').read_text())
@@ -186,6 +283,8 @@ class ResolverTests(unittest.TestCase):
     def test_check_uses_recorded_font_without_hiding_explicit_override(self):
         env=dict(os.environ,FELUCCA_FONT='m8stealth',FELUCCA_FM4='0',FELUCCA_SLICE='1')
         with tempfile.TemporaryDirectory() as td:
+            subprocess.run([sys.executable, str(ROOT/'tools/gen_bitmap_font.py'), str(Path(td)/'ui_fonts.h')],
+                           check=True, env=env, capture_output=True)
             cmd=[sys.executable,str(ROOT/'tools/profile.py'),'--out',td,'--profile','standard']
             subprocess.run(cmd,env=env,check=True,capture_output=True)
             default_env=env.copy();default_env.pop('FELUCCA_FONT')
@@ -195,10 +294,19 @@ class ResolverTests(unittest.TestCase):
                 self.assertNotEqual(rejected.returncode,0)
                 self.assertIn(b'm8stealth only',rejected.stderr)
             self.assertEqual(subprocess.run(cmd+['--check'],env=env,capture_output=True).returncode,0)
+            manifest = Path(td)/'ui-font-manifest.json'
+            original = manifest.read_bytes()
+            manifest.write_text('{}')
+            rejected = subprocess.run(cmd+['--check'], env=env, capture_output=True)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn(b'stale native font manifest', rejected.stderr)
+            manifest.write_bytes(original)
 
     def test_determinism_and_stale_generated_selection(self):
         env=dict(os.environ,FELUCCA_FM4='0',FELUCCA_SLICE='1')
         with tempfile.TemporaryDirectory() as td:
+            subprocess.run([sys.executable, str(ROOT/'tools/gen_bitmap_font.py'), str(Path(td)/'ui_fonts.h')],
+                           check=True, env=env, capture_output=True)
             cmd=[sys.executable,str(ROOT/'tools/profile.py'),'--out',td,'--profile','standard']
             subprocess.run(cmd,check=True,env=env,capture_output=True)
             stamp=(Path(td)/'resolved-profile.json').read_bytes()
@@ -211,6 +319,7 @@ class ResolverTests(unittest.TestCase):
             self.assertNotEqual(subprocess.run(cmd[:-1]+['reduced-lofi','--check'],env=env,capture_output=True).returncode,0)
             self.assertNotEqual(subprocess.run(cmd+['--check'],env=dict(env,FELUCCA_SLICE='0'),capture_output=True).returncode,0)
             info=json.loads(stamp)
+            self.assertIn('assets/fonts/m8stealth/resource-policy.json', info['input_sha256'])
             self.assertEqual(len(info['source_pins']['engines_gitlink']),40)
             self.assertIn('firmware/engines/src/eng_lofi.c',info['input_sha256'])
 

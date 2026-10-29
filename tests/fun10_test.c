@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* 1.2's stored-format changes (FUN10), on the real sound, sequencer, project, user preset and UI sources (with the
- * stubs of tests/ui_test.c):
+ * stubs of tests/ui_harness.h):
  *   LFO 2      SYNC: one cycle per note value of the tempo (several values and tempi, the external clock's measured
  *              tempo), RATE ignored meanwhile; OFF: RATE's table exactly as before. TRIG: NOTE restarts at PHS on a
  *              fresh phrase (as before), FREE never (with SYNC: from PHS when PLAY starts). POL: UNI 0..+1 (the
@@ -18,8 +18,7 @@
  *              them load as before (tests/old_pack.h), a FUN9 claiming more than 64 records or a nudge bit refused, a
  *              user preset's pattern keeps no nudge (its bit 4 is the tie), user presets of 99 and 103 parameters.
  * Built and run by tests/run_tests.sh. */
-#define UI_TEST_NO_MAIN 1
-#include "ui_test.c"
+#include "ui_harness.h"
 #include "old_pack.h"
 
 /* ---------------------------------------------------------------- LFO 2 --- */

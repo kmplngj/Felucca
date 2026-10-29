@@ -10,13 +10,15 @@ device asks (SysEx read requests on the logical image) and we answer. Then
 the FM-1 restarts and the installed identity is checked.
 
   fm1_install.py PACKAGE.fwsc [--port NAME] [--yes] [--force]
-  fm1_install.py FM-1.fwsc            (the official V15 file: back to the stock firmware)
+  fm1_install.py FM-1.fwsc            (the official V15 or V16 file: back to the stock firmware)
   fm1_install.py --info [--port NAME]
 
 If the FM-1 is still in update mode (an earlier install was cut off), the
 install finishes the write. Before any MIDI port is opened the package's
 structure is checked (UFW header, entry list, every file's extent and CRC,
 the loader heads). Only matching known package/loader families may write.
+M-VAVE's FM1 Open firmware and m-bootloader's installer are refused with
+their own explanation (docs/usb-rescue.md).
 --force is a deprecated compatibility option with no effect. Needs mido with python-rtmidi.
 
 Exit codes: 0 done, 1 cancelled or other error, 2 bad arguments or package,
@@ -38,9 +40,18 @@ FINISH_CHECK, FINISH_WRITE = 0xE0000000, 0xF0000000
 MAXDATA = 512
 BLOCKS, BLK, KEEP = 20, 0x30, 0x2F
 LOADER_MARK = b"FELUCCA-LOADER-1"
-# the unmodified official FM-1 V15 (FM-1.fwsc from M-VAVE): returning to it is allowed without --force,
-# as the web installer's "Return to official V15" (web/fm1pkg.js validateStockPackage)
-STOCK_V15_SHA256 = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a"
+# the unmodified official FM-1 firmware files (FM-1.fwsc from M-VAVE), reviewed (#619): returning to one of them
+# is allowed, the exact file only. Their loader also writes M-VAVE's boot area; firmware/src/ota.c OTA_STOCK pins
+# the same images on the device. A FM-1_0NN identity alone is no evidence: modified packages reuse FM-1_016.
+STOCK_SHA256 = {
+    "FM-1_015": "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a",   # V15
+    "FM-1_016": "d017fb65e70aca97ee29d944470c3515a74581df5c0576bf70de917c7b2b61d5",   # V16 (2026-10-21)
+}
+STOCK_RE = re.compile(r"FM-1_0\d\d")              # M-VAVE's identities (M-UPGRADE versions): pinned files only
+MBOOT_PRODUCT = "FM-1_099"                        # m-bootloader's installer (jvitkauskas/m-bootloader)
+# M-VAVE's FM1 Open firmware, on the device and as a package (its kit's sdk/WebUpdate.js openIdentity): its updater
+# takes only a package it was armed for first, which Felucca's installers do not do
+OPEN_RE = re.compile(r"FM1_OFFICIAL_OPEN|FM1_COMMUNITY_\d+|FM-1_8\d{6}")
 # the host-side preflight (ufw_damage): the rules of the device's UFW parser (firmware/src/ota.c ota_ufw,
 # ota_stage) and of the loader (firmware/loader/ldr_core.c), checked before any MIDI port is opened
 UFW_HDR, UFW_ENT, UFW_READ = 0x40, 0x50, 0x400   # header, entry; the device reads both in one 1 KiB go
@@ -51,16 +62,18 @@ OTA_MAX, OTA_LOAD = 0x4E00, 0x01C0A800    # loader body: OTA_AREA_LEN - 0x200; i
 # that is room for any other files (V15: 684 KiB) and still refuses a wrong file before it is read whole
 MAX_PKG = 0x200000
 PRODUCT_RE = re.compile(r"FM-1_[A-Z0-9._-]{1,15}")
-LOADER_FAMILIES = {"felucca-v1": "ota-FM-1_900", "stock-v15": "ota-FM-1_015"}
-PORT_RE = re.compile(r"fm-1|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
+# the official loader is the same in V15 and V16; staged by Felucca it answers with the record name ota.c writes
+LOADER_FAMILIES = {"felucca-v1": "ota-FM-1_900", "stock": "ota-FM-1_015"}
+PORT_RE = re.compile(r"fm-?1|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
 
 # seconds; the tests shorten them
 DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0, "retry": 1.0,
          "poll": 1.0, "hs": 1.0, "idle_check": 8.0, "idle_write": 180.0,
          "wait_loader": 30.0, "wait_reboot": 40.0}
 
-EXIT = {"usage": 2, "badpkg": 2, "notfound": 3, "model": 6, "lost": 4, "stopped": 4, "badreq": 4,
+EXIT = {"usage": 2, "badpkg": 2, "notfound": 3, "model": 6, "open": 6, "lost": 4, "stopped": 4, "badreq": 4,
         "noloader": 5, "noreturn": 5, "mismatch": 6}
+CODES = "docs/usb-rescue.md#update-result-codes"
 
 
 class InstallError(Exception):
@@ -135,6 +148,11 @@ class Identity:
     @property
     def loader(self):
         return self.model.lower().startswith("ota-")
+
+    @property
+    def open(self):
+        """M-VAVE's FM1 Open firmware (FM-1_8nnnnnn looks like an FM-1 identity, but is not one we can update)"""
+        return OPEN_RE.fullmatch(self.text) is not None
 
 
 def printable(b):
@@ -275,14 +293,22 @@ def package_family(image, product):
     None is an unmarked, otherwise valid native package. No connected loader is
     approved to write an unknown loader family.
     """
+    if isinstance(product, str) and OPEN_RE.fullmatch(product):
+        raise InstallError("badpkg", f"{product} is an M-VAVE FM1 Open firmware package: install it with M-VAVE's "
+                                     "FM1 Open updater. Felucca's installers do not install it")
+    if product == MBOOT_PRODUCT:
+        raise InstallError("badpkg", f"{product} is m-bootloader's installer: it replaces the FM-1's bootloader, which "
+                                     "Felucca's installers never write. Install m-bootloader with its own instructions "
+                                     "if you want it (docs/usb-rescue.md#m-bootloader)")
     if (not isinstance(product, str) or not PRODUCT_RE.fullmatch(product)
             or any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product))):
         raise InstallError("badpkg", f"unsupported expected app identity {product!r}")
-    if (product == "FM-1_015"
-            and hashlib.sha256(package_bytes(image, product)).hexdigest() == STOCK_V15_SHA256):
-        return "stock-v15"
-    if product == "FM-1_015":
-        raise InstallError("badpkg", "FM-1_015 is reserved for the exact approved official V15 package")
+    if STOCK_RE.fullmatch(product):
+        if hashlib.sha256(package_bytes(image, product)).hexdigest() == STOCK_SHA256.get(product):
+            return "stock"
+        raise InstallError("badpkg", f"{product} is reserved for M-VAVE's official firmware: only the exact reviewed "
+                                     f"files ({', '.join(f'V{p[-2:]}' for p in STOCK_SHA256)}) are installed, and "
+                                     "this is not one of them")
     if why := ufw_damage(image):
         raise InstallError("badpkg", f"damaged or unsupported package, nothing was sent: {why}")
     files = {}
@@ -297,6 +323,16 @@ def package_family(image, product):
     if LOADER_MARK in loader[0x48:0x48 + 64] and u32(loader, 0x24) <= 0x14000:
         return "felucca-v1"
     return None
+
+
+def refuse_open(dev):
+    """M-VAVE's FM1 Open firmware: nothing is sent, the user returns it to the official firmware first"""
+    if dev.id.open:
+        dev.link.close()
+        raise InstallError("open", f"the FM-1 runs M-VAVE's FM1 Open firmware ({dev.id.text}): its updater takes "
+                                   "only a package it was armed for, which Felucca's installers do not do. Return it "
+                                   "to the official V15 with the FM1 Open updater first, then install this "
+                                   "(docs/usb-rescue.md#m-vave-fm1-open-firmware). Nothing was sent")
 
 
 def require_loader(ota, family):
@@ -455,14 +491,14 @@ class Updater:
         served, last = 0, time.monotonic()
         while True:
             pkt = link.read(DELAY["poll"])
-            if pkt is None:
+            r = parse_request(pkt) if pkt is not None else None
+            # Unrelated/malformed SysEx is not progress and must not hide a
+            # stopped or disconnected updater while the receive queue stays busy.
+            if r is None:
                 if link.lost:
                     return served, False, True
                 if time.monotonic() - last > idle:
                     return served, False, False
-                continue
-            r = parse_request(pkt)
-            if not r:
                 continue
             fl, addr, n = r
             last = time.monotonic()
@@ -490,7 +526,9 @@ class Updater:
         if not finished:
             raise InstallError("lost" if lost else "stopped",
                                f"the FM-1 {'was disconnected' if lost else 'stopped answering'} after "
-                               f"{served} requests; nothing was written")
+                               f"{served} requests; nothing was written" +
+                               ("" if lost else f". If its screen shows UPDATE FAILED -N, the firmware refused "
+                                                f"the package: see {CODES}"))
         step("loader")
         time.sleep(DELAY["loader"])
         ota = self.wait_for(lambda i: i.loader, DELAY["wait_loader"])
@@ -535,6 +573,7 @@ class Updater:
         except InstallError:
             dev.link.close()
             raise
+        refuse_open(dev)
         if model_of(dev.id.text) != model_of(product):
             dev.link.close()
             raise InstallError("model", f"the device is {dev.id.text}, the package is for {product}")
@@ -558,11 +597,11 @@ def load_package(path, force):
     product = product_of(raw)
     image = logical_image(raw)
     family = package_family(image, product)
-    if family == "stock-v15" and hashlib.sha256(raw).hexdigest() != STOCK_V15_SHA256:
-        raise InstallError("badpkg", "official V15 requires the exact approved whole-file digest")
+    if family == "stock" and hashlib.sha256(raw).hexdigest() != STOCK_SHA256[product]:
+        raise InstallError("badpkg", "official firmware requires the exact approved whole-file digest")
     if family is None:
         raise InstallError("badpkg", f"{path}: no Felucca update loader in this package; only Felucca's own "
-                                     "packages and the unmodified official V15 (FM-1.fwsc) are installed "
+                                     "packages and the unmodified official V15 or V16 (FM-1.fwsc) are installed "
                                      "(--force cannot approve an unknown loader family)")
     return product, image
 
@@ -571,7 +610,9 @@ def not_found(up):
     names = up.backend.input_names()
     where = f"no MIDI port matching {up.port!r} answered" if up.port else "FM-1 not found"
     return InstallError("notfound", f"{where} (USB data cable? another app using it?)"
-                        f"\n  MIDI inputs: {', '.join(names) if names else '(none)'}")
+                        f"\n  MIDI inputs: {', '.join(names) if names else '(none)'}"
+                        "\n  Switched on holding PLAY or REC with m-bootloader, the FM-1 shows its menu or download "
+                        "mode and has no MIDI port: switch it off, then on without keys (OCT- for Felucca's rescue)")
 
 
 class Progress:
@@ -606,16 +647,22 @@ def run(a, backend, out, ask):
         if not dev:
             raise not_found(up)
         dev.link.close()
-        mode = "update loader (update not finished)" if dev.id.loader else "running"
+        mode = ("update loader (update not finished)" if dev.id.loader else
+                "M-VAVE FM1 Open firmware: return it to the official firmware before installing" if dev.id.open else
+                "running")
         print(f"{dev.id.text}  [{mode}]  port: {dev.name}", file=out)
         return 0
     product, image = load_package(a.package, a.force)
     print(f"package: {product}  ({a.package})", file=out)
+    if STOCK_RE.fullmatch(product):
+        print(f"         M-VAVE's official V{product[-2:]}: its loader also writes M-VAVE's boot area (replacing "
+              "m-bootloader, if installed) and the flash above the app area", file=out)
     dev = up.find()
     if not dev:
         raise not_found(up)
     print(f"device:  {dev.id.text}  ({dev.name})" + ("  in update mode: the write will be finished" if dev.id.loader else ""),
           file=out)
+    refuse_open(dev)
     if not a.yes and not ask("Install? Do not unplug the FM-1 while writing. [y/N] "):
         dev.link.close()
         print("cancelled", file=out)
