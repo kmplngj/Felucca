@@ -34,6 +34,18 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- **RAM-loader redraw budget:** progress repaints only the percentage strip,
+  and DISPON starts with a fresh deadline. An aggregate redraw overrun stops new
+  transfers without permanently disabling the display; actual transfer timeouts
+  still retain the in-flight source. Verified-sector progress and update policy
+  stay unchanged. [Screen meanings and retry limits](usb-rescue.md#standalone-ram-loader-screen);
+  exact-package FM-1 redraw timing, install and retry checks remain pending.
+
+- Focused piano keys in the browser emulator respond to Enter, Space and numpad
+  Enter, report their pressed state to assistive technology, and release when
+  focus moves away. Adapted to the native input ownership model after
+  [fm1-base's keyboard controls](https://github.com/charlesvestal/fm1-base/commit/46743d1de1101f0a614964e0a4334edd48b5aded).
+
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed present known numeric fields,
@@ -192,9 +204,11 @@ recorded in the linked reports, rather than every current build or device.
   [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
   qualification separate from the offline result.
 
-- PR-source cleanup protects reflog-only detached commits and refuses removal with
-  deinitialized or orphan private submodule repositories. It preserves history
-  without automatic metadata repair. See the
+- PR-source cleanup protects reflog-only detached commits in the parent worktree
+  and its submodules, including commits retained only by an old-side HEAD-log entry.
+  It refuses removal with deinitialized or orphan private submodule repositories
+  and preserves history without automatic metadata repair. Unrelated checkouts'
+  reflogs do not block cleanup. See the
   [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
 
 - Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
