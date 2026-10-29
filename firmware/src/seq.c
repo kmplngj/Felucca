@@ -1250,12 +1250,12 @@ static void seq_tick(track_t *t, uint32_t n)
 
 /* MIDI in: the track a channel plays (0..15): G_ROUTE CH1-4 (0) channels 1..4 their parts (5..16 never get
  * here: midi_event drops them), SEL (1) every channel the selected track; CH5-8 .. CH13-16 (2..4) as CH1-4 on
- * their four channels (midi_base); TRACK (5, 1.5.5) the first track set to the channel, else the first set to OMNI, else
+ * their four channels (midi_base); TRACK (5, 1.5.5) all tracks set to the channel (midi_route_mask), else the first set to OMNI, else
  * none (dropped as a channel outside a block) */
 static volatile uint8_t midi_route;        /* the G_ROUTE events_block last saw (a change to a block: midi_route_block;
                                             * MIDI_ROUTE_AGAIN: TRACK's channels changed, the same again) */
 #define MIDI_ROUTE_AGAIN 0xFFu
-static int32_t midi_slot(uint32_t ch)      /* the track channel ch plays, -1 none (and with SEL) */
+static int32_t midi_slot(uint32_t ch)      /* first track channel ch plays, -1 none (and with SEL) */
 {
     int32_t b = midi_base(), omni = -1;
     uint32_t i;
@@ -1275,6 +1275,17 @@ static track_t *midi_track(uint32_t ch)
 {
     int32_t k = midi_slot(ch);
     return k >= 0 ? &trk[k] : TSEL;
+}
+
+/* Exact TRACK assignments form a layer; OMNI remains a first-match fallback. */
+static uint32_t midi_route_mask(uint32_t ch)
+{
+    uint32_t i, mask = 0;
+    if (song.g[G_ROUTE] == ROUTE_TRACK)
+        for (i = 0; i < NPART; i++)
+            if (mch_get(i) == ch)
+                mask |= 1u << i;
+    return mask ? mask : 1u << trk_index(midi_track(ch));
 }
 
 #include "midi_control.c"

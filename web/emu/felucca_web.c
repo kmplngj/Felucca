@@ -537,6 +537,22 @@ EXPORT uint32_t web_test_engine_param_base(void) { return P_E0; }
 EXPORT uint32_t web_test_engine_rank(uint32_t e) { return eng_ok(e) ? eng_rank(e) : UINT32_MAX; }
 EXPORT const char *web_test_user_name(uint32_t i) { return i < UP_SLOTS ? up_rec(i)->name : 0; }
 EXPORT uint32_t web_test_user_category(uint32_t i) { return up_cat(i); }
+/* Read-only observations for the real-browser MIDI layer test; edits use panel/MIDI input. */
+EXPORT uint32_t web_test_menu_position(void) { return ui.menu ? menu_tab() << 16 | ui.menu_sel : UINT32_MAX; }
+EXPORT uint32_t web_test_route(void) { return (uint32_t)song.g[G_ROUTE]; }
+EXPORT uint32_t web_test_channel(uint32_t i) { return i < NPART ? mch_get(i) : MCH_OFF; }
+EXPORT uint32_t web_test_sound(uint32_t i) { return i < NPART ? (uint32_t)trk[i].eng_req << 8 | trk[i].preset : 0; }
+EXPORT int32_t web_test_level(uint32_t i) { return i < NPART ? trk[i].p[P_LEVEL] : 0; }
+EXPORT uint32_t web_test_owners(uint32_t i) { return i < NPART ? midi_owners[i] : 0; }
+EXPORT uint32_t web_test_gates(uint32_t i)
+{
+    uint32_t n = 0, j;
+    if (i < NPART)
+        for (j = 0; j < NVOICE; j++)
+            n += trk[i].v[j].active && trk[i].v[j].gate;
+    return n;
+}
+
 EXPORT uint32_t web_test_macro_count(void)
 {
 #if FELUCCA_PROFILE_ENGINE_14

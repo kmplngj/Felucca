@@ -21,6 +21,7 @@ test report and maintainer approval before publication. Back up first and read t
 
 The standard profile combines thirteen engines with factory presets, four tracks sharing eight voices,
 a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
+[Native MIDI layers](docs/fork-features.md#native-midi-layers) let parts on a shared input channel play together.
 Eight is the shared allocation pool; deadline headroom depends on the sound and USB load
 ([measured PHYS example](docs/audio-deadline-investigation-2026-10-21.md)).
 The [fork feature guide](docs/fork-features.md) covers controls, defaults,

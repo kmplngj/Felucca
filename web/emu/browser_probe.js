@@ -3,6 +3,15 @@
 export function installProbe() {
   const OriginalNode = globalThis.AudioWorkletNode;
   const probe = globalThis.__feluccaTest = { frames: 0, draws: 0, leds: [], errors: [], audio: [], samples: 0 };
+  // A virtual Web MIDI input drives the page's actual onmidimessage handler.
+  // No physical MIDI device or permission prompt is involved in this browser test.
+  const input = { onmidimessage: null };
+  Object.defineProperty(navigator, "requestMIDIAccess", { configurable: true,
+    value: async () => ({ inputs: new Map([["layer-test", input]]), onstatechange: null }) });
+  probe.midi = (data) => {
+    if (!input.onmidimessage) throw new Error("page has not bound its Web MIDI input");
+    input.onmidimessage({ data: Uint8Array.from(data) });
+  };
   globalThis.AudioWorkletNode = class extends OriginalNode {
     constructor(context, name, options) {
       super(context, name, options);
@@ -19,6 +28,7 @@ export function installProbe() {
         if (m.type === "error") probe.errors.push(m.message);
         if (m.type === "frame") {
           if (m.testMacro) probe.macro = m.testMacro;
+          if (m.testLayer) probe.layer = m.testLayer;
           probe.frames++;
           if (m.fb) probe.draws++;
           if (m.leds) probe.leds = m.leds;
@@ -80,6 +90,13 @@ export function observeMacroWorklet(source) {
   const marker = 'const msg = { type: "frame" };';
   if (source.split(marker).length !== 2) throw new Error("worklet observation marker changed");
   return source.replace(marker, `${marker}
+      msg.testLayer = {
+        route: ex.web_test_route(), menu: ex.web_test_menu_position() >>> 0,
+        tracks: Array.from({ length: 4 }, (_, i) => ({
+          channel: ex.web_test_channel(i), sound: ex.web_test_sound(i),
+          level: ex.web_test_level(i), owners: ex.web_test_owners(i), gates: ex.web_test_gates(i)
+        }))
+      };
       msg.testMacro = {
         count: ex.web_test_macro_count(), engine: ex.web_test_engine(),
         rank: ex.web_test_engine_rank(14),

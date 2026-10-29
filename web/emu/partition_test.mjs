@@ -71,7 +71,7 @@ function health(label, r) {
   check(`${label} finite non-silent early, sustained, released/transport and late PCM`,
     floats.every(Number.isFinite) && audible(256, 1024) && audible(3072, 4096) && audible(14000, 23000) && audible(38912, 40960));
   const [held, released, stopped, restarted] = [0, 8, 16, 24].map(i => r.checks.subarray(i, i + 8));
-  check(`${label} pedal retains note 60 after key-up`, held[0] === 1 && held[1] === 0x81 && held[3] > 0);
+  check(`${label} pedal retains note 60 after key-up`, held[0] === 1 && held[1] === 0x11 && held[3] > 0);
   check(`${label} pedal release drops ownership and gate 60`, released[0] === 0 && released[1] === 0 && released[3] === 0);
   check(`${label} PLAY stops then restarts, late note 72 owned and gated`,
     released[5] === 1 && stopped[5] === 0 && restarted[5] === 1 && restarted[2] === 1 && restarted[4] > 0);
@@ -104,7 +104,7 @@ for (const seed of seeds) {
         check(`${label} negative ${name} changes complete PCM`, firstDifference(a.pcm, m.pcm) !== null);
         if (variant === 2) check(`${label} negative reordered events lose held gate`, m.checks[3] === 0);
         if (variant === 3) check(`${label} negative missing release retains note/gate at release checkpoint`,
-          m.checks[8] === 1 && m.checks[9] === 0x81 && m.checks[11] > 0);
+          m.checks[8] === 1 && m.checks[9] === 0x11 && m.checks[11] > 0);
       }
     }
   }

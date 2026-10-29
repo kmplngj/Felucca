@@ -13,11 +13,13 @@ typedef struct {
     uint8_t rpn_msb, rpn_lsb;
 } midi_channel_t;
 static midi_channel_t midi_ch[16];
-/* Low bits: track + 1. High bit: key released, held by its channel's pedal. */
+/* Low nibble: owner bits per part. High nibble: pedal-held subset of those owners.
+ * Keep one byte per channel/pitch, including mixed synth/drum layers. */
 static uint8_t midi_sel_on[16][128];
 #define midi_notes midi_sel_on
 static uint16_t midi_owners[NTRK];           /* avoids rescanning all 2048 entries for CC123 */
-#define MIDI_PEDAL_NOTE 0x80u
+#define MIDI_PEDAL_NOTE 0xF0u
+_Static_assert(NTRK == 4, "MIDI ownership packs four parts into one byte");
 
 static midi_channel_t *midi_channel(uint32_t ch)
 {
@@ -32,7 +34,7 @@ static midi_channel_t *midi_channel(uint32_t ch)
 
 static uint32_t midi_targets(uint32_t ch)
 {
-    return midi_channel(ch)->targets | (1u << trk_index(midi_track(ch)));
+    return midi_channel(ch)->targets | midi_route_mask(ch);
 }
 
 static void midi_expression(track_t *t, const midi_channel_t *c)
@@ -56,7 +58,7 @@ static int midi_note_held(const track_t *t, uint32_t note)
 {
     uint32_t ch, id = trk_index(t) + 1u;
     for (ch = 0; ch < 16u; ch++)
-        if ((midi_notes[ch][note] & 0x7Fu) == id && !mchord_of(ch, note, id))
+        if ((midi_notes[ch][note] & (1u << (id - 1u))) && !mchord_of(ch, note, id))
             return 1;
     return mchord_held(id, note);
 }
@@ -73,10 +75,10 @@ static int midi_local_held(const track_t *t, uint32_t note)
     return 0;
 }
 
-static void midi_release(uint32_t ch, uint32_t note)
+static void midi_release_track(uint32_t ch, uint32_t note, uint32_t track)
 {
-    uint32_t id = midi_notes[ch][note] & 0x7Fu;
-    midi_notes[ch][note] = 0;
+    uint32_t bit = 1u << track, id = (midi_notes[ch][note] & bit) ? track + 1u : 0;
+    midi_notes[ch][note] &= (uint8_t)~(bit | (bit << 4));
     if (id) {
         midi_owners[id - 1u]--;
         if (!--midi_ch[ch].owned[id - 1u])
@@ -97,6 +99,14 @@ static void midi_release(uint32_t ch, uint32_t note)
             if (!midi_local_held(&trk[id - 1u], nn[i]))
                 input_off(&trk[id - 1u], nn[i]);  /* input_off also checks other MIDI owners */
     }
+}
+
+static void midi_release(uint32_t ch, uint32_t note)
+{
+    uint32_t i;
+    for (i = 0; i < NPART; i++)
+        if (midi_notes[ch][note] & (1u << i))
+            midi_release_track(ch, note, i);
 }
 
 /* a MIDI note-on (ch, note) of track t: its chord (chord.c) or the note alone. A note another key or MIDI
@@ -129,36 +139,44 @@ static void midi_play(track_t *t, uint32_t ch, uint32_t note, uint32_t vel)
 static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
 {
     midi_channel_t *c = midi_channel(ch);
-    uint32_t id = midi_notes[ch][note] & 0x7Fu;
+    uint32_t i, mask;
     if (vel) {
-        track_t *t = midi_track(ch);
-        /* Repeated notes replace the previous press, including a pedal-held one. */
-        if (id)
-            midi_release(ch, note);
-        midi_expression(t, c);
-        if (t != TSEL)
-            midi_hint = (uint8_t)(trk_index(t) + 1u);
-        midi_seen |= (uint8_t)(1u << trk_index(t));   /* (1.5.5: only noted; the UI does the rest) */
-        c->targets |= (uint8_t)(1u << trk_index(t));
-        midi_play(t, ch, note, vel);
-        midi_notes[ch][note] = (uint8_t)(trk_index(t) + 1u);
-        midi_owners[trk_index(t)]++;
-        c->owned[trk_index(t)]++;
-    } else if (id) {
-        if (c->pedal && !drum_track(&trk[id - 1u]))
-            midi_notes[ch][note] |= MIDI_PEDAL_NOTE;
-        else
-            midi_release(ch, note);
+        /* Repeated notes replace all previous owners, including pedal-held ones. */
+        midi_release(ch, note);
+        mask = midi_route_mask(ch);
+        for (i = 0; i < NPART; i++) {
+            track_t *t = &trk[i];
+            if (!(mask & (1u << i)))
+                continue;
+            midi_expression(t, c);
+            if (t != TSEL)
+                midi_hint = (uint8_t)(i + 1u);
+            midi_seen |= (uint8_t)(1u << i);
+            c->targets |= (uint8_t)(1u << i);
+            midi_play(t, ch, note, vel);
+            midi_notes[ch][note] |= (uint8_t)(1u << i);
+            midi_owners[i]++;
+            c->owned[i]++;
+        }
+    } else {
+        for (i = 0; i < NPART; i++)
+            if (midi_notes[ch][note] & (1u << i)) {
+                if (c->pedal && !drum_track(&trk[i]))
+                    midi_notes[ch][note] |= (uint8_t)(1u << (i + 4u));
+                else
+                    midi_release_track(ch, note, i);
+            }
     }
 }
 
 static void midi_pedal_up(uint32_t ch)
 {
-    uint32_t note;
+    uint32_t note, i;
     midi_channel(ch)->pedal = 0;
     for (note = 0; note < 128u; note++)
-        if (midi_notes[ch][note] & MIDI_PEDAL_NOTE)
-            midi_release(ch, note);
+        for (i = 0; i < NPART; i++)
+            if (midi_notes[ch][note] & (1u << (i + 4u)))
+                midi_release_track(ch, note, i);
 }
 
 /* Preset/project panic and CC120 must discard ownership so a later pedal-up
@@ -170,8 +188,7 @@ static void __attribute__((noinline)) midi_forget_track(uint32_t track)
         if (!(midi_ch[ch].targets & (1u << track)))
             continue;
         for (note = 0; note < 128u; note++)
-            if ((midi_notes[ch][note] & 0x7Fu) == track + 1u)
-                midi_notes[ch][note] = 0;
+            midi_notes[ch][note] &= (uint8_t)~((1u << track) | (1u << (track + 4u)));
         midi_ch[ch].targets &= (uint8_t)~(1u << track);
         midi_ch[ch].owned[track] = 0;
     }
@@ -283,8 +300,6 @@ static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
 static void __attribute__((noinline)) midi_cc_map(track_t *t, uint32_t cc, uint32_t value)
 {
     uint32_t i, id = 0xFFFFu, e;
-    if (midi_learned(cc, value))                /* (a learned CC is the user's: not the map's) */
-        return;
     for (i = 0; i < NELEM(MIDI_CC_MAP); i++)
         if (MIDI_CC_MAP[i][0] == cc)
             id = MIDI_CC_MAP[i][1];
@@ -353,7 +368,12 @@ static void midi_control(uint32_t ch, uint32_t cc, uint32_t value)
         }
         break;
     default:
-        midi_cc_map(midi_track(ch), cc, value);
+        if (!midi_learned(cc, value)) {
+            mask = midi_route_mask(ch);
+            for (i = 0; i < NPART; i++)
+                if (mask & (1u << i))
+                    midi_cc_map(&trk[i], cc, value);
+        }
         break;
     }
 }
@@ -374,13 +394,15 @@ static void __attribute__((noinline)) midi_route_block(void)
     for (ch = 0; ch < 16u; ch++) {
         midi_channel_t *c = midi_channel(ch);
         if (midi_in_block(ch)) {
-            track_t *t = midi_track(ch);
-            uint32_t id = trk_index(t) + 1u;
-            if (reassign && (c->targets & (uint8_t)~(1u << (id - 1u))))
+            uint32_t mask = midi_route_mask(ch);
+            if (reassign && (c->targets & (uint8_t)~mask))
                 for (note = 0; note < 128u; note++)
-                    if (midi_notes[ch][note] && (midi_notes[ch][note] & 0x7Fu) != id)
-                        midi_release(ch, note);
-            midi_expression(t, c);
+                    for (i = 0; i < NPART; i++)
+                        if ((midi_notes[ch][note] & (1u << i)) && !(mask & (1u << i)))
+                            midi_release_track(ch, note, i);
+            for (i = 0; i < NPART; i++)
+                if (mask & (1u << i))
+                    midi_expression(&trk[i], c);
             continue;
         }
         for (note = 0; note < 128u; note++)
@@ -392,7 +414,7 @@ static void __attribute__((noinline)) midi_route_block(void)
     }
 }
 
-/* Program Change (1.5.1, #179 by renebohne): the track the channel plays (ROUT as for notes) takes program d1. Only
+/* Program Change (1.5.1, #179 by renebohne): each part the channel plays (including layers) takes program d1. Only
  * noted here, 0x80 | d1 per track (a later one before the main loop wins): a sound load is the main loop's work
  * (undo, motion, FM6's patch), never the audio ISR's. ui.mpc (ui.c; a build without the UI: none) */
 static volatile uint8_t *const mpc_io;
@@ -403,6 +425,7 @@ static volatile uint8_t *const mpc_io;
  * channel aftertouch, Program Change, so they stay free for other instruments. */
 static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
+    uint32_t i, mask;
     if (song.g[G_ROUTE] != 1 && !midi_in_block(ch))
         return;
     if (st == 0x90u || st == 0x80u)
@@ -410,11 +433,16 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
     else if (st == 0xE0u) {
         midi_channel(ch)->bend = (int16_t)((int32_t)(d1 | (d2 << 7)) - 8192);
         midi_expression_channel(ch);
-    } else if (st == 0xB0u) {
-        mod_midi(midi_track(ch), st, d1, d2);
-        midi_control(ch, d1, d2);
-    } else if (st == 0xD0u)
-        mod_midi(midi_track(ch), st, d1, d2);
-    else if (st == 0xC0u && mpc_io)                /* Program Change: the main loop loads it (ui.c midi_pc_poll) */
-        mpc_io[trk_index(midi_track(ch))] = (uint8_t)(0x80u | d1);
+    } else {
+        mask = midi_route_mask(ch);
+        for (i = 0; i < NPART; i++)
+            if (mask & (1u << i)) {
+                if (st == 0xB0u || st == 0xD0u)
+                    mod_midi(&trk[i], st, d1, d2);
+                else if (st == 0xC0u && mpc_io)
+                    mpc_io[i] = (uint8_t)(0x80u | d1);
+            }
+        if (st == 0xB0u)
+            midi_control(ch, d1, d2);
+    }
 }

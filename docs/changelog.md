@@ -51,6 +51,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Native MIDI layers:** TRACK routing plays every part assigned to the same channel,
+  with independent patches/levels and per-part note/sustain ownership. Existing project
+  bytes and protocol IDs are retained. Built-in keys play the selected part;
+  physical USB/TRS and listening validation remain pending. See the
+  [setup and hardware checks](fork-features.md#native-midi-layers).
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery

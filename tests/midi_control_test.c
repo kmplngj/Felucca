@@ -56,7 +56,7 @@ static int sustain_test(void)
 {
     int bad = 0; midi_test_reset(); track_t *t = &trk[0];
     queued(0x90, 60, 100, 1); queued(0xB0, 64, 127, 1); queued(0x80, 60, 0, 1);
-    bad += check("pedal holds a released synth note and its owner", gate_note(t, 60) && midi_notes[0][60] == (1u | MIDI_PEDAL_NOTE));
+    bad += check("pedal holds a released synth note and its owner", gate_note(t, 60) && midi_notes[0][60] == 0x11u);
     queued(0xB0, 64, 0, 1);
     bad += check("pedal release releases its held note", !gate_note(t, 60) && !midi_notes[0][60] && !midi_owners[0]);
     queued(0x90, 62, 100, 1); queued(0xB0, 64, 127, 1); queued(0xB0, 123, 0, 1);
@@ -401,7 +401,7 @@ static int route_test(void)
     for (ch = 4; ch < 16u; ch++) owned |= midi_notes[ch][60 + ch];
     bad += check("CH1-4: note-ons on channels 5..16 (USB and TRS) play nothing", !any_gate() && !owned && !midi_owners[2] && !midi_hint);
     queued(0x91, 62, 100, 1); queued(0x93, 40, 100, 2);
-    bad += check("CH1-4: channels 2 and 4 still play parts 2 and 4", gate_note(&trk[1], 62) && midi_notes[1][62] == 2u && midi_notes[3][40] == 4u);
+    bad += check("CH1-4: channels 2 and 4 still play parts 2 and 4", gate_note(&trk[1], 62) && midi_notes[1][62] == 2u && midi_notes[3][40] == 8u);
     queued(0xE4, 127, 127, 1); queued(0xEF, 0, 0, 2); queued(0xE9, 127, 127, 1);
     bad += check("CH1-4: pitch bend on channels 5, 10, 16 bends no part", !midi_bend_target[0] && !midi_bend_target[1] && !midi_bend_target[2] && !midi_ch[4].bend && !midi_ch[15].bend);
     queued(0xB4, 1, 99, 1); queued(0xB9, 11, 10, 2); queued(0xDF, 77, 0, 1);
@@ -508,7 +508,7 @@ static int route_block_test(void)
 }
 /* 1.5.5 (#202, #143): MIDI IN TRACK, each track its own channel (song.mch: MENU > MIDI > T1..T4 CHANNEL): notes, bend, CC1,
  * aftertouch, the CC map, the panic CCs, Program Change and MIDI out all follow it; OMNI takes what no track has, OFF
- * nothing; two tracks on one channel: the first; a channel change lets go of what the old channel held; the defaults
+ * nothing; two tracks on one channel: both; a channel change lets go of what the old channel held; the defaults
  * (channels 1..4) are CH1-4 exactly */
 static void tch(uint32_t k, uint32_t ch) { menu_put(MI_TCH1 + k, ch); events_block(CTL); }
 static void pc(uint32_t ch, uint32_t prog) { queued(0xC0u | ch, prog, 0, 1); }
@@ -545,7 +545,7 @@ static int route_track_test(void)
     ok &= midi_slot(9) == 0 && midi_slot(1) == 1 && midi_slot(0) == 2 && midi_slot(4) == 2 && midi_slot(15) == 2;
     queued(0x99, 50, 100, 1); queued(0x91, 51, 100, 2); queued(0x94, 52, 100, 1); queued(0x90, 53, 100, 2);
     ok &= gate_note(&trk[0], 50) && gate_note(&trk[1], 51) && gate_note(&trk[2], 52) && gate_note(&trk[2], 53) &&
-          !gate_note(&trk[3], 50) && !gate_note(&trk[3], 52) && midi_notes[9][50] == 1u && midi_notes[4][52] == 3u;
+          !gate_note(&trk[3], 50) && !gate_note(&trk[3], 52) && midi_notes[9][50] == 1u && midi_notes[4][52] == 4u;
     bad += check("TRACK: T1 on 10, T2 on 2, T3 OMNI (every other channel), T4 OFF (none; the selected track too)", ok);
     queued(0xE9, 127, 127, 1); queued(0xB9, 1, 77, 1); queued(0xD9, 66, 0, 1); queued(0xB9, 7, 0, 1);
     ok = midi_bend_target[0] == 512 && !midi_bend_target[1] && !midi_bend_target[3] && trk[0].mw == 77 && trk[0].at == 66 &&
@@ -571,11 +571,11 @@ static int route_track_test(void)
         ml_tab[0] = keep[0]; ml_tab[1] = keep[1];
         bad += check("TRACK: a learned CC (T3 PAN) from channel 10 sets T3; from a channel no track hears, nothing", ok);
     }
-    /* two tracks on one channel: the first */
+    /* two tracks on one channel: both */
     tch(1, 9);
     queued(0x99, 55, 100, 1);
-    ok = gate_note(&trk[0], 55) && !gate_note(&trk[1], 55) && midi_slot(9) == 0;
-    bad += check("TRACK: T1 and T2 both on 10: the first (T1) plays it", ok);
+    ok = gate_note(&trk[0], 55) && gate_note(&trk[1], 55) && midi_slot(9) == 0;
+    bad += check("TRACK: T1 and T2 both on 10: both play it", ok);
     /* a channel change lets go of the old channel's notes (pedal-held too) and its bend */
     midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; trk[0].p[P_VOICE] = V_POLY; events_block(CTL);
     tch(0, 9);
@@ -628,6 +628,97 @@ static int route_track_test(void)
     return bad;
 }
 
+/* Layers share input but retain their own sound, chord and note ownership. */
+static int layer_test(void)
+{
+    int bad = 0, ok;
+    uint32_t source, i;
+    for (source = 1; source <= 2; source++) {
+        midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL);
+        tch(1, 0);
+        trk[0].p[P_VOICE] = trk[1].p[P_VOICE] = V_POLY;
+        queued(0x90, 60, 100, source);
+        ok = gate_note(&trk[0], 60) && gate_note(&trk[1], 60) && midi_notes[0][60] == 3u;
+        queued(0xB0, 64, 127, source); queued(0x80, 60, 0, source);
+        ok &= midi_notes[0][60] == 0x33u && gate_note(&trk[0], 60) && gate_note(&trk[1], 60);
+        queued(0x90, 60, 90, source);             /* replace pedal owners without leaking counts */
+        ok &= midi_notes[0][60] == 3u && midi_owners[0] == 1u && midi_owners[1] == 1u;
+        queued(0xB0, 64, 0, source);
+        ok &= gate_note(&trk[0], 60) && gate_note(&trk[1], 60); /* still physically held */
+        queued(0x90, 60, 0, source);
+        ok &= !any_gate() && !midi_owners[0] && !midi_owners[1];
+        bad += check(source == 1 ? "USB layer: both notes, sustain, retrigger and velocity-zero release" :
+                                  "TRS queue layer: both notes, sustain, retrigger and velocity-zero release", ok);
+    }
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL); tch(1, 0);
+    queued(0x90, 60, 100, 1); queued(0xB0, 64, 127, 1); queued(0x80, 60, 0, 1);
+    tch(1, 5);
+    ok = gate_note(&trk[0], 60) && !gate_note(&trk[1], 60) && midi_notes[0][60] == 0x11u &&
+         midi_owners[0] == 1u && !midi_owners[1];
+    queued(0xB0, 64, 0, 1);
+    ok &= !any_gate() && !midi_notes[0][60];
+    bad += check("Removing a pedal-held layer preserves the other part until pedal-up", ok);
+
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL); tch(1, 0);
+    queued(0x90, 60, 100, 1);
+    panic_req = 2u; events_block(CTL);
+    ok = gate_note(&trk[0], 60) && !gate_note(&trk[1], 60) && midi_notes[0][60] == 1u;
+    queued(0x80, 60, 0, 1);
+    ok &= !any_gate() && !midi_owners[0] && !midi_owners[1];
+    bad += check("A sound-change panic forgets only its layer; the other note releases normally", ok);
+
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL); tch(1, 0);
+    queued(0xE0, 127, 127, 1); queued(0xB0, 1, 77, 1); queued(0xD0, 66, 0, 1);
+    queued(0xB0, 7, 0, 1);
+    ok = midi_bend_target[0] == 512 && midi_bend_target[1] == 512 && trk[0].mw == 77 && trk[1].mw == 77 &&
+         trk[0].at == 66 && trk[1].at == 66 && !trk[0].p[P_LEVEL] && !trk[1].p[P_LEVEL];
+    pc(0, 3);
+    ok &= ui.mpc[0] == 0x83u && ui.mpc[1] == 0x83u && !ui.mpc[2];
+    bad += check("Layer bend, wheel, aftertouch, CC map and Program Change reach both parts", ok);
+    for (i = 120; i <= 123; i++) {
+        if (i == 122) continue;
+        queued(0x90, 60, 100, 1); queued(0xB0, 64, 127, 1); queued(0x80, 60, 0, 1);
+        queued(0xB0, i, 0, 1);
+        ok = i == 123 ? midi_notes[0][60] == 0x33u : !midi_notes[0][60];
+        queued(0xB0, 64, 0, 1);
+        ok &= !any_gate() && !midi_owners[0] && !midi_owners[1];
+        bad += check("Layer panic/reset/All Notes Off retain correct per-part pedal ownership", ok);
+    }
+    /* A shared channel may contain both a drum part and a synth part. */
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL); tch(3, 0);
+    queued(0x90, 36, 100, 1); queued(0xB0, 64, 127, 1); queued(0x80, 36, 0, 1);
+    ok = drum_track(&trk[3]) && midi_notes[0][36] == 0x11u && midi_owners[0] == 1u && !midi_owners[3];
+    queued(0xB0, 64, 0, 1);
+    ok &= !midi_notes[0][36] && !midi_owners[0];
+    bad += check("A synth/drum layer sustains only the synth owner", ok);
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL); tch(1, 0);
+    trk[0].p[P_VOICE] = trk[1].p[P_VOICE] = V_POLY;
+    trk[0].p[P_CHRD] = CH_MAJ; trk[1].p[P_CHRD] = CH_MIN;
+    queued(0x90, 60, 100, 1);
+    ok = gate_note(&trk[0], 64) && gate_note(&trk[1], 63) &&
+         mchord_of(0, 60, 1) && mchord_of(0, 60, 2);
+    trk[0].p[P_CHRD] = trk[1].p[P_CHRD] = CH_OFF;
+    queued(0x80, 60, 0, 1);
+    ok &= !any_gate() && !mchord_of(0, 60, 1) && !mchord_of(0, 60, 2);
+    bad += check("Layer chords release their original distinct tones after a chord edit", ok);
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL); tch(1, 0);
+    song.sel = 1; fm1_in.notes = 1u << 7; events_block(CTL);
+    queued(0x90, 60, 100, 1); queued(0x80, 60, 0, 1);
+    ok = !gate_note(&trk[0], 60) && gate_note(&trk[1], 60);
+    fm1_in.notes = 0; events_block(CTL);
+    ok &= !any_gate();
+    bad += check("Releasing a MIDI layer preserves the same note held on the panel", ok);
+    /* Exercise the UART parser too, including running status. */
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_TRACK; events_block(CTL); tch(1, 0);
+    um_byte(0x90); um_byte(60); um_byte(100); events_block(CTL);
+    ok = gate_note(&trk[0], 60) && gate_note(&trk[1], 60);
+    um_byte(60); um_byte(0); events_block(CTL);
+    ok &= !any_gate() && !midi_notes[0][60];
+    bad += check("TRS UART layer: running-status velocity-zero releases both parts", ok);
+    midi_test_reset();
+    return bad;
+}
+
 static int route_owner_change_test(void)
 {
     int bad = 0;
@@ -651,17 +742,19 @@ static int route_owner_change_test(void)
             song.g[G_ROUTE] = 2;                     /* CH5-8: channel 6 now belongs to T2. */
             events_block(CTL);
         } else {
-            tch(next, ch);                          /* An exact match takes over an OMNI or a duplicate channel. */
+            tch(next, ch);
+            if (r == 0u)
+                tch(old, MCH_OFF);                 /* Remove one owner from the layer while notes are held. */
         }
         ok &= midi_slot(ch) == (int32_t)next && !gate_note(&trk[old], 60) && !gate_note(&trk[old], 62) &&
               !midi_owners[old] && !midi_notes[ch][60] && !midi_notes[ch][62] && !midi_ch[ch].owned[old] &&
               !(midi_ch[ch].targets & (1u << old)) && !midi_bend_target[old];
         queued(0x90u | ch, 64, 100, 1);
         queued(0xB0u | ch, 64, 0, 1);
-        ok &= gate_note(&trk[next], 64) && midi_notes[ch][64] == next + 1u && midi_owners[next] == 1u;
+        ok &= gate_note(&trk[next], 64) && midi_notes[ch][64] == (1u << next) && midi_owners[next] == 1u;
         queued(0x80u | ch, 64, 0, 1);
         ok &= !gate_note(&trk[next], 64) && !midi_owners[next];
-        bad += check(r == 0u ? "TRACK duplicate reassignment releases the old track's held/pedal notes and bend" :
+        bad += check(r == 0u ? "TRACK removing a layer releases only that track's held/pedal notes and bend" :
                      r == 1u ? "TRACK exact channel takes over OMNI: old ownership released, new notes release normally" :
                                "TRACK -> block with a still-heard channel releases its former track ownership", ok);
     }
@@ -1174,6 +1267,6 @@ static int pc_test(void)
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
+              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + layer_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

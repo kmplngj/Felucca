@@ -488,7 +488,7 @@ static int test_midi(void)
     song.g[G_ROUTE] = 1;
     midi_event(0x80, 0, 60, 0); midi_event(0x90, 0, 62, 100);
     bad += check("ROUT changes: note-off releases original owner, new note uses selection",
-                 !gated_notes(&trk[0]) && midi_sel_on[0][62] == 3u && midi_track(3) == &trk[2]);
+                 !gated_notes(&trk[0]) && midi_sel_on[0][62] == 4u && midi_track(3) == &trk[2]);
     song.sel = 1; midi_event(0x80, 0, 62, 0);
     bad += check("note-off after selection follows the note-on's track", !midi_sel_on[0][62]);
     midi_event(0x80, 9, 61, 0);
@@ -570,14 +570,14 @@ static int test_midi(void)
         ok = (TSEL->eng_req != e3 || TSEL->preset != p3) && trk[0].eng_req == e1 && trk[0].preset == p1;
         song.g[G_ROUTE] = 1;                             /* SEL */
         midi_event(0x90, 0, 60, 100);
-        ok &= gated_notes(&trk[2]) == 1u && !gated_notes(&trk[0]) && midi_sel_on[0][60] == 3u;
+        ok &= gated_notes(&trk[2]) == 1u && !gated_notes(&trk[0]) && midi_sel_on[0][60] == 4u;
         midi_event(0x80, 0, 60, 0);
         song.g[G_ROUTE] = 0;                             /* CH1-4 */
         midi_event(0x90, 0, 60, 100);
         ok &= gated_notes(&trk[0]) == 1u && !gated_notes(&trk[2]) && midi_sel_on[0][60] == 1u;
         midi_event(0x80, 0, 60, 0);
         midi_event(0x90, 2, 62, 100);                    /* (CH1-4: channel 3 is T3's) */
-        ok &= gated_notes(&trk[2]) == 1u && midi_sel_on[2][62] == 3u;
+        ok &= gated_notes(&trk[2]) == 1u && midi_sel_on[2][62] == 4u;
         midi_event(0x80, 2, 62, 0);
         bad += check("#192 PRESETS on T3: MIDI IN SEL plays the loaded sound, CH1-4 channel 1 stays T1 (channel 3 T3)", ok);
     }
@@ -5279,7 +5279,7 @@ static int test_midi_leds(void)
     song.g[G_ROUTE] = 1;                               /* ROUT SEL: every channel to the selected track */
     song.sel = 2;
     usb_note(9, 62, 100);
-    ok = midi_sel_on[9][62] == 3u && key_leds(0) == 1u << 9;
+    ok = midi_sel_on[9][62] == 4u && key_leds(0) == 1u << 9;
     usb_note(9, 62, 0);
     song.g[G_ROUTE] = 0;
     song.sel = 0;
