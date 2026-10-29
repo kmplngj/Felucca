@@ -132,10 +132,35 @@ to main; execute current-main code against the isolated state ledger. Preserve a
 
 ## Coordinator and workers
 
-Preferred coordinator: GPT-6.1 Sol with medium reasoning. Use at most two GPT-6.1
-Sol workers: low reasoning for metadata/inventory tasks, medium for substantive
-diff/applicability review. If the runner cannot select models, report that limitation;
-writing a model preference in a prompt does not configure the model.
+Preferred coordinator: GPT-6.1 Sol with medium reasoning. Use at most two concurrent
+workers across runners; honor explicit user model choices.
+Use the ledger helper and local inventory queries for mechanical extraction.
+
+| Runner | Worker task | Model | Reasoning / effort |
+| --- | --- | --- | --- |
+| Codex | Evidence organization, metadata interpretation or bounded documentation/UI pre-screening | GPT-6.1 Terra (`gpt-6.1-terra`) | `medium` |
+| Codex | Substantive diff/applicability review | GPT-6.1 Sol (`gpt-6.1-sol`) | `medium` |
+| Codex | DSP/arithmetic, interrupts/deadlines, concurrency, persistence or protocol/ID contracts | GPT-6.1 Sol (`gpt-6.1-sol`) | `high` |
+| Claude Code | Evidence organization or bounded diff/applicability review | Claude Sonnet 5.5 | `medium` |
+| Claude Code | Substantial review with several interacting paths | Claude Sonnet 5.5 | `high` |
+| Claude Code | Difficult root cause or high-risk cross-cutting assessment | Claude Opus 5.5 | `medium` |
+
+Terra pre-screening proposes evidence and questions; it grants no completed commit
+coverage or final applicability decision. The coordinator checks the complete diff,
+necessary native callers/tests and evidence before accepting any worker proposal.
+Escalate to the higher-risk route when contracts are unclear, evidence conflicts,
+or scope expands, regardless of patch size. For unresolved difficult reasoning,
+the coordinator can use Astra when available.
+
+Configure the selected model and effort in the runner, resolving Claude IDs to the
+exact requested version; aliases or prompt text alone do not establish selection.
+For a user-specified model without an effort, use its listed effort, increasing to
+a higher listed effort for that model when the task requires it.
+If the requested model/effort or delegation is unavailable, report the limitation
+and continue serially without claiming an independent review or silently changing
+models. Record actual selections when exposed. Compare new routes on the same
+evidence and acceptance criteria, including coordinator review and repair time;
+claim cost/token savings only when measured.
 
 Delegate disjoint repository/SHA batches. Workers return structured proposed records
 and evidence; they do not write the canonical ledger, advance frontiers, create issues
