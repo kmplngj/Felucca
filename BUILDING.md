@@ -496,22 +496,41 @@ unsigned wrap and the actual frame/turn/browser scheduling paths. It does not
 qualify wall-clock accuracy, target timer hardware or audio deadlines. Replay
 fingerprints include the shared clock header and the existing HAL inventory.
 
-The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
-their sanitizer builds. This existing NOR model only clears programmed bits, rejects
-256-byte page wrapping, and models sticky power cuts during programming or half an
-erase. Its program counter counts completed bytes; its erase counter excludes requests
-refused before work. Reads remain available for recovery after a cut. The user-preset
-fixture checks every payload/header byte-cut boundary, interrupted/refused erases
-and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. The browser emulator also uses this model behind its
+The backup, FM6-bank, user-preset, editor-derived, persistence/autosave, storage and
+SLICE tests share `tests/host_nor.h`, including their sanitizer builds. This NOR
+model only clears programmed bits, rejects 256-byte page wrapping and models
+sticky power cuts during programming or half an erase. Its program counter counts
+completed bytes; its erase counter excludes requests refused before work. Reads
+remain available for recovery after a cut.
+
+Narrow adapters retain each owner's logical I/O counters and deliberate non-sticky
+call/byte refusals separately from the shared completed-byte/actual-erase counters.
+Storage skips erasing only a fresh object after a full blank-sector scan;
+known used objects and same-boot retries erase, including blank-looking destinations.
+Storage exercises old-or-complete-new A/B recovery and untouched neighbors across
+all object/copy maps; persistence additionally checks runtime `up_put` RAM,
+generation and label rollback plus last-complete-bank and restored-power retries.
+The user-preset fixture retains its exhaustive payload/header cut matrix.
+
+The editor maps all three sample slots onto the NOR image and splits HAL writes
+at page boundaries, including its 480-byte sample header. Protocol requests cover
+payload/header cuts, refused/half erases, sticky faults, same-data retries and
+neighboring flash. Robustness and sample/editor/project fuzz consumers retain the
+same sample-array view; `FELUCCA_FLASH=0` bank/settings branches stay disabled.
+SLICE exercises record-byte cuts, interrupted/refused erases, bounded readback
+retries and acknowledged ineffective/corrupt writes through actual save/boot paths.
+Its records remain single-copy: an erase may lose the old table; recovery finds a
+complete valid record or no manual table, not an A/B rollback. These simulated
+faults do not establish physical flash or power-loss qualification.
+
+The browser emulator also uses this model behind its
 existing bounds, sector-rounding and successful-operation counters. It exports no
 fault controls. A page-contract violation terminates the native adapter and traps
 in standalone Wasm without adding host imports. Native replay fingerprints include
 the shared NOR header so changes invalidate cached adapters and capture provenance.
 The `emulator_partitions` unit checks bounds, page failures and a panel save restored
 in a fresh process; with Emscripten it also checks the actual Wasm trap and empty
-import list. Storage and persistence tests retain their different retry and
-operation-counting models.
+import list.
 
 The backup, FM6-bank, persistence and browser adapters also share
 `tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,

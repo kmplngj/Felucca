@@ -6,7 +6,30 @@
  * bank (id 20) and the SLICE records (id 21): LIST 1, round trips, refusals, power cuts. */
 #include "../firmware/hal/fm1_lcd_contract.h"
 #include "update_record_fixture.h"
+#define st_erase host_nor_erase
+#define st_prog host_nor_prog
 #include "host_nor.h"                              /* before the user sample slots' XIP mapping */
+#undef st_erase
+#undef st_prog
+/* Faults are scoped to one SLICE-record sector; other shared NOR behavior stays intact. */
+enum { SLICE_IGNORE_WRITE = 1, SLICE_IGNORE_ERASE, SLICE_IGNORE_PROGRAM, SLICE_CORRUPT_PROGRAM };
+static uint32_t slice_write_fault, slice_fault_off;
+static int st_erase(uint32_t off)
+{
+    if (off == slice_fault_off && (slice_write_fault == SLICE_IGNORE_WRITE || slice_write_fault == SLICE_IGNORE_ERASE))
+        return 0;
+    return host_nor_erase(off);
+}
+static int st_prog(uint32_t off, const void *src, uint32_t n)
+{
+    int rc;
+    if (off == slice_fault_off && (slice_write_fault == SLICE_IGNORE_WRITE || slice_write_fault == SLICE_IGNORE_PROGRAM))
+        return 0;
+    rc = host_nor_prog(off, src, n);
+    if (!rc && off == slice_fault_off && slice_write_fault == SLICE_CORRUPT_PROGRAM)
+        nor[off] &= 0xFEu;
+    return rc;
+}
 #define SMP_USER_XIP(k) (nor + 0xA0000u + (k) * 0x14000u)
 #define main hostsim_main
 #include "hostsim.c"
@@ -90,6 +113,7 @@ static void reset(void)
     erases = progs = 0;
     dead = 0;
     cut_bytes = cut_erase = -1;
+    slice_write_fault = 0;
     memset(&fvb_tx, 0, sizeof fvb_tx);
     memset(usr_nz, 0, sizeof usr_nz);
 #if FELUCCA_SLICE
@@ -551,6 +575,68 @@ static uint32_t slc_object(uint8_t *o)
     return len;
 }
 
+static int slice_readback_tests(void)
+{
+    static uint8_t before[sizeof nor];
+    slc_bk_t desired;
+    uint32_t failed, mode, k;
+    int bad = 0;
+    for (failed = 0; failed < SMP_USER_SLOTS; failed++)
+        for (mode = SLICE_IGNORE_WRITE; mode <= SLICE_CORRUPT_PROGRAM; mode++) {
+            uint32_t rc, off = SMP_USER_BASE + failed * SMP_USER_SIZE + SLC_REC_OFF;
+            int ok = 1;
+            reset();
+            slc_store_boot();
+            for (k = 0; k < SMP_USER_SLOTS; k++) {
+                make_sample(k, 12000, k + 1u);
+                ok &= slc_man_restore(k, 3, 0, POS_B) == 0;
+            }
+            ok &= slc_bk_make(&desired) == sizeof desired;
+            for (k = 0; k < SMP_USER_SLOTS; k++) {
+                ok &= slc_man_restore(k, 4, 5000, POS_A) == 0 && slc_store_write(k) == 3;
+            }
+            /* A failed erase leaves zero bits that later AND-programming cannot restore. */
+            if (mode == SLICE_IGNORE_ERASE) memset(nor + off, 0, ST_SECTOR);
+            memcpy(before, nor, sizeof before);
+            slice_fault_off = off;
+            slice_write_fault = mode;
+            slc_man_save = 7u;
+            rc = put_all(21, &desired, sizeof desired, st_crc32(&desired, sizeof desired));
+            ok &= rc == 4u && slc_man_save == (uint8_t)(7u & ~((1u << failed) - 1u));
+            for (k = 0; k < SMP_USER_SLOTS; k++) {
+                uint32_t base = SMP_USER_BASE + k * SMP_USER_SIZE;
+                ok &= k < failed ? slices_are(k, 3, 0, POS_B) : slices_are(k, 4, 5000, POS_A);
+                /* Earlier slots commit independently; later slots are not attempted. */
+                if (k < failed)
+                    ok &= !memcmp(nor + base + SLC_REC_OFF, &desired.r[k], sizeof desired.r[k]);
+                if (k > failed)
+                    ok &= !memcmp(nor + base + SLC_REC_OFF, before + base + SLC_REC_OFF, ST_SECTOR);
+                ok &= !memcmp(nor + base, before + base, SLC_REC_OFF);
+            }
+            ok &= memcmp(nor + off, &desired.r[failed], sizeof desired.r[failed]) != 0 &&
+                  !memcmp(nor, before, SMP_USER_BASE) &&
+                  !memcmp(nor + SMP_USER_BASE + SMP_USER_SLOTS * SMP_USER_SIZE,
+                          before + SMP_USER_BASE + SMP_USER_SLOTS * SMP_USER_SIZE,
+                          sizeof nor - SMP_USER_BASE - SMP_USER_SLOTS * SMP_USER_SIZE);
+            printf("backup:   slice readback slot %u fault %u rc %u\n", failed + 1u, mode, rc);
+            bad += check("id 21 silent failure: rc 4, failed/later RAM unchanged, earlier slots committed, samples intact", ok);
+            slice_write_fault = 0;
+            ok = put_all(21, &desired, sizeof desired, st_crc32(&desired, sizeof desired)) == 0 && !slc_man_save;
+            for (k = 0; k < SMP_USER_SLOTS; k++) {
+                smp_user_scan(k);
+                ok &= slices_are(k, 3, 0, POS_B);
+            }
+            {
+                uint32_t e0 = erases, p0 = progs;
+                memcpy(before, nor, sizeof before);
+                ok &= put_all(21, &desired, sizeof desired, st_crc32(&desired, sizeof desired)) == 0 &&
+                      erases == e0 && progs == p0 && !memcmp(nor, before, sizeof before);
+            }
+            bad += check("id 21 fresh restore succeeds after fault clears; rescans restore; unchanged retry writes nothing", ok);
+        }
+    return bad;
+}
+
 static int slice_tests(void)
 {
     int bad = 0, ok;
@@ -781,6 +867,7 @@ static int ext_tests(void)
     int bad = plain_list_tests() + bank_tests();
 #if FELUCCA_SLICE
     bad += slice_tests();
+    bad += slice_readback_tests();
 #endif
     return bad;
 }

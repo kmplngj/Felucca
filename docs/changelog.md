@@ -201,6 +201,12 @@ recorded in the linked reports, rather than every current build or device.
   full commit provenance remain in release metadata; the UI regression gate now
   exercises the generated Dev version before merge. This fixes the initial Dev
   release's layout-test failure; no publication gate is relaxed.
+- **SLICE persistence:** MAN-slice saves and backup restores verify the stored
+  record before reporting success. Ineffective or corrupt writes take the existing
+  save/restore error paths; a failed save (readback mismatch) is retried at the next
+  stopped poll, at most twice per slot, then SAVE ERROR stays. Records remain
+  single-copy, no rollback; interrupted saves can still lose that slot's slices. FM-1 save/restart/restore qualification remains pending.
+
 - Native replay source-change guards include consumed portable Engines sources
   and generated include files, so changes during compilation cannot publish an
   adapter or completed capture with stale input provenance. See
@@ -367,6 +373,18 @@ recorded in the linked reports, rather than every current build or device.
   a `FELUCCA_CPU2=0` build removes the worker entirely.
 
 ### Optimized
+
+- Storage skips a redundant erase only for a fresh copy: neither A nor B holds a
+  commit record, no save of the object was tried since boot, and a complete
+  destination-sector check reads blank. Every other destination, including any
+  same-boot retry after a failed or interrupted save, is erased as before, because a
+  sector that reads blank after an interrupted erase can still hold cells with too
+  little margin. A first erase or program cut by power loss that leaves the copy
+  reading blank cannot be told apart from a fresh copy after reboot and may still skip.
+  Read errors stop the save before writes, and native commit/readback checks remain.
+  [Measured host I/O counts and the interrupted-erase caveat](flash-capacity.md#blank-destination-checks-197-narrowed-in-721)
+  distinguish extra scan reads from avoided erase calls. Physical timing
+  and retention qualification remain pending. No proactive erase or format change.
 
 - Native icons share identical complete 12 px compressed streams while preserving
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
