@@ -165,7 +165,7 @@ static int projects(void)
     trk[3].step[5].hit = 0x81; trk[3].step[5].acc = 0x80; trk[3].step[5].time = ST_NOTE;
     step_set_ratchet(&trk[3].step[5], 4);
     project_capture(&before);
-    ok = proj_pack(&packed, &before) && proj_import(&after, &packed, sizeof packed) && !memcmp(&before, &after, sizeof before);
+    ok = proj_encode(&packed, &before) && proj_import(&after, &packed, sizeof packed) && !memcmp(&before, &after, sizeof before);
     for (i = 0; ok && i < 8u; i++)
         ok &= step_ratchet(&after.t[0].step[i]) == 1u + i % 4u && step_chance(&after.t[0].step[i]) == step_chance(&before.t[0].step[i]) &&
               after.t[0].step[i].vel == before.t[0].step[i].vel;
@@ -178,7 +178,7 @@ static int projects(void)
         for (i = 0; i < NSTEP; i++)
             trk[k].step[i].flags &= (uint8_t)~SF_RATCH;
     project_capture(&before);
-    proj_pack(&packed, &before);
+    proj_encode(&packed, &before);
     ok = 1;
     for (k = 0, pos = 68u; k < NTRK; k++, pos += P_COUNT + 2u + NSTEP * 9u)
         for (i = 0; i < NSTEP; i++)

@@ -70,7 +70,7 @@ static void pack_write(const char *dir, uint32_t slot)
     project_store_t again;
     assert(!project_save_as(slot, pack_names[slot]));
     assert(proj_import(&decoded, &proj_slot[slot], sizeof proj_slot[slot]));
-    assert(proj_pack(&again, &decoded));
+    assert(proj_encode(&again, &decoded));
     assert(!memcmp(&again, &proj_slot[slot], sizeof again));
     assert(!memcmp(decoded.name, pack_names[slot], strlen(pack_names[slot])));
     for (uint32_t k = 0; k < NTRK; k++) {
@@ -147,7 +147,7 @@ static int pack_verify_files(const char *dir)
         fclose(f);
         if (n != sizeof proj_slot[slot] || end != EOF || error ||
             !proj_import(&decoded, &proj_slot[slot], sizeof proj_slot[slot]) ||
-            !proj_pack(&again, &decoded) || memcmp(&again, &proj_slot[slot], sizeof again)) return 1;
+            !proj_encode(&again, &decoded) || memcmp(&again, &proj_slot[slot], sizeof again)) return 1;
     }
     return 0;
 }

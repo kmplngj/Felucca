@@ -61,7 +61,7 @@ static int saved(project_store_t *out)
         q.t[k].engine = trk[k].eng_req;
         q.t[k].preset = trk[k].preset;
     }
-    return proj_pack(out, &q);
+    return proj_encode(out, &q);
 }
 
 static void partial_matrix(track_t *t)              /* every slot on: VEL to PAN, DIST, RATE, E2 */

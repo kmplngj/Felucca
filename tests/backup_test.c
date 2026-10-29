@@ -903,7 +903,7 @@ static int raw_tests(void)
     st_save(OBJ_SETTINGS, &ps, sizeof ps);
     trk[1].step[3] = (step_t){{64}, 1, ST_NOTE, 0, 96, 0, 0};
     project_capture(&proj_scratch);
-    proj_pack(&st, &proj_scratch);
+    proj_encode(&st, &proj_scratch);
     st_save(OBJ_PROJECT0, &st, sizeof st);
     st_save(OBJ_PROJECT0, &st, sizeof st);              /* (both copies: B the newer) */
     st_save(OBJ_AUTOSAVE, &st, sizeof st);
@@ -950,7 +950,7 @@ static int raw_tests(void)
         v6.g[i] = GP[i].def;
     v6.sum = proj_hash(&v6, sizeof v6 - 4u);
     st_save(OBJ_PROJECT0 + 2, &v6, sizeof v6);
-    proj_pack(&st2, &proj_scratch);                     /* a FUN10 header of 104 parameters (1.2 .. 1.4: mapped by count) */
+    proj_encode(&st2, &proj_scratch);                     /* a FUN10 header of 104 parameters (1.2 .. 1.4: mapped by count) */
     st2.raw[66] = 104;
     raw_proj(st2.raw, sizeof st2, PROJ_MAGIC);
     st_save(OBJ_PROJECT0 + 3, &st2, sizeof st2);
@@ -988,7 +988,7 @@ static int raw_tests(void)
     raw_proj(buf, PROJ_STORE_SIZE, 0x46554E42u);       /* "FUNB": a later project format of 3840 bytes */
     st_save(OBJ_PROJECT0, buf, PROJ_STORE_SIZE);
     project_capture(&proj_scratch);
-    proj_pack(&st2, &proj_scratch);
+    proj_encode(&st2, &proj_scratch);
     st2.raw[66] = P_COUNT + 4u;                          /* a FUN10 of more parameters than this firmware has */
     raw_proj(st2.raw, sizeof st2, PROJ_MAGIC);
     st_save(OBJ_PROJECT0 + 1, &st2, sizeof st2);
@@ -1022,11 +1022,25 @@ static int raw_tests(void)
     bad += check("  a later settings record (PER7, 600 B): UNKNOWN, as stored", raw_same(OBJ_SETTINGS, ED_RAW_UNKNOWN, 600));
     bad += check("  a user preset bank of another record size: UNKNOWN, as stored", raw_same(OBJ_UPRESET0 + 1, ED_RAW_UNKNOWN, sizeof ub));
     bad += check("  .. and the export wrote nothing", raw_untouched());
+    {   /* #300: the raw export's state is the codec's proj_classify: a FUN10 of P_COUNT parameters whose header still asks
+         * for the pre-1.0 drum-part conversion (parts 0) is LEGACY (CURRENT before #300); the same with parts NPART CURRENT */
+        uint32_t sum;
+        reset();
+        project_capture(&proj_scratch);
+        ok = proj_encode(&st, &proj_scratch);
+        st_save(OBJ_PROJECT0 + 3, &st, sizeof st);
+        ok &= raw_list_keep() == 0 && raw_same(OBJ_PROJECT0 + 3, ED_RAW_CURRENT, sizeof st);
+        st.raw[63] = 0;
+        sum = proj_hash(st.raw, sizeof st - 4u); memcpy(st.raw + sizeof st - 4u, &sum, 4);
+        st_save(OBJ_PROJECT0 + 3, &st, sizeof st);
+        ok &= raw_list_keep() == 0 && raw_same(OBJ_PROJECT0 + 3, ED_RAW_LEGACY, sizeof st);
+        bad += check("raw LIST (#300): a FUN10 with the old drum part's header byte (parts 0): LEGACY, as stored", ok);
+    }
 
     /* damaged copies: the reader's choice, or the bytes as stored */
     reset();
     project_capture(&proj_scratch);
-    proj_pack(&st, &proj_scratch);
+    proj_encode(&st, &proj_scratch);
     st_save(OBJ_PROJECT0, &st, sizeof st);              /* copy A, seq 1 */
     st.raw[0x200] ^= 0x40;
     st2 = st;
@@ -1059,7 +1073,7 @@ static int raw_tests(void)
     proj_scratch.t[0].engine = ENGI_MACRO;
     proj_scratch.t[0].preset = 50;
     proj_scratch.t[0].p[P_E0] = 47;                     /* last MACRO model, unchanged FUN10 parameter layout */
-    proj_pack(&st, &proj_scratch);
+    proj_encode(&st, &proj_scratch);
     st_save(OBJ_PROJECT0, &st, sizeof st);
     memset(&ub, 0, sizeof ub);
     ub.magic = UP_BANK_MAGIC; ub.rsize = sizeof(up_rec_t); ub.nslot = UP_PER_BANK;
@@ -1118,7 +1132,7 @@ static int raw_tests(void)
     /* an erased slot (project_erase commits 0 bytes) */
     reset();
     project_capture(&proj_scratch);
-    proj_pack(&st, &proj_scratch);
+    proj_encode(&st, &proj_scratch);
     st_save(OBJ_PROJECT0, &st, sizeof st);
     memcpy(&proj_slot[0], &st, sizeof st);
     ok = project_erase(0) == 0;
@@ -1158,7 +1172,7 @@ static int raw_tests(void)
     /* nothing else moves: the backup's snapshot, the staging RAM, the settings queue, the autosave */
     reset();
     project_capture(&proj_scratch);
-    proj_pack(&st, &proj_scratch);
+    proj_encode(&st, &proj_scratch);
     st_save(OBJ_PROJECT0, &st, sizeof st);
     {
         uint32_t gen, len = 0, crc = 0, ms = as.t;
@@ -1328,7 +1342,7 @@ int main(void)
     reset();
     trk[1].step[3] = (step_t){{64}, 1, ST_NOTE, 0, 96, 0, 0};
     project_capture(&proj_scratch);
-    proj_pack(&st, &proj_scratch);
+    proj_encode(&st, &proj_scratch);
     ui.force = 0;
     bad += check("a FUN10 project restores into slot 3 (flash and RAM)",
                  put_all(4, &st, sizeof st, st_crc32(&st, sizeof st)) == 0 && project_used(2) && ui.force &&
@@ -1451,7 +1465,7 @@ int main(void)
     trk[2].step[5] = (step_t){{67}, 1, ST_NOTE, 0, 96, 0, 0};
     trk[2].p[P_LEVEL] = 77;
     project_capture(&proj_scratch);
-    proj_pack(&st, &proj_scratch);
+    proj_encode(&st, &proj_scratch);
     host_tracks_init();
     bad += check("the runtime object restores the tracks",
                  put_all(0, &st, sizeof st, st_crc32(&st, sizeof st)) == 0 && trk[2].step[5].note[0] == 67u &&

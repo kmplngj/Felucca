@@ -173,6 +173,120 @@ static int track_v3_ok(const proj_trk_t *n, const proj_trk_v3_t *o, uint32_t t)
     return ok;
 }
 
+/* #300: the codec's contract (project_codec.h), without the UI: proj_classify on every stored format (the raw export's
+ * states), proj_accepts_length, proj_decode = the reader + proj_bound in that order, proj_decode_current on CURRENT
+ * records only, proj_encode -> proj_decode exact. A FUN10 of P_COUNT parameters whose header still asks for the pre-1.0
+ * conversions (parts not NPART, phys below PROJ_PHYS) is LEGACY since #300 (CURRENT before): the legacy hook converts it,
+ * as proj_unpack did */
+static void codec_project(project_t *a)
+{
+    uint32_t t, i;
+    memset(a, 0, sizeof *a);
+    a->magic = PROJ_MAGIC; a->size = sizeof *a; a->parts = NPART; a->phys = PROJ_PHYS; a->sel = 2;
+    for (i = 0; i < G_COUNT; i++) a->g[i] = GP[i].def;
+    chain_defaults(&a->chain);
+    for (t = 0; t < NTRK; t++) {
+        a->t[t].engine = (uint8_t)trk_def_engine(t);
+        a->t[t].preset = (uint8_t)t;
+        for (i = 0; i < P_COUNT; i++) a->t[t].p[i] = param_desc_of(trk_def_engine(t), i)->def;
+        for (i = 0; i < NSTEP; i++) {
+            step_t *st = &a->t[t].step[i];
+            st->time = i % 3u ? ST_REST : ST_NOTE; st->n = i % 3u ? 0u : 1u; st->note[0] = (uint8_t)(40u + i);
+            st->vel = 100; st->probability = (uint8_t)(i % 7u ? 0u : COND_FIRST + 1u);
+        }
+        memcpy(a->fm6[t], FM6_INIT, FM6_PACKED);
+    }
+    a->motion.count = 1; a->motion.event[0].place = 5; a->motion.event[0].param = P_GLIDE; a->motion.event[0].value = 33;
+    memcpy(a->name, "CODEC", 5);
+    a->sum = proj_sum(a);
+}
+static void rehash(uint8_t *b, uint32_t n)
+{
+    uint32_t sum = proj_hash(b, n - 4u);
+    memcpy(b + n - 4u, &sum, 4);
+}
+/* proj_decode of n bytes = what the reader returns, bounded (the order every caller had by hand before #300) */
+static int decode_is_reader_bound(const void *b, uint32_t n)
+{
+    static project_t x, y;
+    int ok = proj_decode(&x, b, (int)n), ok2 = proj_import(&y, b, (int)n);
+    if (ok2) proj_bound(&y);
+    return ok == ok2 && (!ok || !memcmp(&x, &y, sizeof x));
+}
+static int codec_contract(void)
+{
+    static project_t a, c, d;
+    static project_store_t st, st2;
+    static union { uint32_t align; uint8_t raw[PROJ_STORE_SIZE]; } b;
+    static const uint32_t OLD[9][2] = {{3648u, 0x46554E39u}, {3584u, 0x46554E38u}, {3388u, 0x46554E37u}, {3388u, 0x46554E36u},
+        {3352u, 0x46554E35u}, {2680u, 0x46554E34u}, {2584u, 0x46554E33u}, {2552u, 0x46554E32u}, {688u, 0x46554E31u}};
+    uint32_t n, ok = 1, i;
+    int bad = 0;
+    codec_project(&a);
+    ok = proj_encode(&st, &a) && proj_classify(&st, sizeof st) == PROJ_CURRENT && proj_decode(&c, &st, sizeof st) &&
+         !memcmp(&a, &c, sizeof a) && proj_decode_current(&d, &st, sizeof st) && !memcmp(&c, &d, sizeof c) &&
+         proj_encode(&st2, &c) && !memcmp(&st, &st2, sizeof st);
+    bad += check("codec: FUN10 CURRENT, encode -> decode -> encode exact, decode_current the same", ok);
+    for (n = ok = 0; n < 4000u; n++)
+        ok += (uint32_t)proj_accepts_length(n);
+    bad += check("codec: proj_accepts_length = FUN10 3840, FUN9 3648, FUN8 3584, FUN7 / FUN6 3388 only",
+                 ok == 4u && proj_accepts_length(3840u) && proj_accepts_length(3648u) && proj_accepts_length(3584u) &&
+                 proj_accepts_length(3388u));
+    /* the header bytes of a pre-1.0 record in a FUN10 of P_COUNT: LEGACY, converted by the hook as before */
+    memcpy(b.raw, &st, sizeof st); b.raw[63] = 0; rehash(b.raw, sizeof st);
+    ok = proj_classify(b.raw, sizeof st) == PROJ_LEGACY && !proj_decode_current(&d, b.raw, sizeof st) &&
+         proj_decode(&c, b.raw, sizeof st) && c.parts == NPART && c.t[3].engine == ENGI_DRUM &&
+         c.t[3].preset == PROJ_DEF_KEEP && decode_is_reader_bound(b.raw, sizeof st);
+    bad += check("codec: FUN10 with parts 0 is LEGACY (#300; CURRENT before), the hook makes track 4 the drum part", ok);
+    memcpy(b.raw, &st, sizeof st); b.raw[64] = 1; rehash(b.raw, sizeof st);
+    ok = proj_classify(b.raw, sizeof st) == PROJ_LEGACY && proj_decode(&c, b.raw, sizeof st) && c.phys == PROJ_PHYS &&
+         decode_is_reader_bound(b.raw, sizeof st);
+    memcpy(b.raw, &st, sizeof st); b.raw[64] = 7; rehash(b.raw, sizeof st);
+    ok &= proj_classify(b.raw, sizeof st) == PROJ_CURRENT;          /* (phys above PROJ_PHYS: nothing to convert) */
+    bad += check("codec: FUN10 with phys 1 is LEGACY (converted), phys 7 CURRENT", ok);
+    /* damaged and unknown */
+    memcpy(b.raw, &st, sizeof st); b.raw[100] ^= 1u;
+    ok = proj_classify(b.raw, sizeof st) == PROJ_DAMAGED && !proj_decode(&c, b.raw, sizeof st);
+    memcpy(b.raw, &st, sizeof st); n = 3000u; memcpy(b.raw + 4, &n, 4); rehash(b.raw, sizeof st);
+    ok &= proj_classify(b.raw, sizeof st) == PROJ_DAMAGED && !proj_decode(&c, b.raw, sizeof st);
+    memcpy(b.raw, &st, sizeof st); b.raw[66] = (uint8_t)(P_COUNT + 1u); rehash(b.raw, sizeof st);
+    ok &= proj_classify(b.raw, sizeof st) == PROJ_UNKNOWN && !proj_decode(&c, b.raw, sizeof st);
+    ok &= proj_classify(&st, sizeof st - 1u) == PROJ_UNKNOWN && proj_classify(&st, 0) == PROJ_UNKNOWN &&
+          proj_classify(&st, 7) == PROJ_UNKNOWN;
+    bad += check("codec: a bad hash or size word DAMAGED, a count past P_COUNT or another length UNKNOWN, all refused", ok);
+    memcpy(b.raw, &st, sizeof st); b.raw[66] = 104u; rehash(b.raw, sizeof st);
+    bad += check("codec: FUN10 of 104 parameters (1.2 .. 1.4) is LEGACY", proj_classify(b.raw, sizeof st) == PROJ_LEGACY);
+    /* every older format's length and magic, hash right: LEGACY; the decode as the reader + proj_bound */
+    for (i = 0, ok = 1; i < sizeof OLD / sizeof OLD[0]; i++) {
+        memset(b.raw, 0, sizeof b.raw); memcpy(b.raw, &OLD[i][1], 4); memcpy(b.raw + 4, &OLD[i][0], 4);
+        if (i < 3u) b.raw[66] = 91u;                                     /* (FUN9..FUN7: the parameter count) */
+        rehash(b.raw, OLD[i][0]);
+        ok &= proj_classify(b.raw, OLD[i][0]) == PROJ_LEGACY && decode_is_reader_bound(b.raw, OLD[i][0]) &&
+              !proj_decode_current(&c, b.raw, (int)OLD[i][0]);
+    }
+    bad += check("codec: FUN9 .. FUN1 lengths and magics LEGACY, never decode_current, decode = reader + bound", ok);
+    {   /* a retained 3840-byte slot holding FUN9: not a FUN10 length, so the legacy hook (its own size word) */
+        static uint8_t v9[3648];
+        ok = old_pack(v9, &a, OLD_FUN9, 99u) == sizeof v9;
+        memset(b.raw, 0x5A, sizeof b.raw); memcpy(b.raw, v9, sizeof v9);
+        ok &= proj_classify(b.raw, sizeof b.raw) == PROJ_UNKNOWN && proj_classify(v9, sizeof v9) == PROJ_LEGACY &&
+              proj_decode(&c, b.raw, sizeof b.raw) && proj_decode(&d, v9, sizeof v9) && !memcmp(&c, &d, sizeof c) &&
+              decode_is_reader_bound(b.raw, sizeof b.raw);
+        bad += check("codec: the .noinit slot holding a shorter FUN9 goes through the legacy hook", ok);
+    }
+    {   /* values a reader keeps outside their ranges: bounded by proj_decode only */
+        static project_v2_t w;
+        memset(&w, 0, sizeof w);
+        w.magic = PROJ_MAGIC_V2; w.size = sizeof w;
+        for (i = 0; i < NTRK; i++) { w.t[i].engine = 0; w.t[i].p[P_LEVEL] = 400; w.t[i].step[0].n = 7; }
+        w.sum = proj_hash(&w, sizeof w - 4u);
+        ok = proj_import(&c, &w, sizeof w) && c.t[0].p[P_LEVEL] == 400 && proj_decode(&d, &w, sizeof w) &&
+             d.t[0].p[P_LEVEL] == TP[P_LEVEL].max && d.t[0].step[0].n == 4u && decode_is_reader_bound(&w, sizeof w);
+        bad += check("codec: proj_decode bounds what the reader keeps (FUN2 LEVEL 400 -> its max, 7 notes -> 4)", ok);
+    }
+    return bad;
+}
+
 int main(void)
 {
     static project_v4_t v4;
@@ -444,19 +558,19 @@ int main(void)
         chain_defaults(&a.chain);
         a.t[1].p[P_LEVEL] = 99;
         a.sum = proj_sum(&a);
-        ok = proj_pack(&st, &a);
+        ok = proj_encode(&st, &a);
         for (i = 0; i < PROJ_NAME_LEN; i++) zero &= st.raw[PROJ_NAME_OFF + i] == 0u;
         bad += check("FUN7 no name: the tail all zero (as firmware before wrote it)", ok && zero);
         bad += check("FUN7 of before names (zero tail): loads, no name", proj_import(&c, &st, sizeof st) && !c.name[0] &&
                      c.t[1].p[P_LEVEL] == 99);
         memcpy(a.name, "lofi jam", 8);
         a.sum = proj_sum(&a);
-        ok = proj_pack(&st, &a) && proj_import(&c, &st, sizeof st);
+        ok = proj_encode(&st, &a) && proj_import(&c, &st, sizeof st);
         bad += check("FUN7 name round trip (upper case, 0-padded)", ok && !memcmp(c.name, "LOFI JAM\0\0\0\0", 12) &&
                      !memcmp(st.raw + PROJ_NAME_OFF, "LOFI JAM\0\0\0\0", 12));
         memcpy(a.name, "ABCDEFGHIJKL", 12);         /* 12: no 0 */
         a.sum = proj_sum(&a);
-        ok = proj_pack(&st, &a) && proj_import(&c, &st, sizeof st);
+        ok = proj_encode(&st, &a) && proj_import(&c, &st, sizeof st);
         bad += check("FUN7 name of 12 characters (no terminator)", ok && !memcmp(c.name, "ABCDEFGHIJKL", 12));
         st2 = st;
         st2.raw[PROJ_NAME_OFF + 3] ^= 1u;
@@ -487,7 +601,7 @@ int main(void)
         }
         memcpy(a.name, "FM SONG", 7);
         a.sum = proj_sum(&a);
-        ok = proj_pack(&st, &a) && ((uint32_t *)st.raw)[0] == 0x46554E41u && proj_import(&c, &st, sizeof st);
+        ok = proj_encode(&st, &a) && ((uint32_t *)st.raw)[0] == 0x46554E41u && proj_import(&c, &st, sizeof st);
         for (k = 0; k < NTRK; k++)
             ok &= !memcmp(c.fm6[k], FM6_FACTORY[k * 2u], FM6_PACKED) && c.t[k].engine == ENGI_FM6 &&
                   !memcmp(st.raw + PROJ_FM6_OFF + k * FM6_PACKED, FM6_FACTORY[k * 2u], FM6_PACKED);
@@ -510,7 +624,7 @@ int main(void)
                 f.motion.event[2] = (motion_event_t){3u << 6 | 5u, (uint8_t)(P_LN2 | MOTION_LOCK), 40};
                 f.motion.event[3] = (motion_event_t){3u << 6 | 6u, (uint8_t)(P_E5 | MOTION_LOCK), -3};
                 f.sum = proj_sum(&f);
-                ok = proj_pack(&st, &f) && proj_import(&g, &st, sizeof st) && !memcmp(&f.motion, &g.motion, sizeof f.motion);
+                ok = proj_encode(&st, &f) && proj_import(&g, &st, sizeof st) && !memcmp(&f.motion, &g.motion, sizeof f.motion);
                 bad += check("FUN10 round trip: locks on a lane level (P_LN2) and an engine value (P_E5) kept", ok &&
                              st.raw[68u + NTRK * (P_COUNT + 2u + NSTEP * 9u) + sizeof(chain_config_t) + 4u + 6u + 1u] ==
                              (P_LN2 | MOTION_LOCK) && g.motion.event[3].param == (P_E5 | MOTION_LOCK));
@@ -566,12 +680,12 @@ int main(void)
         bad += check("a retained slot of garbage is empty", !proj_import(&c, &slot, sizeof slot));
         for (i = 0; i < FM6_PACKED; i++) a.fm6[1][i] = (uint8_t)(i | 0x80u);
         a.sum = proj_sum(&a);
-        bad += check("FUN8: a patch byte above 127 cannot be packed", !proj_pack(&st, &a));
+        bad += check("FUN8: a patch byte above 127 cannot be packed", !proj_encode(&st, &a));
         memcpy(a.fm6[1], FM6_INIT, FM6_PACKED);
         a.t[0].step[3].n = 1; a.t[0].step[3].note[0] = 200; a.t[0].step[3].note[2] = 128;
         a.t[0].step[3].vel = 255; a.t[0].step[3].hit = 0x05; a.t[0].step[3].acc = 0xF7;
         a.sum = proj_sum(&a);
-        ok = proj_pack(&st, &a) && proj_import(&c, &st, sizeof st);
+        ok = proj_encode(&st, &a) && proj_import(&c, &st, sizeof st);
         bad += check("FUN8: a step out of range packs inside it (note, velocity 127; accents on hits): it loads",
                      ok && c.t[0].step[3].note[0] == 127u && c.t[0].step[3].note[2] == 127u && c.t[0].step[3].vel == 127u &&
                      c.t[0].step[3].hit == 0x05u && c.t[0].step[3].acc == 0x05u);
@@ -614,7 +728,7 @@ int main(void)
         a.sum = proj_sum(&a);
 #define FM4_OK(c) ((c).t[1].engine == ENGI_FM6 && (c).t[1].preset == 4u && !memcmp((c).fm6[1], pk, FM6_PACKED) && \
                    !memcmp((c).t[1].p, p, sizeof p) && (c).t[0].engine == 0u && !memcmp((c).fm6[0], FM6_INIT, FM6_PACKED))
-        ok = proj_pack(&st, &a) && proj_import(&c, &st, sizeof st);
+        ok = proj_encode(&st, &a) && proj_import(&c, &st, sizeof st);
         bad += check("FUN8 with a DIGITAL track: FM6, the converted patch its own, PTCH / preset FM6 PAD", ok && FM4_OK(c));
         bad += check("  its motion on INDEX / OP LEVEL / E7 goes; a send's and the other track's stay",
                      c.motion.count == 2u && c.motion.event[0].param == P_CHOR && c.motion.event[1].place == 3u &&
@@ -687,7 +801,7 @@ int main(void)
                     !memcmp((c).t[2].p, a.t[2].p, P_E0 * sizeof(int16_t)) && \
                     !memcmp((c).t[2].step, a.t[2].step, sizeof a.t[2].step) && \
                     (c).t[0].engine == ENGI_SAMPLE && (c).t[0].p[P_E0] == 2 && (c).t[1].engine == ENGI_SAMPLE)
-        ok = proj_pack(&st, &a) && proj_import(&c, &st, sizeof st);
+        ok = proj_encode(&st, &a) && proj_import(&c, &st, sizeof st);
         bad += check("FUN8 with a SAMPLE PERC track: DRUM's kit, the rest of the sound and the steps kept", ok && PERC_OK(c) &&
                      str_eq(DRUM_PRESETS[0].name, "DRUM KIT") &&
                      !memcmp(DRUM_PRESETS[0].e, (int8_t[8])DRUM_KIT_E, 8));
@@ -746,13 +860,14 @@ int main(void)
         chain_defaults(&a.chain);
         for (i = 0; i < NTRK; i++) memcpy(a.fm6[i], FM6_INIT, FM6_PACKED);
         bad += check("  an ordinary project (init patches): no record at sector + 0xF00",
-                     (a.sum = proj_sum(&a), proj_pack(&st, &a)) && !rec_at(st.raw + 3584u));
+                     (a.sum = proj_sum(&a), proj_encode(&st, &a)) && !rec_at(st.raw + 3584u));
         memcpy(a.fm6[2], pk2, FM6_PACKED);
         a.sum = proj_sum(&a);
-        ok &= proj_pack(&st, &a) && proj_import(&c, &st, sizeof st) && !memcmp(c.fm6[2], pk2, FM6_PACKED);
+        ok &= proj_encode(&st, &a) && proj_import(&c, &st, sizeof st) && !memcmp(c.fm6[2], pk2, FM6_PACKED);
         ok &= rec_at(st.raw + 3584u);
         bad += check("#418: a valid FUN10 (crafted FM6 patch, track 3) holds a loader-matching record at sector + 0xF00", ok);
     }
+    bad += codec_contract();
     printf("%s\n", bad ? "PROJECT FORMAT TEST FAILED" : "project format test passed");
     return bad != 0;
 }

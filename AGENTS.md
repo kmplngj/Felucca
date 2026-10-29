@@ -105,7 +105,7 @@ Repository choice and license placement are in [Repository ownership](docs/repos
 | `firmware/engines/` | Pinned MIT engine interface, shared DSP/tables and ANALOG/LOFI/TRIO/WHEEL/NOISE; commit changes in the Engines fork before updating the gitlink |
 | `firmware/hal/` | Registers, interrupt assembly, peripheral access, hardware guards |
 | `firmware/app.ld`, `firmware/loader/` | Memory layout and the separate update loader |
-| `firmware/src/storage*.c`, `project.c`, `upreset.c`, `settings_persist.c` | Flash and versioned persistence |
+| `firmware/src/storage*.c`, `project.c`, `upreset.c`, `settings_persist.c` | Flash and versioned persistence; the stored project record is `project_codec.c` ([`project_codec.h`](firmware/src/project_codec.h): `proj_decode` / `proj_encode`), older readers behind one hook in `project_legacy.c` |
 | `tools/`, `tests/` | Target build, asset generators, host simulation and regression checks |
 | `build/gen/` | Generated headers; change their generator or input asset |
 | `web/emu/` | Browser emulator; editor/installer development has moved to Felucca-WebApp |

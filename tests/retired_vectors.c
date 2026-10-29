@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Reference vectors of the retired sounds (#299, part A): what today's firmware makes of DIGITAL (engine 1, four-operator
  * FM), PHYS MODEL 2 (DUST) and MODEL 4 (DRUM) and SAMPLE PERC (SET 4) in each store that can hold them. The firmware's
- * own code runs (nothing here re-implements a conversion): proj_import / proj_bound / proj_pack (projects),
+ * own code runs (nothing here re-implements a conversion): proj_decode / proj_encode (projects),
  * up_bank_check / up_load (user preset records), settings_import (favourites, PER4 and PER6), fm4_apply and
  * fm4_load_preset (the load path of a DIGITAL sound), each on fixed inputs. The output is JSON on stdout, deterministic
  * (no time, no address): tests/fixtures/retired_vectors.json is its committed copy, tests/retired_vectors.py compares
@@ -11,7 +11,7 @@
  *
  * Sections of the JSON (all byte strings are lower-case hex):
  *   constants    the ids the vectors use, FX_DEF, FM4_TO_FM6, DRUM_KIT_E, the sizes
- *   projects     input FUN10 / FUN8 / FUN7 image -> output FUN10 image (import, proj_bound, pack: the load path of proj_fetch);
+ *   projects     input FUN10 / FUN8 / FUN7 image -> output FUN10 image (decode, encode: the load path of proj_fetch);
  *                tracks (engine / preset before and after), motion_dropped (events the conversion removed)
  *   presets      a UPB1 record as stored -> the record in the RAM mirror after up_bank_check (the boot path) -> what
  *                up_load makes of it in the selected track (engine, preset, 111 values, the FM6 patch)
@@ -201,8 +201,8 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
         return;
     pv_build(&q, c);
     if (!strcmp(format, "FUN10")) {
-        if (!proj_pack(&in10, &q))
-            rv_die("proj_pack of the input", c->name);
+        if (!proj_encode(&in10, &q))
+            rv_die("proj_encode of the input", c->name);
         in = in10.raw;
         inlen = sizeof in10;
     } else {
@@ -213,11 +213,10 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
             rv_die("old_pack of the input", c->name);
         in = old;
     }
-    if (!proj_import(&post, in, (int)inlen))          /* the load path: + proj_fm4, proj_perc */
-        rv_die("proj_import", c->name);
-    proj_bound(&post);                                /* (proj_fetch, project_load, autosave_boot, ed_bk_commit) */
-    if (!proj_pack(&out10, &post))
-        rv_die("proj_pack of the output", c->name);
+    if (!proj_decode(&post, in, (int)inlen))          /* the load path: import + proj_fm4, proj_perc + proj_bound */
+        rv_die("proj_decode", c->name);               /* (proj_fetch, project_load, autosave_boot, ed_bk_commit) */
+    if (!proj_encode(&out10, &post))
+        rv_die("proj_encode of the output", c->name);
     rv_sep(&pv_n);
     printf("    {\"name\": \"%s\", \"format\": \"%s\", \"np\": %u, \"retired\": \"%s\", \"phys_byte\": %u,\n",
            c->name, format, np, retired, (unsigned)c->phys);
@@ -227,7 +226,7 @@ static void pv_emit(const pv_case_t *c, const char *format, uint32_t np, const c
                (unsigned)q.t[t].engine, (unsigned)q.t[t].preset, (unsigned)post.t[t].engine,
                (unsigned)post.t[t].preset);
     printf("],\n     \"motion_dropped\": [");
-    /* q is the input before any migration; proj_import_any already changes PHYS identities.
+    /* q is the input before any migration; the decode already changes PHYS identities.
      * Its motion uses current IDs, as the legacy serializer/reader map them by stored count. */
     for (i = 0; i < q.motion.count && i < MOTION_MAX; i++)
         if (!rv_ev_has(&post.motion, &q.motion.event[i])) {

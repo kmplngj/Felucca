@@ -22,9 +22,9 @@ static int roundtrip(const char *input, const char *output)
         host_preset(&trk[1], 3, 2);
         project_capture(&p);
         /* Normalize the existing historical-project defaults once before crossing profiles. */
-        if (!proj_pack(&stored, &p) || !proj_import(&q, &stored, sizeof stored) || project_restore_runtime(&q)) return 3;
+        if (!proj_encode(&stored, &p) || !proj_import(&q, &stored, sizeof stored) || project_restore_runtime(&q)) return 3;
         project_capture(&p);
-        if (!proj_pack(&stored, &p)) return 3;
+        if (!proj_encode(&stored, &p)) return 3;
         song.sel = 1;
         up_store(5, "PROFILE");
         preset = *up_rec(5);
@@ -34,7 +34,7 @@ static int roundtrip(const char *input, const char *output)
     if (!proj_import(&q, &stored, sizeof stored) || project_restore_runtime(&q) ||
         trk[1].eng_req != 3 || trk[1].preset != 2) return 4;
     project_capture(&p);
-    if (!proj_pack(&after, &p) || memcmp(&stored, &after, sizeof stored)) return 5;
+    if (!proj_encode(&after, &p) || memcmp(&stored, &after, sizeof stored)) return 5;
     *up_rec(5) = preset;
     song.sel = 1;
     if (up_load(5) || TSEL->eng_req != 3 || memcmp(&preset, up_rec(5), sizeof preset)) return 6;

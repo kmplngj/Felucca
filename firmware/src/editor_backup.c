@@ -160,7 +160,7 @@ static uint32_t ed_bk_capture(void)
 {
     if (ed_flash_stop()) return 3;
     project_capture(&proj_scratch);
-    if (!proj_pack((project_store_t *)ED_BK_RAW, &proj_scratch)) return 2;
+    if (!proj_encode((project_store_t *)ED_BK_RAW, &proj_scratch)) return 2;
     ed_bk_gen = ++proj_wire_gen;
 #if FELUCCA_FLASH
     ed_bk_settings = persist_saved;                 /* fields absent from this build survive */
@@ -198,10 +198,9 @@ static uint32_t ed_bk_commit(void)
     uint32_t obj;
     if (ed_bk_pos != ed_bk_len || st_crc32(raw, ed_bk_len) != ed_bk_crc) return 2;
     if (ed_bk_id == 0u || (ed_bk_id >= 2u && ed_bk_id <= 5u)) {
-        if (ed_bk_len && !proj_import(&proj_scratch, raw, (int)ed_bk_len)) return 2;
+        if (ed_bk_len && !proj_decode(&proj_scratch, raw, (int)ed_bk_len)) return 2;
         if (ed_bk_len) {                            /* an older format becomes FUN10 inside its ranges */
-            proj_bound(&proj_scratch);
-            if (!proj_pack((project_store_t *)raw, &proj_scratch)) return 2;
+            if (!proj_encode((project_store_t *)raw, &proj_scratch)) return 2;
             ed_bk_len = sizeof(project_store_t);
         }
         if (ed_bk_id == 0u) {
@@ -280,11 +279,6 @@ static uint32_t ed_bk_commit(void)
     sync_reload = 1; ui.force = 1;
     return 0;
 }
-/* a project object's length: FUN10 (today's, 1.2), FUN9 (1.1), FUN8 (before the DRUM lane levels, 1.0.x), FUN7 */
-static int proj_store_len(uint32_t len)
-{
-    return len == sizeof(project_store_t) || len == PROJ_STORE_V9 || len == PROJ_STORE_V8 || len == PROJ_STORE_V7;
-}
 /* the ids BACKUP_PUT takes in this build (the samples, 32..34, travel with SMP_*) */
 static int ed_bk_put_id(uint32_t id)
 {
@@ -304,10 +298,10 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)
     if (a[0] == 0u) {
         if (n != 12u || a[6] > 15u || a[11] > 15u) return 1;
         uint32_t len = ed_bk_r32(a + 2);
-        if (len > ED_BK_MAX || (a[1] == 0u && !proj_store_len(len)) ||
+        if (len > ED_BK_MAX || (a[1] == 0u && !proj_accepts_length(len)) ||
             (a[1] == 1u && len != sizeof(persist_t) && (len <= sizeof(persist_t) + PERSIST_EXT_HDR ||
                                                     len > sizeof(persist_rec_t) || (len - sizeof(persist_t) - PERSIST_EXT_HDR) % 32u)) ||
-            (a[1] >= 2u && a[1] <= 5u && len && !proj_store_len(len)) ||
+            (a[1] >= 2u && a[1] <= 5u && len && !proj_accepts_length(len)) ||
             ((a[1] == 6u || a[1] == 7u) && len && len != sizeof(up_bank_t)) ||
             (a[1] == 8u && len && len != sizeof(fm6_bank_t)) || (a[1] == 9u && len && len != sizeof(upf_t)) ||
             (a[1] == ED_BK_ID_FVB && len && len != FVB_LEN) || (a[1] == ED_BK_ID_SLC && len && len != ED_BK_LEN_SLC)) return 1;
@@ -435,10 +429,10 @@ static int ed_raw_pick(uint32_t id, st_hdr_t *h, int *ok)
  * user preset's version and parameter count, a retired engine on a track) are the client's to read */
 static uint32_t ed_raw_kind(uint32_t id, const uint8_t *b, uint32_t n)
 {
-    uint32_t m = 0, w = 0, s = 0, k;
+    uint32_t m = 0, k;
     if (!n)
         return ED_RAW_EMPTY;                            /* (an erased slot: project_erase commits 0 bytes) */
-    if (n >= 8u) { memcpy(&m, b, 4); memcpy(&w, b + 4, 4); memcpy(&s, b + n - 4u, 4); }
+    if (n >= 8u) memcpy(&m, b, 4);
     if (id == OBJ_SETTINGS) {
         const persist_t *p = (const persist_t *)(const void *)b;
         if ((n == sizeof *p && m == PERSIST_MAGIC) || persist_ext_ok(p, (int)n))
@@ -450,21 +444,10 @@ static uint32_t ed_raw_kind(uint32_t id, const uint8_t *b, uint32_t n)
                (m == 0x50455231u && n == 8u + sizeof(panel_t)) ? ED_RAW_LEGACY : ED_RAW_UNKNOWN;
     }
     if (id == OBJ_AUTOSAVE || (id >= OBJ_PROJECT0 && id < OBJ_PROJECT0 + 4u)) {
-        static const uint32_t F[10][2] = {{PROJ_STORE_SIZE, PROJ_MAGIC}, {PROJ_STORE_V9, PROJ_MAGIC_V9},
-            {PROJ_STORE_V8, PROJ_MAGIC_V8}, {PROJ_STORE_V7, PROJ_MAGIC_V7}, {sizeof(project_v6_t), PROJ_MAGIC_V6},
-            {sizeof(project_v5_t), PROJ_MAGIC_V5}, {sizeof(project_v4_t), PROJ_MAGIC_V4},
-            {sizeof(project_v3_t), PROJ_MAGIC_V3}, {sizeof(project_v2_t), PROJ_MAGIC_V2}, {sizeof(project_v1_t), PROJ_MAGIC_V1}};
-        for (k = 0; k < 10u; k++)                       /* every format: magic, size = its length, FNV-1a last */
-            if (n == F[k][0] && m == F[k][1] && w == n && s == proj_hash(b, n - 4u)) {
-                if (k < 4u) {                         /* serialized layouts: the count must fit, as in proj_unpack */
-                    uint32_t end = n - 4u - PROJ_NAME_LEN - (k == 3u ? 0u : NTRK * FM6_PACKED);
-                    uint32_t tail = k ? sizeof(chain_v9_t) + PROJ_MOTION_V9 : sizeof(chain_config_t) + sizeof(motion_store_t);
-                    if (b[66] < 8u || b[66] > P_COUNT || 68u + NTRK * (b[66] + 2u + NSTEP * 9u) + tail > end)
-                        return ED_RAW_UNKNOWN;
-                }
-                return k || b[66] < P_COUNT ? ED_RAW_LEGACY : ED_RAW_CURRENT;
-            }
-        return ED_RAW_UNKNOWN;
+        /* the codec's own classification (project_codec.c proj_classify); a format's magic and length with a bad size
+         * word or hash (PROJ_DAMAGED) is UNKNOWN here: DAMAGED is a copy whose storage CRC failed */
+        k = proj_classify(b, n);
+        return k == PROJ_CURRENT ? ED_RAW_CURRENT : k == PROJ_LEGACY ? ED_RAW_LEGACY : ED_RAW_UNKNOWN;
     }
     if (id == OBJ_UPRESET0 || id == OBJ_UPRESET0 + 1u) {
         const up_bank_t *u = (const up_bank_t *)(const void *)b;

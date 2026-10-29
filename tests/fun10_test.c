@@ -488,7 +488,7 @@ static int formats(void)
         motion_set_event(&trk[i % 4u], (i / 4u) % NSTEP, i / 4u < NSTEP ? P_REV : P_PAN, (int16_t)(i / 4u < NSTEP ? i / 4u : -(int32_t)(i % 60u)));
     motion_set_lock(&trk[2], 9, P_E0 + 3, 7);
     project_capture(&a);
-    ok = motion.count == MOTION_MAX && proj_pack(&st, &a) && ((uint32_t *)st.raw)[0] == 0x46554E41u &&
+    ok = motion.count == MOTION_MAX && proj_encode(&st, &a) && ((uint32_t *)st.raw)[0] == 0x46554E41u &&
          ((uint32_t *)st.raw)[1] == 3840u && st.raw[66] == P_COUNT && proj_import(&b, &st, sizeof st) && !memcmp(&a, &b, sizeof a);
     ok &= step_nudge(&b.t[0].step[0]) == -8 && step_nudge(&b.t[0].step[1]) == 7 && step_nudge(&b.t[0].step[2]) == -1 &&
           step_ratchet(&b.t[0].step[3]) == 4u && step_nudge(&b.t[0].step[3]) == 1 && step_chance(&b.t[0].step[3]) == 33u;
@@ -503,7 +503,7 @@ static int formats(void)
         static project_store_t so;
         uint32_t pi = 68u, po = 68u, tr, m0, drop = P_E0 - from;
         memset(&so, 0, sizeof so);
-        ok = proj_pack(&st, &a) && !a.t[0].p[P_SPRD] && !a.t[0].p[P_ITYPE] && !a.t[0].p[P_FTYPE] && !a.t[0].p[P_ESYNC];
+        ok = proj_encode(&st, &a) && !a.t[0].p[P_SPRD] && !a.t[0].p[P_ITYPE] && !a.t[0].p[P_FTYPE] && !a.t[0].p[P_ESYNC];
         memcpy(so.raw, st.raw, 68u);
         so.raw[66] = (uint8_t)(P_COUNT - drop);
         for (tr = 0; tr < NTRK; tr++) {
@@ -541,12 +541,12 @@ static int formats(void)
             c.chain.row[i] = (chain_row_t){{(uint8_t)(i % 5u), (uint8_t)((i + 1u) % 5u), (uint8_t)((i + 2u) % 5u),
                                             (uint8_t)((i * 3u) % 5u)}, (uint8_t)(1u + i)};
         c.sum = proj_sum(&c);
-        ok = proj_pack(&st, &c) && proj_import(&d, &st, sizeof st) && !memcmp(&c, &d, sizeof c) && st.raw[at] == CHAIN_ROWS &&
+        ok = proj_encode(&st, &c) && proj_import(&d, &st, sizeof st) && !memcmp(&c, &d, sizeof c) && st.raw[at] == CHAIN_ROWS &&
              st.raw[at + 4u] == 0 && st.raw[at + 5u] == 1 && st.raw[at + 6u] == 2 && st.raw[at + 7u] == 0 && st.raw[at + 8u] == 1 &&
              st.raw[at + 4u + 5u * 15u + 4u] == 16;
         c.chain.row[3].slot[2] = 5;                   /* past "-": refused (pack and load) */
         c.sum = proj_sum(&c);
-        ok &= !proj_pack(&st, &c);
+        ok &= !proj_encode(&st, &c);
         bad += check("FUN10 round trip: 16 sections, a slot per track (A..D, -), the bytes in place", ok);
     }
     project_save(2);
@@ -680,7 +680,7 @@ static int midi_track_fmt(void)
     memset(song.mch, 0, sizeof song.mch);
     song.g[G_ROUTE] = 0;
     project_capture(&a);
-    ok = proj_pack(&st, &a) && PROJ_MIDI_OFF == PROJ_FM6_OFF - 3u && end <= PROJ_MIDI_OFF && PROJ_FM6_OFF - end == 16u;
+    ok = proj_encode(&st, &a) && PROJ_MIDI_OFF == PROJ_FM6_OFF - 3u && end <= PROJ_MIDI_OFF && PROJ_FM6_OFF - end == 16u;
     for (i = end; i < PROJ_FM6_OFF; i++)
         ok &= st.raw[i] == 0u;
     ok &= proj_import(&b, &st, sizeof st) && !memcmp(&a, &b, sizeof a) && !b.mch[0] && !b.mch[3] && !b.g[G_ROUTE];
@@ -690,7 +690,7 @@ static int midi_track_fmt(void)
     mch_set(0, 9); mch_set(1, 1); mch_set(2, MCH_OMNI); mch_set(3, MCH_OFF);
     project_capture(&a);
     ok = a.g[G_ROUTE] == ROUTE_TRACK && a.mch[0] == 9u && a.mch[1] == 0u && a.mch[2] == MCH_OMNI && a.mch[3] == MCH_OFF;
-    ok &= proj_pack(&st, &a);
+    ok &= proj_encode(&st, &a);
     memcpy(&r, st.raw + 8u + 2u * G_ROUTE, 2);
     ok &= r == 0 && st.raw[PROJ_MIDI_OFF] == 9u && st.raw[PROJ_MIDI_OFF + 1u] == (uint8_t)(MCH_OMNI << 2 | (MCH_OFF & 1u) << 7) &&
           st.raw[PROJ_MIDI_OFF + 2u] == (uint8_t)(0x80u | MCH_OFF >> 1) &&
@@ -707,17 +707,17 @@ static int midi_track_fmt(void)
 
     mch_set(0, 4); mch_set(1, 5); mch_set(2, 6); mch_set(3, 7);   /* channels 5..8 in order: CH5-8 the fallback */
     project_capture(&a);
-    ok = proj_pack(&st, &a);
+    ok = proj_encode(&st, &a);
     memcpy(&r, st.raw + 8u + 2u * G_ROUTE, 2);
     ok &= r == 2 && proj_import(&b, &st, sizeof st) && b.g[G_ROUTE] == ROUTE_TRACK && !memcmp(&a, &b, sizeof a);
     mch_set(0, 12); mch_set(1, 13); mch_set(2, 14); mch_set(3, 15);
     project_capture(&a);
-    ok &= proj_pack(&st, &a);
+    ok &= proj_encode(&st, &a);
     memcpy(&r, st.raw + 8u + 2u * G_ROUTE, 2);
     ok &= r == 4;
     mch_set(3, 3);
     project_capture(&a);
-    ok &= proj_pack(&st, &a);
+    ok &= proj_encode(&st, &a);
     memcpy(&r, st.raw + 8u + 2u * G_ROUTE, 2);
     ok &= r == 0;
     bad += check("  TRACK on channels 5..8 / 13..16 in order is stored as CH5-8 / CH13-16 (what 1.5.1 then plays), else CH1-4",
@@ -726,7 +726,7 @@ static int midi_track_fmt(void)
     song.g[G_ROUTE] = 3;                                 /* CH9-12, channels set: kept for TRACK, no bit */
     mch_set(0, 9); mch_set(1, 9); mch_set(2, MCH_OFF); mch_set(3, 0);
     project_capture(&a);
-    ok = proj_pack(&st, &a) && !(st.raw[PROJ_MIDI_OFF + 2u] & 0x80u);
+    ok = proj_encode(&st, &a) && !(st.raw[PROJ_MIDI_OFF + 2u] & 0x80u);
     memcpy(&r, st.raw + 8u + 2u * G_ROUTE, 2);
     ok &= r == 3 && proj_import(&b, &st, sizeof st) && !memcmp(&a, &b, sizeof a) && b.g[G_ROUTE] == 3;
     st.raw[PROJ_MIDI_OFF] |= 31u;                        /* a field past OFF: read as 0 (the track's own channel) */
