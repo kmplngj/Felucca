@@ -31,9 +31,9 @@ class Resolve(unittest.TestCase):
         self.addCleanup(environment.stop)
 
     def test_release_refuses_diagnostic_builds(self):
-        """Every opt-in diagnostic build is refused by the release resolver."""
+        """Every opt-in diagnostic build, including explicit chip probes, is refused by the release resolver."""
         self.assertEqual(B.DIAG_FLAGS, ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE",
-                                       "FELUCCA_RENDER_STAGE"))
+                                       "FELUCCA_CHIP_PROBES", "FELUCCA_RENDER_STAGE"))
         for flag in B.DIAG_FLAGS:
             with patch.dict(os.environ, {flag: "1"}):
                 with self.assertRaises(SystemExit) as raised:
@@ -42,6 +42,16 @@ class Resolve(unittest.TestCase):
                 self.assertEqual(B.resolve([])["name"], "felucca.fwsc")      # a development build is fine
             with patch.dict(os.environ, {flag: "0"}):
                 self.assertEqual(B.resolve(["--release", "1.0"])["product"], "FM-1_910")
+
+    def test_chip_probes_supported_profile(self):
+        with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "1", "FELUCCA_PROFILE": "standard"}):
+            self.assertEqual(B.resolve([])["name"], "felucca.fwsc")
+        for profile in ("macro", "reduced-lofi"):
+            with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "1", "FELUCCA_PROFILE": profile}):
+                with self.assertRaisesRegex(SystemExit, "FELUCCA_CHIP_PROBES=1 requires FELUCCA_PROFILE=standard"):
+                    B.resolve([])
+            with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "0", "FELUCCA_PROFILE": profile}):
+                self.assertEqual(B.resolve([])["name"], f"felucca-{profile}.fwsc")
 
     def test_default_unchanged(self):
         c = B.resolve([])
@@ -825,6 +835,15 @@ class NoJobs(unittest.TestCase):
             with self.assertRaises(SystemExit): B.main([])
         self.assertEqual(self.started(), [])
         self.assertEqual(self.packed, [])
+
+    def test_unsupported_chip_probe_profile_starts_no_jobs(self):
+        for profile in ("macro", "reduced-lofi"):
+            with patch.dict(os.environ, {"FELUCCA_CHIP_PROBES": "1", "FELUCCA_PROFILE": profile}):
+                with self.assertRaisesRegex(SystemExit, "FELUCCA_CHIP_PROBES=1 requires FELUCCA_PROFILE=standard"):
+                    B.main([])
+            self.assertEqual(self.started(), [])
+            self.assertEqual(list(self.out.iterdir()), [])
+            self.assertEqual(self.packed, [])
 
     def test_reduced_release_requires_distinct_identity(self):
         with patch.dict("os.environ", {"FELUCCA_PROFILE": "reduced-lofi"}):

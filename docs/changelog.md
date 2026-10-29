@@ -168,6 +168,14 @@ recorded in the linked reports, rather than every current build or device.
   support targeted debugging; normal FM-1 builds leave these probes disabled.
   The synthetic reproducer adds a test workload, not an audio fix. See the
   [capability overview and activation requirements](diagnostics.md#diagnostic-capabilities).
+- **Bounded developer chip probes:** default-off `FELUCCA_CHIP_PROBES` standard-profile builds
+  expose deterministic control/integer and owned RAM/XIP stride measurements through
+  USB SERIAL, with raw timer ticks, checksums and a separate bounded capture client.
+  Sampled guards refuse visible busy states such as playback, count-in, active
+  voices/worker and USB audio streams; IRQ/peripheral ownership stays unchanged.
+  [First-delivery scope and setup](chip-probes.md) keep physical timing, clock
+  identity, cold-cache/cache-size and remaining instruction experiments unmeasured.
+  The standard health collector is unchanged.
 - **Rendered-screen screenshots:** an opt-in development build exports bounded
   RGB565 HOME/menu captures over USB SERIAL, with full device build identity and a
   host PNG/JSON tool. Explicit `--wake` silently wakes the current stopped view,

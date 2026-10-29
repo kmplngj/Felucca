@@ -74,7 +74,7 @@ class RuntimeReport(unittest.TestCase):
         self.native = {
             'FELUCCA_FLASH': '1', 'FELUCCA_OTA': '1', 'FELUCCA_UAC': '1', 'FELUCCA_UART': '1',
             'FELUCCA_CPU2': '1', 'FELUCCA_CDC': '1', 'FELUCCA_ICONS': '1',
-            'FELUCCA_ISR_ASSERT': '0',
+            'FELUCCA_ISR_ASSERT': '0', 'FELUCCA_CHIP_PROBES': '0',
             # Actual audio.c -> render_stage.h -dM defaults, shared by native/browser.
             'FELUCCA_RENDER_STAGE': '0', 'FELUCCA_RENDER_STAGE_H': '',
             'FELUCCA_UAC_48K': '1', 'FELUCCA_UAC_AS_FIRST': '1',
@@ -208,6 +208,26 @@ else:
         self.assertEqual(argv, receipt['configuration']['compile_argv'][1:])
         self.assertIn('-DFELUCCA_CPU2=1', argv)
         self.assertEqual(len(receipt['files']), 5)
+
+    def test_native_chip_probes_are_recorded_without_browser_counterpart(self):
+        # felucca.c defines this even at its normal default of zero. The browser
+        # includes hostsim.c instead, with no native CDC instruction-probe path.
+        runtime = dict(self.native, **W.ADAPTER, FELUCCA_ISR_ASSERT='1')
+        runtime.pop('FELUCCA_CHIP_PROBES')
+        for enabled in ('0', '1'):
+            native = dict(self.native, FELUCCA_CHIP_PROBES=enabled)
+            mapping = W.logical_mapping(native, runtime, self.constants, self.constants)
+            row = mapping['defines']['FELUCCA_CHIP_PROBES']
+            self.assertEqual((row['native'], row['runtime']), (enabled, None))
+            self.assertIn('native stopped CDC', row['rule'])
+            equal = dict(runtime, FELUCCA_CHIP_PROBES=enabled)
+            W.logical_mapping(native, equal, self.constants, self.constants)
+            wrong = dict(runtime, FELUCCA_CHIP_PROBES=str(1 - int(enabled)))
+            with self.assertRaisesRegex(ValueError, 'target-only runtime macro mismatch: FELUCCA_CHIP_PROBES'):
+                W.logical_mapping(native, wrong, self.constants, self.constants)
+        unknown = dict(runtime, FELUCCA_UNREVIEWED_PROBE='0')
+        with self.assertRaisesRegex(ValueError, 'unmapped FELUCCA macro: FELUCCA_UNREVIEWED_PROBE'):
+            W.logical_mapping(self.native, unknown, self.constants, self.constants)
 
     def test_cpu2_cdc_icons_off_are_explicit_not_browser_defaults(self):
         for name in ('FELUCCA_CPU2', 'FELUCCA_CDC', 'FELUCCA_ICONS'):

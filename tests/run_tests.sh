@@ -1460,6 +1460,7 @@ UNIT_PRODUCERS=
 
 u_diagnostics() {
     run "CDC diagnostics: real console/parser contract, fixtures, bounded transport and interval evidence" python3 tests/diagnostics_test.py
+    run "Bounded chip probes: quiet guards, checksums, timer wrap, deadline and console grammar" python3 tests/chip_probes_test.py
 }
 unit diagnostics "" u_diagnostics
 
