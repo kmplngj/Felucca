@@ -50,19 +50,20 @@ for name, flags, cpu2, arg in CONFIGS:
     for seed in SEEDS:
         a, pa = run(ref, seed, arg)
         b, pb = run(cand, seed, arg)
-        assert pa[1:] == [0] * 4, f'{name}: the reference ran a specialised loop {pa}'
+        assert pa[0] == pa[2] == pa[3] == pa[4] == 0, f'{name}: the reference ran a specialised loop {pa}'
         if a != b:
             first = next(x for x, y in zip(a.splitlines(), b.splitlines()) if x != y)
             print(f'mix fast: {name} seed {seed}: FAILED, first differing checkpoint: {first.split()[1]}')
             failed += 1
         total = [t + v for t, v in zip(total, pb)]
-    # every loop reached: general (0), dry (1), centred (2), centred dry (3); the unity fallback (4) under adv
-    need = [0, 1]
+    # every loop reached (fx.c mix_loop's f): dry (0), general (1), centred dry (2), centred with sends (3);
+    # mix_unity_fix (4) under adv
+    need = [0, 1, 2, 3] + ([4] if arg else [])
     missing = [k for k in need if not total[k]]
     if missing:
         print(f'mix fast: {name}: loops never ran: {missing} (counts {total})')
         failed += 1
-    print(f'mix fast: {name}: {len(SEEDS)} seeds identical; loops general/dry/centred/centred-dry/fallback {total}')
+    print(f'mix fast: {name}: {len(SEEDS)} seeds identical; loops dry/general/centred-dry/centred/fallback {total}')
 
 if os.environ.get('SANITIZE', '1') != '0':
     sanitizers = ['-fsanitize=address,undefined', '-fno-sanitize=shift', '-fno-sanitize-recover=all']

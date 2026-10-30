@@ -50,6 +50,9 @@ fm1_timer5_irq 33387
 mix_spread 73
 send_begin 16
 send_add 88
+# #458: PAN 0 mixer loop's exact wrap fallback, run only when a block's peak reaches 2^19; JieLi 4.0.1,
+# maximum of the standard (12) and FELUCCA_CPU2=0 (15) listings.
+mix_unity_fix 15
 click_render 30
 mod_begin 158
 mod_voice 30

@@ -972,16 +972,6 @@ static int32_t wet[CTL];                                 /* (the dry mix and the
 static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_r[CTL];
 #endif
 
-/* mix_part's specialised non-SPREAD loop (#185): exact, the same sums, sends, peak and state as its general
- * loop. FELUCCA_MIX_FAST=0 builds the general loop alone, the reference of tests/mix_fast_test.py. FX_MIX_PATH: a
- * host test's probe at the selected loop (which, and the block it reads); nothing in the firmware */
-#ifndef FELUCCA_MIX_FAST
-#define FELUCCA_MIX_FAST 1
-#endif
-#ifndef FX_MIX_PATH
-#define FX_MIX_PATH(t, b, n, path) ((void)0)
-#endif
-
 /* Effective MOD targets are sampled once for this part's block. Idle starts snap to the current target;
  * an active THROW owns its already-shaped full-send deficit (perform.c), so its whole block stays exact. */
 static int send_begin(track_t *t, int32_t g[3])
@@ -1101,6 +1091,64 @@ static const uint16_t ENG_VCOST[NENGINES] = {163, FELUCCA_FM4 ? 181 : 0, 162, 67
 };
 #endif
 
+/* mix_part's non-SPREAD loops beside its general one (#185, #458): exact, the same sums, sends, peak and state.
+ * FELUCCA_MIX_FAST=0 builds the general loop alone, the reference of tests/mix_fast_test.py. FX_MIX_PATH: a host
+ * test's probe at the loop chosen (0 dry, 1 general, 2 / 3 PAN 0 without / with sends, 4 mix_unity_fix) and the
+ * block it reads; nothing in the firmware */
+#ifndef FELUCCA_MIX_FAST
+#define FELUCCA_MIX_FAST 1
+#endif
+#ifndef FX_MIX_PATH
+#define FX_MIX_PATH(t, b, n, path) ((void)0)
+#endif
+/* PAN 0 (#458): gl = gr = 4096, the general loop's (x * 4096) >> 12 taken as x, exact while |x| < 2^19 (beyond,
+ * mix_unity_fix). send, a constant at each call, compiles it with the general loop's headroom, clamp and sends (c,
+ * d, r, any nonzero), or without (no inline send: the dry sums only, as mix_part's #185 loop) */
+static inline __attribute__((always_inline)) int32_t mix_centre(track_t *t, int32_t *b, uint32_t n, int32_t lvl,
+                                                                int32_t c, int32_t d, int32_t r, int32_t pk, int send SM_DECL)
+{
+    uint32_t i;
+    int32_t xmax = 0;
+    if (send) {
+        xmax = c > d ? c : d;
+        xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);
+    }
+    FX_MIX_PATH(t, b, n, 2 + send);
+    for (i = 0; i < n; i++) {
+        int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;
+        if (a > pk)
+            pk = a;
+        if (send) {
+            int32_t xs = clamp(x, -xmax, xmax);
+            if (c)
+                SM(c)[i] += mulq15(xs, c);
+            if (d)
+                SM(d)[i] += mulq15(xs, d);
+            if (r)
+                SM(v)[i] += mulq15(xs, r);
+        }
+        SM(l)[i] += x;
+        SM(r)[i] += x;
+    }
+    return pk;
+}
+
+/* after a mix_centre loop whose peak reached 2^19 (rare; or a peak the meter has not taken yet): the samples whose
+ * x * 4096 leaves 32 bits get what the general loop adds, the same wrap ((x << 12) >> 12, two's complement as the
+ * pi32v2 multiply), as a difference to the x already added; modulo 2^32, as those sums' own additions */
+static __attribute__((noinline)) void mix_unity_fix(track_t *t, int32_t *b, uint32_t n, int32_t lvl SM_DECL)
+{
+    uint32_t i;
+    FX_MIX_PATH(t, b, n, 4);
+    for (i = 0; i < n; i++) {
+        int32_t x = ((b[i] >> 2) * lvl) >> 10, w = (int32_t)((uint32_t)x << 12) >> 12;
+        if (w != x) {
+            SM(l)[i] = (int32_t)((uint32_t)SM(l)[i] + (uint32_t)(w - x));
+            SM(r)[i] = (int32_t)((uint32_t)SM(r)[i] + (uint32_t)(w - x));
+        }
+    }
+}
+
 /* one synth part into the dry mix and the sends of sm (mx[0]; mx[1] on the second core); a part with no voice sounding costs
  * the LFO tick and a cleared buffer only (after the DIST tail has run out) */
 static void mix_part(track_t *t, uint32_t n SM_DECL)
@@ -1160,10 +1208,14 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         int ramp = send_begin(t, gains);
         int32_t c = ramp ? 0 : gains[0], d = ramp ? 0 : gains[1], r = ramp ? 0 : gains[2], pk = t->peak;
 #if FELUCCA_MIX_FAST
-        if (!(c | d | r)) {                             /* #185: no inline send (all settled at 0, or a ramp that
-                                                         * send_add below owns): the dry mix and the peak alone,
-                                                         * the same expressions; no headroom divide, clamp or test */
-            FX_MIX_PATH(t, b, n, 1);
+        if (!pan) {                                     /* #458: the centre, both gains unity */
+            pk = (c | d | r) ? mix_centre(t, b, n, lvl, c, d, r, pk, 1 SM_ARG(sm))
+                             : mix_centre(t, b, n, lvl, 0, 0, 0, pk, 0 SM_ARG(sm));
+            if (pk >= 524288)                           /* an |x| that x * 4096 wraps, or a peak not yet taken */
+                mix_unity_fix(t, b, n, lvl SM_ARG(sm));
+        } else if (!(c | d | r)) {                      /* #185: no inline send (all settled at 0, or a ramp that
+                                                         * send_add below owns): the dry sums and the peak */
+            FX_MIX_PATH(t, b, n, 0);
             for (i = 0; i < n; i++) {
                 int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;
                 if (a > pk)
@@ -1173,10 +1225,10 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
             }
         } else
 #endif
-        {
+        {                                               /* the general loop */
             int32_t xmax = c > d ? c : d;
             xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
-            FX_MIX_PATH(t, b, n, 0);
+            FX_MIX_PATH(t, b, n, 1);
             for (i = 0; i < n; i++) {
                 int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
                 int32_t xs = clamp(x, -xmax, xmax);     /* sends: mulq15 would overflow */

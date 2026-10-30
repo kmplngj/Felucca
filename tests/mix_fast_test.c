@@ -20,7 +20,7 @@ static uint32_t mix_rand(void)
     return mix_rng;
 }
 struct track;
-static void mix_probe(const struct track *t, int32_t *b, uint32_t n, int path);
+static void mix_probe(struct track *t, int32_t *b, uint32_t n, int path);
 #define FX_MIX_PATH(t, b, n, path) mix_probe(t, b, n, path)
 #define main hostsim_main
 #include FX_TEST_HOSTSIM
@@ -30,7 +30,7 @@ static void mix_probe(const struct track *t, int32_t *b, uint32_t n, int path);
 /* the samples of a block, rewritten (adv) on both builds alike: the boundaries of x = ((b >> 2) * lvl) >> 10 where
  * x * 4096 leaves signed 32 bits; b stays below where (b >> 2) * lvl itself would */
 static uint32_t adv_rng = 7;
-static void mix_probe(const track_t *t, int32_t *b, uint32_t n, int path)
+static void mix_probe(track_t *t, int32_t *b, uint32_t n, int path)
 {
     uint32_t i;
     mix_hits[path & 7]++;
