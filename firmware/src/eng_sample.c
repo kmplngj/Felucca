@@ -201,6 +201,10 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
     uint32_t r = pow2_q16(d16), stepq = (r >> 8) * (z->rate >> 8);   /* Q16 samples per output */
     int32_t bits = p[P_E2], lp = 4000 + ((clamp((p[P_E4] << 8) + m->cutoff, 0, 127 << 8) * 28767) >> 15);
     int32_t drv = p[P_E6], sh = bits / 10;
+    /* dsp.c voice_amp's ramp amp_at, bit for bit, as a running sum (the interrupt path: no multiply, no
+     * rounding fix-up per sample): ay >> CTL_LOG2 = amp0 + (amp1 - amp0) * i / CTL rounded towards zero,
+     * amp0 scaled by CTL under the shift, a falling ramp biased by CTL - 1; a settled one adds 0 */
+    int32_t da = m->amp1 - m->amp0, ay = m->amp0 * CTL + (da < 0 ? CTL - 1 : 0);
     if (v->s[6] == 2) {                               /* no sample data: the sine at the note's pitch + TUNE */
         smp_sine(out, n, m, p[P_E1] * 16, lp, &v->ph[0], &v->s[7]);
         return;
@@ -234,7 +238,8 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
         if (drv)
             s = softclip(s + (((s >> 2) * (drv * 150)) >> 11));   /* = s * drv * 600 / 32768, no overflow */
         v->s[7] += mulq15(s - v->s[7], lp);           /* gentle tone control (CUT) */
-        out[i] += voice_amp(v->s[7], m, i) << 1;
+        out[i] += mulq15(mulq15(v->s[7], ay >> CTL_LOG2), VOICE_FS) << 1;   /* = voice_amp(v->s[7], m, i) << 1 */
+        ay += da;
         if (v->s[6])
             break;
     }
