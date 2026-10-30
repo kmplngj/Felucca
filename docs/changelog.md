@@ -51,6 +51,14 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Keyboard LEDs keep a note-on lit for about 100 ms (elapsed time, not frames), so
+  very short sequencer, arpeggiator, MIDI and key-tap notes stay visible even when
+  they start and end between two LED updates (#147). The audio side records each
+  part's recent note-ons, all four parts, in 128 B of RAM with a few instructions
+  per note-on; the LED code only reads them. The hold never extends a voice,
+  recording or MIDI, and ends at once on stop, a new selected part, an engine
+  change or LED sleep. Host tests only; FM-1 timing and visibility checks pending.
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery
