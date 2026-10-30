@@ -388,6 +388,8 @@ static void ed_motion_reply(uint32_t k, uint32_t rc, uint32_t kinds, uint32_t fu
             j++;
         }
 }
+#include "editor_control.c"
+
 static int ed_args_ok(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     switch (cmd) {
@@ -437,11 +439,15 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     uint32_t na = n - 4u;
     int16_t *vp;
     const param_desc_t *d;
+    if (cmd == ED_CONTROL) { ed_control_handle(a, na); return; }
     if (!ed_args_ok(cmd, a, na))
         return;
     if ((cmd >= ED_SMP_BEGIN && cmd <= ED_SMP_INFO) || (cmd >= ED_BACKUP_LIST && cmd <= ED_BACKUP_PUT) ||
         (cmd >= ED_FM6B_BEGIN && cmd <= ED_FM6B_END) || cmd == ED_STORE_LIST || cmd == ED_STORE_GET)
+    {
         autosave_hold();                                /* (a transfer: no autosave meanwhile, project.c) */
+        ed_control.transfer = 1;                        /* only the owning client can explicitly release it */
+    }
     ed_begin(cmd);
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_backup_handle(cmd, a, na)) { ed_send(); return; }
@@ -509,6 +515,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                                                    * FM6 voice bank), bit 2 id 21 (the SLICE records); editor_backup.c */
         ed_b(0x59); ed_b(1); ed_b(FELUCCA_FLASH ? ED_RAW_CAPS : 0u);   /* #456: bit 0 STORE_LIST / STORE_GET (82, 83), the stored
                                                                        * objects as flash holds them; editor_backup.c */
+        ed_b(0x5A); ed_b(1); ed_b(ED_CONTROL_CAPS);
         break;
     case ED_GET:
     case ED_SET:
@@ -938,6 +945,8 @@ static int ed_service(void)
 {
     const uint8_t *p;
     uint32_t n;
+    if (sx_ready || sx_collect) ed_control.pending = 0;
+    ed_control_poll();
     ed_sync();                                             /* v2 pushes (while watched) */
     if (!ota_frame_get(&p, &n))
         return 0;

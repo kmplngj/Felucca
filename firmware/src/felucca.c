@@ -131,6 +131,7 @@
 #if FELUCCA_OTA
 #include "ota.c"
 #include "ota_hw.c"
+#define FELUCCA_RESTART 1
 #include "editor.c"              /* web editor SysEx (needs the OTA SysEx plumbing) */
 #endif
 #if FELUCCA_MUL64_REPRO

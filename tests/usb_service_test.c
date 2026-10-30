@@ -267,6 +267,7 @@ static void reset_model(void)
 #endif
     mi_r = mi_w = mo_r = mo_w = so_r = so_w = ua_r = ua_w = 0;
     sx_ready = sx_collect = sx_busy = midi_in_overflow = 0;
+    so_done = so_flight = 0;
     usb_rescue_mode = 0; usb.up = 1;
     host.on = host.sof_each_poll = 1;
     host_buf(0, ep0buf, 0);
@@ -839,9 +840,59 @@ static void suspend_lifecycle(uint32_t hz)
     application_delivered();
     puts("suspend/resume, missing SOF, repeated frame-freeze episodes and pending application data passed");
 }
+static void control_fences(void)
+{
+    const uint8_t ack[] = {0xF0, 0x7D, 0x46, 0x4C, 84, 1, 0, 1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0xF7};
+    uint32_t end, epoch;
+    reset_fixture(44100u);
+    CHECK(!ota_wire_control(ack, sizeof ack, &end, &epoch));
+    CHECK(so_done != end);
+    service(0);
+    CHECK(so_r == so_w && so_flight && so_done != end && so_epoch == epoch);
+    service(0);
+    CHECK(so_done != end);                    /* DMA pending, no host IN token */
+    CHECK(host_in(1));
+    CHECK(so_done != end);                    /* only TIMER5 publishes a completed fence */
+    service(0);
+    CHECK(so_done == end && !so_flight && so_epoch == epoch);
+    CHECK(!ota_wire_control(ack, sizeof ack, &end, &epoch));
+    service(0);
+    host.missing = 1; host.operations = 0;
+    ep1_tx();
+    CHECK(so_epoch != epoch && so_done != end && !so_flight);
+    reset_fixture(44100u);
+    CHECK(!ota_wire_control(ack, sizeof ack, &end, &epoch)); service(0);
+    CHECK(host_in(1));
+    host.missing = 1; host.operations = 0;
+    (void)sie_rd(S_INTRUSB);                /* unrelated poll failure before a successful EP1 call */
+    CHECK(so_epoch != epoch && !so_flight);
+    host.missing = 0; host.operations = 0; ep1_tx();
+    CHECK(so_done != end);                  /* the later successful CSR read must not resurrect it */
+    reset_fixture(44100u);
+    CHECK(!ota_wire_control(ack, sizeof ack, &end, &epoch));
+    service(0);
+    setup(0x0201, 0, 0x81, 0);              /* CLEAR_FEATURE cannot fabricate completion */
+    CHECK(so_epoch != epoch && !so_flight && so_done != end);
+    reset_fixture(44100u);
+    CHECK(!ota_wire_control(ack, sizeof ack, &end, &epoch));
+    service(0);
+    host.common[S_INTRUSB] = 4;
+    service(0);
+    CHECK(so_epoch != epoch && !so_flight && so_done != end);
+    reset_fixture(44100u);
+    so_r = so_w = UINT32_MAX - 2u; so_done = so_r;
+    CHECK(!ota_wire_control(ack, sizeof ack, &end, &epoch));
+    CHECK(end < 64u);
+    service(0); CHECK(so_done != end && host_in(1)); service(0);
+    CHECK(so_done == end && so_epoch == epoch);
+    reset_fixture(44100u);
+    so_w = so_r + SXQ;
+    CHECK(ota_wire_control(ack, sizeof ack, &end, &epoch) == -1 && so_w - so_r == SXQ);
+    puts("control fences: real EP1 completion, fault/reset/halt cancellation, wrap and atomic-full passed");
+}
 int main(void)
 {
-    sie_failures(); retry_lifecycle();
+    control_fences(); sie_failures(); retry_lifecycle();
     for (uint32_t hz = 44100u; hz <= 48000u; hz += 3900u) {
         composite(hz, 0); composite(hz, 1); stream_transitions(hz); control_recovery(hz);
         suspend_lifecycle(hz); configured_retry(hz);

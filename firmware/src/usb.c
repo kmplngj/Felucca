@@ -167,6 +167,10 @@ static volatile uint8_t sx_ready, sx_collect, sx_busy;
 #define SXQ 64u
 static uint32_t sx_out_q[SXQ];
 static volatile uint32_t so_w, so_r;
+/* TIMER5 publishes only after EP1 TxPktRdy cleared, not when dequeuing DMA data. */
+static volatile uint32_t so_done, so_epoch;
+static uint32_t so_flight_end;
+static uint8_t so_flight;
 #endif
 
 /* MIDI rings: 4-byte USB-MIDI event packets */
@@ -410,28 +414,39 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
 }
 
 /* ---------------------------------------------------------- the SIE --- */
+static uint32_t sie_faults;                 /* TIMER5-owned failed transaction generation */
+static void sie_failed(void)
+{
+    sie_faults++;
+#if FELUCCA_OTA
+    so_flight = 0;
+    so_epoch++;                            /* every failed transaction invalidates outstanding fences */
+#endif
+}
 static void sie_wr(uint32_t r, uint32_t v)
 {
     uint32_t n = 20000;
-    if (!fm1_usb_sie_on())
-        return;
+    if (!fm1_usb_sie_on()) { sie_failed(); return; }
     fm1_usb_sie_wr_start(r, v);
     while (!fm1_usb_sie_done() && --n)
         ;
     if (n)
         usb.timeouts = 0;                               /* consecutive failures only */
-    else if (++usb.timeouts > 50u)
-        usb.up = 0;                                     /* SIE dead (no clock?): stop polling it */
+    else {
+        sie_failed();
+        if (++usb.timeouts > 50u)
+            usb.up = 0;                         /* SIE dead (no clock?): stop polling it */
+    }
 }
 
 static uint32_t sie_rd(uint32_t r)
 {
     uint32_t n = 20000;
-    if (!fm1_usb_sie_on())
-        return 0;
+    if (!fm1_usb_sie_on()) { sie_failed(); return 0; }
     fm1_usb_sie_rd_start(r);
     while (!fm1_usb_sie_done())
         if (!--n) {
+            sie_failed();
             if (++usb.timeouts > 50u)
                 usb.up = 0;
             return 0;
@@ -493,6 +508,8 @@ static void usb_reset_state(void)
     usb.sx_on = 0;
 #if FELUCCA_OTA
     sx_collect = 0;
+    so_flight = 0;
+    so_epoch++;
 #endif
     usb.e0_tx = 0;
     usb.has_pend_addr = 0;
@@ -511,6 +528,10 @@ static void usb_reset_state(void)
 
 static void ep1_config(void)
 {
+#if FELUCCA_OTA
+    so_flight = 0;
+    so_epoch++;
+#endif
     fm1_usb_ep_txbuf(1, ep1tx);
     fm1_usb_ep_rxbuf(1, ep1rx);
     sie_wr(S_INDEX, 1);
@@ -720,6 +741,9 @@ static void ep0_service(void)
         if (wvalue != 0 || ep > last)
             goto stall;                                 /* not an endpoint we have */
         if (ep) {                                       /* (EP0 has no halt to clear) */
+#if FELUCCA_OTA
+            if (ep == 1u && (s[4] & 0x80u)) { so_flight = 0; so_epoch++; }
+#endif
             sie_wr(S_INDEX, ep);
             if (s[4] & 0x80u)
                 sie_wr(S_TXCSR1, 0x40);
@@ -944,6 +968,27 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)   /* F0..F7 -> USB-MIDI S
     sx_busy = 0;
     return 0;
 }
+/* Small control replies are all-or-nothing and never wait for the host. Main
+ * disables TIMER5 while publishing the bounded packet group and its fence. */
+static int ota_wire_control(const uint8_t *p, uint32_t n, uint32_t *end, uint32_t *epoch)
+{
+    uint32_t i = 0, w = so_w, count = (n + 2u) / 3u;
+    if (!usb.config || sx_busy || count > SXQ || SXQ - (w - so_r) < count)
+        return -1;
+    while (i < n) {
+        uint32_t k = n - i >= 3u ? 3u : n - i;
+        uint32_t cin = k == 3u && i + k < n ? 4u : 4u + k;
+        sx_out_q[w++ % SXQ] = cin | (uint32_t)p[i] << 8 |
+            (k > 1u ? (uint32_t)p[i + 1u] << 16 : 0u) |
+            (k > 2u ? (uint32_t)p[i + 2u] << 24 : 0u);
+        i += k;
+    }
+    *end = w;
+    *epoch = so_epoch;
+    RING_PUBLISH();
+    so_w = w;
+    return 0;
+}
 static int ota_frame_get(const uint8_t **p, uint32_t *n)
 {
     if (!sx_ready)
@@ -962,9 +1007,9 @@ static void ota_frame_done(void)
 
 static void ep1_tx(void)
 {
-    uint32_t csr, n = 0;
+    uint32_t csr, n = 0, faults = sie_faults;
 #if FELUCCA_OTA
-    if (mo_w == mo_r && so_w == so_r)
+    if (mo_w == mo_r && so_w == so_r && !so_flight)
         return;
 #else
     if (mo_w == mo_r)
@@ -972,11 +1017,29 @@ static void ep1_tx(void)
 #endif
     sie_wr(S_INDEX, 1);
     csr = sie_rd(S_TXCSR1);
+    if (faults != sie_faults) {
+#if FELUCCA_OTA
+        so_flight = 0;
+        so_epoch++;
+#endif
+        return;                                         /* a failed CSR read returns zero, never completion */
+    }
     if (csr & 0x01u)
         return;                                         /* previous packet still pending */
-    if (csr & 0x80u)
+    if (csr & 0x80u) {
         sie_wr(S_TXCSR1, csr & ~0x80u);
 #if FELUCCA_OTA
+        so_flight = 0;
+        so_epoch++;
+#endif
+        return;                                         /* stall recovery abandons the fence */
+    }
+#if FELUCCA_OTA
+    if (so_flight) {
+        so_flight = 0;
+        RING_PUBLISH();
+        so_done = so_flight_end;
+    }
     while (so_r != so_w && n < 64u) {                   /* SysEx first, never split by notes */
         uint32_t pkt = sx_out_q[so_r % SXQ];
         ep1tx[n] = (uint8_t)pkt;
@@ -1003,8 +1066,16 @@ static void ep1_tx(void)
     }
     if (!n)
         return;
+#if FELUCCA_OTA
+    so_flight_end = so_r;
+    so_flight = 1;
+#endif
     fm1_usb_ep_send(1, ep1tx, n);
-    sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
+    csr = sie_rd(S_TXCSR1);
+    if (faults == sie_faults) sie_wr(S_TXCSR1, csr | 0x01u);
+#if FELUCCA_OTA
+    if (faults != sie_faults) { so_flight = 0; so_epoch++; }
+#endif
     usb.tx_pkts++;
 }
 
@@ -1386,6 +1457,10 @@ static void usb_retry(uint32_t now_ms)
 
 static void usb_detach(void)
 {
+#if FELUCCA_OTA
+    so_flight = 0;
+    so_epoch++;
+#endif
     usb.detached = 1;
     usb.up = 0;
     fm1_usb_off();
