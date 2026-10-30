@@ -9,6 +9,7 @@
 static unsigned char host_nor[0x100000];
 #define host_samples (*(unsigned char (*)[3][0x14000])(host_nor + FL_SMP_LO))
 static unsigned host_sample_reads, host_raw_reads, host_mutation_unsafe, host_marker_fail;
+static unsigned host_led_common;
 static uint32_t host_erase_offsets[64], host_erase_count;
 static unsigned char *host_sample_ptr(unsigned k) { host_sample_reads++; return host_samples[k]; }
 #define SMP_USER_XIP(k) host_sample_ptr(k)
@@ -76,6 +77,7 @@ static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took)
 {
 #ifdef SMK_EDITOR_TEST
+    if (host_led_common != 2u) host_mutation_unsafe++;
     host_erase_offsets[host_erase_count++] = off;
     if (FL_IN(off, 4096, FL_SMP_LO, FL_SMP_HI) && host_nor[FL_STOCKTAG_HI - 8u] != 255) host_mutation_unsafe++;
     if (host_marker_fail && off == FL_STOCKTAG_LO) return -1;
@@ -92,6 +94,7 @@ static int fl_write(uint32_t off, const uint8_t *p, uint32_t n)
 }
 #ifdef SMK_EDITOR_TEST
 #define FL_FAR(fn) fn
+static void smk__common(uint32_t group) { host_led_common = group; }
 static uint16_t abuf[8];
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }

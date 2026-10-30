@@ -49,6 +49,7 @@ static int st_owner_erase(uint32_t off)
     FM1_ASSERT_THREAD();
     if (!flash_ok || !FL_IN(off, 0x1000u, FL_DATA_LO, FL_OTA_HI) || (off & 0xFFFu)) return -8;
     f = irq_save(); audio_silence();
+    smk__common(2);                             /* both LED groups off while the scan is stopped */
     rc = FL_FAR(fl_erase4k_ram)(off, &took);
     irq_restore(f);
     /* All 35 VM erases can exceed the boot watchdog interval. XIP is back
@@ -81,6 +82,7 @@ static int st_erase(uint32_t off)
         if (marker < 0) return -8;
         if (!marker) {
         f = irq_save(); audio_silence();
+        smk__common(2);
         rc = FL_FAR(fl_erase4k_ram)(FL_STOCKTAG_LO, &took);
         irq_restore(f);
         if (rc) return rc;
@@ -92,7 +94,9 @@ static int st_erase(uint32_t off)
         return -8;
     f = irq_save();
     audio_silence();
-#if !BOARD_SMK37
+#if BOARD_SMK37
+    smk__common(2);                             /* TIMER5 restores the group at its next frame boundary */
+#else
     fm1__led_lines(0);                          /* (#236) the erase stops the LED scan for ~17 ms (the IRQs are off and its code */
 #endif
     rc = FL_FAR(fl_erase4k_ram)(off, &took);    /* is in the flash): one column would stay lit at full duty and the rest dark, a */

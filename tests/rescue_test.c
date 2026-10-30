@@ -35,6 +35,14 @@ static uint32_t chip = 0x856014u, fail_erase, fail_prog, host_silent, requests, 
 static uint32_t physical_buttons;
 static volatile uint32_t fm1_ms;
 static uint8_t usb_rescue_mode, flash_ok;
+#if BOARD_SMK37
+static uint32_t led_common, led_erase_bad, irq_off;
+static irq_save_fn irq_save;
+static irq_restore_fn irq_restore;
+static uint32_t irq_save(void) { irq_off = 1; return 0; }
+static void irq_restore(uint32_t f) { (void)f; irq_off = 0; }
+static void smk__common(uint32_t group) { if (!irq_off) led_erase_bad++; led_common = group; }
+#endif
 static struct { uint8_t up, detached, ota_req, uboot_req; } usb;
 static struct { uint32_t buttons; } fm1_in;
 static boot_policy_guard_t bootguard;
@@ -62,6 +70,9 @@ static uint32_t fl_jedec_ram(void) { return chip; }
 static fl_erase4k_ram_fn fl_erase4k_ram;
 static int fl_erase4k_ram(uint32_t off, uint32_t *took)
 {
+#if BOARD_SMK37
+    if (!irq_off || led_common != 2u) led_erase_bad++;
+#endif
     erases++; *took = 17000u; ticks += 17000u * 24u;
     if (fail_erase) return -1;
     memset(nor + off, 255, 4096); return 0;
@@ -130,6 +141,9 @@ static void reset(void)
     ticks = 0; fm1_ms = 0; erases = writes = commits = requests = identities = 0;
     fail_prog = fail_erase = host_silent = frame_ready = 0;
     audio_calls = wrapper_calls = 0; chip = 0x856014u;
+#if BOARD_SMK37
+    led_common = led_erase_bad = 0; irq_off = 1;
+#endif
     bootguard.magic = BOOTGUARD_MAGIC; bootguard.pending = BOOT_POLICY_RESCUING;
     bootguard.failed = 2;
     rescue_init();
@@ -195,6 +209,22 @@ int main(int argc, char **argv)
     CHECK("rescue staging uses only polled HAL flash calls, never audio", !audio_calls && !wrapper_calls);
     reset(); usb.uboot_req=1; rescue_step();
     CHECK("explicit ROM request clears bootguard without any flash write", rom == 1 && !bootguard.pending && !writes && !erases);
+#if BOARD_SMK37
+    {
+        uint32_t mode, group, failed, safe = 1;
+        for (mode = 0; mode < 2u; mode++)
+            for (group = 0; group < 2u; group++)
+                for (failed = 0; failed < 2u; failed++) {
+                    int rc;
+                    reset(); usb_rescue_mode = (uint8_t)mode; irq_off = mode;
+                    led_common = group; fail_erase = failed;
+                    rc = ota_erase(OTA_AREA);
+                    safe &= (rc != 0) == (failed != 0) && erases == 1u && !led_erase_bad &&
+                            irq_off == mode && audio_calls == !mode;
+                }
+        CHECK("normal/rescue OTA blanks either LED common before successful/failed erase", safe);
+    }
+#endif
     free(package);
     return fails != 0;
 }

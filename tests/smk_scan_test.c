@@ -32,6 +32,7 @@ static uint32_t last_out, shifted, dma_start, dma_word, latch_at, latch_count, t
 static const uint32_t *dma_source;
 static int selected = -1, dma_pending, shift_ready;
 static uint32_t adc_physical_slot, adc_pending, init_latches;
+static int flash_led_cases;
 static void require(int ok, const char *message)
 {
     if (!ok) { fprintf(stderr, "FAIL tick %u selected %d: %s\n", tick_count, selected, message); exit(1); }
@@ -119,6 +120,7 @@ static void tick(void)
     if (latch_count - init_latches >= 17u) {
         uint32_t common = (sfr[5] >> 17) & 3u;
         uint32_t mask = (1u << 12) | (1u << 2);
+        if (flash_led_cases && common == 3u) return; /* erase paused the group until the next col0 */
         require(common == 1u || common == 2u, "exactly one LED group active");
         require((shifted & mask) == (common == 2u ? 1u << 2 : 1u << 12),
                 "LED commons match the group encoded in the latched word");
@@ -130,6 +132,61 @@ static void close_contact(uint32_t code, int down)
     uint8_t bit = (uint8_t)(1u << (code & 15u));
     if (down) contacts[code >> 4] |= bit; else contacts[code >> 4] &= (uint8_t)~bit;
 }
+/* Exercise the production storage adapters with the real register-backed
+ * common driver, then let the actual scan restore its own phase at col0. */
+#include "../firmware/hal/fm1_flash_map.h"
+#define FL_FAR(fn) fn
+static uint16_t abuf[8];
+static int erase_irq_off, erase_fail, marker_erased;
+static uint32_t erase_commands;
+static uint32_t irq_save(void) { erase_irq_off = 1; return 0; }
+static void irq_restore(uint32_t flags)
+{
+    (void)flags; erase_irq_off = 0;
+    if (flash_led_cases) tick();                 /* an interrupt may run after any read/erase window */
+}
+static void fm1_wdt_feed(void) {}
+static int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)
+{
+    memset(dst, FL_IN(off, n, FL_STOCKTAG_LO, FL_STOCKTAG_HI) && !marker_erased ? 0 : 255, n);
+    return 0;
+}
+static int fl_write(uint32_t off, const uint8_t *src, uint32_t n)
+{ (void)off; (void)src; (void)n; return 0; }
+static int fl_erase4k_ram(uint32_t off, uint32_t *took)
+{
+    require(erase_irq_off && ((sfr[5] >> 17) & 3u) == 3u,
+            "both physical LED commons must be off before the flash erase command");
+    erase_commands++; *took = 400000u; now += *took * FM1_TICKS_PER_US;
+    if (erase_fail) return -1;
+    if (off == FL_STOCKTAG_LO) marker_erased = 1;
+    return 0;
+}
+#include "../firmware/src/storage_hw.c"
+static void erase_led_test(void)
+{
+    uint32_t group, failed, kind, waited;
+    flash_ok = st_owner_ready = 1;
+    flash_led_cases = 1;
+    for (group = 0; group < 2u; group++)
+        for (failed = 0; failed < 2u; failed++)
+            for (kind = 0; kind < 3u; kind++) {
+                int rc;
+                for (waited = 0; waited < 32u && ((sfr[5] >> 17) & 3u) != (group ? 1u : 2u); waited++) tick();
+                require(((sfr[5] >> 17) & 3u) == (group ? 1u : 2u),
+                        "test begins with either physically active LED common in the scan's own phase");
+                erase_commands = 0; erase_fail = (int)failed; marker_erased = kind != 2u;
+                rc = kind == 0u ? st_owner_erase(FL_DATA_LO) : st_erase(kind == 1u ? FL_DATA_LO : FL_SMP_LO);
+                require((rc != 0) == (failed != 0), "erase adapter preserves success/failure result");
+                require(erase_commands == (kind == 2u && !failed ? 2u : 1u),
+                        "sample prerequisite and sample erases each blank the commons");
+                for (waited = 0; waited < 16u && ((sfr[5] >> 17) & 3u) == 3u; waited++) tick();
+                require(((sfr[5] >> 17) & 3u) != 3u, "actual scan re-enables an LED common within one frame");
+                run(32);                       /* existing group/latch assertions verify resumed phase */
+            }
+    flash_led_cases = 0;
+}
+
 int main(void)
 {
     uint32_t i, e, k;
@@ -199,6 +256,7 @@ int main(void)
                 "re-init invalidates the previous row and ADC sample labels");
         run(96);                                      /* four ADC cycles, either LED common group */
     }
+    erase_led_test();
     require(fm1_in.adc_miss == 0u, "all completed conversions were delivered");
     puts("SMK register-backed startup/OCT/buttons/37 keys/8 encoders/frame-wrap/re-init ADC scan passed");
     return 0;

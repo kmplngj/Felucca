@@ -16,6 +16,7 @@ static const uint8_t *owner_ram_window;
 static int owner_xip_rejected;
 static uint32_t sim_ms, wdt_at, wdt_gap, wdt_feeds, erase_ms, read_ms;
 static uint32_t first_erase, owner_prog_erases;
+static uint32_t led_common;
 static int flash_busy, busy_feed, wdt_expired;
 static void advance_ms(uint32_t ms)
 {
@@ -33,6 +34,7 @@ static void fm1_wdt_feed(void)
 }
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
+static void smk__common(uint32_t group) { led_common = group; }
 static int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)
 {
     advance_ms(read_ms);
@@ -44,6 +46,7 @@ static int fl_erase4k_ram(uint32_t off, uint32_t *took)
 {
     int n = erase_cut < 0 ? 4096 : erase_cut;
     flash_busy = 1;
+    if (led_common != 2u) { fprintf(stderr, "LED common active during erase\n"); exit(1); }
     advance_ms(erase_ms);
     if (!erases) first_erase = off;
     (void)took; if (erases++ == erase_fail) { flash_busy = 0; return -1; }
@@ -84,6 +87,7 @@ static void reset(void)
     sim_ms = wdt_at = wdt_gap = wdt_feeds = erase_ms = read_ms = 0;
     flash_busy = busy_feed = wdt_expired = 0;
     first_erase = UINT32_MAX; owner_prog_erases = 0;
+    led_common = 0;
     st_owner_ready = 0; flash_ok = 1;
 }
 static void slow_init(void)

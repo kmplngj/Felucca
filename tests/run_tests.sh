@@ -1353,7 +1353,7 @@ else
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
     u_asan_smk_input() {
-        for smk_test in input outer_activity; do
+        for smk_test in input outer_activity scan; do
             ${CC%% *} -std=gnu11 -O1 -g -Wno-int-to-pointer-cast -fsanitize=address,undefined \
                 -fno-sanitize-recover=all -o "$A/smk_${smk_test}_test" "tests/smk_${smk_test}_test.c"
             run "ASan/UBSan: SMK $smk_test ownership and activity" "$A/smk_${smk_test}_test"
