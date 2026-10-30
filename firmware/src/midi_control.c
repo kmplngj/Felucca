@@ -86,6 +86,44 @@ static void midi_key_reset(void)
     memset(midi_key_range, 0, sizeof midi_key_range);
 }
 
+/* LOW's distance from 1 and HIGH's distance from 127 keep boot defaults
+ * in BSS. Zones select raw positive input velocity, before response scaling. */
+static uint8_t midi_velocity_range[NTRK][2];
+
+static int32_t midi_velocity_range_get(uint32_t track, uint32_t high)
+{
+    if (track >= NTRK || high > 1u)
+        return -1;
+    return high ? 127 - midi_velocity_range[track][1] : 1 + midi_velocity_range[track][0];
+}
+
+static int midi_velocity_range_set(uint32_t track, uint32_t high, uint32_t value)
+{
+    if (track >= NTRK || high > 1u || value < 1u || value > 127u)
+        return 0;
+    if (high ? value < (uint32_t)midi_velocity_range_get(track, 0) :
+               value > (uint32_t)midi_velocity_range_get(track, 1))
+        return 0;
+    midi_velocity_range[track][high] = (uint8_t)(high ? 127u - value : value - 1u);
+    return 1;
+}
+
+static uint32_t midi_velocity_mask(uint32_t mask, uint32_t velocity)
+{
+    uint32_t i;
+    if (!velocity || velocity > 127u)
+        return 0;
+    for (i = 0; i < NPART; i++)
+        if (velocity < 1u + midi_velocity_range[i][0] || velocity > 127u - midi_velocity_range[i][1])
+            mask &= ~(1u << i);
+    return mask;
+}
+
+static void midi_velocity_reset(void)
+{
+    memset(midi_velocity_range, 0, sizeof midi_velocity_range);
+}
+
 static midi_channel_t *midi_channel(uint32_t ch)
 {
     midi_channel_t *c = &midi_ch[ch];
@@ -222,6 +260,7 @@ static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
         /* Filter raw source pitch before transpose, CHRD and ARP expansion.
          * Releases above/below use captured owners, never the current zone. */
         mask = midi_key_mask(midi_route_mask(ch), note);
+        mask = midi_velocity_mask(mask, vel);
         for (i = 0; i < NPART; i++) {
             track_t *t = &trk[i];
             if (!(mask & (1u << i)))
