@@ -388,7 +388,7 @@ static __attribute__((noinline)) void fm1__frame(void)
             *sub = 0;                              /* (never off the detent that long) */
         if (cur == fm1_in.enc_rest[e]) {          /* back on the detent: whole cycles, a lost transition */
             int32_t n = *sub < 0 ? -*sub : *sub;   /* or two forgiven (one click = 4 transitions) */
-            n = n >= 2 ? (n + 2) / 4 : 0;
+            n = n >= 2 ? (n + 2) >> 2 : 0;         /* (n + 2) / 4 of n + 2 > 0: no DIV in TIMER5 (#623) */
             fm1_in.enc_steps[e] = (int16_t)(fm1_in.enc_steps[e] + (*sub < 0 ? -n : n));
             if (n) {
                 fm1_in.enc_dir[e] = (int8_t)(*sub < 0 ? -1 : 1);

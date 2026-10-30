@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Adapted from ordenador/Felucca, upstream PRs #264/#265 (2026). */
 /* Fixed arithmetic vectors from 1.6.1, also run with strict UBSan. Negative
- * DC/lowcut feedback, FM6 velocity scaling and PHASE output keep their exact values. */
+ * DC/lowcut feedback, FM6 velocity scaling and PHASE output keep their exact values;
+ * the divide-free index and division helpers (#623) equal the C they replace. */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -50,10 +51,71 @@ static void phase_signed_output(void)
            negative && positive && hash == UINT64_C(0xbe19079679d9c71d));
 }
 
+/* #623: the divide-free replacements of constant divides, each against the C it replaces: every track and voice
+ * pointer, the index arithmetic for all element sizes up to 4096 B, the signed power-of-two division exhaustively
+ * over +-2^20, at the boundaries and over 1M seeded int32 samples per divisor, and the bend's helpers likewise. */
+static uint32_t lcg_next(uint32_t *s) { return *s = *s * 1664525u + 1013904223u; }
+static int32_t bend_step_ref(int32_t d) { return d > 0 ? (d < 4 ? d : (d + 3) / 4) : (d > -4 ? d : (d - 3) / 4); }
+static int32_t bend_coarse_ref(int32_t b) { return b >= 0 ? b / 16 : -((-b + 15) / 16); }
+static int32_t bend_fine_ref(int32_t b) { return (b - bend_coarse_ref(b) * 16) * 2367 / 2560; }
+
+static void exact_divides(void)
+{
+    static const int32_t edges[] = {INT32_MIN, INT32_MIN + 1, INT32_MIN + 15, INT32_MIN + 16, -65536, -4097, -4096,
+                                    -4095, -17, -16, -15, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 15, 16, 17, 4095,
+                                    4096, 65535, INT32_MAX - 16, INT32_MAX - 3, INT32_MAX - 1, INT32_MAX};
+    uint32_t i, j, sz, bad = 0, n = 0, seed = 0x6237u;
+    int32_t x;
+    for (i = 0; i < NTRK; i++) {                         /* every track, every voice of it */
+        bad += trk_index(&trk[i]) != i;
+        for (j = 0; j < NVOICE; j++)
+            bad += voice_index(&trk[i], &trk[i].v[j]) != j;
+    }
+    bad += C1_PI(&trk[NTRK - 1]) != (NTRK - 1) % C1_NP;
+    expect("trk_index / voice_index: every track and voice", !bad);
+    for (sz = 1, bad = 0; sz <= 4096; sz++) {            /* EXACT_INDEX's arithmetic for any element size */
+        uint32_t k = IDX_SH(sz), inv = IDX_INV(IDX_ODD(sz));
+        for (i = 0; i < 1024; i++, n++)
+            bad += (uint32_t)(((uintptr_t)i * sz) >> k) * inv != i;
+    }
+    for (i = 0; i < 65536; i++, n += 2)                  /* the two real sizes, far beyond the arrays */
+        bad += ((i * (uint32_t)sizeof(track_t)) >> IDX_SH(sizeof(track_t))) * IDX_INV(IDX_ODD(sizeof(track_t))) != i ||
+               ((i * (uint32_t)sizeof(voice_t)) >> IDX_SH(sizeof(voice_t))) * IDX_INV(IDX_ODD(sizeof(voice_t))) != i;
+    expect("EXACT_INDEX: element sizes 1..4096 B, 1024 elements each", !bad && n == 4096u * 1024u + 131072u);
+    for (sz = 0, bad = 0, n = 0; sz <= 30; sz++) {       /* sdiv_pow2: d = 1 .. 2^30 */
+        int32_t d = (int32_t)(1u << sz);
+        for (x = -(1 << 20); x <= 1 << 20; x++, n++)
+            bad += sdiv_pow2(x, 1u << sz) != x / d;
+        for (i = 0; i < NELEM(edges); i++, n++)
+            bad += sdiv_pow2(edges[i], 1u << sz) != edges[i] / d;
+        for (i = 0; i < 1u << 20; i++, n++) {
+            x = (int32_t)lcg_next(&seed);
+            bad += sdiv_pow2(x, 1u << sz) != x / d;
+        }
+    }
+    expect("sdiv_pow2 = C division toward zero, d = 2^0..2^30",
+           !bad && n == 31u * ((2u << 20) + 1u + (uint32_t)NELEM(edges) + (1u << 20)));
+    for (x = -32768, bad = 0; x <= 32767; x++)           /* FORMANT: (960 - pitch) / 4, every int16 pitch */
+        bad += sdiv_pow2(60 * 16 - x, 4) != (60 * 16 - x) / 4;
+    expect("FORMANT (960 - pitch) / 4, every int16 pitch", !bad);
+    for (x = -(1 << 20), bad = 0; x <= 1 << 20; x++)     /* the bend (voice.c): its domain is |x| < 2^17 */
+        bad += bend_step(x) != bend_step_ref(x) || bend_coarse(x) != bend_coarse_ref(x) ||
+               bend_fine_of(x) != bend_fine_ref(x);
+    for (i = 0; i < NELEM(edges) + (1u << 20); i++) {
+        x = i < NELEM(edges) ? edges[i] : (int32_t)lcg_next(&seed);
+        if (x > INT32_MIN + 15)                          /* (-x + 15: the reference's own domain) */
+            bad += bend_coarse(x) != bend_coarse_ref(x) || bend_fine_of(x) != bend_fine_ref(x);
+        if (x >= INT32_MIN + 3 && x <= INT32_MAX - 3)
+            bad += bend_step(x) != bend_step_ref(x);
+    }
+    expect("bend step / coarse / fine = their divisions", !bad);
+}
+
 int main(int argc, char **argv)
 {
     if (!(argc == 2 && !strcmp(argv[1], "--fm6"))) {
         phase_signed_output();
+        exact_divides();
         int32_t dc = 10000, err = 0;
         int32_t out = dc_block(0, &dc, &err);
         expect("DC negative feedback remainder", out == -156 && dc == 9997 && err == 2288);

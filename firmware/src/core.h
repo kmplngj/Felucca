@@ -53,7 +53,7 @@
 #define C1_NP (FELUCCA_CPU2 ? NPART : 1)   /* the copies of the state a part's render writes that parts shared before the
                                             * second core (mod.c, voice.c SPREAD, eng_formant.c): one each with two cores,
                                             * one for all with one, as up to 1.6 */
-#define C1_PI(t) ((uint32_t)((t) - trk) % C1_NP)   /* a part's copy */
+#define C1_PI(t) (trk_index(t) % C1_NP)   /* a part's copy */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
 /* One generated selection is shared by target, host tests and emulator. */
 #define NENG_SHOWN FELUCCA_PROFILE_NSHOWN
@@ -418,6 +418,28 @@ typedef struct {
 
 static track_t trk[NTRK];        /* the instrument: four parts */
 static song_t song;
+/* Exact array indices without a hardware divide (#623). JieLi Clang 4.0.1 compiles every pointer difference (an
+ * exact division by the element size) to the pi32v2 DIV, a constant size too. With the size s = 2^k * o (o odd), the
+ * byte distance of an element is an exact multiple of s: shifted right by k it is an exact multiple of o, and the
+ * product with o's inverse modulo 2^32 is then the quotient itself. p must point at an element of the array at base
+ * (as p - base requires); tests/signed_audio_scaling_test.c checks every track and voice. */
+#define IDX_SH(s) ((uint32_t)__builtin_ctz((uint32_t)(s)))
+#define IDX_ODD(s) ((uint32_t)(s) >> IDX_SH(s))
+#define IDX_NEWTON(o, x) ((x) * (2u - (o) * (x)))  /* an inverse of o modulo 2^n -> modulo 2^2n */
+#define IDX_INV(o) IDX_NEWTON(o, IDX_NEWTON(o, IDX_NEWTON(o, IDX_NEWTON(o, (o)))))   /* o o = 1 mod 8: 3 -> 48 bits */
+#define EXACT_INDEX(p, base) \
+    ((uint32_t)(((uintptr_t)(p) - (uintptr_t)(base)) >> IDX_SH(sizeof *(base))) * IDX_INV(IDX_ODD(sizeof *(base))))
+_Static_assert(IDX_ODD(sizeof(track_t)) * IDX_INV(IDX_ODD(sizeof(track_t))) == 1u, "trk_index: the odd factor's inverse");
+_Static_assert(IDX_ODD(sizeof(voice_t)) * IDX_INV(IDX_ODD(sizeof(voice_t))) == 1u, "voice_index: the odd factor's inverse");
+static inline uint32_t trk_index(const track_t *t) { return EXACT_INDEX(t, trk); }       /* t - trk */
+static inline uint32_t voice_index(const track_t *t, const voice_t *v) { return EXACT_INDEX(v, t->v); }   /* v - t->v */
+/* x / d (C: rounded toward zero) for a power of two d, without a DIV (#623): a negative x gets d - 1 added first,
+ * so the arithmetic shift (floor) rounds toward zero too. Exact for every int32 x (x + d - 1 only for x < 0: no
+ * overflow); d a power of two (1..2^30), a constant at the call. tests/signed_audio_scaling_test.c checks it. */
+static inline __attribute__((always_inline)) int32_t sdiv_pow2(int32_t x, uint32_t d)
+{
+    return (x + (int32_t)((uint32_t)(x >> 31) & (d - 1u))) >> __builtin_ctz(d);
+}
 #define TSEL (&trk[song.sel])    /* the selected track */
 /* MIDI IN TRACK: track i's channel 0..15, MCH_OMNI or MCH_OFF (song.mch), and set */
 static inline uint32_t mch_get(uint32_t i)

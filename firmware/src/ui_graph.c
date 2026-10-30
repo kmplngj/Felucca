@@ -651,7 +651,7 @@ static void graph_insert(const track_t *t, uint16_t c)
  * open (DEPTH), STUT hatched (it repeats the last 'x'); the step playing underlined. Grey when OFF. */
 static void graph_slicer(const track_t *t, uint16_t c)
 {
-    uint32_t i, pat = sl_pattern(t), mode = (uint32_t)t->p[P_SLCR], cur = sl[t - trk].idx;
+    uint32_t i, pat = sl_pattern(t), mode = (uint32_t)t->p[P_SLCR], cur = sl[trk_index(t)].idx;
     int32_t open = 70 - t->p[P_SLDEPTH] * 70 / 127;      /* px a closed GATE step keeps */
     uint16_t col = mode == SL_OFF ? T_DIM : c;
     for (i = 0; i < 16u; i++) {
@@ -954,7 +954,7 @@ static uint32_t fm6_car_ops(uint32_t a)
 /* the algorithm FM6 plays on track t (0..31): ALG, or the patch's at PAT */
 static uint32_t fm6_alg_of(const track_t *t)
 {
-    return t->p[P_E0] >= 1 && t->p[P_E0] <= 32 ? (uint32_t)t->p[P_E0] - 1u : fm6_patch[(t - trk) % NTRK][FP_ALG] & 31u;
+    return t->p[P_E0] >= 1 && t->p[P_E0] <= 32 ? (uint32_t)t->p[P_E0] - 1u : fm6_patch[trk_index(t) % NTRK][FP_ALG] & 31u;
 }
 /* FM6's EDIT pages: the algorithm, drawn as graph_fm draws DIGITAL's, "ALG 05" top left; SLOT on a bank voice (B1..B32,
  * 1.4.1): its name top right. Carriers THEME with INK
@@ -966,7 +966,7 @@ static void graph_fm6(const track_t *t, uint16_t c, uint32_t sel)
 {
     uint32_t alg = fm6_alg_of(t), k, j, car = fm6_car_ops(alg), top = 0, hi = 0, fbop = fm6_fb_op(alg), hotset = 0;
     uint32_t hot = ui.hot_t ? (uint32_t)cur_page()->id[ui.hot_col & 3u] : 0u;
-    const uint8_t *pt = fm6_patch[(t - trk) % NTRK];
+    const uint8_t *pt = fm6_patch[trk_index(t) % NTRK];
     int32_t x[6], y[6], bus, cl = 240, cr = 0, fb = clamp(pt[FP_FB] + t->p[P_E1], 0, 7);
     uint8_t m[6], fan[6] = {0, 0, 0, 0, 0, 0};
     uint16_t rc = hot == P_E2 ? T_ACCENT : c;
@@ -1022,7 +1022,7 @@ static void graph_fm6(const track_t *t, uint16_t c, uint32_t sel)
         char fq[16] = {'O', 'P', (char)('1' + sel), ' ', 0};
         fop_freq(pt + (5u - sel) * FP_OP, fq + 4);
         cv_text_r(228, 4 - GOY, &AF_S, fq, T_TEXT, T_SURF);
-    } else if (fm6_bank_slot(fm6_slot[(t - trk) % NTRK]) >= 0) {   /* SLOT B1..B32: the bank voice's name */
+    } else if (fm6_bank_slot(fm6_slot[trk_index(t) % NTRK]) >= 0) {   /* SLOT B1..B32: the bank voice's name */
         char nm[11];
         for (k = 0; k < 10u; k++)
             nm[k] = (char)pt[FP_NAME + k];
@@ -1040,7 +1040,7 @@ static void graph_fm6(const track_t *t, uint16_t c, uint32_t sel)
 static void graph_fm6env(const track_t *t, uint16_t c)
 {
     static const char *const STG[4] = {"ATK", "DEC", "SUS", "REL"};
-    const uint8_t *op = fop_bytes((uint32_t)(t - trk));
+    const uint8_t *op = fop_bytes(trk_index(t));
     int32_t top = 24, bot = 88, x[6], y[6], k;
     uint32_t sg = fop_stg & 3u;
     char b[24] = {'O', 'P', (char)('1' + fop_op % 6u), 0};
@@ -1493,7 +1493,7 @@ static inline __attribute__((always_inline)) uint32_t graph_signature(void)
         h ^= (ui.hot_t ? ui.hot_col + 1u : 0u) * 65537u;
     if ((pg->scope == SC_ENGINE || fop_page(pg->graph)) && eng_is(t->eng_req, ENGI_FM6))   /* the patch (PAT's algorithm,
                                                      * levels, FB; the operator pages: the operator, the stage) */
-        h ^= (fm6_pgen[(t - trk) % NTRK] + 1u) * 2246822519u + (fop_op + 1u) * 40503u + (fop_stg + 1u) * 7919u;
+        h ^= (fm6_pgen[trk_index(t) % NTRK] + 1u) * 2246822519u + (fop_op + 1u) * 40503u + (fop_stg + 1u) * 7919u;
     if (pg->scope == SC_ENGINE && eng_of(t->eng_req) == &ENG_SAMPLE) h ^= sample_wave.pos * 13u + sample_wave.key;
     if (pg->graph == GR_ROLL) {
         uint32_t ph = pr_playhead(t);

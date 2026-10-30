@@ -97,8 +97,8 @@ static phys_slot_t *phys_slot_of(track_t *t, voice_t *v)
     uint32_t i;
     if (t < &trk[0] || t >= &trk[NPART])
         return 0;
-    i = (uint32_t)(v - t->v);
-    return i < PHYS_POLY ? (phys_slot_t *)ENG_MEM_OF(t, ENGI_PHYS, t - trk) + i : 0;
+    i = voice_index(t, v);
+    return i < PHYS_POLY ? (phys_slot_t *)ENG_MEM_OF(t, ENGI_PHYS, trk_index(t)) + i : 0;
 }
 
 /* a clean state for model md */
@@ -107,7 +107,7 @@ _Static_assert(NTRK == 4, "phys_nz: a seed per part");
 /* Preserve part 0's reset sequence; distinct nonzero streams keep simultaneous MODEL changes from giving
  * identical parts the same excitation, even while the second core is disabled at runtime. */
 static int32_t phys_nz[NTRK] = {0x6A09E667, 0x3C6EF372, 0x510E527F, 0x1F83D9AB};
-#define PHYS_RSEED(t) noise32(&phys_nz[(uint32_t)((t) - trk) % NTRK])   /* the part's own (not rng(), shared) */
+#define PHYS_RSEED(t) noise32(&phys_nz[trk_index(t) % NTRK])   /* the part's own (not rng(), shared) */
 #else
 #define PHYS_RSEED(t) rng()                             /* (one core: as up to 1.6) */
 #endif

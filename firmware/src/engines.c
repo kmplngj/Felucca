@@ -46,7 +46,7 @@ static void *eng_mem_of(const track_t *t, uint32_t want)
         eng_arena_fail(ARENA_BAD_PART, t, want);
         return eng_arena_scratch;
     }
-    p = (uint32_t)(t - trk);
+    p = trk_index(t);
     cur = t->engine < NENGINES ? t->engine : (uint32_t)NENGINES;   /* (an index; NENGINES: ENG_IDX_NONE, below) */
     if (cur != want) {
         eng_arena_fail(ARENA_BAD_ENGINE, t, want);
@@ -132,7 +132,7 @@ static inline uint32_t eng_idx(uint32_t e) { return e < NENGINES ? e : ENG_IDX_N
  * engine's state is in it. An engine without memory leaves it as it is: a switch back finds its state. */
 static void eng_mem_claim(const track_t *t)
 {
-    uint32_t p = (uint32_t)(t - trk), e, k, n;
+    uint32_t p = trk_index(t), e, k, n;
     uint32_t *w;
     if (p >= NPART)
         return;

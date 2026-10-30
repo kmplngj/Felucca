@@ -163,7 +163,7 @@ static void formant_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
     gv = 32767 - p[P_E5] * p[P_E5] * 2;                 /* BREATH: voicing fades at the top */
     gn = p[P_E5] * 258;                                 /* noise: Q15, up to 1.0 */
     og = 13000 - ((p[P_E6] - 64) * 50);                 /* output: narrower bands ring louder */
-    og = (int32_t)(((int64_t)og * fmt_ratio((60 * 16 - v->pitch_cur) / 4)) >> 16);   /* 1.5 dB / oct: low notes are sparse pulses */
+    og = (int32_t)(((int64_t)og * fmt_ratio(sdiv_pow2(60 * 16 - v->pitch_cur, 4))) >> 16);   /* 1.5 dB / oct: low notes are sparse pulses */
     ogk = (og >> 2) * (4 + (buzz >> 10));               /* presence k = 1 .. 4.9 */
 
     for (i = 0; i < n; i++) {

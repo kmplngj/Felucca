@@ -19,7 +19,7 @@ typedef uint32_t macro_clear_word_t __attribute__((may_alias));
 
 static macro_part_t *macro_part(track_t *t)
 {
-    return (macro_part_t *)ENG_MEM_OF(t, ENGI_MACRO, (uint32_t)(t - trk));
+    return (macro_part_t *)ENG_MEM_OF(t, ENGI_MACRO, trk_index(t));
 }
 
 static uint8_t macro_poly(const track_t *t)
@@ -29,7 +29,7 @@ static uint8_t macro_poly(const track_t *t)
 
 static macro_note_t *macro_note(track_t *t, voice_t *v)
 {
-    return &macro_part(t)->note[(uint32_t)(v - t->v)];
+    return &macro_part(t)->note[voice_index(t, v)];
 }
 
 static void macro_note_on(track_t *t, voice_t *v)
@@ -146,7 +146,7 @@ static void macro_block(track_t *t)
         }
         /* Independent deterministic streams, including after model resets.
          * Part zero retains the source/reference seed and existing goldens. */
-        part->full.digital_oscillator_.rng_ = 0x21u + 0x9e3779b9u * (uint32_t)(t - trk);
+        part->full.digital_oscillator_.rng_ = 0x21u + 0x9e3779b9u * trk_index(t);
         braids_MacroOscillator_Init(&part->full);
         part->full.shape_ = (braids_MacroOscillatorShape)MACRO_UPSTREAM[shape];
         part->full_shape = (uint8_t)shape;

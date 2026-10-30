@@ -101,7 +101,7 @@ typedef struct {
 ENG_MEM_FITS("GRAIN", sizeof(gr_part_t));
 static int32_t gr_rng[NPART];
 
-static uint32_t gr_part(const track_t *t) { return (uint32_t)(t - trk) % NPART; }
+static uint32_t gr_part(const track_t *t) { return trk_index(t) % NPART; }
 static gr_part_t *gr_of(const track_t *t) { return (gr_part_t *)ENG_MEM_OF(t, ENGI_GRAIN, gr_part(t)); }
 static uint32_t gr_nz(uint32_t src) { return src < SMP_NSETS ? SMP_SETS[src].nz : usr_nz[(src - SMP_NSETS) % SMP_USER_SLOTS]; }
 static const smp_zone_t *gr_zone(uint32_t src, uint32_t zl)
@@ -355,7 +355,7 @@ static int gr_run(gr_part_t *P, gr_grain_t *g, int32_t *acc, uint32_t n)
 static void grain_note_on(track_t *t, voice_t *v)
 {
     gr_part_t *P = gr_of(t);
-    uint32_t vi = (uint32_t)(v - t->v) % NVOICE, i;
+    uint32_t vi = voice_index(t, v) % NVOICE, i;
     v->s[0] = gr_find((uint32_t)t->p[P_E0] % SMP_NALL, v->note);
     v->s[1] = 0;                                    /* the first grain at once */
     v->ph[0] = 0;                                   /* (the sine's phase: no data) */
@@ -391,7 +391,7 @@ static void grain_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
 {
     gr_part_t *P = gr_of(t);
     const int16_t *p = t->p;
-    uint32_t vi = (uint32_t)(v - t->v) % NVOICE, i, mine = 0, nact = 0, iv;
+    uint32_t vi = voice_index(t, v) % NVOICE, i, mine = 0, nact = 0, iv;
     int32_t zl = v->s[0], acc[CTL], lp, y = v->s[2];
     if (n > CTL)
         n = CTL;

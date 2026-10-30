@@ -183,14 +183,14 @@ static void step_to_grid(step_t *s)
 
 static drum_lane_t *drum_kit_of(const track_t *t)
 {
-    return t >= &trk[0] && t < &trk[NPART] ? (drum_lane_t *)ENG_MEM_OF(t, ENGI_DRUM, t - trk) : 0;
+    return t >= &trk[0] && t < &trk[NPART] ? (drum_lane_t *)ENG_MEM_OF(t, ENGI_DRUM, trk_index(t)) : 0;
 }
 
 /* the lane voice v plays, 0 when it plays none (any more) */
 static drum_lane_t *drum_lane_of(track_t *t, const voice_t *v)
 {
     drum_lane_t *K = drum_kit_of(t), *L;
-    uint32_t i = (uint32_t)(v - t->v);
+    uint32_t i = voice_index(t, v);
     if (!K || i >= NVOICE)
         return 0;
     L = &K[(uint32_t)v->s[0] & (DV_NLANE - 1u)];
@@ -212,7 +212,7 @@ static voice_t *drum_reuse(track_t *t, uint32_t note)
 static void drum_note_on(track_t *t, voice_t *v)
 {
     drum_lane_t *K = drum_kit_of(t), *L;
-    uint32_t i = (uint32_t)(v - t->v), role, lane;
+    uint32_t i = voice_index(t, v), role, lane;
     int32_t st;
     if (!K || i >= NVOICE)
         return;
@@ -294,7 +294,7 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     if (dv_uses_metal(L->c.type) && (L->v.live || L->v.trig))
         dv_metal_run(&L->mb, mb, n);
     dv_run(&L->c, &L->v, mb, y, n);
-    if ((drum_mute[(uint32_t)(t - trk) % NPART] >> ((uint32_t)v->s[0] & (DV_NLANE - 1u))) & 1u)
+    if ((drum_mute[trk_index(t) % NPART] >> ((uint32_t)v->s[0] & (DV_NLANE - 1u))) & 1u)
         return;                                          /* (a muted lane rings on unheard) */
     if (drv > 0) {                                       /* DRV: x1..x4 into the soft clip, the level kept (Q12) */
         g = 4096 + drv * 3 * 4096 / 127;
