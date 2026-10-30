@@ -208,6 +208,9 @@ static void lcd_init(void)
         return;                   /* init is not a recovery/abort operation */
     lcd_initialized = 0;
     fm1_lcd_hw_init();
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_STOPPED()) return;
+#endif
     lcd_spin(2000000u);
     for (r = 0; r < sizeof LCD_SEQ; r += 2u + LCD_SEQ[r + 1u]) {
         if (LCD_SEQ[r] == 0x00u) {                       /* pseudo command: wait */

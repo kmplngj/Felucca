@@ -605,6 +605,11 @@ static void con_lcd_probe_reset(void)
     con_kx("lcdprobe_reset_cnt", lp.reset_raw[2]);
     con_kx("lcdprobe_reset_baud", lp.reset_raw[3]);
     con_kx("lcdprobe_reset_lcd_meta", lp.reset_meta);
+    con_kx("lcdprobe_reset_read_mask", lp.reset_read_mask);
+    con_kx("lcdprobe_reset_issued_baud", lp.reset_issued_baud);
+    con_kx("lcdprobe_reset_baud_writes", lp.reset_baud_writes);
+    con_kv("lcdprobe_reset_attempt_valid", lp.reset_attempt_valid);
+    con_kx("lcdprobe_reset_attempt_baud", lp.reset_attempt_baud);
 }
 static int con_lcd_probe_pending(void)
 {
@@ -623,9 +628,14 @@ static void con_lcd_probe(const char *p)
         con_kv("lcdprobe_arm", ok && run_ok && lp_arm(mode, run, backup));
         if (lp.reset) con_lcd_probe_reset();
     } else if (con_word(&p, "snapshot")) {
-        uint32_t raw[4];
+        uint32_t raw[4], issued[2];
         if (*p || lp.active) { con_puts("lcdprobe_snapshot unavailable\r\n"); return; }
-        fm1_lcd_snapshot(raw); /* unarmed, read-only; never acknowledge PND */
+        fm1_lcd_snapshot(raw); /* readable slots only; never acknowledge PND */
+        fm1_lcd_baud_state(issued);
+        con_kv("lcdprobe_snapshot_protocol", LP_PROTOCOL_VERSION);
+        con_kx("lcdprobe_snapshot_read_mask", FM1_LCD_READ_MASK);
+        con_kx("lcdprobe_snapshot_issued_baud", issued[0]);
+        con_kx("lcdprobe_snapshot_baud_writes", issued[1]);
         con_kx("lcdprobe_snapshot_con", raw[0]); con_kx("lcdprobe_snapshot_adr", raw[1]);
         con_kx("lcdprobe_snapshot_cnt", raw[2]); con_kx("lcdprobe_snapshot_baud", raw[3]);
         con_kx("lcdprobe_snapshot_lcd_meta", lcd_busy | (uint32_t)lcd_fault << 8 | (uint32_t)lcd_initialized << 16);
@@ -643,6 +653,14 @@ static void con_lcd_probe(const char *p)
         for (word = 0; word < 8u; word++) { con_putc(' '); con_hex(lp.trace[i][word], 8u); }
         con_puts("\r\n");
     } else {
+        uint32_t issued[2];
+        fm1_lcd_baud_state(issued);
+        con_kv("lcdprobe_protocol", LP_PROTOCOL_VERSION);
+        con_kx("lcdprobe_read_mask", FM1_LCD_READ_MASK);
+        con_kx("lcdprobe_issued_baud", issued[0]); con_kx("lcdprobe_baud_writes", issued[1]);
+        con_kx("lcdprobe_baud_epoch", lp.baud_epoch);
+        con_kv("lcdprobe_issued_submits", lp.issued_submits); con_kv("lcdprobe_issued_seq", lp.issued_seq);
+        con_kv("lcdprobe_expected_bytes", LP_BYTES);
         con_kv("lcdprobe_active", lp.active); con_kv("lcdprobe_hold", lp.hold);
         con_kv("lcdprobe_phase", lp.phase); con_kv("lcdprobe_mode", lp.mode);
         con_kx("lcdprobe_run", lp.run); con_kv("lcdprobe_records", lp.count);
@@ -652,7 +670,7 @@ static void con_lcd_probe(const char *p)
         con_kv("lcdprobe_wait_result", lp.wait_result);
         con_kv("lcdprobe_pending_before_copy", lp.pending_before_copy);
         con_kv("lcdprobe_released", lp.released); con_kv("lcdprobe_reset_requested", lp.reset);
-        con_kx("lcdprobe_source", (uint32_t)lp.source); con_kv("lcdprobe_programmed_bytes", LP_BYTES);
+        con_kx("lcdprobe_source", (uint32_t)lp.source); con_kv("lcdprobe_programmed_bytes", lp.programmed_bytes);
         con_kx("lcdprobe_C_hash", lp.c_hash); con_kx("lcdprobe_A_hash", lp.a_hash);
         con_kx("lcdprobe_after_hash", lp.after_hash);
         if (lp.reset) con_lcd_probe_reset();
@@ -728,7 +746,7 @@ static void cdc_task(void)                              /* main loop */
         /* Reserve a complete bounded failure response before executing ARM.
          * A full ring leaves the newline queued without waiting or side effects. */
         if ((c == '\r' || c == '\n') && con_lcd_probe_pending() &&
-            co_w - co_r > CO_N - 1024u) return;
+            co_w - co_r > CO_N - 1536u) return;
 #endif
         ci_r++;
         if (c == '\r' || c == '\n') {

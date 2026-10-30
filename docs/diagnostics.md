@@ -469,7 +469,7 @@ byte count after submission. CON PND bit15 is a real completion predicate;
 `lcd_busy` records software ownership. Raw CNT is not a remaining-byte counter.
 
 Trace words are event, raw TIMER4 ticks, raw CON, busy|fault<<8|initialized<<16,
-event argument a, event argument b, raw ADR, raw CNT. Events1..13 are ARM, SUBMIT,
+event argument a, event argument b, unavailable ADR placeholder0, raw CNT. Events1..13 are ARM, SUBMIT,
 SHORT_WAIT, WAIT_RESULT, PACK_ATTEMPT, DENIED, COPY_BEGIN, COPY_END, COMPLETE,
 RELEASE, HOLD_END, RESET, SELECTED. For a non-missed candidate/control require
 WAIT_RESULT=0; PACK_ATTEMPT after real failed wait with busy/fault/initialized;
@@ -503,35 +503,67 @@ The diagnostic proves neither a permanent-stuck hardware fault nor the productio
 four-million-poll deadline, SPI timing, cache transactions, or real pixel behavior
 before the actual maintainer-run optical test.
 
+### LCD probe protocol 2: readable state and issued writes
+
+The exact WL82 SDK declares SPI BAUD and ADR write-only. The probe does not load
+those registers. Snapshot/trace ADR and BAUD slots are unavailable placeholders0,
+identified by read_mask5 (bit0 CON, bit2 CNT). CON and CNT remain real hardware
+observations; CNT is never remaining bytes or progress. A zero placeholder is not
+read-as-zero hardware behavior, source address0 or divider0.
+
+The HAL records the normal issued BAUD value and a write counter only after each
+actual volatile BAUD store. Both existing boot write sites still issue4. The
+snapshot reports protocol2, read_mask, issued_baud and baud_writes alongside the
+readable registers and packed LCD metadata (busy bit0, fault bits8..15,
+initialized bits16..23). This is software-issued configuration, not accepted
+hardware state or a measured clock frequency. `lcdprobe snapshot` is unarmed-only.
+
+The new baud_writes and baud_epoch fields (including snapshot/reset variants)
+use fixed-width 0x-prefixed hex for the full unsigned32-bit range.
+Status has protocol/read_mask/issued_baud/baud_writes/baud_epoch/issued_submits/
+issued_seq/expected_bytes. Before ARM, epoch and selected source/bytes/issue
+counters are0; expected_bytes is59520. ARM requires full-word issued_baud4 and a
+positive write counter, then freezes that counter as baud_epoch. Every clock
+reprogramming attempt while armed, including4, is refused before hardware/GPIO
+changes. A genuine FINISH first releases the lease; only then may ordinary healthy
+REPAINT reinit issue normal4 again. Persistence exclusion remains active until
+reboot. Global baud_writes may advance/wrap after FINISH; the held epoch and
+selected tuple stay latched. No such post-FINISH observation qualifies another ARM.
+
+SUBMIT trace events remain attempts. HAL calls the issue witness only after its
+actual BUF or ADR/CNT stores. During the selected window, the witness count/sequence
+must be6, the selected source must equal the pinned canvas and bytes59520. SELECTED
+records that actual issued tuple. C preparation and post-FINISH repaint are outside
+these selected-window counters. Neither six software issuance events nor the tuple
+is a physical bus transaction count or hardware acceptance proof. Host validation
+must use these issued witnesses with real PND/lease ordering, never range-check the
+unavailable raw ADR slot or silently substitute software values into raw fields.
+
 ### LCD probe abort evidence
 
-`lcdprobe snapshot` is read-only and available only while unarmed. It reports
-raw CON/ADR/CNT/BAUD and packed LCD metadata (busy bit0, fault bits8..15,
-initialized bits16..23). It never acknowledges completion or changes the SPI clock.
-BAUD qualification requires the full word to equal4; CNT is not remaining bytes
-and software busy is not a hardware-busy measurement.
+A reset request retains its first cause, phase, ticks, milliseconds, readable
+snapshot/placeholders, LCD metadata, read_mask, issued BAUD/write counter and any
+refused clock attempt (attempt_valid/attempt_baud) in ordinary BSS, independent of
+trace capacity. Later faults cannot overwrite that first observation. Cause codes:
+1 issued-config/epoch audit,2 trace full,3 unexpected submit,4 C/label setup,
+5 selected issue contract,6 arm lifetime,7 completion refusal,8 hardware wait
+deadline,9 abort,10 refused clock reprogramming. Code1 is not a BAUD readback fault.
 
-A reset request retains its first cause, phase, timer ticks, milliseconds,
-CON/ADR/CNT/BAUD and LCD metadata in ordinary BSS, independent of trace capacity.
-Cause codes are1 BAUD mismatch,2 trace full,3 unexpected submit,4 C/label setup,
-5 selected-transfer contract,6 arm lifetime,7 completion refusal,8 hardware wait
-deadline and9 explicit abort. Subsequent faults cannot replace that first observation.
-A reset-pending ARM returns `lcdprobe_arm 0` and its `lcdprobe_reset_*` fields in
-the same echoed response frame before the prompt. Missing or partial framing is
-uncertain; never replay ARM, GO or FINISH after uncertainty.
+Reset-pending ARM returns `lcdprobe_arm 0` plus the14 `lcdprobe_reset_*` fields in
+one canonical echoed response before its prompt. Missing or partial framing is
+uncertain: never replay ARM, GO or FINISH. Old protocol/host tooling is not qualified
+for protocol2. Probe newline admission reserves1536 bytes; actual worst-width
+status serialization is checked separately from generic console output policy.
 
-The main loop offers at most100ms from first reset request for that bounded
-report, clamped to the existing30s arm deadline. It keeps normal USB, scan, audio
-and watchdog service while preserving the full write exclusion, held display and
-source lease. It submits no further LCD transfer and acknowledges no completion
-after the request. Then it uses the existing intentional full-chip reset path. A
-request at the arm deadline has no report margin. This is a best-effort opportunity,
-not delivery proof: an empty software ring can still have an EP3 packet in flight.
-Only a complete retained host response proves receipt; absent/stalled hosts cannot
-extend the deadline. Reset clears this volatile evidence.
+The main loop offers at most100ms from first request for a report, clamped to the
+existing30s arm deadline. USB, scan, audio and watchdog service continue with full
+write exclusion/held display/source ownership. No later LCD submit, completion
+acknowledgment or source release follows a request; a refused init also returns
+before its blocking delay. Then the existing intentional full-chip reset runs.
+At30s there is no report margin. This is best effort, not delivery proof: software
+ring-empty can still leave an EP3 packet in flight. Only a retained complete host
+frame proves receipt. Reset clears this volatile evidence.
 
-A submit trace records an observed attempt before the HAL permission decision.
-Once reset is requested, the HAL refuses programming the attempted transfer;
-failed-run trace entries must not be counted as completed or programmed transfers.
-These abort diagnostics identify a software decision, not a physical fault cause
-or successful LCD qualification.
+Register access reference: the official SDK's dated
+[WL82 header](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK/blob/AC79NN_SDK_V1.2.1_2023-12-13/include_lib/driver/cpu/wl82/asm/WL82.h).
+No actual SCK-frequency or read-side-effect guarantee follows from its access tags.

@@ -11,14 +11,17 @@ static uint32_t lp_hash(const void *p, uint32_t n)
     while (n--) h = (h ^ *s++) * 16777619u;
     return h;
 }
-/* Latch the exact observation that requested reset, before trace/report work.
- * No second snapshot can replace a BAUD guard's actual failing read. */
+/* Latch the first issued-config or attempted-write observation before report
+ * work. Later observations cannot replace that immutable software evidence. */
 static void lp_reset_latch(uint32_t cause, uint32_t t, const uint32_t raw[4], uint32_t meta)
 {
-    uint32_t i;
+    uint32_t i, issued[2];
     if (lp.reset) return;
+    fm1_lcd_baud_state(issued);
     lp.reset_cause = cause; lp.reset_phase = lp.phase;
     lp.reset_ticks = t; lp.reset_ms = fm1_ms; lp.reset_meta = meta;
+    lp.reset_read_mask = FM1_LCD_READ_MASK;
+    lp.reset_issued_baud = issued[0]; lp.reset_baud_writes = issued[1];
     for (i = 0; i < 4u; i++) lp.reset_raw[i] = raw[i];
     lp.hold = 1u; /* also freeze a repaint if reset was requested after finish */
     __asm__ volatile("" ::: "memory");
@@ -33,12 +36,28 @@ static void lp_request_reset(uint32_t cause)
     meta = lcd_busy | (uint32_t)lcd_fault << 8 | (uint32_t)lcd_initialized << 16;
     lp_reset_latch(cause, t, raw, meta);
 }
+static uint32_t lp_baud_allowed(uint32_t value)
+{
+    if (!lp.active) return 1;
+    /* FINISH has released the diagnostic lease before ordinary healthy redraw.
+     * It does not release the active-lifetime persistence exclusion. */
+    if (!lp.reset && lp.released && !lp.hold && lp.phase == LP_REPAINT &&
+        !lcd_busy && !lcd_fault && value == 4u) return 1;
+    if (!lp.reset) {
+        lp.reset_attempt_valid = 1u; lp.reset_attempt_baud = value;
+        lp_request_reset(LP_RST_BAUD_ATTEMPT);
+    }
+    return 0; /* every armed attempt, including same-value4, stops before stores */
+}
 static void lp_record(uint32_t event, uint32_t a, uint32_t b)
 {
-    uint32_t i = lp.count, t = fm1_ticks(), raw[4], meta;
+    uint32_t i = lp.count, t = fm1_ticks(), raw[4], meta, issued[2];
     fm1_lcd_snapshot(raw);
     meta = lcd_busy | (uint32_t)lcd_fault << 8 | (uint32_t)lcd_initialized << 16;
-    if (raw[3] != 4u) lp_reset_latch(LP_RST_BAUD, t, raw, meta);
+    fm1_lcd_baud_state(issued);
+    if (issued[0] != 4u || !issued[1] ||
+        (lp.active && lp.phase != LP_REPAINT && issued[1] != lp.baud_epoch))
+        lp_reset_latch(LP_RST_ISSUED_BAUD, t, raw, meta);
     if (i == LP_TRACE_CAP) { lp.overflow = 1; lp_reset_latch(LP_RST_TRACE, t, raw, meta); return; }
     lp.trace[i][0] = event; lp.trace[i][1] = t; lp.trace[i][2] = raw[0];
     lp.trace[i][3] = meta;
@@ -54,17 +73,28 @@ static uint32_t lp_submit(uint32_t command, const void *source, uint32_t bytes)
     lp.submits++;
     lp_record(LP_SUBMIT, command, bytes);
     if (lp.reset) return 0;
-    if (lp.phase == LP_SETUP && !command && source == cv_px && bytes == LP_BYTES) {
-        lp.selected_submits++;
-        lp.source = (uintptr_t)source;
-        lp.selected = 1;
-        lp.phase = LP_TRANSFER;
-    } else if (lp.selected) {
+    (void)command; (void)source; (void)bytes;
+    if (lp.selected) {
         /* Refuse register submission after observing an invalid attempt. The
          * existing source lease remains intact until ordinary full-chip reset. */
         lp_request_reset(LP_RST_SUBMIT);
     }
     return !lp.reset;
+}
+/* HAL calls only after its actual volatile BUF or ADR/CNT stores. This records
+ * software issuance, never hardware acceptance or physical bus transactions. */
+static void lp_issued(uint32_t command, const void *source, uint32_t bytes)
+{
+    if (LCD_PROBE_STOPPED()) return;
+    if (!lp.active || lp.phase == LP_C_READY || lp.phase == LP_REPAINT) return;
+    lp.issued_submits++;
+    if (lp.phase == LP_SETUP && !command && source == cv_px && bytes == LP_BYTES) {
+        lp.selected_submits++;
+        lp.source = (uintptr_t)source; lp.programmed_bytes = bytes;
+        lp.issued_seq = lp.issued_submits;
+        __asm__ volatile("" ::: "memory");
+        lp.selected = 1; lp.phase = LP_TRANSFER;
+    } else if (lp.selected) lp_request_reset(LP_RST_SELECTION);
 }
 static uint32_t lp_wait_budget(void)
 {
@@ -142,12 +172,15 @@ static uint16_t lp_pixel(uint32_t x, uint32_t y)
 }
 static int lp_arm(uint32_t mode, uint32_t run, uint32_t backup_restore_confirmed)
 {
+    uint32_t issued[2];
     if (lp.active || mode > LP_CONTROL || !run || !backup_restore_confirmed || !LP_OWNER_READY()) return 0;
     lcd_sync();
     if (lcd_busy || lcd_fault || !lcd_initialized) return 0;
     memset(&lp, 0, sizeof lp);
     lp.active = lp.hold = 1; lp.mode = mode; lp.run = run;
     lp.phase = LP_C_READY; lp.arm_ms = fm1_ms;
+    fm1_lcd_baud_state(issued); lp.baud_epoch = issued[1];
+    if (issued[0] != 4u || !issued[1]) { lp_request_reset(LP_RST_ISSUED_BAUD); return 0; }
     /* All later write producers are now excluded, including during C setup. */
     lcd_fill(0, 58, 240, 124, 0x1082u);
     LP_LABEL(mode, run); /* outside y58..181, before selected DMA */
@@ -168,8 +201,9 @@ static int lp_go(void)
     lp.phase = LP_SETUP; lp.go_ms = fm1_ms;
     __asm__ volatile("" ::: "memory");
     lcd_blit(0, 58, 240, 124, cv_px); /* normal six submissions: window, then selected data */
-    if (lp.phase != LP_TRANSFER || lp.selected_submits != 1u || lp.submits != 6u) { lp_request_reset(LP_RST_SELECTION); return 0; }
-    lp_record(LP_SELECTED, (uint32_t)(uintptr_t)cv_px, LP_BYTES); /* after real ADR/CNT submission */
+    if (lp.phase != LP_TRANSFER || lp.selected_submits != 1u || lp.submits != 6u ||
+        lp.issued_submits != 6u || lp.issued_seq != 6u || lp.source != (uintptr_t)cv_px || lp.programmed_bytes != LP_BYTES) { lp_request_reset(LP_RST_SELECTION); return 0; }
+    lp_record(LP_SELECTED, (uint32_t)lp.source, lp.programmed_bytes); /* actual post-store issued tuple */
     if (lp.reset) return 0;
     if (lp.mode != LP_A_ONLY) {
         lp.short_wait = 1;

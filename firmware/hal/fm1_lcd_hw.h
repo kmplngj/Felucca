@@ -36,6 +36,24 @@
 #define FM1_LCD_DO (1u << 10)
 
 static uint32_t fm1_lcd_timeouts;
+#if FELUCCA_LCD_INFLIGHT
+/* Exact WL82 SDK: BAUD/ADR are write-only. These are issued software writes,
+ * not register readback, bus acceptance, progress or measured clock frequency. */
+#define FM1_LCD_READ_MASK 5u       /* snapshot slots: CON and CNT only */
+static uint32_t fm1_lcd_issued_baud_value, fm1_lcd_issued_baud_writes;
+FM1_INLINE void fm1_lcd_baud_state(uint32_t out[2])
+{
+    out[0] = fm1_lcd_issued_baud_value;
+    out[1] = fm1_lcd_issued_baud_writes;
+}
+FM1_INLINE void fm1_lcd_note_baud(uint32_t value)
+{
+    __asm__ volatile("" ::: "memory"); /* after the actual volatile peripheral store */
+    fm1_lcd_issued_baud_value = value;
+    __asm__ volatile("" ::: "memory");
+    fm1_lcd_issued_baud_writes++;
+}
+#endif
 
 FM1_INLINE void fm1_panel_power_on(void)
 {
@@ -45,6 +63,9 @@ FM1_INLINE void fm1_panel_power_on(void)
 
 FM1_INLINE void fm1_lcd_hw_init(void)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (!lp_baud_allowed(4u)) return; /* before GPIO, CON or clock changes */
+#endif
     fm1_panel_power_on();
     FM1_LCD_IOMAP_CON1 |= 0x10u;
     FM1_LCD_PC_OUT |= FM1_LCD_CS;
@@ -52,6 +73,9 @@ FM1_INLINE void fm1_lcd_hw_init(void)
     FM1_LCD_PC_DIR &= ~(FM1_LCD_CS | FM1_LCD_DC | FM1_LCD_CLK | FM1_LCD_DO);
     FM1_LCD_SPI_CON = 0x4021u;
     FM1_LCD_SPI_BAUD = 4u;
+#if FELUCCA_LCD_INFLIGHT
+    fm1_lcd_note_baud(4u);
+#endif
 }
 
 FM1_INLINE void fm1_lcd_backlight(uint32_t on)
@@ -62,18 +86,28 @@ FM1_INLINE void fm1_lcd_backlight(uint32_t on)
         FM1_LCD_PA_OUT |= FM1_LCD_BL;
 }
 
-FM1_INLINE void fm1_lcd_baud(uint32_t b) { FM1_LCD_SPI_BAUD = b; }
+FM1_INLINE void fm1_lcd_baud(uint32_t b)
+{
+#if FELUCCA_LCD_INFLIGHT
+    if (!lp_baud_allowed(b)) return;
+#endif
+    FM1_LCD_SPI_BAUD = b;
+#if FELUCCA_LCD_INFLIGHT
+    fm1_lcd_note_baud(b);
+#endif
+}
 
 /* Read-only completion: send_cmd/send_data clear pending before submission.
  * A false result never releases a borrowed DMA source. */
 #if FELUCCA_LCD_INFLIGHT
-/* Non-acknowledging diagnostic snapshot. CNT is raw, never assumed progress. */
+/* Read only documented readable registers. Unavailable slots are placeholders,
+ * explicitly identified by FM1_LCD_READ_MASK; CNT has no progress semantics. */
 FM1_INLINE void fm1_lcd_snapshot(uint32_t out[4])
 {
     out[0] = FM1_LCD_SPI_CON;
-    out[1] = FM1_LCD_SPI_ADR;
+    out[1] = 0; /* unavailable: ADR is write-only; do not load it */
     out[2] = FM1_LCD_SPI_CNT;
-    out[3] = FM1_LCD_SPI_BAUD;
+    out[3] = 0; /* unavailable: BAUD is write-only; do not load it */
 }
 #endif
 
@@ -121,6 +155,10 @@ FM1_INLINE void fm1_lcd_send_cmd(uint8_t c)
     FM1_LCD_PC_OUT &= ~FM1_LCD_CS;
     FM1_LCD_SPI_CON |= 0x4000u;
     FM1_LCD_SPI_BUF = c;
+#if FELUCCA_LCD_INFLIGHT
+    __asm__ volatile("" ::: "memory");
+    lp_issued(c, 0, 1u);
+#endif
 }
 
 FM1_INLINE void fm1_lcd_send_data(const void *p, uint32_t n)
@@ -133,4 +171,8 @@ FM1_INLINE void fm1_lcd_send_data(const void *p, uint32_t n)
     FM1_LCD_SPI_CON |= 0x4000u;
     FM1_LCD_SPI_ADR = (uint32_t)(uintptr_t)p;
     FM1_LCD_SPI_CNT = n;
+#if FELUCCA_LCD_INFLIGHT
+    __asm__ volatile("" ::: "memory");
+    lp_issued(0, p, n);
+#endif
 }

@@ -1354,3 +1354,12 @@ arm or pixel buffer. See the LCD probe abort-evidence contract in
 [diagnostics](docs/diagnostics.md#lcd-probe-abort-evidence). Default-OFF LCD/GFX
 code equivalence and the focused reset/HAL oracle are separate from ON native
 resource checks and physical validation.
+
+The in-flight diagnostic uses protocol2: BAUD/ADR are write-only in the pinned
+WL82 SDK and are not loaded. Availability and software-issued configuration/issue
+witnesses replace invalid readback assumptions; they do not measure a hardware
+clock. Preserve both original normal divider4 stores and OFF code form. ON host
+fixtures model unavailable WO readback explicitly, and native listing review must
+verify no WO loads plus witness publication after the actual stores. Refresh host
+protocol/artifact pins after this change; see
+[protocol2](docs/diagnostics.md#lcd-probe-protocol-2-readable-state-and-issued-writes).
