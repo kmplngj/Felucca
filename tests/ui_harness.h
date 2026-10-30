@@ -294,6 +294,7 @@ static void ui_power_on(void)
     memset(snd_said, 0, sizeof snd_said);               /* (.bss at power-on: nothing said yet) */
     memset(&scrn, 0, sizeof scrn);                        /* MENU > SCREEN OFF: on, idle from now (main.c) */
     scrn.idle = fm1_ms;
+    memset((void *)note_hit, 0, sizeof note_hit);        /* (.bss at power-on: no note-on events, voice.c) */
     kb_asleep = 0;
     panel_moved = 0;
 }
