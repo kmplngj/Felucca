@@ -11,6 +11,8 @@ typedef struct {
     uint8_t owned[NTRK];                    /* held/pedal notes per track, at most 128 per channel */
     uint8_t ready, semis, cents;
     uint8_t rpn_msb, rpn_lsb;
+    uint16_t fine14;                        /* RPN1: 8192 = unison, retained by CC121 */
+    int8_t coarse;                          /* RPN2: -64..63 semitones */
 } midi_channel_t;
 static midi_channel_t midi_ch[16];
 /* Selector/map port: ordenador/Felucca #255, commit
@@ -89,6 +91,7 @@ static midi_channel_t *midi_channel(uint32_t ch)
     midi_channel_t *c = &midi_ch[ch];
     if (!c->ready) {
         c->semis = 2;
+        c->fine14 = 8192;
         c->rpn_msb = c->rpn_lsb = 127;
         c->ready = 1;
     }
@@ -105,6 +108,7 @@ static void midi_expression(track_t *t, const midi_channel_t *c)
     int32_t range = ((int32_t)c->semis * 100 + c->cents) * 256 / 100;
     if (drum_track(t))
         return;
+    midi_tune_q14[trk_index(t)] = (int32_t)c->coarse * 16384 + ((int32_t)c->fine14 - 8192) * 2;
     midi_bend_target[trk_index(t)] = (int32_t)c->bend * range / (c->bend < 0 ? 8192 : 8191);
 }
 
@@ -260,6 +264,7 @@ static void __attribute__((noinline)) midi_forget_track(uint32_t track)
     midi_owners[track] = 0;
     mchord_forget(track);
     midi_bend_q8[track] = midi_bend_target[track] = 0;
+    midi_tune_q14[track] = 0;
 }
 
 static void midi_silence_track(uint32_t track)
@@ -388,6 +393,31 @@ static int midi_nrpn_extra(uint32_t address, uint32_t value)
     return 0;
 }
 
+/* Called only for an active RPN selection; selector/source ownership stays in
+ * the controller dispatcher. Partial data entry preserves the other byte. */
+static void midi_rpn_data(uint32_t ch, uint32_t msb, uint32_t lsb, uint32_t cc, uint32_t value)
+{
+    midi_channel_t *c = midi_channel(ch);
+    if (msb || lsb > 2u)
+        return;
+    if (!lsb) {                              /* RPN0: existing bend sensitivity */
+        if (cc == 6u)
+            c->semis = (uint8_t)(value > 24u ? 24u : value);
+        else
+            c->cents = (uint8_t)(value > 99u ? 99u : value);
+    } else if (lsb == 1u) {                  /* RPN1: 14-bit +/- one semitone */
+        if (cc == 6u)
+            c->fine14 = (uint16_t)((value << 7) | (c->fine14 & 127u));
+        else
+            c->fine14 = (uint16_t)((c->fine14 & 16256u) | value);
+    } else {                                /* RPN2: LSB is ignored */
+        if (cc != 6u)
+            return;
+        c->coarse = (int8_t)((int32_t)value - 64);
+    }
+    midi_expression_channel(ch);
+}
+
 static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32_t source)
 {
     midi_channel_t *c = midi_channel(ch);
@@ -415,7 +445,7 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
                 arp_forget(&trk[i]);
             }
         break;
-    case 121:                                      /* Reset All Controllers, keep bend sensitivity */
+    case 121:                                      /* RP-015: keep registered tuning and bend sensitivity */
         midi_nrpn_reset_channel(ch);
         c->bend = 0;
         c->wheel = 0;
@@ -441,12 +471,8 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
         }
         break;
     case 6: case 38:
-        if (!c->rpn_msb && !c->rpn_lsb) {           /* RPN 0: +/-0..24 semitones, 0..99 cents */
-            if (cc == 6u)
-                c->semis = (uint8_t)(value > 24u ? 24u : value);
-            else
-                c->cents = (uint8_t)(value > 99u ? 99u : value);
-            midi_expression_channel(ch);
+        if (!c->rpn_msb && c->rpn_lsb <= 2u) {
+            midi_rpn_data(ch, c->rpn_msb, c->rpn_lsb, cc, value);
         } else if (cc == 6u && n && n->seen == 3u) {
             uint32_t id = midi_nrpn_id(n->msb, n->lsb);
             if (!midi_nrpn_extra(((uint32_t)n->msb << 7) | n->lsb, value) && id < P_COUNT) {
@@ -479,8 +505,10 @@ static void __attribute__((noinline)) midi_route_block(void)
     uint32_t ch, note, i;
     uint32_t reassign = song.g[G_ROUTE] == ROUTE_TRACK || midi_route == ROUTE_TRACK || midi_route == MIDI_ROUTE_AGAIN;
     if (reassign)
-        for (i = 0; i < NTRK; i++)
+        for (i = 0; i < NTRK; i++) {
+            midi_tune_q14[i] = 0;
             midi_bend_target[i] = 0;                /* A track with no channel must not retain the old bend. */
+        }
     for (ch = 0; ch < 16u; ch++) {
         midi_channel_t *c = midi_channel(ch);
         if (midi_in_block(ch)) {
