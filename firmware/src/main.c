@@ -183,6 +183,16 @@ static const char *c1_held_msg(uint32_t reason)
 }
 #endif
 
+#if FELUCCA_OTA
+static void ed_restart_platform(void)
+{
+    fm1_audio_stop();
+    boot_policy_intentional(&bootguard);
+    usb_detach();
+    fm1_reboot();                            /* HAL holds CPU1 before the P33 warm reset */
+}
+#endif
+
 static void fm1_main(void)
 {
     uint32_t splash_start, master_ms;
@@ -204,7 +214,10 @@ static void fm1_main(void)
         memset(&felucca_dbg, 0, sizeof felucca_dbg);
         felucca_dbg.magic = DBG_MAGIC;
     }
-    felucca_dbg.boots++;
+    if (!++felucca_dbg.boots) ++felucca_dbg.boots;
+#if FELUCCA_OTA
+    ed_control_boot(felucca_dbg.boots);
+#endif
     felucca_dbg.max_us = 0;
     felucca_dbg.in_audio = 0;                       /* .noinit: a reset inside the audio ISR left it set, and
                                                        TIMER5 would treat every tick as nested (no USB poll) */

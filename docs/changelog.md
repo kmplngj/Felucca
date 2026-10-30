@@ -51,6 +51,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- [Guarded USB-MIDI warm restart](device-control.md) for automated FM-1 tests,
+  with full build/boot identity, BUSY refusal, explicit transfer ownership and a
+  separate host control tool. The host sends once and verifies the next boot
+  generation after reconnect. No implicit project save or bootloader change;
+  physical qualification remains pending.
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery
