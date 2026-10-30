@@ -1014,6 +1014,29 @@ static void ota_frame_done(void)
 }
 #endif
 
+#if FELUCCA_RESTART
+/* Keep bounded fence validation separate from the TIMER5 packet-copy loops. */
+static __attribute__((noinline)) int ep1_restart_ready(uint32_t csr, uint32_t faults)
+{
+    if (faults != sie_faults)
+        return 0;                              /* sie_failed already abandoned the fence at the source */
+    if (csr & 0x01u)
+        return 0;                              /* previous packet still pending */
+    if (csr & 0x80u) {
+        sie_wr(S_TXCSR1, csr & ~0x80u);
+        so_flight = 0;
+        so_epoch++;
+        return 0;                              /* stall recovery abandons the fence */
+    }
+    if (so_flight) {
+        so_flight = 0;
+        RING_PUBLISH();
+        so_done = so_flight_end;
+    }
+    return 1;
+}
+#endif
+
 static void ep1_tx(void)
 {
     uint32_t csr, n = 0;
@@ -1034,27 +1057,11 @@ static void ep1_tx(void)
     sie_wr(S_INDEX, 1);
     csr = sie_rd(S_TXCSR1);
 #if FELUCCA_RESTART
-    if (faults != sie_faults) {
-        so_flight = 0;
-        so_epoch++;
-        return;                                         /* a failed CSR read returns zero, never completion */
-    }
-#endif
+    if (!ep1_restart_ready(csr, faults))
+        return;
+#else
     if (csr & 0x01u)
         return;                                         /* previous packet still pending */
-#if FELUCCA_RESTART
-    if (csr & 0x80u) {
-        sie_wr(S_TXCSR1, csr & ~0x80u);
-        so_flight = 0;
-        so_epoch++;
-        return;                                         /* stall recovery abandons the fence */
-    }
-    if (so_flight) {
-        so_flight = 0;
-        RING_PUBLISH();
-        so_done = so_flight_end;
-    }
-#else
     if (csr & 0x80u)
         sie_wr(S_TXCSR1, csr & ~0x80u);
 #endif
@@ -1093,7 +1100,6 @@ static void ep1_tx(void)
 #if FELUCCA_RESTART
     csr = sie_rd(S_TXCSR1);
     if (faults == sie_faults) sie_wr(S_TXCSR1, csr | 0x01u);
-    if (faults != sie_faults) { so_flight = 0; so_epoch++; }
 #else
     sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
 #endif
