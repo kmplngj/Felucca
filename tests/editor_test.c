@@ -3,8 +3,19 @@
 /* The firmware editor handler, USB framing and UART recovery against RAM flash.
  * Build with the generated tables and the same flags as hostsim.c. */
 #include "../firmware/hal/fm1_flash_data_contract.h"
+#ifdef SMK_EDITOR_TEST
+#define BOARD_SMK37 1
+#include "../firmware/hal/fm1_flash_map.h"
+static unsigned char host_nor[0x100000];
+#define host_samples (*(unsigned char (*)[3][0x14000])(host_nor + FL_SMP_LO))
+static unsigned host_sample_reads, host_raw_reads, host_mutation_unsafe, host_marker_fail;
+static uint32_t host_erase_offsets[64], host_erase_count;
+static unsigned char *host_sample_ptr(unsigned k) { host_sample_reads++; return host_samples[k]; }
+#define SMP_USER_XIP(k) host_sample_ptr(k)
+#else
 static unsigned char host_samples[3][0x14000];
 #define SMP_USER_XIP(k) host_samples[k]
+#endif
 #define FELUCCA_OTA 1
 #define FELUCCA_FLASH 0
 #define FELUCCA_VERSION "TEST"
@@ -49,23 +60,49 @@ static void panel_setup(void) {}
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
 
+#ifndef SMK_EDITOR_TEST
 static uint32_t flash_ok = 1;
 static void audio_silence(void) {}
+#endif
 static void fl_inval(uint32_t off, uint32_t n) { (void)off; (void)n; }
-static uint8_t *host_flash_ptr(uint32_t off) { return &host_samples[0][0] + off - SMP_USER_BASE; }
+static uint8_t *host_flash_ptr(uint32_t off) {
+#ifdef SMK_EDITOR_TEST
+    return host_nor + off;
+#else
+    return &host_samples[0][0] + off - SMP_USER_BASE;
+#endif
+}
 static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took)
 {
+#ifdef SMK_EDITOR_TEST
+    host_erase_offsets[host_erase_count++] = off;
+    if (FL_IN(off, 4096, FL_SMP_LO, FL_SMP_HI) && host_nor[FL_STOCKTAG_HI - 8u] != 255) host_mutation_unsafe++;
+    if (host_marker_fail && off == FL_STOCKTAG_LO) return -1;
+#endif
     memset(host_flash_ptr(off), 0xFF, 4096); *took = 0; host_erases++; return 0;
 }
 static fl_write_fn fl_write;
 static int fl_write(uint32_t off, const uint8_t *p, uint32_t n)
 {
+#ifdef SMK_EDITOR_TEST
+    if (FL_IN(off, n, FL_SMP_LO, FL_SMP_HI) && host_nor[FL_STOCKTAG_HI - 8u] != 255) host_mutation_unsafe++;
+#endif
     memcpy(host_flash_ptr(off), p, n); host_writes++; return 0;
 }
+#ifdef SMK_EDITOR_TEST
+#define FL_FAR(fn) fn
+static uint16_t abuf[8];
+static uint32_t irq_save(void) { return 0; }
+static void irq_restore(uint32_t f) { (void)f; }
+static int fl_read_ram(uint32_t off, uint8_t *p, uint32_t n) { host_raw_reads++; memcpy(p, host_nor + off, n); return 0; }
+static int fl_erase4k_ram(uint32_t off, uint32_t *took) { return fl_erase4k(off, took); }
+#include "../firmware/src/storage_hw.c"
+#else
 static int st_read(uint32_t off, void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
 static int st_prog(uint32_t off, const void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
 static int st_erase(uint32_t off) { (void)off; return -1; }
+#endif
 #include "../firmware/src/storage.c"
 #include "../firmware/src/editor.c"
 
@@ -1711,6 +1748,7 @@ static int macro_model_protocol(void)
 }
 #endif
 
+#ifndef SMK_EDITOR_TEST
 int main(void)
 {
     int bad = backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
@@ -1723,4 +1761,5 @@ int main(void)
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
     return bad != 0;
 }
+#endif /* !SMK_EDITOR_TEST */
 #endif

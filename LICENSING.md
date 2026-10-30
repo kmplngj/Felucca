@@ -7,6 +7,14 @@ texts are in `LICENSES/` and the component paths listed below.
 
 Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 
+The experimental SMK board adapter also retains Copyright (C) 2026 M. Geisler
+(genkigenki/makkuro), GPL-3.0-only. It adapts
+`genkigenki/Felucca@b67312cd25bd01b097ed69388b83e86bd8449365`; see
+[the source and qualification record](docs/smk37.md#source-and-qualification).
+This covers the selected SMK HAL, controls, flash-layout, packaging and updater
+changes, with native safety adaptations. No vendor dump, factory calibration,
+CC BY-NC guide assets or restricted donor logo is included.
+
 ## What is GPL-3.0-only
 
 Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header:

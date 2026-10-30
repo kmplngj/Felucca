@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: GPL-3.0-only
+name: Experimental SMK firmware
+
+# Manual opt-in or tagged release reuse. Normal push/PR validation stays FM-1.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional release version (empty builds development firmware)
+        default: ''
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  target:
+    name: SMK ${{ matrix.model }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [pro, elite, mke]
+    env:
+      FELUCCA_PROFILE: standard
+      RAW_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          python-version: '3.12'
+          enable-cache: false
+      - name: Validate optional release version
+        shell: bash
+        run: |
+          version="${RAW_VERSION#v}"
+          if [ -n "$RAW_VERSION" ]; then python3 tools/ci.py version "$version"; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Prepare pinned SDK inputs and target toolchain
+        run: |
+          echo "JIELI_TOOLCHAIN=$RUNNER_TEMP/jieli/toolchain" >> "$GITHUB_ENV"
+          echo "AC79_SDK=$RUNNER_TEMP/sdk" >> "$GITHUB_ENV"
+          sh tools/get_toolchain.sh "$RUNNER_TEMP/jieli"
+          AC79_SDK="$RUNNER_TEMP/sdk" python3 tools/ci.py sdk
+      - name: Build the selected model and verify its resource evidence
+        env:
+          SMK_BUILD_MODEL: ${{ matrix.model }}
+        run: |
+          release_args=()
+          if [ -n "$VERSION" ]; then release_args=(--release "$VERSION"); fi
+          uv run --locked --group build ./build.sh --board smk37 --model "$SMK_BUILD_MODEL" "${release_args[@]}"
+          uv run --locked --group build python tools/build_report.py --verify build/resource-report.json
+          cat tests/target_budget.txt tests/target_budget_smk37.txt > build/smk-target-budget.txt
+          python3 tests/target_budget.py build/felucca.dis build/smk-target-budget.txt
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools')
+          import source_archive
+          version = os.environ['VERSION'] or json.loads(Path('build/build-identity.json').read_text())['version'].removeprefix('v')
+          archive = Path('build/felucca-smk37-source.tar.gz')
+          source_archive.export(Path.cwd(), archive, version)
+          source_archive.verify_archive(archive)
+          PY
+          if [ -n "$VERSION" ]; then
+            mkdir "$RUNNER_TEMP/smk-reproduce"
+            tar -xzf build/felucca-smk37-source.tar.gz -C "$RUNNER_TEMP/smk-reproduce"
+            reproduced="$RUNNER_TEMP/smk-reproduce/felucca-$VERSION-source"
+            (
+              cd "$reproduced"
+              UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/smk-reproduce-venv" \
+                uv run --locked --group build ./build.sh --board smk37 --model "$SMK_BUILD_MODEL" --release "$VERSION"
+            )
+            uv run --locked --group build python tools/smk_release.py prepare --version "$VERSION" \
+              --model "$SMK_BUILD_MODEL" --reproduction "$reproduced" --destination build/smk-release
+          fi
+          cp LICENSE LICENSING.md build/
+          cp -R LICENSES build/
+          cp docs/smk37.md build/SMK37.md
+          if [ -z "$VERSION" ]; then
+            (cd build && sha256sum felucca-smk37*.fwsc felucca-smk37-source.tar.gz > SHA256SUMS)
+          fi
+      - name: Retain verified experimental release model artifacts
+        if: env.VERSION != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: experimental-smk37-${{ matrix.model }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: build/smk-release/
+      - name: Retain experimental model artifacts
+        if: env.VERSION == ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: experimental-smk37-${{ matrix.model }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            build/felucca-smk37*.fwsc
+            build/felucca-smk37-source.tar.gz
+            build/felucca.bin
+            build/resource-report.json
+            build/build-identity.json
+            build/gen/resolved-profile.json
+            build/LICENSE
+            build/LICENSING.md
+            build/LICENSES/
+            build/SMK37.md
+            build/SHA256SUMS

@@ -889,7 +889,52 @@ def official_one(path, product, version):
     coverage.outcome(f'official-v{version}', 'failed' if failed != before else 'passed',
                      sha256=hashlib.sha256(raw).hexdigest())
 
+def smk_models():
+    """Package, resumed/staged loader and final firmware all name exactly one model."""
+    flash = M.flash_image(synth(60000, 7), M.KEY, board="smk37")
+    models = ("FM-1", *I.SMK_MODELS)
+    for model in I.SMK_MODELS:
+        product = model + "_900"
+        raw = M.ufw(flash, loader(), product)
+        image = I.logical_image(raw)
+        path = TMP / (model + ".fwsc")
+        path.write_bytes(raw)
+        ok(I.load_package(path, False) == (product, image), f"SMK: valid native {product}")
+        for connected in models:
+            dev = FakeFM1(image, identity=connected + "_016", name="Felucca", after_write=product,
+                          loader_identity="ota-" + model + "_900")
+            rc, out, err = cli([str(path), "--yes"], dev)
+            ok((rc == 0 and dev.upgrades == 2) if connected == model
+               else (rc == 6 and dev.upgrades == 0 and dev.served == 0),
+               f"SMK: {connected} -> {product} exact model check")
+        for connected in models:
+            dev = FakeFM1(image, identity="ota-" + connected + "_900", name="Felucca Update", after_write=product)
+            rc, out, err = cli([str(path), "--yes"], dev)
+            ok((rc == 0 and dev.upgrades == 1) if connected == model
+               else (rc == 6 and dev.upgrades == 0 and dev.served == 0),
+               f"SMK resume: loader {connected} -> {product} exact identity")
+        dev = FakeFM1(image, identity=model + "_016", after_write=product,
+                      loader_identity="ota-" + model + "_901")
+        rc, out, err = cli([str(path), "--yes"], dev)
+        ok(rc == 6 and dev.upgrades == 1, f"SMK staged: wrong loader version {model} refused")
+        dev = FakeFM1(image, identity=model + "_016", after_write=model + "_901",
+                      loader_identity="ota-" + model + "_900")
+        rc, out, err = cli([str(path), "--yes"], dev)
+        ok(rc == 6, f"SMK final firmware identity {model} checked exactly")
+        for official in (model + "_016", model + "_099"):
+            path.write_bytes(M.ufw(flash, loader(), official))
+            dev = FakeFM1(image)
+            rc, out, err = cli([str(path), "--yes", "--force"], dev)
+            ok(rc == 2 and dev.opened == 0, f"SMK official {official} refused before MIDI with force")
+        try:
+            I.package_family(I.logical_image(package(product)), product)
+            ok(False, f"SMK {model} must reject FM-1 flash layout")
+        except I.InstallError as error:
+            ok(error.code == "badpkg", f"SMK {model} rejects FM-1 flash layout")
+
+
 wire()
+smk_models()
 installs()
 errors()
 transport_idle()

@@ -11,11 +11,19 @@
 #define __attribute__(x)   /* (the sources' .pool sections: no Mach-O section names, as in ota_test.c) */
 #include "../firmware/src/boot_policy.h"
 #define FELUCCA_OTA 1
+#if BOARD_SMK37
+#include "../firmware/hal/fm1_flash_map.h"
+#define FELUCCA_ID SMK_MODEL "_900"
+enum { FM1_BTN_OCT_DOWN = 4, FM1_BTN_OCT_UP = 5 };
+#else
 #define FELUCCA_ID "FM-1_900"
+#endif
 #define FELUCCA_OTA_DRYRUN 0
 #define FM1_TICKS_PER_US 24u
 #define FL_FAR(fn) fn
+#ifndef FL_IN
 #define FL_IN(off,n,lo,hi) ((off) >= (lo) && (off) <= (hi) && (n) <= (hi)-(off))
+#endif
 #define T_BG 1
 #define T_TEXT 2
 #define T_THEME 3
@@ -77,6 +85,10 @@ static int fl_erase4k(uint32_t off, uint32_t *took) { wrapper_calls++; return fl
 static fl_write_fn fl_write;
 static int fl_write(uint32_t off, const uint8_t *p, uint32_t n) { uint32_t t; wrapper_calls++; return fl_prog_ram(off,p,n,&t); }
 static int st_read(uint32_t off, void *p, uint32_t n) { wrapper_calls++; return fl_read_ram(off,p,n); }
+#if BOARD_SMK37
+/* Normal SMK OTA reads bypass store ownership; rescue itself uses the raw HAL. */
+static int st_raw_read(uint32_t off, void *p, uint32_t n) { return fl_read_ram(off,p,n); }
+#endif
 static int ota_frame_get(const uint8_t **p, uint32_t *n)
 { if (!frame_ready) return 0; *p = frame; *n = frame_len; return 1; }
 static void ota_frame_done(void) { frame_ready = 0; }
@@ -138,10 +150,21 @@ int main(int argc, char **argv)
         memcpy(package+940,raw+960,(size_t)size-960);
         package_len=(uint32_t)size-20; free(raw);
     }
+#if BOARD_SMK37
+    physical_buttons = 3;
+    CHECK("SMK bank buttons do not select OCT rescue/calibration", rescue_boot_buttons() == 0);
+    physical_buttons = 1u << FM1_BTN_OCT_DOWN;
+    CHECK("SMK physical OCT- normalizes to rescue bit", rescue_boot_buttons() == 1);
+    physical_buttons |= 1u << FM1_BTN_OCT_UP;
+    CHECK("SMK both OCT keys normalize to calibration bits", rescue_boot_buttons() == 3);
+    reset(); chip = 0xEB6014u; rescue_init();
+    CHECK("SMK alternate qualified flash JEDEC supports recovery", flash_ok);
+#else
     physical_buttons = 1;
     CHECK("manual decision reads physical OCT- before normal startup", rescue_boot_buttons() == 1);
     physical_buttons = 3;
     CHECK("physical both-OCT remains available to calibration", rescue_boot_buttons() == 3);
+#endif
     reset();
     for (i=0;i<20000;i++) rescue_step();
     CHECK("rescue idle performs no erase/program/normal audio wrappers", !erases && !writes && !audio_calls && !wrapper_calls);

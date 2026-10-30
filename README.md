@@ -12,6 +12,11 @@ additional synthesis engines, and improve CPU efficiency, RAM use and firmware s
 This is ongoing integration and experimentation. Features are adopted as they are
 reviewed and tested; the fork does not automatically include every upstream or fork change.
 
+Opt-in [experimental SMK-37 Pro, Elite and MKE-P37 targets](docs/smk37.md) add
+model-specific packages and native controls. Each model's physical qualification
+is pending. Normal CI, PR builds and Latest Dev retain the standard FM-1 target;
+tagged releases also include experimental SMK assets.
+
 [Release channels](docs/releases.md): **Latest Dev** publishes a traceable experimental
 prerelease at one fixed `latest-dev` address, replaced after each validated PR merge; tagged releases require an explicit FM-1
 test report and maintainer approval before publication. Back up first and read the

@@ -13,7 +13,12 @@
 #define FELUCCA_OTA 1
 #define FELUCCA_OTA_DRYRUN 0
 #define FELUCCA_USB_PID 0x0002
+#include "fm1_cc.h"
+#if BOARD_SMK37
+#define FELUCCA_ID "ota-" SMK_MODEL "_900"
+#else
 #define FELUCCA_ID "ota-FM-1_900"
+#endif
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")
 #include "fm1_time.h"
 #include "fm1_sys.h"
@@ -21,15 +26,27 @@
 /* the loader may write the app area and erase update records; never the head, nor Felucca's store
  * [0x97000, 0xE0000), the autosave and the FM6 voice bank [0xE5000, 0xE8000) (user data, never a record:
  * ldr_core.c). The records it clears are at 0xE4F00 (staging sector 0xE4000) and 0xE8F00 (0xE8000). */
+#if BOARD_SMK37
+#define FL_RANGE_OK(off, n) FL_LDR_RANGE_OK(off, n)
+#else
 #define FL_RANGE_OK(off, n) (FL_IN(off, n, 0x4000u, 0x97000u) || FL_IN(off, n, 0xE0000u, 0xE5000u) || \
                              FL_IN(off, n, 0xE8000u, 0xFC000u))
+#endif
 #include "fm1_flash.h"
 #include "../src/libc.c"
 #include "../src/usb.c"
 
 #include "ldr_service.c"
 
+#if BOARD_SMK37
+/* The SMK loader keeps USB service alive with a dark screen; its panel init
+ * sequence is not yet qualified for the RAM-only loader. */
+static void ldr_screen_init(void) {}
+static void ldr_screen_status(uint32_t state, int32_t code) { (void)state; (void)code; }
+static void ldr_screen_progress(uint32_t done, uint32_t total) { (void)done; (void)total; }
+#else
 #include "ldr_screen.c"
+#endif
 
 /* ---- ota.c hooks (the SysEx frame hooks are in usb.c) ---- */
 static uint32_t ota_now_ms(void) { return ldr_ms(); }
@@ -62,8 +79,10 @@ static void ldr_progress(uint32_t done, uint32_t total) { ldr_screen_progress(do
 static void ldr_status(uint32_t state, int32_t code) { ldr_screen_status(state, code); }
 #include "ldr_core.c"
 #include "ldr_install.c"
+#if !BOARD_SMK37
 _Static_assert(LDR_AUTO_LO == FL_AUTO_LO && LDR_AUTO_HI == FL_VBANK_HI && FL_AUTO_HI == FL_VBANK_LO,
                "the loader's protected window is the autosave pair plus the voice bank");
+#endif
 
 extern uint32_t _bss_start[], _bss_end[];
 

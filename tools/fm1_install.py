@@ -61,10 +61,11 @@ OTA_MAX, OTA_LOAD = 0x4E00, 0x01C0A800    # loader body: OTA_AREA_LEN - 0x200; i
 # every byte of a package is something the device may read: flash.bin is at most the 1 MiB part, so twice
 # that is room for any other files (V15: 684 KiB) and still refuses a wrong file before it is read whole
 MAX_PKG = 0x200000
-PRODUCT_RE = re.compile(r"FM-1_[A-Z0-9._-]{1,15}")
+SMK_MODELS = ("SMK-37 Pro", "SMK-37 Elite", "MKE-P37")
+PRODUCT_RE = re.compile(r"(?:FM-1|SMK-37 Pro|SMK-37 Elite|MKE-P37)_[A-Z0-9._-]{1,15}")
 # the official loader is the same in V15 and V16; staged by Felucca it answers with the record name ota.c writes
 LOADER_FAMILIES = {"felucca-v1": "ota-FM-1_900", "stock": "ota-FM-1_015"}
-PORT_RE = re.compile(r"fm-?1|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
+PORT_RE = re.compile(r"fm-?1|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
 
 # seconds; the tests shorten them
 DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0, "retry": 1.0,
@@ -300,9 +301,12 @@ def package_family(image, product):
         raise InstallError("badpkg", f"{product} is m-bootloader's installer: it replaces the FM-1's bootloader, which "
                                      "Felucca's installers never write. Install m-bootloader with its own instructions "
                                      "if you want it (docs/usb-rescue.md#m-bootloader)")
-    if (not isinstance(product, str) or not PRODUCT_RE.fullmatch(product)
+    if (not isinstance(product, str) or not PRODUCT_RE.fullmatch(product) or len(product) > 20
             or any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product))):
         raise InstallError("badpkg", f"unsupported expected app identity {product!r}")
+    model = model_of(product)
+    if model in SMK_MODELS and re.fullmatch(r"0[0-9]{2}|8[0-9]{6}", product[len(model) + 1:]):
+        raise InstallError("badpkg", f"{product}: official SMK packages have not been reviewed and are not installed")
     if STOCK_RE.fullmatch(product):
         if hashlib.sha256(package_bytes(image, product)).hexdigest() == STOCK_SHA256.get(product):
             return "stock"
@@ -315,13 +319,14 @@ def package_family(image, product):
     for i in range(u16(jl_dec(image[:UFW_HDR]), 8)):
         e = jl_dec(image[UFW_HDR + i * UFW_ENT:UFW_HDR + (i + 1) * UFW_ENT])
         files[u16(e, 0)] = (u32(e, 8), u32(e, 12))
-    if files[0][1] != FL_MIN:
-        raise InstallError("badpkg", f"unsupported flash.bin layout: expected exactly {FL_MIN:#x} bytes")
+    flash_size = 0x9D000 if model in SMK_MODELS else FL_MIN
+    if files[0][1] != flash_size:
+        raise InstallError("badpkg", f"unsupported flash.bin layout: expected exactly {flash_size:#x} bytes")
     off, size = files[100]
     loader = image[off:off + size]
     # Match ota_stage: only the first LZ4 literal window of the actual type-100 loader.
     if LOADER_MARK in loader[0x48:0x48 + 64] and u32(loader, 0x24) <= 0x14000:
-        return "felucca-v1"
+        return "felucca-v1" if model == "FM-1" else "felucca-v1:" + model
     return None
 
 
@@ -337,6 +342,8 @@ def refuse_open(dev):
 
 def require_loader(ota, family):
     expected = LOADER_FAMILIES.get(family)
+    if isinstance(family, str) and family.startswith("felucca-v1:") and family[11:] in SMK_MODELS:
+        expected = "ota-" + family[11:] + "_900"
     if expected is None or ota.id.text != expected:
         ota.link.close()
         raise InstallError("model", f"incompatible update loader {ota.id.text}: "

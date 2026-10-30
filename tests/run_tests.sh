@@ -334,6 +334,7 @@ u_portable() {
     run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py
     run "generated sample inputs: stale/extra WAVs and header cache" python3 tests/gen_samples_test.py
     run "build --product: precedence, validation, no job on bad input (mocked)" python3 tests/build_product_test.py
+    run "SMK release assets: model identity, source reproduction, tampering and publication staging" python3 tests/smk_release_test.py
     run "JieLi 64-bit arithmetic compile/link smoke (explicit skip without toolchain)" python3 tests/build_guard_target_test.py
     run "selective minsize: ISR symbol graph and annotation fixtures" python3 tests/size_fns_test.py
     run "selective minsize: real JieLi LLVM IR smoke (explicit skip without toolchain)" python3 tests/size_fns_target_test.py
@@ -458,6 +459,52 @@ u_lcd_power() {
     run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
 }
 unit lcd_power "" u_lcd_power
+
+u_smk_platform() {
+    $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_input_test" tests/smk_input_test.c
+    run "SMK input: production velocity, pad/key ownership, outer keys and encoders" "$OUT/smk_input_test"
+    $CC -std=gnu11 -O2 -o "$OUT/smk_lcd_test" tests/smk_lcd_test.c
+    run "SMK display: LCD DMA lifetime and RGB pad SPI sharing" "$OUT/smk_lcd_test"
+    $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/smk_storage_setup_test" tests/smk_storage_setup_test.c
+    run "SMK storage confirmation: physical release, fresh confirm, cancel and timeout" "$OUT/smk_storage_setup_test"
+    $CC -std=gnu11 -O2 -o "$OUT/smk_storage_test" tests/smk_storage_test.c
+    run "SMK storage: ownership, interrupted initialization and protected flash" "$OUT/smk_storage_test"
+    $CC -std=gnu11 -O2 -o "$OUT/smk_flash_guard_test" tests/smk_flash_guard_test.c
+    run "SMK flash: protected windows despite an incorrect caller allow-list" "$OUT/smk_flash_guard_test"
+    python3 tests/smk_fixtures.py "$OUT/smk-fixtures"
+    python3 tests/ota_stock_fixtures.py "$OUT/smk-fixtures/official-fm1"
+    for smk_model in pro elite mke; do
+        case "$smk_model" in
+            pro) smk_identity='SMK-37 Pro' ;;
+            elite) smk_identity='SMK-37 Elite' ;;
+            mke) smk_identity='MKE-P37' ;;
+        esac
+        $CC -std=gnu11 -O2 -DBOARD_SMK37=1 -DOWN_PKG=1 "-DSMK_MODEL=\"$smk_identity\"" \
+            -o "$OUT/smk_ota_$smk_model" tests/ota_test.c
+        run "SMK $smk_model: production OTA handshake, staging and board bounds" \
+            "$OUT/smk_ota_$smk_model" "$OUT/smk-fixtures/$smk_model.fwsc"
+        $CC -std=gnu11 -O2 -DBOARD_SMK37=1 "-DSMK_MODEL=\"$smk_identity\"" \
+            -o "$OUT/smk_rescue_$smk_model" tests/rescue_test.c
+        run "SMK $smk_model: early recovery, physical OCT keys and alternate JEDEC" \
+            "$OUT/smk_rescue_$smk_model" "$OUT/smk-fixtures/$smk_model.fwsc"
+        $CC -std=gnu11 -O2 -DBOARD_SMK37=1 -DOWN_PKG=1 "-DSMK_MODEL=\"$smk_identity\"" \
+            -o "$OUT/smk_loader_$smk_model" tests/smk_loader_test.c
+        for smk_stock in v15 v16; do
+            run "SMK $smk_model: loader retry, data preservation and FM-1 $smk_stock refusal" \
+                "$OUT/smk_loader_$smk_model" "$OUT/smk-fixtures/$smk_model.fwsc" \
+                "$OUT/smk-fixtures/official-fm1/$smk_stock.fwsc"
+        done
+    done
+}
+unit smk_platform "" u_smk_platform
+
+UNIT_NEEDS=assets
+u_smk_editor() {
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_editor_test" tests/smk_editor_test.c -lm
+    run "SMK editor: ownership, unavailable slots, backup reads and marker-before-write" "$OUT/smk_editor_test"
+}
+unit smk_editor "" u_smk_editor
+UNIT_NEEDS=
 
 u_screen_capture() {
     $CC -std=c11 -Wall -Wextra -Werror -Wno-unused-function -o "$OUT/screen_capture_test" tests/screen_capture_test.c

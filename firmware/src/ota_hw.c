@@ -64,7 +64,11 @@ static int ota_fread(uint32_t off, void *p, uint32_t n)
         rescue_poll();
         return rc;
     }
+#if BOARD_SMK37
+    return st_raw_read(off, p, n);              /* updater remains available while the store is locked */
+#else
     return st_read(off, p, n);
+#endif
 }
 static void ota_show(uint32_t step, int32_t code)
 {
