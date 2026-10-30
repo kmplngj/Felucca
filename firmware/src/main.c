@@ -183,6 +183,19 @@ static const char *c1_held_msg(uint32_t reason)
 }
 #endif
 
+#if FELUCCA_LCD_INFLIGHT
+static void lp_reset_if_requested(void)
+{
+    if (!lp.active || !lp.reset) return;
+    lp_record(LP_RESET, lp.phase, 0);
+    fm1_audio_stop();
+    usb_detach();
+    fm1_delay_ms(30u);
+    boot_policy_intentional(&bootguard);
+    fm1_reboot(); /* P33 full-chip reboot: no forced LCD completion or ROM request */
+}
+#endif
+
 static void fm1_main(void)
 {
     uint32_t splash_start, master_ms;
@@ -288,6 +301,10 @@ static void fm1_main(void)
         }
 #endif
         music_frame_sense();                            /* battery, MASTER (before the platform services, as ever) */
+#if FELUCCA_LCD_INFLIGHT
+        if (lp.active) { usb.ota_req = usb.uboot_req = 0; }
+        if (!lp.active)
+#endif
         {   /* OCT- + OCT+ held 5 s: enter UBOOT with RAM intact (debug / update); a countdown
              * shows from 2 s over the whole screen (the menu and the dialogs too: ui_draw), letting
              * go cancels it */
@@ -320,6 +337,9 @@ static void fm1_main(void)
 #if FELUCCA_OTA
         if (ed_service())                               /* OTA only for a held non-editor frame */
             ota_service();                              /* M-UPGRADE handshake */
+#if FELUCCA_LCD_INFLIGHT
+        if (!lp.active)
+#endif
         if (usb.ota_req) {                              /* M-UPGRADE upgrade command */
             usb.ota_req = 0;
             panic_req = (1u << NTRK) - 1u;               /* every track (bit per track) */
@@ -329,6 +349,9 @@ static void fm1_main(void)
             lcd_fill(0, 0, 240, 240, T_BG);
             ui.force = 1;
         }
+#endif
+#if FELUCCA_LCD_INFLIGHT
+        if (!lp.active)
 #endif
         if (usb.uboot_req) {                            /* SysEx F0 22 24 35 7D F7 from the host */
             fm1_audio_stop();
@@ -343,6 +366,10 @@ static void fm1_main(void)
         }
 #if FELUCCA_CDC
         cdc_task();
+#endif
+#if FELUCCA_LCD_INFLIGHT
+        lp_step();
+        lp_reset_if_requested();
 #endif
         music_frame_run();                              /* input, settings, autosave, LEDs, screen */
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */

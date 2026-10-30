@@ -33,7 +33,13 @@ static void lcd_sync(void)          /* finish the running transfer (before touch
         return;
     if (lcd_fault)
         return;
+#if FELUCCA_LCD_INFLIGHT
+    { uint32_t completed = (uint32_t)fm1_lcd_wait();
+      lp_wait_result(completed);
+      if (!completed) {
+#else
     if (!fm1_lcd_wait()) {
+#endif
         lcd_fault = 1;
         lcd_retry_armed = 0;
         lcd_faults++;
@@ -41,6 +47,9 @@ static void lcd_sync(void)          /* finish the running transfer (before touch
     }
     fm1_lcd_deselect();
     lcd_busy = 0;
+#if FELUCCA_LCD_INFLIGHT
+    }
+#endif
 }
 
 /* Normal main-loop frames only. A timeout is not an abort: observe once per
@@ -49,6 +58,9 @@ static void lcd_sync(void)          /* finish the running transfer (before touch
  * is not a normal frame that a full redraw could repair. */
 static int lcd_service(uint32_t now)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (lp.active && lp.hold) return 0; /* observation hold cannot silently recover/repaint */
+#endif
     if (!lcd_fault)
         return 0;
     if (!lcd_retry_armed) {

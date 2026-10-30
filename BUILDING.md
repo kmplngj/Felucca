@@ -1328,3 +1328,21 @@ It needs the configured target tools and SDK but does not compile firmware. Sour
 artifact hashes bind actual working bytes; a recorded dirty checkout is not identified
 by its commit alone. Releases and CI artifacts include both JSON sidecars; local release
 `SHA256SUMS` covers them. These reports do not measure live stack use or FM-1 deadlines.
+
+## LCD in-flight diagnostic (`FELUCCA_LCD_INFLIGHT=1`)
+
+Development-only, default `0`, standard profile only, never a release. The normal
+release resolver refuses this flag; its exact `DIAG_FLAGS` test includes it.
+The diagnostic requires FLASH, OTA and CDC, and runs only after an explicit
+volatile console arm. It never autoruns or retains an arm across reboot.
+
+This #600 preparation uses the existing 59,520-byte aligned canvas and normal
+SPI1 divider/count. A one-shot 16-poll software wait can observe a genuinely
+pending transfer. It never masks completion, changes clocks, overflows DMA, or
+performs an in-place peripheral abort/reset. Only the bounded control mode may
+execute the actual canvas packing copy after the real failed-wait condition.
+
+Target/native integration, resource and disassembly review, optical controls,
+backup/restoration prerequisites and deliberate normal reset cleanup are required
+before a device run. A passing host oracle is not permission to install or a
+physical acceptance result. See `docs/diagnostics.md` for the experiment contract.

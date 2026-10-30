@@ -66,6 +66,17 @@ FM1_INLINE void fm1_lcd_baud(uint32_t b) { FM1_LCD_SPI_BAUD = b; }
 
 /* Read-only completion: send_cmd/send_data clear pending before submission.
  * A false result never releases a borrowed DMA source. */
+#if FELUCCA_LCD_INFLIGHT
+/* Non-acknowledging diagnostic snapshot. CNT is raw, never assumed progress. */
+FM1_INLINE void fm1_lcd_snapshot(uint32_t out[4])
+{
+    out[0] = FM1_LCD_SPI_CON;
+    out[1] = FM1_LCD_SPI_ADR;
+    out[2] = FM1_LCD_SPI_CNT;
+    out[3] = FM1_LCD_SPI_BAUD;
+}
+#endif
+
 FM1_INLINE uint32_t fm1_lcd_done(void) { return (FM1_LCD_SPI_CON & 0x8000u) != 0; }
 
 FM1_INLINE int fm1_lcd_complete(void)
@@ -79,7 +90,12 @@ FM1_INLINE int fm1_lcd_complete(void)
 static int fm1_lcd_wait(void)
 {
     uint32_t n;
-    for (n = 0; n < 4000000u; n++)
+#if FELUCCA_LCD_INFLIGHT
+    uint32_t limit = lp_wait_budget();
+#else
+    const uint32_t limit = 4000000u;
+#endif
+    for (n = 0; n < limit; n++)
         if (fm1_lcd_complete())
             return 1;
     fm1_lcd_timeouts++;
@@ -90,6 +106,9 @@ FM1_INLINE void fm1_lcd_deselect(void) { FM1_LCD_PC_OUT |= FM1_LCD_CS; }
 
 FM1_INLINE void fm1_lcd_send_cmd(uint8_t c)
 {
+#if FELUCCA_LCD_INFLIGHT
+    lp_submit(c, 0, 1u);
+#endif
     FM1_LCD_PC_OUT &= ~FM1_LCD_DC;
     FM1_LCD_PC_OUT &= ~FM1_LCD_CS;
     FM1_LCD_SPI_CON |= 0x4000u;
@@ -98,6 +117,9 @@ FM1_INLINE void fm1_lcd_send_cmd(uint8_t c)
 
 FM1_INLINE void fm1_lcd_send_data(const void *p, uint32_t n)
 {
+#if FELUCCA_LCD_INFLIGHT
+    lp_submit(0, p, n);
+#endif
     FM1_LCD_PC_OUT |= FM1_LCD_DC;
     FM1_LCD_PC_OUT &= ~FM1_LCD_CS;
     FM1_LCD_SPI_CON |= 0x4000u;

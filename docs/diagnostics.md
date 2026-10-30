@@ -426,3 +426,79 @@ panel responsiveness. Compare the same workload with/without polling to quantify
 overhead, including lateness, shedding, stream errors and scan timing; record both runs'
 provenance, duration and configuration. No hardware session is implied by simulated logs.
 This host-only client changes no firmware source, build flags, target code or RAM.
+
+## LCD in-flight causal diagnostic (`FELUCCA_LCD_INFLIGHT`)
+
+Off by default and refused by `--release`. This is a standard-profile maintainer
+experiment for #600, not a production fault-injection mode. Console commands are
+`lcdprobe arm MODE RUN backup-restore-ok` (MODE 0 A-only, 1 candidate, 2 control;
+nonzero 32-bit RUN), `lcdprobe go`, `lcdprobe`, `lcdprobe trace INDEX`,
+`lcdprobe finish` and `lcdprobe abort`. No command proves that a backup exists:
+the maintainer must first retain and compare all15/MENU/live state and establish the
+persisted-state check or reviewed restoration route, including any unsaved live music state. The saved-autosave baseline is separate: read-only STORE_LIST82
+and STORE_GET83 export raw stored objects including STORE type9 (autosave).
+BACKUP object9 is UPF6, not saved autosave; all15/MENU cannot establish raw STORE9
+preservation. Capture raw metadata/payload hashes before arm, after intentional
+reboot and after restoring the pinned known-good normal package; active editor frames are discarded, so
+readbacks cannot be performed during hold. Arming requires quiet transport/voices/keys, an awake healthy
+display, no pending settings/SLICE save and unchanged settings. No silent save
+is performed to satisfy a prerequisite. Sole device/installer/console ownership
+is mandatory. Every run remains pending physical qualification.
+
+Arming blocks write producers and save gestures until ordinary full-chip reboot,
+including after `finish`. Scan/audio interrupts, USB polling, watchdog feeding and
+read-only console status/dbg/inp/crash continue. Editor/native command frames are
+discarded without dispatch; storage, raw flash wrapper and OTA write backstops
+refuse before flash or IRQ-off entry. An experiment is not a normal MIDI/editor
+compatibility or loaded-deadline result.
+
+The label is outside the rectangle (0,58)..(239,181). First retain completed dark
+grey C and its label. `go` prepares identical A in the existing canvas: upper
+62 rows red/white coded cells, lower62 blue/yellow cells. The selected transfer
+is exactly 59,520 bytes. Candidate calls the actual guarded packing writer and
+is denied. Control alone can copy bytes[29760,59520) to[0,29760), using the real
+packing loop and never its trailing LCD submit. A timeout miss or completion
+racing the COPY_BEGIN snapshot performs no packing; it is inconclusive.
+
+All HAL command/data submissions from selected window setup through optical hold
+are observed; there must be exactly the normal six setup/data submissions, only
+one selected pixel DMA, and no later submit before hold release. C rendering and
+post-hold recovery traffic are outside that bounded count. SUBMIT raw registers
+are pre-submit snapshots; SELECTED binds the actual source argument and programmed
+byte count after submission. CON PND bit15 is a real completion predicate;
+`lcd_busy` records software ownership. Raw CNT is not a remaining-byte counter.
+
+Trace words are event, raw TIMER4 ticks, raw CON, busy|fault<<8|initialized<<16,
+event argument a, event argument b, raw ADR, raw CNT. Events1..13 are ARM, SUBMIT,
+SHORT_WAIT, WAIT_RESULT, PACK_ATTEMPT, DENIED, COPY_BEGIN, COPY_END, COMPLETE,
+RELEASE, HOLD_END, RESET, SELECTED. For a non-missed candidate/control require
+WAIT_RESULT=0; PACK_ATTEMPT after real failed wait with busy/fault/initialized;
+COPY_BEGIN only in control with its own snapshot PND=0; COPY_END writes14,880
+pixels; candidate DENIED and zero stores. COMPLETE must observe PND=1 before
+acknowledgment/deselect/RELEASE. Overflow, reset, unexplained submit, missing
+record or changed source/count invalidates qualification. No formatted output or
+buffer hash runs inside the wait/copy critical interval.
+
+The common hold prevents service/repaint and remains after genuine completion
+through settled optical inspection. A-only establishes orientation and exact A
+appearance. A valid positive control needs stable blue/yellow coded geometry at
+upper-half positions where neither C nor unchanged/partial A can supply it, in
+the same sole transfer. Retain labeled video or repeated settled observations;
+predeclare a threshold of at least two separate complete2x2 coded-cell blocks
+(16x8 pixels per cell), both blue and yellow in their predicted geometry. No B or
+ambiguous B is inconclusive, never safe-release proof. The model images show one
+possible partial-transfer result, not predicted physical DMA progress.
+
+After optical retention, `finish` releases the hold for the normal service/wake/
+full latest repaint path while all write exclusions remain. The original 250ms
+backoff and wake waits are assessed separately; this diagnostic hold changes
+timing. `abort`, failure to complete within1000ms of `go`, trace overflow, or
+30000ms since arm requests an intentional ordinary full-chip reboot at the next
+main pass. It never clears PND, deselects, or releases a pending source to imitate
+recovery. Firmware keeps serving main/IRQ work until that bounded cleanup.
+After reboot the volatile arm is gone; do not rearm automatically. Restore the
+pinned known-good normal package through the reviewed installer under maintainer control,
+then verify ordinary identity, all15/MENU/live state, panel/audio and coldboot.
+The diagnostic proves neither a permanent-stuck hardware fault nor the production
+four-million-poll deadline, SPI timing, cache transactions, or real pixel behavior
+before the actual maintainer-run optical test.

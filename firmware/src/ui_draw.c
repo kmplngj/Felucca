@@ -1510,6 +1510,9 @@ static void ui_display_failed(void)
 }
 static void ui_draw(void)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (lp.active && lp.hold) { lp_step(); return; }
+#endif
     static uint8_t counting;
     if (LCD_SERVICE(fm1_ms)) {
         /* A failed SLPIN could have completed late. Wait from confirmed release,

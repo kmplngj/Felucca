@@ -584,9 +584,68 @@ static void con_screen(const char *p)
 #endif
 }
 
+#if FELUCCA_LCD_INFLIGHT
+static void lp_label(uint32_t mode, uint32_t run)
+{
+    char label[] = "LCD600 CANDIDATE 00000000";
+    const char *name = mode == LP_CONTROL ? "CONTROL  " : mode == LP_A_ONLY ? "A ONLY   " : "CANDIDATE";
+    uint32_t i;
+    for (i = 0; i < 9u; i++) label[7u + i] = name[i];
+    for (i = 0; i < 8u; i++) label[17u + i] = "0123456789ABCDEF"[(run >> (28u - 4u*i)) & 15u];
+    draw_text_line(0, 4, 240, &AF_S, label, 0xFFFFu, 0u, 1);
+}
+static void con_lcd_probe(const char *p)
+{
+    int ok, run_ok;
+    if (con_word(&p, "arm")) {
+        uint32_t mode = con_num(&p, &ok), run = con_num(&p, &run_ok);
+        uint32_t backup = con_word(&p, "backup-restore-ok") && !*p;
+        con_kv("lcdprobe_arm", ok && run_ok && lp_arm(mode, run, backup));
+    } else if (con_word(&p, "go")) con_kv("lcdprobe_go", !*p && lp_go());
+    else if (con_word(&p, "finish")) con_kv("lcdprobe_finish", !*p && lp_finish());
+    else if (con_word(&p, "abort")) {
+        if (lp.active && !*p) lp.reset = 1;
+        con_kv("lcdprobe_reset_requested", lp.reset);
+    } else if (con_word(&p, "trace")) {
+        uint32_t i = con_num(&p, &ok), word;
+        if (!ok || *p || i >= lp.count || (lp.selected && !lp.released && !lp.reset)) {
+            con_puts("lcdprobe_trace unavailable\r\n"); return;
+        }
+        con_puts("lcdprobe_trace "); con_dec((int32_t)i);
+        for (word = 0; word < 8u; word++) { con_putc(' '); con_hex(lp.trace[i][word], 8u); }
+        con_puts("\r\n");
+    } else {
+        con_kv("lcdprobe_active", lp.active); con_kv("lcdprobe_hold", lp.hold);
+        con_kv("lcdprobe_phase", lp.phase); con_kv("lcdprobe_mode", lp.mode);
+        con_kx("lcdprobe_run", lp.run); con_kv("lcdprobe_records", lp.count);
+        con_kv("lcdprobe_overflow", lp.overflow); con_kv("lcdprobe_selected", lp.selected_submits);
+        con_kv("lcdprobe_setup_and_hold_submits", lp.submits);
+        con_kv("lcdprobe_stores_pixels", lp.stores); con_kv("lcdprobe_denied", lp.denied);
+        con_kv("lcdprobe_wait_result", lp.wait_result);
+        con_kv("lcdprobe_pending_before_copy", lp.pending_before_copy);
+        con_kv("lcdprobe_released", lp.released); con_kv("lcdprobe_reset_requested", lp.reset);
+        con_kx("lcdprobe_source", (uint32_t)lp.source); con_kv("lcdprobe_programmed_bytes", LP_BYTES);
+        con_kx("lcdprobe_C_hash", lp.c_hash); con_kx("lcdprobe_A_hash", lp.a_hash);
+        con_kx("lcdprobe_after_hash", lp.after_hash);
+        con_puts("lcdprobe_optical_result UNQUALIFIED_REQUIRES_OWNER_OBSERVATION\r\n");
+    }
+}
+#endif
+
 static void con_exec(const char *p)
 {
     FM1_ASSERT_THREAD();                                /* formatted replies: main loop only (#428) */
+#if FELUCCA_LCD_INFLIGHT
+    if (con_word(&p, "lcdprobe")) { con_lcd_probe(p); return; }
+    if (lp.active) {
+        if (con_word(&p, "status")) con_status();
+        else if (con_word(&p, "dbg")) con_dbg();
+        else if (con_word(&p, "inp")) con_inp();
+        else if (con_word(&p, "crash")) con_crash();
+        else con_puts("lcdprobe active: read-only diagnostics or lcdprobe abort\r\n");
+        return; /* no screen capture, UBOOT, memory command or hidden writer */
+    }
+#endif
     if (con_word(&p, "help") || con_word(&p, "?"))
         con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "screen"))
