@@ -5110,6 +5110,9 @@ static int test_fm4_retired(void)
 }
 #endif
 
+/* #147: past the keys' short hold of a note-on (NOTE_HOLD_MS): the events of the notes before have ended */
+static void hold_over(void) { fm1_ms += NOTE_HOLD_MS + NOTE_HIT_EARLY; }
+
 /* #38: the keys of the notes the selected track's sequencer and ARP sound light while it plays */
 static int test_play_leds(void)
 {
@@ -5275,6 +5278,8 @@ static int test_midi_leds(void)
     trs_note(0x90, 64, 90);                           /* TRS: E4 on channel 1 */
     ok = key_leds(0) == 1u << 11;
     trs_note(0x80, 64, 0);
+    ok &= key_leds(0) == 1u << 11;                      /* (#147: the short hold, then dark) */
+    hold_over();
     bad += check("  TRS MIDI IN: E4 lights key 12 while held", ok && key_leds(0) == 0u);
     song.g[G_ROUTE] = 1;                               /* ROUT SEL: every channel to the selected track */
     song.sel = 2;
@@ -5283,6 +5288,7 @@ static int test_midi_leds(void)
     usb_note(9, 62, 0);
     song.g[G_ROUTE] = 0;
     song.sel = 0;
+    hold_over();
     bad += check("  ROUT SEL: channel 10 into the selected track lights its key", ok && key_leds(0) == 0u);
     usb_note(0, 60, 100);
     song.octave = -1;
@@ -5291,11 +5297,13 @@ static int test_midi_leds(void)
     ok &= key_leds(0) == 0u;                            /* (C4 below the keys an octave up) */
     song.octave = 0;
     usb_note(0, 60, 0);
+    hold_over();
     usb_note(0, 100, 100);                             /* G#7: above the keyboard */
     usb_note(0, 40, 100);                              /* E2: below it */
     ok &= key_leds(0) == 0u && midi_owners[0] == 2u;
     usb_note(0, 100, 0);
     usb_note(0, 40, 0);
+    hold_over();
     bad += check("  the keys follow the octave; notes off the keyboard are not shown", ok);
     trk[0].p[P_QUANT] = 1;                             /* SNAP in C major: C#4 rounds down to C4 too */
     trk[0].p[P_SCALE] = 1;
@@ -5303,12 +5311,15 @@ static int test_midi_leds(void)
     usb_note(0, 60, 100);
     ok = kb_map(&trk[0], 8) == 60u && key_leds(0) == 1u << 7;
     usb_note(0, 60, 0);
+    hold_over();
     trk[0].p[P_QUANT] = trk[0].p[P_SCALE] = 0;
     bad += check("  QNT SNAP: only the lowest key giving the note lights", ok && key_leds(0) == 0u);
     midi_event(0xB0, 0, 64, 127);                      /* the pedal down: a released note still sounds */
     usb_note(0, 65, 100);
     usb_note(0, 65, 0);
     ok = key_leds(0) == 1u << 12;
+    hold_over();
+    ok &= key_leds(0) == 1u << 12;                      /* (the pedal holds it past the short hold) */
     midi_event(0xB0, 0, 64, 0);
     bad += check("  a note the pedal holds stays lit until the pedal is up", ok && key_leds(0) == 0u);
     fm1_in.notes = 1u << 0;                            /* with a key held and the sequencer */
@@ -5319,6 +5330,8 @@ static int test_midi_leds(void)
     trk[0].seq_active = 1;
     seq_start();
     events_block(CTL);
+    ok &= key_leds(0) == (1u << 0 | 1u << 7 | 1u << 11);   /* (the key just let go: its note-on's short hold) */
+    hold_over();
     ok &= key_leds(0) == (1u << 7 | 1u << 11);
     bad += check("  with a key held and the sequencer's notes: all of them lit", ok);
     ui.layer = LAYER_SCL;
@@ -5338,6 +5351,169 @@ static int test_midi_leds(void)
     transport_req = 2;
     events_block(CTL);
     usb_note(0, 60, 0);
+    return bad;
+}
+
+/* #147: a note-on stays lit on its key NOTE_HOLD_MS after it starts, whether or not it still sounds and however late
+ * the LED frame: the events are the audio side's (voice.c note_hit), read here without consuming them, in elapsed ms */
+static int hit_slots(int part)                         /* the valid events of a part's ring */
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < NOTE_HIT_SLOTS; i++)
+        n += (note_hit[part][i] & NOTE_HIT_VALID) != 0u;
+    return (int)n;
+}
+static int test_note_hit_leds(void)
+{
+    int bad = 0, ok;
+    uint32_t i, k, t0, n[NPART], m[NPART];
+    track_t *t = &trk[0];
+    ui_power_on();
+    memset(&um, 0, sizeof um);
+    song.sel = 0;
+    fm1_ms = 5000u;
+    scrn.idle = fm1_ms;
+    (void)key_leds(0);                                  /* (the selected part seen: its events stay from now on) */
+    t0 = fm1_ms;
+    usb_note(0, 60, 100);
+    usb_note(0, 60, 0);                                 /* on and off with no LED frame between */
+    ok = !midi_owners[0] && !midi_note_held(t, 60);
+    for (i = 0; i < NVOICE; i++)
+        ok &= !t->v[i].gate;
+    ok &= key_leds(0) == 1u << 7 && key_leds(0) == 1u << 7 && hit_leds(t) == 1u << 7;   /* (read twice: nothing is consumed) */
+    bad += check("#147 a note-on and off between two LED frames: its key (C4) is lit; the note is over, nothing held", ok);
+    fm1_ms = t0 + 99u;
+    ok = key_leds(0) == 1u << 7;
+    fm1_ms = t0 + NOTE_HOLD_MS;
+    ok &= key_leds(0) == 0u;
+    bad += check("#147 the hold is elapsed ms: lit at 99 ms, dark at 100 ms, whatever frames ran in between", ok);
+
+    fm1_ms = t0 = 20000u;                               /* a repeat of the note: one event, the hold from the later */
+    usb_note(0, 60, 100);
+    usb_note(0, 60, 0);
+    fm1_ms = t0 + 60u;
+    usb_note(0, 60, 100);
+    usb_note(0, 60, 0);
+    ok = hit_slots(0) == 1;
+    fm1_ms = t0 + 150u;
+    ok &= key_leds(0) == 1u << 7;
+    fm1_ms = t0 + 160u;
+    ok &= key_leds(0) == 0u;
+    bad += check("#147 the same note again: one event, held from its latest note-on", ok);
+
+    fm1_ms = t0 = 30000u;                               /* more distinct notes than slots: the oldest is lost */
+    for (i = 0; i < NOTE_HIT_SLOTS + 1u; i++)
+        trk_note_on(t, 60u + i, 100);
+    trk_all_off(t);
+    ok = hit_slots(0) == (int)NOTE_HIT_SLOTS && key_leds(0) == 0xFF00u;   /* 61..68 on keys 9..16, not C4 */
+    bad += check("#147 more notes than slots within the hold: the newest NOTE_HIT_SLOTS show, the oldest goes first", ok);
+
+    memset((void *)note_hit, 0, sizeof note_hit);
+    for (i = 0; i < NPART; i++) {                       /* all four parts: each part's own key, its own ring */
+        song.sel = (uint8_t)i;
+        (void)key_leds(0);
+    }
+    fm1_ms = t0 = 50000u;
+    for (i = 0; i < NPART; i++) {
+        n[i] = kb_map(&trk[i], 3u + i);                 /* (a note key 3 + i of this part plays) */
+        trk_note_on(&trk[i], n[i], 100);
+        trk_all_off(&trk[i]);
+    }
+    ok = 1;
+    for (i = 0; i < NPART; i++) {
+        for (k = 0; k < 27u && kb_map(&trk[i], k) != n[i]; k++)
+            ;
+        m[i] = 1u << k;
+        ok &= hit_slots((int)i) == 1 && hit_leds(&trk[i]) == m[i];
+    }
+    bad += check("#147 four parts: each note lights its part's own key (the DRUM part by its GM map), one event each", ok);
+
+    fm1_ms = t0 = 60000u;                               /* a new selected part starts without events of its own */
+    song.sel = 0;
+    (void)key_leds(0);
+    usb_note(0, 60, 100);
+    usb_note(0, 60, 0);
+    ok = key_leds(0) == 1u << 7;
+    song.sel = 1;
+    ok &= key_leds(0) == 0u;
+    song.sel = 0;
+    ok &= key_leds(0) == 0u && !hit_slots(0);
+    bad += check("#147 a part newly selected is read from the selection on: its earlier events are cleared", ok);
+
+    fm1_ms = t0 = 70000u;                               /* the sequencer's short note: over, its key still lit */
+    song.sel = 0;
+    (void)key_leds(0);
+    t->step[0] = (step_t){.note = {60}, .n = 1, .time = ST_NOTE};
+    t->step[1] = (step_t){.note = {64}, .n = 1, .time = ST_NOTE};
+    t->seq_active = 1;
+    seq_start();
+    events_block(CTL);
+    events_block(div_samples((uint32_t)t->p[P_SDIV]) + CTL);
+    ok = t->seq_n == 1u && t->seq_notes[0] == 64u && key_leds(0) == (1u << 7 | 1u << 11);
+    for (i = 0, k = 0; i < NVOICE; i++)
+        k += t->v[i].gate && t->v[i].note == 60u;
+    ok &= k == 0u;                                      /* (C4 is released: the hold is the lamp's only) */
+    fm1_ms = t0 + NOTE_HOLD_MS;
+    ok &= key_leds(0) == 1u << 11;
+    bad += check("#147 sequencer: the step that ended keeps its key for the hold, the sounding step its key throughout", ok);
+    transport_req = 2;
+    events_block(CTL);
+    bad += check("#147 stop: the events end with the transport", !song.playing && key_leds(0) == 0u && !hit_slots(0));
+
+    fm1_ms = t0 = 80000u;                               /* an engine change resets its part's events */
+    usb_note(0, 60, 100);
+    usb_note(0, 60, 0);
+    ok = hit_slots(0) == 1;
+    set_engine_of(t, t->eng_req == ENGI_FM6 ? 0u : ENGI_FM6);
+    ok &= hit_slots(0) == 0 && key_leds(0) == 0u;
+    set_engine_of(t, 0);
+    bad += check("#147 an engine change clears the part's events (sound_install)", ok);
+
+    ok = 1;                                             /* 24-bit and 32-bit time wrap */
+    for (i = 0; i < 2u; i++) {
+        fm1_ms = t0 = i ? 0xFFFFFFFFu - 20u : 0x00FFFFFFu - 20u;
+        (void)key_leds(0);
+        usb_note(0, 60, 100);
+        usb_note(0, 60, 0);
+        fm1_ms = t0 + 60u;
+        ok &= key_leds(0) == 1u << 7;
+        fm1_ms = t0 + 130u;
+        ok &= key_leds(0) == 0u;
+    }
+    bad += check("#147 the hold crosses the 24-bit event time's and the 32-bit clock's wrap", ok);
+
+    fm1_ms = t0 = 90000u;                               /* an event stamped just after the reader's clock read */
+    note_hit[0][3] = NOTE_HIT_VALID | ((t0 + 5u) & NOTE_HIT_TMASK) << 7 | 62u;   /* (the ISR ran between) */
+    ok = key_leds(0) == 1u << 9;
+    memset((void *)note_hit, 0, sizeof note_hit);
+    bad += check("#147 a note-on stamped a few ms after the reader's clock still counts as new", ok);
+
+    fm1_ms = t0 = 100000u;                              /* the sweep: an old event never comes back at the 24-bit wrap */
+    (void)key_leds(0);
+    usb_note(0, 60, 100);
+    usb_note(0, 60, 0);
+    fm1_ms = t0 + 6000u;
+    (void)key_leds(0);
+    fm1_ms = t0 + 12000u;
+    ok = key_leds(0) == 0u && !hit_slots(0);            /* (swept: older than NOTE_HIT_STALE_MS) */
+    fm1_ms = t0 + 0x1000000u + 10u;                     /* .. where its 24 bits would read as 10 ms old */
+    ok &= key_leds(0) == 0u;
+    bad += check("#147 stale events are swept, so a part idle for 4.6 h shows no old note at the wrap", ok);
+
+    ui_power_on();                                      /* screen sleep: LEDs dark clears the events */
+    memset(&um, 0, sizeof um);
+    menu_put(MI_SCROFF, 5);
+    fm1_ms = scrn.idle + 300000u;
+    (void)key_leds(0);
+    usb_note(0, 60, 100);
+    usb_note(0, 60, 0);
+    ok = hit_slots(0) == 1;
+    scr_frame();
+    ui_leds();
+    ok &= scr_led_dark() && !hit_slots(0);
+    scr_touch();
+    ok &= key_leds(0) == 0u;
+    bad += check("#147 LEDs going dark (AUTO OFF) ends the events; waking shows no old note", ok);
     return bad;
 }
 
@@ -11390,6 +11566,7 @@ int main(int argc, char **argv)
     bad += test_play_leds();
     bad += test_cursor_step_leds();
     bad += test_midi_leds();
+    bad += test_note_hit_leds();
     bad += test_seq_quant();
     bad += test_idle_glow();
     bad += test_breath();
