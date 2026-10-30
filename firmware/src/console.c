@@ -588,7 +588,7 @@ static void con_screen(const char *p)
 static void lp_label(uint32_t mode, uint32_t run)
 {
     char label[] = "LCD600 CANDIDATE 00000000";
-    const char *name = mode == LP_CONTROL ? "CONTROL  " : mode == LP_A_ONLY ? "A ONLY   " : "CANDIDATE";
+    const char *name = mode == LP_CONTROL ? "CONTROL  " : mode == LP_A_ONLY ? "A ONLY   " : mode == LP_RECOVERY ? "RECOVERY " : "CANDIDATE";
     uint32_t i;
     for (i = 0; i < 9u; i++) label[7u + i] = name[i];
     for (i = 0; i < 8u; i++) label[17u + i] = "0123456789ABCDEF"[(run >> (28u - 4u*i)) & 15u];
@@ -673,6 +673,9 @@ static void con_lcd_probe(const char *p)
         con_kx("lcdprobe_source", (uint32_t)lp.source); con_kv("lcdprobe_programmed_bytes", lp.programmed_bytes);
         con_kx("lcdprobe_C_hash", lp.c_hash); con_kx("lcdprobe_A_hash", lp.a_hash);
         con_kx("lcdprobe_after_hash", lp.after_hash);
+        if (lp.mode == LP_RECOVERY) {
+            con_kv("lcdprobe_recovery_stage", lp.recovery_stage);
+        }
         if (lp.reset) con_lcd_probe_reset();
         con_puts("lcdprobe_optical_result UNQUALIFIED_REQUIRES_OWNER_OBSERVATION\r\n");
     }

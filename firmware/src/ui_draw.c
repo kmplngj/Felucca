@@ -1560,6 +1560,9 @@ static void ui_draw(void)
     if (scrn.recovering && scrn.st == SCR_SHOW) {
         lcd_fill(0, 0, 240, 240, T_BG);                 /* partial old frames/overlays cannot supply untouched gaps */
         lcd_sync();                                  /* cancel page computation if even the final clear row failed */
+#if FELUCCA_LCD_INFLIGHT
+        if (!LCD_FAILED()) lp_recovery_observe(LP_RECOVERY_CLEAR);
+#endif
         if (LCD_FAILED()) { ui_display_failed(); return; }
     }
     ui_draw_page(counting);
@@ -1576,6 +1579,10 @@ static void ui_draw(void)
 #endif
     scr_shown();
     if (LCD_FAILED()) { ui_display_failed(); return; }
+#if FELUCCA_LCD_INFLIGHT
+    if (scrn.st == SCR_ON && !scrn.recovering) lp_recovery_observe(LP_RECOVERY_SHOWN);
+    if (LCD_FAILED()) { ui_display_failed(); return; }
+#endif
 #if FELUCCA_SCREEN_CAPTURE
     /* The first captured band is a subsequent frame, after the full wake redraw
      * and DISPON. Never publish the transitional SCR_SHOW frame as READY. */

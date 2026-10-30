@@ -431,7 +431,7 @@ This host-only client changes no firmware source, build flags, target code or RA
 
 Off by default and refused by `--release`. This is a standard-profile maintainer
 experiment for #600, not a production fault-injection mode. Console commands are
-`lcdprobe arm MODE RUN backup-restore-ok` (MODE 0 A-only, 1 candidate, 2 control;
+`lcdprobe arm MODE RUN backup-restore-ok` (MODE 0 A-only, 1 candidate, 2 control, 3 recovery;
 nonzero 32-bit RUN), `lcdprobe go`, `lcdprobe`, `lcdprobe trace INDEX`,
 `lcdprobe finish`, `lcdprobe abort` and unarmed-only `lcdprobe snapshot`. No command proves that a backup exists:
 the maintainer must first retain and compare all15/MENU/live state and establish the
@@ -460,7 +460,7 @@ is denied. Control alone can copy bytes[29760,59520) to[0,29760), using the real
 packing loop and never its trailing LCD submit. A timeout miss or completion
 racing the COPY_BEGIN snapshot performs no packing; it is inconclusive.
 
-All HAL command/data submissions from selected window setup through optical hold
+For modes 0–2, all HAL command/data submissions from selected window setup through optical hold
 are observed; there must be exactly the normal six setup/data submissions, only
 one selected pixel DMA, and no later submit before hold release. C rendering and
 post-hold recovery traffic are outside that bounded count. SUBMIT raw registers
@@ -479,7 +479,7 @@ acknowledgment/deselect/RELEASE. Overflow, reset, unexplained submit, missing
 record or changed source/count invalidates qualification. No formatted output or
 buffer hash runs inside the wait/copy critical interval.
 
-The common hold prevents service/repaint and remains after genuine completion
+For modes 0–2, the common hold prevents service/repaint and remains after genuine completion
 through settled optical inspection. A-only establishes orientation and exact A
 appearance. A valid positive control needs stable blue/yellow coded geometry at
 upper-half positions where neither C nor unchanged/partial A can supply it, in
@@ -489,10 +489,10 @@ predeclare a threshold of at least two separate complete2x2 coded-cell blocks
 ambiguous B is inconclusive, never safe-release proof. The model images show one
 possible partial-transfer result, not predicted physical DMA progress.
 
-After optical retention, `finish` releases the hold for the normal service/wake/
+For modes 0–2, after optical retention, `finish` releases the hold for the normal service/wake/
 full latest repaint path while all write exclusions remain. The original 250ms
 backoff and wake waits are assessed separately; this diagnostic hold changes
-timing. `abort`, failure to complete within1000ms of `go`, trace overflow, or
+timing. `abort`, failure of modes 0–2 to complete within1000ms of `go`, trace overflow, or
 30000ms since arm requests an intentional ordinary full-chip reboot at the next
 main pass. It never clears PND, deselects, or releases a pending source to imitate
 recovery. Firmware keeps serving main/IRQ work until that bounded cleanup.
@@ -502,6 +502,36 @@ then verify ordinary identity, all15/MENU/live state, panel/audio and coldboot.
 The diagnostic proves neither a permanent-stuck hardware fault nor the production
 four-million-poll deadline, SPI timing, cache transactions, or real pixel behavior
 before the actual maintainer-run optical test.
+
+### Mode 3: ordinary recovery observation
+
+`lcdprobe arm 3 RUN backup-restore-ok` uses the same prerequisites and command
+route above, followed by `lcdprobe go` and read-only `lcdprobe` /
+`lcdprobe trace INDEX` observations. The existing V5 controller pins the earlier
+firmware and does not support mode 3; no mode-3 host controller is provided by
+this change. Review and qualify the host and package before any device run.
+
+GO issues the normal six-submission, 59,520-byte DMA transfer. One 16-poll
+software wait must fail with fault and ownership set and actual PND clear. A
+completion before that observation refuses the attempt and requests reset; it is
+not retried. The fixed recovery view changes RAM UI selection only. Ordinary
+`lcd_service` owns the 250ms retry, genuine PND check, acknowledgment and source
+release; the mode-3 probe step does not release it. The normal wake path then
+uses two 120ms waits, a full clear and latest RAM view before issuing DISPON.
+
+Only mode 3 adds `lcdprobe_recovery_stage`: 1 failed wait, 2 service released,
+3 full clear completed, 4 production SCR_ON/DISPON issued. Trace events 14–19
+are recovery fault, service arm, service poll, service release, recovery clear
+and recovery shown. Events 15–19 carry `fm1_ms` in b; event 14 carries zero.
+Stage 4 is not an LCD
+acknowledgment or optical pass: DISPON may still be asynchronous. Modes 0–2
+retain their existing status fields and optical/finish contract. Mode 3 enters
+REPAINT and `finish` refuses it. Before stage 4, a 5s recovery deadline from GO requests
+the normal first-cause reset route; the 30s arm lifetime and active write/input
+exclusions still apply, including after stage 4, until full-chip reset.
+Actual panel input during a fault, permanent hardware noncompletion and partial
+initialization faults remain unqualified; host models do not establish device
+behavior or loaded audio/USB/scan continuity.
 
 ### LCD probe protocol 2: readable state and issued writes
 
@@ -547,7 +577,7 @@ refused clock attempt (attempt_valid/attempt_baud) in ordinary BSS, independent 
 trace capacity. Later faults cannot overwrite that first observation. Cause codes:
 1 issued-config/epoch audit,2 trace full,3 unexpected submit,4 C/label setup,
 5 selected issue contract,6 arm lifetime,7 completion refusal,8 hardware wait
-deadline,9 abort,10 refused clock reprogramming. Code1 is not a BAUD readback fault.
+deadline,9 abort,10 refused clock reprogramming,11 recovery refusal/deadline. Code1 is not a BAUD readback fault.
 
 Reset-pending ARM returns `lcdprobe_arm 0` plus the14 `lcdprobe_reset_*` fields in
 one canonical echoed response before its prompt. Missing or partial framing is

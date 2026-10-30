@@ -1342,6 +1342,11 @@ pending transfer. It never masks completion, changes clocks, overflows DMA, or
 performs an in-place peripheral abort/reset. Only the bounded control mode may
 execute the actual canvas packing copy after the real failed-wait condition.
 
+Mode 3 additionally observes ordinary LCD recovery after one real failed 16-poll
+wait. It is development-only and needs its own reviewed host/controller and
+package: the existing V5 controller pins the earlier revision and does not accept
+mode 3. A stage-4 report records DISPON issued, not physical display acceptance.
+
 Target/native integration, resource and disassembly review, optical controls,
 backup/restoration prerequisites and deliberate normal reset cleanup are required
 before a device run. A passing host oracle is not permission to install or a

@@ -74,16 +74,27 @@ static int lcd_service(uint32_t now)
     if (!lcd_retry_armed) {
         lcd_retry_t = now;
         lcd_retry_armed = 1;
+#if FELUCCA_LCD_INFLIGHT
+        lp_recovery_observe(LP_SERVICE_ARM);
+#endif
         return 0;
     }
     if ((uint32_t)(now - lcd_retry_t) < LCD_RETRY_MS)
         return 0;
     lcd_retry_t = now;
     if (lcd_busy) {
+#if FELUCCA_LCD_INFLIGHT
+        lp_recovery_observe(LP_SERVICE_POLL);
+        if (LCD_PROBE_STOPPED()) return 0;
+#endif
         if (!fm1_lcd_complete())
             return 0;
         fm1_lcd_deselect();
         lcd_busy = 0;
+#if FELUCCA_LCD_INFLIGHT
+        lp_recovery_observe(LP_SERVICE_RELEASE);
+        if (LCD_PROBE_STOPPED()) return 0;
+#endif
     }
     if (!lcd_initialized)
         return 0;
