@@ -1062,6 +1062,8 @@ static int project_restore_runtime(const project_t *input)
     panic_req = (1u << NTRK) - 1u;
     fm1_irq_off();                                      /* the audio ISR must not see half a project */
     seq_stop();
+    /* External performance setup belongs to the session, never the saved project. */
+    midi_session_reset();
     transport_req = 0;
     chain_config = p->chain;
     motion = p->motion;

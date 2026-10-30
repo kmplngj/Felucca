@@ -331,10 +331,9 @@ try {
     const expected = await screen("before-save");
     assert.notEqual(expected.graph_sha256, factoryEnvelope, "saved attack must differ from factory state");
     await tap("SAVE"); await tap("OCT+"); await tap("OCT+");
-    const saved = await waitFor(() => {
-      const value = localStorage.getItem("felucca-emu-flash");
-      return value && Object.keys(JSON.parse(value)).length && value;
-    });
+    await waitFor(() => __feluccaTest.macro?.used === 1 && localStorage.getItem("felucca-emu-flash"));
+    await page.waitForTimeout(250);
+    const saved = await page.evaluate(() => localStorage.getItem("felucca-emu-flash"));
     capturedAudio = await page.evaluate(() => ({ blocks: __feluccaTest.audio, rate: __feluccaTest.context.sampleRate }));
     messages.push(...await page.evaluate(() => __feluccaTest.errors));
     await page.reload();
@@ -558,6 +557,140 @@ try {
     const released = await layerAudio(false, false);
     await waitFor(() => __feluccaTest.layer.tracks.slice(0, 2).every((t) => t.owners === 0 && t.gates === 0));
     return { sounding, released };
+  });
+  capturedAudio = null; // retain PCM from the current MIDI scenarios on failure or success
+  const nrpn = async (address, value) => {
+    for (const [cc, v] of [[99, address >> 7], [98, address & 127], [6, value]])
+      await midiLayer([0xB0, cc, v]);
+  };
+  const waitTracks = (predicate, arg) => waitFor(predicate, arg);
+  const release = async (note) => { await midiLayer([0x90, note, 0]); await waitTracks(() => __feluccaTest.layer.tracks.slice(0, 2).every(t => t.owners === 0)); };
+  await check("MIDI NRPN sound controls: level and ANALOG cutoff affect held PCM", async () => {
+    await midiLayer([0x90, 60, 100]); await layerAudio(true, true);
+    await nrpn(0, 0); await waitTracks(() => __feluccaTest.layer.tracks.slice(0, 2).every(t => t.level === 0));
+    const silent = await layerAudio(false, false);
+    await nrpn(0, 100); await waitTracks(() => __feluccaTest.layer.tracks.slice(0, 2).every(t => t.level === 100));
+    await nrpn(0x84, 0); await waitTracks(() => __feluccaTest.layer.tracks[0].values[8] === 0);
+    const lowAudio = await layerAudio(true, true);
+    await nrpn(0x84, 127); await waitTracks(() => __feluccaTest.layer.tracks[0].values[8] === 127);
+    const highAudio = await layerAudio(true, true);
+    assert(highAudio.left_rms > lowAudio.left_rms * 3, "cutoff did not change T1 PCM energy"); await release(60);
+    return { silent, lowAudio, highAudio, state: await layerState() };
+  });
+  await check("MIDI pair mix endpoints and midpoint change both parts and stereo PCM", async () => {
+    await nrpn(0x3100, 20); await waitTracks(() => __feluccaTest.layer.midi[5] === 20);
+    await midiLayer([0x90, 60, 100]);
+    const levels = [], audio = [];
+    for (const [v, a, b, left, right] of [[0,112,0,true,false], [64,100,100,true,true], [127,0,112,false,true]]) {
+      await midiLayer([0xB0, 20, v]); await waitTracks(({a,b}) => __feluccaTest.layer.tracks[0].level === a && __feluccaTest.layer.tracks[1].level === b, {a,b});
+      levels.push([a,b]); audio.push(await layerAudio(left,right));
+    }
+    await release(60); await nrpn(0x3100, 0); await midiLayer([0xB0,7,100]);
+    return { levels, audio };
+  });
+  await check("MIDI key ranges select inclusive destinations and preserve release ownership", async () => {
+    await nrpn(0x3001, 59); await nrpn(0x3010, 60);
+    await waitTracks(() => __feluccaTest.layer.tracks[0].values[1] === 59 && __feluccaTest.layer.tracks[1].values[0] === 60);
+    const audio = [];
+    for (const [note,left,right] of [[59,true,false],[60,false,true]]) {
+      await midiLayer([0x90,note,100]); await waitTracks(({left,right}) => __feluccaTest.layer.tracks[0].owners === +left && __feluccaTest.layer.tracks[1].owners === +right, {left,right});
+      audio.push(await layerAudio(left,right));
+      if (note === 59) { await nrpn(0x3001, 58); await waitTracks(() => __feluccaTest.layer.tracks[0].values[1] === 58); }
+      await release(note);
+    }
+    await nrpn(0x3001, 127); await nrpn(0x3010, 0);
+    return { audio };
+  });
+  await check("MIDI velocity zones use raw velocity before soft pedal scaling", async () => {
+    await nrpn(0x3003, 79); await nrpn(0x3012, 80); await midiLayer([0xB0,67,64]);
+    await midiLayer([0x90,60,100]);
+    const state = await waitTracks(() => { const s=__feluccaTest.layer; return s.tracks[0].owners === 0 && s.tracks[1].owners === 1 && s.tracks[1].values[4] === 50 && s; });
+    const hard = await layerAudio(false,true); await release(60);
+    await midiLayer([0x90,60,79]); await waitTracks(() => __feluccaTest.layer.tracks[0].owners === 1 && __feluccaTest.layer.tracks[0].values[4] === 40 && __feluccaTest.layer.tracks[1].owners === 0);
+    const soft = await layerAudio(true,false); await release(60);
+    await nrpn(0x3003,127); await nrpn(0x3012,1); await midiLayer([0xB0,67,0]);
+    return { state, hard, soft };
+  });
+  await check("MIDI soft pedal thresholds preserve positive attacks and reset", async () => {
+    const values=[];
+    for (const [pedal, velocity, expected] of [[63,100,100],[64,100,50],[0,50,50],[127,1,1],[0,100,100]]) {
+      await midiLayer([0xB0,67,pedal]); await midiLayer([0x90,60,velocity]);
+      await waitTracks((v) => __feluccaTest.layer.tracks[0].owners === 1 && __feluccaTest.layer.tracks[0].values[4] === v, expected);
+      if (velocity > 1) values.push(await layerAudio(true,true)); else values.push((await layerState()).tracks[0].values[4]);
+      await release(60);
+    }
+    assert(values[1].left_rms < values[0].left_rms * 0.85, "soft pedal did not reduce T1 PCM");
+    const ratio = values[1].left_rms / values[2].left_rms;
+    assert(ratio > 0.6 && ratio < 1.6, `soft 100 / normal 50 RMS ratio ${ratio}`);
+    return { values, ratio };
+  });
+  await check("MIDI articulation switches retain authored glide and respect poly mode", async () => {
+    await midiLayer([0xB0,5,80]); await midiLayer([0xB0,65,0]);
+    await waitTracks(() => __feluccaTest.layer.tracks[0].values[7] === 80 && __feluccaTest.layer.tracks[0].values[5] === 0);
+    await midiLayer([0xB0,65,127]); await waitTracks(() => __feluccaTest.layer.tracks[0].values[5] === 80);
+    await nrpn(37,0); await midiLayer([0xB0,68,127]); await waitTracks(() => __feluccaTest.layer.tracks[0].values[6] === 0);
+    await nrpn(37,42); await waitTracks(() => __feluccaTest.layer.tracks[0].values[9] === 1 && __feluccaTest.layer.tracks[0].values[6] === 2);
+    await midiLayer([0x90,60,100]); const audio = await layerAudio(true,true);
+    await midiLayer([0x90,64,100]);
+    const transition = await waitTracks(() => { const s=__feluccaTest.layer; return s.tracks[0].owners === 2 && s.tracks[0].gates === 1 && s; });
+    const overlapAudio = await layerAudio(true,true);
+    await midiLayer([0x80,64,0]); await waitTracks(() => __feluccaTest.layer.tracks[0].owners === 1); await release(60);
+    const state=await layerState(); await midiLayer([0xB0,121,0]); return { state, audio, transition, overlapAudio };
+  });
+  await check("MIDI RPN fine and coarse tuning update held voices", async () => {
+    await nrpn(0x3100,20); await midiLayer([0xB0,20,0]); await midiLayer([0xB0,5,0]);
+    const pitch = async (min, max) => {
+      await layerAudio(true,false);
+      return page.evaluate(({min,max}) => {
+        const p=__feluccaTest, x=p.audio.slice(-4).flatMap(b => b.left), rate=p.context.sampleRate;
+        let bestHz=0, bestPower=-1;
+        for (let f=min; f<=max; f+=0.5) {
+          let re=0, im=0;
+          for (let n=0; n<x.length; n++) { const a=2*Math.PI*f*n/rate, w=0.5-0.5*Math.cos(2*Math.PI*n/(x.length-1)); re+=x[n]*w*Math.cos(a); im-=x[n]*w*Math.sin(a); }
+          const power=re*re+im*im; if (power>bestPower) { bestPower=power; bestHz=f; }
+        }
+        return bestHz;
+      }, {min,max});
+    };
+    await midiLayer([0x90,69,100]); const neutral=await pitch(400,480);
+    for (const [cc,v] of [[101,0],[100,1],[6,96],[38,0]]) await midiLayer([0xB0,cc,v]);
+    await waitTracks(() => __feluccaTest.layer.midi[1] === 12288); const fine=await pitch(420,490);
+    for (const [cc,v] of [[6,64],[38,0],[100,2],[6,76]]) await midiLayer([0xB0,cc,v]);
+    await waitTracks(() => __feluccaTest.layer.midi[1] === 8192 && __feluccaTest.layer.midi[2] === 12); const octave=await pitch(830,930);
+    assert(Math.abs(neutral-440)<8 && Math.abs(fine-452.893)<8 && Math.abs(octave-880)<10, `PCM frequencies ${neutral}, ${fine}, ${octave}`);
+    assert(fine / neutral > 1.015 && fine / neutral < 1.045, "fine tuning failed to raise the held pitch");
+    assert(octave / neutral > 1.96 && octave / neutral < 2.04, "coarse tuning failed to raise pitch one octave");
+    const state=await layerState(); await release(69); await midiLayer([0xB0,6,64]); await nrpn(0x3100,0); await midiLayer([0xB0,7,100]); return { neutral,fine,octave,state };
+  });
+  await check("MIDI bank select recalls a panel-saved user preset", async () => {
+    await tap("HOME"); await tap("SAVE"); await tap("OCT+"); await tap("OCT+");
+    await waitFor(() => __feluccaTest.macro.used === 1); await tap("HOME");
+    const saved=(await layerState()).tracks[0].sound;
+    await midiLayer([0xC0,2]); await waitTracks((sound) => __feluccaTest.layer.tracks[0].sound !== sound, saved);
+    const other=(await layerState()).tracks[0].sound;
+    await midiLayer([0x90,60,100]); const otherAudio=await freshAudio(true); await release(60);
+    await midiLayer([0xB0,32,1]); await waitTracks(() => __feluccaTest.layer.midi[4] === 1);
+    assert.equal((await layerState()).tracks[0].sound,other);
+    await midiLayer([0xC0,0]); await waitTracks((sound) => __feluccaTest.layer.tracks[0].sound === sound, saved);
+    await midiLayer([0x90,60,100]); const audio=await freshAudio(true); await release(60);
+    await midiLayer([0xB0,0,1]); await midiLayer([0xC0,0]); await page.waitForTimeout(250);
+    assert.equal((await layerState()).tracks[0].sound,saved, "unsupported bank changed sound");
+    await midiLayer([0xB0,0,0]); return { saved,other,otherAudio,audio };
+  });
+  await check("Project load resets session controls and retains registered tuning", async () => {
+    await tap("HOME"); for (let i=0; i<4; i++) await tap("SAVE");
+    await page.getByRole("slider", {name:"KNOB 4",exact:true}).press("ArrowUp");
+    const before = await page.evaluate(() => localStorage.getItem("felucca-emu-flash"));
+    await tap("OCT+"); await tap("OCT+");
+    await waitFor(old => localStorage.getItem("felucca-emu-flash") !== old, before);
+    await nrpn(0x3001,59); await nrpn(0x3012,80); await nrpn(0x3100,20);
+    await midiLayer([0xB0,67,127]); await midiLayer([0xB0,65,127]);
+    for (const [cc,v] of [[101,0],[100,2],[6,76],[32,1]]) await midiLayer([0xB0,cc,v]);
+    await waitTracks(() => { const s=__feluccaTest.layer; return s.midi[0] === 1 && s.midi[2] === 12 && s.midi[4] === 1 && s.midi[5] === 20 && s.tracks[0].values[1] === 59; });
+    await page.getByRole("slider", {name:"KNOB 3",exact:true}).press("ArrowUp"); await tap("OCT+");
+    const state = await waitTracks(() => { const s=__feluccaTest.layer; return s.midi[0] === 0 && s.midi[2] === 12 && s.midi[4] === 0 && s.midi[5] === 0 && s.tracks[0].values[1] === 127 && s.tracks[1].values[2] === 1 && s; });
+    await midiLayer([0xB0,6,64]); await page.waitForTimeout(100); assert.equal((await layerState()).midi[2],12);
+    return state;
   });
   await check("no browser or worklet errors", async () => {
     messages.push(...await page.evaluate(() => __feluccaTest.errors));

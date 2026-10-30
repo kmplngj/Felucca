@@ -629,6 +629,11 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     u_midi_control() {
         $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_control_test" tests/midi_control_test.c -lm
         run "USB/TRS clock, bend, sustain, ownership and panic recovery" "$OUT/midi_control_test"
+        for fixture in midi_nrpn midi_tuning midi_soft midi_mix midi_key_range midi_velocity_range midi_glide midi_performance; do
+            $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/${fixture}_test" "tests/${fixture}_test.c" -lm
+            run "MIDI performance: $fixture" "$OUT/${fixture}_test"
+        done
+        run "Stable NRPN registry and public descriptor bounds" python3 tests/midi_nrpn_registry_test.py "$OUT/midi_nrpn_test"
     }
     unit midi_control "" u_midi_control
 

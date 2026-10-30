@@ -89,12 +89,15 @@ export function installProbe() {
 export function observeMacroWorklet(source) {
   const marker = 'const msg = { type: "frame" };';
   if (source.split(marker).length !== 2) throw new Error("worklet observation marker changed");
+  source = source.replace("if (msg.leds || msg.fb || msg.sectors || msg.load !== undefined) this.port.postMessage(msg, transfer);", "this.port.postMessage(msg, transfer);");
   return source.replace(marker, `${marker}
       msg.testLayer = {
         route: ex.web_test_route(), menu: ex.web_test_menu_position() >>> 0,
+        midi: Array.from({ length: 9 }, (_, f) => ex.web_test_midi_value(f)),
         tracks: Array.from({ length: 4 }, (_, i) => ({
           channel: ex.web_test_channel(i), sound: ex.web_test_sound(i),
-          level: ex.web_test_level(i), owners: ex.web_test_owners(i), gates: ex.web_test_gates(i)
+          level: ex.web_test_level(i), owners: ex.web_test_owners(i), gates: ex.web_test_gates(i),
+          values: Array.from({ length: 10 }, (_, f) => ex.web_test_track_value(i, f))
         }))
       };
       msg.testMacro = {

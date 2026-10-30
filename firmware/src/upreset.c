@@ -456,15 +456,14 @@ static int up_rename_cat(uint32_t k, const char *name, uint32_t cat)
 }
 static int up_rename(uint32_t k, const char *name) { return up_rename_cat(k, name, 0); }
 
-/* slot k -> the selected part's sound: engine and every parameter except the track's own (param_kept:
+/* slot k -> destination t's sound: engine and every parameter except the track's own (param_kept:
  * the mix, ARP, SCL, the pattern parameters, the SLICER). The steps stay: the record's pattern is
  * loaded only from SAVE > PHRASES (up_pat_load). 0 ok, 1 empty */
-static int up_load(uint32_t k)
+static int up_load_to(track_t *t, uint32_t k)
 {
     const up_rec_t *r;
     int16_t v[P_COUNT];
     uint32_t i;
-    track_t *t = TSEL;
     if (!up_used(k))
         return 1;
     r = up_rec(k);
@@ -484,9 +483,28 @@ static int up_load(uint32_t k)
     }
     t->user = (uint8_t)(k + 1u);
     load_end(t);
-    sync_reload = 1;
+    if (t == TSEL)
+        sync_reload = 1;
     ui.force = 1;
     return 0;
+}
+
+static int up_load(uint32_t k) { return up_load_to(TSEL, k); }
+
+/* MIDI bank 1 never selects a missing engine (the UI/editor retain their N/A load policy). */
+static int midi_pc_user_load(track_t *t, uint32_t k)
+{
+    const up_rec_t *r;
+    if (!up_used(k))
+        return 1;
+    r = up_rec(k);
+    if (!eng_ok(r->engine)
+#if !FELUCCA_FM4
+        && !(r->engine == ENGI_DIGITAL && eng_ok(ENGI_FM6))
+#endif
+       )
+        return 1;                                  /* keep absent engines inert, never substitute another */
+    return up_load_to(t, k);
 }
 
 /* the patterns of the user presets (SAVE > PHRASES lists them after the factory ones, ui.c pat_count) */
