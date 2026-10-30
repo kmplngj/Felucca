@@ -201,6 +201,9 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
     uint32_t r = pow2_q16(d16), stepq = (r >> 8) * (z->rate >> 8);   /* Q16 samples per output */
     int32_t bits = p[P_E2], lp = 4000 + ((clamp((p[P_E4] << 8) + m->cutoff, 0, 127 << 8) * 28767) >> 15);
     int32_t drv = p[P_E6], sh = bits / 10;
+    /* BITS: (s >> sh) << sh clears the low sh bits of s (two's complement), so one AND per sample; clean
+     * (sh 0: BITS 0..9) keeps every bit */
+    int32_t qm = sh > 0 ? (int32_t)(~0u << sh) : -1;
     /* dsp.c voice_amp's ramp amp_at, bit for bit, as a running sum (the interrupt path: no multiply, no
      * rounding fix-up per sample): ay >> CTL_LOG2 = amp0 + (amp1 - amp0) * i / CTL rounded towards zero,
      * amp0 scaled by CTL under the shift, a falling ramp biased by CTL - 1; a settled one adds 0 */
@@ -233,8 +236,7 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
             v->s[3] = sample_next(z, v, p[P_E3]);
         }
         s = v->s[2] + (((v->s[3] - v->s[2]) * (int32_t)(frac >> 1)) >> 15);
-        if (sh)                                       /* BITS: 0 = clean, up to 12 bits removed */
-            s = (s >> sh) << sh;
+        s &= qm;                                      /* BITS: 0 = clean, up to 12 bits removed */
         if (drv)
             s = softclip(s + (((s >> 2) * (drv * 150)) >> 11));   /* = s * drv * 600 / 32768, no overflow */
         v->s[7] += mulq15(s - v->s[7], lp);           /* gentle tone control (CUT) */
