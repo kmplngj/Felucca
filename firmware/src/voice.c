@@ -120,10 +120,24 @@ static uint32_t trk_nvoice(const track_t *t)
     return c && c < NVOICE ? c : NVOICE;
 }
 
-/* the part's voice mode: P_VOICE, POLY for an engine of hits (engine_t.oneshot: DRUM) */
+/* Live MIDI switches: 0 untouched, 1 OFF, 2 ON. Outside saved track parameters.
+ * A part has one effective state (USB/TRS and channels share it, last event wins). */
+static uint8_t midi_glide_switch[NTRK], midi_legato_switch[NTRK];
+
+static int32_t trk_glide(const track_t *t)
+{
+    return midi_glide_switch[t - trk] == 1u && !ENGINES[t->engine]->oneshot ? 0 : t->p[P_GLIDE];
+}
+
+/* CC68 changes articulation only within the existing one-voice stack. */
 static uint32_t trk_vmode(const track_t *t)
 {
-    return ENGINES[t->engine]->oneshot ? V_POLY : (uint32_t)t->p[P_VOICE];
+    uint32_t mode = (uint32_t)t->p[P_VOICE], sw = midi_legato_switch[t - trk];
+    if (ENGINES[t->engine]->oneshot)
+        return V_POLY;
+    if (sw && (mode == V_MONO || mode == V_LEGATO))
+        return sw == 2u ? V_LEGATO : V_MONO;
+    return mode;
 }
 
 /* ------------------------------------------------- the shared voice budget --- */
@@ -240,7 +254,7 @@ static voice_t *voice_alloc(track_t *t, uint32_t note)
         if (k < NVOICE)
             voice_kill(&vp->v[k]);
     }
-    if (t->p[P_ALLOC] || t->p[P_GLIDE]) {
+    if (t->p[P_ALLOC] || trk_glide(t)) {
         for (i = 0; i < np; i++) {
             int32_t d = t->v[i].pitch_cur - (int32_t)note * 16;
             if (t->v[i].active)
@@ -285,7 +299,7 @@ static void glide_set(track_t *t, voice_t *v, int glide)
         return;
     }
     if (t->p[P_GLMODE]) {
-        int32_t d = v->pitch16 - v->pitch_cur, ticks = 1 + t->p[P_GLIDE] * t->p[P_GLIDE] / 8;
+        int32_t d = v->pitch16 - v->pitch_cur, ticks = 1 + trk_glide(t) * trk_glide(t) / 8;
         d = d < 0 ? -d : d;
         v->gstep = d / ticks > 0 ? d / ticks : 1;
     } else {
@@ -425,7 +439,7 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
         t->nmono = 0;                                   /* no stale mono stack after a mode change */
         t->mono_note = 0;
         v->fine = 0;
-        voice_start(t, v, note, vel, t->p[P_GLIDE] != 0 && !ENGINES[t->engine]->oneshot);
+        voice_start(t, v, note, vel, trk_glide(t) != 0 && !ENGINES[t->engine]->oneshot);
         return;
     }
     {
@@ -438,9 +452,9 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
         if (sounding && want == t->mono_note)
             return;                                     /* LOW / HIGH priority: this key does not win */
         if (mode == V_MONO)                             /* MONO: always retrigger, glide when GLIDE is set */
-            mono_play(t, want, vel, 1, t->p[P_GLIDE] != 0 || t->slide_glide);
+            mono_play(t, want, vel, 1, trk_glide(t) != 0 || t->slide_glide);
         else                                            /* LEGATO / UNISON: glide only between held notes */
-            mono_play(t, want, vel, !sounding, sounding && (t->p[P_GLIDE] != 0 || t->slide_glide));
+            mono_play(t, want, vel, !sounding, sounding && (trk_glide(t) != 0 || t->slide_glide));
     }
 }
 
@@ -459,7 +473,7 @@ static void trk_note_off(track_t *t, uint32_t note)
         if (t->mono_note == note) {
             uint32_t next = mono_pick(t);
             if (next) {                                 /* fall back to a held note, legato */
-                mono_play(t, next, t->v[0].vel, 0, t->p[P_GLIDE] != 0);
+                mono_play(t, next, t->v[0].vel, 0, trk_glide(t) != 0);
             } else {
                 for (i = 0; i < nv; i++)
                     if (t->v[i].gate) {
@@ -692,6 +706,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     bend = midi_bend_q8[ti] * 64 + (ENGINES[eng_idx(t->eng_req)] == &ENG_DRUM ? 0 : midi_tune_q14[ti]);
     bend16 = bend >= 0 ? bend / 1024 : -((-bend + 1023) / 1024);
     bend_fine = (bend - bend16 * 1024) * 2367 / 163840;
+    int32_t glide_time = trk_glide(t);             /* once per block, outside the sample loop */
     uint32_t nr = 0, fade = t->xf_on && t->xf;
     int16_t pe_new[8];
     for (i = 0; i < n; i++)
@@ -747,7 +762,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         }
         if (v->pitch_cur != v->pitch16) {               /* glide */
             int32_t d = v->pitch16 - v->pitch_cur;
-            int32_t st = v->gstep ? v->gstep : (int32_t)(ENV_LIN[(p[P_GLIDE] ? p[P_GLIDE] : 40) & 127] >> 14);   /* slide: ~45 ms */
+            int32_t st = v->gstep ? v->gstep : (int32_t)(ENV_LIN[(glide_time ? glide_time : 40) & 127] >> 14);   /* slide: ~45 ms */
             if (st < 1)
                 st = 1;
             v->pitch_cur += d > 0 ? (d < st ? d : st) : (-d < st ? d : -st);

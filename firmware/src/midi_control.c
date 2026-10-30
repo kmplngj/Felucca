@@ -13,6 +13,8 @@ typedef struct {
     uint8_t rpn_msb, rpn_lsb;
     uint16_t fine14;                        /* RPN1: 8192 = unison, retained by CC121 */
     int8_t coarse;                          /* RPN2: -64..63 semitones */
+    uint8_t glide_switch, legato_switch;     /* 0 untouched, 1 OFF, 2 ON */
+    uint8_t glide_parts, legato_parts;       /* destinations bound since last sound/panic */
 } midi_channel_t;
 static midi_channel_t midi_ch[16];
 /* Selector/map port: ordenador/Felucca #255, commit
@@ -167,6 +169,41 @@ static void midi_expression_channel(uint32_t ch)
             midi_expression(&trk[i], midi_channel(ch));
 }
 
+/* Bind switches to destinations when received. A sound/panic invalidates that
+ * destination, so a later note cannot reinstall an old patch's controller mode. */
+static void midi_articulation(track_t *t, const midi_channel_t *c)
+{
+    uint32_t i = trk_index(t), bit = 1u << i;
+    if (c->glide_parts & bit)
+        midi_glide_switch[i] = c->glide_switch;
+    if (c->legato_parts & bit)
+        midi_legato_switch[i] = c->legato_switch;
+}
+
+static void midi_articulation_control(uint32_t ch, uint32_t cc, uint32_t value)
+{
+    midi_channel_t *c = midi_channel(ch);
+    uint32_t i, j, mask = midi_targets(ch), sw = value >= 64u ? 2u : 1u;
+    if (cc == 65u) {
+        c->glide_switch = (uint8_t)sw;
+        c->glide_parts |= (uint8_t)mask;
+    } else {
+        c->legato_switch = (uint8_t)sw;
+        c->legato_parts |= (uint8_t)mask;
+    }
+    for (i = 0; i < NPART; i++)
+        if (mask & (1u << i)) {
+            midi_articulation(&trk[i], c);
+            /* OFF ends an in-progress portamento too; ON affects subsequent
+             * transitions. Never rebuild the mono stack or retrigger on a CC. */
+            if (cc == 65u && sw == 1u && !ENGINES[trk[i].engine]->oneshot)
+                for (j = 0; j < NVOICE; j++) {
+                    trk[i].v[j].pitch_cur = trk[i].v[j].pitch16;
+                    trk[i].v[j].gstep = 0;
+                }
+        }
+}
+
 /* a MIDI note of track t sounds note: one played as itself, or a tone of one played as a chord (chord.c) */
 static int midi_note_held(const track_t *t, uint32_t note)
 {
@@ -266,6 +303,7 @@ static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
             if (!(mask & (1u << i)))
                 continue;
             midi_expression(t, c);
+            midi_articulation(t, c);
             if (t != TSEL)
                 midi_hint = (uint8_t)(i + 1u);
             midi_seen |= (uint8_t)(1u << i);
@@ -303,7 +341,10 @@ static void midi_pedal_up(uint32_t ch)
 static void __attribute__((noinline)) midi_forget_track(uint32_t track)
 {
     uint32_t ch, note;
+    midi_glide_switch[track] = midi_legato_switch[track] = 0;
     for (ch = 0; ch < 16u; ch++) {
+        midi_ch[ch].glide_parts &= (uint8_t)~(1u << track);
+        midi_ch[ch].legato_parts &= (uint8_t)~(1u << track);
         if (!(midi_ch[ch].targets & (1u << track)))
             continue;
         for (note = 0; note < 128u; note++)
@@ -390,10 +431,10 @@ static uint32_t ml_id(uint32_t code)        /* an entry's code -> P_* id, P_COUN
 {
     return code >= ML_E0 ? P_E0 + code - ML_E0 : code && code <= P_E0 ? code - 1u : P_COUNT;
 }
-static int ml_free_cc(uint32_t cc)          /* (CC1 6 38 64 67 98..101 120..127: midi_control's own) */
+static int ml_free_cc(uint32_t cc)          /* fixed expressive controls and selectors are reserved */
 {
-    return cc && cc < 120u && cc != 1u && cc != 6u && cc != 11u && cc != 32u && cc != 38u && cc != 64u && cc != 67u &&
-           (cc < 96u || cc > 101u);
+    return cc && cc < 120u && cc != 1u && cc != 6u && cc != 11u && cc != 32u && cc != 38u && cc != 64u &&
+           cc != 65u && cc != 67u && cc != 68u && (cc < 96u || cc > 101u);
 }
 /* 1: cc is learned (set here) or taken by MIDI LEARN waiting for one */
 static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
@@ -573,7 +614,12 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
         c->soft = 0;
         c->rpn_msb = c->rpn_lsb = 127;
         midi_expression_channel(ch);
+        midi_articulation_control(ch, 65, 0);
+        midi_articulation_control(ch, 68, 0);
         midi_pedal_up(ch);
+        break;
+    case 65: case 68:
+        midi_articulation_control(ch, cc, value);
         break;
     case 64:
         if (value >= 64u)
@@ -629,11 +675,13 @@ static void __attribute__((noinline)) midi_route_block(void)
 {
     uint32_t ch, note, i;
     uint32_t reassign = song.g[G_ROUTE] == ROUTE_TRACK || midi_route == ROUTE_TRACK || midi_route == MIDI_ROUTE_AGAIN;
-    if (reassign)
-        for (i = 0; i < NTRK; i++) {
+    for (i = 0; i < NTRK; i++) {
+        midi_glide_switch[i] = midi_legato_switch[i] = 0;
+        if (reassign) {
             midi_tune_q14[i] = 0;
-            midi_bend_target[i] = 0;                /* A track with no channel must not retain the old bend. */
+            midi_bend_target[i] = 0;
         }
+    }
     for (ch = 0; ch < 16u; ch++) {
         midi_channel_t *c = midi_channel(ch);
         if (midi_in_block(ch)) {
@@ -643,6 +691,13 @@ static void __attribute__((noinline)) midi_route_block(void)
                     for (i = 0; i < NPART; i++)
                         if ((midi_notes[ch][note] & (1u << i)) && !(mask & (1u << i)))
                             midi_release_track(ch, note, i);
+            if (reassign) {
+                c->glide_parts &= (uint8_t)mask;
+                c->legato_parts &= (uint8_t)mask;
+            }
+            for (i = 0; i < NPART; i++)
+                if ((mask | c->targets) & (1u << i))
+                    midi_articulation(&trk[i], c);
             for (i = 0; i < NPART; i++)
                 if (mask & (1u << i))
                     midi_expression(&trk[i], c);
@@ -651,6 +706,7 @@ static void __attribute__((noinline)) midi_route_block(void)
         for (note = 0; note < 128u; note++)
             if (midi_notes[ch][note])
                 midi_release(ch, note);
+        c->glide_switch = c->legato_switch = c->glide_parts = c->legato_parts = 0;
         c->pedal = c->wheel = c->soft = 0;
         c->bend = 0;
         c->rpn_msb = c->rpn_lsb = 127;
