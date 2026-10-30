@@ -375,6 +375,17 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- The native mixer runs a part's block in a shorter specialized loop when all its
+  inline sends are zero ([#185](https://github.com/kmplngj/Felucca/issues/185)) or
+  its PAN is centred ([#458](https://github.com/kmplngj/Felucca/issues/458)). The
+  dry sums, sends, send ramps, THROW, peak and state stay exactly as before.
+  The centred loop adds `x` for `(x * 4096) >> 12`. That is exact only below
+  2^19, so a block whose peak reaches that bound runs a fallback that reproduces
+  the original 32-bit wrap. SPREAD and the off-centre loop with sends are
+  unchanged. [Identical-trace regressions](../tests/mix_fast_test.py) compare
+  the build against the general loop alone. Host and target-listing estimates
+  are not FM-1 timing gains; device qualification is pending.
+
 - Native icons share identical complete 12 px compressed streams while preserving
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
   [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.
