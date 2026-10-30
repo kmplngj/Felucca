@@ -75,6 +75,57 @@ static void pedal(uint32_t down)
     midi_enqueue(0x0Bu | 0xB0u << 8 | 64u << 16 | (down ? 127u << 24 : 0u), 1);
     events_block(CTL);
 }
+static void cc(uint32_t channel, uint32_t control)
+{
+    midi_enqueue(0x0Bu | (0xB0u | channel) << 8 | control << 16, 1);
+    events_block(CTL);
+}
+static void all_notes_off_test(void)
+{
+    static const uint8_t keys[10] = {0,1,2,3,4,32,33,34,35,36};
+    uint32_t arp, k, note, use_pedal;
+    for (arp = 0; arp < 2u; arp++) {
+        for (k = 0; k < 10u; k++) {
+            reset(arp, 0); outer(keys[k], 1);
+            note = ext_note[keys[k]] - 1u;
+            REQUIRE(held(0, note, arp));
+            cc(0, 123);
+            REQUIRE(held(0, note, arp) && ext_note[keys[k]] == note + 1u);
+            REQUIRE(!arp || (trk[0].arp_phys == 1u && trk[0].nheld == 1u));
+            REQUIRE(!output(0x80, note));
+            outer(keys[k], 0);
+            REQUIRE(!held(0, note, arp) && !trk[0].nheld && !trk[0].arp_phys);
+            REQUIRE(output(0x80, note) == 1u);
+        }
+        for (use_pedal = 0; use_pedal < 2u; use_pedal++) {
+            reset(arp, 0); outer(32, 1); external(1); external_note(72, 1);
+            if (use_pedal) pedal(1);
+            cc(0, 123);
+            REQUIRE(held(0, 79, arp));
+            REQUIRE(!!midi_owners[0] == !!use_pedal);
+            external(0);                              /* later MIDI note-off must preserve the local owner */
+            if (use_pedal) pedal(0);
+            REQUIRE(held(0, 79, arp) && !held(0, 72, arp) && !midi_owners[0]);
+            REQUIRE(!arp || (trk[0].arp_phys == 1u && trk[0].nheld == 1u));
+            outer(32, 0);
+            REQUIRE(!held(0, 79, arp) && !trk[0].nheld && !trk[0].arp_phys);
+        }
+        reset(arp, 0); outer(32, 1); song.sel = 1;
+        /* Track2 has sequenced/unowned sound; an outer owner on T1 must not
+         * block CC123's normal cleanup of another addressed track. */
+        input_on(&trk[1], 60, 100); cc(1, 123);
+        REQUIRE(!held(1, 60, arp) && !trk[1].nheld && !trk[1].arp_phys);
+        REQUIRE(held(0, 79, arp));
+        midi_enqueue(0x09u | 0x91u << 8 | 62u << 16 | 100u << 24, 1); events_block(CTL);
+        cc(0, 123);
+        REQUIRE(held(0, 79, arp) && held(1, 62, arp));
+        outer(32, 0); REQUIRE(!held(0, 79, arp) && held(1, 62, arp));
+        cc(1, 123); REQUIRE(!held(1, 62, arp));
+        reset(arp, 0); outer(32, 1); cc(0, 120);
+        REQUIRE(!held(0, 79, arp) && !trk[0].nheld && !trk[0].arp_phys);
+        outer(32, 0);                              /* CC120 remains an unconditional panic */
+    }
+}
 int main(void)
 {
     uint32_t arp, chord, first, up;
@@ -138,6 +189,7 @@ int main(void)
         outer(up ? 33 : 32, 0); REQUIRE(gates(0, 127) == 1u && !output(0x80, 127));
         outer(up ? 32 : 33, 0); REQUIRE(!gates(0, 127) && output(0x80, 127) == 1u);
     }
+    all_notes_off_test();
     puts("SMK central/pad/outer/MIDI shared-note ownership and release orders passed");
     return 0;
 }

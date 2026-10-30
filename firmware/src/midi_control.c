@@ -208,6 +208,13 @@ static int midi_track_held(uint32_t track)
     for (k = 0; k < 27u; k++)
         if ((fm1_in.notes & (1u << k)) && kb_trk[k] == track)
             return 1;
+#if BOARD_SMK37
+    /* CC123 releases the channel's MIDI notes, never a still-held outer key.
+     * Track ownership follows its press even after the selected track changes. */
+    for (k = 0; k < FM1_NKEY; k++)
+        if (ext_note[k] && ext_trk[k] == track)
+            return 1;
+#endif
     return 0;
 }
 
