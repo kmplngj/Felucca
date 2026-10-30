@@ -337,32 +337,38 @@ static void fm1_main(void)
 #if FELUCCA_OTA
         if (ed_service())                               /* OTA only for a held non-editor frame */
             ota_service();                              /* M-UPGRADE handshake */
-#if FELUCCA_LCD_INFLIGHT
-        if (!lp.active)
-#endif
         if (usb.ota_req) {                              /* M-UPGRADE upgrade command */
-            usb.ota_req = 0;
-            panic_req = (1u << NTRK) - 1u;               /* every track (bit per track) */
-            scr_wake_now();                             /* (its progress on the screen) */
-            if (flash_ok)
-                ota_session();                          /* returns only if nothing was committed */
-            lcd_fill(0, 0, 240, 240, T_BG);
-            ui.force = 1;
+#if FELUCCA_LCD_INFLIGHT
+            if (lp.active) usb.ota_req = 0;
+            else
+#endif
+            {
+                usb.ota_req = 0;
+                panic_req = (1u << NTRK) - 1u;               /* every track (bit per track) */
+                scr_wake_now();                             /* (its progress on the screen) */
+                if (flash_ok)
+                    ota_session();                          /* returns only if nothing was committed */
+                lcd_fill(0, 0, 240, 240, T_BG);
+                ui.force = 1;
+            }
         }
 #endif
-#if FELUCCA_LCD_INFLIGHT
-        if (!lp.active)
-#endif
         if (usb.uboot_req) {                            /* SysEx F0 22 24 35 7D F7 from the host */
-            fm1_audio_stop();
-            scr_wake_now();
-            lcd_fill(0, 0, 240, 240, T_BG);
-            draw_text_box(0, 110, 240, &AF_M, "UBOOT (USB)", T_THEME, 1);
-            fm1_delay_ms(20);
-            usb_detach();
-            fm1_delay_ms(30);
-            boot_policy_intentional(&bootguard);
-            fm1_enter_uboot();
+#if FELUCCA_LCD_INFLIGHT
+            if (lp.active) usb.uboot_req = 0;
+            else
+#endif
+            {
+                fm1_audio_stop();
+                scr_wake_now();
+                lcd_fill(0, 0, 240, 240, T_BG);
+                draw_text_box(0, 110, 240, &AF_M, "UBOOT (USB)", T_THEME, 1);
+                fm1_delay_ms(20);
+                usb_detach();
+                fm1_delay_ms(30);
+                boot_policy_intentional(&bootguard);
+                fm1_enter_uboot();
+            }
         }
 #if FELUCCA_CDC
         cdc_task();
