@@ -14,10 +14,28 @@ static int read_fail = -1, prog_cut = -1, erase_cut = -1;
 static int protected_write, reads, erases, programs, erase_fail = -1, erase_noop, prog_noop;
 static const uint8_t *owner_ram_window;
 static int owner_xip_rejected;
+static uint32_t sim_ms, wdt_at, wdt_gap, wdt_feeds, erase_ms, read_ms;
+static uint32_t first_erase, owner_prog_erases;
+static int flash_busy, busy_feed, wdt_expired;
+static void advance_ms(uint32_t ms)
+{
+    uint32_t gap;
+    sim_ms += ms;
+    gap = sim_ms - wdt_at;
+    if (gap > wdt_gap) wdt_gap = gap;
+    if (gap >= 8000u) wdt_expired = 1;
+}
+static void fm1_wdt_feed(void)
+{
+    if (flash_busy) busy_feed = 1;
+    wdt_feeds++;
+    wdt_at = sim_ms;
+}
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
 static int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)
 {
+    advance_ms(read_ms);
     if (reads++ == read_fail) return -1;
     if (FL_IN(off, n, FL_DATA_LO, FL_DATA_HI)) owner_ram_window = dst;
     memcpy(dst, nor + off, n); return 0;
@@ -25,15 +43,20 @@ static int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)
 static int fl_erase4k_ram(uint32_t off, uint32_t *took)
 {
     int n = erase_cut < 0 ? 4096 : erase_cut;
-    (void)took; if (erases++ == erase_fail) return -1;
-    if (!FL_GUARD(off, 4096)) { protected_write++; return -1; }
+    flash_busy = 1;
+    advance_ms(erase_ms);
+    if (!erases) first_erase = off;
+    (void)took; if (erases++ == erase_fail) { flash_busy = 0; return -1; }
+    if (!FL_GUARD(off, 4096)) { protected_write++; flash_busy = 0; return -1; }
     if (!erase_noop) memset(nor + off, 255, (unsigned)n);
+    flash_busy = 0;
     return erase_cut < 0 ? 0 : -1;
 }
 static int fl_write(uint32_t off, const void *src, uint32_t n)
 {
     const uint8_t *p = src; uint32_t i;
     programs++;
+    if (off == 0xAF000u) owner_prog_erases = (uint32_t)erases;
     if (!FL_GUARD(off, n)) { protected_write++; return -1; }
     /* The last metadata read identifies the writable RAM staging buffer.
      * Simulate XIP being unavailable during the owner-tag program: a literal
@@ -58,7 +81,41 @@ static void reset(void)
     erase_noop = prog_noop = 0;
     reads = programs = erases = protected_write = 0;
     owner_ram_window = NULL; owner_xip_rejected = 0;
+    sim_ms = wdt_at = wdt_gap = wdt_feeds = erase_ms = read_ms = 0;
+    flash_busy = busy_feed = wdt_expired = 0;
+    first_erase = UINT32_MAX; owner_prog_erases = 0;
     st_owner_ready = 0; flash_ok = 1;
+}
+static void slow_init(void)
+{
+    reset();
+    memset(nor + FL_DATA_LO, 0, FL_OTA_HI - FL_DATA_LO);
+    erase_ms = 400u;                            /* generic NOR maximum, not a physical measurement */
+    read_ms = 1u;                               /* also budget every verification/readback window */
+}
+static void watchdog_cases(void)
+{
+    int k, all_reads;
+    slow_init();
+    CHECK(st_owner_initialize() == 0 && st_owner_ready);
+    CHECK(sim_ms >= 14000u && wdt_feeds == 35u && !wdt_expired && wdt_gap < 8000u);
+    CHECK(!busy_feed && !flash_busy && first_erase == ST_OWNER_OFF && owner_prog_erases == 35u);
+    all_reads = reads;
+    /* The driver timeout is 500ms: service must remain bounded there too. */
+    slow_init(); erase_ms = 500u;
+    CHECK(st_owner_initialize() == 0 && sim_ms >= 17500u && wdt_feeds == 35u && !wdt_expired && !busy_feed);
+    for (k = 0; k < 35; k++) {
+        slow_init(); erase_fail = k;
+        CHECK(st_owner_initialize() < 0 && !st_owner_ready);
+        CHECK(wdt_feeds == (uint32_t)k + 1u && !wdt_expired && !busy_feed && !flash_busy);
+        slow_init(); read_fail = k * 64;        /* first verification read of each erased sector */
+        CHECK(st_owner_initialize() < 0 && !st_owner_ready);
+        CHECK(wdt_feeds == (uint32_t)k + 1u && !wdt_expired && !busy_feed && !flash_busy);
+    }
+    slow_init(); prog_cut = 7;
+    CHECK(st_owner_initialize() < 0 && !st_owner_ready && wdt_feeds == 35u && !wdt_expired && !busy_feed);
+    slow_init(); read_fail = all_reads - 1;      /* final tag readback, after all sector feeds */
+    CHECK(st_owner_initialize() < 0 && !st_owner_ready && wdt_feeds == 35u && !wdt_expired && !busy_feed);
 }
 int main(void)
 {
@@ -137,6 +194,7 @@ int main(void)
     for (k = 0; k < 0xA000; k++) CHECK(nor[0xF4000 + k] == 0x38);
     for (k = 0; k < 0x1000; k++) CHECK(nor[0xFF000 + k] == 0x49);
     CHECK(!protected_write);
+    watchdog_cases();
     /* Negative control: the simulated flash-busy hook rejects an XIP tag. */
     {
         static const uint8_t flash_tag[16] = "FELUCCA-SMK-V1";

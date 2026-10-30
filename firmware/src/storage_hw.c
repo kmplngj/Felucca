@@ -51,6 +51,9 @@ static int st_owner_erase(uint32_t off)
     f = irq_save(); audio_silence();
     rc = FL_FAR(fl_erase4k_ram)(off, &took);
     irq_restore(f);
+    /* All 35 VM erases can exceed the boot watchdog interval. XIP is back
+     * before this service, on success or failure; never feed while flash-busy. */
+    fm1_wdt_feed();
     return rc;
 }
 #endif
