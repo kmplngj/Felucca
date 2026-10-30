@@ -1423,12 +1423,19 @@ static int32_t click_beat_now(void)
  * ignores it, as it ignores MIDI bend), the mod wheel its CC1, the mod matrix's MODW source (mod.c). Both go to MIDI
  * OUT too. Another track selected: the one before is left unbent, its MODW at 0. Audio ISR, before the MIDI IN of
  * the block (an incoming bend or CC1 for the same track wins until the wheel moves again) */
-static void smk_wheels_block(void)
+static void smk_wheels_block(uint32_t routing_reset)
 {
     static uint8_t prev = 0xFF, prev_mc = 0xFF, lm = 0xFF;
     static int32_t lb = 0x7FFFFFFF;
     uint32_t sel = song.sel % NTRK, mc = trk_midi_ch(sel), m = smk_modw;
     int32_t b = smk_bend14;
+    /* Route cleanup rebuilds local bend from incoming channel state even when
+     * the selected output channel stays the same. Restore the physical wheels
+     * once here, before this block's later MIDI events can take precedence. */
+    if (routing_reset) {
+        lb = 0x7FFFFFFF;
+        lm = 0xFF;
+    }
     if (sel != prev || mc != prev_mc) {
         if (prev < NTRK) {
             midi_bend_target[prev] = 0;
@@ -1465,6 +1472,9 @@ static void smk_wheels_block(void)
 static void events_block(uint32_t n)
 {
     uint32_t i, pr, seq_n = n;
+#if BOARD_SMK37
+    uint32_t wheel_routing_reset = 0;
+#endif
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     if (midi_clock.mode != clock_mode) {
         seq_stop();
@@ -1495,8 +1505,12 @@ static void events_block(uint32_t n)
         transport_req = 0;
     }
     if (midi_route != (uint8_t)song.g[G_ROUTE]) {     /* ROUT changed: a block lets go of the other channels */
-        if (song.g[G_ROUTE] != ROUTE_SEL)
+        if (song.g[G_ROUTE] != ROUTE_SEL) {
             midi_route_block();
+#if BOARD_SMK37
+            wheel_routing_reset = 1;
+#endif
+        }
         midi_route = (uint8_t)song.g[G_ROUTE];       /* Keep the previous route available to ownership cleanup. */
     }
     pr = panic_req;
@@ -1538,7 +1552,7 @@ static void events_block(uint32_t n)
         t->aholdp = t->p[P_AHOLD];
     }
 #if BOARD_SMK37
-    smk_wheels_block();
+    smk_wheels_block(wheel_routing_reset);
 #endif
     keyboard_block();
     while (mi_r != mi_w) {                            /* USB-MIDI (and TRS) in */

@@ -22,6 +22,36 @@ int main(void)
 #if BOARD_SMK37
     smk_bend14 = 4096; smk_modw = 99; events_block(CTL);
     CHECK(mo_w-mo_r == 2 && controllers(0, 0, 4096, 99)); drain();
+    /* SEL -> CH1-4 and TRACK revalidation retain output channel1, but routing
+     * cleanup rebuilds the internal bend from incoming MIDI channel state. */
+    song.g[G_ROUTE] = ROUTE_SEL; events_block(CTL); CHECK(mo_w == mo_r);
+    song.g[G_ROUTE] = 0; events_block(CTL);
+    CHECK(midi_bend_target[0] == 256 && trk[0].mw == 99);
+    CHECK(mo_w-mo_r == 2 && controllers(0, 0, 4096, 99)); drain();
+    events_block(CTL); CHECK(mo_w == mo_r && midi_bend_target[0] == 256);
+    song.g[G_ROUTE] = ROUTE_TRACK; mch_set(0, 0); events_block(CTL);
+    CHECK(midi_bend_target[0] == 256 && mo_w-mo_r == 2 && controllers(0, 0, 4096, 99)); drain();
+    mch_set(1, 5); midi_route = MIDI_ROUTE_AGAIN; events_block(CTL);
+    CHECK(midi_bend_target[0] == 256 && mo_w-mo_r == 2 && controllers(0, 0, 4096, 99)); drain();
+    events_block(CTL); CHECK(mo_w == mo_r);
+    /* MIDI arriving later in the very same cleanup block still wins; an idle
+     * wheel must not take precedence again on the following unchanged block. */
+    midi_route = MIDI_ROUTE_AGAIN;
+    midi_enqueue(0x0Eu | 0xE0u << 8 | 80u << 24, 1);  /* bend+2048: +128 Q8 at default range */
+    midi_enqueue(0x0Bu | 0xB0u << 8 | 1u << 16 | 31u << 24, 1);
+    events_block(CTL);
+    CHECK(midi_bend_target[0] == 128 && trk[0].mw == 31);
+    CHECK(mo_w-mo_r == 2 && controllers(0, 0, 4096, 99)); drain();
+    events_block(CTL); CHECK(mo_w == mo_r && midi_bend_target[0] == 128 && trk[0].mw == 31);
+    smk_bend14 = 4097; events_block(CTL);
+    CHECK(midi_bend_target[0] == 256 && trk[0].mw == 31 && mo_w-mo_r == 1);
+    CHECK(midi_out_q[mo_r % MQ] == (0x0Eu | 0xE0u << 8 | 1u << 16 | 96u << 24)); drain();
+    smk_modw = 100; events_block(CTL);
+    CHECK(midi_bend_target[0] == 256 && trk[0].mw == 100 && mo_w-mo_r == 1);
+    CHECK(midi_out_q[mo_r % MQ] == (0x0Bu | 0xB0u << 8 | 1u << 16 | 100u << 24)); drain();
+    smk_bend14 = 4096; smk_modw = 99; events_block(CTL); drain();
+    /* Return to the default route before the existing channel-handoff cases. */
+    song.g[G_ROUTE] = 0; events_block(CTL); drain();
     song.sel = 1; events_block(CTL);
     CHECK(mo_w-mo_r == 4 && controllers(0, 0, 0, 0) && controllers(2, 1, 4096, 99));
     CHECK(midi_bend_target[0] == 0 && trk[0].mw == 0 && midi_bend_target[1] == 256 && trk[1].mw == 99);
