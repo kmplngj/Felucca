@@ -413,7 +413,8 @@ static void smk_leds(const uint8_t *nl, const uint8_t *nb, const uint8_t *nm, co
     br = br < 128u ? br * 2u : (255u - br) * 2u;        /* the breath: 0..254 over ~1 s */
     for (c = 0; c < SMK_NLED; c++)
         fm1_led[c] = (uint8_t)(nl[c] | nb[c]);
-    fm1_led[SMK_BTN_FADER_BANK] = smk_fbank != 0u;      /* FADER BANK lit off bank A */
+    if (smk_btn_free(SMK_BTN_FADER_BANK))
+        fm1_led[SMK_BTN_FADER_BANK] = smk_fbank != 0u;  /* FADER BANK lit off bank A */
     if (smk_btn_free(SMK_BTN_KNOB_BANK))
         fm1_led[SMK_BTN_KNOB_BANK] = ui.menu != 0;      /* KNOB BANK lit while the menu is up */
     if ((int32_t)(fm1_ms - padled_hold_until) < 0)      /* (console padtest has them) */

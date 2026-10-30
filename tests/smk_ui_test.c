@@ -44,6 +44,26 @@ int main(void)
     uint32_t role, label, id;
     reset_smk(); panel_init();
     CHECK(sizeof(panel_t) == 32 && !memcmp(&panel, &PANEL_DEFAULT, sizeof panel));
+    /* The spare bank indicator owns id 1 only while calibration leaves it free. */
+    for (role = 0; role < 3; role++) {
+        uint32_t bank, playing, recording;
+        reset_smk(); host_anim = host_idle = 0; settings_leds = LEDS_DIM;
+        if (role) panel.btn[role == 1 ? B_PLAY : B_REC] = SMK_BTN_FADER_BANK;
+        panel_init();
+        for (bank = 0; bank < 4; bank++) for (playing = 0; playing < 2; playing++)
+            for (recording = 0; recording < 2; recording++) {
+                uint32_t expected = role == 1 ? playing : role == 2 ? recording : bank != 0;
+                smk_fbank = (uint8_t)bank; song.playing = (uint8_t)playing; song.rec = (uint8_t)recording;
+                ui_leds();
+                if (fm1_led[SMK_BTN_FADER_BANK] != expected) {
+                    fprintf(stderr, "id1 LED role=%s bank=%u playing=%u rec=%u: got %u expected %u\n",
+                            role == 1 ? "PLAY" : role == 2 ? "REC" : "FADER BANK", bank, playing, recording,
+                            fm1_led[SMK_BTN_FADER_BANK], expected);
+                    return 1;
+                }
+            }
+    }
+    reset_smk();
     /* A live free FADER BANK press acts exactly once; release and idle do nothing. */
     raw_press(SMK_BTN_FADER_BANK); CHECK(smk_fbank == 1 && smk_fbank_new);
     fm1_in.buttons = 0; ui_input(); ui_input(); CHECK(smk_fbank == 1);
