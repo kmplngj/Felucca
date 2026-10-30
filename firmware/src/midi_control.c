@@ -395,6 +395,77 @@ static void __attribute__((noinline)) midi_cc_map(track_t *t, uint32_t cc, uint3
     midi_cc_set(t, id, value);
 }
 
+/* One session-only pair. CC 0 disables future edits; assignments never restore
+ * old levels or retain a controller position. Parts remain absolute, as LEARN's
+ * targets do, and heard USB/TRS channels share the assignment. */
+static uint8_t midi_mix_config[3] = {0, 0, 1};
+
+static void midi_mix_reset(void)
+{
+    midi_mix_config[0] = midi_mix_config[1] = 0;
+    midi_mix_config[2] = 1;
+}
+
+static uint32_t midi_mix_config_get(uint32_t field)
+{
+    return field < NELEM(midi_mix_config) ? midi_mix_config[field] : 0;
+}
+
+static int midi_mix_config_set(uint32_t field, uint32_t value)
+{
+    uint32_t i;
+    if (field >= NELEM(midi_mix_config))
+        return 0;
+    if (!field) {
+        if (value) {
+            if (!ml_free_cc(value) || value == 65u || value == 67u || value == 68u)
+                return 0;
+            for (i = 0; i < NELEM(MIDI_CC_MAP); i++)
+                if (MIDI_CC_MAP[i][0] == value)
+                    return 0;
+        }
+    } else if (value >= NPART || value == midi_mix_config[3u - field])
+        return 0;
+    midi_mix_config[field] = (uint8_t)value;
+    return 1;
+}
+
+/* Linear complementary amplitude, 0..unity, quantized to the native LEVEL
+ * table. Binary search is bounded to seven comparisons per part; nearest gain
+ * wins, with ties toward the quieter value. No floating point or render work. */
+static uint32_t midi_mix_level(uint32_t position)
+{
+    uint32_t gain = (LEVEL_Q12[112] * position + 63u) / 127u;
+    uint32_t lo = 0, hi = 112, mid;
+    while (lo < hi) {
+        mid = (lo + hi) / 2u;
+        if (LEVEL_Q12[mid] < gain)
+            lo = mid + 1u;
+        else
+            hi = mid;
+    }
+    if (lo && gain - LEVEL_Q12[lo - 1u] <= LEVEL_Q12[lo] - gain)
+        lo--;
+    return lo;
+}
+
+static int midi_mix_control(uint32_t ch, uint32_t cc, uint32_t value)
+{
+    uint32_t i, level;
+    (void)ch;                                    /* midi_event gates unheard channels */
+    if (!midi_mix_config[0] || cc != midi_mix_config[0] || value > 127u)
+        return 0;
+    for (i = 1; i < 3u; i++) {
+        track_t *t = &trk[midi_mix_config[i]];
+        level = midi_mix_level(i == 1u ? 127u - value : value);
+        if (t->p[P_LEVEL] != (int16_t)level) {
+            t->p[P_LEVEL] = (int16_t)level;
+            (void)motion_capture(t, P_LEVEL, (int16_t)level);
+        }
+    }
+    return 1;
+}
+
 /* Integration bridge for session configuration; root wires feature helpers here.
  * Return nonzero only when the address is handled. */
 static int midi_nrpn_extra(uint32_t address, uint32_t value)
@@ -499,7 +570,7 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
         }
         break;
     default:
-        if (!midi_learned(cc, value)) {
+        if (!midi_learned(cc, value) && !midi_mix_control(ch, cc, value)) {
             mask = midi_route_mask(ch);
             for (i = 0; i < NPART; i++)
                 if (mask & (1u << i))
