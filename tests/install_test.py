@@ -933,6 +933,19 @@ def smk_models():
             ok(error.code == "badpkg", f"SMK {model} rejects FM-1 flash layout")
 
 
+def candidate_names():
+    class Names:
+        def input_names(self):
+            return ["Felucca", "Felucca Update", "SMK-37 Elite", "MKE-P37", "Elite Controller", "Other Synth"]
+
+    backend = Names()
+    ok(I.Updater(backend).candidates(True) == ["Felucca", "Felucca Update", "SMK-37 Elite", "MKE-P37"],
+       "discovery retains SMK/Felucca names without probing unrelated Elite gear")
+    ok(I.Updater(backend, "Elite Controller").candidates(True) == ["Elite Controller"],
+       "explicit port selection retains its existing override contract")
+
+
+candidate_names()
 wire()
 smk_models()
 installs()

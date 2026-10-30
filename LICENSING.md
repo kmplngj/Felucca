@@ -14,6 +14,9 @@ The experimental SMK board adapter also retains Copyright (C) 2026 M. Geisler
 This covers the selected SMK HAL, controls, flash-layout, packaging and updater
 changes, with native safety adaptations. No vendor dump, factory calibration,
 CC BY-NC guide assets or restricted donor logo is included.
+The elapsed wheel-drift helper additionally adapts GPL-3.0-only
+`zvenson/dinghy@7c31bb25c90cc11b2a94f1a10f549d0817884ac1`,
+`firmware/src/smk_wheel.h`, with its individual notice retained.
 
 ## What is GPL-3.0-only
 

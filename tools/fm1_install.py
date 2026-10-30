@@ -65,7 +65,7 @@ SMK_MODELS = ("SMK-37 Pro", "SMK-37 Elite", "MKE-P37")
 PRODUCT_RE = re.compile(r"(?:FM-1|SMK-37 Pro|SMK-37 Elite|MKE-P37)_[A-Z0-9._-]{1,15}")
 # the official loader is the same in V15 and V16; staged by Felucca it answers with the record name ota.c writes
 LOADER_FAMILIES = {"felucca-v1": "ota-FM-1_900", "stock": "ota-FM-1_015"}
-PORT_RE = re.compile(r"fm-?1|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
+PORT_RE = re.compile(r"fm-?1|smk|mke-p37|starry|felucca|ota|composite|sinco|usb-midi", re.I)   # candidate names; protocol identity is checked before updating
 
 # seconds; the tests shorten them
 DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0, "retry": 1.0,

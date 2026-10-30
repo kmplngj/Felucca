@@ -463,6 +463,9 @@ unit lcd_power "" u_lcd_power
 u_smk_platform() {
     $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_input_test" tests/smk_input_test.c
     run "SMK input: production velocity, pad/key ownership, outer keys and encoders" "$OUT/smk_input_test"
+    $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_scan_test" tests/smk_scan_test.c
+    run "SMK scan: physical columns, delayed DMA/latch, startup, all keys and LED groups" "$OUT/smk_scan_test"
+    run "SMK wheels: elapsed-time drift, repeated polls, wrap and bounded delayed service" python3 tests/smk_wheel_test.py
     $CC -std=gnu11 -O2 -o "$OUT/smk_lcd_test" tests/smk_lcd_test.c
     run "SMK display: LCD DMA lifetime and RGB pad SPI sharing" "$OUT/smk_lcd_test"
     $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/smk_storage_setup_test" tests/smk_storage_setup_test.c
@@ -504,6 +507,11 @@ u_smk_editor() {
     run "SMK editor: ownership, unavailable slots, backup reads and marker-before-write" "$OUT/smk_editor_test"
 }
 unit smk_editor "" u_smk_editor
+u_smk_ui() {
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_ui_test" tests/smk_ui_test.c -lm
+    run "SMK UI: consumed/remapped BANK keys, high button IDs and reserved MASTER calibration" "$OUT/smk_ui_test"
+}
+unit smk_ui "" u_smk_ui
 UNIT_NEEDS=
 
 u_screen_capture() {

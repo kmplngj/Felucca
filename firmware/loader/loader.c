@@ -82,6 +82,11 @@ static void ldr_status(uint32_t state, int32_t code) { ldr_screen_status(state, 
 #if !BOARD_SMK37
 _Static_assert(LDR_AUTO_LO == FL_AUTO_LO && LDR_AUTO_HI == FL_VBANK_HI && FL_AUTO_HI == FL_VBANK_LO,
                "the loader's protected window is the autosave pair plus the voice bank");
+#else
+_Static_assert(LDR_APP_LO == FL_APP_LO && LDR_APP_HI == FL_APP_HI &&
+               LDR_REC_LO == FL_REC_LO && LDR_REC_HI == FL_REC_HI &&
+               LDR_DATA_LO == FL_DATA_LO && LDR_DATA_HI == FL_DATA_HI,
+               "SMK loader bounds must match the protected flash map");
 #endif
 
 extern uint32_t _bss_start[], _bss_end[];

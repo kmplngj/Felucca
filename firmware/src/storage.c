@@ -106,7 +106,10 @@ static int st_owner_check(void)
         if (st_owner_read(off, b, sizeof b)) return -1;
         for (i = 0; i < sizeof b; i++) if (b[i] != 0xFFu) return -1;
     }
-    if (st_owner_prog(ST_OWNER_OFF, WANT, sizeof WANT) ||
+    /* Programming disables XIP: stage the tag in the existing RAM buffer
+     * before the flash driver consumes it. WANT is safe again for readback. */
+    memcpy(b, WANT, sizeof WANT);
+    if (st_owner_prog(ST_OWNER_OFF, b, sizeof WANT) ||
         st_owner_read(ST_OWNER_OFF, b, sizeof WANT) || memcmp(b, WANT, sizeof WANT)) return -1;
     st_owner_ready = 1;
     return 0;

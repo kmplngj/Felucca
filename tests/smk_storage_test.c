@@ -12,11 +12,14 @@ static uint8_t nor[0x100000];
 static uint16_t abuf[8];
 static int read_fail = -1, prog_cut = -1, erase_cut = -1;
 static int protected_write, reads, erases, programs, erase_fail = -1, erase_noop, prog_noop;
+static const uint8_t *owner_ram_window;
+static int owner_xip_rejected;
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
 static int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)
 {
     if (reads++ == read_fail) return -1;
+    if (FL_IN(off, n, FL_DATA_LO, FL_DATA_HI)) owner_ram_window = dst;
     memcpy(dst, nor + off, n); return 0;
 }
 static int fl_erase4k_ram(uint32_t off, uint32_t *took)
@@ -32,6 +35,13 @@ static int fl_write(uint32_t off, const void *src, uint32_t n)
     const uint8_t *p = src; uint32_t i;
     programs++;
     if (!FL_GUARD(off, n)) { protected_write++; return -1; }
+    /* The last metadata read identifies the writable RAM staging buffer.
+     * Simulate XIP being unavailable during the owner-tag program: a literal
+     * or any other source outside that buffer cannot be consumed. */
+    if (off == 0xAF000u && p != owner_ram_window) {
+        owner_xip_rejected++;
+        return -1;
+    }
     for (i = 0; i < n; i++) {
         if ((int)i == prog_cut) return -1;
         if (!prog_noop) nor[off + i] &= p[i];
@@ -47,6 +57,7 @@ static void reset(void)
     read_fail = prog_cut = erase_cut = erase_fail = -1;
     erase_noop = prog_noop = 0;
     reads = programs = erases = protected_write = 0;
+    owner_ram_window = NULL; owner_xip_rejected = 0;
     st_owner_ready = 0; flash_ok = 1;
 }
 int main(void)
@@ -54,6 +65,7 @@ int main(void)
     int k, count; uint8_t b = 0;
     reset(); CHECK(st_owner_check() == 0 && ST_AVAILABLE);
     CHECK(erases == 0 && programs == 1);
+    CHECK(owner_ram_window != NULL && owner_xip_rejected == 0);
     count = reads;
     CHECK(st_save(OBJ_SETTINGS, &b, 1) == 0);
     st_owner_ready = 0; flash_ok = 1;
@@ -122,6 +134,13 @@ int main(void)
     for (k = 0; k < 0xA000; k++) CHECK(nor[0xF4000 + k] == 0x38);
     for (k = 0; k < 0x1000; k++) CHECK(nor[0xFF000 + k] == 0x49);
     CHECK(!protected_write);
+    /* Negative control: the simulated flash-busy hook rejects an XIP tag. */
+    {
+        static const uint8_t flash_tag[16] = "FELUCCA-SMK-V1";
+        reset();
+        CHECK(st_owner_prog(ST_OWNER_OFF, flash_tag, sizeof flash_tag) < 0);
+        CHECK(owner_xip_rejected == 1 && nor[ST_OWNER_OFF] == 0xFFu);
+    }
     puts("SMK ownership, interrupted initialization, marker and flash policy passed");
     return 0;
 }

@@ -1,8 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Drive production SMK matrix decoding without touching GPIO. */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+/* Stand-ins for the two architecture instructions; the real drain/guard
+ * functions below still perform the saves, masking and exact restoration. */
+static uint32_t test_icfg, irq_saves, irq_restores;
+static uint32_t test_irq_save(void) { uint32_t f = test_icfg; test_icfg = 0; irq_saves++; return f; }
+static void test_irq_restore(uint32_t f) { test_icfg = f; irq_restores++; }
+#define SMK_INPUT_IRQ_SAVE() test_irq_save()
+#define SMK_INPUT_IRQ_RESTORE(f) test_irq_restore(f)
 #define BOARD_SMK37 1
 #include "../firmware/hal/smk_input.h"
 static void check(int ok, const char *message)
@@ -67,6 +75,56 @@ int main(void)
     }
     check(fm1_in.enc_steps[7] == 1 || fm1_in.enc_steps[7] == -1,
           "eighth encoder emits one detent after decoder startup");
+    /* Exercise the real key/pad event paths around the last trim point. The
+     * interpolator reaches 1024 exactly there, so MIDI conversion must clamp. */
+    for (v = 949u; v <= 951u; v++) {
+        memset((void *)&fm1_in, 0, sizeof fm1_in);
+        fm1_in.pad_base[8] = 100u;
+        for (i = 0; i < SMK_PAD_PEAKN; i++) smk__pad(8, v);
+        check(fm1_in.pnotes == 1u && fm1_in.key_vel[SMK_KEY_F3] == 127u,
+              "pad peaks below/at/above last trim point remain valid maximum MIDI velocity");
+    }
+    for (v = 979u; v <= 981u; v++) {
+        uint32_t key;
+        for (key = 0; key <= SMK_KEY_F3; key += SMK_KEY_F3) {
+            memset((void *)&fm1_in, 0, sizeof fm1_in);
+            smk_extq_w = smk_extq_r = 0;
+            contact(SMK_KEYC[key][0], 1);
+            smk__keys(100u);
+            contact(SMK_KEYC[key][1], 1);
+            smk__keys(100u + (1013u - v) * 100u * FM1_TICKS_PER_US);
+            check(fm1_in.key_vel[key] == 127u,
+                  "key timing below/at/above last trim point remains valid maximum MIDI velocity");
+            if (!key)
+                check(smk_extq_w == 1u && (smk_extq[0] & 0xFFu) == 127u,
+                      "outer-key maximum strike remains note-on rather than velocity128/release");
+        }
+    }
+    for (i = 0; i < 2u; i++) {
+        uint32_t original = i ? 0x12345678u : 0u, outer, released;
+        test_icfg = original;
+        fm1_in.enc_steps[SMK_ENC_MASTER] = 2;
+        smk_master = 724;
+        check(fm1_adc_read(FM1_ADC_MASTER) == 772 && test_icfg == original,
+              "boot/runtime MASTER drain preserves caller ICFG");
+        fm1_in.pressed = 0x11u; fm1_in.released = 0x20u;
+        check(fm1_input_edges(&released) == 0x11u && released == 0x20u && test_icfg == original,
+              "button-edge drain preserves caller ICFG");
+        fm1_in.notes_pressed = 0x123u;
+        check(fm1_input_note_edges() == 0x123u && test_icfg == original,
+              "note-edge drain preserves caller ICFG");
+        outer = fm1__lock();
+        check(test_icfg == 0u, "outer guard masks interrupts");
+        fm1_in.enc_steps[SMK_ENC_MASTER] = 1;
+        check(fm1_adc_read(FM1_ADC_MASTER) == 796 && test_icfg == 0u,
+              "nested MASTER drain cannot enable outer masked context");
+        fm1_in.pressed = 1;
+        check(fm1_input_edges(NULL) == 1u && test_icfg == 0u,
+              "nested button drain cannot enable outer masked context");
+        fm1__unlock(outer);
+        check(test_icfg == original && irq_saves == irq_restores,
+              "outer guard restores exact initial configuration after nested drains");
+    }
     puts("SMK matrix key/velocity/outer-key/OCT/pad/encoder contracts passed");
     return 0;
 }

@@ -95,6 +95,12 @@ frame; fast-strike response needs device testing. LCD and RGB pads share SPI1;
 pad service drains LCD DMA and restores LCD routing before another screen write.
 The adapter does not drive FM-1's PA2 backlight/matrix rail on SMK.
 
+Pitch-wheel centre drift uses Dinghy's reference policy of at most one raw
+count per 250 ms inside the dead band, based on elapsed time rather than poll
+count. A delayed poll never catches up with a sudden centre jump. This interval
+is a reference behavior, not measured factory calibration; physical drift and
+wheel feel remain pending qualification.
+
 USR1 and USR2 retain 80 KiB each. USR3 retains its stored/wire ID but is unavailable
 on SMK; writes are refused. FM-1 keeps all three slots. Project, settings, user
 preset and voice-bank formats retain their native IDs and serialization.
@@ -193,6 +199,8 @@ Individual file notices are retained. Dinghy's
 [v0.4 release](https://github.com/zvenson/dinghy/releases/tag/v0.4), commit
 `7c31bb25c90cc11b2a94f1a10f549d0817884ac1`, is the model/asset reference;
 its release notes also distinguish host tests from device qualification.
+The elapsed wheel-drift helper also adapts that pinned revision's
+`firmware/src/smk_wheel.h`, retaining its GPL-3.0-only attribution.
 No vendor dumps, calibration data, guide artwork or restricted logo assets are
 distributed here.
 

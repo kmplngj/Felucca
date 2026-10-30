@@ -63,6 +63,7 @@ static void smk_faders(void)
     }
 }
 
+#include "smk_wheel.h"
 /* the wheels (stock: mux C address 4 = pitch, 5 = mod), self-calibrating: the pitch wheel's rest is its centre
  * (taken at power-on, followed slowly while it rests), each wheel's range grows to what it has reached (the
  * travel is short: raw ~445..640 pitch, ~474..629 mod on a unit). Pitch: a 14-bit bend -8192..8191 with a dead
@@ -71,12 +72,14 @@ static void smk_faders(void)
 static void smk_wheels(void)
 {
     enum { DEAD = 12, SPAN0 = 80, MOD_LO = 485, MOD_HI = 615 };
-    static int32_t pc, plo, phi, mlo, mhi, rest;
+    static int32_t pc, plo, phi, mlo, mhi;
+    static uint32_t rest_ms;
     int32_t p = fm1_in.wheel[0], m = fm1_in.wheel[1], d, b, mw;
     if (fm1_in.frames < 300u)                     /* (the readings settle) */
         return;
     if (!pc) {
         pc = p;
+        rest_ms = fm1_ms;
         plo = p - SPAN0;
         phi = p + SPAN0;
         mlo = m < MOD_LO ? m : MOD_LO;
@@ -93,12 +96,9 @@ static void smk_wheels(void)
     d = p - pc;
     if (d > -DEAD && d < DEAD) {
         b = 0;
-        if (++rest > 200) {                        /* resting: the centre follows a slow drift */
-            pc += d > 0 ? 1 : d < 0 ? -1 : 0;
-            rest = 0;
-        }
+        pc += smk_wheel_drift(d, fm1_ms, &rest_ms);
     } else {
-        rest = 0;
+        rest_ms = fm1_ms;
         b = d > 0 ? (d - DEAD) * 8191 / (phi - pc - DEAD > 1 ? phi - pc - DEAD : 1)
                   : (d + DEAD) * 8192 / (pc - plo - DEAD > 1 ? pc - plo - DEAD : 1);
         b = clamp(b, -8192, 8191);

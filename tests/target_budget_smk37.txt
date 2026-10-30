@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Append to target_budget.txt for SMK builds; all shared DSP budgets stay in force.
-# Initial SMK scanner reference: JieLi Clang 4.0.1, standard engines, CPU2 compiled
+# Corrected SMK scanner reference: JieLi Clang 4.0.1, standard engines, CPU2 compiled
 # (runtime OFF), UART=0, selective minsize, --release 1.6.1, 2026-10-30.
-# Measured static loop heuristic (424 instructions, 411 in loops, 7 divides,
+# Measured static loop heuristic (431 instructions, 417 in loops, 7 divides,
 # 5 calls in loops), NOT cycles or proof of physical scan/audio deadlines.
+# Replaces 1136 after the physical-column/settled-frame and MIDI velocity fixes.
+# The added backward branch changes heuristic nesting; the old scanner sampled
+# the wrong column. Shared DSP budgets are unchanged.
 # The FM-1 OPTIONAL reference of 14 remains unchanged.
-fm1_input_tick 1136
+fm1_input_tick 1349

@@ -31,6 +31,9 @@
 /* Partial input adapter for shared production consumers (smk_input.h's keybed layout). */
 #define FM1_NKEY 37u
 #define SMK_KEY_F3 5u
+#ifndef SMK_ENC_MASTER
+#define SMK_ENC_MASTER 0u
+#endif
 static struct { volatile uint32_t notes, buttons; uint8_t key_vel[FM1_NKEY]; } fm1_in;
 static int32_t smk_extkey_take(void) { return -1; }
 #else

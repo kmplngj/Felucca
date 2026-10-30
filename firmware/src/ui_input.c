@@ -1580,12 +1580,6 @@ static void ui_input(void)
     uint32_t smk_kb = ((pressed >> SMK_BTN_KNOB_BANK) & 1u) && smk_btn_free(SMK_BTN_KNOB_BANK);
     int32_t smk_lr = ((pressed >> SMK_BTN_RIGHT) & 1u) && smk_btn_free(SMK_BTN_RIGHT) ? 1 :
                      ((pressed >> SMK_BTN_LEFT) & 1u) && smk_btn_free(SMK_BTN_LEFT) ? -1 : 0;
-    if (pressed & 1u << SMK_BTN_FADER_BANK) {           /* SMK-37 Pro FADER BANK: what the four faders set */
-        static const char *const FB[4] = {"A  LEVEL", "B  PAN", "C  REV", "D  DLY"};
-        smk_fbank = (uint8_t)((smk_fbank + 1u) % 4u);
-        smk_fbank_new = 1;
-        ui_say("FADER BANK ", FB[smk_fbank]);
-    }
 #endif
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */
 #if !FELUCCA_FM4
@@ -1610,6 +1604,15 @@ static void ui_input(void)
     }
     if (scr_input(pressed, notes))                      /* MENU > SCREEN OFF: dark, or the wake gesture: swallowed */
         return;                                         /* (before the buttons' timers: no tap or hold after it) */
+#if BOARD_SMK37
+    /* A consumed or reassigned physical button must not change the fader bank. */
+    if ((pressed & (1u << SMK_BTN_FADER_BANK)) && smk_btn_free(SMK_BTN_FADER_BANK)) {
+        static const char *const FB[4] = {"A  LEVEL", "B  PAN", "C  REV", "D  DLY"};
+        smk_fbank = (uint8_t)((smk_fbank + 1u) % 4u);
+        smk_fbank_new = 1;
+        ui_say("FADER BANK ", FB[smk_fbank]);
+    }
+#endif
     if (mom.n && !mom_down()) {                         /* MOMENTARY: LFO let go (or the menu, a layer ..): back */
         mom_restore();
         ui_message("BACK");
@@ -1843,12 +1846,12 @@ static void ui_input(void)
         }
         default:                                        /* page buttons (GLO SCL ENV LFO EDIT ARP): when let go */
             if (!lay)                                   /* (with FX held: swallowed) */
-                ui.pg_down |= (uint16_t)(1u << id);
+                ui.pg_down |= 1u << id;
             break;
         }
     }
     b = ui.pg_down & ~fm1_in.buttons;
-    ui.pg_down &= (uint16_t)~b;
+    ui.pg_down &= ~b;
     for (id = 0; b; id++, b >>= 1)
         if (b & 1u)
             page_tap(panel_btn_of(id));
@@ -1921,7 +1924,7 @@ static void ui_input(void)
         if ((s = panel_enc(EN_K1 + k)) == 0)
             continue;
         if (mom_down())                                 /* (LFO + a knob, MOMENTARY or not: LFO's release opens no page) */
-            ui.pg_down &= (uint16_t)~(1u << panel.btn[B_LFO]);
+            ui.pg_down &= ~(1u << panel.btn[B_LFO]);
         if ((held = lock_held()) != 0u) {               /* a step held on STEP: KNOB k locks (parameter locks) */
             lock_turn(k, s, held);
             ui.hot_col = (uint8_t)k;
@@ -2009,7 +2012,11 @@ static void panel_setup(void)
         panel.btn[i] = (uint8_t)id;
         used |= 1u << id;
     }
+#if BOARD_SMK37
+    used = 1u << SMK_ENC_MASTER;                      /* K1 always belongs to the virtual MASTER control */
+#else
     used = 0;
+#endif
     for (i = 0; i < NE; i++) {
         uint32_t e;
         int32_t st = 0;

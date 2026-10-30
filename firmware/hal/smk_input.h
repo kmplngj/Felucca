@@ -37,15 +37,23 @@
 #define FM1_INPUT_IDLE() ((void)0)
 #endif
 
-#define SMK_SPI2_CON (*(volatile uint32_t *)0x11E00u)
-#define SMK_SPI2_BAUD (*(volatile uint32_t *)0x11E04u)
-#define SMK_SPI2_ADR (*(volatile uint32_t *)0x11E0Cu)
-#define SMK_SPI2_CNT (*(volatile uint32_t *)0x11E10u)
-#define SMK_IOMAP_CON1 (*(volatile uint32_t *)0x51020u)
-#define SMK_USBIO_CON (*(volatile uint32_t *)0x16A0Cu)   /* second USB PHY pads as GPIO (LED commons) */
-#define SMK_ADC_CON (*(volatile uint32_t *)0x13100u)
-#define SMK_ADC_RES (*(volatile uint32_t *)0x13104u)
-#define SMK_WLA_CON0 (*(volatile uint32_t *)0x11900u)
+/* Register/DMA address adapters keep the real scan usable by register-backed
+ * host fixtures; production accesses remain direct volatile SFR operations. */
+#ifndef SMK_REG
+#define SMK_REG(a) (*(volatile uint32_t *)(a))
+#endif
+#ifndef SMK_DMA_ADDRESS
+#define SMK_DMA_ADDRESS(p) ((uint32_t)(uintptr_t)(p))
+#endif
+#define SMK_SPI2_CON SMK_REG(0x11E00u)
+#define SMK_SPI2_BAUD SMK_REG(0x11E04u)
+#define SMK_SPI2_ADR SMK_REG(0x11E0Cu)
+#define SMK_SPI2_CNT SMK_REG(0x11E10u)
+#define SMK_IOMAP_CON1 SMK_REG(0x51020u)
+#define SMK_USBIO_CON SMK_REG(0x16A0Cu)   /* second USB PHY pads as GPIO (LED commons) */
+#define SMK_ADC_CON SMK_REG(0x13100u)
+#define SMK_ADC_RES SMK_REG(0x13104u)
+#define SMK_WLA_CON0 SMK_REG(0x11900u)
 
 #define FM1_NCOL 16u
 #define FM1_NBTN 18u
@@ -147,7 +155,9 @@ static volatile uint8_t smk_extq_w, smk_extq_r;
 static uint8_t fm1_led[SMK_NLED];     /* 1 = lit (button LED i = button i) */
 static volatile uint32_t smk_ledw[2]; /* per LED group: 0xFFFF0000 | low half (LED lines active low) */
 static volatile uint32_t smk_muxw = 0xFFFFFFC7u;  /* AND masks over the whole 32-bit word: only the low half */
-static uint8_t smk_col, smk_grp, smk_slot, smk_adc_slot = 0xFF;
+/* smk_col names the DMA word awaiting the latch, never the rows being read.
+ * smk_sample_col is valid only after a word has actually been latched. */
+static uint8_t smk_col, smk_sample_col = 0xFF, smk_grp, smk_slot, smk_adc_slot = 0xFF;
 
 /* ------------------------------------------------------------------ pins --- */
 static void smk__pin_in_pu(uint32_t port, uint32_t m)
@@ -197,7 +207,7 @@ FM1_INLINE void smk__shift(uint32_t col)        /* start the DMA of column col's
     static uint32_t w;
     w = SMK_COLW(col) & smk_ledw[smk_grp] & smk_muxw;
     SMK_SPI2_CON |= 0x4000u;
-    SMK_SPI2_ADR = (uint32_t)(uintptr_t)&w;
+    SMK_SPI2_ADR = SMK_DMA_ADDRESS(&w);
     SMK_SPI2_CNT = 4u;
 }
 
@@ -223,7 +233,11 @@ static uint32_t smk_curve(const uint16_t *t, uint32_t x)   /* stock curve: 5 poi
     v = (i - 1u) * 256u + ((x - t[i - 1u]) << 8) / (uint32_t)(t[i] - t[i - 1u]);
     return v ? v : 1u;
 }
-FM1_INLINE uint8_t smk_vel7(uint32_t v10) { return (uint8_t)(v10 >> 3 ? v10 >> 3 : 1u); }
+FM1_INLINE uint8_t smk_vel7(uint32_t v10)
+{
+    uint32_t v = v10 >> 3;
+    return (uint8_t)(v < 1u ? 1u : v > 127u ? 127u : v);
+}
 
 static void smk_trim_defaults(void)
 {
@@ -277,6 +291,7 @@ static void fm1_input_init(void)
     smk__pin_analog(FM1_PC, 1u << 9);                            /* ADC ch8 (PC9 never an SPI1 clock) */
     smk_ledw[0] = smk_ledw[1] = 0xFFFFFFFFu;
     smk_muxw = 0xFFFFFFC7u;                                      /* mux address 0 (bits 3..5) */
+    smk_slot = 0;                                               /* match that address after rescue re-init too */
     smk__common(2);
     SMK_IOMAP_CON1 = (SMK_IOMAP_CON1 & ~0x30000u) | 0x20000u;    /* SPI2 group C: PA3 / PA4 */
     SMK_SPI2_CON = 0x4020u;                                      /* master, TX, no IRQ (stock: 0x6020) */
@@ -287,6 +302,8 @@ static void fm1_input_init(void)
     for (i = 0; i < SMK_NPAD; i++)
         fm1_in.pad_base[i] = 100u;                               /* (stock init) */
     smk_col = 0;
+    smk_sample_col = 0xFF;                                  /* no known column has settled yet */
+    smk_adc_slot = 0xFF;
     smk__shift(0);                                               /* the first word: latched on the first tick */
 }
 
@@ -427,7 +444,6 @@ static void fm1__frame(void)
     smk__keys(now);
     smk__buttons();
     smk__encoders();
-    smk__leds();
     fm1_in.frames++;
 }
 
@@ -549,7 +565,7 @@ FM1_INLINE void smk__adc_start(uint32_t ch)
 static void fm1_input_tick(void)
 {
     static const uint8_t CH[3] = {SMK_ADC_PADA, SMK_ADC_PADB, SMK_ADC_MUXC};
-    uint32_t col = smk_col, next;
+    uint32_t col = smk_col, sampled = smk_sample_col, next;
     if (smk_adc_slot != 0xFF) {                              /* the conversion of the last tick */
         if (SMK_ADC_CON & 0x80u) {
             fm1_in.adc_ok++;
@@ -561,10 +577,14 @@ static void fm1_input_tick(void)
         SMK_ADC_CON = 0;
         smk_adc_slot = 0xFF;
     }
-    fm1_in.raw[col] = (uint8_t)smk__rows();
+    /* Read the previous latch's column, which has settled for one whole tick.
+     * At cold start there is no known selection until the first DMA is latched. */
+    if (sampled != 0xFFu)
+        fm1_in.raw[sampled] = (uint8_t)smk__rows();
     if (col == 0u)                                           /* a new frame: its LED group */
         smk__common(smk_grp);
     smk__latch();                                            /* the word shifted last tick */
+    smk_sample_col = (uint8_t)col;
     next = (col + 1u) & 15u;
     smk_col = (uint8_t)next;
     /* the mux address for the slot after this one goes out with the next word */
@@ -575,8 +595,10 @@ static void fm1_input_tick(void)
         smk_slot = (uint8_t)ns;
         smk_muxw = 0xFFFFFFC7u | smk__slot_addr(ns) << 3;
     }
+    if (sampled == FM1_NCOL - 1u)
+        fm1__frame();                                        /* all 16 settled columns are now present */
     if (next == 0u)
-        fm1__frame();                                        /* (before the shift: column 0 carries the new LED group) */
+        smk__leds();                                         /* prepare group before shifting column 0 */
     smk__shift(next);
 }
 
@@ -593,16 +615,26 @@ static void fm1_input_scan(void)
 }
 
 /* ------------------------------------------------------- main-loop API --- */
-static inline uint32_t fm1__lock(void)
+/* As motion_guard/unguard, restore the caller's full ICFG. MASTER is read
+ * before IRQ sources start at boot; a drain must not enable interrupts there. */
+#ifndef SMK_INPUT_IRQ_SAVE
+FM1_INLINE uint32_t smk_input_irq_save(void)
 {
-    __asm__ volatile("cli" ::: "memory");
-    return 0;
+    uint32_t f;
+    __asm__ volatile("%0 = icfg\n\tcli" : "=r"(f) : : "memory");
+    return f;
 }
-static inline void fm1__unlock(uint32_t v)
+#define SMK_INPUT_IRQ_SAVE() smk_input_irq_save()
+#endif
+#ifndef SMK_INPUT_IRQ_RESTORE
+FM1_INLINE void smk_input_irq_restore(uint32_t f)
 {
-    (void)v;
-    __asm__ volatile("csync\n\tsti" ::: "memory");
+    __asm__ volatile("csync\n\ticfg = %0" : : "r"(f) : "memory");
 }
+#define SMK_INPUT_IRQ_RESTORE(f) smk_input_irq_restore(f)
+#endif
+static inline uint32_t fm1__lock(void) { return SMK_INPUT_IRQ_SAVE(); }
+static inline void fm1__unlock(uint32_t f) { SMK_INPUT_IRQ_RESTORE(f); }
 
 static int32_t fm1_enc_take(uint32_t e)
 {

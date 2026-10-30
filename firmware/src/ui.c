@@ -222,7 +222,11 @@ static struct {
     uint8_t ly;                  /* the layer whose button is down (LAYER_*), 0 = none */
     uint8_t layer;               /* the layer whose map is shown (LAYER_*), 0 = none */
     uint8_t lock;                /* #83: the layer locked open by a double tap (LAYER_*), 0 = none (ui_layer.c) */
+#if BOARD_SMK37
+    uint32_t pg_down;            /* SMK calibration may map a page to button 16 or 17 */
+#else
     uint16_t pg_down;            /* page buttons down (panel ids) that act when let go */
+#endif
     uint32_t layer_sig;          /* drawn-state cache of the map */
     char msg[24];
     char msg2[24];               /* a second message, shown when the first is over */

@@ -63,6 +63,9 @@ static void panel_init(void)                     /* also after a flash load: ids
         if (ok) buttons |= 1u << panel.btn[i];
     }
     for (i = 0; ok && i < NE; i++) {
+#if BOARD_SMK37
+        if (panel.enc[i] == SMK_ENC_MASTER) { ok = 0; break; }
+#endif
         ok = panel.enc[i] < FM1_NENC && !(encoders & (1u << panel.enc[i])) &&
              (panel.dir[i] == 1 || panel.dir[i] == -1);
         if (ok) encoders |= 1u << panel.enc[i];
