@@ -347,20 +347,26 @@ static __attribute__((noinline)) void fm6_op_run(int32_t *out, const int32_t *in
         FM6_OP_LOOP(phase, =)
 }
 
-/* the operator with feedback (fb: its last two outputs) */
+/* the operator with feedback (fb: its last two outputs). Two loops (add: += else =): kept as one loop, the choice
+ * stays in it as a predicated load and add per sample */
+#define FM6_FB_LOOP(STORE)                                                        \
+    for (i = 0; i < FM6_N; i++) {                                               \
+        int32_t s = (y0 + y) >> (shift + 1);                                    \
+        g += dg;                                                                \
+        y0 = y;                                                                 \
+        y = (int32_t)(((int64_t)fm6_sin((int32_t)((uint32_t)phase + (uint32_t)s)) * g) >> 15); \
+        out[i] STORE y;                                                         \
+        phase = (int32_t)((uint32_t)phase + (uint32_t)freq);                    \
+    }
 static __attribute__((noinline)) void fm6_op_fb(int32_t *out, int32_t phase, int32_t freq, int32_t g1, int32_t g2,
                                                 int32_t *fb, int32_t shift, int add)
 {
     int32_t dg = (g2 - g1 + (FM6_N >> 1)) >> FM6_LG_N, g = g1, y0 = fb[0], y = fb[1];
     uint32_t i;
-    for (i = 0; i < FM6_N; i++) {
-        int32_t s = (y0 + y) >> (shift + 1);
-        g += dg;
-        y0 = y;
-        y = (int32_t)(((int64_t)fm6_sin((int32_t)((uint32_t)phase + (uint32_t)s)) * g) >> 15);
-        out[i] = add ? out[i] + y : y;
-        phase = (int32_t)((uint32_t)phase + (uint32_t)freq);
-    }
+    if (add)
+        FM6_FB_LOOP(+=)
+    else
+        FM6_FB_LOOP(=)
     fb[0] = y0;
     fb[1] = y;
 }
