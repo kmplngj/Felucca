@@ -26,7 +26,8 @@ the commands and revisions actually exercised.
 ## Device control 84
 
 INFO appends `5A 01 caps`: bit 0 supports the read-only control identity; bit 1
-supports guarded warm restart. Normal target OTA/editor builds advertise both.
+supports guarded warm restart. `TRANSFER_COMPLETE` requires bit 0; `RESTART`
+requires both bits. Normal target OTA/editor builds advertise both.
 Host fixtures omit restart support unless an explicit test hook enables it.
 The browser emulator omits USB/editor support entirely. Negotiate the capability;
 do not repurpose MIDI System Reset, UBOOT or OTA.

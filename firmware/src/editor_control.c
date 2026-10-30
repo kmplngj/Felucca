@@ -35,7 +35,7 @@ static uint32_t ed_control_busy(void)
         fx_audio_activity != ed_control.quiet_audio || fm1_ms - ed_control.quiet_since < ED_CONTROL_QUIET_MS)
         busy |= 2u;
     for (k = 0; k < NTRK; k++) {
-        if (trk[k].nheld || trk[k].arp_phys || trk[k].latched || trk[k].seq_n || trk[k].rh_n)
+        if (midi_track_held(k) || trk[k].nheld || trk[k].arp_phys || trk[k].latched || trk[k].seq_n || trk[k].rh_n)
             busy |= 2u;
         for (i = 0; i < NVOICE; i++) if (trk[k].v[i].active) busy |= 2u;
     }

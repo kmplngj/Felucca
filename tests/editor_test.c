@@ -90,6 +90,8 @@ static void reset(void)
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev); memset(&settings, 0, sizeof settings); settings_init();
     memset(proj_slot, 0, sizeof proj_slot); memset(up_bank, 0, sizeof up_bank);
     memset(&um, 0, sizeof um); memset(usr_nz, 0, sizeof usr_nz);
+    memset(midi_notes, 0, sizeof midi_notes); memset(midi_owners, 0, sizeof midi_owners);
+    memset(midi_ch, 0, sizeof midi_ch); memset(mchord, 0, sizeof mchord);
     host_progress = 1; host_erases = host_writes = host_wire_n = 0;
     transport_req = panic_req = 0; sx_ready = sx_collect = sx_busy = 0;
     so_r = so_w = so_done = mi_r = mi_w = 0; midi_in_overflow = 0; usb.config = 1; usb.up = 0;
@@ -1799,6 +1801,35 @@ static int guarded_control(void)
         reset();
     }
     bad += check("CONTROL refuses count-in/song/notes/learn/menu/writes/update/transfers", ok);
+    if (eng_ok(ENGI_DRUM)) {
+        int32_t pcm[2u * CTL];
+        uint32_t active = 0, sounded = 0;
+        reset();
+        host_preset(TSEL, ENGI_DRUM, 0);
+        TSEL->p[P_AMODE] = 0;
+        song.g[G_ROUTE] = ROUTE_SEL;
+        song.master_q12 = MASTER_FULL;
+        midi_in_event(0x642A9009u);           /* USB MIDI CH1: closed hi-hat, held through its one-shot decay */
+        for (uint32_t block = 0; block < 5u * FS / CTL; block++) {
+            mix_block(pcm, CTL);
+            active = 0;
+            for (uint32_t voice = 0; voice < NVOICE; voice++) active += TSEL->v[voice].active != 0;
+            sounded |= active != 0;
+            if (sounded && !active) break;
+        }
+        ok = sounded && !active && midi_track_held(0) && !TSEL->nheld && !TSEL->arp_phys;
+        control_token(a, 1); request(ED_CONTROL, a, 16);
+        bad += check("CONTROL refuses held MIDI one-shot after its real DRUM voice decays",
+            ok && host_wire[6] == 3 && !ed_control.pending && !host_restarts);
+        midi_in_event(0x002A8008u);
+        events_block(CTL);
+        control_token(a, 1); request(ED_CONTROL, a, 16);
+        ok = !midi_track_held(0) && !host_wire[6] && ed_control.pending;
+        so_done = ed_control.end; ed_control_poll();
+        bad += check("CONTROL permits restart after real MIDI NoteOff and observed quiet",
+            ok && host_restarts == 1 && !ed_control.pending);
+        reset();
+    }
     control_token(a, 1); host_audio_activity++;
     request(ED_CONTROL, a, 16);
     bad += check("CONTROL refuses FX tail activity with no active voices", host_wire[6] == 3 && !ed_control.pending);

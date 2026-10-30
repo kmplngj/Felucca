@@ -56,8 +56,11 @@
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "v1.6.1" /* shown in the menu, the console and the editor; build.py --release X.Y */
 #endif
-#if FELUCCA_OTA
-#define FELUCCA_RESTART 1        /* application-only USB completion fences; the update loader keeps its existing path */
+#ifndef FELUCCA_RESTART
+#define FELUCCA_RESTART FELUCCA_OTA  /* application-only USB completion fences; the loader keeps its existing path */
+#endif
+#if FELUCCA_RESTART && !FELUCCA_OTA
+#error "FELUCCA_RESTART needs FELUCCA_OTA"
 #endif
 #if FELUCCA_OTA && !FELUCCA_FLASH
 #error "FELUCCA_OTA needs FELUCCA_FLASH"
