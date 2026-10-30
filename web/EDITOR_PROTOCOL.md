@@ -27,8 +27,9 @@ the commands and revisions actually exercised.
 
 INFO appends `5A 01 caps`: bit 0 supports the read-only control identity; bit 1
 supports guarded warm restart. Normal target OTA/editor builds advertise both.
-Host/emulator adapters omit restart support unless an explicit test hook enables
-it. Negotiate the capability; do not repurpose MIDI System Reset, UBOOT or OTA.
+Host fixtures omit restart support unless an explicit test hook enables it.
+The browser emulator omits USB/editor support entirely. Negotiate the capability;
+do not repurpose MIDI System Reset, UBOOT or OTA.
 See [host usage and limits](../docs/device-control.md).
 
 All integers below are the five-byte, canonical u32 encoding in the framing
