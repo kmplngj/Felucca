@@ -23,6 +23,10 @@ the commands and revisions actually exercised.
 - [MIDI LEARN 78..79](#midi-learn-78-79-15), [palette 80..81](#custom-palette-80-81-16), [raw export 82..83](#raw-store-export-82-83-456)
 - [Parameter reference](#parameter-and-engine-reference), [project containers](#project-containers), [protocol changelog](#protocol-changelog)
 
+Ordinary MIDI channel performance controls are documented separately in the
+[MIDI performance guide](../docs/midi-performance.md) and the [stable NRPN registry](../docs/midi-530.md).
+Their session configuration does not add a SysEx command or saved parameter ID.
+
 ## Framing
 
 A request is `F0 7D 46 4C <cmd> <args...> F7`:

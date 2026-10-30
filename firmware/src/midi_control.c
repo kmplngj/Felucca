@@ -780,3 +780,22 @@ static void midi_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
     midi_event_source(st, ch, d1, d2, 1u);
 }
+
+/* Project replacement resets controller setup, not registered tuning values. */
+static void midi_session_reset(void)
+{
+    uint32_t ch;
+    midi_key_reset();
+    midi_velocity_reset();
+    midi_mix_reset();
+    midi_soft_reset();
+    midi_nrpn_reset();
+    midi_bank_reset();
+    memset(midi_glide_switch, 0, sizeof midi_glide_switch);
+    memset(midi_legato_switch, 0, sizeof midi_legato_switch);
+    for (ch = 0; ch < 16u; ch++) {
+        midi_ch[ch].rpn_msb = midi_ch[ch].rpn_lsb = 127;
+        midi_ch[ch].glide_switch = midi_ch[ch].legato_switch = 0;
+        midi_ch[ch].glide_parts = midi_ch[ch].legato_parts = 0;
+    }
+}

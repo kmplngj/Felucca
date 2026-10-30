@@ -1063,11 +1063,7 @@ static int project_restore_runtime(const project_t *input)
     fm1_irq_off();                                      /* the audio ISR must not see half a project */
     seq_stop();
     /* External performance setup belongs to the session, never the saved project. */
-    midi_key_reset();
-    midi_velocity_reset();
-    midi_mix_reset();
-    midi_soft_reset();
-    midi_nrpn_reset();
+    midi_session_reset();
     transport_req = 0;
     chain_config = p->chain;
     motion = p->motion;
