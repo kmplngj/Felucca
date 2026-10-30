@@ -433,6 +433,13 @@ _Static_assert(IDX_ODD(sizeof(track_t)) * IDX_INV(IDX_ODD(sizeof(track_t))) == 1
 _Static_assert(IDX_ODD(sizeof(voice_t)) * IDX_INV(IDX_ODD(sizeof(voice_t))) == 1u, "voice_index: the odd factor's inverse");
 static inline uint32_t trk_index(const track_t *t) { return EXACT_INDEX(t, trk); }       /* t - trk */
 static inline uint32_t voice_index(const track_t *t, const voice_t *v) { return EXACT_INDEX(v, t->v); }   /* v - t->v */
+/* x / d (C: rounded toward zero) for a power of two d, without a DIV (#623): a negative x gets d - 1 added first,
+ * so the arithmetic shift (floor) rounds toward zero too. Exact for every int32 x (x + d - 1 only for x < 0: no
+ * overflow); d a power of two (1..2^30), a constant at the call. tests/signed_audio_scaling_test.c checks it. */
+static inline __attribute__((always_inline)) int32_t sdiv_pow2(int32_t x, uint32_t d)
+{
+    return (x + (int32_t)((uint32_t)(x >> 31) & (d - 1u))) >> __builtin_ctz(d);
+}
 #define TSEL (&trk[song.sel])    /* the selected track */
 /* MIDI IN TRACK: track i's channel 0..15, MCH_OMNI or MCH_OFF (song.mch), and set */
 static inline uint32_t mch_get(uint32_t i)

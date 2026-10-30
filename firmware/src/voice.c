@@ -665,9 +665,25 @@ static __attribute__((noinline)) void spread_sum(int32_t *out)
 }
 #endif
 
-/* render one block of a part into out (cleared here); returns the voices rendered */
 /* Channel bend is live performance state, outside projects/presets. Q8 semitones. */
 static int32_t midi_bend_q8[NTRK], midi_bend_target[NTRK];
+/* The bend's arithmetic without a DIV (#623), the values of the C divisions it replaces. |target| <= 6397 Q8
+ * (24 semitones 99 cents; 65,533 with any uint8 RPN), so |d| < 2^17, far from any overflow below; the
+ * signed_audio_scaling test compares each with its division over a domain beyond that.
+ * bend_step: ~6 ms smoothing, an exact landing: d within +-3, else (d + 3) / 4 or (d - 3) / 4 (away from zero).
+ * For d >= 4, d + 3 > 0 and the shift is the division; for d <= -4, (d - 3) / 4 rounds toward zero, which is
+ * floor((d - 3 + 3) / 4) = d >> 2 (arithmetic shift: floor). */
+static inline int32_t bend_step(int32_t d)
+{
+    return d > 0 ? (d < 4 ? d : (d + 3) >> 2) : (d > -4 ? d : d >> 2);
+}
+/* bend_coarse: bend >= 0 ? bend / 16 : -((-bend + 15) / 16), both floor(bend / 16) = bend >> 4.
+ * bend_fine: the rest r = bend - 16 floor(bend / 16) (0..15) as r * 2367 / 2560 (1/4096; 1 ct = 2.367):
+ * r * 60595 >> 16. 60595 / 65536 = 2367 / 2560 - 3.1e-6, and r 2367 / 2560 is a whole number only at r = 0
+ * (2367 and 2560 coprime), else at least 1 / 2560 above one: 15 x 3.1e-6 crosses no floor. */
+static inline int32_t bend_coarse(int32_t bend) { return bend >> 4; }
+static inline int32_t bend_fine_of(int32_t bend) { return (int32_t)(((uint32_t)bend & 15u) * 60595u >> 16); }
+/* render one block of a part into out (cleared here); returns the voices rendered */
 static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
 {
     const engine_t *e = ENGINES[t->engine];
@@ -684,11 +700,11 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     } else {
         int32_t d = midi_bend_target[ti] - midi_bend_q8[ti];
         /* ~6 ms smoothing, with an exact landing (no permanent small offset). */
-        midi_bend_q8[ti] += d > 0 ? (d < 4 ? d : (d + 3) / 4) : (d > -4 ? d : (d - 3) / 4);
+        midi_bend_q8[ti] += bend_step(d);
     }
     bend = midi_bend_q8[ti];
-    bend16 = bend >= 0 ? bend / 16 : -((-bend + 15) / 16);
-    bend_fine = (bend - bend16 * 16) * 2367 / 2560;
+    bend16 = bend_coarse(bend);
+    bend_fine = bend_fine_of(bend);
     uint32_t nr = 0, fade = t->xf_on && t->xf;
     int16_t pe_new[8];
     for (i = 0; i < n; i++)
@@ -738,7 +754,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             if (p[P_LD_AMP])
                 m.amp1 = mulq15(m.amp1, 32767 - mulq15(p[P_LPOL] ? lfo : (lfo + 32768) >> 1, p[P_LD_AMP] * 258));
             if (fade)                                   /* linear to 0 over the fade */
-                m.amp1 = m.amp1 * (int32_t)(t->xf - 1u) / (int32_t)XF_BLOCKS;
+                m.amp1 = sdiv_pow2(m.amp1 * (int32_t)(t->xf - 1u), XF_BLOCKS);   /* (no DIV: core.h) */
             m.amp0 = v->env_out;
             v->env_out = m.amp1;
         }
