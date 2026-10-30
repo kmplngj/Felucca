@@ -406,18 +406,22 @@ static int smk_btn_free(uint32_t id)
  * in the theme's colour: lit full, breathing dark .. full and back (~1.1 s, as fm1_input.h), the mid level (nm: the
  * grid's beats, the scale's root) a quarter, the glow of a key that does something (og: the DRUM grid's lanes, sg:
  * SCALE LEDS) a sixteenth; the other keys' idle glow is off: off is off on the pads */
-static void smk_leds(const uint8_t *nl, const uint8_t *nb, const uint8_t *nm, const uint8_t *og, const uint8_t *sg)
+static void smk_leds(const uint8_t *nl, const uint8_t *nb, const uint8_t *nm, const uint8_t *og, const uint8_t *sg,
+                     uint32_t dark)
 {
     uint32_t c, th = T_THEME, br = (fm1_ms >> 2) & 0xFFu;
     uint32_t r = (th >> 11) << 3 | (th >> 13), g = ((th >> 5) & 0x3Fu) << 2 | ((th >> 9) & 3u), b = (th & 0x1Fu) << 3 | ((th >> 2) & 7u);
     br = br < 128u ? br * 2u : (255u - br) * 2u;        /* the breath: 0..254 over ~1 s */
     for (c = 0; c < SMK_NLED; c++)
         fm1_led[c] = (uint8_t)(nl[c] | nb[c]);
-    if (smk_btn_free(SMK_BTN_FADER_BANK))
-        fm1_led[SMK_BTN_FADER_BANK] = smk_fbank != 0u;  /* FADER BANK lit off bank A */
-    if (smk_btn_free(SMK_BTN_KNOB_BANK))
-        fm1_led[SMK_BTN_KNOB_BANK] = ui.menu != 0;      /* KNOB BANK lit while the menu is up */
-    if ((int32_t)(fm1_ms - padled_hold_until) < 0)      /* (console padtest has them) */
+    if (!dark) {
+        if (smk_btn_free(SMK_BTN_FADER_BANK))
+            fm1_led[SMK_BTN_FADER_BANK] = smk_fbank != 0u;  /* FADER BANK lit off bank A */
+        if (smk_btn_free(SMK_BTN_KNOB_BANK))
+            fm1_led[SMK_BTN_KNOB_BANK] = ui.menu != 0;      /* KNOB BANK lit while the menu is up */
+    }
+    /* AUTO OFF owns the pads too; awake diagnostic holds retain their colours. */
+    if (!dark && (int32_t)(fm1_ms - padled_hold_until) < 0)
         return;
     for (c = 0; c < SMK_NPAD; c++) {                    /* white key c on its pad (the top row first) */
         uint32_t id = LED_KEY0 + SMK_WHITE_NOTE[c];
@@ -447,7 +451,7 @@ static void ui_leds(void)
         if (!scr_dark_active() && elapsed >= 30000u && elapsed % 30000u < 120u)
             led_put(nm, LED_KEY0 + ((elapsed / 30000u - 1u) % 27u), 1);
 #if BOARD_SMK37
-        smk_leds(nl, nb, nm, og, sg);
+        smk_leds(nl, nb, nm, og, sg, 1);
 #else
         fm1_led_dim_level(1u);
         for (c = 0; c < FM1_NCOL; c++) {
@@ -515,7 +519,7 @@ static void ui_leds(void)
 #if BOARD_SMK37
     if (song.playing || (seq_counting() && cin_pos < click_beat_len() / 4u))   /* (no green LED: PLAY itself) */
         led_put(nl, panel.btn[B_PLAY], 1);
-    smk_leds(nl, nb, nm, og, sg);
+    smk_leds(nl, nb, nm, og, sg, 0);
 #else
     if (song.playing || (seq_counting() && cin_pos < click_beat_len() / 4u))   /* counting in: green on each beat */
         nl[LED_PLAY_GREEN >> 3] |= (uint8_t)(1u << (LED_PLAY_GREEN & 7u));
