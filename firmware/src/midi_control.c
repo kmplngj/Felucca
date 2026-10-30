@@ -7,7 +7,7 @@
  * share it (last controller wins). Drum hits ignore bend and sustain. CC1 keeps the existing matrix routing. */
 typedef struct {
     int16_t bend;                           /* signed 14-bit value, zero = centre */
-    uint8_t wheel, pedal, targets;
+    uint8_t wheel, pedal, soft, targets;
     uint8_t owned[NTRK];                    /* held/pedal notes per track, at most 128 per channel */
     uint8_t ready, semis, cents;
     uint8_t rpn_msb, rpn_lsb;
@@ -96,6 +96,15 @@ static midi_channel_t *midi_channel(uint32_t ch)
         c->ready = 1;
     }
     return c;
+}
+
+/* Session controller state: project replacement resets this along with routing setup.
+ * Sound changes and note/sound panic keep the physical switch state. */
+static void midi_soft_reset(void)
+{
+    uint32_t ch;
+    for (ch = 0; ch < 16u; ch++)
+        midi_ch[ch].soft = 0;
 }
 
 static uint32_t midi_targets(uint32_t ch)
@@ -222,7 +231,9 @@ static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
                 midi_hint = (uint8_t)(i + 1u);
             midi_seen |= (uint8_t)(1u << i);
             c->targets |= (uint8_t)(1u << i);
-            midi_play(t, ch, note, vel);
+            /* Select destinations with raw velocity first (zones), then soften once.
+             * Round half upward: every positive MIDI velocity remains positive. */
+            midi_play(t, ch, note, c->soft ? (vel + 1u) >> 1 : vel);
             midi_notes[ch][note] |= (uint8_t)(1u << i);
             midi_owners[i]++;
             c->owned[i]++;
@@ -340,9 +351,9 @@ static uint32_t ml_id(uint32_t code)        /* an entry's code -> P_* id, P_COUN
 {
     return code >= ML_E0 ? P_E0 + code - ML_E0 : code && code <= P_E0 ? code - 1u : P_COUNT;
 }
-static int ml_free_cc(uint32_t cc)          /* (CC1 6 38 64 98..101 120..127: midi_control's own) */
+static int ml_free_cc(uint32_t cc)          /* (CC1 6 38 64 67 98..101 120..127: midi_control's own) */
 {
-    return cc && cc < 120u && cc != 1u && cc != 6u && cc != 11u && cc != 32u && cc != 38u && cc != 64u &&
+    return cc && cc < 120u && cc != 1u && cc != 6u && cc != 11u && cc != 32u && cc != 38u && cc != 64u && cc != 67u &&
            (cc < 96u || cc > 101u);
 }
 /* 1: cc is learned (set here) or taken by MIDI LEARN waiting for one */
@@ -449,6 +460,7 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
         midi_nrpn_reset_channel(ch);
         c->bend = 0;
         c->wheel = 0;
+        c->soft = 0;
         c->rpn_msb = c->rpn_lsb = 127;
         midi_expression_channel(ch);
         midi_pedal_up(ch);
@@ -458,6 +470,9 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
             c->pedal = 1;
         else
             midi_pedal_up(ch);
+        break;
+    case 67:
+        c->soft = (uint8_t)(value >= 64u);
         break;
     case 101: midi_nrpn_reset_channel(ch); c->rpn_msb = (uint8_t)value; break;
     case 100: midi_nrpn_reset_channel(ch); c->rpn_lsb = (uint8_t)value; break;
@@ -496,7 +511,7 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
 
 /* ROUT CH1-4 listens to channels 1..4 only (1.2: CH5-8, CH9-12, CH13-16 to their four). A switch to a block from
  * SEL or another block (events_block, before the queue) lets go of what the other channels hold: their notes
- * released (also pedal-held ones), their pedal, bend, wheel and RPN selection reset, so no note can hang on a
+ * released (also pedal-held ones), their pedal, soft switch, bend, wheel and RPN selection reset, so no note can hang on a
  * channel that is no longer heard. When entering, leaving or editing TRACK, a still-heard channel also releases
  * notes whose former track is no longer its destination (duplicates / OMNI). Legacy SEL -> block keeps heard
  * channels' original owners until note-off. Each part's bend then follows the new routing. */
@@ -526,7 +541,7 @@ static void __attribute__((noinline)) midi_route_block(void)
         for (note = 0; note < 128u; note++)
             if (midi_notes[ch][note])
                 midi_release(ch, note);
-        c->pedal = c->wheel = 0;
+        c->pedal = c->wheel = c->soft = 0;
         c->bend = 0;
         c->rpn_msb = c->rpn_lsb = 127;
         midi_nrpn_reset_channel(ch);
