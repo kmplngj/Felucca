@@ -1439,6 +1439,7 @@ static void smk_wheels_block(uint32_t routing_reset)
     if (sel != prev || mc != prev_mc) {
         if (prev < NTRK) {
             midi_bend_target[prev] = 0;
+            smk_bend_source[prev] = 0;
             trk[prev].mw = 0;
             /* Release the channel actually driven, even if its routing has changed.
              * A shared channel remains controlled by the newly selected track. */
@@ -1453,12 +1454,10 @@ static void smk_wheels_block(uint32_t routing_reset)
         lm = 0xFF;
     }
     if (b != lb) {
-        const midi_channel_t *c = midi_channel(mc);
-        int32_t range = ((int32_t)c->semis * 100 + c->cents) * 256 / 100;
         uint32_t u = (uint32_t)(b + 8192);
         lb = b;
-        if (!drum_track(&trk[sel]))
-            midi_bend_target[sel] = b * range / (b < 0 ? 8192 : 8191);
+        smk_bend_source[sel] = (uint8_t)(SMK_BEND_PHYSICAL | (mc + 1u));
+        midi_expression(&trk[sel], midi_channel(mc));
         midi_out_event(0x0Eu | (0xE0u | mc) << 8 | (u & 0x7Fu) << 16 | ((u >> 7) & 0x7Fu) << 24);
     }
     if (m != lm) {

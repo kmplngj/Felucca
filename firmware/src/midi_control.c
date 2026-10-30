@@ -13,6 +13,12 @@ typedef struct {
     uint8_t rpn_msb, rpn_lsb;
 } midi_channel_t;
 static midi_channel_t midi_ch[16];
+#if BOARD_SMK37
+/* Last bend controller per part: channel+1, high bit for the physical wheel.
+ * Notes preserve this authority; RPN0 recalculates its raw bend at its range. */
+#define SMK_BEND_PHYSICAL 0x80u
+static uint8_t smk_bend_source[NTRK];
+#endif
 /* Low bits: track + 1. High bit: key released, held by its channel's pedal. */
 static uint8_t midi_sel_on[16][128];
 #define midi_notes midi_sel_on
@@ -35,12 +41,32 @@ static uint32_t midi_targets(uint32_t ch)
     return midi_channel(ch)->targets | (1u << trk_index(midi_track(ch)));
 }
 
+#if BOARD_SMK37
+static void smk_bend_take(uint32_t ch)
+{
+    uint32_t i, mask = midi_targets(ch);
+    for (i = 0; i < NTRK; i++)
+        if (mask & (1u << i))
+            smk_bend_source[i] = (uint8_t)(ch + 1u);
+}
+#endif
+
 static void midi_expression(track_t *t, const midi_channel_t *c)
 {
-    int32_t range = ((int32_t)c->semis * 100 + c->cents) * 256 / 100;
+    int32_t bend = c->bend, range;
+#if BOARD_SMK37
+    uint32_t id = trk_index(t), source = smk_bend_source[id];
+    if (!source)
+        smk_bend_source[id] = (uint8_t)(c - midi_ch + 1u);
+    else {
+        c = midi_channel((source & 0x1Fu) - 1u);
+        bend = source & SMK_BEND_PHYSICAL ? smk_bend14 : c->bend;
+    }
+#endif
+    range = ((int32_t)c->semis * 100 + c->cents) * 256 / 100;
     if (drum_track(t))
         return;
-    midi_bend_target[trk_index(t)] = (int32_t)c->bend * range / (c->bend < 0 ? 8192 : 8191);
+    midi_bend_target[trk_index(t)] = bend * range / (bend < 0 ? 8192 : 8191);
 }
 
 static void midi_expression_channel(uint32_t ch)
@@ -50,6 +76,19 @@ static void midi_expression_channel(uint32_t ch)
         if (mask & (1u << i))
             midi_expression(&trk[i], midi_channel(ch));
 }
+
+#if BOARD_SMK37
+/* Range belongs to the source channel even when TRACK's first-match input
+ * destination differs from the selected physical-wheel track. This union is
+ * for RPN recalculation only; explicit bend/reset keep normal MIDI targets. */
+static void smk_bend_range(uint32_t ch)
+{
+    uint32_t i, mask = midi_targets(ch);
+    for (i = 0; i < NTRK; i++)
+        if ((mask & (1u << i)) || (smk_bend_source[i] & 0x1Fu) == ch + 1u)
+            midi_expression(&trk[i], midi_channel(ch));
+}
+#endif
 
 /* a MIDI note of track t sounds note: one played as itself, or a tone of one played as a chord (chord.c) */
 static int midi_note_held(const track_t *t, uint32_t note)
@@ -183,6 +222,9 @@ static void __attribute__((noinline)) midi_forget_track(uint32_t track)
     midi_owners[track] = 0;
     mchord_forget(track);
     midi_bend_q8[track] = midi_bend_target[track] = 0;
+#if BOARD_SMK37
+    smk_bend_source[track] = 0;
+#endif
 }
 
 static void midi_silence_track(uint32_t track)
@@ -341,6 +383,9 @@ static void midi_control(uint32_t ch, uint32_t cc, uint32_t value)
         c->bend = 0;
         c->wheel = 0;
         c->rpn_msb = c->rpn_lsb = 127;
+#if BOARD_SMK37
+        smk_bend_take(ch);                          /* explicit reset supersedes physical/other-channel bend */
+#endif
         midi_expression_channel(ch);
         midi_pedal_up(ch);
         break;
@@ -361,7 +406,11 @@ static void midi_control(uint32_t ch, uint32_t cc, uint32_t value)
                 c->semis = (uint8_t)(value > 24u ? 24u : value);
             else
                 c->cents = (uint8_t)(value > 99u ? 99u : value);
+#if BOARD_SMK37
+            smk_bend_range(ch);
+#else
             midi_expression_channel(ch);
+#endif
         }
         break;
     default:
@@ -380,6 +429,10 @@ static void __attribute__((noinline)) midi_route_block(void)
 {
     uint32_t ch, note, i;
     uint32_t reassign = song.g[G_ROUTE] == ROUTE_TRACK || midi_route == ROUTE_TRACK || midi_route == MIDI_ROUTE_AGAIN;
+#if BOARD_SMK37
+    for (i = 0; i < NTRK; i++)
+        smk_bend_source[i] = 0;                    /* rebuild authority alongside the new routing */
+#endif
     if (reassign)
         for (i = 0; i < NTRK; i++)
             midi_bend_target[i] = 0;                /* A track with no channel must not retain the old bend. */
@@ -392,6 +445,9 @@ static void __attribute__((noinline)) midi_route_block(void)
                 for (note = 0; note < 128u; note++)
                     if (midi_notes[ch][note] && (midi_notes[ch][note] & 0x7Fu) != id)
                         midi_release(ch, note);
+#if BOARD_SMK37
+            smk_bend_source[id - 1u] = (uint8_t)(ch + 1u);
+#endif
             midi_expression(t, c);
             continue;
         }
@@ -421,6 +477,9 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
         midi_note_event(ch, d1, st == 0x90u ? d2 : 0);
     else if (st == 0xE0u) {
         midi_channel(ch)->bend = (int16_t)((int32_t)(d1 | (d2 << 7)) - 8192);
+#if BOARD_SMK37
+        smk_bend_take(ch);                          /* explicit controller, unlike a later note or RPN update */
+#endif
         midi_expression_channel(ch);
     } else if (st == 0xB0u) {
         mod_midi(midi_track(ch), st, d1, d2);
