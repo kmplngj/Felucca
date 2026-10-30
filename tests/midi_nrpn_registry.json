@@ -1,0 +1,457 @@
+{
+  "donor": "ordenador/Felucca@3348c2eb6aa4ba175f5e746a7e42d7670f74a498",
+  "common": [
+    [
+      0,
+      "P_LEVEL",
+      "Level"
+    ],
+    [
+      1,
+      "P_ATK",
+      "ENV Attack"
+    ],
+    [
+      2,
+      "P_DEC",
+      "ENV Decay"
+    ],
+    [
+      3,
+      "P_SUS",
+      "ENV Sustain"
+    ],
+    [
+      4,
+      "P_REL",
+      "ENV Release"
+    ],
+    [
+      5,
+      "P_ED_FLT",
+      "ENV Filter"
+    ],
+    [
+      6,
+      "P_ED_PIT",
+      "ENV Pitch"
+    ],
+    [
+      7,
+      "P_ED_SHP",
+      "ENV Shape"
+    ],
+    [
+      9,
+      "P_LRATE",
+      "LFO Rate"
+    ],
+    [
+      10,
+      "P_LWAVE",
+      "LFO Wave"
+    ],
+    [
+      11,
+      "P_LPHASE",
+      "LFO Phase"
+    ],
+    [
+      12,
+      "P_LFADE",
+      "LFO Fade"
+    ],
+    [
+      13,
+      "P_LD_PIT",
+      "LFO Pitch"
+    ],
+    [
+      14,
+      "P_LD_FLT",
+      "LFO Filter"
+    ],
+    [
+      15,
+      "P_LD_SHP",
+      "LFO Shape"
+    ],
+    [
+      16,
+      "P_LD_AMP",
+      "LFO Amplitude"
+    ],
+    [
+      17,
+      "P_AMODE",
+      "Arp Mode"
+    ],
+    [
+      18,
+      "P_ARATE",
+      "Arp Rate"
+    ],
+    [
+      19,
+      "P_AOCT",
+      "Arp Octaves"
+    ],
+    [
+      20,
+      "P_AGATE",
+      "Arp Gate"
+    ],
+    [
+      21,
+      "P_ASWING",
+      "Arp Swing"
+    ],
+    [
+      22,
+      "P_APROB",
+      "Arp Probability"
+    ],
+    [
+      23,
+      "P_AHOLD",
+      "Arp Hold"
+    ],
+    [
+      24,
+      "P_AORDER",
+      "Arp Order"
+    ],
+    [
+      25,
+      "P_ROOT",
+      "Scale Root"
+    ],
+    [
+      26,
+      "P_SCALE",
+      "Scale"
+    ],
+    [
+      27,
+      "P_QUANT",
+      "Quantize"
+    ],
+    [
+      28,
+      "P_TRANS",
+      "Transpose"
+    ],
+    [
+      29,
+      "P_SLEN",
+      "Sequence Length"
+    ],
+    [
+      30,
+      "P_SDIV",
+      "Sequence Division"
+    ],
+    [
+      31,
+      "P_SSWING",
+      "Sequence Swing"
+    ],
+    [
+      32,
+      "P_SGATE",
+      "Sequence Gate"
+    ],
+    [
+      33,
+      "P_DIST",
+      "Distortion"
+    ],
+    [
+      34,
+      "P_CHOR",
+      "Chorus Send"
+    ],
+    [
+      35,
+      "P_DLY",
+      "Delay Send"
+    ],
+    [
+      36,
+      "P_REV",
+      "Reverb Send"
+    ],
+    [
+      37,
+      "P_VOICE",
+      "Voice Mode"
+    ],
+    [
+      38,
+      "P_GLIDE",
+      "Glide"
+    ],
+    [
+      39,
+      "P_PAN",
+      "Pan"
+    ],
+    [
+      40,
+      "P_MUTE",
+      "Mute"
+    ],
+    [
+      41,
+      "P_GLMODE",
+      "Glide Mode"
+    ],
+    [
+      42,
+      "P_PRIO",
+      "Voice Priority"
+    ],
+    [
+      43,
+      "P_ALLOC",
+      "Voice Allocation"
+    ],
+    [
+      44,
+      "P_DETUNE",
+      "Detune"
+    ],
+    [
+      45,
+      "P_SLCR",
+      "Slicer Mode"
+    ],
+    [
+      46,
+      "P_SLPAT",
+      "Slicer Pattern"
+    ],
+    [
+      47,
+      "P_SLRATE",
+      "Slicer Rate"
+    ],
+    [
+      48,
+      "P_SLDEPTH",
+      "Slicer Depth"
+    ],
+    [
+      49,
+      "P_M1SRC",
+      "Matrix1 Source"
+    ],
+    [
+      50,
+      "P_M1DST",
+      "Matrix1 Destination"
+    ],
+    [
+      51,
+      "P_M1AMT",
+      "Matrix1 Amount"
+    ],
+    [
+      52,
+      "P_M2SRC",
+      "Matrix2 Source"
+    ],
+    [
+      53,
+      "P_M2DST",
+      "Matrix2 Destination"
+    ],
+    [
+      54,
+      "P_M2AMT",
+      "Matrix2 Amount"
+    ],
+    [
+      55,
+      "P_M3SRC",
+      "Matrix3 Source"
+    ],
+    [
+      56,
+      "P_M3DST",
+      "Matrix3 Destination"
+    ],
+    [
+      57,
+      "P_M3AMT",
+      "Matrix3 Amount"
+    ],
+    [
+      58,
+      "P_M4SRC",
+      "Matrix4 Source"
+    ],
+    [
+      59,
+      "P_M4DST",
+      "Matrix4 Destination"
+    ],
+    [
+      60,
+      "P_M4AMT",
+      "Matrix4 Amount"
+    ],
+    [
+      81,
+      "P_CHRD",
+      "Chord"
+    ],
+    [
+      82,
+      "P_VOIC",
+      "Chord Voicing"
+    ],
+    [
+      83,
+      "P_LN0",
+      "Drum Kick"
+    ],
+    [
+      84,
+      "P_LN1",
+      "Drum Snare"
+    ],
+    [
+      85,
+      "P_LN2",
+      "Drum Clap"
+    ],
+    [
+      86,
+      "P_LN3",
+      "Drum Closed Hat"
+    ],
+    [
+      87,
+      "P_LN4",
+      "Drum Open Hat"
+    ],
+    [
+      88,
+      "P_LN5",
+      "Drum Tom"
+    ],
+    [
+      89,
+      "P_LN6",
+      "Drum Rim"
+    ],
+    [
+      90,
+      "P_LN7",
+      "Drum Bell"
+    ],
+    [
+      91,
+      "P_LSYNC",
+      "LFO Sync"
+    ],
+    [
+      92,
+      "P_LTRIG",
+      "LFO Trigger"
+    ],
+    [
+      93,
+      "P_LPOL",
+      "LFO Polarity"
+    ],
+    [
+      94,
+      "P_SQNT",
+      "Sequence Quantize"
+    ],
+    [
+      95,
+      "P_SPRD",
+      "Spread"
+    ],
+    [
+      96,
+      "P_ITYPE",
+      "Insert Type"
+    ],
+    [
+      97,
+      "P_IA",
+      "Insert A"
+    ],
+    [
+      98,
+      "P_IB",
+      "Insert B"
+    ],
+    [
+      99,
+      "P_IC",
+      "Insert C"
+    ],
+    [
+      100,
+      "P_IMIX",
+      "Insert Mix"
+    ],
+    [
+      101,
+      "P_FTYPE",
+      "Analog Filter Type"
+    ],
+    [
+      102,
+      "P_ESYNC",
+      "ENV Sync"
+    ]
+  ],
+  "engine": [
+    [
+      0,
+      "P_E0",
+      "Engine E1"
+    ],
+    [
+      1,
+      "P_E1",
+      "Engine E2"
+    ],
+    [
+      2,
+      "P_E2",
+      "Engine E3"
+    ],
+    [
+      3,
+      "P_E3",
+      "Engine E4"
+    ],
+    [
+      4,
+      "P_E4",
+      "Engine E5"
+    ],
+    [
+      5,
+      "P_E5",
+      "Engine E6"
+    ],
+    [
+      6,
+      "P_E6",
+      "Engine E7"
+    ],
+    [
+      7,
+      "P_E7",
+      "Engine E8"
+    ]
+  ]
+}
