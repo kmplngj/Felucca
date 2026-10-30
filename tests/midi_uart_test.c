@@ -107,11 +107,11 @@ int main(void)
         0xF8, 64, 0xFE, 102,             /* realtime inside a message */
         0xC1, 5, 6,                      /* program change + running */
         0xF0, 0x22, 0x24, 0x35, 0x7D, 0xF7, 70, 71,   /* SysEx dropped; cancels running status */
-        0xB0, 7, 0x7F, 0xF2, 1, 2, 9, 9, /* CC, song position (dropped), data without status */
+        0xB0, 7, 0x7F, 0xF2, 1, 2, 9, 9, /* CC, song position (#281: kept), data without status */
         0x80, 60, 0,
     };
     static const uint32_t want[] = {
-        0x643C9009u, 0x653E9009u, 0x0000F80Fu, 0x66409009u, 0x0005C10Cu, 0x0006C10Cu, 0x7F07B00Bu, 0x003C8008u,
+        0x643C9009u, 0x653E9009u, 0x0000F80Fu, 0x66409009u, 0x0005C10Cu, 0x0006C10Cu, 0x7F07B00Bu, 0x0201F203u, 0x003C8008u,
     };
     uint32_t i, bad = 0, n = sizeof want / sizeof want[0];
     for (i = 0; i < sizeof in; i++)
@@ -147,6 +147,30 @@ int main(void)
                   ((pkt >> 16) & 0x7Fu) == chs[3u * i + 1u] && (pkt >> 24) == chs[3u * i + 2u];
         }
         bad += (uint32_t)check("uart: channels 1, 2, 3, 10, 16 -> USB-MIDI packets", ok);
+    }
+    {   /* #281: Song Position Pointer, TRS (stateful) and USB (CIN 3), malformed frames dropped */
+        static const uint8_t spp[] = {
+            0xF2, 0x10, 0xF8, 0x02,      /* realtime inside: kept, then SPP 0x110 */
+            0xF2, 0x05, 0x90, 60, 100,   /* truncated by a status: the note, no SPP */
+            0xF2, 0x7F, 0x7F, 0x33,      /* 16383; a third data byte (no running status) is dropped */
+            0xF2, 0xF7, 0x01, 0x02,      /* an end of SysEx cancels it */
+        };
+        static const uint32_t want_spp[] = {0x0000F80Fu, 0x0210F203u, 0x643C9009u, 0x7F7FF203u};
+        uint32_t w0 = mi_w, ok = 1;
+        for (i = 0; i < sizeof spp; i++)
+            um_byte(spp[i]);
+        ok &= mi_w == w0 + 4u;
+        for (i = 0; i < 4u && ok; i++)
+            ok &= midi_in_q[(w0 + i) % MQ] == want_spp[i] && midi_in_source[(w0 + i) % MQ] == 2u;
+        bad += (uint32_t)check("uart: song position, realtime inside, truncated, extra", ok);
+        w0 = mi_w;
+        midi_in_event(0x0201F213u);                  /* cable 1, CIN 3: cable stripped */
+        midi_in_event(0x0081F203u);                  /* data byte with bit 7: dropped */
+        midi_in_event(0x8001F203u);
+        midi_in_event(0x0001F202u);                  /* CIN 2 (two bytes): not a song position */
+        midi_in_event(0x0001F20Fu);                  /* CIN F single bytes: not either */
+        bad += (uint32_t)check("usb: song position CIN 3 only, 7-bit data, USB source",
+            mi_w == w0 + 1u && midi_in_q[w0 % MQ] == 0x0201F203u && midi_in_source[w0 % MQ] == 1u);
     }
     bad += (uint32_t)test_usb_sysex();
     printf("%s\n", bad ? "MIDI PARSER TEST FAILED" : "midi parser test passed");

@@ -635,6 +635,12 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     }
     unit midi_control "" u_midi_control
 
+    u_midi_sync() {
+        $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_sync_test" tests/midi_sync_test.c -lm
+        run "USB/TRS Song Position Pointer: Continue located in patterns and SONG sections (#281)" "$OUT/midi_sync_test"
+    }
+    unit midi_sync "" u_midi_sync
+
     u_midi_dsp_reliability() {
         run "Nested TRS, UART events, defined DSP and tempo guards (strict sanitizers)" \
             python3 tests/run_midi_dsp_focused.py --out "$OUT/midi-dsp-reliability"
