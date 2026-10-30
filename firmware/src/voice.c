@@ -496,6 +496,7 @@ static void trk_all_off(track_t *t)
  * then the engine switches and the notes that came during the fade start on it. A part with nothing
  * sounding switches at once. */
 #define XF_BLOCKS 4u                                    /* 4 x 32 samples: 2.9 ms */
+_Static_assert((XF_BLOCKS & (XF_BLOCKS - 1u)) == 0u, "XF_BLOCKS: sdiv_pow2 needs a power of two");
 static void engine_block(track_t *t)
 {
     uint32_t i, any = 0;
