@@ -1265,11 +1265,117 @@ static int pc_test(void)
     bad += check("  MIDI LEARN waiting: a PC is not taken for a CC, it loads", ok);
     return bad;
 }
+/* #801: exercise real queued input, per-channel selectors and main-loop sound installation. */
+static int midi_801_bank_test(void)
+{
+    int bad = 0, ok;
+    track_t *t = &trk[0], was;
+    uint32_t gen;
+    up_rec_t first, last;
+    midi_test_reset();
+    memset(up_bank, 0, sizeof up_bank);
+    set_engine_of(t, 0);
+    apply_preset_to(t, 2);
+    up_store(0, "BANK A");
+    set_engine_of(t, ENGI_FM6);
+    apply_preset_to(t, 4);
+    up_store(31, "BANK B");
+    first = *up_rec(0); last = *up_rec(31);
+    set_engine_of(t, 0);
+    was = *t;
+    gen = up_gen;
+    queued(0xB0, 32, 1, 1); queued(0xB0, 0, 0, 2);
+    bad += check("801 bank selectors in either order share USB/TRS, do not load or queue", same_sound(t, &was) && !ui.mpc[0]);
+    pc(0, 31);
+    queued(0xB0, 32, 0, 2);                    /* queued PC must retain bank 1 */
+    bad += check("801 PC captures bank 1 with program before a later selector change", ui.mpc[0] == (0x100u | 0x80u | 31u));
+    midi_pc_poll();
+    bad += check("801 captured user request loads exact U32/FM6, never bank-0 program 31", t->user == 32u && t->eng_req == ENGI_FM6);
+    queued(0xB0, 0, 0, 1); queued(0xB0, 32, 1, 1);
+    was = *t;
+    pc(0, 0); pc(0, 30); midi_pc_poll();
+    bad += check("801 last PC wins even if its exact user slot is empty", same_sound(t, &was));
+    pc(0, 32); midi_pc_poll();
+    bad += check("801 user program 32 never wraps to slot 0", same_sound(t, &was));
+    queued(0xB0, 0, 1, 1); pc(0, 0); midi_pc_poll();
+    bad += check("801 retained LSB plus nonzero MSB is unsupported, never another bank", same_sound(t, &was));
+    queued(0xB0, 0, 0, 1);
+    queued(0xB0, 121, 0, 1); pc(0, 0); midi_pc_poll();
+    bad += check("801 CC121 retains bank select and loads U01", t->user == 1u && t->eng_req == 0);
+    was = *t;
+    *up_rec(1) = *up_rec(0); up_rec(1)->packed[0] = 255;
+    pc(0, 1); midi_pc_poll();
+    ok = same_sound(t, &was);
+    *up_rec(1) = *up_rec(0); up_rec(1)->engine = ENG_ID_MAX - 1u;
+    pc(0, 1); midi_pc_poll();
+    ok &= same_sound(t, &was);
+    bad += check("801 malformed/absent-engine records leave the existing sound intact", ok);
+    bad += check("801 MIDI recalls never write preset banks", gen == up_gen);
+
+    undo.keep = 0;
+    was = *t;
+    pc(0, 31); midi_pc_poll();
+    hold(B_SAVE);
+    bad += check("801 user recall uses the normal SAVE-held sound undo", same_sound(t, &was));
+
+    /* Both layered destinations use the captured route, independent of selected track. */
+    midi_test_reset();
+    *up_rec(0) = first; *up_rec(31) = last;
+    song.g[G_ROUTE] = ROUTE_TRACK;
+    mch_set(0, 0); mch_set(1, 0);
+    song.mch[2] = song.mch[3] = MCH_OFF;
+    events_block(CTL);
+    song.sel = 3;
+    my_steps(&trk[0]); my_steps(&trk[1]);
+    trk[0].p[P_LEVEL] = 37; trk[1].p[P_LEVEL] = 79;
+    was = trk[0];
+    motion_clear(&trk[0]);
+    motion_set_event(&trk[0], 0, P_REV, 100);
+    motion_set_event(&trk[0], 0, P_E0, 2);
+    queued(0x90, 60, 100, 1);
+    queued(0xB0, 32, 1, 2); pc(0, 31);
+    song.mch[1] = MCH_OFF;                    /* edits after PC do not retarget it */
+    midi_pc_poll();
+    ok = trk[0].user == 32 && trk[1].user == 32 && !trk[3].user;
+    ok &= trk[0].p[P_LEVEL] == 37 && trk[1].p[P_LEVEL] == 79;
+    ok &= !memcmp(was.step, trk[0].step, sizeof was.step);
+    ok &= (panic_req & 3u) == 3u;
+    ok &= motion.count == 1u && motion.event[0].param == P_REV && motion.event[0].value == 100;
+    events_block(CTL); queued(0x80, 60, 0, 2);
+    ok &= !midi_owners[0] && !midi_owners[1];
+    bad += check("801 layered recall captures destinations, keeps steps/mix/common motion and uses normal panic", ok);
+
+    /* All channels retain independent selectors; physical ports share each channel. */
+    midi_test_reset(); song.g[G_ROUTE] = ROUTE_SEL;
+    ok = 1;
+    for (uint32_t ch = 0; ch < 16u; ch++) {
+        queued(0xB0u | ch, 0, ch, 1);
+        queued(0xB0u | ch, 32, 127u - ch, 2);
+    }
+    for (uint32_t ch = 0; ch < 16u; ch++) {
+        queued(0xC0u | ch, ch, 0, 2);
+        ok &= ui.mpc[0] == ((ch << 15) | ((127u - ch) << 8) | 0x80u | ch);
+    }
+    bad += check("801 all 16 channels snapshot independent retained MSB/LSB across ports", ok);
+    midi_bank_reset();
+    ok = !ui.mpc[0];
+    for (uint32_t ch = 0; ch < 16u; ch++)
+        ok &= !midi_ch[ch].bank_msb && !midi_ch[ch].bank_lsb;
+    pc(0, 2);
+    ok &= ui.mpc[0] == 0x82u;
+    bad += check("801 project bank reset cancels pending loads and restores legacy bank zero", ok);
+    queued(0xB0, 32, 1, 1); pc(0, 31);
+    for (uint32_t i = 0; i <= MQ; i++)
+        midi_enqueue(0x09u | 0x90u << 8 | 70u << 16 | 100u << 24, 1);
+    events_block(CTL);
+    bad += check("801 input overflow cancels queued recalls and resets bank selectors", !ui.mpc[0] && !midi_ch[0].bank_lsb);
+    return bad;
+}
 #ifndef MIDI_CONTROL_NO_MAIN
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + layer_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
+              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + layer_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test() + midi_801_bank_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }
 

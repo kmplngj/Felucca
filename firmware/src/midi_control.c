@@ -15,6 +15,7 @@ typedef struct {
     int8_t coarse;                          /* RPN2: -64..63 semitones */
     uint8_t glide_switch, legato_switch;     /* 0 untouched, 1 OFF, 2 ON */
     uint8_t glide_parts, legato_parts;       /* destinations bound since last sound/panic */
+    uint8_t bank_msb, bank_lsb;             /* retained CC0/32; bank 0 is legacy per-engine PC */
 } midi_channel_t;
 static midi_channel_t midi_ch[16];
 /* Selector/map port: ordenador/Felucca #255, commit
@@ -597,6 +598,8 @@ static void midi_control_source(uint32_t ch, uint32_t cc, uint32_t value, uint32
     uint32_t i, mask;
     midi_nrpn_t *n = source == 1u || source == 2u ? &midi_nrpn[source - 1u][ch] : 0;
     switch (cc) {
+    case 0: c->bank_msb = (uint8_t)value; break;
+    case 32: c->bank_lsb = (uint8_t)value; break;
     case 1:
         c->wheel = (uint8_t)value;
         break;
@@ -725,10 +728,19 @@ static void __attribute__((noinline)) midi_route_block(void)
     }
 }
 
-/* Program Change (1.5.1, #179 by renebohne): each part the channel plays (including layers) takes program d1. Only
- * noted here, 0x80 | d1 per track (a later one before the main loop wins): a sound load is the main loop's work
- * (undo, motion, FM6's patch), never the audio ISR's. ui.mpc (ui.c; a build without the UI: none) */
-static volatile uint8_t *const mpc_io;
+/* One atomic word per destination: valid bit 7, program bits 0..6, bank bits 8..21.
+ * The last PC before service wins, including unsupported addresses. Selectors alone
+ * never touch pending requests. Both physical inputs share the channel's selectors. */
+static volatile uint32_t *const mpc_io;
+static void midi_bank_reset(void)                  /* boot/project reset, caller excludes input ISR */
+{
+    uint32_t ch;
+    for (ch = 0; ch < 16u; ch++)
+        midi_ch[ch].bank_msb = midi_ch[ch].bank_lsb = 0;
+    if (mpc_io)
+        for (ch = 0; ch < NTRK; ch++)
+            mpc_io[ch] = 0;
+}
 
 /* Keep the occasional controller/panic dispatch outside the hot rendering loop. Channel voice messages only
  * (realtime and clock are handled in events_block, SysEx never reaches here). With ROUT CH1-4 channels
@@ -751,7 +763,8 @@ static void __attribute__((noinline)) midi_event_source(uint32_t st, uint32_t ch
                 if (st == 0xB0u || st == 0xD0u)
                     mod_midi(&trk[i], st, d1, d2);
                 else if (st == 0xC0u && mpc_io)
-                    mpc_io[i] = (uint8_t)(0x80u | d1);
+                    mpc_io[i] = ((uint32_t)midi_channel(ch)->bank_msb << 15) |
+                                ((uint32_t)midi_channel(ch)->bank_lsb << 8) | 0x80u | d1;
             }
         if (st == 0xB0u)
             midi_control_source(ch, d1, d2, source);

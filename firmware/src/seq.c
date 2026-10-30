@@ -1409,6 +1409,7 @@ static void events_block(uint32_t n)
         memset(midi_sel_on, 0, sizeof midi_sel_on);
         memset(midi_ch, 0, sizeof midi_ch);
         midi_nrpn_reset();
+        midi_bank_reset();                            /* discard unserviced recalls after lost input */
         memset(midi_owners, 0, sizeof midi_owners);
         memset(mchord, 0, sizeof mchord);
         midi_hint = 0;

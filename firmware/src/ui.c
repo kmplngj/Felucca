@@ -15,6 +15,7 @@ static int graph_project_used(uint32_t slot);       /* cached slot validity for 
 static uint32_t chain_prepare(void);
 static int up_used(uint32_t k);              /* user presets: upreset.c */
 static int up_load(uint32_t k);
+static int midi_pc_user_load(track_t *t, uint32_t k);
 static uint32_t up_count(void);
 static uint32_t up_nth(uint32_t n);
 static uint32_t up_rank(uint32_t slot);
@@ -249,7 +250,7 @@ static struct {
         uint8_t pick, trk, id;   /* a parameter picked (1): its track and P_* id */
         volatile uint8_t io[2];  /* midi_control.c ml_arm, ml_heard */
     } ml;
-    volatile uint8_t mpc[NTRK];  /* MIDI Program Change per track, 0x80 | program, 0 none (midi_control.c mpc_io: here
+    volatile uint32_t mpc[NTRK]; /* MIDI bank/program snapshot per track, 0 none (midi_control.c mpc_io: here
                                   * for the same reason as ml.io; midi_pc_poll) */
 } ui;
 
@@ -1541,7 +1542,7 @@ static void clean_engine(void) { clean_engine_of(TSEL); }
  * undo for a run of them). DRUM: its n-th KIT, the retired variants skipped (enum_orig); FM6: its presets (F1..F8),
  * then the voice bank's B1..B32 through SLOT as the knob loads them (fm6_poll; the rest of the sound stays), an empty
  * one ignored. A program past the last is ignored, not wrapped: a number is always the same sound */
-static volatile uint8_t *const mpc_io = ui.mpc;
+static volatile uint32_t *const mpc_io = ui.mpc;
 static void midi_pc_load(track_t *t, uint32_t n)
 {
     uint32_t e = t->eng_req, k;                   /* (#212: an unavailable engine has no presets: ignored) */
@@ -1573,7 +1574,12 @@ static void midi_pc_poll(void)                       /* main loop (ui_input) */
         v = ui.mpc[k];
         ui.mpc[k] = 0;
         fm1_irq_on();
-        midi_pc_load(&trk[k], v & 127u);
+        if (!v)                                     /* overflow may have canceled it before the guard */
+            continue;
+        if (!(v >> 8))
+            midi_pc_load(&trk[k], v & 127u);       /* bank 0: preserve all legacy engine numbering */
+        else if ((v >> 8) == 1u && (v & 127u) < UP_SLOTS)
+            (void)midi_pc_user_load(&trk[k], v & 127u);  /* bank 1: exact physical user slot, no wrap */
         ui.force = 1;
     }
 }
