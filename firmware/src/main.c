@@ -358,7 +358,7 @@ static void fm1_main(void)
     persist_boot();
 #if FELUCCA_OTA
     if (flash_ok)
-        ota_boot_cleanup();                             /* staging area left by an update */
+        ota_boot_cleanup(ST_AVAILABLE);                 /* SMK: automatic cleanup requires an owned store */
 #endif
     settings_init();
     usb_serial_apply();                                 /* (#67: the saved USB SERIAL before usb_start) */
@@ -580,6 +580,9 @@ void fm1_cstart(void)
     fm1_boot.p3_rst = (uint8_t)p3;
     fm1_boot.rst_src = src;
     fm1_boot.wdt_con = (uint8_t)wdt;
+#if BOARD_SMK37
+    smk_extkeys_asleep = 1;                 /* queued splash gestures stay consumed after their release */
+#endif
     boot_path = boot_policy_select(&bootguard, boot_path, rescue_boot_buttons(), FELUCCA_OTA);
     if (boot_path == BOOT_POLICY_ROM)
         fm1_enter_uboot();                     /* builds without OTA retain the ROM fallback */

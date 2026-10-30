@@ -1425,16 +1425,23 @@ static int32_t click_beat_now(void)
  * the block (an incoming bend or CC1 for the same track wins until the wheel moves again) */
 static void smk_wheels_block(void)
 {
-    static uint8_t prev = 0xFF, lm = 0xFF;
+    static uint8_t prev = 0xFF, prev_mc = 0xFF, lm = 0xFF;
     static int32_t lb = 0x7FFFFFFF;
     uint32_t sel = song.sel % NTRK, mc = trk_midi_ch(sel), m = smk_modw;
     int32_t b = smk_bend14;
-    if (sel != prev) {
+    if (sel != prev || mc != prev_mc) {
         if (prev < NTRK) {
             midi_bend_target[prev] = 0;
             trk[prev].mw = 0;
+            /* Release the channel actually driven, even if its routing has changed.
+             * A shared channel remains controlled by the newly selected track. */
+            if (prev_mc != mc) {
+                midi_out_event(0x0Eu | (0xE0u | prev_mc) << 8 | 64u << 24);
+                midi_out_event(0x0Bu | (0xB0u | prev_mc) << 8 | 1u << 16);
+            }
         }
         prev = (uint8_t)sel;
+        prev_mc = (uint8_t)mc;
         lb = 0x7FFFFFFF;
         lm = 0xFF;
     }

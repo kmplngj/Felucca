@@ -47,7 +47,7 @@ static int st_owner_erase(uint32_t off)
 {
     uint32_t took, f; int rc;
     FM1_ASSERT_THREAD();
-    if (!flash_ok || !FL_IN(off, 0x1000u, FL_DATA_LO, FL_DATA_HI) || (off & 0xFFFu)) return -8;
+    if (!flash_ok || !FL_IN(off, 0x1000u, FL_DATA_LO, FL_OTA_HI) || (off & 0xFFFu)) return -8;
     f = irq_save(); audio_silence();
     rc = FL_FAR(fl_erase4k_ram)(off, &took);
     irq_restore(f);

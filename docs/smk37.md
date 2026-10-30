@@ -112,19 +112,25 @@ the exact model before trying this firmware. Physical installation, recovery and
 stock return remain pending for this fork on every model.
 
 First boot accepts only this adapter's confirmed store tag, or initializes an
-entirely blank metadata area. Existing donor, stock or unknown metadata is kept:
+entirely blank VM (`0x9D000..0xBFFFF`, including OTA staging). Existing donor,
+stock or unknown bytes anywhere in an untagged VM are kept:
 the instrument shows **STORAGE LOCKED / FOREIGN DATA KEPT** and runs in RAM-only
 mode. Saves, sample writes and later automatic persistence remain blocked.
 A failed read, erase, program or verification never grants storage ownership.
 The USB updater and read-only factory calibration remain available independently.
+Automatic OTA cleanup also requires store ownership: locked first boot never
+erases foreign staging bytes. An interrupted update without an owned store stays
+locked until an explicit updater retry or confirmed initialization; it does not
+authorize automatic adoption or cleanup.
 
-To deliberately initialize metadata, hold **KNOB BANK + FADER BANK while powering
+To deliberately initialize storage, hold **KNOB BANK + FADER BANK while powering
 on**. Read the warning, release the held buttons, then press **OCT+** to confirm
-or **OCT−** to cancel. Confirmation erases Felucca's metadata area and commits
+or **OCT−** to cancel. Confirmation erases and verifies all 35 VM sectors
+(`0x9D000..0xBFFFF`, metadata and OTA staging) and commits
 ownership only after verification; successful initialization restarts the device.
 Keep backups: this removes previous projects, settings, presets and FM6 bank
-metadata in that area. It does not erase the sample area. Interrupted or failed
-initialization keeps persistence unavailable until a successful explicit retry.
+metadata in that area. It does not erase the sample area. A failed initialization
+does not enable persistence in that boot; retry explicitly if storage stays locked.
 
 | Flash range | Purpose / rule |
 | --- | --- |
@@ -171,6 +177,10 @@ firmware before installing or initializing storage.
    DATA KEPT** and RAM-only operation. Play and release the lowest, middle and
    highest keys and each pad; each note must end on release. Turn K1 and K5–K8,
    move both wheels and each fader; listen and monitor MIDI for the mapped action.
+   From HOME, select T1 with K2, move both wheels away from neutral, then select
+   T2 without centering them. The previous MIDI channel must receive bend centre
+   (8192) and CC1 zero, followed by the current values on T2's channel. Centre
+   the wheels; T2 must return to normal too.
 3. With the transport stopped, press KNOB BANK to open the menu, turn K3 to change
    its tab and K4 to change its selected row, then press KNOB BANK to close it.
    Expect readable, stable graphics while pads flash and USB audio is active.
@@ -180,16 +190,23 @@ firmware before installing or initializing storage.
    Hold G5 and G#5 together: both map to G5. Release either key first; G5 must
    continue until the second key releases, with one MIDI note-on/off pair.
    Repeat with the opposite press/release order. Tap ARP and set K5 MODE to UP;
-   tap ARP again for ARP 2 and set K7 HOLD to OFF, then repeat: the arpeggio must end with the final
-   release. Finally release all keys, disable ARP, and hold external USB-MIDI G5
+   tap ARP again for ARP 2 and set K7 HOLD to OFF, then repeat: the arpeggio must
+   end with the final release. Finally release all keys, disable ARP, and hold external USB-MIDI G5
    with only the outer G#5 key. Release each source first in turn; the remaining
    hold must continue, and the last release must leave no stuck note.
-4. For a disposable, backed-up store only, power off and hold both BANK buttons
+4. Open KNOB BANK, use K3 to select DISPLAY and K4 to select AUTO OFF, then tap
+   OCT+. Select rows with K4 and change values with K5: IDLE AFTER 5 MIN, IDLE
+   MODE SCREEN, ALL DARK NEVER and WAKE PANEL. Close with PATCH and leave the
+   controls untouched for five minutes. An outer key must wake the screen while
+   its first press stays silent through release; the next press must play and
+   release normally. Playing or holding only outer keys must keep the idle timer
+   refreshed. Restore IDLE AFTER NEVER and the original wake settings afterward.
+5. For a disposable, backed-up store only, power off and hold both BANK buttons
    while powering on. Expect the initialization warning. Release both and press
    OCT−: expect normal RAM-only startup and preserved data. Repeat, release all
    BANK/OCT buttons, then press OCT+: expect initialization and restart. A held
    OCT+ at entry must not confirm; leaving the screen alone cancels after 30 s.
-5. With the matching reviewed package ready, power on holding OCT− alone. Expect
+6. With the matching reviewed package ready, power on holding OCT− alone. Expect
    USB rescue and successful model discovery without loading stored projects.
    Both OCT buttons instead retain hardware calibration. During an SMK loader
    update the display may be dark; require the host's successful final identity

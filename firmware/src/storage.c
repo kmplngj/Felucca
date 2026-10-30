@@ -101,8 +101,10 @@ static int st_owner_check(void)
     st_owner_ready = 0;
     if (st_owner_read(ST_OWNER_OFF, b, sizeof WANT)) return -1;
     if (!memcmp(b, WANT, sizeof WANT)) { st_owner_ready = 1; return 0; }
-    /* Check all metadata, including spare/tag bytes. No erase is necessary. */
-    for (off = ST_SMK_BASE; off < 0xBB000u; off += sizeof b) {
+    /* Claim only a wholly blank VM, including OTA staging. Otherwise a blank
+     * metadata prefix could authorize automatic cleanup of foreign staging.
+     * No erase is necessary for this automatic initialization. */
+    for (off = ST_SMK_BASE; off < 0xC0000u; off += sizeof b) {
         if (st_owner_read(off, b, sizeof b)) return -1;
         for (i = 0; i < sizeof b; i++) if (b[i] != 0xFFu) return -1;
     }
@@ -116,14 +118,15 @@ static int st_owner_check(void)
 }
 /* Destructive initialization: caller must obtain an explicit physical user
  * confirmation. Invalidate the old owner FIRST, verify each erased sector, and
- * publish the owner LAST. Samples/stock marker are intentionally untouched. */
+ * publish the owner LAST. The confirmed erase includes all VM/staging sectors;
+ * samples and the stock marker are intentionally untouched. */
 static int st_owner_initialize(void)
 {
     uint8_t b[64]; uint32_t pass, off, a, i;
     st_owner_ready = 0;
     for (pass = 0; pass < 2u; pass++) {
         for (off = pass ? ST_SMK_BASE : ST_OWNER_OFF;
-             off < (pass ? 0xBB000u : ST_OWNER_OFF + ST_SECTOR); off += ST_SECTOR) {
+             off < (pass ? 0xC0000u : ST_OWNER_OFF + ST_SECTOR); off += ST_SECTOR) {
             if (pass && off == ST_OWNER_OFF) continue;
             if (st_owner_erase(off)) return -1;
             for (a = off; a < off + ST_SECTOR; a += sizeof b) {

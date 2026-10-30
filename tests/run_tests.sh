@@ -463,6 +463,8 @@ unit lcd_power "" u_lcd_power
 u_smk_platform() {
     $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_input_test" tests/smk_input_test.c
     run "SMK input: production velocity, pad/key ownership, outer keys and encoders" "$OUT/smk_input_test"
+    $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_outer_activity_test" tests/smk_outer_activity_test.c
+    run "SMK outer keys: held activity, queued wake consumption and warm initialization" "$OUT/smk_outer_activity_test"
     $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_scan_test" tests/smk_scan_test.c
     run "SMK scan: physical columns, delayed DMA/latch, startup, all keys and LED groups" "$OUT/smk_scan_test"
     run "SMK wheels: elapsed-time drift, repeated polls, wrap and bounded delayed service" python3 tests/smk_wheel_test.py
@@ -508,7 +510,7 @@ u_smk_editor() {
 }
 unit smk_editor "" u_smk_editor
 u_smk_ui() {
-    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_ui_test" tests/smk_ui_test.c -lm
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_ui_test" tests/smk_ui_test.c -lm
     run "SMK UI: consumed/remapped BANK keys, high button IDs and reserved MASTER calibration" "$OUT/smk_ui_test"
 }
 unit smk_ui "" u_smk_ui
@@ -517,6 +519,14 @@ u_smk_note_ownership() {
     run "SMK notes: shared central/outer/MIDI holds, chords, ARP and release orders" "$OUT/smk_note_ownership_test"
 }
 unit smk_note_ownership "" u_smk_note_ownership
+u_smk_wheel_transfer() {
+    for smk_board in 0 1; do
+        $CC -O2 -w -DBOARD_SMK37=$smk_board -Ibuild/gen -Ifirmware/src \
+            -o "$OUT/smk_wheel_transfer_$smk_board" tests/smk_wheel_transfer_test.c -lm
+        run "Wheel channel handoff (SMK=$smk_board)" "$OUT/smk_wheel_transfer_$smk_board"
+    done
+}
+unit smk_wheel_transfer "" u_smk_wheel_transfer
 UNIT_NEEDS=
 
 u_screen_capture() {
@@ -1342,11 +1352,29 @@ else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    u_asan_smk_input() {
+        for smk_test in input outer_activity; do
+            ${CC%% *} -std=gnu11 -O1 -g -Wno-int-to-pointer-cast -fsanitize=address,undefined \
+                -fno-sanitize-recover=all -o "$A/smk_${smk_test}_test" "tests/smk_${smk_test}_test.c"
+            run "ASan/UBSan: SMK $smk_test ownership and activity" "$A/smk_${smk_test}_test"
+        done
+    }
+    unit asan_smk_input "smk_platform" u_asan_smk_input
+    u_asan_smk_ui() {
+        $SCC -o "$A/smk_ui_test" tests/smk_ui_test.c -lm
+        run "ASan/UBSan: SMK calibration and consumed wake/boot gestures" "$A/smk_ui_test"
+    }
+    unit asan_smk_ui "smk_ui" u_asan_smk_ui
     u_asan_smk_note_ownership() {
         $SCC -o "$A/smk_note_ownership_test" tests/smk_note_ownership_test.c -lm
         run "ASan/UBSan: SMK shared-note ownership and final release" "$A/smk_note_ownership_test"
     }
     unit asan_smk_note_ownership "smk_note_ownership" u_asan_smk_note_ownership
+    u_asan_smk_wheel_transfer() {
+        $SCC -DBOARD_SMK37=1 -o "$A/smk_wheel_transfer" tests/smk_wheel_transfer_test.c -lm
+        run "ASan/UBSan: SMK wheel channel handoff" "$A/smk_wheel_transfer"
+    }
+    unit asan_smk_wheel_transfer "smk_wheel_transfer" u_asan_smk_wheel_transfer
     u_asan_icon_streams() {
         ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ibuild/gen -I"$OUT" \
             -o "$A/icon_stream_test" tests/icon_stream_test.c -lm

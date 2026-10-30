@@ -409,6 +409,11 @@ static int scr_input(uint32_t pressed, uint32_t notes)
 {
     uint32_t held = fm1_in.buttons | fm1_in.notes, k;
     int32_t moved = 0;
+#if BOARD_SMK37
+    uint32_t outer;
+    notes |= smk_extkey_activity(&outer);
+    held |= outer;
+#endif
     scr_sync();
     if (pressed | notes | held | panel_moved)
         scr_touch();
@@ -434,6 +439,9 @@ static int scr_input(uint32_t pressed, uint32_t notes)
         return 1;
     scrn.eat = 0;                                       /* all let go, the knobs at rest: input again */
     kb_asleep = 0;
+#if BOARD_SMK37
+    smk_extkeys_asleep = 0;
+#endif
     return 0;
 }
 /* ui_draw, every frame: 1 = draw it */
@@ -453,6 +461,9 @@ static int scr_frame(void)
         scrn.st = SCR_OFF;
         scrn.t = fm1_ms;
         scrn.eat = 1;
+#if BOARD_SMK37
+        smk_extkeys_asleep = 1;              /* mark new events before audio suppression becomes visible */
+#endif
         kb_asleep = 1;
         break;
     case SCR_WAKE:

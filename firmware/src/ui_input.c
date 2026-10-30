@@ -1598,8 +1598,16 @@ static void ui_input(void)
     follow_poll();                                      /* (1.6, #242: SEQ's roll follows the play position) */
     if (kb_boot_hold) {                                /* consume splash dismissal through its release */
         enc_drop();
-        if (!(fm1_in.buttons | fm1_in.notes))
+        if (!(fm1_in.buttons | fm1_in.notes
+#if BOARD_SMK37
+              | smk_extkeys_held
+#endif
+             )) {
             kb_boot_hold = 0;
+#if BOARD_SMK37
+            smk_extkeys_asleep = kb_asleep;
+#endif
+        }
         return;
     }
     if (scr_input(pressed, notes))                      /* MENU > SCREEN OFF: dark, or the wake gesture: swallowed */

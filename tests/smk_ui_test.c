@@ -12,12 +12,17 @@ static const uint8_t SMK_WHITE_NOTE[SMK_NPAD] = {0,2,4,6,7,9,11,12,14,16,18,19,2
 #define SMK_PAD_OF_WHITE(w) (w)
 static uint32_t padled_hold_until;
 static void padled_set(uint32_t p, uint8_t r, uint8_t g, uint8_t b) { (void)p; (void)r; (void)g; (void)b; }
+static int32_t outer_event = -1;
+static int32_t outer_take(void) { int32_t e = outer_event; outer_event = -1; return e; }
+#define HOST_SMK_EXTKEY_TAKE() outer_take()
 #include "ui_harness.h"
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "line %d: %s\n", __LINE__, #x); return 1; } } while (0)
 static void reset_smk(void)
 {
     ui_power_on(); kb_boot_hold = 0; smk_fbank = smk_fbank_new = 0;
     host_pressed = host_notes = 0;
+    smk_extkeys_held = smk_extkeys_pressed = smk_extkeys_asleep = 0;
+    outer_event = -1;
     memset(host_enc, 0, sizeof host_enc); memset(host_enc_late, 0, sizeof host_enc_late);
 }
 static void raw_press(uint32_t id)
@@ -81,6 +86,35 @@ int main(void)
     for (role = 0; role < NE; role++) CHECK(panel.enc[role] == role + 1 && panel.dir[role] == 1);
     host_enc[SMK_ENC_MASTER] = 3; CHECK(panel_enc(EN_SELECT) == 0 && fm1_enc_take(SMK_ENC_MASTER) == 3);
     host_enc[panel.enc[EN_K4]] = 2; CHECK(panel_enc(EN_K4) == 2);
+    /* Splash dismissal also waits for the outer keys, consuming old queued
+     * presses even if audio processes them after main releases the boot gate. */
+    reset_smk(); kb_boot_hold = smk_extkeys_asleep = 1; smk_extkeys_held = 1;
+    ui_input(); CHECK(kb_boot_hold && smk_extkeys_asleep);
+    smk_extkeys_held = 0; ui_input(); CHECK(!kb_boot_hold && !smk_extkeys_asleep);
+    outer_event = 0x8000 | 100; events_block(CTL); CHECK(!ext_note[0]);
+    /* Outer keys keep both timers alive, wake in PANEL mode, and the wake
+     * gesture remains consumed until every outer key is released. */
+    reset_smk(); fm1_ms = 400000; scrn.idle = 0;
+    smk_extkeys_held = smk_extkeys_pressed = 1; ui_input();
+    CHECK(scrn.idle == fm1_ms && !smk_extkeys_pressed);
+    fm1_ms += 400000; ui_input(); CHECK(scrn.idle == fm1_ms);
+    smk_extkeys_held = 0; smk_extkeys_pressed = 2; fm1_ms++; ui_input();
+    CHECK(scrn.idle == fm1_ms); /* short press/release between main-loop polls */
+    reset_smk(); ui_prefs2 |= PREF_WAKE_PANEL >> 16;
+    scrn.st = SCR_OFF; scrn.eat = kb_asleep = smk_extkeys_asleep = 1;
+    fm1_ms = 1000; smk_extkeys_held = smk_extkeys_pressed = 1;
+    outer_event = 0x8000 | (0 << 8) | 100; events_block(CTL); ui_input();
+    CHECK(scrn.st == SCR_WAKE && kb_asleep && !ext_note[0]);
+    scrn.st = SCR_ON; fm1_ms += 1000; ui_input();
+    CHECK(kb_asleep && smk_extkeys_asleep); /* held across completed wake */
+    smk_extkeys_held = 0; ui_input();
+    CHECK(!kb_asleep && !smk_extkeys_asleep);
+    /* Even if audio consumes the old queue only after waking, no stale press
+     * may sound; a fresh post-release press is playable and releases normally. */
+    outer_event = 0x8000 | (0 << 8) | 100; events_block(CTL); CHECK(!ext_note[0]);
+    outer_event = (0 << 8); events_block(CTL); CHECK(!ext_note[0]);
+    outer_event = (0 << 8) | 100; events_block(CTL); CHECK(ext_note[0]);
+    outer_event = 0; events_block(CTL); CHECK(!ext_note[0]);
     puts("SMK UI consumed/reassigned bank presses, 18-bit page releases and reserved MASTER calibration passed");
     return 0;
 }

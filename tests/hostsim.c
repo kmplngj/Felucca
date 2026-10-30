@@ -35,6 +35,12 @@
 #define SMK_ENC_MASTER 0u
 #endif
 static struct { volatile uint32_t notes, buttons; uint8_t key_vel[FM1_NKEY]; } fm1_in;
+static uint32_t smk_extkeys_held, smk_extkeys_pressed;
+static uint8_t smk_extkeys_asleep;
+static uint32_t smk_extkey_activity(uint32_t *held)
+{
+    uint32_t p = smk_extkeys_pressed; *held = smk_extkeys_held; smk_extkeys_pressed = 0; return p;
+}
 #ifndef HOST_SMK_EXTKEY_TAKE
 #define HOST_SMK_EXTKEY_TAKE() (-1)
 #endif

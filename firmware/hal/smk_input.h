@@ -151,6 +151,10 @@ static volatile struct {
 #define SMK_EXTQ 32u
 static volatile uint16_t smk_extq[SMK_EXTQ];
 static volatile uint8_t smk_extq_w, smk_extq_r;
+/* TIMER5 publishes compact outer-key activity for main-loop screen policy.
+ * Keep it independent of the audio queue, whose sole consumer is the audio ISR. */
+static volatile uint32_t smk_extkeys_held, smk_extkeys_pressed;
+static volatile uint8_t smk_extkeys_asleep; /* main-loop wake suppression, captured per queued press */
 
 static uint8_t fm1_led[SMK_NLED];     /* 1 = lit (button LED i = button i) */
 static volatile uint32_t smk_ledw[2]; /* per LED group: 0xFFFF0000 | low half (LED lines active low) */
@@ -301,6 +305,11 @@ static void fm1_input_init(void)
         fm1_in.enc_last[i] = 0xFF;
     for (i = 0; i < SMK_NPAD; i++)
         fm1_in.pad_base[i] = 100u;                               /* (stock init) */
+    /* Init runs before scan interrupts: rebuild compact activity from retained
+     * key state (or zero after caller reset), never snapshot 64 bits live in UI.
+     * The UI owns the sleep/boot gate, so re-init must preserve that policy. */
+    smk_extkeys_held = ((uint32_t)fm1_in.keys & 31u) | ((uint32_t)(fm1_in.keys >> 32) & 31u) << 5;
+    smk_extkeys_pressed = 0;
     smk_col = 0;
     smk_sample_col = 0xFF;                                  /* no known column has settled yet */
     smk_adc_slot = 0xFF;
@@ -315,7 +324,9 @@ static void smk__extq(uint32_t k, uint32_t vel)
     uint8_t w = smk_extq_w;
     if ((uint8_t)(w + 1u) % SMK_EXTQ == smk_extq_r)
         return;
-    smk_extq[w] = (uint16_t)(k << 8 | vel);
+    /* Bit15 makes a wake-only press an invalid key index for the consumer.
+     * Capture it now: a delayed queued press must not sound after wake ends. */
+    smk_extq[w] = (uint16_t)(k << 8 | vel | (vel && smk_extkeys_asleep ? 0x8000u : 0u));
     smk_extq_w = (uint8_t)((w + 1u) % SMK_EXTQ);
 }
 
@@ -333,6 +344,9 @@ static void smk__key_event(uint32_t k, uint32_t vel)     /* vel 0 = release */
         }
         fm1_in.notes = fm1_in.knotes | fm1_in.pnotes;
     } else {
+        uint32_t bit = 1u << (k < SMK_KEY_F3 ? k : k - 27u);
+        if (vel) { smk_extkeys_held |= bit; smk_extkeys_pressed |= bit; }
+        else smk_extkeys_held &= ~bit;
         smk__extq(k, vel);
     }
     if (vel)
@@ -455,7 +469,7 @@ static void fm1__frame(void)
 static void smk__padq(uint32_t pad, uint32_t vel)     /* a pad hit (vel) or release (0): its white key */
 {
     int32_t n0 = smk_pad_piano ? SMK_PIANO_NOTE[pad] : (int32_t)SMK_WHITE_NOTE[SMK_WHITE_OF_PAD(pad)];
-    uint32_t n, bit;
+    uint32_t n, bit, other;
     if (vel) {
         if (n0 < 0)
             return;                                   /* (a gap of the piano layout) */
@@ -473,7 +487,13 @@ static void smk__padq(uint32_t pad, uint32_t vel)     /* a pad hit (vel) or rele
         fm1_in.pnotes |= bit;
         fm1_in.notes_pressed |= bit;
     } else {
-        fm1_in.pnotes &= ~bit;
+        /* Layout changes can give two held pads the same note. This pad's
+         * retained mapping is already cleared; release only the final owner. */
+        for (other = 0; other < SMK_NPAD; other++)
+            if (smk_pad_note[other] == n + 1u)
+                break;
+        if (other == SMK_NPAD)
+            fm1_in.pnotes &= ~bit;
     }
     fm1_in.notes = fm1_in.knotes | fm1_in.pnotes;
 }
@@ -665,7 +685,17 @@ static uint32_t fm1_input_note_edges(void)
     return p;
 }
 
-/* the next outer-key event (keybed key << 8 | velocity, 0 = release), -1 if none */
+/* Main-loop snapshot: a short press survives even after its release. */
+static uint32_t smk_extkey_activity(uint32_t *held)
+{
+    uint32_t f = fm1__lock(), p = smk_extkeys_pressed;
+    *held = smk_extkeys_held;
+    smk_extkeys_pressed = 0;
+    fm1__unlock(f);
+    return p;
+}
+
+/* The next outer-key event; bit15 marks a consumed wake press, -1 if none. */
 static int32_t smk_extkey_take(void)
 {
     int32_t v = -1;

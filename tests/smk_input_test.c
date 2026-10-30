@@ -23,6 +23,65 @@ static void contact(uint32_t code, uint32_t down)
     if (down) fm1_in.raw[code >> 4] |= bit;
     else fm1_in.raw[code >> 4] &= (uint8_t)~bit;
 }
+static void pad_mode(uint32_t mode)
+{
+    smk_pad_grid = mode == 1u;
+    smk_pad_piano = mode == 2u;
+}
+static void pad_hit(uint32_t pad)
+{
+    uint32_t i;
+    fm1_in.pad_base[pad] = 100u;
+    for (i = 0; i < SMK_PAD_PEAKN; i++) smk__pad(pad, 700u);
+}
+static void pad_up(uint32_t pad)
+{
+    smk__pad(pad, 100u); smk__pad(pad, 100u);
+}
+static void key_contact(uint32_t key, uint32_t down)
+{
+    uint32_t i;
+    contact(SMK_KEYC[key][0], down); contact(SMK_KEYC[key][1], down);
+    for (i = 0; i < (down ? 1u : SMK_KEY_REL); i++) smk__keys(100000u);
+}
+static void pad_collision_test(void)
+{
+    /* Physical pads in different layouts can acquire the same retained note.
+     * Literal mappings are independent of the HAL's note-selection helpers. */
+    static const uint8_t cases[][5] = {
+        {0, 8, 1, 0, 0}, {1, 0, 0, 8, 0},       /* normal/grid F3 */
+        {0,12, 2, 0, 7}, {2, 0, 0,12, 7},       /* normal/piano C4 */
+        {1, 4, 2, 0, 7}, {2, 0, 1, 4, 7},       /* grid/piano C4 */
+    };
+    static const uint8_t release_order[6][3] = {{0,1,2},{1,0,2},{0,2,1},{1,2,0},{2,0,1},{2,1,0}};
+    uint32_t c, key, order, step;
+    for (c = 0; c < sizeof cases / sizeof cases[0]; c++)
+        for (key = 0; key < 2u; key++)
+            for (order = 0; order < (key ? 6u : 2u); order++) {
+                uint32_t note = cases[c][4], bit = 1u << note, pads = 2u, keys = key;
+                uint32_t physical_key = SMK_KEY_F3 + note;
+                memset((void *)&fm1_in, 0, sizeof fm1_in);
+                memset(smk_pad_note, 0, sizeof smk_pad_note);
+                if (key) key_contact(physical_key, 1);
+                pad_mode(cases[c][0]); pad_hit(cases[c][1]);
+                pad_mode(cases[c][2]); pad_hit(cases[c][3]);
+                check(fm1_in.pnotes == bit && fm1_in.notes == bit,
+                      "physical pads in different layouts share their original note");
+                /* Change the active layout again: each release must use the
+                 * note its own peak captured, not today's layout. */
+                pad_mode((cases[c][2] + 1u) % 3u);
+                for (step = 0; step < (key ? 3u : 2u); step++) {
+                    uint32_t source = release_order[order][step];
+                    if (source == 2u) { key_contact(physical_key, 0); keys--; }
+                    else { pad_up(cases[c][source ? 3u : 1u]); pads--; }
+                    check(fm1_in.pnotes == (pads ? bit : 0u),
+                          "one pad release preserves every remaining pad owner");
+                    check(fm1_in.knotes == (keys ? bit : 0u) && fm1_in.notes == (pads || keys ? bit : 0u),
+                          "combined note ends only after the last pad/key owner releases");
+                }
+            }
+    pad_mode(0);
+}
 int main(void)
 {
     uint32_t i, v;
@@ -125,6 +184,7 @@ int main(void)
         check(test_icfg == original && irq_saves == irq_restores,
               "outer guard restores exact initial configuration after nested drains");
     }
+    pad_collision_test();
     puts("SMK matrix key/velocity/outer-key/OCT/pad/encoder contracts passed");
     return 0;
 }

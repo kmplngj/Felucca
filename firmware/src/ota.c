@@ -548,12 +548,18 @@ static int ota_session(void)
     return 0;
 }
 
-/* boot: a staging area left over (we are running, so the update finished or
- * never started): erase it so the SPL does not re-enter the loader */
-static int ota_boot_cleanup(void)
+/* Boot cleanup is automatic, unlike an explicitly requested OTA session.
+ * On SMK the staging sectors are stock VM too: only an owned store permits
+ * cleanup. Unowned interrupted updates wait for an explicit retry or init. */
+static int ota_boot_cleanup(int store_owned)
 {
     uint8_t a[4], r[8];
     uint32_t i, used = 0;
+#if BOARD_SMK37
+    if (!store_owned) return 0;
+#else
+    (void)store_owned;                              /* preserve native FM-1 cleanup */
+#endif
     if (ota_fread(OTA_AREA, a, 4) || ota_fread(OTA_RES, r, 8))
         return -1;
     for (i = 0; i < 4u; i++)

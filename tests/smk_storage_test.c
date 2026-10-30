@@ -83,7 +83,9 @@ int main(void)
         CHECK(st_owner_check() < 0 && !st_owner_ready && erases == 0);
         if (k) { prog_cut = -1; CHECK(st_owner_check() < 0 && !st_owner_ready); }
     }
-    for (k = 0; k < 0x1E000; k += 4096) {
+    /* A foreign byte in staging must also block automatic ownership, even
+     * when every metadata byte is blank. Neither check nor cleanup may erase. */
+    for (k = 0; k < 0x23000; k += 4096) {
         reset(); nor[ST_SMK_BASE + k + 4095] = 0;
         CHECK(st_owner_check() < 0 && !st_owner_ready && !programs && !erases);
     }
@@ -105,25 +107,26 @@ int main(void)
     CHECK(st_erase(FL_SMP_LO) == 0 && nor[FL_SMP_LO] == 255);
     CHECK(st_prog(FL_SMP_LO, &b, 1) == 0);
     CHECK(st_erase(0xEA000) < 0 && st_erase(0xC0000) < 0);
-    reset(); memset(nor + FL_DATA_LO, 0, FL_DATA_HI - FL_DATA_LO);
+    reset(); memset(nor + FL_DATA_LO, 0, FL_OTA_HI - FL_DATA_LO);
     memset(nor + FL_SMP_LO, 0x63, FL_SMP_HI - FL_SMP_LO);
     CHECK(st_owner_initialize() == 0 && st_owner_ready);
+    CHECK(erases == 35 && nor[FL_OTA_LO] == 0xFFu && nor[FL_OTA_HI - 1u] == 0xFFu);
     CHECK(nor[FL_SMP_LO] == 0x63 && nor[FL_SMP_HI - 1] == 0x63);
     count = reads;
     for (k = 0; k < count; k++) {
-        reset(); memset(nor + FL_DATA_LO, 0, FL_DATA_HI - FL_DATA_LO); read_fail = k;
+        reset(); memset(nor + FL_DATA_LO, 0, FL_OTA_HI - FL_DATA_LO); read_fail = k;
         CHECK(st_owner_initialize() < 0 && !st_owner_ready);
     }
-    for (k = 0; k < 30; k++) {
-        reset(); memset(nor + FL_DATA_LO, 0, FL_DATA_HI - FL_DATA_LO); erase_fail = k;
+    for (k = 0; k < 35; k++) {
+        reset(); memset(nor + FL_DATA_LO, 0, FL_OTA_HI - FL_DATA_LO); erase_fail = k;
         CHECK(st_owner_initialize() < 0 && !st_owner_ready);
         read_fail = -1; CHECK(st_owner_check() < 0 && !st_owner_ready);
     }
     for (k = 0; k < 16; k++) {
-        reset(); memset(nor + FL_DATA_LO, 0, FL_DATA_HI - FL_DATA_LO); prog_cut = k;
+        reset(); memset(nor + FL_DATA_LO, 0, FL_OTA_HI - FL_DATA_LO); prog_cut = k;
         CHECK(st_owner_initialize() < 0 && !st_owner_ready);
     }
-    reset(); memset(nor + FL_DATA_LO, 0, FL_DATA_HI - FL_DATA_LO); erase_noop = 1;
+    reset(); memset(nor + FL_DATA_LO, 0, FL_OTA_HI - FL_DATA_LO); erase_noop = 1;
     CHECK(st_owner_initialize() < 0 && !st_owner_ready && erases == 1);
     reset(); prog_noop = 1; CHECK(st_owner_check() < 0 && !st_owner_ready);
     /* All protected bytes remain sentinels through explicit initialization. */

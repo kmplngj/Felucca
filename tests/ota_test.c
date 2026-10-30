@@ -39,6 +39,7 @@ static size_t logical_len;
 static uint8_t rx[1024];                 /* one pending host frame (7-bit bytes) */
 static uint32_t rx_len, rx_full;
 static uint32_t now_ms, requests, ident_replies, mute_after = 0xFFFFFFFFu, bad_erase, erases;
+static uint32_t flash_reads;
 static int committed;
 static uint8_t committed_parm[112];
 static int32_t last_code;
@@ -129,7 +130,7 @@ static int ota_prog(uint32_t off, const void *src, uint32_t n)
     for (i = 0; i < n; i++) nor[off + i] &= s[i];
     return 0;
 }
-static int ota_fread(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
+static int ota_fread(uint32_t off, void *dst, uint32_t n) { flash_reads++; memcpy(dst, nor + off, n); return 0; }
 static void ota_show(uint32_t step, int32_t code) { if (step == 9) last_code = code; }
 static void ota_commit(const uint8_t *parm) { committed = 1; memcpy(committed_parm, parm, 112); }
 
@@ -235,7 +236,7 @@ static void reset_dev(void)
     memset(nor, 0xFF, sizeof nor);
     memcpy(nor, dev_head, 0x4000);                        /* device flash head = the first package's flash.bin head */
     rx_full = 0; requests = 0; ident_replies = 0; committed = 0; last_code = 0;
-    mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0;
+    mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0; flash_reads = 0;
 }
 
 /* the device's chip key: its isd_config.ini blob rewritten as fm1pkg_make.key_blob does; 0x10000 = a broken blob */
@@ -317,9 +318,37 @@ int main(int argc, char **argv)
                      (p[6] | p[7] << 8) == 0x5441 && ota_rd32(p + 72) == TEST_OTA_LO);
         bad += check("nothing written outside 0xE0000..0xE4FFF", bad_erase == 0);
     }
-    /* boot cleanup erases it */
-    bad += check("boot cleanup erases the area", ota_boot_cleanup() == 1 && area_erased());
-    bad += check("second boot: nothing to do", ota_boot_cleanup() == 0);
+#if BOARD_SMK37
+    {   /* An explicit OTA still stages/commits without store ownership. Its
+         * partial/successful staging is not an automatic adoption on reboot. */
+        uint32_t before_erases = erases, before_reads = flash_reads;
+        bad += check("unowned reboot keeps explicitly staged update", ota_boot_cleanup(0) == 0 &&
+                     erases == before_erases && flash_reads == before_reads && !area_erased());
+    }
+#endif
+    /* Owned-store cleanup retains its existing behavior. FM-1 ignores the
+     * ownership argument because its existing map/policy is unchanged. */
+    bad += check("boot cleanup erases the area", ota_boot_cleanup(1) == 1 && area_erased());
+    bad += check("second boot: nothing to do", ota_boot_cleanup(1) == 0);
+#if BOARD_SMK37
+    {
+        static uint8_t kept[OTA_AREA_LEN];
+        uint32_t value, kept_all = 1;
+        /* Every byte value, including all-FF, arbitrary stock VM data and
+         * record-shaped tails: locked boot must do no reads or erases. */
+        for (value = 0; value < 256u; value++) {
+            reset_dev();
+            memset(nor + OTA_AREA, (int)value, OTA_AREA_LEN);
+            memcpy(kept, nor + OTA_AREA, sizeof kept);
+            kept_all &= ota_boot_cleanup(0) == 0 && !erases && !flash_reads &&
+                        !memcmp(kept, nor + OTA_AREA, sizeof kept);
+        }
+        bad += check("foreign SMK VM sentinels survive locked cleanup", kept_all);
+    }
+#else
+    reset_dev(); nor[OTA_AREA] = 0;
+    bad += check("FM1 cleanup ignores SMK ownership gate", ota_boot_cleanup(0) == 1 && area_erased());
+#endif
 
     /* 1.6.1: another board's package (flash.bin not this board's app area size): refused in step 1, nothing erased */
     {
