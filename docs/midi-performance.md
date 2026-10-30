@@ -92,6 +92,8 @@ not equal-power compensation or a promise of constant loudness for all patches.
 
 ## Testing and limits
 
+For physical USB/TRS testing, use the [timed Python sender and MIDI-file procedure](midi-hardware-testing.md).
+
 Use the rebuilt browser emulator for software-MIDI/PCM tests; it does not validate
 physical USB/TRS transport or FM-1 deadlines. The focused host tests cover each
 feature and combinations, including project-reset and bank snapshot ordering.
