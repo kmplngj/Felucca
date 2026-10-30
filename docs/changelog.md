@@ -391,6 +391,12 @@ recorded in the linked reports, rather than every current build or device.
   [combined integration evidence](https://github.com/kmplngj/Felucca/pull/349)
   and [silent-FX regressions](../tests/fx_rest_test.md); host equivalence and target
   estimates do not establish FM-1 timing gains.
+- **FM6 feedback operator:** the add and overwrite stores of the feedback operator
+  are now separate loops (#366), so the target compiler no longer keeps a predicated
+  load/add in each sample. Audio and feedback state are unchanged, checked bit for bit
+  over all 32 algorithms and feedback settings. The pi32v2 loop shrinks from 26 to
+  20 (overwrite) or 23 (add) instructions per sample for +76 B of app flash; static
+  counts, not measured FM-1 timing, which remains pending.
 - **Memory and display work:** aligned memory copies/fills, paired-pixel canvas
   clears, cached project readiness, scope/LCD submission improvements and smaller
   font decode caches. The [controlled font comparison](font-experiment.md) records
