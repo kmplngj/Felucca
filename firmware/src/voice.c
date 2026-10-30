@@ -35,7 +35,7 @@ static int32_t lfo_wave(track_t *t, uint32_t ph)
 static uint32_t lfo_rand(track_t *t)
 {
     uint32_t s = t->lfo_rnd ? t->lfo_rnd : 0x9E3779B9u;
-    if ((uint32_t)(t - trk) < LFO_SHARED_RNG)
+    if (trk_index(t) < LFO_SHARED_RNG)
         return rng();
     s ^= s << 13;
     s ^= s >> 17;
@@ -309,7 +309,7 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     v->pitch16 = (int32_t)note * 16;
     v->mvel = t->m_vel;                                 /* mod.c: the note's VEL and RAND */
     v->mrnd = t->m_rnd;
-    t->m_vi = (uint8_t)(v - t->v);
+    t->m_vi = (uint8_t)voice_index(t, v);
     glide_set(t, v, glide);
     if (!sounding) {
         v->env = 0;
@@ -678,7 +678,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     int32_t tune = song.g[G_TUNE] >= 0 ? song.g[G_TUNE] * 16 / 100 : -((-song.g[G_TUNE] * 16 + 99) / 100);
     int32_t tune_fine = (song.g[G_TUNE] * 16 - tune * 100) * 2367 / 16000;   /* rest, in 1/4096 (1 ct = 2.367) */
     int32_t bend, bend16, bend_fine;
-    uint32_t ti = (uint32_t)(t - trk);
+    uint32_t ti = trk_index(t);
     if (ENGINES[eng_idx(t->eng_req)] == &ENG_DRUM) {
         midi_bend_q8[ti] = midi_bend_target[ti] = 0;
     } else {

@@ -442,7 +442,7 @@ static int slc_man_restore(uint32_t k, uint32_t n, uint32_t end, const uint32_t 
 /* ---- voices */
 static int16_t *slc_rb(track_t *t, voice_t *v)
 {
-    uint32_t p = (uint32_t)(t - trk), i = (uint32_t)(v - t->v);
+    uint32_t p = trk_index(t), i = voice_index(t, v);
     return p < NPART && i < NVOICE ? (*(slc_rbuf_t *)ENG_MEM_OF(t, ENGI_SLICE, p))[i] : 0;
 }
 

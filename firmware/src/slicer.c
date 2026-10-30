@@ -158,7 +158,7 @@ static inline __attribute__((always_inline)) void sl_seg(const track_t *t, sl_t 
 /* the step clock over n samples and the SLICER on b (0: the clock only, the track is silent) */
 static void slicer_track(const track_t *t, int32_t *b, uint32_t n)
 {
-    uint32_t k = (uint32_t)(t - trk), i = 0;
+    uint32_t k = trk_index(t), i = 0;
     sl_t *s = &sl[k];
     int act = b && (t->p[P_SLCR] != SL_OFF || s->gc || s->w);
     while (i < n) {
@@ -178,7 +178,7 @@ static void slicer_track(const track_t *t, int32_t *b, uint32_t n)
 /* slicer_track with SPREAD's side signal sd (fx.c mix_spread; b != 0) */
 static __attribute__((noinline)) void slicer_track_sd(const track_t *t, int32_t *b, int32_t *sd, uint32_t n)
 {
-    uint32_t k = (uint32_t)(t - trk), i = 0;
+    uint32_t k = trk_index(t), i = 0;
     sl_t *s = &sl[k];
     int act = t->p[P_SLCR] != SL_OFF || s->gc || s->w;
     while (i < n) {
@@ -198,6 +198,6 @@ static __attribute__((noinline)) void slicer_track_sd(const track_t *t, int32_t 
 /* a silent part must still be rendered: a repeat is playing or fading (fx.c mix_part) */
 static int slicer_busy(const track_t *t)
 {
-    const sl_t *s = &sl[t - trk];
+    const sl_t *s = &sl[trk_index(t)];
     return s->w || (t->p[P_SLCR] == SL_STUT && s->loop);
 }

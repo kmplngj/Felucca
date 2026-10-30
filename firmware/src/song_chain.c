@@ -101,7 +101,7 @@ static uint32_t chain_clock(const chain_row_t *r)
 static int chain_owns(uint32_t id) { return (id >= P_SLEN && id <= P_SGATE) || id == P_SQNT; }
 static const step_t *seq_steps(const track_t *t)
 {
-    uint32_t k = (uint32_t)(t - trk), s;
+    uint32_t k = trk_index(t), s;
     if (!chain.running)
         return t->step;
     s = chain.lane[k];

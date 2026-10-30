@@ -55,8 +55,6 @@ static volatile uint8_t midi_seen;       /* 1.5.5 (#208): bit per track, a MIDI 
                                           * looked (ui_input.c midi_follow: the track's light, AUTO SELECT;
                                           * ui.c scr_input: MENU > MIDI > SCREEN WAKE +MIDI) */
 
-static uint32_t trk_index(const track_t *t) { return (uint32_t)(t - trk); }
-
 /* MENU > MIDI > MIDI IN (G_ROUTE, up to 1.1.5 GLO > SYSTEM ROUT): the first channel (0..15) of the block of four that
  * plays tracks 1..4, -1 with SEL, -2 with TRACK (each track its own: song.mch). Stored
  * 0 CH1-4, 1 SEL, then (1.2, Discussion #143) 2 CH5-8, 3 CH9-12, 4 CH13-16, (1.5.5, #202) 5 TRACK */
