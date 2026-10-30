@@ -51,6 +51,9 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **Hardware MIDI test sender:** [timed Python scenarios and MIDI-file export](midi-hardware-testing.md)
+  for the eight performance controls, with explicit output selection, message logs
+  and interruption cleanup. Physical MIDI/audio acceptance remains pending.
 - **MIDI performance controls:** session key/velocity zones and two-part mixing,
   CC65/67/68 articulation/soft controls, channel fine/coarse tuning, stable NRPN
   parameter input and Bank Select access to existing user presets. Existing project
