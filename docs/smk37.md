@@ -174,6 +174,16 @@ firmware before installing or initializing storage.
 3. With the transport stopped, press KNOB BANK to open the menu, turn K3 to change
    its tab and K4 to change its selected row, then press KNOB BANK to close it.
    Expect readable, stable graphics while pads flash and USB audio is active.
+   At the default octave, tap PATCH for HOME and turn K2 (SELECT) to T1. Tap
+   SCALE until SCL appears; set K5 ROOT to C, K6 SCL to MAJ, K7 QNT to SNAP and
+   K8 TRN to 0. Tap SCALE for CHORD and set K5 CHRD to OFF; tap PATCH for HOME.
+   Hold G5 and G#5 together: both map to G5. Release either key first; G5 must
+   continue until the second key releases, with one MIDI note-on/off pair.
+   Repeat with the opposite press/release order. Tap ARP and set K5 MODE to UP;
+   tap ARP again for ARP 2 and set K7 HOLD to OFF, then repeat: the arpeggio must end with the final
+   release. Finally release all keys, disable ARP, and hold external USB-MIDI G5
+   with only the outer G#5 key. Release each source first in turn; the remaining
+   hold must continue, and the last release must leave no stuck note.
 4. For a disposable, backed-up store only, power off and hold both BANK buttons
    while powering on. Expect the initialization warning. Release both and press
    OCT−: expect normal RAM-only startup and preserved data. Repeat, release all

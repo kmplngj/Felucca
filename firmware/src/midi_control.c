@@ -70,6 +70,11 @@ static int midi_local_held(const track_t *t, uint32_t note)
             for (i = 0; i < kb_chn[k]; i++)
                 if (kb_chord[k][i] == note)
                     return 1;
+#if BOARD_SMK37
+    for (k = 0; k < FM1_NKEY; k++)
+        if (ext_note[k] == note + 1u && ext_trk[k] == trk_index(t))
+            return 1;
+#endif
     return 0;
 }
 

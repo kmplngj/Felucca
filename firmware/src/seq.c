@@ -837,11 +837,14 @@ static void ext_keys_block(void)
             continue;
         if (!v) {
             if (ext_note[k]) {
+                track_t *t = &trk[ext_trk[k] % NTRK];
                 n = ext_note[k] - 1u;
-                mc = trk_midi_ch(ext_trk[k] % NTRK);
-                input_off(&trk[ext_trk[k] % NTRK], n);
-                midi_out_event(0x08u | (0x80u | mc) << 8 | n << 16);
-                ext_note[k] = 0;
+                ext_note[k] = 0;                        /* remove this owner before checking the others */
+                if (!midi_local_held(t, n)) {
+                    mc = trk_midi_ch(ext_trk[k] % NTRK);
+                    input_off(t, n);                    /* external MIDI owners are checked by input_off */
+                    midi_out_event(0x08u | (0x80u | mc) << 8 | n << 16);
+                }
             }
             continue;
         }
@@ -850,11 +853,18 @@ static void ext_keys_block(void)
         n = kb_map(&trk[sel], (uint32_t)((int32_t)k - (int32_t)SMK_KEY_F3));
         if (n == KB_SILENT)
             continue;
+        if (!midi_local_held(&trk[sel], n)) {
+            /* Outer keys join the same internal hold as MIDI IN, including ARP;
+             * replaying input_on would leave an extra arp_phys count on release.
+             * Local MIDI OUT still describes the physical press. The existing
+             * FM-1 central-key/MIDI policy (#307) remains unchanged. */
+            if (!midi_note_held(&trk[sel], n))
+                input_on(&trk[sel], n, v);
+            mc = trk_midi_ch(sel);
+            midi_out_event(0x09u | (0x90u | mc) << 8 | n << 16 | v << 24);
+        }
         ext_note[k] = (uint8_t)(n + 1u);
         ext_trk[k] = (uint8_t)sel;
-        mc = trk_midi_ch(sel);
-        input_on(&trk[sel], n, v);
-        midi_out_event(0x09u | (0x90u | mc) << 8 | n << 16 | v << 24);
     }
 }
 #endif

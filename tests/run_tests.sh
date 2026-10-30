@@ -512,6 +512,11 @@ u_smk_ui() {
     run "SMK UI: consumed/remapped BANK keys, high button IDs and reserved MASTER calibration" "$OUT/smk_ui_test"
 }
 unit smk_ui "" u_smk_ui
+u_smk_note_ownership() {
+    $CC -std=gnu11 -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_note_ownership_test" tests/smk_note_ownership_test.c -lm
+    run "SMK notes: shared central/outer/MIDI holds, chords, ARP and release orders" "$OUT/smk_note_ownership_test"
+}
+unit smk_note_ownership "" u_smk_note_ownership
 UNIT_NEEDS=
 
 u_screen_capture() {
@@ -1337,6 +1342,11 @@ else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    u_asan_smk_note_ownership() {
+        $SCC -o "$A/smk_note_ownership_test" tests/smk_note_ownership_test.c -lm
+        run "ASan/UBSan: SMK shared-note ownership and final release" "$A/smk_note_ownership_test"
+    }
+    unit asan_smk_note_ownership "smk_note_ownership" u_asan_smk_note_ownership
     u_asan_icon_streams() {
         ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ibuild/gen -I"$OUT" \
             -o "$A/icon_stream_test" tests/icon_stream_test.c -lm
