@@ -149,7 +149,9 @@
 #endif
 #define LP_OWNER_READY() (LP_SLICE_READY() && autosave_quiet() && !transport_busy() && !fm1_in.buttons && !fm1_in.notes && scrn.st == SCR_ON && \
                           persist_pending == PERSIST_IDLE && !settings_unsaved() && !usb.ota_req && !usb.uboot_req)
-#define LP_REDRAW() (ui.force = 1u)
+/* FINISH restarts the screen-off idle time: input stays dropped until reboot, so an
+ * idle limit expired during hold would otherwise send SLPIN before the repaint shows. */
+#define LP_REDRAW() (scr_touch(), ui.force = 1u)
 #define LP_RECOVERY_VIEW() do { ui.menu = 1; ui.menu_sel = MI_COLOR; } while (0)
 static void lp_label(uint32_t mode, uint32_t run);
 #define LP_LABEL(mode, run) lp_label(mode, run)
