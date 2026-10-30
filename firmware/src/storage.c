@@ -136,6 +136,9 @@ static int st_load(uint32_t obj, void *dst, uint32_t max)
 /* save into copy `to` (0 A, 1 B; -1: the one that is not the current copy, as st_save) */
 static int st_save_to(uint32_t obj, const void *src, uint32_t len, int to)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) return -9; /* before cache/generation/publication */
+#endif
     uint32_t seq, base, off;
     int cur, rc;
     st_hdr_t h;

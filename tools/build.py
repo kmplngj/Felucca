@@ -75,7 +75,7 @@ NOINIT_SPARE_MIN = 100              # B of app.ld's NOINIT region left unallocat
 # FELUCCA_CRASH_CTX=1 (hal/fm1_irq.h, #428): a diagnostic build whose crash record also keeps r0..r15, usp, ssp and
 # their key (19 words). Only that build may take these bytes out of the floor; release and standard builds keep 100 B
 CRASH_CTX_NOINIT = 76
-DIAG_FLAGS = ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE", "FELUCCA_RENDER_STAGE")  # development diagnostics, never a release
+DIAG_FLAGS = ("FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE", "FELUCCA_RENDER_STAGE", "FELUCCA_LCD_INFLIGHT")  # development diagnostics, never a release
 LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
@@ -155,6 +155,8 @@ def resolve(argv):
     if a.release and diag:
         raise SystemExit(f"--release with a diagnostic build ({', '.join(diag)}=1): build the release without them")
     profile_name = os.environ.get("FELUCCA_PROFILE", "standard")
+    if os.environ.get("FELUCCA_LCD_INFLIGHT") == "1" and profile_name != "standard":
+        raise SystemExit("FELUCCA_LCD_INFLIGHT requires the standard profile")
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", profile_name):
         raise SystemExit("invalid FELUCCA_PROFILE name")
     if profile_name != "standard":
@@ -593,7 +595,7 @@ def app_flags():
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
                  "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2", "FELUCCA_ISR_ASSERT",
-                 "FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE", "FELUCCA_RENDER_STAGE"):
+                 "FELUCCA_CRASH_CTX", "FELUCCA_MUL64_REPRO", "FELUCCA_SCREEN_CAPTURE", "FELUCCA_RENDER_STAGE", "FELUCCA_LCD_INFLIGHT"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")

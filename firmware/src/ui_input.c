@@ -1473,6 +1473,14 @@ static void ui_notices(void)
 
 static void ui_input(void)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) {
+        enc_drop();
+        (void)fm1_input_edges(0);
+        (void)fm1_input_note_edges();
+        return; /* scan/music IRQs continue; no saved/menu gestures or queued detents */
+    }
+#endif
     uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), now = fm1_ticks(), id, b, k;
     uint32_t home, rec, save;
     uint32_t oct;

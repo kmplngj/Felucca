@@ -241,17 +241,32 @@ static void cv_blit_from(uint32_t x, uint32_t y, uint32_t r0)
 static void cv_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h)
 {
     uint32_t r, c, dst = 0;
+#if FELUCCA_LCD_INFLIGHT
+    uint32_t probe;
+#endif
     if (x0 >= cv_w || y0 >= cv_h || !w || !h)
         return;
     if (w > cv_w - x0) w = cv_w - x0;
     if (h > cv_h - y0) h = cv_h - y0;
     lcd_sync();                                   /* never overwrite a running DMA's source */
+#if FELUCCA_LCD_INFLIGHT
+    probe = lp_pack_begin(x0, y0, w, h);
+    if (LCD_FAILED() && !lp_control_write(probe)) {
+        lp_pack_denied(probe);
+        return;                                  /* candidate exercises this real producer guard */
+    }
+    if (!lp_pack_ready(probe)) return;             /* timeout miss also cannot pack/resubmit */
+#else
     if (LCD_FAILED())
         return;
+#endif
     GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h);         /* before packing changes canvas coordinates */
     for (r = 0; r < h; r++)
         for (c = 0; c < w; c++)
             cv_px[dst++] = cv_px[(y0 + r) * cv_w + x0 + c];
+#if FELUCCA_LCD_INFLIGHT
+    if (probe) { lp_pack_end(probe, dst); return; } /* no trailing submission on any probe branch */
+#endif
     lcd_blit(x + x0, y + y0, w, h, cv_px);
 }
 

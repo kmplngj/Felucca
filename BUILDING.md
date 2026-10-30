@@ -1328,3 +1328,43 @@ It needs the configured target tools and SDK but does not compile firmware. Sour
 artifact hashes bind actual working bytes; a recorded dirty checkout is not identified
 by its commit alone. Releases and CI artifacts include both JSON sidecars; local release
 `SHA256SUMS` covers them. These reports do not measure live stack use or FM-1 deadlines.
+
+## LCD in-flight diagnostic (`FELUCCA_LCD_INFLIGHT=1`)
+
+Development-only, default `0`, standard profile only, never a release. The normal
+release resolver refuses this flag; its exact `DIAG_FLAGS` test includes it.
+The diagnostic requires FLASH, OTA and CDC, and runs only after an explicit
+volatile console arm. It never autoruns or retains an arm across reboot.
+
+This #600 preparation uses the existing 59,520-byte aligned canvas and normal
+SPI1 divider/count. A one-shot 16-poll software wait can observe a genuinely
+pending transfer. It never masks completion, changes clocks, overflows DMA, or
+performs an in-place peripheral abort/reset. Only the bounded control mode may
+execute the actual canvas packing copy after the real failed-wait condition.
+
+Mode 3 additionally observes ordinary LCD recovery after one real failed 16-poll
+wait. It is development-only and needs its own reviewed host/controller and
+package: the existing V5 controller pins the earlier revision and does not accept
+mode 3. A stage-4 report records DISPON issued, not physical display acceptance.
+
+Target/native integration, resource and disassembly review, optical controls,
+backup/restoration prerequisites and deliberate normal reset cleanup are required
+before a device run. A passing host oracle is not permission to install or a
+physical acceptance result. See `docs/diagnostics.md` for the experiment contract.
+
+The LCD in-flight probe also provides an unarmed read-only raw snapshot and
+first-reset-cause metadata. Its abort report opportunity is bounded by100ms and
+the unchanged30s arm lifetime; it adds only ordinary diagnostic BSS, no retained
+arm or pixel buffer. See the LCD probe abort-evidence contract in
+[diagnostics](docs/diagnostics.md#lcd-probe-abort-evidence). Default-OFF LCD/GFX
+code equivalence and the focused reset/HAL oracle are separate from ON native
+resource checks and physical validation.
+
+The in-flight diagnostic uses protocol2: BAUD/ADR are write-only in the pinned
+WL82 SDK and are not loaded. Availability and software-issued configuration/issue
+witnesses replace invalid readback assumptions; they do not measure a hardware
+clock. Preserve both original normal divider4 stores and OFF code form. ON host
+fixtures model unavailable WO readback explicitly, and native listing review must
+verify no WO loads plus witness publication after the actual stores. Refresh host
+protocol/artifact pins after this change; see
+[protocol2](docs/diagnostics.md#lcd-probe-protocol-2-readable-state-and-issued-writes).

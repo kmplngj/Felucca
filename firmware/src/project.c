@@ -1232,6 +1232,9 @@ static uint32_t chain_prepare(void)
 
 static void settings_poll(void)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) return; /* includes SLICE deferred writes */
+#endif
 #if FELUCCA_FLASH
     persist_rec_t *p = &persist_tmp;
 #if FELUCCA_SLICE
@@ -1372,6 +1375,9 @@ static void autosave_hold(void) { as.t = fm1_ms; }   /* the editor's transfers: 
 /* main loop, every pass (after settings_poll) */
 static void autosave_poll(void)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) return;
+#endif
 #if FELUCCA_FLASH
     uint32_t sig, audio;
     if (!flash_ok || fm1_ms - as.poll < AS_POLL_MS)

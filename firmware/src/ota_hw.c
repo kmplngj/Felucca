@@ -21,6 +21,9 @@ static void ota_idle(void)
 static int ota_in_area(uint32_t off, uint32_t n) { return FL_IN(off, n, OTA_AREA, OTA_AREA + OTA_AREA_LEN); }
 static int ota_erase(uint32_t off)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) return -9; /* includes direct rescue RAM calls */
+#endif
     uint32_t took;
     if (!flash_ok || !ota_in_area(off, 0x1000u) || (off & 0xFFFu))
         return -8;
@@ -34,6 +37,9 @@ static int ota_erase(uint32_t off)
 }
 static int ota_prog(uint32_t off, const void *p, uint32_t n)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) return -9; /* includes direct rescue RAM calls */
+#endif
     if (!flash_ok || !ota_in_area(off, n))
         return -8;
     if (usb_rescue_mode) {

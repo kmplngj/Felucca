@@ -28,6 +28,9 @@ static void audio_silence(void)                 /* IRQs off: the DMA would loop 
 }
 static int st_erase(uint32_t off)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) return -9; /* before IRQ-off or flash access */
+#endif
     uint32_t took, f;
     int rc;
     FM1_ASSERT_THREAD();                        /* (#428) before irq_save: an erase stops audio and scan */
@@ -42,6 +45,9 @@ static int st_erase(uint32_t off)
 }
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) return -9; /* before IRQ-off or flash access */
+#endif
     FM1_ASSERT_THREAD();                        /* (#428) */
     if (!FL_STORE_OK(off, n))                   /* only inside the storage areas */
         return -8;

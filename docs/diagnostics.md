@@ -426,3 +426,174 @@ panel responsiveness. Compare the same workload with/without polling to quantify
 overhead, including lateness, shedding, stream errors and scan timing; record both runs'
 provenance, duration and configuration. No hardware session is implied by simulated logs.
 This host-only client changes no firmware source, build flags, target code or RAM.
+
+## LCD in-flight causal diagnostic (`FELUCCA_LCD_INFLIGHT`)
+
+Off by default and refused by `--release`. This is a standard-profile maintainer
+experiment for #600, not a production fault-injection mode. Console commands are
+`lcdprobe arm MODE RUN backup-restore-ok` (MODE 0 A-only, 1 candidate, 2 control, 3 recovery;
+nonzero 32-bit RUN), `lcdprobe go`, `lcdprobe`, `lcdprobe trace INDEX`,
+`lcdprobe finish`, `lcdprobe abort` and unarmed-only `lcdprobe snapshot`. No command proves that a backup exists:
+the maintainer must first retain and compare all15/MENU/live state and establish the
+persisted-state check or reviewed restoration route, including any unsaved live music state. The saved-autosave baseline is separate: read-only STORE_LIST82
+and STORE_GET83 export raw stored objects including STORE type9 (autosave).
+BACKUP object9 is UPF6, not saved autosave; all15/MENU cannot establish raw STORE9
+preservation. Capture raw metadata/payload hashes before arm, after intentional
+reboot and after restoring the pinned known-good normal package; active editor frames are discarded, so
+readbacks cannot be performed during hold. Arming requires quiet transport/voices/keys, an awake healthy
+display, no pending settings/SLICE save and unchanged settings. No silent save
+is performed to satisfy a prerequisite. Sole device/installer/console ownership
+is mandatory. Every run remains pending physical qualification.
+
+Arming blocks write producers and save gestures until ordinary full-chip reboot,
+including after `finish`. Scan/audio interrupts, USB polling, watchdog feeding and
+read-only console status/dbg/inp/crash continue. Editor/native command frames are
+discarded without dispatch; storage, raw flash wrapper and OTA write backstops
+refuse before flash or IRQ-off entry. An experiment is not a normal MIDI/editor
+compatibility or loaded-deadline result.
+
+The label is outside the rectangle (0,58)..(239,181). First retain completed dark
+grey C and its label. `go` prepares identical A in the existing canvas: upper
+62 rows red/white coded cells, lower62 blue/yellow cells. The selected transfer
+is exactly 59,520 bytes. Candidate calls the actual guarded packing writer and
+is denied. Control alone can copy bytes[29760,59520) to[0,29760), using the real
+packing loop and never its trailing LCD submit. A timeout miss or completion
+racing the COPY_BEGIN snapshot performs no packing; it is inconclusive.
+
+For modes 0–2, all HAL command/data submissions from selected window setup through optical hold
+are observed; there must be exactly the normal six setup/data submissions, only
+one selected pixel DMA, and no later submit before hold release. C rendering and
+post-hold recovery traffic are outside that bounded count. SUBMIT raw registers
+are pre-submit snapshots; SELECTED binds the actual source argument and programmed
+byte count after submission. CON PND bit15 is a real completion predicate;
+`lcd_busy` records software ownership. Raw CNT is not a remaining-byte counter.
+
+Trace words are event, raw TIMER4 ticks, raw CON, busy|fault<<8|initialized<<16,
+event argument a, event argument b, unavailable ADR placeholder0, raw CNT. Events1..13 are ARM, SUBMIT,
+SHORT_WAIT, WAIT_RESULT, PACK_ATTEMPT, DENIED, COPY_BEGIN, COPY_END, COMPLETE,
+RELEASE, HOLD_END, RESET, SELECTED. For a non-missed candidate/control require
+WAIT_RESULT=0; PACK_ATTEMPT after real failed wait with busy/fault/initialized;
+COPY_BEGIN only in control with its own snapshot PND=0; COPY_END writes14,880
+pixels; candidate DENIED and zero stores. COMPLETE must observe PND=1 before
+acknowledgment/deselect/RELEASE. Overflow, reset, unexplained submit, missing
+record or changed source/count invalidates qualification. No formatted output or
+buffer hash runs inside the wait/copy critical interval.
+
+For modes 0–2, the common hold prevents service/repaint and remains after genuine completion
+through settled optical inspection. A-only establishes orientation and exact A
+appearance. A valid positive control needs stable blue/yellow coded geometry at
+upper-half positions where neither C nor unchanged/partial A can supply it, in
+the same sole transfer. Retain labeled video or repeated settled observations;
+predeclare a threshold of at least two separate complete2x2 coded-cell blocks
+(16x8 pixels per cell), both blue and yellow in their predicted geometry. No B or
+ambiguous B is inconclusive, never safe-release proof. The model images show one
+possible partial-transfer result, not predicted physical DMA progress.
+
+For modes 0–2, after optical retention, `finish` releases the hold for the normal service/wake/
+full latest repaint path while all write exclusions remain. The original 250ms
+backoff and wake waits are assessed separately; this diagnostic hold changes
+timing. `abort`, failure of modes 0–2 to complete within1000ms of `go`, trace overflow, or
+30000ms since arm requests an intentional ordinary full-chip reboot at the next
+main pass. It never clears PND, deselects, or releases a pending source to imitate
+recovery. Firmware keeps serving main/IRQ work until that bounded cleanup.
+After reboot the volatile arm is gone; do not rearm automatically. Restore the
+pinned known-good normal package through the reviewed installer under maintainer control,
+then verify ordinary identity, all15/MENU/live state, panel/audio and coldboot.
+The diagnostic proves neither a permanent-stuck hardware fault nor the production
+four-million-poll deadline, SPI timing, cache transactions, or real pixel behavior
+before the actual maintainer-run optical test.
+
+### Mode 3: ordinary recovery observation
+
+`lcdprobe arm 3 RUN backup-restore-ok` uses the same prerequisites and command
+route above, followed by `lcdprobe go` and read-only `lcdprobe` /
+`lcdprobe trace INDEX` observations. The existing V5 controller pins the earlier
+firmware and does not support mode 3; no mode-3 host controller is provided by
+this change. Review and qualify the host and package before any device run.
+
+GO issues the normal six-submission, 59,520-byte DMA transfer. One 16-poll
+software wait must fail with fault and ownership set and actual PND clear. A
+completion before that observation refuses the attempt and requests reset; it is
+not retried. The fixed recovery view changes RAM UI selection only. Ordinary
+`lcd_service` owns the 250ms retry, genuine PND check, acknowledgment and source
+release; the mode-3 probe step does not release it. The normal wake path then
+uses two 120ms waits, a full clear and latest RAM view before issuing DISPON.
+
+Only mode 3 adds `lcdprobe_recovery_stage`: 1 failed wait, 2 service released,
+3 full clear completed, 4 production SCR_ON/DISPON issued. Trace events 14–19
+are recovery fault, service arm, service poll, service release, recovery clear
+and recovery shown. Events 15–19 carry `fm1_ms` in b; event 14 carries zero.
+Stage 4 is not an LCD
+acknowledgment or optical pass: DISPON may still be asynchronous. Modes 0–2
+retain their existing status fields and optical/finish contract. Mode 3 enters
+REPAINT and `finish` refuses it. Before stage 4, a 5s recovery deadline from GO requests
+the normal first-cause reset route; the 30s arm lifetime and active write/input
+exclusions still apply, including after stage 4, until full-chip reset.
+Actual panel input during a fault, permanent hardware noncompletion and partial
+initialization faults remain unqualified; host models do not establish device
+behavior or loaded audio/USB/scan continuity.
+
+### LCD probe protocol 2: readable state and issued writes
+
+The exact WL82 SDK declares SPI BAUD and ADR write-only. The probe does not load
+those registers. Snapshot/trace ADR and BAUD slots are unavailable placeholders0,
+identified by read_mask5 (bit0 CON, bit2 CNT). CON and CNT remain real hardware
+observations; CNT is never remaining bytes or progress. A zero placeholder is not
+read-as-zero hardware behavior, source address0 or divider0.
+
+The HAL records the normal issued BAUD value and a write counter only after each
+actual volatile BAUD store. Both existing boot write sites still issue4. The
+snapshot reports protocol2, read_mask, issued_baud and baud_writes alongside the
+readable registers and packed LCD metadata (busy bit0, fault bits8..15,
+initialized bits16..23). This is software-issued configuration, not accepted
+hardware state or a measured clock frequency. `lcdprobe snapshot` is unarmed-only.
+
+The new baud_writes and baud_epoch fields (including snapshot/reset variants)
+use fixed-width 0x-prefixed hex for the full unsigned32-bit range.
+Status has protocol/read_mask/issued_baud/baud_writes/baud_epoch/issued_submits/
+issued_seq/expected_bytes. Before ARM, epoch and selected source/bytes/issue
+counters are0; expected_bytes is59520. ARM requires full-word issued_baud4 and a
+positive write counter, then freezes that counter as baud_epoch. Every clock
+reprogramming attempt while armed, including4, is refused before hardware/GPIO
+changes. A genuine FINISH first releases the lease; only then may ordinary healthy
+REPAINT reinit issue normal4 again. Persistence exclusion remains active until
+reboot. Global baud_writes may advance/wrap after FINISH; the held epoch and
+selected tuple stay latched. No such post-FINISH observation qualifies another ARM.
+
+SUBMIT trace events remain attempts. HAL calls the issue witness only after its
+actual BUF or ADR/CNT stores. During the selected window, the witness count/sequence
+must be6, the selected source must equal the pinned canvas and bytes59520. SELECTED
+records that actual issued tuple. C preparation and post-FINISH repaint are outside
+these selected-window counters. Neither six software issuance events nor the tuple
+is a physical bus transaction count or hardware acceptance proof. Host validation
+must use these issued witnesses with real PND/lease ordering, never range-check the
+unavailable raw ADR slot or silently substitute software values into raw fields.
+
+### LCD probe abort evidence
+
+A reset request retains its first cause, phase, ticks, milliseconds, readable
+snapshot/placeholders, LCD metadata, read_mask, issued BAUD/write counter and any
+refused clock attempt (attempt_valid/attempt_baud) in ordinary BSS, independent of
+trace capacity. Later faults cannot overwrite that first observation. Cause codes:
+1 issued-config/epoch audit,2 trace full,3 unexpected submit,4 C/label setup,
+5 selected issue contract,6 arm lifetime,7 completion refusal,8 hardware wait
+deadline,9 abort,10 refused clock reprogramming,11 recovery refusal/deadline. Code1 is not a BAUD readback fault.
+
+Reset-pending ARM returns `lcdprobe_arm 0` plus the14 `lcdprobe_reset_*` fields in
+one canonical echoed response before its prompt. Missing or partial framing is
+uncertain: never replay ARM, GO or FINISH. Old protocol/host tooling is not qualified
+for protocol2. Probe newline admission reserves1536 bytes; actual worst-width
+status serialization is checked separately from generic console output policy.
+
+The main loop offers at most100ms from first request for a report, clamped to the
+existing30s arm deadline. USB, scan, audio and watchdog service continue with full
+write exclusion/held display/source ownership. No later LCD submit, completion
+acknowledgment or source release follows a request; a refused init also returns
+before its blocking delay. Then the existing intentional full-chip reset runs.
+At30s there is no report margin. This is best effort, not delivery proof: software
+ring-empty can still leave an EP3 packet in flight. Only a retained complete host
+frame proves receipt. Reset clears this volatile evidence.
+
+Register access reference: the official SDK's dated
+[WL82 header](https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK/blob/AC79NN_SDK_V1.2.1_2023-12-13/include_lib/driver/cpu/wl82/asm/WL82.h).
+No actual SCK-frequency or read-side-effect guarantee follows from its access tags.

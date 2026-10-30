@@ -936,6 +936,14 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
  * not independently poll OTA then: it would consume that request as not its own. */
 static int ed_service(void)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_ACTIVE()) {
+        const uint8_t *held;
+        uint32_t length;
+        if (ota_frame_get(&held, &length)) ota_frame_done();
+        return 0; /* transport still polls; no editor dispatch, sync push or OTA service */
+    }
+#endif
     const uint8_t *p;
     uint32_t n;
     ed_sync();                                             /* v2 pushes (while watched) */
