@@ -24,6 +24,9 @@
  * the rate until a host asks for another, sends the samples as before, bit for bit. */
 #include "isr_assert.h"
 #include "../hal/fm1_usb.h"   /* registers; relative, so the loader and the host tests find it too */
+#ifndef FELUCCA_RESTART
+#define FELUCCA_RESTART 0        /* app control only; never alter the update loader's USB service */
+#endif
 #ifndef FELUCCA_CDC
 #define FELUCCA_CDC 0
 #endif
@@ -414,6 +417,7 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
 }
 
 /* ---------------------------------------------------------- the SIE --- */
+#if FELUCCA_RESTART
 static uint32_t sie_faults;                 /* TIMER5-owned failed transaction generation */
 static void sie_failed(void)
 {
@@ -423,6 +427,9 @@ static void sie_failed(void)
     so_epoch++;                            /* every failed transaction invalidates outstanding fences */
 #endif
 }
+#else
+#define sie_failed() ((void)0)
+#endif
 static void sie_wr(uint32_t r, uint32_t v)
 {
     uint32_t n = 20000;
@@ -508,8 +515,10 @@ static void usb_reset_state(void)
     usb.sx_on = 0;
 #if FELUCCA_OTA
     sx_collect = 0;
+#if FELUCCA_RESTART
     so_flight = 0;
     so_epoch++;
+#endif
 #endif
     usb.e0_tx = 0;
     usb.has_pend_addr = 0;
@@ -528,7 +537,7 @@ static void usb_reset_state(void)
 
 static void ep1_config(void)
 {
-#if FELUCCA_OTA
+#if FELUCCA_RESTART
     so_flight = 0;
     so_epoch++;
 #endif
@@ -741,7 +750,7 @@ static void ep0_service(void)
         if (wvalue != 0 || ep > last)
             goto stall;                                 /* not an endpoint we have */
         if (ep) {                                       /* (EP0 has no halt to clear) */
-#if FELUCCA_OTA
+#if FELUCCA_RESTART
             if (ep == 1u && (s[4] & 0x80u)) { so_flight = 0; so_epoch++; }
 #endif
             sie_wr(S_INDEX, ep);
@@ -1007,9 +1016,16 @@ static void ota_frame_done(void)
 
 static void ep1_tx(void)
 {
-    uint32_t csr, n = 0, faults = sie_faults;
+    uint32_t csr, n = 0;
+#if FELUCCA_RESTART
+    uint32_t faults = sie_faults;
+#endif
 #if FELUCCA_OTA
+#if FELUCCA_RESTART
     if (mo_w == mo_r && so_w == so_r && !so_flight)
+#else
+    if (mo_w == mo_r && so_w == so_r)
+#endif
         return;
 #else
     if (mo_w == mo_r)
@@ -1017,29 +1033,32 @@ static void ep1_tx(void)
 #endif
     sie_wr(S_INDEX, 1);
     csr = sie_rd(S_TXCSR1);
+#if FELUCCA_RESTART
     if (faults != sie_faults) {
-#if FELUCCA_OTA
         so_flight = 0;
         so_epoch++;
-#endif
         return;                                         /* a failed CSR read returns zero, never completion */
     }
+#endif
     if (csr & 0x01u)
         return;                                         /* previous packet still pending */
+#if FELUCCA_RESTART
     if (csr & 0x80u) {
         sie_wr(S_TXCSR1, csr & ~0x80u);
-#if FELUCCA_OTA
         so_flight = 0;
         so_epoch++;
-#endif
         return;                                         /* stall recovery abandons the fence */
     }
-#if FELUCCA_OTA
     if (so_flight) {
         so_flight = 0;
         RING_PUBLISH();
         so_done = so_flight_end;
     }
+#else
+    if (csr & 0x80u)
+        sie_wr(S_TXCSR1, csr & ~0x80u);
+#endif
+#if FELUCCA_OTA
     while (so_r != so_w && n < 64u) {                   /* SysEx first, never split by notes */
         uint32_t pkt = sx_out_q[so_r % SXQ];
         ep1tx[n] = (uint8_t)pkt;
@@ -1066,15 +1085,17 @@ static void ep1_tx(void)
     }
     if (!n)
         return;
-#if FELUCCA_OTA
+#if FELUCCA_RESTART
     so_flight_end = so_r;
     so_flight = 1;
 #endif
     fm1_usb_ep_send(1, ep1tx, n);
+#if FELUCCA_RESTART
     csr = sie_rd(S_TXCSR1);
     if (faults == sie_faults) sie_wr(S_TXCSR1, csr | 0x01u);
-#if FELUCCA_OTA
     if (faults != sie_faults) { so_flight = 0; so_epoch++; }
+#else
+    sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
 #endif
     usb.tx_pkts++;
 }
@@ -1457,7 +1478,7 @@ static void usb_retry(uint32_t now_ms)
 
 static void usb_detach(void)
 {
-#if FELUCCA_OTA
+#if FELUCCA_RESTART
     so_flight = 0;
     so_epoch++;
 #endif

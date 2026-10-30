@@ -56,6 +56,9 @@
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "v1.6.1" /* shown in the menu, the console and the editor; build.py --release X.Y */
 #endif
+#if FELUCCA_OTA
+#define FELUCCA_RESTART 1        /* application-only USB completion fences; the update loader keeps its existing path */
+#endif
 #if FELUCCA_OTA && !FELUCCA_FLASH
 #error "FELUCCA_OTA needs FELUCCA_FLASH"
 #endif
@@ -131,7 +134,6 @@
 #if FELUCCA_OTA
 #include "ota.c"
 #include "ota_hw.c"
-#define FELUCCA_RESTART 1
 #include "editor.c"              /* web editor SysEx (needs the OTA SysEx plumbing) */
 #endif
 #if FELUCCA_MUL64_REPRO

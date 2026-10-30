@@ -17,6 +17,9 @@
 #define FELUCCA_CDC T_CDC
 #define FELUCCA_UAC 1
 #define FELUCCA_OTA 1
+#ifndef FELUCCA_RESTART
+#define FELUCCA_RESTART 1
+#endif
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "usb service:%d: %s\n", __LINE__, #x); exit(1); } } while (0)
 /* Parse the actual HAL once. Only its call sites below are substituted; the
@@ -840,6 +843,7 @@ static void suspend_lifecycle(uint32_t hz)
     application_delivered();
     puts("suspend/resume, missing SOF, repeated frame-freeze episodes and pending application data passed");
 }
+#if FELUCCA_RESTART
 static void control_fences(void)
 {
     const uint8_t ack[] = {0xF0, 0x7D, 0x46, 0x4C, 84, 1, 0, 1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0xF7};
@@ -890,9 +894,13 @@ static void control_fences(void)
     CHECK(ota_wire_control(ack, sizeof ack, &end, &epoch) == -1 && so_w - so_r == SXQ);
     puts("control fences: real EP1 completion, fault/reset/halt cancellation, wrap and atomic-full passed");
 }
+#endif
 int main(void)
 {
-    control_fences(); sie_failures(); retry_lifecycle();
+#if FELUCCA_RESTART
+    control_fences();
+#endif
+    sie_failures(); retry_lifecycle();
     for (uint32_t hz = 44100u; hz <= 48000u; hz += 3900u) {
         composite(hz, 0); composite(hz, 1); stream_transitions(hz); control_recovery(hz);
         suspend_lifecycle(hz); configured_retry(hz);
