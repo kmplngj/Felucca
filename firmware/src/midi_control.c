@@ -46,6 +46,44 @@ static uint16_t midi_owners[NTRK];           /* avoids rescanning all 2048 entri
 #define MIDI_PEDAL_NOTE 0xF0u
 _Static_assert(NTRK == 4, "MIDI ownership packs four parts into one byte");
 
+/* Session-only external-input zones. Store HIGH's distance from 127 so BSS
+ * zero gives the full range at boot, without changing any saved parameter. */
+static uint8_t midi_key_range[NTRK][2];
+
+static int32_t midi_key_range_get(uint32_t track, uint32_t high)
+{
+    if (track >= NTRK || high > 1u)
+        return -1;
+    return high ? 127 - midi_key_range[track][1] : midi_key_range[track][0];
+}
+
+static int midi_key_range_set(uint32_t track, uint32_t high, uint32_t value)
+{
+    if (track >= NTRK || high > 1u || value > 127u)
+        return 0;
+    if (high ? value < (uint32_t)midi_key_range_get(track, 0) :
+               value > (uint32_t)midi_key_range_get(track, 1))
+        return 0;
+    midi_key_range[track][high] = (uint8_t)(high ? 127u - value : value);
+    return 1;
+}
+
+static uint32_t midi_key_mask(uint32_t mask, uint32_t note)
+{
+    uint32_t i;
+    if (note > 127u)
+        return 0;
+    for (i = 0; i < NPART; i++)
+        if (note < midi_key_range[i][0] || note > 127u - midi_key_range[i][1])
+            mask &= ~(1u << i);
+    return mask;
+}
+
+static void midi_key_reset(void)
+{
+    memset(midi_key_range, 0, sizeof midi_key_range);
+}
+
 static midi_channel_t *midi_channel(uint32_t ch)
 {
     midi_channel_t *c = &midi_ch[ch];
@@ -168,7 +206,9 @@ static void midi_note_event(uint32_t ch, uint32_t note, uint32_t vel)
     if (vel) {
         /* Repeated notes replace all previous owners, including pedal-held ones. */
         midi_release(ch, note);
-        mask = midi_route_mask(ch);
+        /* Filter raw source pitch before transpose, CHRD and ARP expansion.
+         * Releases above/below use captured owners, never the current zone. */
+        mask = midi_key_mask(midi_route_mask(ch), note);
         for (i = 0; i < NPART; i++) {
             track_t *t = &trk[i];
             if (!(mask & (1u << i)))
