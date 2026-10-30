@@ -19,16 +19,23 @@ enum { LP_ARM=1, LP_SUBMIT, LP_SHORT_WAIT, LP_WAIT_RESULT, LP_PACK_ATTEMPT,
 #define LP_BYTES (LP_PIXELS * 2u)
 #define LP_HW_MS 1000u
 #define LP_HOLD_MS 30000u
+#define LP_REPORT_MS 100u
+/* First reset cause: immutable ordinary BSS, independent of trace capacity. */
+enum { LP_RST_BAUD=1, LP_RST_TRACE, LP_RST_SUBMIT, LP_RST_C_SETUP,
+       LP_RST_SELECTION, LP_RST_HOLD, LP_RST_COMPLETE, LP_RST_HW, LP_RST_ABORT };
 static struct {
     volatile uint32_t active, hold, phase, mode, run, short_wait, selected, go_ms, arm_ms;
     uint32_t count, overflow, submits, selected_submits, stores, denied, reset;
     uint32_t a_hash, c_hash, after_hash, wait_result, pending_before_copy, released;
+    uint32_t reset_cause, reset_phase, reset_ticks, reset_ms, reset_raw[4], reset_meta;
     uintptr_t source;
     uint32_t trace[LP_TRACE_CAP][8];
 } lp; /* ordinary BSS only: reboot disarms; no .noinit or persistent state */
 #define LCD_PROBE_ACTIVE() (lp.active != 0u)
+#define LCD_PROBE_STOPPED() (lp.active && lp.reset)
+static void lp_request_reset(uint32_t cause);
 static void lp_record(uint32_t event, uint32_t a, uint32_t b);
-static void lp_submit(uint32_t command, const void *source, uint32_t bytes);
+static uint32_t lp_submit(uint32_t command, const void *source, uint32_t bytes);
 static uint32_t lp_wait_budget(void);
 static void lp_wait_result(uint32_t result);
 static uint32_t lp_pack_begin(uint32_t x0, uint32_t y0, uint32_t w, uint32_t h);
@@ -39,5 +46,6 @@ static void lp_pack_end(uint32_t probe, uint32_t stores);
 static void lp_step(void);
 #else
 #define LCD_PROBE_ACTIVE() 0
+#define LCD_PROBE_STOPPED() 0
 #endif
 #endif

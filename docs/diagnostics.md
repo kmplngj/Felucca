@@ -433,7 +433,7 @@ Off by default and refused by `--release`. This is a standard-profile maintainer
 experiment for #600, not a production fault-injection mode. Console commands are
 `lcdprobe arm MODE RUN backup-restore-ok` (MODE 0 A-only, 1 candidate, 2 control;
 nonzero 32-bit RUN), `lcdprobe go`, `lcdprobe`, `lcdprobe trace INDEX`,
-`lcdprobe finish` and `lcdprobe abort`. No command proves that a backup exists:
+`lcdprobe finish`, `lcdprobe abort` and unarmed-only `lcdprobe snapshot`. No command proves that a backup exists:
 the maintainer must first retain and compare all15/MENU/live state and establish the
 persisted-state check or reviewed restoration route, including any unsaved live music state. The saved-autosave baseline is separate: read-only STORE_LIST82
 and STORE_GET83 export raw stored objects including STORE type9 (autosave).
@@ -502,3 +502,36 @@ then verify ordinary identity, all15/MENU/live state, panel/audio and coldboot.
 The diagnostic proves neither a permanent-stuck hardware fault nor the production
 four-million-poll deadline, SPI timing, cache transactions, or real pixel behavior
 before the actual maintainer-run optical test.
+
+### LCD probe abort evidence
+
+`lcdprobe snapshot` is read-only and available only while unarmed. It reports
+raw CON/ADR/CNT/BAUD and packed LCD metadata (busy bit0, fault bits8..15,
+initialized bits16..23). It never acknowledges completion or changes the SPI clock.
+BAUD qualification requires the full word to equal4; CNT is not remaining bytes
+and software busy is not a hardware-busy measurement.
+
+A reset request retains its first cause, phase, timer ticks, milliseconds,
+CON/ADR/CNT/BAUD and LCD metadata in ordinary BSS, independent of trace capacity.
+Cause codes are1 BAUD mismatch,2 trace full,3 unexpected submit,4 C/label setup,
+5 selected-transfer contract,6 arm lifetime,7 completion refusal,8 hardware wait
+deadline and9 explicit abort. Subsequent faults cannot replace that first observation.
+A reset-pending ARM returns `lcdprobe_arm 0` and its `lcdprobe_reset_*` fields in
+the same echoed response frame before the prompt. Missing or partial framing is
+uncertain; never replay ARM, GO or FINISH after uncertainty.
+
+The main loop offers at most100ms from first reset request for that bounded
+report, clamped to the existing30s arm deadline. It keeps normal USB, scan, audio
+and watchdog service while preserving the full write exclusion, held display and
+source lease. It submits no further LCD transfer and acknowledges no completion
+after the request. Then it uses the existing intentional full-chip reset path. A
+request at the arm deadline has no report margin. This is a best-effort opportunity,
+not delivery proof: an empty software ring can still have an EP3 packet in flight.
+Only a complete retained host response proves receipt; absent/stalled hosts cannot
+extend the deadline. Reset clears this volatile evidence.
+
+A submit trace records an observed attempt before the HAL permission decision.
+Once reset is requested, the HAL refuses programming the attempted transfer;
+failed-run trace entries must not be counted as completed or programmed transfers.
+These abort diagnostics identify a software decision, not a physical fault cause
+or successful LCD qualification.

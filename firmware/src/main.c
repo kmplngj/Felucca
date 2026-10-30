@@ -187,6 +187,10 @@ static const char *c1_held_msg(uint32_t reason)
 static void lp_reset_if_requested(void)
 {
     if (!lp.active || !lp.reset) return;
+    /* Best-effort report opportunity, never a delivery claim or a waiting loop.
+     * Neither repeated commands nor a stalled host can renew either deadline. */
+    if ((uint32_t)(fm1_ms - lp.arm_ms) < LP_HOLD_MS &&
+        (uint32_t)(fm1_ms - lp.reset_ms) < LP_REPORT_MS) return;
     lp_record(LP_RESET, lp.phase, 0);
     fm1_audio_stop();
     usb_detach();

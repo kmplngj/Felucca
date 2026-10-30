@@ -81,6 +81,9 @@ FM1_INLINE uint32_t fm1_lcd_done(void) { return (FM1_LCD_SPI_CON & 0x8000u) != 0
 
 FM1_INLINE int fm1_lcd_complete(void)
 {
+#if FELUCCA_LCD_INFLIGHT
+    if (LCD_PROBE_STOPPED()) return 0;
+#endif
     if (!(FM1_LCD_SPI_CON & 0x8000u))
         return 0;
     FM1_LCD_SPI_CON |= 0x4000u;    /* SDK: clear pending, NOT a DMA abort */
@@ -92,12 +95,17 @@ static int fm1_lcd_wait(void)
     uint32_t n;
 #if FELUCCA_LCD_INFLIGHT
     uint32_t limit = lp_wait_budget();
+    if (LCD_PROBE_STOPPED()) return 0;
 #else
     const uint32_t limit = 4000000u;
 #endif
-    for (n = 0; n < limit; n++)
+    for (n = 0; n < limit; n++) {
+#if FELUCCA_LCD_INFLIGHT
+        if (LCD_PROBE_STOPPED()) return 0;
+#endif
         if (fm1_lcd_complete())
             return 1;
+    }
     fm1_lcd_timeouts++;
     return 0;                     /* no acknowledgment/release on timeout */
 }
@@ -107,7 +115,7 @@ FM1_INLINE void fm1_lcd_deselect(void) { FM1_LCD_PC_OUT |= FM1_LCD_CS; }
 FM1_INLINE void fm1_lcd_send_cmd(uint8_t c)
 {
 #if FELUCCA_LCD_INFLIGHT
-    lp_submit(c, 0, 1u);
+    if (!lp_submit(c, 0, 1u)) return;
 #endif
     FM1_LCD_PC_OUT &= ~FM1_LCD_DC;
     FM1_LCD_PC_OUT &= ~FM1_LCD_CS;
@@ -118,7 +126,7 @@ FM1_INLINE void fm1_lcd_send_cmd(uint8_t c)
 FM1_INLINE void fm1_lcd_send_data(const void *p, uint32_t n)
 {
 #if FELUCCA_LCD_INFLIGHT
-    lp_submit(0, p, n);
+    if (!lp_submit(0, p, n)) return;
 #endif
     FM1_LCD_PC_OUT |= FM1_LCD_DC;
     FM1_LCD_PC_OUT &= ~FM1_LCD_CS;

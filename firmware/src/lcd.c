@@ -18,7 +18,10 @@ static uint8_t lcd_fault, lcd_retry_armed, lcd_initialized;
 static uint32_t lcd_retry_t, lcd_faults, lcd_recoveries;
 #define LCD_RETRY_MS 250u
 #define LCD_ASYNC_DRIVER 1
-#define LCD_FAILED() (lcd_fault != 0u)
+#ifndef LCD_PROBE_STOPPED
+#define LCD_PROBE_STOPPED() 0
+#endif
+#define LCD_FAILED() (lcd_fault != 0u || LCD_PROBE_STOPPED())
 #define LCD_SERVICE(now) lcd_service(now)
 
 static void lcd_spin(uint32_t n)
@@ -31,11 +34,12 @@ static void lcd_sync(void)          /* finish the running transfer (before touch
 {
     if (!lcd_busy)
         return;
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
 #if FELUCCA_LCD_INFLIGHT
     { uint32_t completed = (uint32_t)fm1_lcd_wait();
       lp_wait_result(completed);
+      if (LCD_PROBE_STOPPED()) return;
       if (!completed) {
 #else
     if (!fm1_lcd_wait()) {
@@ -61,7 +65,7 @@ static int lcd_service(uint32_t now)
 #if FELUCCA_LCD_INFLIGHT
     if (lp.active && lp.hold) return 0; /* observation hold cannot silently recover/repaint */
 #endif
-    if (!lcd_fault)
+    if (!LCD_FAILED())
         return 0;
     if (!lcd_retry_armed) {
         lcd_retry_t = now;
@@ -87,7 +91,7 @@ static int lcd_service(uint32_t now)
 static void lcd_cmd(uint8_t c)
 {
     lcd_sync();
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     lcd_busy = 1;
     __asm__ volatile("" ::: "memory");
@@ -100,7 +104,7 @@ static void lcd_data(const void *p, uint32_t n)
     if (!n)
         return;                    /* SPI_CNT = 0 never completes */
     lcd_sync();
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     lcd_busy = 1;                  /* completed by lcd_sync */
     __asm__ volatile("" ::: "memory");              /* initialized RAM and ownership before DMA starts */
@@ -110,22 +114,23 @@ static void lcd_data(const void *p, uint32_t n)
 static void lcd_window(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1)
 {
     lcd_sync();
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     lcd_small[0] = (uint8_t)(x0 >> 8);
     lcd_small[1] = (uint8_t)x0;
     lcd_small[2] = (uint8_t)(x1 >> 8);
     lcd_small[3] = (uint8_t)x1;
     lcd_cmd(0x2A);
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     lcd_data(lcd_small, 4);
+    if (LCD_PROBE_STOPPED()) return;
     lcd_small[4] = (uint8_t)(y0 >> 8);       /* own bytes: the x transfer may still read [0..3] */
     lcd_small[5] = (uint8_t)y0;
     lcd_small[6] = (uint8_t)(y1 >> 8);
     lcd_small[7] = (uint8_t)y1;
     lcd_cmd(0x2B);
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     lcd_data(lcd_small + 4, 4);
     lcd_cmd(0x2C);
@@ -144,7 +149,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
     if (y + h > 240u)
         h = 240u - y;
     lcd_sync();
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
 #if FELUCCA_SCREEN_CAPTURE
     scap_fill(x, y, w, h, c);
@@ -153,13 +158,13 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
     for (i = 0; i < k; i++)
         lcd_fillbuf[i] = (uint16_t)sw;
     lcd_window(x, y, x + w - 1u, y + h - 1u);
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     for (n = w * h; n; n -= k) {
         if (k > n)
             k = n;
         lcd_data(lcd_fillbuf, k * 2u);
-        if (lcd_fault)
+        if (LCD_FAILED())
             return;
     }
 }
@@ -167,10 +172,10 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *px)
 {
-    if (!w || !h || lcd_fault)
+    if (!w || !h || LCD_FAILED())
         return;
     lcd_window(x, y, x + w - 1u, y + h - 1u);
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
 #if FELUCCA_SCREEN_CAPTURE
     scap_blit(x, y, w, h, px);
@@ -195,7 +200,7 @@ static const uint8_t LCD_SEQ[] = {
 static void lcd_init(void)
 {
     uint32_t r, x;
-    if (lcd_busy || lcd_fault)
+    if (lcd_busy || LCD_FAILED())
         return;                   /* init is not a recovery/abort operation */
     lcd_initialized = 0;
     fm1_lcd_hw_init();
@@ -206,7 +211,7 @@ static void lcd_init(void)
             continue;
         }
         lcd_cmd(LCD_SEQ[r]);
-        if (lcd_fault)
+        if (LCD_FAILED())
             return;
         for (x = 0; x < LCD_SEQ[r + 1u]; x++)
             lcd_small[x] = LCD_SEQ[r + 2u + x];
@@ -214,12 +219,12 @@ static void lcd_init(void)
             lcd_data(lcd_small, LCD_SEQ[r + 1u]);
     }
     lcd_sync();
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     fm1_lcd_baud(LCD_BAUD);
     lcd_fill(0, 0, 240, 240, 0);
     lcd_cmd(0x29);
-    if (!lcd_fault)
+    if (!LCD_FAILED())
         lcd_initialized = 1;
 }
 
@@ -243,14 +248,14 @@ static void lcd_power(uint32_t s)
  * left as they are: the crash handler calls it) */
 static void lcd_wake_now(void)
 {
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     lcd_spin(3000000u);                            /* (120 ms after a SLPIN) */
     lcd_cmd(0x11);
-    if (lcd_fault)
+    if (LCD_FAILED())
         return;
     lcd_spin(3000000u);
     lcd_cmd(0x29);
-    if (!lcd_fault)
+    if (!LCD_FAILED())
         fm1_lcd_backlight(1);
 }

@@ -594,6 +594,22 @@ static void lp_label(uint32_t mode, uint32_t run)
     for (i = 0; i < 8u; i++) label[17u + i] = "0123456789ABCDEF"[(run >> (28u - 4u*i)) & 15u];
     draw_text_line(0, 4, 240, &AF_S, label, 0xFFFFu, 0u, 1);
 }
+static void con_lcd_probe_reset(void)
+{
+    con_kv("lcdprobe_reset_cause", lp.reset_cause);
+    con_kv("lcdprobe_reset_phase", lp.reset_phase);
+    con_kx("lcdprobe_reset_ticks", lp.reset_ticks);
+    con_kx("lcdprobe_reset_ms", lp.reset_ms);
+    con_kx("lcdprobe_reset_con", lp.reset_raw[0]);
+    con_kx("lcdprobe_reset_adr", lp.reset_raw[1]);
+    con_kx("lcdprobe_reset_cnt", lp.reset_raw[2]);
+    con_kx("lcdprobe_reset_baud", lp.reset_raw[3]);
+    con_kx("lcdprobe_reset_lcd_meta", lp.reset_meta);
+}
+static int con_lcd_probe_pending(void)
+{
+    return con.len >= 8u && !memcmp(con.line, "lcdprobe", 8u);
+}
 static void con_lcd_probe(const char *p)
 {
     int ok, run_ok;
@@ -601,10 +617,18 @@ static void con_lcd_probe(const char *p)
         uint32_t mode = con_num(&p, &ok), run = con_num(&p, &run_ok);
         uint32_t backup = con_word(&p, "backup-restore-ok") && !*p;
         con_kv("lcdprobe_arm", ok && run_ok && lp_arm(mode, run, backup));
+        if (lp.reset) con_lcd_probe_reset();
+    } else if (con_word(&p, "snapshot")) {
+        uint32_t raw[4];
+        if (*p || lp.active) { con_puts("lcdprobe_snapshot unavailable\r\n"); return; }
+        fm1_lcd_snapshot(raw); /* unarmed, read-only; never acknowledge PND */
+        con_kx("lcdprobe_snapshot_con", raw[0]); con_kx("lcdprobe_snapshot_adr", raw[1]);
+        con_kx("lcdprobe_snapshot_cnt", raw[2]); con_kx("lcdprobe_snapshot_baud", raw[3]);
+        con_kx("lcdprobe_snapshot_lcd_meta", lcd_busy | (uint32_t)lcd_fault << 8 | (uint32_t)lcd_initialized << 16);
     } else if (con_word(&p, "go")) con_kv("lcdprobe_go", !*p && lp_go());
     else if (con_word(&p, "finish")) con_kv("lcdprobe_finish", !*p && lp_finish());
     else if (con_word(&p, "abort")) {
-        if (lp.active && !*p) lp.reset = 1;
+        if (lp.active && !*p) lp_request_reset(LP_RST_ABORT);
         con_kv("lcdprobe_reset_requested", lp.reset);
     } else if (con_word(&p, "trace")) {
         uint32_t i = con_num(&p, &ok), word;
@@ -627,6 +651,7 @@ static void con_lcd_probe(const char *p)
         con_kx("lcdprobe_source", (uint32_t)lp.source); con_kv("lcdprobe_programmed_bytes", LP_BYTES);
         con_kx("lcdprobe_C_hash", lp.c_hash); con_kx("lcdprobe_A_hash", lp.a_hash);
         con_kx("lcdprobe_after_hash", lp.after_hash);
+        if (lp.reset) con_lcd_probe_reset();
         con_puts("lcdprobe_optical_result UNQUALIFIED_REQUIRES_OWNER_OBSERVATION\r\n");
     }
 }
@@ -695,6 +720,12 @@ static void cdc_task(void)                              /* main loop */
         RING_PUBLISH();
         if ((c == '\r' || c == '\n') && con_screen_pending() &&
             co_w - co_r > CO_N - 768u) return;
+#if FELUCCA_LCD_INFLIGHT
+        /* Reserve a complete bounded failure response before executing ARM.
+         * A full ring leaves the newline queued without waiting or side effects. */
+        if ((c == '\r' || c == '\n') && con_lcd_probe_pending() &&
+            co_w - co_r > CO_N - 1024u) return;
+#endif
         ci_r++;
         if (c == '\r' || c == '\n') {
             if (c == '\n' && con.len == 0)

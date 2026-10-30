@@ -1346,3 +1346,11 @@ Target/native integration, resource and disassembly review, optical controls,
 backup/restoration prerequisites and deliberate normal reset cleanup are required
 before a device run. A passing host oracle is not permission to install or a
 physical acceptance result. See `docs/diagnostics.md` for the experiment contract.
+
+The LCD in-flight probe also provides an unarmed read-only raw snapshot and
+first-reset-cause metadata. Its abort report opportunity is bounded by100ms and
+the unchanged30s arm lifetime; it adds only ordinary diagnostic BSS, no retained
+arm or pixel buffer. See the LCD probe abort-evidence contract in
+[diagnostics](docs/diagnostics.md#lcd-probe-abort-evidence). Default-OFF LCD/GFX
+code equivalence and the focused reset/HAL oracle are separate from ON native
+resource checks and physical validation.

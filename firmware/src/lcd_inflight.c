@@ -11,34 +11,60 @@ static uint32_t lp_hash(const void *p, uint32_t n)
     while (n--) h = (h ^ *s++) * 16777619u;
     return h;
 }
+/* Latch the exact observation that requested reset, before trace/report work.
+ * No second snapshot can replace a BAUD guard's actual failing read. */
+static void lp_reset_latch(uint32_t cause, uint32_t t, const uint32_t raw[4], uint32_t meta)
+{
+    uint32_t i;
+    if (lp.reset) return;
+    lp.reset_cause = cause; lp.reset_phase = lp.phase;
+    lp.reset_ticks = t; lp.reset_ms = fm1_ms; lp.reset_meta = meta;
+    for (i = 0; i < 4u; i++) lp.reset_raw[i] = raw[i];
+    lp.hold = 1u; /* also freeze a repaint if reset was requested after finish */
+    __asm__ volatile("" ::: "memory");
+    lp.reset = 1u;
+}
+static void lp_request_reset(uint32_t cause)
+{
+    uint32_t raw[4], t, meta;
+    if (lp.reset) return;
+    t = fm1_ticks();
+    fm1_lcd_snapshot(raw);
+    meta = lcd_busy | (uint32_t)lcd_fault << 8 | (uint32_t)lcd_initialized << 16;
+    lp_reset_latch(cause, t, raw, meta);
+}
 static void lp_record(uint32_t event, uint32_t a, uint32_t b)
 {
-    uint32_t i = lp.count, t = fm1_ticks(), raw[4];
+    uint32_t i = lp.count, t = fm1_ticks(), raw[4], meta;
     fm1_lcd_snapshot(raw);
-    if (raw[3] != 4u) lp.reset = 1;
-    if (i == LP_TRACE_CAP) { lp.overflow = lp.reset = 1; return; }
+    meta = lcd_busy | (uint32_t)lcd_fault << 8 | (uint32_t)lcd_initialized << 16;
+    if (raw[3] != 4u) lp_reset_latch(LP_RST_BAUD, t, raw, meta);
+    if (i == LP_TRACE_CAP) { lp.overflow = 1; lp_reset_latch(LP_RST_TRACE, t, raw, meta); return; }
     lp.trace[i][0] = event; lp.trace[i][1] = t; lp.trace[i][2] = raw[0];
-    lp.trace[i][3] = lcd_busy | (uint32_t)lcd_fault << 8 | (uint32_t)lcd_initialized << 16;
+    lp.trace[i][3] = meta;
     lp.trace[i][4] = a; lp.trace[i][5] = b;
     lp.trace[i][6] = raw[1]; lp.trace[i][7] = raw[2];
     __asm__ volatile("" ::: "memory");
     lp.count = i + 1u;
 }
-static void lp_submit(uint32_t command, const void *source, uint32_t bytes)
+static uint32_t lp_submit(uint32_t command, const void *source, uint32_t bytes)
 {
-    if (!lp.active || lp.phase == LP_C_READY || lp.phase == LP_REPAINT) return;
+    if (LCD_PROBE_STOPPED()) return 0;
+    if (!lp.active || lp.phase == LP_C_READY || lp.phase == LP_REPAINT) return 1;
     lp.submits++;
     lp_record(LP_SUBMIT, command, bytes);
+    if (lp.reset) return 0;
     if (lp.phase == LP_SETUP && !command && source == cv_px && bytes == LP_BYTES) {
         lp.selected_submits++;
         lp.source = (uintptr_t)source;
         lp.selected = 1;
         lp.phase = LP_TRANSFER;
     } else if (lp.selected) {
-        /* Observer never suppresses a real submit: unexpected traffic invalidates
-         * evidence and requests ordinary full-chip reset at the next main pass. */
-        lp.reset = 1;
+        /* Refuse register submission after observing an invalid attempt. The
+         * existing source lease remains intact until ordinary full-chip reset. */
+        lp_request_reset(LP_RST_SUBMIT);
     }
+    return !lp.reset;
 }
 static uint32_t lp_wait_budget(void)
 {
@@ -58,6 +84,7 @@ static uint32_t lp_pack_begin(uint32_t x0, uint32_t y0, uint32_t w, uint32_t h)
 {
     if (!lp.active || !lp.selected || lp.phase != LP_TRANSFER) return 0;
     lp_record(LP_PACK_ATTEMPT, y0 * cv_w + x0, w * h);
+    if (lp.reset) return 1;
     if (lp.wait_result && !lcd_busy && !lcd_fault) {
         lp.phase = LP_MISS; lp.released = 1;
         lp.after_hash = lp_hash(cv_px, sizeof cv_px);
@@ -125,11 +152,11 @@ static int lp_arm(uint32_t mode, uint32_t run, uint32_t backup_restore_confirmed
     lcd_fill(0, 58, 240, 124, 0x1082u);
     LP_LABEL(mode, run); /* outside y58..181, before selected DMA */
     lcd_sync();
-    if (lcd_busy || lcd_fault) { lp.reset = 1; return 0; }
+    if (lcd_busy || lcd_fault) { lp_request_reset(LP_RST_C_SETUP); return 0; }
     cv_begin(240, 124, 0x1082u);
     lp.c_hash = lp_hash(cv_px, sizeof cv_px);
     lp_record(LP_ARM, mode, run);
-    return 1;
+    return !lp.reset;
 }
 static int lp_go(void)
 {
@@ -141,8 +168,9 @@ static int lp_go(void)
     lp.phase = LP_SETUP; lp.go_ms = fm1_ms;
     __asm__ volatile("" ::: "memory");
     lcd_blit(0, 58, 240, 124, cv_px); /* normal six submissions: window, then selected data */
-    if (lp.phase != LP_TRANSFER || lp.selected_submits != 1u || lp.submits != 6u) { lp.reset = 1; return 0; }
+    if (lp.phase != LP_TRANSFER || lp.selected_submits != 1u || lp.submits != 6u) { lp_request_reset(LP_RST_SELECTION); return 0; }
     lp_record(LP_SELECTED, (uint32_t)(uintptr_t)cv_px, LP_BYTES); /* after real ADR/CNT submission */
+    if (lp.reset) return 0;
     if (lp.mode != LP_A_ONLY) {
         lp.short_wait = 1;
         /* Both modes call the actual ownership-protected producer. Only control
@@ -154,11 +182,12 @@ static int lp_go(void)
 static void lp_step(void)
 {
     if (!lp.active) return;
-    if ((uint32_t)(fm1_ms - lp.arm_ms) >= LP_HOLD_MS) lp.reset = 1;
+    if ((uint32_t)(fm1_ms - lp.arm_ms) >= LP_HOLD_MS) lp_request_reset(LP_RST_HOLD);
     if (!lp.selected || lp.released || lp.reset) return;
     if (fm1_lcd_done()) {
         lp_record(LP_COMPLETE, lp.phase, 0);
-        if (!fm1_lcd_complete()) { lp.reset = 1; return; }
+        if (lp.reset || lp.overflow) return;
+        if (!fm1_lcd_complete()) { lp_request_reset(LP_RST_COMPLETE); return; }
         fm1_lcd_deselect();
         __asm__ volatile("" ::: "memory");
         lcd_busy = 0;
@@ -166,13 +195,14 @@ static void lp_step(void)
         lp.after_hash = lp_hash(cv_px, sizeof cv_px); /* outside the short race */
         if (lp.phase != LP_MISS) lp.phase = LP_SETTLED;
         lp_record(LP_RELEASE, lp.after_hash, 0);
-    } else if ((uint32_t)(fm1_ms - lp.go_ms) >= LP_HW_MS) lp.reset = 1;
+    } else if ((uint32_t)(fm1_ms - lp.go_ms) >= LP_HW_MS) lp_request_reset(LP_RST_HW);
 }
 static int lp_finish(void)
 {
     if (!lp.active || !lp.released || lp.reset || lp.overflow ||
         (lp.phase != LP_SETTLED && lp.phase != LP_MISS)) return 0;
     lp_record(LP_HOLD_END, lp.phase, 0);
+    if (lp.reset) return 0;
     lp.hold = 0; lp.phase = LP_REPAINT;
     LP_REDRAW(); /* normal service/wake/full latest redraw; still no writes/gestures */
     return 1;
