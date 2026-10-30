@@ -349,6 +349,9 @@ u_portable() {
 unit portable "" u_portable
 
 u_storage() {
+    $CC -o "$OUT/host_nor_test" tests/host_nor_test.c
+    run "host NOR model (host_nor.h): aligned erase / program, 0 -> 1 counter, bounds / alignment aborts" "$OUT/host_nor_test"
+
     $CC -o "$OUT/storage_test" tests/storage_test.c
     run "flash storage (A/B, torn writes)" "$OUT/storage_test"
 
