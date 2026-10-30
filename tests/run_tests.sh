@@ -1042,6 +1042,13 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     unit sends "" u_sends
     UNIT_PRODUCERS=
 
+    u_mix_fast() {
+        run "Mixer fast paths: no-send and centred-pan loops equal the general loop (PCM, sums, state)" python3 tests/mix_fast_test.py
+    }
+    UNIT_PRODUCERS=tests/mix_fast_test.py
+    unit mix_fast "" u_mix_fast
+    UNIT_PRODUCERS=
+
     u_regression() {
         # Probe the actual CC (including wrappers), never the executable's alias.
         CPU_PATHS=$(python3 tests/cpu_baseline.py $CC)

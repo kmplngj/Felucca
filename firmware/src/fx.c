@@ -972,6 +972,16 @@ static int32_t wet[CTL];                                 /* (the dry mix and the
 static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_r[CTL];
 #endif
 
+/* mix_part's specialised non-SPREAD loop (#185): exact, the same sums, sends, peak and state as its general
+ * loop. FELUCCA_MIX_FAST=0 builds the general loop alone, the reference of tests/mix_fast_test.py. FX_MIX_PATH: a
+ * host test's probe at the selected loop (which, and the block it reads); nothing in the firmware */
+#ifndef FELUCCA_MIX_FAST
+#define FELUCCA_MIX_FAST 1
+#endif
+#ifndef FX_MIX_PATH
+#define FX_MIX_PATH(t, b, n, path) ((void)0)
+#endif
+
 /* Effective MOD targets are sampled once for this part's block. Idle starts snap to the current target;
  * an active THROW owns its already-shaped full-send deficit (perform.c), so its whole block stays exact. */
 static int send_begin(track_t *t, int32_t g[3])
@@ -1149,21 +1159,38 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         int32_t gains[3];
         int ramp = send_begin(t, gains);
         int32_t c = ramp ? 0 : gains[0], d = ramp ? 0 : gains[1], r = ramp ? 0 : gains[2], pk = t->peak;
-        int32_t xmax = c > d ? c : d;
-        xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
-        for (i = 0; i < n; i++) {
-            int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
-            int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
-            if (a > pk)
-                pk = a;
-            if (c)
-                SM(c)[i] += mulq15(xs, c);
-            if (d)
-                SM(d)[i] += mulq15(xs, d);
-            if (r)
-                SM(v)[i] += mulq15(xs, r);
-            SM(l)[i] += (x * gl) >> 12;
-            SM(r)[i] += (x * gr) >> 12;
+#if FELUCCA_MIX_FAST
+        if (!(c | d | r)) {                             /* #185: no inline send (all settled at 0, or a ramp that
+                                                         * send_add below owns): the dry mix and the peak alone,
+                                                         * the same expressions; no headroom divide, clamp or test */
+            FX_MIX_PATH(t, b, n, 1);
+            for (i = 0; i < n; i++) {
+                int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;
+                if (a > pk)
+                    pk = a;
+                SM(l)[i] += (x * gl) >> 12;
+                SM(r)[i] += (x * gr) >> 12;
+            }
+        } else
+#endif
+        {
+            int32_t xmax = c > d ? c : d;
+            xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
+            FX_MIX_PATH(t, b, n, 0);
+            for (i = 0; i < n; i++) {
+                int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
+                int32_t xs = clamp(x, -xmax, xmax);     /* sends: mulq15 would overflow */
+                if (a > pk)
+                    pk = a;
+                if (c)
+                    SM(c)[i] += mulq15(xs, c);
+                if (d)
+                    SM(d)[i] += mulq15(xs, d);
+                if (r)
+                    SM(v)[i] += mulq15(xs, r);
+                SM(l)[i] += (x * gl) >> 12;
+                SM(r)[i] += (x * gr) >> 12;
+            }
         }
         t->peak = pk;
         if (ramp)
