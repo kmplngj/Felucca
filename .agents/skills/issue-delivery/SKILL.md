@@ -282,6 +282,10 @@ merge prerequisite.
 
 ## Merge gate and hardware handoff
 
+For planning or resuming a live FM-1 session, including a test-tool failure, use
+[bounded hardware sessions](../../../docs/ai-workflows.md#finish-bounded-hardware-sessions).
+Carry its remaining-check record through worker handoffs and final reporting.
+
 Merge only when authorized by the current request or explicit autonomous-delivery
 mandate, and all of these conditions hold for the final candidate:
 

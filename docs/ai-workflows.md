@@ -66,6 +66,61 @@ a firmware/audio build; workflow YAML and shared scheduler/coverage implementati
 still require full validation. See
 [CI stages](../.github/CI.md#feedback-and-merge-stages) for the selection boundary.
 
+## Finish bounded hardware sessions
+
+Apply this procedure to a single PR, a batch or a resumed device session. Keep the
+existing firmware, review and physical acceptance requirements; organize the work
+around the remaining evidence rather than repeating the whole qualification.
+
+1. **Define done before the live session.** In the existing task record, list each
+   required check, its candidate/package and setup, observable pass condition,
+   evidence link, status and reason it would need repeating. Separate software,
+   device measurements and owner observations. Freeze this acceptance scope;
+   newly discovered risks can add a justified required check, while unrelated
+   improvements go to the next package. Tell the owner the remaining checks,
+   estimated hands-on time and expected installations/restarts, including cleanup.
+2. **Prepare the operator path offline.** For new or changed orchestration, exercise
+   relevant success, timeout, cancellation and recovery branches with existing
+   fixtures/fakes before involving the device. Check the prompts, expected display
+   region, response time and transport ownership. Allocate observation time plus
+   process/response overhead within the device's actual deadline. If that cannot
+   fit, revise the procedure before starting. Keep protected dialogs with the owner.
+3. **Run one coherent block.** Group compatible checks on the same installed image
+   and known setup. Use one readiness checkpoint for the explained block; request
+   intermediate actions or observations only when a physical transition, timed
+   observation or safety decision requires them. Retain required isolated runs,
+   cold starts, fresh backups/readbacks and device deadlines. Plan cleanup once at
+   the end of the block, or earlier when a failure requires a safe return.
+4. **Repeat the affected check.** First identify whether a failure belongs to the
+   firmware, transport, host orchestration or missing owner observation. Keep valid
+   partial evidence with its limits. Record the changed input and affected checks
+   before retrying. A host-dialog repair requires host-path validation and the
+   missing device observation; reuse firmware/build/CI evidence when its identity
+   and dependencies are unchanged. A firmware change still refreshes applicable
+   validation. An uncertain external write must be reconciled before any retry.
+5. **Close or name the blocker.** Finish when every required check has valid evidence,
+   cleanup/data checks pass and the required owner observations are recorded.
+   Otherwise report the exact pending check and next action. If a corrected attempt
+   repeats the same failure without new evidence, end that live test block, put the
+   device in the planned safe state and diagnose offline. Continue independent
+   authorized work; leave hardware acceptance and merge gates pending.
+
+Update the same compact task record after each block: closed checks, remaining
+checks and the next action. Reopen a passed check only for changed relevant inputs,
+contradictory evidence or a stated reproducibility requirement. A fresh conversation,
+worker handoff or additional archive does not itself invalidate evidence. Preserve
+original logs and receipts and link incremental results; verification of a copy
+checks its integrity rather than creating another firmware qualification stage.
+Documentation and evidence packaging are complete when the required records are
+correct and durable; further packaging or reviews need a concrete uncovered risk.
+
+For a timing-sensitive observation, retain late owner feedback with its limits;
+it does not replace a required in-window acknowledgement. Once software evidence
+is complete, report “software complete; hardware pending” with the precise gap.
+Workers receive that gap and the existing evidence, so a handoff can continue from
+the first unfinished check. Resume a session by reconciling candidate and device
+state with the record and refreshing only facts that could have changed.
+
 ## Read results before opening raw evidence
 
 When a full local suite is needed, use
