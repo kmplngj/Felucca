@@ -289,3 +289,57 @@ static uint32_t midi_clock_advance(uint32_t now)
     midi_clock.rendered += n;
     return n;
 }
+
+/* #280, MENU > MIDI > CLOCK OUT: the internal clock to USB-MIDI. 24 pulses a quarter, 6 on each 1/16 of the metronome's
+ * unswung grid (clk_step, clk_pos: the 1/16 steps every 1/16 track plays), queued in the control block each falls in
+ * (events_block, after click_tick); CLOCK+TRANS also sends Start before the first pulse and Stop with the transport
+ * (a restart, GLO + PLAY: Stop, Start). The mode is latched at PLAY: a change while playing takes effect at the next
+ * one, except OFF, which ends the output (with a Stop after a Start). Never while an external clock is followed (no
+ * THRU): an echo of the FM-1's own clock cannot come back as its clock (INT ignores clock in). The transport always
+ * starts at the top, so no Continue or Song Position is sent. Jitter: up to one audio half (the half's blocks render
+ * in one burst), the 2 kHz TIMER5 poll and the 1 ms USB frame; the pulse count itself does not drift from the
+ * sequencer's grid */
+enum { MCO_OFF, MCO_CLOCK, MCO_TRANSPORT };
+static struct {
+    uint8_t mode;                                  /* latched at PLAY; MCO_OFF: not sending */
+    uint8_t step, k;                               /* the 1/16 (clk_step) and the pulses sent in it (0..6) */
+} mco;
+static void mco_stop(void)
+{
+    if (mco.mode == MCO_TRANSPORT)
+        midi_out_rt(0xFCu);
+    mco.mode = MCO_OFF;
+}
+static __attribute__((noinline)) void midi_clock_out_block(uint32_t clock_mode)
+{
+    uint32_t due;
+    if (!song.playing || clock_mode || !midi_clock_out) {
+        if (mco.mode)
+            mco_stop();
+        return;
+    }
+    if (!song.tick) {                              /* PLAY (or a restart) in this block: from the top */
+        if (mco.mode)
+            mco_stop();
+        mco.mode = midi_clock_out;
+        if (mco.mode == MCO_TRANSPORT)
+            midi_out_rt(0xFAu);
+        mco.step = (uint8_t)clk_step;
+        mco.k = 0;
+    }
+    if (!mco.mode)
+        return;                                    /* (turned on while playing: from the next PLAY) */
+    if (clk_step != mco.step) {                    /* a 1/16 ended: the rest of its pulses, and of every 1/16 a faster
+                                                    * tempo skipped with the steps (click_tick, seq_tick: at most 15) */
+        due = 6u * (((clk_step - mco.step) & 15u) - 1u) + 6u - mco.k;
+        while (due--)
+            midi_out_rt(0xF8u);
+        mco.step = (uint8_t)clk_step;
+        mco.k = 0;
+    }
+    due = clk_pos * 6u / div_samples(2u) + 1u;     /* (clk_pos < one 1/16 after click_tick) */
+    while (mco.k < due && mco.k < 6u) {
+        midi_out_rt(0xF8u);
+        mco.k++;
+    }
+}

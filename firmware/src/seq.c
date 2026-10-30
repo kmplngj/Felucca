@@ -1473,6 +1473,7 @@ static void events_block(uint32_t n)
         cin_record();
     if (song.playing)
         click_tick(seq_n);
+    midi_clock_out_block(clock_mode);               /* MENU > MIDI > CLOCK OUT (#280) */
     for (i = 0; i < NPART; i++) {
         uint32_t arp_n = clock_mode ? midi_grid_advance(&midi_arp_grid[i], seq_n, (uint32_t)trk[i].p[P_ARATE]) : n;
         arp_step(&trk[i], arp_n, clock_mode && song.playing ? arp_n : n);

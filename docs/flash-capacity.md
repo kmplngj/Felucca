@@ -263,7 +263,9 @@ Findings:
   [display settings compatibility](display-idle.md#storage-and-editor-compatibility).
   MENU > DISPLAY > GRAPH (#572) uses bits 1–2 of ANIM IDLE's already-owned byte `[10]`
   (bit 0 IDLE unchanged; stored 0 = TURN, the default). It claims no additional byte;
-  older firmware ignores the bits and keeps them as saved.
+  older firmware ignores the bits and keeps them as saved. MENU > MIDI > CLOCK OUT (#280)
+  uses bits 3–4 of the same byte (stored 0 = OFF, the default; 3 reads as OFF), leaving
+  bits 5–7 spare.
 - A record longer than 2,688 B (`sizeof(persist_rec_t)`) is *invalid* to a firmware built from `a373657`
   (`settings_import` returns 0 for `n` beyond it), not merely "not understood". A tail that keeps the
   total at or below 2,688 B with a different extension `ver` falls into that firmware's `ext_other`

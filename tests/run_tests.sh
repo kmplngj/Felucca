@@ -637,7 +637,7 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
 
     u_midi_sync() {
         $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_sync_test" tests/midi_sync_test.c -lm
-        run "USB/TRS Song Position Pointer: Continue located in patterns and SONG sections (#281)" "$OUT/midi_sync_test"
+        run "MIDI sync: USB/TRS Song Position Pointer located in patterns and SONG sections (#281); USB CLOCK OUT 24 PPQN, transport, reserved slots (#280)" "$OUT/midi_sync_test"
     }
     unit midi_sync "" u_midi_sync
 

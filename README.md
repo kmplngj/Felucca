@@ -49,7 +49,9 @@ phase, timestamps TRS input during rendering, and guards invalid tempo.
 [Device results](docs/midi-dsp-device-results-2026-10-21.md) qualify USB pulse-count
 phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
 External USB/TRS clock follows the master's [Song Position Pointer](docs/fork-features.md#song-position-pointer-281):
-a locate and Continue resume patterns and SONG sections at the master's position (device checks pending).
+a locate and Continue resume patterns and SONG sections at the master's position. MENU > MIDI >
+[CLOCK OUT](docs/fork-features.md#midi-clock-out-280) (default OFF) sends 24 PPQN clock, and optionally Start/Stop,
+over USB-MIDI from the internal clock (device checks pending).
 Five portable engines live in the pinned
 [Felucca-Engines fork](https://github.com/kmplngj/Felucca-Engines); initial standard/reduced
 engine build profiles are implemented. Versioned [profile contracts and exact post-link
