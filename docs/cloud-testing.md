@@ -52,6 +52,12 @@ isolated browser context, then closes the browser and server. It tests:
   held-note channel removal, rejoining and velocity-zero release. Setup uses real
   panel controls; read-only worklet observations confirm routing and note ownership.
   Channel-isolation checks allow the existing MIDI PAN=63 opposite-side leakage.
+- MIDI performance controls through the same input and PCM path: sound NRPNs,
+  pair-mix endpoints and midpoint, key and raw-velocity zones, soft pedal,
+  overlapping mono/legato notes and glide state, held-note tuning frequency,
+  panel-saved user-bank recall, and project-load session reset. Observations
+  include actual track state and PCM; physical transports and deadlines remain
+  separate device checks.
 - Browser, network, console and AudioWorklet errors.
 
 The test-only probe observes the existing worklet's messages and taps its actual

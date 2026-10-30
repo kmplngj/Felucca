@@ -544,6 +544,29 @@ EXPORT uint32_t web_test_channel(uint32_t i) { return i < NPART ? mch_get(i) : M
 EXPORT uint32_t web_test_sound(uint32_t i) { return i < NPART ? (uint32_t)trk[i].eng_req << 8 | trk[i].preset : 0; }
 EXPORT int32_t web_test_level(uint32_t i) { return i < NPART ? trk[i].p[P_LEVEL] : 0; }
 EXPORT uint32_t web_test_owners(uint32_t i) { return i < NPART ? midi_owners[i] : 0; }
+EXPORT int32_t web_test_track_value(uint32_t i, uint32_t field)
+{
+    if (i >= NPART) return -1;
+    switch (field) {
+    case 0: return midi_key_range_get(i, 0); case 1: return midi_key_range_get(i, 1);
+    case 2: return midi_velocity_range_get(i, 0); case 3: return midi_velocity_range_get(i, 1);
+    case 4: return trk[i].m_vel; case 5: return trk_glide(&trk[i]);
+    case 6: return trk_vmode(&trk[i]); case 7: return trk[i].p[P_GLIDE];
+    case 8: return trk[i].p[P_E4]; case 9: return trk[i].p[P_VOICE];
+    default: return -1;
+    }
+}
+EXPORT int32_t web_test_midi_value(uint32_t field)
+{
+    const midi_channel_t *c = &midi_ch[0];
+    switch (field) {
+    case 0: return c->soft; case 1: return c->fine14; case 2: return c->coarse;
+    case 3: return c->bank_msb; case 4: return c->bank_lsb;
+    case 5: return midi_mix_config_get(0); case 6: return midi_mix_config_get(1);
+    case 7: return midi_mix_config_get(2); case 8: return midi_nrpn[1][0].seen;
+    default: return -1;
+    }
+}
 EXPORT uint32_t web_test_gates(uint32_t i)
 {
     uint32_t n = 0, j;
