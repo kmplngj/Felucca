@@ -608,7 +608,11 @@ static void con_lcd_probe_reset(void)
 }
 static int con_lcd_probe_pending(void)
 {
-    return con.len >= 8u && !memcmp(con.line, "lcdprobe", 8u);
+    uint32_t i = 0;
+    /* cdc_task has not terminated this line yet: never inspect stale suffixes. */
+    while (i < con.len && con.line[i] == ' ') i++;
+    return con.len - i >= 8u && !memcmp(con.line + i, "lcdprobe", 8u) &&
+           (con.len - i == 8u || con.line[i + 8u] == ' ');
 }
 static void con_lcd_probe(const char *p)
 {

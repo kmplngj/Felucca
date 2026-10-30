@@ -34,7 +34,11 @@ static void lcd_sync(void)          /* finish the running transfer (before touch
 {
     if (!lcd_busy)
         return;
+#if FELUCCA_LCD_INFLIGHT
     if (LCD_FAILED())
+#else
+    if (lcd_fault)                 /* preserve the original JieLi OFF guard form */
+#endif
         return;
 #if FELUCCA_LCD_INFLIGHT
     { uint32_t completed = (uint32_t)fm1_lcd_wait();
