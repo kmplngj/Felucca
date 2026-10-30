@@ -36,7 +36,7 @@ voice detune then retain their existing preparation. The base pitch clamps to
 is retained at full 14-bit precision, while the existing 1/4096 oscillator factor
 limits effective fractional resolution to about 0.42 cents. No new oscillator,
 saved parameter, allocation or per-sample conversion is introduced. State adds
-fine 14 plus coarse to each of 16 channels and one Q 14 int 32 per part; exact target
+fine 14 plus coarse to each of 16 channels and one Q14 int32 per part; exact target
 layout, flash and deadline deltas need the coordinator's fresh target build.
 
 ## Validation and user test procedure
@@ -52,19 +52,19 @@ integration tests remain applicable. Browser PCM/pitch tests, full host tests,
 target budgets and physical FM-1 checks remain coordinator/hardware gates.
 
 Use the exact integrated candidate emulator/package, stopped transport, track 1
-ANALOG with no pitch modulation, channel 1, note 69 (A 4), global TUNE 0. For every
+ANALOG with no pitch modulation, channel 1, note 69 (A4), global TUNE 0. For every
 sequence below bytes are hexadecimal; keep the original note 69 held throughout:
 
-1. Send `B 0 65 00 B 0 64 01 B 0 06 40 B 0 26 00`, then `90 45 64`.
+1. Send `B0 65 00 B0 64 01 B0 06 40 B0 26 00`, then `90 45 64`.
    Expect 440 Hz at normal tuning.
-2. Send `B 0 06 60 B 0 26 00` (fine 12288). Expect approximately 452.893 Hz
+2. Send `B0 06 60 B0 26 00` (fine 12288). Expect approximately 452.893 Hz
    (+50 cents), while note identity stays 69.
-3. Send `B 0 06 40 B 0 26 00 B 0 64 02 B 0 06 4C`.
+3. Send `B0 06 40 B0 26 00 B0 64 02 B0 06 4C`.
    Expect 880 Hz (+12 semitones).
 4. Send `80 45 00`: the original note releases. Repeat while holding sustain
-   (`B 0 40 7F`), then send `B 0 79 00`: sustain releases but +12 remains.
-5. Send `B 0 65 00 B 0 64 02 B 0 06 40` to restore coarse zero, fine center
-   from step 3 remains. Null selection with `B 0 65 7F B 0 64 7F`.
+   (`B0 40 7F`), then send `B0 79 00`: sustain releases but +12 remains.
+5. Send `B0 65 00 B0 64 02 B0 06 40` to restore coarse zero, fine center
+   from step 3 remains. Null selection with `B0 65 7F B0 64 7F`.
 
 For a two-layer unison/detune check, assign track 1 and track 2 distinct MIDI
 channels 1 and 2, use the same ANALOG patch and send note 69 to both. Send the fine

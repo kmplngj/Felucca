@@ -550,8 +550,19 @@ static int midi_mix_control(uint32_t ch, uint32_t cc, uint32_t value)
  * Return nonzero only when the address is handled. */
 static int midi_nrpn_extra(uint32_t address, uint32_t value)
 {
-    (void)address;
-    (void)value;
+    if (address >= 0x3000u && address < 0x3040u) {
+        uint32_t track = (address - 0x3000u) >> 4, field = address & 15u;
+        if (track < NPART && field < 4u) {
+            if (field < 2u)
+                (void)midi_key_range_set(track, field, value);
+            else
+                (void)midi_velocity_range_set(track, field - 2u, value);
+            return 1;                       /* invalid/reversed values leave the setup unchanged */
+        }
+    } else if (address >= 0x3100u && address <= 0x3102u) {
+        (void)midi_mix_config_set(address - 0x3100u, value);
+        return 1;
+    }
     return 0;
 }
 
