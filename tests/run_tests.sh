@@ -459,6 +459,27 @@ u_lcd_power() {
 }
 unit lcd_power "" u_lcd_power
 
+u_lcd_fault() {
+    $CC -w -o "$OUT/lcd_fault_test" tests/lcd_fault_test.c -lm
+    run "LCD fault: actual driver/canvas/UI ownership, backoff, latest redraw, power/capture" "$OUT/lcd_fault_test"
+    run "LCD HAL: completion acknowledgment and bounded missing-completion polls" python3 tests/lcd_wait_test.py
+    negative_rc=0
+    "$OUT/lcd_fault_test" --dma-negative > "$OUT/lcd_fault_negative.log" 2>&1 || negative_rc=$?
+    if [ "$negative_rc" != 1 ] || ! grep -q 'LCD fault oracle: in-flight source modified' "$OUT/lcd_fault_negative.log"; then
+        echo "FAIL LCD fault ownership negative control did not detect an in-flight write"
+        return 1
+    fi
+    negative_rc=0
+    "$OUT/lcd_fault_test" --cache-negative > "$OUT/lcd_fault_cache_negative.log" 2>&1 || negative_rc=$?
+    if [ "$negative_rc" != 1 ] || ! grep -q 'cached recovery matches the complete latest forced redraw' "$OUT/lcd_fault_cache_negative.log"; then
+        echo "FAIL LCD fault cache negative control did not detect missing full repaint"
+        return 1
+    fi
+}
+UNIT_NEEDS=assets
+unit lcd_fault "" u_lcd_fault
+UNIT_NEEDS=
+
 u_screen_capture() {
     $CC -std=c11 -Wall -Wextra -Werror -Wno-unused-function -o "$OUT/screen_capture_test" tests/screen_capture_test.c
     run "Screen capture: actual LCD delayed DMA, coverage, coherence, expiry and cancellation" "$OUT/screen_capture_test"
@@ -1310,6 +1331,13 @@ else
         run "LCD power model (ASan/UBSan)" "$A/lcd_power_test"
     }
     unit asan_lcd_power "lcd_power" u_asan_lcd_power
+
+    u_asan_lcd_fault() {
+        ${CC%% *} -O1 -g -w -Ibuild/gen -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -o "$A/lcd_fault_test" tests/lcd_fault_test.c -lm
+        run "LCD fault ownership and real UI (ASan/UBSan)" "$A/lcd_fault_test"
+    }
+    unit asan_lcd_fault "lcd_fault" u_asan_lcd_fault
 
     u_asan_screen_capture() {
         ${CC%% *} -std=c11 -Wall -Wextra -Werror -Wno-unused-function \

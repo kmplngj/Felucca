@@ -63,7 +63,7 @@ static void fm1_lcd_send_data(const void *p, uint32_t n)
     pending_kind = PENDING_DATA;
     selected = 1;
 }
-static void fm1_lcd_wait(void)
+static int fm1_lcd_wait(void)
 {
     require(pending_kind != PENDING_NONE && selected, "wait without selected transfer");
     if (pending_kind == PENDING_DATA) {
@@ -74,7 +74,9 @@ static void fm1_lcd_wait(void)
         pending_n = 0;
     }
     pending_kind = PENDING_NONE;
+    return 1;
 }
+static int fm1_lcd_complete(void) { return fm1_lcd_wait(); }
 static void fm1_lcd_deselect(void)
 {
     require(!pending_kind && selected, "deselect before wait");
@@ -148,6 +150,7 @@ int main(int argc, char **argv)
         return failures ? 1 : 0;
     }
     if (argc != 1) return 2;
+    if (lcd_service(0)) return 1;
 
     reset();
     lcd_data(lcd_small, 4);

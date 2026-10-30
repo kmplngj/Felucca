@@ -8,7 +8,9 @@
  *   fm1_lcd_baud(b)            SPI1 clock = lsb / (b + 1)
  *   fm1_lcd_send_cmd(c)        D/C low, CS low, one byte (then fm1_lcd_wait)
  *   fm1_lcd_send_data(p, n)    D/C high, CS low, DMA n bytes from RAM p
- *   fm1_lcd_wait()             SPI done (or timeout, counted), pending cleared
+ *   fm1_lcd_done()             read-only completion; does not acknowledge
+ *   fm1_lcd_complete()         nonblocking completion; acknowledge only when done
+ *   fm1_lcd_wait()             1: complete; 0: timeout, source is STILL owned
  *   fm1_lcd_deselect()         CS high
  *   fm1_lcd_backlight(on)      PA2 low (on) / high (off); the TIMER5 scan writes port A too: IRQs off around it
  */
@@ -66,14 +68,22 @@ FM1_INLINE void fm1_lcd_baud(uint32_t b) { FM1_LCD_SPI_BAUD = b; }
  * A false result never releases a borrowed DMA source. */
 FM1_INLINE uint32_t fm1_lcd_done(void) { return (FM1_LCD_SPI_CON & 0x8000u) != 0; }
 
-static void fm1_lcd_wait(void)
+FM1_INLINE int fm1_lcd_complete(void)
+{
+    if (!(FM1_LCD_SPI_CON & 0x8000u))
+        return 0;
+    FM1_LCD_SPI_CON |= 0x4000u;    /* SDK: clear pending, NOT a DMA abort */
+    return 1;
+}
+
+static int fm1_lcd_wait(void)
 {
     uint32_t n;
-    for (n = 0; n < 4000000u && !(FM1_LCD_SPI_CON & 0x8000u); n++)
-        ;
-    if (n == 4000000u)
-        fm1_lcd_timeouts++;
-    FM1_LCD_SPI_CON |= 0x4000u;
+    for (n = 0; n < 4000000u; n++)
+        if (fm1_lcd_complete())
+            return 1;
+    fm1_lcd_timeouts++;
+    return 0;                     /* no acknowledgment/release on timeout */
 }
 
 FM1_INLINE void fm1_lcd_deselect(void) { FM1_LCD_PC_OUT |= FM1_LCD_CS; }

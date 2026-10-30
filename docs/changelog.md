@@ -225,6 +225,13 @@ recorded in the linked reports, rather than every current build or device.
   no physical display observation is claimed.
   See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
 
+- **LCD failure containment:** a missing completion stops further display work
+  while retaining DMA source ownership. Verified late completion permits a bounded
+  wake/full-redraw retry of the latest UI state; failed initialization stays stopped
+  until reboot. Screenshots cannot report a completed image after transport failure.
+  Physical DMA, recovery and loaded FM-1 service qualification remain pending;
+  see [the contract and limits](lcd-fault-containment.md).
+
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
   built-in palettes. Mute marks and inactive graphics keep their distinct state.
