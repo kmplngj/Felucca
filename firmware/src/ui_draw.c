@@ -1503,6 +1503,9 @@ static void ui_display_failed(void)
 {
     ui.force = 1;
     scrn.eat = kb_asleep = 0;
+#if BOARD_SMK37
+    smk_extkeys_asleep = kb_boot_hold;                 /* display failure must not release the splash gate */
+#endif
 #if FELUCCA_SCREEN_CAPTURE
     if (scap_live()) scap.state = SCAP_COVERAGE;         /* no completed wire image; also releases a wake lease */
     scap.tapping = 0;

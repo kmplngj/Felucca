@@ -432,6 +432,9 @@ static int scr_input(uint32_t pressed, uint32_t notes)
     }
     if (LCD_FAILED() || scrn.recovering) {
         scrn.eat = kb_asleep = 0;                       /* a failed display cannot hold musical input asleep */
+#if BOARD_SMK37
+        smk_extkeys_asleep = kb_boot_hold;             /* future presses play; queued wake marks stay consumed */
+#endif
         return 0;
     }
     if (scrn.st == SCR_ON && !scrn.eat)
