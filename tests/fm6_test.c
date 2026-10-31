@@ -178,6 +178,50 @@ static void algorithms(void)
     check("algorithms: more carriers, more level (1 .. 6)", grows);
 }
 
+/* ----------------------------------------------------------- feedback --- */
+/* #366: the feedback operator stores into its bus either as add or as overwrite (fm6_op_fb), by the algorithm and
+ * which operators sounded before it. Every algorithm x feedback 0..7 (0 = off) through the public voice path
+ * (trk_note_on / track_render / trk_note_off): two overlapping notes, ramping envelopes, a release tail, the hash
+ * of all the PCM. Frozen before the add / overwrite loops were split; the factory presets never reach the add form. */
+static uint64_t feedback_hash(void)
+{
+    static const int R[4] = {70, 62, 55, 60}, L[4] = {99, 80, 60, 0};
+    uint64_t h = UINT64_C(14695981039346656037);
+    uint32_t a, fb, k, i, j;
+    for (a = 0; a < 32u; a++)
+        for (fb = 0; fb < 8u; fb++) {
+            init_patch(base);
+            for (k = 1; k <= 6u; k++)
+                op_set(base, k, R, L, 90 - (int)k * 3, 1);
+            base[FP_ALG] = (uint8_t)a;
+            base[FP_FB] = (uint8_t)fb;
+            setup(base, 0);
+            for (i = 0; i < 24u; i++) {
+                static int32_t b[CTL];
+                if (i == 0)
+                    trk_note_on(&trk[0], 52, 100);
+                if (i == 6)
+                    trk_note_on(&trk[0], 67, 70);
+                if (i == 14)
+                    trk_note_off(&trk[0], 52);
+                if (i == 18)
+                    trk_note_off(&trk[0], 67);
+                track_render(&trk[0], b, CTL);
+                for (j = 0; j < CTL; j++)
+                    h = (h ^ (uint32_t)b[j]) * UINT64_C(1099511628211);
+            }
+        }
+    return h;
+}
+
+static void feedback(void)
+{
+    uint64_t h = feedback_hash();
+    printf("fm6: feedback hash %016llx\n", (unsigned long long)h);
+    check("feedback: 32 algorithms x feedback 0..7, overlapping notes and release: PCM unchanged",
+          h == UINT64_C(0x47a456b1e6e9c8c9));
+}
+
 /* ---------------------------------------------------------- envelopes --- */
 static void envelopes(void)
 {
@@ -660,6 +704,7 @@ int main(int argc, char **argv)
 {
     uint32_t pi;
     algorithms();
+    feedback();
     envelopes();
     retrigger();
     dc_clip();
