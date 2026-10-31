@@ -51,6 +51,19 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- **USB MIDI clock out (#280):** MENU > MIDI > CLOCK OUT (default OFF; CLOCK or
+  CLOCK+TRANS) sends 24 PPQN clock from the internal sequencer, optionally with
+  Start/Stop, with out-ring slots reserved against key bursts. The setting uses
+  spare bits of an existing settings byte and appears to editors as MENU id 35.
+  See [behavior, jitter budget and limits](fork-features.md#midi-clock-out-280);
+  device checks with Live, AUM, an M8 and a second FM-1 remain pending.
+- **MIDI Song Position Pointer (#281):** with USB or TRS clock selected, the
+  FM-1 follows the source's `F2` position: Continue after a locate resumes every
+  track (polymeter, swing and loop conditions included) and SONG sections at the
+  master's position; Start still starts from zero. A song stays resumable after
+  the master's Stop. See [behavior and limits](fork-features.md#song-position-pointer-281);
+  Ableton Live, AUM and M8 device checks remain pending.
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery

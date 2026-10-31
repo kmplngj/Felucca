@@ -197,13 +197,33 @@ static int midi_enqueue(uint32_t pkt, uint32_t source)
     return 1;
 }
 
+/* #280, MENU > MIDI > CLOCK OUT (ui.c clkout_get, copied every frame): 0 OFF, 1 CLOCK, 2 CLOCK + TRANSPORT. While it
+ * is on, keys and CCs leave MQ_RT_ROOM slots of the out ring to the realtime bytes (midi_clock.c), so a burst of them
+ * never silences the clock; OFF, the ring is the keys' as before */
+#define MQ_RT_ROOM 8u
+static volatile uint8_t midi_clock_out;
+static volatile uint32_t midi_out_drops, midi_rt_drops;   /* packets the full ring refused: keys / CCs, realtime */
 static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
 {
-    if (usb.config && mo_w - mo_r < MQ) {
+    if (usb.config && mo_w - mo_r < MQ - (midi_clock_out ? MQ_RT_ROOM : 0u)) {
         midi_out_q[mo_w % MQ] = pkt;
         RING_PUBLISH();
         mo_w++;
+    } else if (usb.config) {
+        midi_out_drops++;
     }
+}
+static void midi_out_rt(uint32_t status)            /* a realtime byte (CIN F), from the audio ISR */
+{
+    if (!usb.config)
+        return;
+    if (mo_w - mo_r >= MQ) {
+        midi_rt_drops++;
+        return;
+    }
+    midi_out_q[mo_w % MQ] = 0xFu | status << 8;
+    RING_PUBLISH();
+    mo_w++;
 }
 
 /* ------------------------------------------------------- descriptors --- */
@@ -867,6 +887,10 @@ static void midi_in_event(uint32_t pkt)                 /* one USB-MIDI event pa
     }
     if (cin == 0xFu && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) {
         midi_enqueue(0xFu | st << 8, 1u);
+        return;
+    }
+    if (cin == 0x3u && st == 0xF2u && !(pkt & 0x80800000u)) {   /* Song Position Pointer: LSB, MSB (#281) */
+        midi_enqueue(pkt & 0x7F7FFF0Fu, 1u);
         return;
     }
     if (cin >= 8u && cin <= 0xEu && (st >> 4) == cin && !((pkt >> 16) & 0x80u) &&

@@ -224,7 +224,7 @@ payload length. Do not parse them as a generic TLV stream.
 | `46 01` | nfactory, nbank | FM6 patches; current 8, 0 |
 | `53 01` | caps | bit 0 WATCH preserves pending changes; bit 1 no own PRESET/G_ENGSEL RELOAD (current 3) |
 | `50 01` | caps | FM6 v2: bit 0 retired patch bank, bit 1 user-preset patch target (current 3) |
-| `4E 01` | count | MENU settings count (33, or 34 with CPU2) |
+| `4E 01` | count | MENU settings count (36 with CPU2, 35 without; #280 appended CLOCK OUT) |
 | `52 01` | 4 | Step ratchet maximum |
 | `4C 01` | 1 | Parameter locks |
 | `41 01` | capacity lo, hi | Full motion capacity, 128 = `00 01` |
@@ -1306,7 +1306,7 @@ Unknown id returns rc 1 and echoes the requested id/value. Other values clamp to
   ABOUT).
   For a kind it does not know, an editor cannot find the tab (it does not know that kind's bytes).
 
-This firmware (count 33; tabs 0 DISPLAY, 1 CONTROL, 2 AUDIO, 3 MIDI, 4 SYSTEM (1.2; before: 3 SYSTEM); 1.0.5 had the
+This firmware (count 36 with CPU2, 35 without; before #280 one fewer; tabs 0 DISPLAY, 1 CONTROL, 2 AUDIO, 3 MIDI, 4 SYSTEM (1.2; before: 3 SYSTEM); 1.0.5 had the
 first 12, 1.1 the first 15, 1.2 before SCALE LEDS the first 16, before SCREEN OFF the first 17, 1.1.5 the first 18, 1.2
 before MIDI IN the first 21, 1.2 the first 23, 1.3 / 1.4 the first 24, 1.5 / 1.5.1 the first 25, 1.5.5 .. 1.6 the first
 32; a FELUCCA_CPU2=0 build of 1.6.1 too):
@@ -1348,6 +1348,16 @@ before MIDI IN the first 21, 1.2 the first 23, 1.3 / 1.4 the first 24, 1.5 / 1.5
 | 32 | 32 | 2ND CORE | 0 | 0 OFF, 1 ON (BETA) (1.6.1, Discussion #141: the second core renders some of the parts; from the next power-on) | OFF | 4 SYSTEM |
 | 33 (32 without CPU2) | 33 | ALL DARK | 0 | 0 NEVER; 1–4 5 MIN/15 MIN/30 MIN/60 MIN | NEVER | 0 DISPLAY |
 | 34 (33 without CPU2) | 34 | GRAPH | 0 | 0 SCOPE, 1 TURN, 2 CURVE, 3 STILL (#572) | TURN | 0 DISPLAY |
+| 35 (34 without CPU2) | 35 | CLOCK OUT | 0 | 0 OFF, 1 CLOCK, 2 CLOCK+TRANS (#280) | OFF | 3 MIDI |
+
+**CLOCK OUT (#280, id 35):** MIDI clock from the FM-1's internal clock to USB-MIDI. OFF (the default, every earlier
+setting) sends no realtime bytes. CLOCK sends 24 pulses per quarter note (F8, CIN 0xF) while the internal transport
+plays, on the unswung 1/16 grid; CLOCK+TRANS also sends Start (FA) before the first pulse and Stop (FC) when it stops
+(a restart: Stop, Start). The FM-1's transport always starts at the top, so it sends no Continue or Song Position.
+Nothing is sent while the CLK source is USB or TRS (no thru). The mode is taken at PLAY; switching to OFF while
+playing ends the output (with a Stop after a Start). Stored in bits 3–4 of `settings_dev[10]` (ANIM IDLE's and
+GRAPH's byte; 3 reads as OFF); older firmware ignores the bits and keeps them as saved, and backups carry the byte
+unchanged. While it is on, keys and CCs leave 8 of the 64 USB-MIDI out-ring slots to realtime bytes.
 
 The device's AUDIO tab shows SPEAKER EQ, USB LEVEL, CLICK, CLICK LEVEL, COUNT-IN and (1.2) TUNE (index 9, 10, 12, 13,
 14, 22).

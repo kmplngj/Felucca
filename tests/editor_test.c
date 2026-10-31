@@ -13,7 +13,7 @@ static unsigned char host_samples[3][0x14000];
 #include "../firmware/hal/fm1_lcd_contract.h"
 #include "hostsim.c"
 #undef main
-#define MENU_N (34u + FELUCCA_CPU2)                  /* ALL DARK id 33, GRAPH 34 (#572); id 32 stays reserved in CPU2=0 builds */
+#define MENU_N (35u + FELUCCA_CPU2)                  /* ALL DARK id 33, GRAPH 34 (#572), CLOCK OUT 35 (#280); id 32 stays reserved in CPU2=0 builds */
 
 static uint32_t host_progress = 1, host_erases, host_writes;
 static uint8_t host_wire[4096];
@@ -210,7 +210,7 @@ static int preferences(void)
         host_wire[e - 33] == 0 &&                        /* (no bank since 1.0.3) */
         host_wire[e - 32] == 0x53 && host_wire[e - 31] == 1 && host_wire[e - 30] == 3 &&
         host_wire[e - 29] == 0x50 && host_wire[e - 28] == 1 && host_wire[e - 27] == 3 &&   /* FM6 v2: no bank, preset patches */
-        host_wire[e - 26] == 0x4E && host_wire[e - 25] == 1 && host_wire[e - 24] == MENU_N &&   /* MENU: 34 items with CPU2, 33 without */
+        host_wire[e - 26] == 0x4E && host_wire[e - 25] == 1 && host_wire[e - 24] == MENU_N &&   /* MENU: 36 items with CPU2, 35 without */
         host_wire[e - 23] == 0x52 && host_wire[e - 22] == 1 && host_wire[e - 21] == 4 &&   /* RATCH */
         host_wire[e - 20] == 0x4C && host_wire[e - 19] == 1 && host_wire[e - 18] == 1 &&   /* 1.1 parameter locks */
         host_wire[e - 17] == 0x41 && host_wire[e - 16] == 1 && host_wire[e - 15] == 0 && host_wire[e - 14] == 1 &&   /* 1.2: 128 */
@@ -1146,7 +1146,7 @@ static uint32_t menu_set(uint32_t id, int32_t v)            /* -> rc; host_wire[
 #define TCH_NAMES "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,OMNI,OFF"
 static int menu_protocol(void)
 {
-    static const char *const WANT[35][2] = {
+    static const char *const WANT[36][2] = {
         {"COLOR", 0}, {"STYLE", "FLAT,LINE"}, {"LARGE", "OFF,ON"}, {"ANIM", "ON,OFF,IDLE"}, {"LEDS", "OFF,DIM LO,DIM HI,INV,INV LO,INV HI"},
         {"HOLD", "0.3 s,0.4 s,0.5 s,0.6 s"}, {"KNOB ACCEL", "OFF,ON"}, {"FX LATCH", "OFF,ON"}, {"BPM LOCK", "OFF,ON"},
         {"SPEAKER EQ", "FLAT,LOWCUT,BASS+"}, {"USB LEVEL", "MASTER,FIXED"}, {"USB SERIAL", "ON,OFF"},
@@ -1161,10 +1161,11 @@ static int menu_protocol(void)
         {"T1 CHANNEL", TCH_NAMES}, {"T2 CHANNEL", TCH_NAMES}, {"T3 CHANNEL", TCH_NAMES}, {"T4 CHANNEL", TCH_NAMES},   /* (1.5.5) */
         {"AUTO SELECT", "OFF,ON"}, {"WAKE", "+MIDI,PANEL"},                                        /* (same id 31) */
         {"2ND CORE", "OFF,ON (BETA)"}, {"ALL DARK", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"},
-        {"GRAPH", "SCOPE,TURN,CURVE,STILL"}};                                                  /* (#572) */
-    static const int32_t DEF[35] = {-1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0, 0,
-                                    1};                                                  /* (GRAPH: TURN) */
-    static const uint8_t TAB[35] = {0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 4, 2, 2, 2, 4, 1, 0, 0, 1, 1, 3, 2, 0, 4, 1, 3, 3, 3, 3, 3, 0, 4, 0, 0};   /* DISPLAY CONTROL AUDIO
+        {"GRAPH", "SCOPE,TURN,CURVE,STILL"},                                                   /* (#572) */
+        {"CLOCK OUT", "OFF,CLOCK,CLOCK+TRANS"}};                                               /* (#280) */
+    static const int32_t DEF[36] = {-1, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 0, 0, 0, 0,
+                                    1, 0};                                               /* (GRAPH: TURN; CLOCK OUT: OFF) */
+    static const uint8_t TAB[36] = {0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 4, 2, 2, 2, 4, 1, 0, 0, 1, 1, 3, 2, 0, 4, 1, 3, 3, 3, 3, 3, 0, 4, 0, 0, 3};   /* DISPLAY CONTROL AUDIO
                                                                                                          * MIDI SYSTEM (1.2) */
     static const char *const TABN[5] = {"DISPLAY", "CONTROL", "AUDIO", "MIDI", "SYSTEM"};
     int bad = 0, ok = 1;
@@ -1265,6 +1266,13 @@ static int menu_protocol(void)
         uint8_t idle = settings_dev[10];
         ok &= menu_set(34, 3) == 3 && graph_mode() == GM_STILL && ((settings_dev[10] >> 1) & 3u) == 3u &&
               (settings_dev[10] & ~6u) == (idle & ~6u);
+        /* #280: CLOCK OUT CLOCK+TRANS, bits 3..4 of the same byte; GRAPH and IDLE kept; a stored 3 reads as OFF */
+        idle = settings_dev[10];
+        ok &= menu_set(35, 9) == 3 && ed_rv(host_wire + 7) == 2 && midi_clock_out == 2u && ((settings_dev[10] >> 3) & 3u) == 2u &&
+              (settings_dev[10] & ~0x18u) == (idle & ~0x18u) && graph_mode() == GM_STILL;
+        settings_dev[10] |= 0x18u;
+        ok &= clkout_get() == 0u;
+        settings_dev[10] = (uint8_t)((settings_dev[10] & ~0x18u) | 0x10u);
     }
 #if FELUCCA_CPU2
     ok &= menu_set(32, 1) == 3 && ui_prefs2 == 0xBFu;   /* (2ND CORE ON (BETA), bit 7 of ui_prefs2) */
@@ -1272,8 +1280,8 @@ static int menu_protocol(void)
     ok &= menu_set(32, 1) == 1 && ui_prefs2 == 0x3Fu;   /* (no 2ND CORE in a FELUCCA_CPU2=0 build: an unknown id, nothing set) */
 #endif
     for (i = 0; i < MENU_N; i++) {                         /* MENU_DESC reads them back */
-        static const int32_t SET[35] = {2, 1, 1, 1, 1, 3, 1, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 1, 1, 2, -13, 1, 1, 1, 9, 16, 17, 0, 1, 1, 1, 0,
-                                        3};
+        static const int32_t SET[36] = {2, 1, 1, 1, 1, 3, 1, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 1, 1, 2, -13, 1, 1, 1, 9, 16, 17, 0, 1, 1, 1, 0,
+                                        3, 2};
         uint32_t id = !FELUCCA_CPU2 && i >= 32u ? i + 1u : i;   /* (CPU2=0: id 32 reserved) */
         menu_desc(i, &it);
         ok &= it.value == SET[id];
@@ -1303,7 +1311,7 @@ static int menu_protocol(void)
         uint8_t hold0 = settings_hold, leds0 = settings_leds;
         memcpy(fav0, &favorites, sizeof favorites); memcpy(set0, &settings, sizeof settings);
         memcpy(dev0, settings_dev, sizeof settings_dev);
-        uint32_t unknown = FELUCCA_CPU2 ? 35u : 32u;          /* (#572: 34 GRAPH) */
+        uint32_t unknown = FELUCCA_CPU2 ? 36u : 32u;          /* (#572: 34 GRAPH; #280: 35 CLOCK OUT) */
         ok = menu_set(unknown, 1) == 1 && host_wire[6] == unknown && ed_rv(host_wire + 7) == 1;
         ok &= menu_set(126, -3) == 1 && host_wire[6] == 126 && ed_rv(host_wire + 7) == -3;
         ok &= menu_set(127, 0) == 1 && host_wire[6] == 127;
@@ -1337,7 +1345,7 @@ static int menu_protocol(void)
         ok &= menu_set(17, 12) == 2u && ed_rv(host_wire + 7) == 2;
         ok &= !memcmp(dev0, settings_dev, sizeof dev0) && scrn.idle == idle0 &&
               host_erases == erases0 && host_writes == writes0;
-        menu_desc(MENU_N - 2u, &it);                     /* (ALL DARK; GRAPH, #572, after it) */
+        menu_desc(MENU_N - 3u, &it);                     /* (ALL DARK; GRAPH, #572, and CLOCK OUT, #280, after it) */
         ok &= it.id == 33u && it.value == 3 && it.min == 0 && it.max == 4;
         bad += check("MENU_SET conflicting timers: rc 2, actual unchanged values, no preference/timer/flash mutation", ok);
         ok = menu_set(33, 0) == 3u && menu_set(17, 12) == 3u && menu_set(33, 4) == 2u && ed_rv(host_wire + 7) == 0;

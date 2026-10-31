@@ -110,6 +110,64 @@ the cause of the previously reported intermittent zero tempo. Signed DC/low-cut,
 FM6 and PHYS scaling is defined without changing the normal vectors/PCM.
 See [evidence and combined device procedure](midi-dsp-reliability.md).
 
+## Song Position Pointer (#281)
+
+With the clock source set to USB or TRS (HOME > CLOCK page, KNOB3 **CLK**), the FM-1 follows the
+master's Song Position Pointer (MIDI `F2`) from that source only. A DAW, AUM or another
+sequencer that locates while stopped and then sends Continue resumes the FM-1 at the
+same musical position:
+
+- every track lands on the step it would have reached had it played from Start,
+  modulo its own LEN and DIV (polymetric tracks, odd lengths with SWING and step
+  CONDITION loop counts included); the metronome and ARP LED beat follow;
+- a step that starts exactly at the position plays on Continue; a step that started
+  before it stays silent until the next step;
+- a SONG resumes in the section and repeat at that position (silent lanes included).
+  A song stays resumable after the master's Stop, a lost clock, or reaching its end:
+  the master's Start plays it from section 1, Continue (with or without a position)
+  where it left off. A position past the song's end leaves the FM-1 stopped, so a
+  locate back into the song plays it again. The panel's PLAY or STOP ends this; the
+  next Continue locates the patterns;
+- Start always starts from zero; a position received while playing is ignored, as
+  MIDI 1.0 sends it only while stopped.
+
+The position is stored by the parser and resolved once, by the Continue, at the audio
+block boundary. The ARP keeps its own phase, and the SLICER and FX hold layers keep
+theirs. Host coverage is in `tests/midi_sync_test.c` and `tests/midi_uart_test.c`;
+Ableton Live locate + Continue, AUM transport and whether the M8 sends SPP remain
+pending on real devices.
+
+## MIDI clock out (#280)
+
+MENU > MIDI > **CLOCK OUT** makes the FM-1 a USB-MIDI clock master while its clock is
+INT (HOME > CLOCK page, KNOB3 **CLK**):
+
+- **OFF** (the default, and every earlier setting): no clock or transport bytes.
+- **CLOCK**: 24 pulses per quarter note while the sequencer plays, six on each 1/16
+  of the bar grid the metronome and 1/16 tracks use. SWING never moves the clock.
+- **CLOCK+TRANS**: the same, plus Start before the first pulse and Stop when the
+  transport stops (song end and GLO + PLAY restart included: a restart sends Stop, Start).
+
+The FM-1's transport always starts from the top, so it sends no Continue or Song
+Position Pointer. Nothing is sent while the CLK source is USB or TRS, so a host that
+echoes the FM-1's clock back cannot drive it, and the FM-1 sends no clock while it
+follows one (there is no thru). The mode is taken when PLAY starts; switching to OFF
+while playing ends the output with a Stop if a Start was sent. A tempo change that
+makes the sequencer skip a 1/16 sends that 1/16's pulses at once, so followers keep
+the bar count.
+
+With CLOCK OUT on, keys and CCs leave 8 of the 64 USB-MIDI out-ring slots to the clock,
+so a key burst cannot silence it; refused packets are counted in firmware (not yet in the
+USB SERIAL report). Jitter budget: a pulse is queued in the 32-sample control block it
+falls in, but the four blocks of an audio half (2.9 ms at 44.1 kHz) render in one burst,
+then the 2 kHz TIMER5 poll (0.5 ms) and the 1 ms USB frame add to it: up to about
+4.4 ms peak to peak, with no drift from the sequencer's grid. SysEx (the editor,
+updates) goes first, so the clock pauses during a transfer. The setting is stored in
+bits 3–4 of `settings_dev[10]`; older firmware ignores and keeps them
+([protocol](../web/EDITOR_PROTOCOL.md), MENU id 35). Host coverage is in
+`tests/midi_sync_test.c`; Ableton Live, AUM, an M8 behind a USB host and a second FM-1,
+with measured jitter and drift, remain pending.
+
 ## Effect control smoothing
 
 Shared chorus Depth changes glide while the bus sounds: tap and release **FX**

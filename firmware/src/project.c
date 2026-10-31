@@ -1189,6 +1189,9 @@ static uint32_t chain_prepare(void)
         return 2;
     if (!chain_valid(&chain_config) || !chain_config.count)
         return 1;
+    fm1_irq_off();
+    midi_clock.song = 0;                                /* (a song the master stopped: its sources are rewritten) */
+    fm1_irq_on();
     for (i = 0; i < chain_config.count; i++)            /* the slots the lanes play (not the silent ones) */
         for (k = 0; k < NTRK; k++) {
             uint32_t s = chain_config.row[i].slot[k];

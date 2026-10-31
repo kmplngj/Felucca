@@ -1356,7 +1356,7 @@ static int32_t click_beat_now(void)
 /* everything that happens between two rendered blocks */
 static void events_block(uint32_t n)
 {
-    uint32_t i, pr, seq_n = n;
+    uint32_t i, pr, seq_n = n, was_song;
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     if (midi_clock.mode != clock_mode) {
         seq_stop();
@@ -1366,6 +1366,8 @@ static void events_block(uint32_t n)
     }
     if (cin_left && !clock_mode)
         cin_block(n);
+    if (transport_req)
+        midi_clock.song = 0;                        /* (the panel's transport: a song the master stopped is over) */
     if (transport_req == 1u) {
         if (clock_mode)
             midi_clock_transport(0xFAu, fm1_ms);
@@ -1436,10 +1438,12 @@ static void events_block(uint32_t n)
         uint32_t d1 = (pkt >> 16) & 0x7Fu, d2 = (pkt >> 24) & 0x7Fu;
         uint32_t source = midi_in_source[at] ? midi_in_source[at] : 1u, ms = midi_in_ms[at];
         mi_r++;
-        if (status >= 0xF8u) {
+        if (status >= 0xF8u || status == 0xF2u) {
             if (clock_mode == source) {
                 if (status == 0xF8u)
                     midi_clock_pulse(ms);
+                else if (status == 0xF2u)
+                    midi_clock_spp(d1 | d2 << 7);   /* Song Position Pointer (#281) */
                 else
                     midi_clock_transport(status, ms);
             }
@@ -1451,7 +1455,7 @@ static void events_block(uint32_t n)
         if (song.playing) {
             uint32_t last = midi_clock.have_pulse ? midi_clock.last_ms : midi_clock.start_ms;
             if (fm1_ms - last > 500u) {
-                seq_stop();                         /* cable loss must not leave a running held note */
+                midi_clock_stop();                  /* cable loss must not leave a running held note */
                 midi_clock.tempo_valid = 0;
             } else
                 seq_n = midi_clock_advance(fm1_ms);
@@ -1459,13 +1463,17 @@ static void events_block(uint32_t n)
     }
     if (aud_req)
         seq_audition();                               /* (STEP PREVIEW: a step sounds, stopped) */
+    was_song = chain.running;
     chain_tick(clock_mode && chain.running ? midi_seq_preview(&trk[chain.clk], seq_n) : seq_n);
+    if (clock_mode && was_song && !chain.running)
+        midi_clock.song = 1;                        /* a song that ended: the master's Start / locate plays it again */
     for (i = 0; i < NTRK; i++)
         seq_tick(&trk[i], seq_n);
     if (cin_flush)
         cin_record();
     if (song.playing)
         click_tick(seq_n);
+    midi_clock_out_block(clock_mode);               /* MENU > MIDI > CLOCK OUT (#280) */
     for (i = 0; i < NPART; i++) {
         uint32_t arp_n = clock_mode ? midi_grid_advance(&midi_arp_grid[i], seq_n, (uint32_t)trk[i].p[P_ARATE]) : n;
         arp_step(&trk[i], arp_n, clock_mode && song.playing ? arp_n : n);

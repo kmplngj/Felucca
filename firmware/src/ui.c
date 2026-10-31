@@ -121,6 +121,19 @@ static void graph_mode_put(uint32_t v)
 {
     settings_dev[10] = (uint8_t)((settings_dev[10] & ~6u) | GRAPH_CODE(v & 3u) << 1);
 }
+/* #280: MENU > MIDI > CLOCK OUT (menu_items.c CLKOUT_N), bits 3..4 of the same byte (older firmware reads bit 0 and,
+ * since #572, bits 1..2, and keeps the byte as saved): 0 OFF (every older setting, the default), 1 CLOCK, 2 CLOCK +
+ * TRANSPORT; 3 (unknown) reads as OFF. Into usb.c midi_clock_out every frame (rp_apply) and when set */
+static uint32_t clkout_get(void)
+{
+    uint32_t v = (settings_dev[10] >> 3) & 3u;
+    return v < 3u ? v : 0u;
+}
+static void clkout_put(uint32_t v)
+{
+    settings_dev[10] = (uint8_t)((settings_dev[10] & ~0x18u) | (v % 3u) << 3);
+    midi_clock_out = (uint8_t)clkout_get();
+}
 static int home_levels(void) { return ui_home_view == HV_LEVELS; }
 enum { RP_CLICK, RP_LEVEL, RP_COUNTIN };
 static uint32_t rp_get(uint32_t f)                     /* a field as the MENU steps it: 0..2 */
@@ -134,6 +147,7 @@ static void rp_apply(void)                             /* the settings into clic
     click_mode = (uint8_t)rp_get(RP_CLICK);
     click_lvl = (uint8_t)rp_get(RP_LEVEL);
     cin_bars = (uint8_t)rp_get(RP_COUNTIN);
+    midi_clock_out = (uint8_t)clkout_get();
 }
 static void rp_put(uint32_t f, uint32_t v)
 {

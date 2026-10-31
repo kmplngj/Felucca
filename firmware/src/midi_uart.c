@@ -7,8 +7,9 @@
  * USB-MIDI packets (cable 0, CIN = status >> 4), so seq.c routes them by channel
  * exactly as USB (CH1-4 or SEL;
  * host tests: midi_uart_test, hostsim TRACKS trs_test);
- * Clock/Start/Continue/Stop retain timestamps and source; other realtime,
- * system common and SysEx are ignored (no SysEx->UBOOT from DIN). */
+ * Clock/Start/Continue/Stop and Song Position (F2, as a USB CIN 3 packet) retain
+ * timestamps and source; other realtime, system common and SysEx are ignored
+ * (no SysEx->UBOOT from DIN). */
 #include "../hal/fm1_uart.h"   /* registers; relative, so the host tests find it too */
 
 #define UM_RING 128u
@@ -16,7 +17,7 @@ static volatile uint8_t um_ring[UM_RING] __attribute__((aligned(16)));
 static struct {
     uint32_t rd, pend;
     volatile uint32_t bytes, drops, msgs;          /* TIMER5 writes; read-only CDC diagnostics */
-    uint8_t st, need, got, d0, sysex;
+    uint8_t st, need, got, d0, sysex, spp;         /* spp: an F2 collecting its two data bytes */
 } um;
 
 static void uart_midi_init(void)                   /* before timer5_start(): PORTH RMW */
@@ -42,9 +43,23 @@ static void um_byte(uint32_t b)
     }
     if (b & 0x80u) {
         um.sysex = b == 0xF0u;
+        um.spp = b == 0xF2u;                       /* (any other status abandons an unfinished one) */
         um.st = b < 0xF0u ? (uint8_t)b : 0;        /* system common/SysEx cancel running status */
         um.need = (uint8_t)um_len(b);
         um.got = 0;
+        return;
+    }
+    if (um.spp) {                                  /* Song Position Pointer: LSB, MSB; no running status */
+        if (!um.got) {
+            um.d0 = (uint8_t)b;
+            um.got = 1;
+            return;
+        }
+        um.spp = um.got = 0;
+        if (midi_enqueue(0x3u | 0xF2u << 8 | (uint32_t)um.d0 << 16 | b << 24, 2u))
+            um.msgs++;
+        else
+            um.drops++;
         return;
     }
     if (um.sysex || !um.st)
@@ -74,7 +89,7 @@ static void uart_midi_take(uint32_t n)
         um.drops += um.pend - UM_RING;
         um.rd = (um.rd + um.pend - UM_RING) & (UM_RING - 1u);
         um.pend = UM_RING;
-        um.st = um.got = um.sysex = 0;              /* lost bytes: wait for a complete new status */
+        um.st = um.got = um.sysex = um.spp = 0;     /* lost bytes: wait for a complete new status */
         midi_in_overflow = 1;
     }
     while (um.pend) {
