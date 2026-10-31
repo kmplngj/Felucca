@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 #include "isr_assert.h"
+#include "../hal/fm1_flash_map.h"
 /* Persistent storage on the SPI NOR.
  *
  * Every object has an A/B sector pair. A save goes to the copy that is not
@@ -62,6 +63,84 @@ static uint32_t st_crc32_add(uint32_t c, const void *p, uint32_t n)   /* zlib CR
 }
 static uint32_t st_crc32(const void *p, uint32_t n) { return ~st_crc32_add(0xFFFFFFFFu, p, n); }
 
+#if BOARD_SMK37
+/* SMK-37 Pro: every object in FL_DATA 0x9D000..0xBAFFF (the stock VM),
+ * A/B neighbours: projects 0x9D000..0xA4FFF, user preset banks 0xA5000..0xA8FFF, autosave 0xA9000 /
+ * 0xAA000, the user presets' FM6 patches (OBJ_UPFM6, the pair of the retired OBJ_FM6BANK) 0xAB000 / 0xAC000,
+ * settings 0xAD000 / 0xAE000; the store owner tag 0xAF000 (st_owner_check), the FM6 voice bank 0xB0000
+ * (fm6_vbank.c FVB_HOME); 0xB1000..0xBAFFF spare. Never near BTIF / USRTRIM (0xC0000..0xC1FFF) or key_mac
+ * (0xFF000). */
+#define ST_SMK_BASE 0x9D000u
+#define ST_SMK_PAIRS 9u
+#define ST_SMK_SECTORS (2u * ST_SMK_PAIRS)
+#define ST_SMK_VBANK 0xB0000u                  /* the FM6 voice bank (fm6_vbank.c), one sector */
+_Static_assert(OBJ_COUNT == 10u && OBJ_UPFM6 == OBJ_FM6BANK + 1u, "SMK store: a new object needs a place");
+_Static_assert(ST_SMK_BASE + ST_SMK_SECTORS * ST_SECTOR == 0xAF000u, "SMK store: the objects end at the owner tag");
+_Static_assert(ST_SMK_VBANK >= 0xAF000u + ST_SECTOR && ST_SMK_VBANK + ST_SECTOR <= 0xBB000u, "SMK store: past FL_DATA");
+static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset of copy A (0) / B (1) */
+{
+    static const uint8_t ORDER[OBJ_COUNT] = {
+        [OBJ_PROJECT0] = 0, [OBJ_PROJECT0 + 1] = 1, [OBJ_PROJECT0 + 2] = 2, [OBJ_PROJECT0 + 3] = 3,
+        [OBJ_UPRESET0] = 4, [OBJ_UPRESET0 + 1] = 5, [OBJ_AUTOSAVE] = 6, [OBJ_FM6BANK] = 7, [OBJ_UPFM6] = 7,
+        [OBJ_SETTINGS] = 8};
+    return ST_SMK_BASE + (ORDER[obj % OBJ_COUNT] * 2u + (copy & 1u)) * ST_SECTOR;
+}
+
+/* Native tag deliberately differs from the donor format. Hardware family is
+ * selected explicitly at build time; JEDEC is insufficient to identify a board.
+ * Nonempty unowned metadata requires explicit destructive recovery, never boot. */
+#define ST_OWNER_OFF 0xAF000u
+static uint8_t st_owner_ready;
+static int st_owner_read(uint32_t off, void *dst, uint32_t n);
+static int st_owner_prog(uint32_t off, const void *src, uint32_t n);
+static int st_owner_erase(uint32_t off);
+static int st_owner_check(void)
+{
+    static const uint8_t WANT[16] = "FELUCCA-SMK-V1";
+    uint8_t b[64]; uint32_t off, i;
+    st_owner_ready = 0;
+    if (st_owner_read(ST_OWNER_OFF, b, sizeof WANT)) return -1;
+    if (!memcmp(b, WANT, sizeof WANT)) { st_owner_ready = 1; return 0; }
+    /* Claim only a wholly blank VM, including OTA staging. Otherwise a blank
+     * metadata prefix could authorize automatic cleanup of foreign staging.
+     * No erase is necessary for this automatic initialization. */
+    for (off = ST_SMK_BASE; off < 0xC0000u; off += sizeof b) {
+        if (st_owner_read(off, b, sizeof b)) return -1;
+        for (i = 0; i < sizeof b; i++) if (b[i] != 0xFFu) return -1;
+    }
+    /* Programming disables XIP: stage the tag in the existing RAM buffer
+     * before the flash driver consumes it. WANT is safe again for readback. */
+    memcpy(b, WANT, sizeof WANT);
+    if (st_owner_prog(ST_OWNER_OFF, b, sizeof WANT) ||
+        st_owner_read(ST_OWNER_OFF, b, sizeof WANT) || memcmp(b, WANT, sizeof WANT)) return -1;
+    st_owner_ready = 1;
+    return 0;
+}
+/* Destructive initialization: caller must obtain an explicit physical user
+ * confirmation. Invalidate the old owner FIRST, verify each erased sector, and
+ * publish the owner LAST. The confirmed erase includes all VM/staging sectors;
+ * samples and the stock marker are intentionally untouched. */
+static int st_owner_initialize(void)
+{
+    uint8_t b[64]; uint32_t pass, off, a, i;
+    st_owner_ready = 0;
+    for (pass = 0; pass < 2u; pass++) {
+        for (off = pass ? ST_SMK_BASE : ST_OWNER_OFF;
+             off < (pass ? 0xC0000u : ST_OWNER_OFF + ST_SECTOR); off += ST_SECTOR) {
+            if (pass && off == ST_OWNER_OFF) continue;
+            if (st_owner_erase(off)) return -1;
+            for (a = off; a < off + ST_SECTOR; a += sizeof b) {
+                if (st_owner_read(a, b, sizeof b)) return -1;
+                for (i = 0; i < sizeof b; i++) if (b[i] != 0xFFu) return -1;
+            }
+        }
+    }
+    return st_owner_check();
+}
+#define ST_AVAILABLE (flash_ok && st_owner_ready)
+#else
+#define ST_AVAILABLE flash_ok
+static int st_owner_check(void) { return 0; }
 static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset of copy A (0) / B (1) */
 {
     if (obj == OBJ_SETTINGS)
@@ -75,10 +154,15 @@ static uint32_t st_sector(uint32_t obj, uint32_t copy)  /* flash offset of copy 
     return 0x97000u + (obj - OBJ_PROJECT0) * 2u * ST_SECTOR + copy * ST_SECTOR;
 }
 
+#endif /* BOARD_SMK37 */
+
 static uint8_t st_buf[ST_PAYLOAD_MAX] __attribute__((aligned(4), section(".pool")));   /* (main loop only) */
 
 static int st_head(uint32_t obj, uint32_t copy, st_hdr_t *h)   /* commit record valid: 0 */
 {
+#if BOARD_SMK37
+    if (!st_owner_ready) return -1;
+#endif
     if (obj >= OBJ_COUNT || copy > 1u)
         return -1;
     if (st_read(st_sector(obj, copy), h, sizeof *h))
@@ -139,6 +223,9 @@ static int st_save_to(uint32_t obj, const void *src, uint32_t len, int to)
     uint32_t seq, base, off;
     int cur, rc;
     st_hdr_t h;
+#if BOARD_SMK37
+    if (!st_owner_ready) return -1;
+#endif
     FM1_ASSERT_THREAD();                         /* erases and programs flash: main loop only (#428) */
     if (obj >= OBJ_COUNT || len > ST_PAYLOAD_MAX || to > 1)
         return -1;

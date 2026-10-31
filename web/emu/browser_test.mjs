@@ -164,12 +164,105 @@ try {
   await check("desktop wrapper text contrast", wrapperContrast);
   await check("keyboard note produces stereo PCM", async () => {
     await page.keyboard.down("z");
+    assert.equal(await page.getByRole("button", { name: "F3", exact: true }).getAttribute("aria-pressed"), "true");
     const observed = await freshAudio(true);
     assert(observed.peak <= 1, `out-of-range audio: ${observed.peak}`);
     await page.keyboard.up("z");
+    assert.equal(await page.getByRole("button", { name: "F3", exact: true }).getAttribute("aria-pressed"), "false");
     return observed;
   });
   await check("note release becomes quiet", () => freshAudio(false));
+  await check("focused note keys support Enter, Space and blur release", async () => {
+    const key = page.getByRole("button", { name: "F3", exact: true });
+    const other = page.getByRole("button", { name: "G3", exact: true });
+    for (const code of ["Enter", "Space", "NumpadEnter"]) {
+      await key.focus();
+      const scroll = await page.evaluate(() => scrollY);
+      await page.keyboard.down(code);
+      assert.equal(await key.getAttribute("aria-pressed"), "true");
+      await freshAudio(true);
+      await page.keyboard.down(code);                    // auto-repeat must keep the same held note
+      assert.equal(await key.getAttribute("aria-pressed"), "true");
+      assert.equal(await page.evaluate(() => scrollY), scroll, `${code} scrolled the page`);
+      await page.keyboard.up(code);
+      assert.equal(await key.getAttribute("aria-pressed"), "false");
+      await freshAudio(false);
+    }
+    await key.focus();
+    await page.keyboard.down("NumpadEnter");
+    await page.keyboard.down("Space");
+    await freshAudio(true);
+    await page.keyboard.up("Space");
+    assert.equal(await key.getAttribute("aria-pressed"), "true", "NumpadEnter still owns the held key");
+    await other.focus();
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "blur left the key pressed");
+    await freshAudio(false);
+    await page.keyboard.up("NumpadEnter");
+    assert.equal(await other.getAttribute("aria-pressed"), "false", "focus transfer pressed another key");
+    return { activation: ["Enter", "Space", "NumpadEnter"], repeat_held: true, blur_released: true };
+  });
+  await check("click-only note activation is momentary and does not duplicate physical input", async () => {
+    const key = page.getByRole("button", { name: "F3", exact: true });
+    const other = page.getByRole("button", { name: "G3", exact: true });
+    await key.focus();
+    const click = await key.evaluate((el) => {
+      const after = __feluccaTest.samples;                  // snapshot before the click in this same browser task
+      el.click();                                           // click-only DOM activation, not a real AT test
+      return { after, pressed: el.getAttribute("aria-pressed") };
+    });
+    assert.equal(click.pressed, "true");
+    await page.waitForTimeout(500);                          // retained PCM must survive the short note's release
+    await waitFor((after) => {
+      const p = __feluccaTest, size = 2048;
+      const first = p.samples - p.audio.length * size;
+      if (first > after) throw new Error("click audio window expired from the PCM tap");
+      return p.audio.some((block, i) => {
+        if (first + (i + 1) * size <= after) return false;
+        return [block.left, block.right].every((channel) =>
+          channel.every(Number.isFinite) && Math.sqrt(channel.reduce((sum, x) => sum + x*x, 0) / channel.length) > 0.001);
+      });
+    }, click.after);
+    await waitFor(() => document.querySelector('[aria-label="F3"]').getAttribute("aria-pressed") === "false");
+    await freshAudio(false);
+    const pressedBeforeBlur = await key.evaluate((el) => { el.click(); return el.getAttribute("aria-pressed"); });
+    assert.equal(pressedBeforeBlur, "true");
+    await other.focus();
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "blur left virtual note held");
+    await freshAudio(false);
+    await key.focus();
+    await key.evaluate((el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "pointer click duplicated note");
+    await page.keyboard.down("Enter");
+    await key.evaluate((el) => el.click());                 // synthesized click while keyboard owns it
+    await page.keyboard.up("Enter");
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "keyboard click duplicated note");
+    await key.evaluate((el) => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
+      el.click();                                         // follow-on click in the same event turn
+    });
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "follow-on keyboard click duplicated note");
+    await freshAudio(false);
+    await key.focus();
+    await page.keyboard.down("Enter");
+    await page.keyboard.down("Space");
+    const previousKey = await key.elementHandle();
+    // Model browsers that omit blur on target removal, even if this one emits it.
+    await previousKey.evaluate((el) => el.addEventListener("blur", (e) => e.stopImmediatePropagation(), { capture: true, once: true }));
+    await page.setViewportSize({ width: 390, height: 844 }); // rebuild removes the focused key while held
+    await waitFor((el) => !el.isConnected, previousKey);
+    await previousKey.dispose();
+    assert.equal(await key.getAttribute("aria-pressed"), "false", "layout rebuild kept the removed focus owners before keyup");
+    await freshAudio(false);                              // release must not depend on a future physical keyup
+    await page.keyboard.up("Enter");
+    await page.keyboard.up("Space");
+    const afterRebuild = await key.evaluate((el) => { el.click(); return el.getAttribute("aria-pressed"); });
+    assert.equal(afterRebuild, "true", "layout rebuild left the virtual-click guard set");
+    await waitFor(() => document.querySelector('[aria-label="F3"]').getAttribute("aria-pressed") === "false");
+    await freshAudio(false);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    return { click_only: true, timed_release: true, blur_release: true, physical_click_suppressed: true };
+  });
   await check("pointer opens ENV and encoder redraws LCD", async () => {
     await page.getByRole("button", { name: "SEL", exact: true }).click();
     await waitFor(() => (__feluccaTest.leds[0] & (1 << 1)) !== 0);
@@ -224,8 +317,10 @@ try {
     assert(box && box.width > 0 && box.x >= 0 && box.x + box.width <= 391, "key outside portrait viewport");
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
+    assert.equal(await key.getAttribute("aria-pressed"), "true");
     const observed = await freshAudio(true);
     await page.mouse.up();
+    assert.equal(await key.getAttribute("aria-pressed"), "false");
     await freshAudio(false);
     await screen("portrait");
     return observed;

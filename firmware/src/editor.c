@@ -89,14 +89,25 @@ static void ed_smp_inval(uint32_t k)
 }
 static int ed_smp_erase(uint32_t k, uint32_t all)  /* header sector, or the whole slot */
 {
-    uint32_t i, took;
+    uint32_t i;
+#if !BOARD_SMK37
+    uint32_t took;
+#endif
     int rc = 0;
+#if BOARD_SMK37
+    /* Ownership and the two physical slots also apply to direct helper callers. */
+    if (!ST_AVAILABLE || !SMP_USER_HAS(k)) return -1;
+#endif
     usr_nz[k] = 0;
     for (i = 0; i < 16u; i++)
         usr_zone[k][i].n = 0;                     /* a sounding voice ends instead of reading 0xFF */
     for (i = 0; i < (all ? SMP_USER_SIZE / 0x1000u : 1u) && !rc; i++) {
         audio_silence();
+#if BOARD_SMK37
+        rc = st_erase(ed_smp_slot(k) + i * 0x1000u);
+#else
         rc = fl_erase4k(ed_smp_slot(k) + i * 0x1000u, &took);
+#endif
         fm1_wdt_feed();
     }
     ed_smp_inval(k);
@@ -106,6 +117,9 @@ static int ed_flash_stop(void);
 static int ed_smp_end(uint32_t k, const uint8_t *a, uint32_t na)
 {
     const smp_user_hdr_t *h = (const smp_user_hdr_t *)ed_smp_buf;
+#if BOARD_SMK37
+    if (!ST_AVAILABLE || !SMP_USER_HAS(k)) return 4;
+#endif
     if (ed_unpack7(a, na, ed_smp_buf, sizeof(smp_user_hdr_t)) != sizeof(smp_user_hdr_t))
         return 1;
     if (h->magic != SMP_USER_MAGIC || h->version != 1 || !h->nz || h->nz > 16u ||
@@ -118,7 +132,11 @@ static int ed_smp_end(uint32_t k, const uint8_t *a, uint32_t na)
     ed_smp_inval(k);
     if (st_crc32(smp_user_xip(k) + SMP_USER_DATA, h->data_len) != h->crc)
         return 3;
+#if BOARD_SMK37
+    if (st_prog(ed_smp_slot(k), ed_smp_buf, sizeof(smp_user_hdr_t)))
+#else
     if (fl_write(ed_smp_slot(k), ed_smp_buf, sizeof(smp_user_hdr_t)))
+#endif
         return 4;
     ed_smp_inval(k);
     smp_user_scan(k);
@@ -628,17 +646,34 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         break;
     case ED_SMP_BEGIN:                                     /* slot -> slot, rc */
     case ED_SMP_ERASE:
-        if (na < 1u || a[0] >= SMP_USER_SLOTS || !flash_ok)
-            return;
+        if (na < 1u || a[0] >= SMP_USER_SLOTS
+#if !BOARD_SMK37
+            || !flash_ok
+#endif
+           ) return;
         ed_b(a[0]);
+#if BOARD_SMK37
+        if (!ST_AVAILABLE || !SMP_USER_HAS(a[0])) { ed_b(1); break; }
+#endif
         ed_b(ed_flash_stop() || ed_smp_erase(a[0], cmd == ED_SMP_ERASE) ? 1u : 0u);
         break;
     case ED_SMP_WRITE: {                                   /* slot, off (3 x 7 bit), pack7 data -> slot, off, rc */
-        uint32_t off, len, rc = 0, took;
-        if (na < 5u || a[0] >= SMP_USER_SLOTS || !flash_ok)
-            return;
+        uint32_t off, len, rc = 0;
+#if !BOARD_SMK37
+        uint32_t took;
+#endif
+        if (na < 5u || a[0] >= SMP_USER_SLOTS
+#if !BOARD_SMK37
+            || !flash_ok
+#endif
+           ) return;
         off = (uint32_t)a[1] | (uint32_t)a[2] << 7 | (uint32_t)a[3] << 14;
         len = ed_unpack7(a + 4, na - 4u, ed_smp_buf, 256u);
+#if BOARD_SMK37
+        if (!ST_AVAILABLE || !SMP_USER_HAS(a[0]))
+            rc = 3;
+        else
+#endif
         if (off < SMP_USER_DATA || (off & 0xFFu) || !len || off + len > SMP_USER_SIZE)
             rc = 1;
         else if (usr_nz[a[0]])
@@ -648,9 +683,17 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         else {
             if (!(off & 0xFFFu)) {                         /* first write into a sector: erase it */
                 audio_silence();
+#if BOARD_SMK37
+                rc = st_erase(ed_smp_slot(a[0]) + off) ? 2u : 0u;
+#else
                 rc = fl_erase4k(ed_smp_slot(a[0]) + off, &took) ? 2u : 0u;
+#endif
             }
+#if BOARD_SMK37
+            if (!rc && st_prog(ed_smp_slot(a[0]) + off, ed_smp_buf, len))
+#else
             if (!rc && fl_write(ed_smp_slot(a[0]) + off, ed_smp_buf, len))
+#endif
                 rc = 3;
         }
         ed_b(a[0]);
@@ -661,8 +704,11 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         break;
     }
     case ED_SMP_END:                                       /* slot, pack7 header -> slot, rc */
-        if (na < 2u || a[0] >= SMP_USER_SLOTS || !flash_ok)
-            return;
+        if (na < 2u || a[0] >= SMP_USER_SLOTS
+#if !BOARD_SMK37
+            || !flash_ok
+#endif
+           ) return;
         ed_b(a[0]);
         ed_b((uint32_t)ed_smp_end(a[0], a + 1, na - 1u));
         break;
@@ -670,6 +716,11 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         ed_b(SMP_USER_SLOTS);
         ed_b(SMP_USER_SIZE / 1024u);
         for (i = 0; i < SMP_USER_SLOTS; i++) {
+#if BOARD_SMK37
+            if (!ST_AVAILABLE || !SMP_USER_HAS(i)) {
+                ed_b(0); ed_str("", 8); ed_b(0); continue;
+            }
+#endif
             const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(i);
             char nm[9] = {0};
             uint32_t j;

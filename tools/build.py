@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 """Build Felucca: the app, the update loader and an installable .fwsc package.
 
-  tools/build.py [--release X.Y[-suffix]] [--product FM-1_XXX]
+  tools/build.py [--release X.Y[-suffix]] [--product MODEL_XXX] [--board fm1|smk37] [--model pro|elite|mke]
 
 Outputs in build/: felucca.bin (app), loader/ota.bin (update loader),
 felucca.fwsc (package). A release build (--release X.Y) writes felucca-X.Y.fwsc and a folder
@@ -100,6 +100,7 @@ SDK_SHA256 = {
 }
 
 DEV_PRODUCT = "FM-1_900"            # the development default identity; release builds are FM-1_9XY
+BOARD, MODEL = "fm1", None
 PRODUCT = DEV_PRODUCT               # this build's package identity, set by main()
 BUILD_IDENTITY = None               # one resolved input shared by generated UI and artifact sidecar
 VERSION = None                      # FELUCCA_VERSION for release builds (default: firmware/src/felucca.c)
@@ -117,9 +118,11 @@ PRODUCT_RE = re.compile(r"FM-1_[A-Z0-9._-]{1,15}")    # 20 characters at most: t
 RESERVED_PRODUCTS = re.compile(r"FM-1_0\d\d|FM-1_8\d{6}")
 
 
-def check_product(product):
+def check_product(product, model_name="FM-1"):
     """Raise SystemExit unless product is a package identity this build may use (syntax only: a valid
     identity is not registered with, or accepted by, any host or Hub)."""
+    if model_name != "FM-1":
+        return fm1pkg_make.check_product(product, model_name)
     if not product.isascii() or not PRODUCT_RE.fullmatch(product):
         raise SystemExit(f"--product {product!r}: use FM-1_ and 1..15 of A-Z 0-9 . _ - (ASCII, 20 characters at most)")
     if RESERVED_PRODUCTS.fullmatch(product):
@@ -138,16 +141,22 @@ def resolve(argv):
     ap.add_argument("--product", metavar="FM-1_XXX",
                     help="package identity (FELUCCA_ID and package marker); default FM-1_9XY with --release, else FM-1_900")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
+    ap.add_argument("--board", default=os.environ.get("BOARD", "fm1"), help="fm1 (default) or smk37; $BOARD fallback")
+    ap.add_argument("--model", default=os.environ.get("MODEL"), help="smk37 model: pro (default), elite or mke; $MODEL fallback")
     a = ap.parse_args(argv)
-    product, version, tag = DEV_PRODUCT, None, ""
+    board, model, model_name = fm1pkg_make.target(a.board, a.model)
+    if board == "smk37" and os.environ.get("FELUCCA_UART") not in (None, "0"):
+        raise SystemExit("SMK-37 requires FELUCCA_UART=0: PH8 belongs to its key matrix")
+    board_tag = ("-smk37" + ("-" + model if model != "pro" else "")) if board == "smk37" else ""
+    product, version, tag = model_name + "_900", None, ""
     if a.release:                   # one digit each: the identity has room for two (X.Y.Z and X.Y.Z.W keep X.Y's)
         m = re.fullmatch(r"([0-9])\.([0-9])(?:\.[0-9]){0,2}(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z, X.Y.Z.W or X.Y-suffix, one digit each")
-        product = "FM-1_9" + m[1] + m[2]
+        product = model_name + "_9" + m[1] + m[2]
         version = "v" + a.release.lower()      # e.g. v1.0, v1.1-rc1
     if a.product is not None:
-        check_product(a.product)
+        check_product(a.product, model_name)
         if a.product != product:
             tag = "-" + a.product
         product = a.product
@@ -161,10 +170,10 @@ def resolve(argv):
         if a.release and (a.product is None or not tag):
             raise SystemExit("non-standard release profile requires a distinct --product identity")
         tag += "-" + profile_name
-    base = f"felucca-{a.release}{tag}" if a.release else f"felucca{tag}"
-    return {"product": product, "version": version, "release": a.release, "sdk": a.sdk,
+    base = f"felucca-{a.release}{board_tag}{tag}" if a.release else f"felucca{board_tag}{tag}"
+    return {"board": board, "model": model, "product": product, "version": version, "release": a.release, "sdk": a.sdk,
             "explicit": a.product is not None, "name": base + ".fwsc",
-            "rel": f"release-{a.release}{tag}", "app": f"{base}-app.bin"}
+            "rel": f"release-{a.release}{board_tag}{tag}", "app": f"{base}-app.bin"}
 
 
 def toolchain():
@@ -536,7 +545,7 @@ def loader_check(hdr, syms):
 def build_loader():
     LDR.mkdir(parents=True, exist_ok=True)
     src = FW / "loader"
-    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src"]
+    flags = [*CFLAGS, *board_flags(), "-Ifirmware/hal", "-Ifirmware/src"]
     tc_all(("cc", "-c", src / "crt0_ldr.S", "-o", LDR / "crt0_ldr.o"),
            ("cc", *flags, "-c", src / "loader.c", "-o", LDR / "loader.o"))
     elf = LDR / "loader.elf"
@@ -582,14 +591,22 @@ def ld_regions():
     """firmware/app.ld's MEMORY regions: name -> (origin, length)"""
     regs = {}
     for m in re.finditer(r"^\s*(\w+)\s*\([rwx]+\)\s*:\s*ORIGIN\s*=\s*(\w+),\s*LENGTH\s*=\s*(\w+)",
-                         (FW / "app.ld").read_text(), re.M):
+                         (FW / "app.ld").read_text().replace(
+                             "DEFINED(FELUCCA_APP_SLOT) ? FELUCCA_APP_SLOT : ", ""), re.M):
         n = m.group(3)
         regs[m.group(1)] = (int(m.group(2), 0), int(n[:-1], 0) * 1024 if n.endswith("K") else int(n, 0))
+    if BOARD == "smk37":
+        regs["XIP"] = (regs["XIP"][0], APP_SLOT)
     return regs
 
 
+def board_flags():
+    return (["-DBOARD_SMK37=1", f'-DSMK_MODEL="{fm1pkg_make.MODELS[MODEL]}"']
+            if BOARD == "smk37" else [])
+
+
 def app_flags():
-    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
+    flags = [*CFLAGS, *board_flags(), "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
                  "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2", "FELUCCA_ISR_ASSERT",
@@ -600,6 +617,8 @@ def app_flags():
     v = os.environ.get("FELUCCA_USB_LAYOUT")   # firmware/src/usb.c: how the USB composite presents itself (#67), 0..3
     if v in ("0", "1", "2", "3"):
         flags.append(f"-DFELUCCA_USB_LAYOUT={v}")
+    if BOARD == "smk37" and "-DFELUCCA_UART=0" not in flags:
+        flags.append("-DFELUCCA_UART=0")
     flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
@@ -626,7 +645,8 @@ def build_app():
         tc("cc", *[f for f in flags if not f.startswith(("-I", "-D", "-W"))], "-c",
            OUT / "felucca_size.ll", "-o", OUT / "felucca.o")
     elf = OUT / "felucca.elf"
-    tc("pi32v2/bin/ld", "-T", FW / "app.ld", OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o",
+    tc("pi32v2/bin/ld", *(["--defsym", f"FELUCCA_APP_SLOT={APP_SLOT}"] if BOARD == "smk37" else []),
+       "-T", FW / "app.ld", OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o",
        *([OUT / "fm1_cpu1.o"] if CPU2 else []), OUT / "felucca.o", "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin", "c1text.bin"):
         (OUT / sect).unlink(missing_ok=True)
@@ -951,7 +971,7 @@ def main(argv=None):
 
 
 def _main(argv=None):
-    global PRODUCT, VERSION, BUILD_IDENTITY
+    global PRODUCT, VERSION, BUILD_IDENTITY, BOARD, MODEL, APP_SLOT
     try:
         c = resolve(sys.argv[1:] if argv is None else argv)  # validated before any job starts
     except SystemExit as error:
@@ -960,6 +980,8 @@ def _main(argv=None):
         raise
     (OUT / 'resource-report.json').unlink(missing_ok=True)
     PRODUCT, VERSION, name = c["product"], c["version"], c["name"]
+    BOARD, MODEL = c["board"], c["model"]
+    APP_SLOT = fm1pkg_make.BOARDS[BOARD][1]
     if _source_verifier is not None:
         _source_verifier["verify_tree"](SRC)
     from profile import validate_selection
@@ -1001,7 +1023,7 @@ def _main(argv=None):
         print("  FAIL ", e)
     if errors:
         raise SystemExit("build: checks failed")
-    pkg = fm1pkg_make.ufw(fm1pkg_make.flash_image(img, fm1pkg_make.KEY), ota, PRODUCT)
+    pkg = fm1pkg_make.ufw(fm1pkg_make.flash_image(img, fm1pkg_make.KEY, **({"board": BOARD} if BOARD != "fm1" else {})), ota, PRODUCT)
     (OUT / name).write_bytes(pkg)
     att = SRC / "assets" / "samples-cc0" / "ATTRIBUTION.txt"
     if att.exists():

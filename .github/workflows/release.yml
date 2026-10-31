@@ -63,8 +63,13 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+  smk:
+    needs: approval
+    uses: ./.github/workflows/smk-build.yml
+    with:
+      version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
   publish:
-    needs: validate
+    needs: [validate, smk]
     if: github.event_name == 'workflow_dispatch' && inputs.publish
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -86,6 +91,18 @@ jobs:
         with:
           name: release-${{ github.run_id }}
           path: downloaded
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: experimental-smk37-pro-${{ github.sha }}
+          path: downloaded-smk/pro
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: experimental-smk37-elite-${{ github.sha }}
+          path: downloaded-smk/elite
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: experimental-smk37-mke-${{ github.sha }}
+          path: downloaded-smk/mke
       - name: Verify downloaded firmware and complete source bundles and publish
         shell: bash
         run: |
@@ -94,6 +111,10 @@ jobs:
           mv "downloaded/release-$VERSION" release
           # Staging verifies both archives, source pins and all license/checksum assets.
           python3 tools/ci.py stage-release "$VERSION"
+          # Verify all three independent native models and clean-source reproductions
+          # against this exact tagged FM-1 source distribution before adding assets.
+          python3 tools/smk_release.py stage --version "$VERSION" --revision "$GITHUB_SHA" \
+            --bundles downloaded-smk --destination release-assets
           (cd release-assets && sha256sum -c SHA256SUMS)
           # Publish only bytes matching the package actually tested on hardware.
           python3 tools/release_notes.py verify-tested-package

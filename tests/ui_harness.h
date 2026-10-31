@@ -27,7 +27,13 @@ static int c1_exclusion, c1_recovers;                   /* #410: a retained excl
 #undef main
 
 /* ------------------------------------------------------------ HAL stubs --- */
+#if BOARD_SMK37
+#define FM1_NCOL 64u              /* enough storage for the partial SMK LED adapter */
+#define HOST_UI_NENC 8u
+#else
 #define FM1_NCOL 11u
+#define HOST_UI_NENC 7u
+#endif
 static const int8_t FM1_KEYMAP[6][FM1_NCOL];
 static uint8_t fm1_led[FM1_NCOL], fm1_led_dim[FM1_NCOL], fm1_led_breath[FM1_NCOL], fm1_led_mid[FM1_NCOL];
 static uint32_t host_dim_lo;                      /* hal/fm1_input.h: the glow MENU > LEDS asked for (1: DIM LO) */
@@ -40,7 +46,7 @@ static int fm1_led_idle_on(void) { return host_idle; }
 static void fm1_led_anim_stop(void) { host_anim = host_idle = 0; }
 #define FM1_TICKS_PER_US 1u
 static uint32_t host_ticks, host_pressed, host_notes;
-static int32_t host_enc[7];
+static int32_t host_enc[HOST_UI_NENC];
 #define HOST_CLOCK_TICKS host_ticks
 #include "host_clock.h"
 #undef HOST_CLOCK_TICKS
@@ -50,13 +56,13 @@ static uint32_t fm1_input_edges(uint32_t *x) { uint32_t p = host_pressed; (void)
 static fm1_input_note_edges_fn fm1_input_note_edges;
 static uint32_t fm1_input_note_edges(void) { uint32_t n = host_notes; host_notes = 0; return n; }
 /* host_enc_late: detents the TIMER5 scan counts just after a read (#102: while ui_input runs); the next read has them */
-static int32_t host_enc_late[7];
+static int32_t host_enc_late[HOST_UI_NENC];
 static fm1_enc_take_fn fm1_enc_take;
 static int32_t fm1_enc_take(uint32_t e)
 {
-    int32_t s = host_enc[e % 7u];
-    host_enc[e % 7u] = host_enc_late[e % 7u];
-    host_enc_late[e % 7u] = 0;
+    int32_t s = host_enc[e % HOST_UI_NENC];
+    host_enc[e % HOST_UI_NENC] = host_enc_late[e % HOST_UI_NENC];
+    host_enc_late[e % HOST_UI_NENC] = 0;
     return s;
 }
 static void (*host_wdt_hook)(void);                /* (a test's: time passing in a blocking loop, as panel_setup's) */

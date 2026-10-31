@@ -178,6 +178,12 @@ uv run --locked --group build ./build.sh
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
+The default target remains FM-1. Opt-in SMK builds use `--board smk37` and
+`--model pro|elite|mke`; see [SMK packages, controls and storage/recovery](docs/smk37.md).
+Board/model selection is separate from `FELUCCA_PROFILE`. Normal push/PR builds
+do not build the SMK model matrix; **Experimental SMK firmware** is manual or
+called by tagged releases.
+
 ### Final-image soft-double policy
 
 Every target application build checks the final linked ELF symbol table against

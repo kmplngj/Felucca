@@ -149,6 +149,7 @@ static uint32_t fm1_input_note_edges(void) { uint32_t n = web_notes_pressed; web
 static fm1_enc_take_fn fm1_enc_take;
 static int32_t fm1_enc_take(uint32_t e) { int32_t s = web_enc_steps[e % 7u]; web_enc_steps[e % 7u] = 0; return s; }
 static void fm1_input_init(void) {}
+#define FM1_OCT_BOTH 3u                         /* same physical OCT bits as the FM-1 input HAL */
 static void fm1_input_tick(void) {}
 static void fm1_wdt_feed(void) {}
 static void fm1_irq_off(void) {}

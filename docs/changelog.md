@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- Focused piano keys in the browser emulator respond to Enter, Space and numpad
+  Enter, report their pressed state to assistive technology, and release when
+  focus moves away. Adapted to the native input ownership model after
+  [fm1-base's keyboard controls](https://github.com/charlesvestal/fm1-base/commit/46743d1de1101f0a614964e0a4334edd48b5aded).
+
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed present known numeric fields,
@@ -45,6 +50,14 @@ recorded in the linked reports, rather than every current build or device.
   change.
 
 ### Added
+
+- Opt-in [SMK-37 Pro, SMK-37 Elite and MKE-P37 targets](smk37.md) add model-specific
+  firmware packages, velocity keys/pads, faders/wheels and protected per-board
+  flash layouts. Unknown stores remain RAM-only until explicit initialization;
+  failed operations cannot confirm ownership. SMK has two user sample slots and
+  USB MIDI, with per-model physical qualification pending. Normal CI/PR firmware
+  builds and Latest Dev retain the standard FM-1 target; tagged releases also
+  carry experimental SMK assets with separate build evidence.
 
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device

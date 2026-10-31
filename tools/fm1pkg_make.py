@@ -24,11 +24,60 @@ build.py --release do).
 """
 import argparse
 import os
+import re
 import struct
 from pathlib import Path
 
 APP_SLOT = 0x8DFBC
 FLASH_SIZE = 0x93000
+# SMK descriptor facts adapted from GPL-3.0-only genkigenki/Felucca
+# b67312cd25bd01b097ed69388b83e86bd8449365 (SMK-37 port).
+# the region descriptors after app.bin / cfg_tool.bin: (offset, size, flags, resvd, index, name16 or name).
+# The offsets are ABSOLUTE flash offsets. The 16 name bytes after the names are SDK packer fields.
+REGIONS = {
+    "fm1": [(0x93000, 352256, 0x12, 0x80, 0, bytes.fromhex("564d00ffffffffffffffffff00800000")),     # VM
+            (0, None, 0x92, 0x82, 0, bytes.fromhex("5052435400ffffffffffffff434f4445")),         # PRCT = FLASH_SIZE
+            (0xE9000, 0x1000, 0x92, 0x80, 0, bytes.fromhex("4254494600ffffffffffffff4155544f")),  # BTIF
+            (0xEA000, 0x12000, 0x92, 0x81, 1, "USR")],
+    # SMK-37 Pro v016, as the stock package's region table
+    "smk37": [(0x9D000, 0x23000, 0x12, 0x81, 0, bytes.fromhex("564d00ffffffffffffffffff00800000")),    # VM
+              (0, None, 0x92, 0x82, 0, bytes.fromhex("5052435400ffffffffffffff434f4445")),        # PRCT = FLASH_SIZE
+              (0xC0000, 0x1000, 0x92, 0x82, 0, bytes.fromhex("4254494600ffffffffffffff4155544f")), # BTIF
+              (0xC1000, 0x1000, 0x92, 0x81, 0, bytes.fromhex("5553525452494d00ffffffffffffffff")), # USRTRIM
+              (0xC2000, 0x29000, 0x92, 0x81, 0, bytes.fromhex("555352464c41534800ffffffffffffff")), # USRFLASH
+              (0xF4000, 0xA000, 0x92, 0x81, 1, "USR")],
+}
+# per board: (flash end, app slot). Default constants retain the FM-1 API.
+BOARDS = {"fm1": (0x93000, 0x8DFBC), "smk37": (0x9D000, 0x97400)}
+MODELS = {"pro": "SMK-37 Pro", "elite": "SMK-37 Elite", "mke": "MKE-P37"}
+
+
+def target(board="fm1", model=None):
+    """Validate the independent board/model axis before reading or generating inputs."""
+    if board not in BOARDS:
+        raise SystemExit(f"unknown board {board!r}: use fm1 or smk37")
+    if board == "fm1":
+        if model is not None:
+            raise SystemExit("--model / MODEL requires --board smk37 / BOARD=smk37")
+        return board, None, "FM-1"
+    model = "pro" if model is None else model
+    if model not in MODELS:
+        raise SystemExit(f"unknown SMK model {model!r}: use pro, elite or mke")
+    return board, model, MODELS[model]
+
+
+def check_product(product, model_name):
+    """Exact model family, bounded ASCII marker; official identities stay reserved."""
+    prefix = model_name + "_"
+    suffix = product[len(prefix):] if product.startswith(prefix) else ""
+    if (not product.isascii() or len(product) > 20
+            or not re.fullmatch(r"[A-Z0-9._-]+", suffix)
+            or re.fullmatch(r"0[0-9]{2}|8[0-9]{6}", suffix)
+            or any((ord(c) + i + 1) & 0xFF == 0x7D for i, c in enumerate(product))):
+        raise SystemExit(f"--product {product!r}: use {prefix} and uppercase ASCII A-Z 0-9 . _ -; "
+                         "20 characters at most; official identities are reserved")
+
+
 KEY = 0x980F
 # flash header: JieLi SDK defaults (burner_size 544, VID "0.01", flash_size 0xFF000,
 # fs_ver 0x10, PID "AC791N_STORY"), plain, without its CRC
@@ -104,17 +153,19 @@ def sdk_file(rel):
         raise SystemExit(f"fm1pkg_make: {path}: {e.strerror}. Set AC79_SDK to a JieLi AC79 SDK checkout.")
 
 
-def flash_image(app, key):
+def flash_image(app, key, board="fm1"):
     """Return flash image bytes with the app region encrypted using the chip key.
 
     Read boot and configuration data from the SDK. Raise SystemExit if the app
     exceeds its slot or the app region, including SDK data, exceeds flash space.
     """
+    target(board)
+    flash_size, app_slot = BOARDS[board]
     spl = sdk_file("uboot.boot")                         # SDK SPL, BANKCB-encoded as in the SDK
     cfg_tool = sdk_file("cfg_tool.bin")
     eq = sdk_file("cfg/eq_cfg_hw.bin")
     isd = key_blob(key) + b"[FELUCCA]\r\n"
-    f = bytearray(b"\xFF" * FLASH_SIZE)
+    f = bytearray(b"\xFF" * flash_size)
     # ---- head
     spl_off = 0xA0
     isd_off = spl_off + len(spl)
@@ -131,20 +182,18 @@ def flash_image(app, key):
         enc(head, o, 32)
     f[0:len(head)] = head
     # ---- app area (plain first, then SFC)
-    if len(app) > APP_SLOT:
-        raise SystemExit(f"app is {len(app)} B, the slot is {APP_SLOT} B")
-    app = app + b"\xFF" * (APP_SLOT - len(app))
-    blk = 0x120 + APP_SLOT + len(cfg_tool)              # app_area_head block size
+    if len(app) > app_slot:
+        raise SystemExit(f"app is {len(app)} B, the slot is {app_slot} B")
+    app = app + b"\xFF" * (app_slot - len(app))
+    blk = 0x120 + app_slot + len(cfg_tool)              # app_area_head block size
     area = bytearray(b"\xFF" * blk)
-    area[0x120:0x120 + APP_SLOT] = app
-    area[0x120 + APP_SLOT:blk] = cfg_tool
-    ents = [entry(crc16(app), 0x120, APP_SLOT, 0x82, 0xFF, 0, "app.bin"),
-            entry(crc16(cfg_tool), 0x120 + APP_SLOT, len(cfg_tool), 0x82, 0xFF, 0, "cfg_tool.bin"),
+    area[0x120:0x120 + app_slot] = app
+    area[0x120 + app_slot:blk] = cfg_tool
+    ents = [entry(crc16(app), 0x120, app_slot, 0x82, 0xFF, 0, "app.bin"),
+            entry(crc16(cfg_tool), 0x120 + app_slot, len(cfg_tool), 0x82, 0xFF, 0, "cfg_tool.bin"),
             # region descriptors; the bytes after the names are SDK packer fields (VM size, "CODE", "AUTO")
-            entry(0xFFFF, 0x93000, 352256, 0x12, 0x80, 0, bytes.fromhex("564d00ffffffffffffffffff00800000")),
-            entry(0xFFFF, 0, FLASH_SIZE, 0x92, 0x82, 0, bytes.fromhex("5052435400ffffffffffffff434f4445")),
-            entry(0xFFFF, 0xE9000, 0x1000, 0x92, 0x80, 0, bytes.fromhex("4254494600ffffffffffffff4155544f")),
-            entry(0xFFFF, 0xEA000, 0x12000, 0x92, 0x81, 1, "USR")]
+            *(entry(0xFFFF, off, flash_size if size is None else size, flags, reserved, index, name)
+              for off, size, flags, reserved, index, name in REGIONS[board])]
     area[32:32 + len(b"".join(ents))] = b"".join(ents)
     area[0:32] = entry(crc16(area[32:blk]), 0x02000120, blk, 0x83, 0xFF, 0, "app_area_head")
     # nested cfg directory right after the block: SDK default EQ table
@@ -153,10 +202,10 @@ def flash_image(app, key):
     cfg = entry(crc16(cfg_body), 0x20, 0x20 + len(cfg_body), 0x83, 0xFF, 1, "cfg") + cfg_body
     region = bytearray(area + cfg)
     # A bytearray slice assignment past the end would silently enlarge flash.bin.
-    if len(region) > FLASH_SIZE - 0x4000:
-        raise SystemExit(f"fm1pkg_make: app area is {len(region)} B, available {FLASH_SIZE - 0x4000} B, "
-                         f"{len(region) - (FLASH_SIZE - 0x4000)} B too much "
-                         f"(flash end {0x4000 + len(region):#x}, limit {FLASH_SIZE:#x}; "
+    if len(region) > flash_size - 0x4000:
+        raise SystemExit(f"fm1pkg_make: app area is {len(region)} B, available {flash_size - 0x4000} B, "
+                         f"{len(region) - (flash_size - 0x4000)} B too much "
+                         f"(flash end {0x4000 + len(region):#x}, limit {flash_size:#x}; "
                          f"SDK cfg_tool.bin {len(cfg_tool)} B, cfg/eq_cfg_hw.bin {len(eq)} B)")
     sfc(region, 0, len(region), 0, key)
     f[0x4000:0x4000 + len(region)] = region
@@ -209,15 +258,20 @@ def main():
     ap.add_argument("app", type=Path)
     ap.add_argument("ota", type=Path)
     ap.add_argument("out", type=Path)
-    ap.add_argument("--product", default="FM-1_900")
+    ap.add_argument("--board", default=os.environ.get("BOARD", "fm1"))
+    ap.add_argument("--model", default=os.environ.get("MODEL"))
+    ap.add_argument("--product")
     ap.add_argument("--key", type=lambda s: int(s, 0), default=KEY)
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args()
+    board, model, model_name = target(a.board, a.model)
+    product = a.product if a.product is not None else model_name + "_900"
+    check_product(product, model_name)
     global SDK
     SDK = a.sdk
-    pkg = ufw(flash_image(a.app.read_bytes(), a.key), a.ota.read_bytes(), a.product)
+    pkg = ufw(flash_image(a.app.read_bytes(), a.key, board), a.ota.read_bytes(), product)
     a.out.write_bytes(pkg)
-    print(f"package {a.out}: {len(pkg)} B, identity {a.product}, chip key {a.key:#06x}")
+    print(f"package {a.out}: {len(pkg)} B, identity {product}, chip key {a.key:#06x}")
 
 
 if __name__ == "__main__":
