@@ -383,7 +383,11 @@ static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *o
 #define OTA_STAGED_RC(rc) ((rc) <= -8 && (rc) >= -13)
 static int ota_stage(void)                       /* steps 1..6; 0 = host said success */
 {
-    static uint8_t hdr[0x400] __attribute__((section(".pool"))), b[512] __attribute__((section(".pool")));
+    /* One 1 KiB pool buffer: the UFW header view is dead once flash.bin's CRC is taken below, before the first body
+     * read; from there on only the body/comparison view b (its first 512 bytes) is used. Nothing keeps a pointer
+     * into hdr past that point, and ota_read/ota_fread are synchronous. */
+    static uint8_t hdr[0x400] __attribute__((section(".pool")));
+    uint8_t *const b = hdr;
     uint32_t i, n, ota_off, ota_len, fl_off, fl_len, fl_crc, c, len, own, official, key;
     int rc;
     /* 1. UFW header + entry list */
