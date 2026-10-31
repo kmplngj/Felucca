@@ -42,6 +42,7 @@ FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_l
          "uac_service", "sie_rd", "sie_wr",                 # outlined hot USB callees; caller scores exclude their bodies
          "mix_part",                                        # a part's block (fx.c), on either core since the second
          "mix_spread", "send_begin", "send_add",             # send-ramp helpers: count their loops separately from callers
+         "mix_unity_fix",                                   # PAN 0 loop's wrap fallback (fx.c, #458): rare, separate
          "c1_params",                                       # bounded canonical snapshot/restore around a worker job
          "uac_tap48",                                       # the USB audio input at 48 kHz: the 44.1 -> 48 resampler (usb.c)
          "click_render",                                    # the metronome's click (click.c), while it sounds

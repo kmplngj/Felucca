@@ -37,7 +37,7 @@ WORKFLOW_CHECK_INPUTS = {
 # persistence, protocol, build inputs and unfamiliar paths retain full validation.
 UI_FEEDBACK = ('ui', 'ui_render', 'ui_compare', 'settings', 'boot_splash', 'frame')
 DSP_FEEDBACK = ('regression', 'sound_install', 'engines', 'union', 'arena')
-FX_FEEDBACK = ('regression', 'fx_rest', 'audio_transitions', 'insert', 'chorus', 'sends')
+FX_FEEDBACK = ('regression', 'fx_rest', 'audio_transitions', 'insert', 'chorus', 'sends', 'mix_fast')
 
 # Exact audited paths: a new ui_*/eng_* file must not silently inherit a partial
 # plan. The scheduler expands prerequisites; ready candidates still use select().
@@ -76,6 +76,8 @@ DRAFT_INPUTS = {
     'tests/audio_transition_test.py': ('audio_transitions',),
     'tests/chorus_depth_test.py': ('chorus',),
     'tests/send_gain_test.py': ('sends',),
+    'tests/mix_fast_test.py': ('mix_fast',),
+    'tests/mix_fast_test.c': ('mix_fast',),
 }
 
 
