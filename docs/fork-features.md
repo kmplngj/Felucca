@@ -112,7 +112,7 @@ See [evidence and combined device procedure](midi-dsp-reliability.md).
 
 ## Song Position Pointer (#281)
 
-With the clock source set to USB or TRS (GLO, KNOB3 **CLK**), the FM-1 follows the
+With the clock source set to USB or TRS (HOME > CLOCK page, KNOB3 **CLK**), the FM-1 follows the
 master's Song Position Pointer (MIDI `F2`) from that source only. A DAW, AUM or another
 sequencer that locates while stopped and then sends Continue resumes the FM-1 at the
 same musical position:
@@ -140,7 +140,7 @@ pending on real devices.
 ## MIDI clock out (#280)
 
 MENU > MIDI > **CLOCK OUT** makes the FM-1 a USB-MIDI clock master while its clock is
-INT (GLO, KNOB3 **CLK**):
+INT (HOME > CLOCK page, KNOB3 **CLK**):
 
 - **OFF** (the default, and every earlier setting): no clock or transport bytes.
 - **CLOCK**: 24 pulses per quarter note while the sequencer plays, six on each 1/16
