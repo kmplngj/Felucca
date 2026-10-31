@@ -3,6 +3,14 @@
 
 ## Diagnostic capabilities
 
+The [experimental SMK targets](smk37.md) retain the USB console and add
+`storage_available` / `storage_owner_ready` status fields plus SMK input counters.
+Unknown/failed storage ownership is reported as locked; physical flash access
+for calibration and recovery is independent. SMK has no FM-1 TRS input or
+`FM1_INPUT_LAT` key-latency instrumentation: do not interpret its scan statistics
+as measured FM-1 key latency. Model qualification and the shared LCD/pad bus
+remain separate device checks.
+
 Choose the capability for the question being investigated. Console commands require
 a build with USB CDC enabled and MENU > SYSTEM > USB SERIAL ON. Read
 [build options](../BUILDING.md#build-product-identity-forks) before selecting a diagnostic

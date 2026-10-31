@@ -89,6 +89,27 @@ class FlashImageTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, f"app is {P.APP_SLOT + 1} B, the slot is {P.APP_SLOT} B"):
             P.flash_image(b"A" * (P.APP_SLOT + 1), P.KEY)
 
+    def test_smk_slot_sdk_bound_and_region_descriptors(self):
+        flash_size, app_slot = P.BOARDS["smk37"]
+        capacity = flash_size - 0x4000 - 0x120 - app_slot - 64
+        self.sdk(capacity, 0)
+        image = P.flash_image(b"A" * app_slot, P.KEY, board="smk37")
+        self.assertEqual(len(image), flash_size)
+        region = bytearray(image[0x4000:])
+        P.sfc(region, 0, len(region), 0, P.KEY)
+        self.assertEqual(region[0x120:0x120 + app_slot], b"A" * app_slot)
+        self.assertEqual(struct.unpack_from("<I", region, 32 + 8)[0], app_slot)
+        self.assertEqual(struct.unpack_from("<I", region, 96 + 4)[0], 0x9D000)  # VM
+        self.assertEqual(struct.unpack_from("<I", region, 128 + 8)[0], flash_size)  # PRCT
+        with self.assertRaises(SystemExit):
+            P.flash_image(b"A" * (app_slot + 1), P.KEY, board="smk37")
+        self.sdk(capacity + 1, 0)
+        with self.assertRaisesRegex(SystemExit, "1 B too much"):
+            P.flash_image(b"APP", P.KEY, board="smk37")
+        # A per-call layout must never change the next default FM-1 package.
+        self.sdk(0, 0)
+        self.assertEqual(len(P.flash_image(b"APP", P.KEY)), P.FLASH_SIZE)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1551,6 +1551,9 @@ static void ui_draw(void)
              * before a keyboard ISR can consume the first post-wake press. */
             scrn.eat = 0;
             kb_asleep = 0;
+#if BOARD_SMK37
+            smk_extkeys_asleep = 0;
+#endif
             scap.state = SCAP_PENDING;
         }
     }

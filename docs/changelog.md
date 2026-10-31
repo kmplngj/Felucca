@@ -51,6 +51,14 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Opt-in [SMK-37 Pro, SMK-37 Elite and MKE-P37 targets](smk37.md) add model-specific
+  firmware packages, velocity keys/pads, faders/wheels and protected per-board
+  flash layouts. Unknown stores remain RAM-only until explicit initialization;
+  failed operations cannot confirm ownership. SMK has two user sample slots and
+  USB MIDI, with per-model physical qualification pending. Normal CI/PR firmware
+  builds and Latest Dev retain the standard FM-1 target; tagged releases also
+  carry experimental SMK assets with separate build evidence.
+
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
   test attestation and a linked report before publication. Both ship risk/recovery

@@ -222,7 +222,11 @@ static struct {
     uint8_t ly;                  /* the layer whose button is down (LAYER_*), 0 = none */
     uint8_t layer;               /* the layer whose map is shown (LAYER_*), 0 = none */
     uint8_t lock;                /* #83: the layer locked open by a double tap (LAYER_*), 0 = none (ui_layer.c) */
+#if BOARD_SMK37
+    uint32_t pg_down;            /* SMK calibration may map a page to button 16 or 17 */
+#else
     uint16_t pg_down;            /* page buttons down (panel ids) that act when let go */
+#endif
     uint32_t layer_sig;          /* drawn-state cache of the map */
     char msg[24];
     char msg2[24];               /* a second message, shown when the first is over */
@@ -405,6 +409,11 @@ static int scr_input(uint32_t pressed, uint32_t notes)
 {
     uint32_t held = fm1_in.buttons | fm1_in.notes, k;
     int32_t moved = 0;
+#if BOARD_SMK37
+    uint32_t outer;
+    notes |= smk_extkey_activity(&outer);
+    held |= outer;
+#endif
     scr_sync();
     if (pressed | notes | held | panel_moved)
         scr_touch();
@@ -430,6 +439,9 @@ static int scr_input(uint32_t pressed, uint32_t notes)
         return 1;
     scrn.eat = 0;                                       /* all let go, the knobs at rest: input again */
     kb_asleep = 0;
+#if BOARD_SMK37
+    smk_extkeys_asleep = 0;
+#endif
     return 0;
 }
 /* ui_draw, every frame: 1 = draw it */
@@ -449,6 +461,9 @@ static int scr_frame(void)
         scrn.st = SCR_OFF;
         scrn.t = fm1_ms;
         scrn.eat = 1;
+#if BOARD_SMK37
+        smk_extkeys_asleep = 1;              /* mark new events before audio suppression becomes visible */
+#endif
         kb_asleep = 1;
         break;
     case SCR_WAKE:
