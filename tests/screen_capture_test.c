@@ -30,11 +30,11 @@ static void fm1_lcd_send_data(const void *p, uint32_t n)
     selected = 1; dma_src = p; dma_n = n;
     memcpy(dma_copy, p, n); transfers++;
 }
-static void fm1_lcd_wait(void)
+static int fm1_lcd_wait(void)
 {
     uint32_t i;
     need(selected, "completion has a selected transfer");
-    if (!dma_src) return;
+    if (!dma_src) return 1;
     need(!memcmp(dma_src, dma_copy, dma_n), "in-flight source remains unchanged");
     if (command == 0x2Au || command == 0x2Bu) {
         uint32_t a, b;
@@ -53,7 +53,9 @@ static void fm1_lcd_wait(void)
         }
     }
     dma_src = NULL; dma_n = 0;
+    return 1;
 }
+static int fm1_lcd_complete(void) { return fm1_lcd_wait(); }
 static void fm1_lcd_deselect(void) { need(selected && !dma_src, "deselect after completion"); selected = 0; }
 #include "../firmware/src/lcd.c"
 
@@ -183,6 +185,7 @@ int main(int argc, char **argv)
         return 0;
     }
     if (argc != 1) return 2;
+    if (lcd_service(0)) return 1;
     test_image(); test_coverage_and_clipping(); test_coherence(); test_lifecycle();
     printf("PASS screen capture: delayed-DMA RGB565 oracle, 30 bands, coverage, coherence, lifecycle (%u checks)\n", checks);
     return 0;

@@ -10,17 +10,30 @@
 enum { SMK_BTN_KNOB_BANK, SMK_BTN_FADER_BANK, SMK_BTN_LEFT, SMK_BTN_RIGHT };
 static const uint8_t SMK_WHITE_NOTE[SMK_NPAD] = {0,2,4,6,7,9,11,12,14,16,18,19,21,23,24,26};
 #define SMK_PAD_OF_WHITE(w) (w)
-static uint32_t padled_hold_until;
-static uint32_t host_pad_rgb[SMK_NPAD];
-static void padled_set(uint32_t p, uint8_t r, uint8_t g, uint8_t b)
-{ if (p < SMK_NPAD) host_pad_rgb[p] = (uint32_t)r << 16 | (uint32_t)g << 8 | b; }
+/* Use the existing actual-driver fault model for sleep/recovery as well. */
+#define UI_LCD_SOURCE "lcd_fault_model.h"
+static void fm1_padled_send(const void *p, uint32_t n);
+static void fm1_padled_done(void);
 static int32_t outer_event = -1;
 static int32_t outer_take(void) { int32_t e = outer_event; outer_event = -1; return e; }
 #define HOST_SMK_EXTKEY_TAKE() outer_take()
 #include "ui_harness.h"
+#define host_pad_rgb padled_rgb
+static void fm1_padled_send(const void *p, uint32_t n)
+{
+    lcd_model_submit(3);
+    lcd_model_src = p; lcd_model_n = n; memcpy(lcd_model_copy, p, n);
+}
+static void fm1_padled_done(void)
+{
+    lcd_model_need(!lcd_model_pending, "LED route restored only after completion");
+}
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "line %d: %s\n", __LINE__, #x); return 1; } } while (0)
 static void reset_smk(void)
 {
+    lcd_sync();
+    lcd_model_need(!lcd_fault && !lcd_busy, "reset cannot abandon a failed DMA");
+    lcd_initialized = 1;
     ui_power_on(); kb_boot_hold = 0; smk_fbank = smk_fbank_new = 0;
     host_pressed = host_notes = 0;
     smk_extkeys_held = smk_extkeys_pressed = smk_extkeys_asleep = 0;
@@ -88,9 +101,60 @@ static int auto_off_leds(void)
     for (i = 0; i < SMK_NPAD; i++) CHECK(host_pad_rgb[i] == 0x123456);
     return 0;
 }
+static void recover_display(void)
+{
+    lcd_model_fail_cmd = 0; lcd_model_release = 1;
+    fm1_ms++; ui_draw();
+    fm1_ms += 250u; ui_draw();
+    fm1_ms += 120u; ui_draw();
+    fm1_ms += 120u; ui_draw(); lcd_sync();
+}
+static int failed_display_outer_keys(void)
+{
+    uint32_t path;
+    for (path = 0; path < 2u; path++) {
+        reset_smk(); fm1_ms = 1000u; CHECK(scr_write(1, 0, 0));
+        fm1_ms += 300000u;
+        CHECK(!scr_frame() && scrn.st == SCR_OFF && kb_asleep && smk_extkeys_asleep);
+        outer_event = 0x8000 | 100; /* an already queued wake gesture, retained across failure */
+        smk_extkeys_pressed = 1; CHECK(scr_input(0, 0));
+        CHECK(scrn.st == SCR_WAKE);
+        lcd_model_fail_cmd = 0x11; fm1_ms += 120u;
+        CHECK(!scr_frame() && lcd_fault && lcd_busy); /* genuine SLPOUT wait timeout */
+        if (path) ui_draw(); else CHECK(!scr_input(0, 0));
+        CHECK(!scrn.eat && !kb_asleep && !smk_extkeys_asleep);
+        CHECK(outer_event == (0x8000 | 100)); /* neither failure path flushes queued markers */
+        events_block(CTL); CHECK(!ext_note[0]);
+        outer_event = 0; events_block(CTL);
+        outer_event = (smk_extkeys_asleep ? 0x8000 : 0) | 100;
+        events_block(CTL); CHECK(ext_note[0]); /* future outer presses play despite failed LCD */
+        outer_event = 0; events_block(CTL); CHECK(!ext_note[0]);
+        recover_display();
+        CHECK(!lcd_fault && scrn.st == SCR_ON && !scrn.recovering);
+        CHECK(!scr_input(0, 0) && !smk_extkeys_asleep); /* SCR_ON early return cannot retain mute */
+        outer_event = (smk_extkeys_asleep ? 0x8000 : 0) | 100;
+        events_block(CTL); CHECK(ext_note[0]);
+        outer_event = 0; events_block(CTL); CHECK(!ext_note[0]);
+    }
+    reset_smk(); scrn.recovering = 1;
+    scrn.eat = kb_asleep = smk_extkeys_asleep = 1;
+    CHECK(!scr_input(0, 0) && !smk_extkeys_asleep); /* healthy transport, redraw still recovering */
+    scrn.recovering = 0;
+    /* A display failure must not release splash suppression or rewrite a
+     * wake/boot-only press already retained for the audio consumer. */
+    reset_smk(); kb_boot_hold = smk_extkeys_asleep = 1;
+    outer_event = 0x8000 | 100;
+    lcd_model_fail_cmd = 0x11; lcd_power(1); CHECK(lcd_fault);
+    ui_draw(); CHECK(kb_boot_hold && smk_extkeys_asleep && outer_event == (0x8000 | 100));
+    ui_input(); CHECK(!kb_boot_hold && !smk_extkeys_asleep);
+    events_block(CTL); CHECK(!ext_note[0]);
+    recover_display(); CHECK(!lcd_fault && !lcd_busy);
+    return 0;
+}
 int main(void)
 {
     uint32_t role, label, id;
+    CHECK(failed_display_outer_keys() == 0);
     CHECK(auto_off_leds() == 0);
     reset_smk(); panel_init();
     CHECK(sizeof(panel_t) == 32 && !memcmp(&panel, &PANEL_DEFAULT, sizeof panel));

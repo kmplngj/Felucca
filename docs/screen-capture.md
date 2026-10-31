@@ -82,6 +82,9 @@ The implementation copies only one owned 240×8 RGB565 band (3,840 bytes), with
 coverage and session state. It taps actual fill/blit submissions before source
 reuse and drains the last LCD DMA before declaring the band ready. The host pulls
 at most 96 bytes per READ, verifies chunk CRC32 and assembles all 30 bands.
+A native LCD completion failure ends capture as `coverage`, releases its wake hold
+and never publishes READY. The [transport fault policy](lcd-fault-containment.md)
+retains DMA ownership; capture cannot reset or abort it.
 
 Each band requests an ordinary complete HOME/menu redraw. Every pixel in the band
 must be covered. The ordered draw-stream fingerprint must match the first

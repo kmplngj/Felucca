@@ -249,6 +249,12 @@ static void con_status(void)
 #endif
     con_kv("audio_late", (int32_t)felucca_dbg.late);
     con_kv("voices_shed", (int32_t)shed_count);
+#ifdef LCD_ASYNC_DRIVER
+    con_kv("lcd_fault", lcd_fault);
+    con_kv("lcd_owned", lcd_busy);
+    con_kv("lcd_faults", (int32_t)lcd_faults);
+    con_kv("lcd_recoveries", (int32_t)lcd_recoveries);
+#endif
 #if FELUCCA_CPU2
     con_kv("cpu2_set", (ui_prefs2 & (PREF_CPU2_ON >> 16)) != 0u);   /* MENU > 2ND CORE: 1 ON (from power-on), 0 OFF */
     con_kv("cpu2", fm1_c1_on);                          /* the second core renders parts (hal/fm1_cpu1.h) */

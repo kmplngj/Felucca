@@ -1499,9 +1499,33 @@ static void scap_scene_check(void)
 }
 #endif
 static void ui_draw_page(uint32_t counting);
+static void ui_display_failed(void)
+{
+    ui.force = 1;
+    scrn.eat = kb_asleep = 0;
+#if BOARD_SMK37
+    smk_extkeys_asleep = kb_boot_hold;                 /* display failure must not release the splash gate */
+#endif
+#if FELUCCA_SCREEN_CAPTURE
+    if (scap_live()) scap.state = SCAP_COVERAGE;         /* no completed wire image; also releases a wake lease */
+    scap.tapping = 0;
+#endif
+}
 static void ui_draw(void)
 {
     static uint8_t counting;
+    if (LCD_SERVICE(fm1_ms)) {
+        /* A failed SLPIN could have completed late. Wait from confirmed release,
+         * then SLPOUT / wait / full redraw / DISPON, even if software was ON. */
+        scrn.st = SCR_WAKE;
+        scrn.t = fm1_ms;
+        scrn.recovering = 1;
+        ui.force = 1;
+    }
+    if (LCD_FAILED()) {
+        ui_display_failed();
+        return;                   /* inputs/music/background service are outside drawing */
+    }
     style_apply();
 #if FELUCCA_SCREEN_CAPTURE
     scap_scene_check();
@@ -1512,6 +1536,7 @@ static void ui_draw(void)
         ui.force = 1;
     }
     if (!scr_frame()) {                                 /* MENU > SCREEN OFF: dark (or waking), nothing drawn */
+        if (LCD_FAILED()) { ui_display_failed(); return; }
 #if FELUCCA_SCREEN_CAPTURE
         if (scap.state == SCAP_PENDING || scap.state == SCAP_READY) scap.state = SCAP_ASLEEP;
 #endif
@@ -1532,19 +1557,31 @@ static void ui_draw(void)
         }
     }
 #endif
+    if (scrn.recovering && scrn.st == SCR_SHOW) {
+        lcd_fill(0, 0, 240, 240, T_BG);                 /* partial old frames/overlays cannot supply untouched gaps */
+        lcd_sync();                                  /* cancel page computation if even the final clear row failed */
+        if (LCD_FAILED()) { ui_display_failed(); return; }
+    }
     ui_draw_page(counting);
+    if (LCD_FAILED()) {
+        ui_display_failed();
+        return;
+    }
 #if FELUCCA_SCREEN_CAPTURE
     if (scap.tapping) {
         lcd_sync();                                  /* complete the last asynchronous source read */
-        scap_render_end();
+        if (LCD_FAILED()) { ui_display_failed(); return; }
+        else scap_render_end();
     }
 #endif
     scr_shown();
+    if (LCD_FAILED()) { ui_display_failed(); return; }
 #if FELUCCA_SCREEN_CAPTURE
     /* The first captured band is a subsequent frame, after the full wake redraw
      * and DISPON. Never publish the transitional SCR_SHOW frame as READY. */
     if (scap.state == SCAP_WAKING && scrn.st == SCR_ON) {
         lcd_sync();
+        if (LCD_FAILED()) { ui_display_failed(); return; }
         scap_scene_check();
         if (scap.state == SCAP_WAKING) {
             /* No panel gesture woke this display. Release sleep's suppression
@@ -1561,6 +1598,9 @@ static void ui_draw(void)
 }
 static void ui_draw_page(uint32_t counting)
 {
+#ifdef UI_DRAW_PAGE_HOOK
+    UI_DRAW_PAGE_HOOK();
+#endif
     if (ui.uboot) {
         draw_uboot();
         draw_head();

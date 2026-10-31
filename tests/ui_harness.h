@@ -101,6 +101,7 @@ static uint32_t host_fl_end(uint32_t y0, uint32_t y1)   /* the rows y0..y1-1: pi
         n += host_fl_n[k] == 2u && host_fl_mid[k] != host_screen[k];
     return n;
 }
+#ifndef UI_LCD_SOURCE
 static lcd_fill_fn lcd_fill;
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
@@ -115,6 +116,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
         for (i = 0; i < w && x + i < 240u; i++)
             host_put((y + j) * 240u + x + i, (uint16_t)((c >> 8) | (c << 8)));
 }
+#endif
 static void lcd_sync(void);
 static void (*host_lcd_sync_hook)(void);
 static int host_lcd_async;
@@ -132,6 +134,7 @@ static void host_lcd_copy(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const 
     for (j = 0; j < h && y + j < 240u; j++)
         for (i = 0; i < w && x + i < 240u; i++) host_put((y + j) * 240u + x + i, p[j * w + i]);
 }
+#ifndef UI_LCD_SOURCE
 static void lcd_sync(void)
 {
     if (host_dma.p) {
@@ -141,6 +144,7 @@ static void lcd_sync(void)
     }
     if (host_lcd_sync_hook) host_lcd_sync_hook();
 }
+#endif
 /* MENU > SCREEN OFF (lcd.c lcd_power / lcd_wake_now): what the panel was told, in order (0 off: DISPOFF, SLPIN;
  * 1 SLPOUT; 2 DISPON; 3 lcd_wake_now), with the time; host_bl the panel showing (the backlight itself stays on: PA2 is
  * the key matrix's /OE too, lcd.c lcd_power) */
@@ -152,8 +156,10 @@ static void host_pw_log(uint32_t s)
     host_pw_n++;
     host_bl = s != 0u;
 }
+#ifndef UI_LCD_SOURCE
 static void lcd_power(uint32_t s) { host_pw_log(s); }
 static void lcd_wake_now(void) { host_pw_log(3u); }
+#endif
 /* (the HOME oscilloscope's buffer, scope_buf: fx.c, with hostsim.c) */
 static uint32_t host_blit_rows;                    /* rows blitted (what a frame draws) */
 static struct { uint32_t stage; } felucca_dbg;
@@ -162,6 +168,7 @@ static struct { uint32_t stage; } felucca_dbg;
 static uint32_t host_blit_watch, host_blit_n;
 static struct { uint32_t y, h, stage; } host_blit_log[16];
 #endif
+#ifndef UI_LCD_SOURCE
 static lcd_blit_fn lcd_blit;
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
@@ -185,6 +192,11 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
     } else
         host_lcd_copy(x, y, w, h, p);
 }
+#endif
+
+#ifdef UI_LCD_SOURCE
+#include UI_LCD_SOURCE                    /* actual transport with independent DMA fault oracle */
+#endif
 #define FELUCCA_FLASH 0
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "TEST"
