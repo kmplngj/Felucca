@@ -533,6 +533,10 @@ EXPORT void web_test_heavy(void)
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
 EXPORT uint32_t web_test_engine(void) { return TSEL->eng_req; }
+EXPORT uint32_t web_test_user_action(void)
+{
+    return !ui.home && !ui.menu && !ui.confirm && !name_on() && cur_page()->graph == GR_USER ? act_col() : 0;
+}
 EXPORT int32_t web_test_param(uint32_t i) { return i < P_COUNT ? TSEL->p[i] : 0; }
 EXPORT uint32_t web_test_engine_param_base(void) { return P_E0; }
 EXPORT uint32_t web_test_engine_rank(uint32_t e) { return eng_ok(e) ? eng_rank(e) : UINT32_MAX; }
