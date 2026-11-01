@@ -28,6 +28,8 @@ The standard profile combines thirteen engines with factory presets, four tracks
 a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
 Eight is the shared allocation pool; deadline headroom depends on the sound and USB load
 ([measured PHYS example](docs/audio-deadline-investigation-2026-10-21.md)).
+The [audio backport record](docs/tessera-audio-backports.md) covers PHYS decay cleanup,
+earlier overload recovery and their remaining FM-1 checks.
 The [fork feature guide](docs/fork-features.md) covers controls, defaults,
 compatibility limits and build identification. The
 [upstream manual](https://github.com/hugelton/Felucca/wiki/Home) documents the shared
