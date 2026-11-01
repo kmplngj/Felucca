@@ -114,7 +114,8 @@ class NativeBundle(unittest.TestCase):
             self.assertEqual(len(authority['slots']), 64)
             self.assertEqual(slots[1], dict(id=1, key='felucca.engine.digital', status='retired'))
             self.assertEqual(slots[14], dict(id=14, key='felucca.engine.macro', status='active'))
-            self.assertTrue(all(slots[i] == dict(id=i, key=None, status='reserved') for i in range(15, 64)))
+            self.assertEqual(slots[15], dict(id=15, key='felucca.engine.adpcm', status='active'))
+            self.assertTrue(all(slots[i] == dict(id=i, key=None, status='reserved') for i in range(16, 64)))
             self.assertEqual({e['id']: e['key'] for e in catalog['engines']},
                              {i: s['key'] for i, s in slots.items() if s['status'] != 'reserved'})
             selected = [dict(id=e['id'], key=e['key'], status=slots[e['id']]['status'], owner=e['owner'], source=e['source'])

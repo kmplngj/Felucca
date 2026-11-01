@@ -178,6 +178,12 @@ uv run --locked --group build ./build.sh
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
+The default target remains FM-1. Opt-in SMK builds use `--board smk37` and
+`--model pro|elite|mke`; see [SMK packages, controls and storage/recovery](docs/smk37.md).
+Board/model selection is separate from `FELUCCA_PROFILE`. Normal push/PR builds
+do not build the SMK model matrix; **Experimental SMK firmware** is manual or
+called by tagged releases.
+
 ### Final-image soft-double policy
 
 Every target application build checks the final linked ELF symbol table against
@@ -280,6 +286,12 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 `LICENSES/` (the package contains Apache-2.0 SDK files, so the licence texts travel with it).
 
 ### Build revision and PR identity
+
+The optional extended [USB-MIDI identity QUERY](web/EDITOR_PROTOCOL.md#device-control-84)
+exports the same verified PR label and the generated `FELUCCA_PROFILE_NAME`
+(1..64 lowercase letters, digits or hyphens). The profile is the resolved profile
+selection; feature-flag overrides remain separate build-provenance inputs.
+Older query clients retain their original byte-compatible reply.
 
 Each build resolves its actual checkout into `build/gen/build_identity.h` and
 `build/build-identity.json`; the version, eight-character commit, dirty flag and
@@ -389,6 +401,14 @@ invocation; stale `build/genwav/` files cannot change the header. Headers and th
 cache are published atomically for parallel invocations. The canonical WAV files
 remain under `build/genwav/` for the SLICE test loop.
 
+## Desktop beta
+
+`platforms/linux/build.sh` builds the source-only SDL2 desktop port against the
+selected fork profile and fresh `build/gen` assets. Install SDL2 development files;
+ALSA MIDI is optional on Linux and CoreMIDI is used on macOS. See the
+[desktop build and smoke checks](platforms/linux/README.md). This does not produce
+an FM-1 install package.
+
 ## Browser emulator
 
 ```
@@ -496,22 +516,41 @@ unsigned wrap and the actual frame/turn/browser scheduling paths. It does not
 qualify wall-clock accuracy, target timer hardware or audio deadlines. Replay
 fingerprints include the shared clock header and the existing HAL inventory.
 
-The backup, FM6-bank and user-preset tests share `tests/host_nor.h`, including
-their sanitizer builds. This existing NOR model only clears programmed bits, rejects
-256-byte page wrapping, and models sticky power cuts during programming or half an
-erase. Its program counter counts completed bytes; its erase counter excludes requests
-refused before work. Reads remain available for recovery after a cut. The user-preset
-fixture checks every payload/header byte-cut boundary, interrupted/refused erases
-and restored-power retries through the production bank/storage code; it does not exercise runtime
-`up_put` mirror rollback. The browser emulator also uses this model behind its
+The backup, FM6-bank, user-preset, editor-derived, persistence/autosave, storage and
+SLICE tests share `tests/host_nor.h`, including their sanitizer builds. This NOR
+model only clears programmed bits, rejects 256-byte page wrapping and models
+sticky power cuts during programming or half an erase. Its program counter counts
+completed bytes; its erase counter excludes requests refused before work. Reads
+remain available for recovery after a cut.
+
+Narrow adapters retain each owner's logical I/O counters and deliberate non-sticky
+call/byte refusals separately from the shared completed-byte/actual-erase counters.
+Storage skips erasing only a fresh object after a full blank-sector scan;
+known used objects and same-boot retries erase, including blank-looking destinations.
+Storage exercises old-or-complete-new A/B recovery and untouched neighbors across
+all object/copy maps; persistence additionally checks runtime `up_put` RAM,
+generation and label rollback plus last-complete-bank and restored-power retries.
+The user-preset fixture retains its exhaustive payload/header cut matrix.
+
+The editor maps all three sample slots onto the NOR image and splits HAL writes
+at page boundaries, including its 480-byte sample header. Protocol requests cover
+payload/header cuts, refused/half erases, sticky faults, same-data retries and
+neighboring flash. Robustness and sample/editor/project fuzz consumers retain the
+same sample-array view; `FELUCCA_FLASH=0` bank/settings branches stay disabled.
+SLICE exercises record-byte cuts, interrupted/refused erases, bounded readback
+retries and acknowledged ineffective/corrupt writes through actual save/boot paths.
+Its records remain single-copy: an erase may lose the old table; recovery finds a
+complete valid record or no manual table, not an A/B rollback. These simulated
+faults do not establish physical flash or power-loss qualification.
+
+The browser emulator also uses this model behind its
 existing bounds, sector-rounding and successful-operation counters. It exports no
 fault controls. A page-contract violation terminates the native adapter and traps
 in standalone Wasm without adding host imports. Native replay fingerprints include
 the shared NOR header so changes invalidate cached adapters and capture provenance.
 The `emulator_partitions` unit checks bounds, page failures and a panel save restored
 in a fresh process; with Emscripten it also checks the actual Wasm trap and empty
-import list. Storage and persistence tests retain their different retry and
-operation-counting models.
+import list.
 
 The backup, FM6-bank, persistence and browser adapters also share
 `tests/host_flash_context.h`: no-op IRQ save/restore, the plain-XIP window hook,
@@ -698,6 +737,18 @@ Use `--strict` for an approved baseline gate; report mode returns success after 
 its findings. See [UI comparison](docs/ui-comparison.md) for capture, selections, exit
 codes and the separate hardware readability check.
 
+The full runner includes the focused [ADSR render synchronization](docs/adsr-render-synchronization.md)
+checks in normal and legacy FM4 modes. After generating assets, run them separately with:
+
+```sh
+uv run --locked --group build python tests/adsr_sync_test.py --negative-controls
+uv run --locked --group build python tests/adsr_sync_test.py --fm4 --out build/adsr-sync-fm4
+```
+
+These compare the real LCD output against forced renders and inject changes around
+snapshot/raster/submission boundaries. They retain conservative unrelated-parameter
+redraws; they do not establish FM-1 timing or complete the broader redraw work in #95.
+
 The [silent FX bus regression](tests/fx_rest_test.md) compares bursts and long silences
 with the rest paths forced off, at `-O2` and `-Os`, including persistent state and
 actual skip counters. The suite requires the chorus, delay and HALL rest paths;
@@ -865,6 +916,12 @@ differing PCM/state word appear in the output; fixture code is in
 `web/emu/partition_test.c` and `web/emu/partition_test.mjs`.
 
 ## Device diagnostics
+
+The native LCD fault regression compiles the actual driver/canvas/UI against an
+independent DMA oracle (`tests/lcd_fault_test.c`), including sanitizer coverage.
+`python3 tests/lcd_wait_test.py` checks the HAL's real completion/wait bodies with
+substituted registers. These host checks do not qualify hardware DMA abort or
+recovery; see [LCD containment](docs/lcd-fault-containment.md).
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.
@@ -1322,3 +1379,8 @@ It needs the configured target tools and SDK but does not compile firmware. Sour
 artifact hashes bind actual working bytes; a recorded dirty checkout is not identified
 by its commit alone. Releases and CI artifacts include both JSON sidecars; local release
 `SHA256SUMS` covers them. These reports do not measure live stack use or FM-1 deadlines.
+
+The experimental `FELUCCA_PROFILE=adpcm` recipe selects the upstream 1.8 BRR engine
+at stable ID 15, leaving MACRO at 14 and all standard engines enabled. It stays off
+in standard builds and is too costly to claim FM-1 qualification. See the
+[backport source and test guide](docs/upstream-1.8-backport.md).

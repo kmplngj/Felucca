@@ -167,7 +167,7 @@ EXPECTED_COUNTERS = {
         usb_suspends usb_retries usb_frame_stalls midi_rx_pkts midi_tx_pkts
         uart_rx_bytes uart_rx_msgs uart_rx_drops uac_rate_sets uac_starts
         uac_pkts uac_underruns uac_overruns uac_missed uac_stalls
-        uac_adj_up uac_adj_down isr_misuse
+        uac_adj_up uac_adj_down isr_misuse lcd_faults lcd_recoveries
         mul64_runs mul64_inl_bad mul64_nol_bad mul64_ref_bad""".split()),
     "dbg": {"halves", "nested", "late", "timer_irqs", "ui_frames"},
     "inp": {"timer_irqs", "nested"},
@@ -181,7 +181,7 @@ EXPECTED_NUMERIC = {command: names | additional for command, names, additional i
     ("crash", EXPECTED_COUNTERS["crash"], {"uptime_ms"}),
 )}
 OPTIONAL_COUNTERS = {name for name in EXPECTED_COUNTERS["status"]
-                     if name.startswith(("uart_", "uac_")) or name == "isr_misuse"}
+                     if name.startswith(("uart_", "uac_", "lcd_")) or name == "isr_misuse"}
 # isr_misuse/isr_misuse_pc are `status` keys of FELUCCA_ISR_ASSERT=1 FM-1 builds only
 # (FM1_ISR_ASSERT_TARGET); host fixtures and release builds must not emit them.
 # mul64_* (FELUCCA_MUL64_REPRO=1, #425) and crash_ctx plus the crash registers (FELUCCA_CRASH_CTX=1, #428)
@@ -205,6 +205,7 @@ class ConsoleContractTests(unittest.TestCase):
             command = shlex.split(os.environ.get("CC", "cc")) + [
                 "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
                 "-DFELUCCA_UAC=" + str(int(features)), "-DFELUCCA_UART=" + str(int(features)),
+                "-DCONSOLE_KEYTOUCH=" + str(int(features)),
                 str(root / "tests/console_diagnostics.c"), "-o", str(binary)]
             subprocess.run(command, check=True, timeout=30)
             cls.binaries[features] = binary
@@ -229,6 +230,36 @@ class ConsoleContractTests(unittest.TestCase):
         result = diag.parse_response(command, raw)
         self.assertEqual(result["issues"], [])
         return result["fields"]
+
+    def test_lcd_failure_fields(self):
+        status = self.response("status")
+        self.assertEqual((status["lcd_fault"], status["lcd_owned"]), (1, 1))
+        self.assertEqual(status["lcd_faults"], 4000000000)
+        self.assertEqual(status["lcd_recoveries"], 3)
+
+    def test_aftertouch_readings_and_off_state_are_read_only(self):
+        for on in (True, False):
+            args = [] if on else ["at-off"]
+            raw = subprocess.check_output([str(self.binaries[True]), "at", *args], timeout=5)
+            rows = "".join(f"{k}={1023 - k * 7}/{k * 6}" + ("\r\n" if k % 5 == 4 else " ")
+                           for k in range(20))
+            self.assertEqual(raw, (f"at\r\nat_on {int(on)}\r\nan_timeouts 7\r\nheld 524289\r\n" +
+                                   rows + "> ").encode())
+        help_reply = subprocess.check_output([str(self.binaries[True]), "help"], timeout=5)
+        self.assertIn(b"inp  at  crash", help_reply)
+
+    def test_aftertouch_without_analog_scan_is_unavailable(self):
+        raw = subprocess.check_output([str(self.binaries[False]), "at"], timeout=5)
+        self.assertEqual(raw, b"at\r\nat unavailable\r\n> ")
+
+    def test_lcd_counter_deltas_and_older_firmware(self):
+        start = snapshot(status=STATUS + "lcd_faults 2\nlcd_recoveries 1\n")
+        end = snapshot(status=STATUS.replace("uptime_ms 10000", "uptime_ms 15000") +
+                       "lcd_faults 5\nlcd_recoveries 3\n")
+        result = diag.compare(start, end)
+        self.assertEqual(result["deltas"]["status"]["lcd_faults"], 3)
+        self.assertEqual(result["deltas"]["status"]["lcd_recoveries"], 2)
+        self.assertEqual(diag.parse_response("status", reply("status", STATUS))["issues"], [])
 
     def test_counter_membership(self):
         self.assertEqual(set(diag.COMMANDS), set(EXPECTED_COUNTERS))

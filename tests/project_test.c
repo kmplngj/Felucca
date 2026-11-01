@@ -173,6 +173,68 @@ static int track_v3_ok(const proj_trk_t *n, const proj_trk_v3_t *o, uint32_t t)
     return ok;
 }
 
+/* Immediately prior firmware stored 111 parameters: common 0..102, then engine 103..110.
+ * Construct its FUN10 payload with ordinary automation and locks on every engine value. */
+static int before_aftertouch(void)
+{
+    project_t a, b, c;
+    static project_store_t current, old;
+    uint32_t pi = 68u, po = 68u, i, t, m0, hash;
+    int ok = 1;
+    memset(&a, 0, sizeof a);
+    a.magic = PROJ_MAGIC; a.size = sizeof a; a.parts = NPART; a.phys = PROJ_PHYS;
+    chain_defaults(&a.chain);
+    memcpy(a.name, "PRE AT", 6);
+    for (t = 0; t < NTRK; t++) {
+        a.t[t].engine = 0;
+        memcpy(a.fm6[t], FM6_INIT, FM6_PACKED);
+        for (i = 0; i < P_COUNT; i++)
+            a.t[t].p[i] = param_desc_of(0, i)->def;
+        for (i = 0; i < 8u; i++) {
+            const param_desc_t *d = param_desc_of(0, P_E0 + i);
+            a.t[t].p[P_E0 + i] = (int16_t)(d->min + (t + i) % (uint32_t)(d->max - d->min + 1));
+        }
+    }
+    a.motion.count = 16;
+    a.motion.on = 3;
+    for (i = 0; i < 16u; i++)
+        a.motion.event[i] = (motion_event_t){(uint8_t)((i / 8u) << 6 | i % 8u),
+            (uint8_t)(P_E0 + i % 8u | (i >= 8u ? MOTION_LOCK : 0u)), 7};
+    a.sum = proj_sum(&a);
+    ok &= proj_pack(&current, &a);
+    memset(&old, 0, sizeof old);
+    memcpy(old.raw, current.raw, 68u);
+    old.raw[66] = 111;
+    for (t = 0; t < NTRK; t++) {
+        for (i = 0; i < P_COUNT; i++, pi++)
+            if (i < 103u || i >= P_E0)
+                old.raw[po++] = current.raw[pi];
+        memcpy(old.raw + po, current.raw + pi, 2u + NSTEP * 9u);
+        pi += 2u + NSTEP * 9u;
+        po += 2u + NSTEP * 9u;
+    }
+    memcpy(old.raw + po, current.raw + pi, sizeof(chain_config_t) + sizeof(motion_store_t));
+    m0 = po + sizeof(chain_config_t);
+    for (i = 0; i < old.raw[m0]; i++) {
+        uint8_t *id = &old.raw[m0 + 4u + 3u * i + 1u];
+        *id = (uint8_t)(103u + i % 8u | (i >= 8u ? MOTION_LOCK : 0u));
+    }
+    memcpy(old.raw + PROJ_FM6_OFF, current.raw + PROJ_FM6_OFF, PROJ_STORE_SIZE - 4u - PROJ_FM6_OFF);
+    hash = proj_hash(old.raw, PROJ_STORE_SIZE - 4u);
+    memcpy(old.raw + PROJ_STORE_SIZE - 4u, &hash, 4);
+    ok &= proj_import(&b, &old, sizeof old);
+    for (t = 0; t < NTRK; t++) {
+        ok &= !b.t[t].p[P_ATSNS] && !b.t[t].p[P_ATDST] && !b.t[t].p[P_ATAMT];
+        for (i = 0; i < 8u; i++)
+            ok &= b.t[t].p[P_E0 + i] == a.t[t].p[P_E0 + i];
+    }
+    for (i = 0; i < 16u; i++)
+        ok &= b.motion.event[i].param == (uint8_t)(P_E0 + i % 8u | (i >= 8u ? MOTION_LOCK : 0u));
+    ok &= !memcmp(&a, &b, sizeof a) && proj_pack(&current, &b) && proj_import(&c, &current, sizeof current) &&
+          !memcmp(&b, &c, sizeof b);
+    return check("FUN10 np111: AT defaults OFF, E0..7 and automation/locks move +3, current round trip", ok);
+}
+
 int main(void)
 {
     static project_v4_t v4;
@@ -188,13 +250,13 @@ int main(void)
         project_v1_t v1;
     } buf;
     uint32_t i, t;
-    int bad = 0, ok;
+    int bad = before_aftertouch(), ok;
 
     bad += check("layout: SLICER after DETUNE, then the matrix just before P_E0",
                  P_SLCR == P_DETUNE + 1 && P_SLDEPTH + 1 == P_M1SRC && P_M4AMT + 1 == P_FM1_ATK && P_FM4_LEVEL + 1 == P_CHRD && P_VOIC + 1 == P_LN0 &&
                  P_LN7 + 1 == P_LSYNC && P_LSYNC + 3 == P_SQNT && P_SQNT + 1 == P_SPRD && P_SPRD + 1 == P_ITYPE &&
-                 P_ITYPE + 4 == P_IMIX && P_IMIX + 1 == P_FTYPE && P_FTYPE + 1 == P_ESYNC && P_ESYNC + 1 == P_E0 && P_E0 == 103 &&
-                 P_COUNT == PROJ_NP_V3 + 54u && PROJ_NP_V3 == PROJ_NP_V2 + 4u);
+                 P_ITYPE + 4 == P_IMIX && P_IMIX + 1 == P_FTYPE && P_FTYPE + 1 == P_ESYNC && P_ESYNC + 1 == P_ATSNS && P_ATSNS + 3 == P_E0 && P_E0 == 106 &&
+                 P_COUNT == PROJ_NP_V3 + 57u && PROJ_NP_V3 == PROJ_NP_V2 + 4u);
     bad += check("FUN10 fits one flash object, the retained cache in NOINIT", sizeof(project_store_t) <= 4096u - 256u &&
                  sizeof(project_store_t) == 3840u && 0xC8u + 4u * sizeof(project_store_t) <= 0x3D50u);
 
@@ -436,9 +498,9 @@ int main(void)
         project_t a, c;
         project_store_t st, st2;
         uint32_t i, zero = 1;
-        bad += check("FUN10 name at the end of the reserved tail, the FM6 patches before it, after the data (16 spare)",
+        bad += check("FUN10 name at the end of the reserved tail, the FM6 patches before it, after the data (4 spare)",
                      PROJ_NAME_OFF == 3824u && PROJ_FM6_OFF == 3312u && 68u + NTRK * (P_COUNT + 2u + NSTEP * 9u) +
-                     sizeof(chain_config_t) + sizeof(motion_store_t) + 16u == PROJ_FM6_OFF);
+                     sizeof(chain_config_t) + sizeof(motion_store_t) + 4u == PROJ_FM6_OFF);
         memset(&a, 0, sizeof a);
         a.magic = PROJ_MAGIC; a.size = sizeof a; a.parts = NPART; a.phys = PROJ_PHYS;
         chain_defaults(&a.chain);

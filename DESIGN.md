@@ -100,16 +100,18 @@ antialiased except the pre-rendered icons and keycap pills.
 
 ## Colors
 
-Each palette stores five colours (BG, SURF, TEXT, THEME, ACCENT, `build/gen/ui_palettes.h`); the rest are
+Each palette stores five colours (background, identity, text, primary, secondary, `build/gen/ui_palettes.h`); the rest are
 fixed blends (`firmware/src/gfx.c palette_set`). Direction A draws on BG only (SURF equals BG).
+Identity supplies THEME, primary supplies REC/warnings, and secondary supplies ACCENT.
 
 - **TEXT** primary type and labels in focus; **MID** (70 % TEXT on BG) labels, units, hints and the resting
   focus rule; **DIM** (42 %) inactive; **LINE** (18 %) hairlines, rule tracks and dividers.
 - **THEME** values, curves and the palette's identity.
 - **ACCENT** the one active thing: the knob turning now (its rule, numeral and curve dot), the step edited,
   the tab underline. Never on a resting label.
-- GREY and MONO are strictly neutral (a test enforces it); in MONO, where accent equals theme, a turning
-  knob also inverts its state text.
+- GREY and MONO keep neutral base colours, with red REC/warnings, blue active controls and a green
+  battery on USB power. Editing-state rule forms remain readable without colour. In every palette a
+  turning knob also inverts its state text, a cue that remains where the accent matches the theme or MID.
 - Built-in palettes keep every emitted text pair at or above 4.5:1. CUSTOM is user-controlled.
 
 ## Typography

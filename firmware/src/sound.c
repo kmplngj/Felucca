@@ -147,8 +147,8 @@ static void sound_install(track_t *t, uint32_t eng, uint32_t preset, const int16
         fm6_set_patch(tr, patch);
     if (flags & SND_PANIC)
         panic_req |= (uint8_t)(1u << tr);
-    sound_unguard(f);
     note_hits_clear(tr);                              /* (#147: the old sound's note events are not the new one's) */
+    sound_unguard(f);                                  /* a new-sound note-on may run as soon as this publishes */
     if (fslot) {
         fm6_own_ok &= (uint8_t)~(1u << tr);           /* (fm6_load_slot: nothing of OWN to bring back) */
         fm6_slot[tr] = (uint8_t)slot;

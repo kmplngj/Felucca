@@ -70,11 +70,14 @@ static const char *const N_IRATE[] = {"689", "919", "1.1k", "1.4k", "1.8k", "2.2
 static const char *const N_MSRC[] = {"OFF", "LFO", "ENV", "VEL", "KEY", "RAND", "MODW", "AT", "EXPR", "S&H", "SLEW"};
 static const char *const N_MDST[] = {"OFF", "PITCH", "CUT", "SHP", "AMP", "PAN", "DIST", "CHO", "DLY", "REV", "RATE",
                                      "VIB", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "DEPTH", "VEL", "TIME"};
+/* AFTERTOUCH: OFF disables the key readings; MIDI pressure can still use its routing. */
+static const char *const N_ATSNS[] = {"OFF", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
 static const char *const N_ENGNAME[] = {
 #include "engine_names.inc"
 };
 typedef char engname_fit[NELEM(N_ENGNAME) == NENGINES ? 1 : -1];   /* G_ENGSEL: a name per id of the table */
 
+static const char *const N_SLOT[] = {"A", "B", "C", "D", 0};   /* G_SLOT 1..4: the list and header letters */
 #define PD(l, f, mn, mx, df) {l, f, mn, mx, df, 0, 0}
 #define PE(l, n, df) {l, F_ENUM, 0, (int16_t)(sizeof(n) / sizeof(n[0]) - 1), df, n, 0}
 
@@ -163,6 +166,9 @@ static const param_desc_t TP[P_COUNT] = {
     [P_IMIX] = PD("MIX", F_PCT, 0, 127, 127),
     [P_FTYPE] = PE("TYPE", N_FTYPE, 0),           /* 1.5 (#104): ANALOG's filter, LP = as before (eng_analog.c) */
     [P_ESYNC] = PE("ESYNC", N_ONOFF, 0),          /* 1.5 (#175): OFF = ATK DEC REL in ms, as before (voice.c esync) */
+    [P_ATSNS] = PE("AT", N_ATSNS, 0),
+    [P_ATDST] = PE("ATDST", N_MDST, 0),
+    [P_ATAMT] = PD("ATAMT", F_BIPCT, -64, 63, 0),
 };
 
 /* the INSERT's A B C as its TYPE means them (TP's ranges and defaults): the drives DRIVE TONE LEVEL, CRUSH BITS RATE
@@ -203,7 +209,7 @@ static const param_desc_t GP[G_COUNT] = {
      * stored with the project as before. (was "--": stored 0 = CH1-4, as MIDI IN always was) */
     [G_ROUTE] = PE("ROUT", N_ROUTE, 0),
     [G_INFO] = PD("CPU", F_INT, 0, 0, 0),
-    [G_SLOT] = PD("SLOT", F_INT, 1, 4, 1),
+    [G_SLOT] = {"SLOT", F_INT, 1, 4, 1, N_SLOT, 0},   /* 1.8: A..D, values remain 1..4 */
     [G_NAME] = PE("NAME", N_DASH, 0),
     [G_LOAD] = PE("LOAD", N_GO, 0),
     [G_SAVE] = PE("SAVE", N_GO, 0),
@@ -318,7 +324,7 @@ static int32_t param_turn(const param_desc_t *d, int32_t v, int32_t steps)
 
 static uint8_t fmt_named;        /* the last param_format was a name (F_ENUM, even "4"): ui_draw.c's digits do not roll it */
 
-/* value string (<= 5 chars) and unit for a parameter value */
+/* value string (<= 6 chars) and unit for a parameter value */
 static void param_format(const param_desc_t *d, int32_t v, char *val, const char **unit)
 {
     *unit = "";
@@ -394,7 +400,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         *unit = "st";
         break;
     case F_ENUM:
-        str_cpy(val, d->names[v < d->min ? d->min : v > d->max ? d->max : v], 6);
+        str_cpy(val, d->names[v < d->min ? d->min : v > d->max ? d->max : v], 7);
         if (d->unit)
             *unit = d->unit;
         break;
@@ -403,10 +409,10 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         *unit = "BPM";
         break;
     case F_NOTE:
-        str_cpy(val, N_NOTE[v % 12], 6);
+        str_cpy(val, N_NOTE[v % 12], 7);
         break;
     case F_ONOFF:
-        str_cpy(val, N_ONOFF[v ? 1 : 0], 6);
+        str_cpy(val, N_ONOFF[v ? 1 : 0], 7);
         break;
     case F_STEPS:
         fmt_int(val, v);
@@ -417,7 +423,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
             uint32_t k = 0;                           /* split evenly over the names (engine desc hooks) */
             while (d->names[k])
                 k++;
-            str_cpy(val, d->names[(uint32_t)(clamp(v, d->min, d->max) - d->min) * k / (uint32_t)(d->max - d->min + 1)], 6);
+            str_cpy(val, d->names[(uint32_t)(clamp(v, d->min, d->max) - d->min) * k / (uint32_t)(d->max - d->min + 1)], 7);
         } else {
             fmt_int(val, v);
         }
@@ -474,7 +480,7 @@ static const page_t PAGES[] = {
     {"OP LEVEL", FAM_EDIT, SC_TRACK, GR_NONE, {P_FM1_LEVEL, P_FM2_LEVEL, P_FM3_LEVEL, P_FM4_LEVEL}},
     {"VOICE", FAM_EDIT, SC_TRACK, GR_NONE, {P_VOICE, P_GLIDE, P_GLMODE, P_PRIO}},
     {"VOICE 2", FAM_EDIT, SC_TRACK, GR_NONE, {P_ALLOC, P_DETUNE, P_PAN, P_MUTE}},
-    {"VOICE 3", FAM_EDIT, SC_TRACK, GR_NONE, {P_SPRD, 0xFF, 0xFF, 0xFF}},   /* #148: SPREAD */
+    {"VOICE 3", FAM_EDIT, SC_TRACK, GR_NONE, {P_SPRD, P_ATSNS, P_ATDST, P_ATAMT}},   /* #148: SPREAD */
     /* 1.2 (Discussion #153): a family's pages go round in this order, a tap of its button each (ui.c open_family) */
     {"SONG", FAM_GLO, SC_GLOBAL, GR_SONG, {0xFF, 0xFF, 0xFF, 0xFF}},        /* GLO's only page (1.2; up to 1.1.5 SEQ's) */
     /* SAVE's taps (1.5, #173): USER (SAVE from another page: the quick save, SAVE OCT+ OCT+), PRESETS (the engines and

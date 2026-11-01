@@ -659,6 +659,19 @@ static int formats(void)
         for (i = 0; i < 8u; i++) up_set_value(&r, 96u + i, (int16_t)(30 + i));
         up_params(&r, v, def);
         ok &= v[P_SPRD] == 33 && v[P_FTYPE] == 0 && v[P_ESYNC] == 0 && v[P_E0] == 30 && v[P_E7] == 37;
+        r.np = 111;                                   /* immediately before AT: common 0..102, engine 103..110 */
+        for (i = 0; i < 103u; i++) up_set_value(&r, i, t->p[i]);
+        for (i = 0; i < 8u; i++) up_set_value(&r, 103u + i, (int16_t)(40 + i));
+        memcpy(r.name, "PRE AT", 6);
+        up_params(&r, v, def);
+        int prior_ok = up_valid(&r) && !v[P_ATSNS] && !v[P_ATDST] && !v[P_ATAMT];
+        for (i = 0; i < 8u; i++) prior_ok &= v[P_E0 + i] == (int16_t)(40 + i);
+        r.np = P_COUNT;
+        for (i = 0; i < P_COUNT; i++) up_set_value(&r, i, v[i]);
+        int16_t again[P_COUNT];
+        up_params(&r, again, def);
+        prior_ok &= up_valid(&r) && !memcmp(v, again, sizeof v);
+        bad += check("user preset np111: AT defaults OFF, all eight engine values move +3, current round trip", prior_ok);
         t->p[P_SPRD] = 0;
         bad += check("user presets: 106 kept; 99 (1.1): LFO 2 / QUANTIZE defaults; 103: SPREAD 0; 104: TYPE LP, ENV SYNC OFF",
                      ok);
@@ -680,11 +693,11 @@ static int midi_track_fmt(void)
     memset(song.mch, 0, sizeof song.mch);
     song.g[G_ROUTE] = 0;
     project_capture(&a);
-    ok = proj_pack(&st, &a) && PROJ_MIDI_OFF == PROJ_FM6_OFF - 3u && end <= PROJ_MIDI_OFF && PROJ_FM6_OFF - end == 16u;
+    ok = proj_pack(&st, &a) && PROJ_MIDI_OFF == PROJ_FM6_OFF - 3u && end <= PROJ_MIDI_OFF && PROJ_FM6_OFF - end == 4u;
     for (i = end; i < PROJ_FM6_OFF; i++)
         ok &= st.raw[i] == 0u;
     ok &= proj_import(&b, &st, sizeof st) && !memcmp(&a, &b, sizeof a) && !b.mch[0] && !b.mch[3] && !b.g[G_ROUTE];
-    bad += check("MIDI IN TRACK (1.5.5): CH1-4 and the default channels pack as before (the 16 spare bytes all 0)", ok);
+    bad += check("MIDI IN TRACK (1.5.5): CH1-4 and the default channels pack as before (the 4 spare bytes all 0)", ok);
 
     song.g[G_ROUTE] = ROUTE_TRACK;
     mch_set(0, 9); mch_set(1, 1); mch_set(2, MCH_OMNI); mch_set(3, MCH_OFF);

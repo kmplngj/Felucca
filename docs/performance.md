@@ -65,6 +65,11 @@ disassembly. The target budget checker verifies its listing hash and selects the
 engine set, independently of the current `build/gen` profile. A listing without a sidecar
 retains the historical full checks; a stale or incompatible sidecar fails validation.
 
+The [ADSR synchronization fix](adsr-render-synchronization.md) records a display
+correctness comparison with extra draw-time hashing, its controlled code/frame cost
+and the remaining MACRO capacity and physical-device gates. It is not a redraw or CPU
+optimization claim.
+
 Run the build and suite sequentially and check each exit status before using its artifacts.
 For release builds, substitute the actual versioned package name. Record the relevant
 environment overrides separately; do not archive unrelated credentials/environment variables.
@@ -391,7 +396,11 @@ Current compiler flags and reachability exclusions are authoritative in `tools/b
 and `tools/size_fns.py`. The [remaining-helper experiment](selective-minsize-521.md)
 measured a 64 B option for HELP/category helpers and rejected promotion because
 of extra main-loop calls without service-latency evidence; production selection
-is unchanged. Clock/voltage changes, a second core, or FPU/DSP rewrites are
+is unchanged for those helpers. The [MACRO flash-fit comparison](macro-flash-size.md)
+extends selection to FM6 operator UI, sequence tools and editor LEARN/PALETTE
+helpers while retaining `-Os` for their IRQ-off record scans/copies. Its 2,220 B
+combined saving includes losslessly narrowed Braids formant tables; target service
+timing remains unmeasured. Clock/voltage changes, a second core, or FPU/DSP rewrites are
 separate hardware experiments with their own correctness, timing and reliability evidence.
 
 ## Soft-double link guard
@@ -419,3 +428,19 @@ availability and repeated costs, target cost deltas, RAM/POOL used/spare, app/pa
 bytes, golden/audio results, device timing/error deltas, and remaining unmeasured paths.
 Keep raw logs and artifacts under ignored `build/`. A dated example and the research
 behind this procedure are in [the development review](development-review-2026-10-11.md).
+
+
+## Upstream 1.8 pressure-scan budget
+
+The [1.8 backport](upstream-1.8-backport.md) adds analog conversion ownership,
+held-row drive/release and scan callbacks inside `fm1_input_tick`. At the candidate
+based on `f0fea3c5fce7a0134f84543e09b64001c2991b33`, fresh JieLi Clang 4.0.1
+(20260730.1), AC79NN SDK 1.2.1, selective size enabled builds measure 562 target
+instructions, 494 in backward spans, zero divides and eight calls in those spans.
+The corrected upstream overlap-joining estimator scores it 536 in standard,
+CPU2-off and ADPCM builds, against the old digital-only optional budget 14.
+Only this new scanner budget is recalibrated to 536; existing engine, mixer and
+interrupt budgets are retained. This is an explained feature-cost/layout change,
+not a CPU speedup or a device deadline result. The host scan/ADC regressions cover
+state ownership and bounded timeout behavior. Physical enabled/disabled pressure,
+MASTER continuity, LED scan and loaded audio timing still need FM-1 observations.

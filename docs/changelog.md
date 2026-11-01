@@ -30,6 +30,19 @@ recorded in the linked reports, rather than every current build or device.
 | **Diagnostics and reproducible testing** | [Read-only USB collector](diagnostics.md), [rendered-screen capture](screen-capture.md), [interaction replay](interaction-replay.md) and [real browser UI/audio gate](cloud-testing.md), with their setup, provenance and validation scope. | Collection continuity is not a firmware pass. Host/WASM replay does not qualify FM-1 I/O or deadlines; digital screenshots do not qualify physical colours/backlight. Capture flags are development-only, and explicit capture wake awaits device validation. |
 | **CI and AI workflows** | [Selective CI, caches and exact-revision artifacts](../.github/CI.md); [AI workflow guide](ai-workflows.md) linking summary-first evidence, the firmware-watch ledger/skill, PR-testing instructions and firmware-specific AI review configuration. | Context filtering preserves full relevant diff and history coverage. AI/static review complements target and device checks. Text reduction is a context-size proxy until actual token usage and task quality are measured. |
 
+## Upstream 1.8.0 backport
+
+- Added FM-1 key pressure and MIDI channel-pressure routing on EDIT > VOICE 3,
+  disabled by default, plus CLEAR ALL and undo for hand-edited steps.
+- Added unsaved-project load and MIDI LEARN clear confirmations, contextual dialogs,
+  menu/dialog transport stop, clock-loss notices and six-letter value labels.
+- Corrected FM6 operator amplitude modulation with nonzero AMS, preserving factory
+  voices with AMS zero. Updated five-colour palettes and one-time CUSTOM migration.
+- Added the experimental, default-off ADPCM profile at stable ID 15 (MACRO keeps 14)
+  and the source-only SDL2 desktop beta. The fork retains its own HAL and native UI.
+- [Source pins, compatibility and pending device checks](upstream-1.8-backport.md)
+  distinguish host/build evidence from physical FM-1 acceptance.
+
 ## Fork development
 
 ### Fixed
@@ -58,6 +71,22 @@ recorded in the linked reports, rather than every current build or device.
   per note-on; the LED code only reads them. The hold never extends a voice,
   recording or MIDI, and ends at once on stop, a new selected part, an engine
   change or LED sleep. Host tests only; FM-1 timing and visibility checks pending.
+
+- [Guarded USB-MIDI warm restart](device-control.md) for automated FM-1 tests,
+  with full build/boot identity, BUSY refusal, explicit transfer ownership and a
+  separate host control tool. The host sends once and verifies the next boot
+  generation after reconnect. Capability-negotiated identity queries also expose
+  the verified PR label and canonical compiled build-profile name, preserving
+  the original query/reply for older clients. No implicit project save or bootloader change;
+  physical qualification remains pending.
+
+- Opt-in [SMK-37 Pro, SMK-37 Elite and MKE-P37 targets](smk37.md) add model-specific
+  firmware packages, velocity keys/pads, faders/wheels and protected per-board
+  flash layouts. Unknown stores remain RAM-only until explicit initialization;
+  failed operations cannot confirm ownership. SMK has two user sample slots and
+  USB MIDI, with per-model physical qualification pending. Normal CI/PR firmware
+  builds and Latest Dev retain the standard FM-1 target; tagged releases also
+  carry experimental SMK assets with separate build evidence.
 
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
@@ -216,10 +245,21 @@ recorded in the linked reports, rather than every current build or device.
   full commit provenance remain in release metadata; the UI regression gate now
   exercises the generated Dev version before merge. This fixes the initial Dev
   release's layout-test failure; no publication gate is relaxed.
+- **SLICE persistence:** MAN-slice saves and backup restores verify the stored
+  record before reporting success. Ineffective or corrupt writes take the existing
+  save/restore error paths; a failed save (readback mismatch) is retried at the next
+  stopped poll, at most twice per slot, then SAVE ERROR stays. Records remain
+  single-copy, no rollback; interrupted saves can still lose that slot's slices. FM-1 save/restart/restore qualification remains pending.
+
 - Native replay source-change guards include consumed portable Engines sources
   and generated include files, so changes during compilation cannot publish an
   adapter or completed capture with stale input provenance. See
   [interaction replay](interaction-replay.md).
+
+- **ADSR redraw synchronization:** keep submitted curve values and redraw state
+  coherent across asynchronous parameter changes, avoiding stale curves when values
+  return during a display transfer. Other parameter edits retain conservative redraws;
+  FM-1 qualification remains pending. See [scope and validation](adsr-render-synchronization.md).
 
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
@@ -232,6 +272,13 @@ recorded in the linked reports, rather than every current build or device.
   are unchanged. Native host rendering and scroll checks qualify this text change;
   no physical display observation is claimed.
   See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
+
+- **LCD failure containment:** a missing completion stops further display work
+  while retaining DMA source ownership. Verified late completion permits a bounded
+  wake/full-redraw retry of the latest UI state; failed initialization stays stopped
+  until reboot. Screenshots cannot report a completed image after transport failure.
+  Physical DMA, recovery and loaded FM-1 service qualification remain pending;
+  see [the contract and limits](lcd-fault-containment.md).
 
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
@@ -382,6 +429,24 @@ recorded in the linked reports, rather than every current build or device.
   a `FELUCCA_CPU2=0` build removes the worker entirely.
 
 ### Optimized
+
+- The opt-in MACRO firmware fits the FM-1 app slot again through lossless Braids
+  formant-table storage and additional main-loop size optimization. The matched
+  default-feature build saves **2,220 B** with unchanged static RAM, models and
+  factory sounds; IRQ-off record scans retain their generated code. See the
+  [measurements and pending device service/timing checks](macro-flash-size.md).
+
+- Storage skips a redundant erase only for a fresh copy: neither A nor B holds a
+  commit record, no save of the object was tried since boot, and a complete
+  destination-sector check reads blank. Every other destination, including any
+  same-boot retry after a failed or interrupted save, is erased as before, because a
+  sector that reads blank after an interrupted erase can still hold cells with too
+  little margin. A first erase or program cut by power loss that leaves the copy
+  reading blank cannot be told apart from a fresh copy after reboot and may still skip.
+  Read errors stop the save before writes, and native commit/readback checks remain.
+  [Measured host I/O counts and the interrupted-erase caveat](flash-capacity.md#blank-destination-checks-197-narrowed-in-721)
+  distinguish extra scan reads from avoided erase calls. Physical timing
+  and retention qualification remain pending. No proactive erase or format change.
 
 - Native icons share identical complete 12 px compressed streams while preserving
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the

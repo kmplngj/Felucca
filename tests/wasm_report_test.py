@@ -1073,10 +1073,11 @@ else:
          'NSTEP': '64',
          'NTRK': 'NPART',
          'NVOICE': '8'}
+        native['FELUCCA_ADPCM'] = runtime['FELUCCA_ADPCM'] = '1'
         for native_assert in ('0', '1'):
             native['FELUCCA_ISR_ASSERT'] = native_assert
             mapping = W.logical_mapping(native, runtime, native_constants, runtime_constants)
-            for name in ('FELUCCA_CATEGORY', 'FELUCCA_FAVORITES'):
+            for name in ('FELUCCA_CATEGORY', 'FELUCCA_FAVORITES', 'FELUCCA_ADPCM'):
                 self.assertEqual(mapping['defines'][name],
                                  {'native': '1', 'runtime': '1', 'rule': 'equal'})
             row = mapping['defines']['FELUCCA_ISR_ASSERT']
@@ -1085,7 +1086,7 @@ else:
         disabled = dict(runtime, FELUCCA_ISR_ASSERT='0')
         with self.assertRaisesRegex(ValueError, 'unsupported ISR assertion adapter'):
             W.logical_mapping(native, disabled, native_constants, runtime_constants)
-        for name in ('FELUCCA_CATEGORY', 'FELUCCA_FAVORITES'):
+        for name in ('FELUCCA_CATEGORY', 'FELUCCA_FAVORITES', 'FELUCCA_ADPCM'):
             with self.subTest(name=name):
                 wrong = dict(runtime, **{name: '0'})
                 with self.assertRaisesRegex(ValueError, 'logical macro mismatch: ' + name):

@@ -877,6 +877,7 @@ static void project_capture(project_t *p)
 
 /* the music as it is now -> slot, named `name` (0: the current name; "" none); 0 saved, nonzero refused or failed.
  * The current name becomes the saved one */
+static void proj_kept_now(void);
 static int project_save_as(uint32_t slot, const char *name)
 {
     project_t *p = &proj_scratch;
@@ -893,7 +894,7 @@ static int project_save_as(uint32_t slot, const char *name)
     if (!proj_pack(&proj_wire, p)) { ui_message("SAVE FORMAT ERROR"); return 2; }
 
 #if FELUCCA_FLASH
-    if (flash_ok) {
+    if (ST_AVAILABLE) {
         if (st_save(OBJ_PROJECT0 + (slot & 3u), &proj_wire, sizeof proj_wire)) {
             ui_message("SAVE ERROR");
             return 2;
@@ -902,6 +903,7 @@ static int project_save_as(uint32_t slot, const char *name)
         proj_name_get(proj_name, (const uint8_t *)p->name);
         proj_cur = (uint8_t)(slot & 3u);
         pat_from_set((slot & 3u) + 1u);
+        proj_kept_now();
         ui_message("SAVED");
         return 0;
     }
@@ -910,6 +912,7 @@ static int project_save_as(uint32_t slot, const char *name)
     proj_name_get(proj_name, (const uint8_t *)p->name);
     proj_cur = (uint8_t)(slot & 3u);
     pat_from_set((slot & 3u) + 1u);
+    proj_kept_now();
     ui_message("SAVED (RAM)");
     return 0;
 }
@@ -987,7 +990,7 @@ static int project_rename(uint32_t slot, const char *name)
     proj_wire_gen++;
     if (!proj_pack(&proj_wire, p)) { ui_message("SAVE FORMAT ERROR"); return 2; }
 #if FELUCCA_FLASH
-    if (flash_ok && st_save(OBJ_PROJECT0 + (slot & 3u), &proj_wire, sizeof proj_wire)) {
+    if (ST_AVAILABLE && st_save(OBJ_PROJECT0 + (slot & 3u), &proj_wire, sizeof proj_wire)) {
         ui_message("SAVE ERROR");
         return 2;
     }
@@ -996,7 +999,7 @@ static int project_rename(uint32_t slot, const char *name)
     if (proj_cur == (slot & 3u))
         proj_name_get(proj_name, (const uint8_t *)p->name);
 #if FELUCCA_FLASH
-    if (flash_ok) { ui_message("RENAMED"); return 0; }
+    if (ST_AVAILABLE) { ui_message("RENAMED"); return 0; }
 #endif
     ui_message("RENAMED (RAM)");
     return 0;
@@ -1020,7 +1023,7 @@ static int project_erase(uint32_t slot)
         return 1;
     }
 #if FELUCCA_FLASH
-    if (flash_ok && st_save(OBJ_PROJECT0 + slot, &proj_wire, 0)) {
+    if (ST_AVAILABLE && st_save(OBJ_PROJECT0 + slot, &proj_wire, 0)) {
         ui_message("ERASE ERROR");
         return 2;
     }
@@ -1032,7 +1035,7 @@ static int project_erase(uint32_t slot)
         if (pat_from[k] == slot + 1u)
             pat_from[k] = 0;
 #if FELUCCA_FLASH
-    if (flash_ok) {
+    if (ST_AVAILABLE) {
         char b[20] = "PROJECT A ERASED";
         b[8] = (char)('A' + slot);
         ui_message(b);
@@ -1108,14 +1111,44 @@ static int project_restore_runtime(const project_t *input)
     undo_depth--;
     sync_reload = 1;
     ui.force = 1;
+    proj_kept_now();
     ui_message("LOADED");
     memset(snd_said, 0, sizeof snd_said);               /* a missing sample is said again, after LOADED */
+    return 0;
+}
+/* MENU > SYSTEM > CLEAR ALL (1.8, #266): the music as a new project, loaded as one is: every track its power-on
+ * engine and sound with no steps or automation, the song order, BPM and the rest of the project's values their
+ * defaults, the FM6 init patch, no name and no slot. The stored projects, user presets, samples, settings and MIDI
+ * LEARN stay (an autosave follows as after any change). 0 done, 1 refused (as project_restore_runtime) */
+static int project_new(void)
+{
+    project_t *q = &proj_scratch;
+    uint32_t i, k;
+    memset(q, 0, sizeof *q);
+    q->magic = PROJ_MAGIC;
+    q->size = sizeof *q;
+    q->parts = NPART;
+    for (i = 0; i < G_COUNT; i++)
+        q->g[i] = GP[i].def;
+    chain_defaults(&q->chain);
+    for (i = 0; i < NTRK; i++) {
+        for (k = 0; k < P_COUNT; k++)
+            q->t[i].p[k] = param_desc_of(trk_def_engine(i), k)->def;
+        q->t[i].engine = (uint8_t)trk_def_engine(i);
+        q->t[i].preset = PROJ_DEF_SOUND;                /* (project_restore_runtime: the power-on sound, no steps) */
+        for (k = 0; k < NSTEP; k++)
+            q->t[i].step[k].time = ST_REST;
+    }
+    proj_fm6_init(q);                                   /* (and the sum) */
+    if (project_restore_runtime(q))
+        return 1;
+    ui_message("ALL CLEARED");
     return 0;
 }
 static void project_load(uint32_t slot)
 {
 #if FELUCCA_FLASH
-    if (flash_ok && !proj_import(&proj_scratch, &proj_slot[slot & 3u], sizeof(project_store_t))) proj_fetch(slot);
+    if (ST_AVAILABLE && !proj_import(&proj_scratch, &proj_slot[slot & 3u], sizeof(project_store_t))) proj_fetch(slot);
 #endif
     if (!proj_import(&proj_scratch, &proj_slot[slot & 3u], sizeof(project_store_t))) { ui_message("EMPTY SLOT"); return; }
     proj_bound(&proj_scratch);                          /* a retained RAM slot of an older format: as from flash */
@@ -1148,12 +1181,13 @@ static void persist_boot(void)                    /* before settings_init / pane
 #if FELUCCA_FLASH
     persist_rec_t *p = &persist_tmp;
     uint32_t f = irq_save();
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;       /* the expected 1 MiB part, else stay RAM-only */
+    flash_ok = FL_JEDEC_OK(FL_FAR(fl_jedec_ram)());       /* the expected 1 MiB part, else stay RAM-only */
     irq_restore(f);
     if (!flash_ok)
         return;
     fl_plain_window_init();                        /* flash above 0x93000 reads as plaintext through XIP
                                                     * (user sample sets are played from there) */
+    if (st_owner_check()) return;
 #if FELUCCA_SLICE
     slc_store_boot();                              /* (the scans read each slot's stored slices) */
 #endif
@@ -1237,7 +1271,7 @@ static void settings_poll(void)
 #if FELUCCA_SLICE
     slc_store_poll();                              /* SLICE's slices edited on the SLICES page */
 #endif
-    if (persist_pending == PERSIST_IDLE || !flash_ok || transport_busy() ||
+    if (persist_pending == PERSIST_IDLE || !ST_AVAILABLE || transport_busy() ||
         (persist_pending == PERSIST_RETRY && (uint32_t)(fm1_ms - persist_retry_ms) < 1000u))
         return;
     *p = persist_saved;
@@ -1277,7 +1311,7 @@ static int settings_unsaved(void)
  * report it (the editor's replies, editor_preferences.c ed_settings_save):
  *   SETTINGS_SAVED     the record in flash holds the settings in RAM (written now, or unchanged: no erase)
  *   SETTINGS_QUEUED    requested, written by settings_poll once the transport stops (PLAY, a pending PLAY, an armed SONG)
- *   SETTINGS_RAM_ONLY  applied in RAM, not in flash: no flash (FELUCCA_FLASH=0, flash_ok 0) or a failed write (the
+ *   SETTINGS_RAM_ONLY  applied in RAM, not in flash: no flash (FELUCCA_FLASH=0, ST_AVAILABLE 0) or a failed write (the
  *                      request stays queued: settings_poll retries after 1000 ms, a new request at once when stopped)
  * Only this answer is evidence of durability: the panel's deferred request (ui.c set_later) clearing is not. */
 enum { SETTINGS_SAVED, SETTINGS_RAM_ONLY, SETTINGS_QUEUED };
@@ -1285,7 +1319,7 @@ static uint32_t settings_save_result(void)
 {
     settings_save();
 #if FELUCCA_FLASH
-    if (!flash_ok || persist_pending == PERSIST_RETRY) return SETTINGS_RAM_ONLY;
+    if (!ST_AVAILABLE || persist_pending == PERSIST_RETRY) return SETTINGS_RAM_ONLY;
     if (persist_pending == PERSIST_REQUESTED) return SETTINGS_QUEUED;
     return settings_unsaved() ? SETTINGS_RAM_ONLY : SETTINGS_SAVED;
 #else
@@ -1354,6 +1388,12 @@ static uint32_t autosave_sig(void)
     return as_mix(h, proj_name, sizeof proj_name);
 }
 
+/* 1.8: the music as a stored project holds it, when it last was one (a PROJECT load or save, CLEAR ALL, power-on):
+ * PROJECT LOAD asks first when it has changed since (ui_input.c CF_LOAD_PROJ) */
+static uint32_t proj_kept;
+static void proj_kept_now(void) { proj_kept = autosave_sig(); }
+static int proj_changed(void) { return autosave_sig() != proj_kept; }
+
 /* nothing going on that an erase (the audio stopped ~40 ms) would be heard in, or would race */
 static int autosave_quiet(void)
 {
@@ -1374,7 +1414,7 @@ static void autosave_poll(void)
 {
 #if FELUCCA_FLASH
     uint32_t sig, audio;
-    if (!flash_ok || fm1_ms - as.poll < AS_POLL_MS)
+    if (!ST_AVAILABLE || fm1_ms - as.poll < AS_POLL_MS)
         return;
     as.poll = fm1_ms;
     sig = autosave_sig();
@@ -1410,7 +1450,7 @@ static int autosave_boot(int allowed)
 {
     int rc = 0;
 #if FELUCCA_FLASH
-    if (flash_ok && allowed && !(ui_prefs & PREF_RESTORE_OFF)) {
+    if (ST_AVAILABLE && allowed && !(ui_prefs & PREF_RESTORE_OFF)) {
         int n;
         proj_wire_gen++;
         n = st_load(OBJ_AUTOSAVE, &proj_wire, sizeof proj_wire);
@@ -1428,6 +1468,7 @@ static int autosave_boot(int allowed)
     as.saved = as.seen = autosave_sig();
     as.audio = fx_audio_activity;
     as.t = fm1_ms;
+    proj_kept_now();
     return rc;
 }
 

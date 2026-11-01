@@ -401,8 +401,8 @@ static void mono_remove(track_t *t, uint32_t note)
  * LED frames still shows. A ring of NOTE_HIT_SLOTS words per part: bit 31 valid, bits 7..30 the fm1_ms (24 bits) of the
  * note-on, bits 0..6 the note. Producer: trk_note_on, the audio ISR only; a word is one aligned 32-bit store, so a
  * reader sees the old event or the new one, never half of either, and no index or flag is published. The producer
- * refreshes the slot that already holds the note (a repeat takes no second slot), else the next slot in turn: more
- * distinct notes than slots inside the hold lose the oldest first. Consumers (the main loop) only read: each decides its
+ * refreshes the slot that already holds the note (a repeat takes no second slot), else an empty slot or the oldest
+ * event; equal timestamps use circular order. Consumers (the main loop) only read: each decides its
  * own window from the event's time, so none consumes an event another needs. The one clear is note_hits_clear (sound.c),
  * a reset, with the interrupt off. The time is the event's own, not the reader's: the hold follows elapsed time however
  * late a frame is. It extends no voice and touches neither the recorder nor MIDI out. */
@@ -410,7 +410,7 @@ static void mono_remove(track_t *t, uint32_t note)
 #define NOTE_HIT_VALID 0x80000000u
 #define NOTE_HIT_TMASK 0xFFFFFFu                        /* the 24-bit time: 4.6 h, the main loop sweeps the older ones */
 static volatile uint32_t note_hit[NPART][NOTE_HIT_SLOTS];
-static uint8_t note_hit_next[NPART];                    /* the producer's own: the slot a new note takes */
+static uint8_t note_hit_next[NPART];                    /* producer-owned circular tie-break for equal event times */
 /* ms since the event of word w, plus NOTE_HIT_EARLY: a note-on can stamp fm1_ms a few ms after a reader took its own
  * "now" (the ISR ran in between), so an event up to NOTE_HIT_EARLY ms ahead of "now" still counts as new (ages
  * 0..NOTE_HIT_EARLY - 1). The age wraps in 24 bits: a reader treats an age of NOTE_HIT_EARLY + its window or more as
@@ -424,17 +424,25 @@ static inline uint32_t note_hit_age(uint32_t now, uint32_t w)
 static void note_hit_post(const track_t *t, uint32_t note)
 {
     uint32_t p = (uint32_t)(t - trk) % NPART, i, s = note_hit_next[p];
+    uint32_t now = fm1_ms, oldest = 0, empty = 0;
     volatile uint32_t *r = note_hit[p];
     for (i = 0; i < NOTE_HIT_SLOTS; i++) {
-        uint32_t w = r[i];
+        uint32_t j = (note_hit_next[p] + i) % NOTE_HIT_SLOTS, w = r[j];
         if ((w & NOTE_HIT_VALID) && (w & 127u) == (note & 127u)) {
-            s = i;
+            s = j;
             break;
         }
+        if (!(w & NOTE_HIT_VALID)) {
+            if (!empty) s = j;
+            empty = 1;
+        } else if (!empty) {
+            uint32_t age = note_hit_age(now, w);
+            if (age > oldest) { oldest = age; s = j; }
+        }
     }
-    if (s == note_hit_next[p])
+    if (i == NOTE_HIT_SLOTS || s == note_hit_next[p])
         note_hit_next[p] = (uint8_t)((s + 1u) % NOTE_HIT_SLOTS);
-    r[s] = NOTE_HIT_VALID | (fm1_ms & NOTE_HIT_TMASK) << 7 | (note & 127u);
+    r[s] = NOTE_HIT_VALID | (now & NOTE_HIT_TMASK) << 7 | (note & 127u);
 }
 
 static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
@@ -544,6 +552,12 @@ static void engine_block(track_t *t)
         if (!t->xf_on) {
             for (i = 0; i < NVOICE; i++)
                 any |= t->v[i].active;
+#if FELUCCA_ADPCM
+            if (t->engine == ENGI_ADPCM) {              /* a part may still sound after its last voice */
+                eng_mem_claim(t);
+                any |= adp_part(t)->d.edirty;
+            }
+#endif
             if (any) {
                 t->xf_on = 1;
                 t->xf = XF_BLOCKS;
@@ -809,6 +823,16 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     }
     if (T_SPREAD(t))
         SPREAD_SUM(out, t);                /* out: every voice; spread_buf: the left ones */
+#if FELUCCA_ADPCM
+    if (e == &ENG_ADPCM) {                            /* the optional engine's per-part echo */
+        vmod_t echo_fade;
+        if (fade) {
+            echo_fade.amp0 = VOICE_FS * (int32_t)t->xf / (int32_t)XF_BLOCKS;
+            echo_fade.amp1 = VOICE_FS * (int32_t)(t->xf - 1u) / (int32_t)XF_BLOCKS;
+        }
+        nr += adp_post(t, out, n, fade ? &echo_fade : 0);
+    }
+#endif
     if (fade) {
         for (i = 0; i < 8u; i++)
             t->p[P_E0 + i] = pe_new[i];

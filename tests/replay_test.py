@@ -199,10 +199,24 @@ class NativeReplayTests(unittest.TestCase):
         output = subprocess.check_output([*compiler, *replay.FLAGS, "-MM", "tools/replay_native.c"],
                                          cwd=ROOT, text=True)
         dependencies = shlex.split(output.replace("\\\n", " ").split(":", 1)[1])
-        consumed = {str((ROOT / name).resolve().relative_to(ROOT)) for name in dependencies}
+        # Toolchain-owned files outside the checkout are not repository source inputs.
+        # Keep every resolved checkout dependency in the inventory check.
+        paths = ((ROOT / name).resolve() for name in dependencies)
+        consumed = {str(path.relative_to(ROOT)) for path in paths if path.is_relative_to(ROOT)}
         missing = consumed - replay.source_inputs().keys()
         self.assertTrue(consumed)
         self.assertFalse(missing, f"unfingerprinted compiler inputs: {sorted(missing)}")
+
+    def test_dependency_inventory_excludes_sdk_but_requires_repository_inputs(self):
+        # Compiler dependency output may include toolchain-owned files even with -MM.
+        dependencies = "replay.o: tools/replay_native.c /external-sdk/SDKSettings.json\n"
+        with mock.patch.object(subprocess, "check_output", return_value=dependencies), \
+             mock.patch.object(replay, "source_inputs", return_value={"tools/replay_native.c": "digest"}):
+            self.test_consumed_dependencies_are_fingerprinted()
+        with mock.patch.object(subprocess, "check_output", return_value=dependencies), \
+             mock.patch.object(replay, "source_inputs", return_value={}):
+            with self.assertRaisesRegex(AssertionError, "tools/replay_native.c"):
+                self.test_consumed_dependencies_are_fingerprinted()
 
     def run_scenario(self, data, success=True):
         type(self).serial += 1

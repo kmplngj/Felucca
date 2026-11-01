@@ -21,12 +21,19 @@ typedef struct {
     uint8_t bitmap_scale;               /* 0 = alpha; 1/2 = packed 1-bit glyphs, integer scale (in existing padding) */
     const uint8_t *hc;                  /* data's Huffman code (cv_alpha_hc), 0 = 2 px per byte (cv_alpha) */
 } aafont_t;
-typedef struct { const char *name; uint16_t bg, surf, text, theme, accent; } ui_pal_t;
+typedef struct { const char *name; uint16_t c1, c2, c3, primary, secondary; } ui_pal_t;
 typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #include "ui_fonts.h"                   /* M8Stealth native grids and shared integer-scaled roles */
 #include "ui_palettes.h"
 #include "ui_keycaps.h"                 /* KC_*: the keycaps / badges (tools/gen_aa_keycaps.py), KNOB_* arcs */
 #define ELLIPSIS '\x85'                 /* the ellipsis glyph of AF_S and AF_M */
+
+/* Synchronous host/emulator adapters have no in-flight transport to recover.
+ * The actual driver supplies both hooks before this file is included. */
+#ifndef LCD_ASYNC_DRIVER
+#define LCD_FAILED() 0
+#define LCD_SERVICE(now) 0
+#endif
 
 /* host tests hook in here (layout lint, draw cost); nothing in the firmware */
 #ifndef GFX_HOOK_TEXT
@@ -84,10 +91,12 @@ static uint8_t cv_flip;          /* cv_alpha_hc: the cell mirrored left <-> righ
 #define RGB(r, g, b) ((uint16_t)((((r) >> 3) << 11) | (((g) >> 2) << 5) | ((b) >> 3)))
 
 /* ------------------------------------------------------------- theme --- */
-/* Five stored colours per palette, the rest derived with fixed blends (tools/gen_ui_palettes.py) */
+/* Five stored colours per palette (color1 color2 color3 primary secondary), the rest derived with fixed blends
+ * (tools/gen_ui_palettes.py) */
 static struct {
+    uint16_t pal[5];             /* the five as stored: color1 color2 color3 primary secondary (the editor shows them) */
     uint16_t bg, surf, text, theme, accent;
-    uint16_t mid, dim, line, sel, tint, ink, rec, raise, key, lane, grid;
+    uint16_t mid, dim, line, sel, tint, ink, rec, raise, key, lane, grid, ok;
     uint8_t light, mono;
     uint8_t style;               /* MENU > STYLE (ui.c style_apply): ST_FLAT, ST_LINE */
     uint32_t gen;                /* bumped by palette_set (the text ramps follow) */
@@ -109,7 +118,9 @@ static struct {
 #define T_SEL ux.sel             /* selection and gauge fill */
 #define T_TINT ux.tint           /* a faint theme area */
 #define T_INK ux.ink             /* text on T_SEL / T_THEME */
-#define T_REC ux.rec             /* REC: fixed red (GREY, MONO: the accent) */
+#define T_REC ux.rec             /* REC: the palette's primary (red) */
+#define T_WARN ux.rec            /* a warning (low battery, a full name): the primary too */
+#define T_OK ux.ok               /* 1.8: the battery on USB power: green, on every palette (darker on a light BG) */
 #define T_RAISE ux.raise         /* a raised area on a surface: stubs, guides, slots, chips, button wells */
 #define T_KEY ux.key             /* a keycap's fill (its label: T_INK; unavailable: a T_DIM fill) */
 #define T_LANE ux.lane           /* the piano roll: an in-scale row (SURF -> THEME 10 %) */
@@ -117,12 +128,13 @@ static struct {
 #define NPALETTES UI_NPALETTES
 
 static inline uint16_t ux_gray(uint32_t x5) { return (uint16_t)((x5 << 11) | (x5 << 6) | x5); }
+static int ux_is_gray(uint16_t c) { return (c >> 11) == (c & 31u) && ((c >> 5) & 63u) == (c >> 11) * 2u; }
 /* a + (b - a) * pct / 100 per channel, rounded; GREY on the red channel, so it stays gray */
 static uint16_t ux_mix(uint16_t a, uint16_t b, int32_t pct)
 {
     static const uint8_t SH[3] = {11, 5, 0}, MK[3] = {31, 63, 31};
     uint32_t out = 0, k;
-    if (ux.mono) {
+    if (ux.mono && ux_is_gray(a) && ux_is_gray(b)) {
         int32_t x = a >> 11, d = ((b >> 11) - x) * pct;
         return ux_gray((uint32_t)(x + (d + (d >= 0 ? 50 : -50)) / 100));
     }
@@ -140,40 +152,45 @@ static uint32_t ux_luma(uint16_t c)        /* 0..255 */
 /* 1.6 (#244): a palette of the user's, the 11th (index NPALETTES, "CUSTOM"): the same five stored colours, the rest
  * derived as for every palette, set from the editor (ui.c cpal_*; settings: settings_dev[0..9, 12], PER4 favorites.factory[15]). Not GREY
  * (no gray ramps) and not MONO: the channels blend as they are */
-static ui_pal_t ux_cust = {"CUSTOM", 0x0841, 0xCE59, 0xEF5D, 0xFFDF, 0xFD20};
-/* the five colours as stored (RGB565, 16 bits little endian each: BG SURF TEXT THEME ACCENT) */
+static ui_pal_t ux_cust = {"CUSTOM", 0x0841, 0xFFDF, 0xEF5D, UI_REC_DARK, 0xFD20};
+/* the five colours as stored (RGB565, 16 bits little endian each: color1 color2 color3 primary secondary) */
 static void palette_custom_load(const uint8_t *b)
 {
-    ux_cust.bg = (uint16_t)(b[0] | b[1] << 8);
-    ux_cust.surf = (uint16_t)(b[2] | b[3] << 8);
-    ux_cust.text = (uint16_t)(b[4] | b[5] << 8);
-    ux_cust.theme = (uint16_t)(b[6] | b[7] << 8);
-    ux_cust.accent = (uint16_t)(b[8] | b[9] << 8);
+    ux_cust.c1 = (uint16_t)(b[0] | b[1] << 8);
+    ux_cust.c2 = (uint16_t)(b[2] | b[3] << 8);
+    ux_cust.c3 = (uint16_t)(b[4] | b[5] << 8);
+    ux_cust.primary = (uint16_t)(b[6] | b[7] << 8);
+    ux_cust.secondary = (uint16_t)(b[8] | b[9] << 8);
 }
 
 static void palette_set(uint32_t i)
 {
     int cust = i == NPALETTES;
     const ui_pal_t *p = cust ? &ux_cust : &UI_PALETTES[i % NPALETTES];
+    uint16_t surf;
     i %= NPALETTES;
     ux.mono = !cust && i == UI_GREY_INDEX;
-    ux.bg = p->bg; ux.surf = ux.style ? p->bg : p->surf; ux.text = p->text; ux.theme = p->theme; ux.accent = p->accent;
-    ux.mid = ux_mix(p->bg, p->text, UI_MID_PCT);
-    ux.dim = ux_mix(p->bg, p->text, UI_DIM_PCT);
-    ux.line = ux_mix(p->bg, p->text, UI_LINE_PCT);
-    ux.sel = ux_mix(p->bg, p->theme, UI_SEL_PCT);
-    ux.tint = ux_mix(p->bg, p->theme, UI_TINT_PCT);
-    ux.ink = p->bg;
-    ux.raise = ux_mix(p->surf, p->text, UI_RAISE_PCT);
-    ux.key = ux_mix(p->bg, p->text, UI_KEY_PCT);
-    ux.lane = ux_mix(ux.surf, p->theme, 10);
-    ux.grid = ux_mix(ux.surf, p->text, 6);
-    ux.light = ux_luma(p->bg) > 128u;
-    ux.rec = ux.mono ? p->accent : ux.light ? UI_REC_LIGHT : UI_REC_DARK;
+    ux.pal[0] = p->c1; ux.pal[1] = p->c2; ux.pal[2] = p->c3; ux.pal[3] = p->primary; ux.pal[4] = p->secondary;
+    ux.bg = p->c1; ux.text = p->c3; ux.theme = p->c2; ux.accent = p->secondary; ux.rec = p->primary;
+    ux.mono = !cust && i == UI_GREY_INDEX;
+    ux.mid = ux_mix(ux.bg, ux.text, UI_MID_PCT);
+    ux.dim = ux_mix(ux.bg, ux.text, UI_DIM_PCT);
+    ux.line = ux_mix(ux.bg, ux.text, UI_LINE_PCT);
+    ux.sel = ux_mix(ux.bg, ux.theme, UI_SEL_PCT);
+    ux.tint = ux_mix(ux.bg, ux.theme, UI_TINT_PCT);
+    ux.ink = ux.bg;
+    surf = !cust && i == UI_BW_INDEX ? ux.bg : ux_mix(ux.bg, ux.theme, UI_SURF_PCT);   /* the card colour (MONO: black) */
+    ux.surf = ux.style ? ux.bg : surf;
+    ux.raise = ux_mix(surf, ux.text, UI_RAISE_PCT);
+    ux.key = ux_mix(ux.bg, ux.text, UI_KEY_PCT);
+    ux.lane = ux_mix(ux.surf, ux.theme, 10);
+    ux.grid = ux_mix(ux.surf, ux.text, 6);
+    ux.light = ux_luma(ux.bg) > 128u;
+    ux.ok = ux.light ? UI_OK_LIGHT : UI_OK_DARK;
     if (!cust && i == UI_BW_INDEX) {             /* MONO: black and white, set, not blended (tools/gen_ui_palettes.py) */
-        ux.mid = ux.sel = ux.key = ux.rec = p->text;   /* a selection, a keycap, REC: white, its INK black */
+        ux.mid = ux.sel = ux.key = p->c3;        /* a selection, a keycap: white, its INK black */
         ux.dim = ux.line = ux.raise = ux.lane = UI_BW_GREY;   /* the one grey: inactive, tracks, wells */
-        ux.tint = ux.grid = p->bg;
+        ux.tint = ux.grid = p->c1;
     }
     ux.gen++;                                    /* the text ramps change with the coverage curve */
 }
@@ -199,6 +216,8 @@ static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
     if (w * h > CV_MAX)
         h = CV_MAX / w;
     lcd_sync();                     /* the last blit may still read cv_px */
+    if (LCD_FAILED())
+        return;                     /* timeout did not acquire the canvas */
     GFX_HOOK_BEGIN();
     cv_w = w;
     cv_h = h;
@@ -237,6 +256,8 @@ static void cv_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint3
     if (w > cv_w - x0) w = cv_w - x0;
     if (h > cv_h - y0) h = cv_h - y0;
     lcd_sync();                                   /* never overwrite a running DMA's source */
+    if (LCD_FAILED())
+        return;
     GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h);         /* before packing changes canvas coordinates */
     for (r = 0; r < h; r++)
         for (c = 0; c < w; c++)
@@ -246,6 +267,8 @@ static void cv_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint3
 
 static inline void cv_pset(int32_t x, int32_t y, uint16_t c)
 {
+    if (LCD_FAILED())
+        return;
     y += cv_oy;
     if ((uint32_t)x < cv_w && (uint32_t)y < cv_h)
         cv_px[(uint32_t)y * cv_w + (uint32_t)x] = swap16(c);
@@ -255,6 +278,8 @@ static void cv_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 {
     int32_t x1 = x + w, y1 = y + h + cv_oy, i;
     uint16_t sc = swap16(c);
+    if (LCD_FAILED())
+        return;
     y += cv_oy;                             /* clipped once, then filled row by row */
     if (x < 0)
         x = 0;
@@ -290,6 +315,8 @@ static void cv_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
     int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1, sx = x0 < x1 ? 1 : -1;
     int32_t dy = y1 > y0 ? y0 - y1 : y1 - y0, sy = y0 < y1 ? 1 : -1;
     int32_t err = dx + dy, guard = 2000;
+    if (LCD_FAILED())
+        return;
     while (guard--) {                       /* bounded: a line is never longer than 480 px */
         int32_t e2 = 2 * err;               /* both tests use the same error value */
         cv_pset(x0, y0, c);
@@ -390,7 +417,7 @@ static const uint16_t *ramp(uint16_t fg, uint16_t bg)
     for (a = 0; a < 16u; a++) {
         uint32_t out = 0;
         int32_t w = cv[a];
-        if (ux.mono) {
+        if (ux.mono && ux_is_gray(fg) && ux_is_gray(bg)) {   /* GREY's signal colours keep their channels. */
             int32_t x = bg >> 11;
             out = ux_gray((uint32_t)(x + ((((fg >> 11) - x) * w + 128) >> 8)));
         } else {
@@ -408,6 +435,8 @@ static const uint16_t *ramp(uint16_t fg, uint16_t bg)
 static void cv_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint16_t *rv)
 {
     uint32_t k = 0, gx, gy;
+    if (LCD_FAILED())
+        return;
     y += cv_oy;
     for (gy = 0; gy < h; gy++) {
         int32_t py = y + (int32_t)gy;
@@ -435,6 +464,8 @@ static void cv_bitmap(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_
                       uint32_t scale, uint16_t ink)
 {
     uint32_t sw = w / scale, sy, sx, k, j, srow = 0;
+    if (LCD_FAILED())
+        return;
     y += cv_oy;
     for (sy = 0; sy * scale < h; sy++, srow += sw)
         for (k = 0; k < scale; k++) {
@@ -486,8 +517,11 @@ static const uint16_t *hc_lut(const uint8_t *hc)
 static void cv_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint8_t *hc,
                         const uint16_t *rv)
 {
-    const uint16_t *lut = hc_lut(hc);
+    const uint16_t *lut;
     uint32_t gy, v = 0, run = 0, acc = 0, nb = 0;
+    if (LCD_FAILED())
+        return;
+    lut = hc_lut(hc);
     y += cv_oy;
     for (gy = 0; gy < h; gy++) {
         int32_t py = y + (int32_t)gy;

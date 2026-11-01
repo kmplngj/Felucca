@@ -169,8 +169,8 @@ static int test_sound_loads(void)
                  undo.p[P_E0 + 1] == before.p[P_E0 + 1] && undo.eng == before.eng_req && undo.preset == before.preset);
     t->step[0].note[0] = 99;                      /* recorded after the loads */
     hold(B_SAVE);
-    bad += check("SAVE held: the sound back (UNDO/REDO T1); steps recorded since stay", same_sound(t, &before) &&
-                 t->step[0].note[0] == 99 && msg_is("UNDO/REDO T1"));
+    bad += check("SAVE held: the sound back (UNDO/REDO T1 SOUND); steps recorded since stay", same_sound(t, &before) &&
+                 t->step[0].note[0] == 99 && msg_is("UNDO/REDO T1 SOUND"));
     bad += check("SAVE held does not open the SAVE pages", ui.home);
     hold(B_SAVE);
     bad += check("SAVE held again: the loads again (redo)", t->eng_req != before.eng_req && t->step[0].note[0] == 99);
@@ -665,11 +665,25 @@ static int test_save(void)
     bad += check("OCT+ (YES): NAME, the slot not written yet", name_on() && stored_param(0, 0, P_E0) != 5);
     press(B_OCTUP);
     bad += check("OCT+ overwrites it", ui.confirm == CF_NONE && !name_on() && stored_param(0, 0, P_E0) == 5);
-    trk[0].p[P_LEVEL] = 11;
     turn(EN_K3, 1);
     press(B_OCTUP);
-    bad += check("KNOB 3 LOAD, OCT+: the project back; LOAD stays picked", trk[0].p[P_LEVEL] != 11 &&
-                 trk[0].p[P_LEVEL] == stored_param(0, 0, P_LEVEL) && msg_is("LOADED") && ui.act == 3u);
+    bad += check("KNOB 3 LOAD, OCT+, nothing changed since the save: loaded at once; LOAD stays picked",
+                 ui.confirm == CF_NONE && msg_is("LOADED") && ui.act == 3u);
+    trk[0].p[P_LEVEL] = 11;
+    press(B_OCTUP);
+    {
+        char qa[24], qb[24];
+        confirm_text(qa, qb);
+        bad += check("1.8 LOAD over changes not saved: the LOAD PROJECT A? dialog, nothing loaded yet",
+                     ui.confirm == CF_LOAD_PROJ && str_eq(qa, "LOAD PROJECT A?") && str_eq(qb, "CHANGES NOT SAVED GO") &&
+                     trk[0].p[P_LEVEL] == 11);
+    }
+    press(B_OCTDN);
+    bad += check("1.8   OCT- keeps the changes", ui.confirm == CF_NONE && trk[0].p[P_LEVEL] == 11);
+    turn(EN_K3, 1);
+    press(B_OCTUP); press(B_OCTUP);
+    bad += check("1.8   OCT+ (YES): the project back", trk[0].p[P_LEVEL] != 11 &&
+                 trk[0].p[P_LEVEL] == stored_param(0, 0, P_LEVEL) && msg_is("LOADED"));
     /* user presets */
     for (i = 0; i < NPAGES; i++)
         if (PAGES[i].graph == GR_USER)
@@ -1168,7 +1182,7 @@ static int test_recent(void)
     bad += check("  the PRESETS knob steps through it loading each (the order kept); the sound is the entry's",
                  ok && total == RECENT_N && k == 2u && TSEL->eng_req == 0 && TSEL->preset == 8u);
     hold(B_SAVE);
-    bad += check("  SAVE held: the audition cancelled as with any browse", same_sound(TSEL, &before) && msg_is("UNDO/REDO T1"));
+    bad += check("  SAVE held: the audition cancelled as with any browse", same_sound(TSEL, &before) && msg_is("UNDO/REDO T1 SOUND"));
     /* user presets: a slot replaced or deleted is not loaded stale */
     memset(&recent, 0, sizeof recent);
     list_set(0);
@@ -1439,7 +1453,7 @@ static int test_display_preferences(void)
     settings.palette = 5; palette_set(5);
     press(B_OCTUP);
     bad += check("COLOR OCT+ previews the next palette (PAPER, light) without closing the menu",
-                 settings.palette == 6 && T_BG == UI_PALETTES[6].bg && ux.light && ui.menu == 1 && !song.octave &&
+                 settings.palette == 6 && T_BG == UI_PALETTES[6].c1 && ux.light && ui.menu == 1 && !song.octave &&
                  memcmp(before, host_screen, sizeof before) && !memcmp(sounds, trk, sizeof sounds));
     turn(EN_K1, 1);
     bad += check("COLOR KNOB 1 steps on to HI-CON, NIGHT (#50: true black), MONO (1.0.2: black and white), then wraps to GREY",
@@ -1519,11 +1533,11 @@ static int test_menu_tabs(void)
             }
     }
     ui_prefs = 0;
-    bad += check("MENU tabs: DISPLAY CONTROL AUDIO MIDI SYSTEM (7 8 6 7 7 rows; CPU2=0 SYSTEM 6), hidden WAKE / ALL DARK descriptors skipped, fit the page; tab names "
+    bad += check("MENU tabs: DISPLAY CONTROL AUDIO MIDI SYSTEM (7 8 6 7 8 rows; CPU2=0 SYSTEM 7), hidden WAKE / ALL DARK descriptors skipped, fit the page; tab names "
                  "justified (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
                  mtab_rows(MTAB_DISPLAY) == 7u && MI_TAB[MI_HOME] == MTAB_DISPLAY && mtab_rows(MTAB_CONTROL) == 8u && MI_TAB[MI_SELECT] == MTAB_CONTROL && mtab_rows(MTAB_AUDIO) == 6u &&
-                 mtab_rows(MTAB_MIDI) == 7u && MI_TAB[MI_MFOLLOW] == MTAB_MIDI && MI_TAB[MI_SCRWAKE] == MTAB_DISPLAY && !menu_native_row(MI_SCRWAKE) && !menu_native_row(MI_DARK) && MI_SCRWAKE + 1u == MI_LCLEAR && MI_TAB[MI_LCLEAR] == MTAB_MIDI && MI_TAB[MI_TCH4] == MTAB_MIDI && mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CPU2 &&
+                 mtab_rows(MTAB_MIDI) == 7u && MI_TAB[MI_MFOLLOW] == MTAB_MIDI && MI_TAB[MI_SCRWAKE] == MTAB_DISPLAY && !menu_native_row(MI_SCRWAKE) && !menu_native_row(MI_DARK) && MI_SCRWAKE + 1u == MI_LCLEAR && MI_TAB[MI_LCLEAR] == MTAB_MIDI && MI_TAB[MI_TCH4] == MTAB_MIDI && mtab_rows(MTAB_SYSTEM) == 7u + FELUCCA_CPU2 && MI_TAB[MI_CLRALL] == MTAB_SYSTEM && !menu_valued(MI_CLRALL) &&
 #if FELUCCA_CPU2
                  MI_TAB[MI_CPU2] == MTAB_SYSTEM &&
 #endif
@@ -1863,23 +1877,36 @@ static int test_information(void)
 static int screen_gray(void)
 {
     uint32_t i;
+    uint16_t acc = ux.accent, rec = ux.rec, okc = ux.ok;
+    if (ux.mono) {                                  /* GREY's two colours (secondary, primary) and the battery's green (1.8)
+                                                     * are drawn gray for this check */
+        ux.accent = ux.rec = ux.ok = ux.text; ux.gen++;
+        ui.force = 1; ui_draw();
+    }
     for (i = 0; i < 240u * 240u; i++) {
         uint16_t c = swap16(host_screen[i]);
-        if ((c >> 11) != (c & 31u) || ((c >> 5) & 63u) != (c >> 11) * 2u)
+        if ((c >> 11) != (c & 31u) || ((c >> 5) & 63u) != (c >> 11) * 2u) {
+            ux.accent = acc; ux.rec = rec; ux.ok = okc; ux.gen++; ui.force = 1;
             return 0;
+        }
     }
+    ux.accent = acc; ux.rec = rec; ux.ok = okc; ux.gen++; ui.force = 1;
     return 1;
 }
 static int screen_neutral(void)
 {
     uint32_t i;
+    uint16_t acc = ux.accent, rec = ux.rec, okc = ux.ok;
+    ux.accent = ux.rec = ux.ok = ux.text; ux.gen++;    /* (1.8: MONO's three colours, as GREY's, drawn white for this check) */
+    ui.force = 1; ui_draw();
     for (i = 0; i < 240u * 240u; i++) {
         uint16_t c = swap16(host_screen[i]);
         int32_t d = (int32_t)((c >> 5) & 63u) - (int32_t)(c >> 11) * 2;
         if ((c >> 11) != (c & 31u) || d < -2 || d > 2)
-            return 0;
+            break;
     }
-    return 1;
+    ux.accent = acc; ux.rec = rec; ux.ok = okc; ux.gen++; ui.force = 1;
+    return i == 240u * 240u;
 }
 static int mono_screens(uint32_t pal, int (*chk)(void), uint32_t *n)
 {
@@ -2017,8 +2044,7 @@ static int test_roll(void)
                 *vp = (int16_t)v0;
             }
         }
-    ok &= n > 0u;
-    bad += check("roll: every page and engine: names snap; compact numeric controls retain rolling digits", ok);
+    bad += check("roll: every page and engine: names snap (SLOT A..D); header numeric rolling checked separately", ok);
 
     /* The bank snaps the actual value; the independent header retains rolling
      * digits, bounded damage, direction, retargeting and exact final pixels. */
@@ -2298,6 +2324,41 @@ static int test_chain(void)
     bad += check("cancel preserves the full song", chain_config.count == CHAIN_ROWS);
     turn(EN_K4, 1); press(B_OCTUP); press(B_OCTUP);
     bad += check("confirmed CLEAR SONG keeps musical steps", !chain_config.count && !ui.song_row);
+    {   /* 1.8 (#266): MENU > SYSTEM > CLEAR ALL: the dialog, then a new project (every track's steps and automation, the
+         * song order, BPM); OCT- keeps it all */
+        int ok = 1;
+        char qa[24], qb[24];
+        chain_config.count = 1;                         /* (a section of slot A) */
+        trk[1].step[0].time = ST_NOTE; trk[1].step[0].n = 1;
+        song.g[G_BPM] = (int16_t)(GP[G_BPM].def + 7);
+        ui.menu = 1; ui.menu_sel = MI_CLRALL; press(B_OCTUP);
+        confirm_text(qa, qb);
+        ok &= ui.confirm == CF_CLEAR_ALL && !ui.menu && str_eq(qa, "CLEAR ALL?") && str_eq(qb, "SAVED PROJECTS STAY");
+        press(B_OCTDN);
+        ok &= !ui.confirm && chain_config.count && step_on(&trk[1].step[0]);
+        ui.menu = 1; ui.menu_sel = MI_CLRALL; press(B_OCTUP); press(B_OCTUP);
+        ok &= !ui.confirm && !chain_config.count && song.g[G_BPM] == GP[G_BPM].def && msg_is("ALL CLEARED") &&
+              proj_cur == PROJ_NO_SLOT && !proj_name[0];
+        for (k = 0; k < NTRK; k++) {
+            uint32_t i;
+            ok &= !motion_count(&trk[k]) && trk[k].eng_req == trk_def_engine(k);
+            for (i = 0; i < NSTEP; i++)
+                ok &= !step_on(&trk[k].step[i]);
+        }
+        bad += check("#266 MENU > SYSTEM > CLEAR ALL asks, OCT- keeps, OCT+ a new project (no steps, automation, song)", ok);
+    }
+    {   /* 1.8: SEQ > STEP, EDIT clears the step: SAVE held puts it back */
+        int ok = 1;
+        ui_power_on();
+        go_title("STEP");
+        ui.cursor = 2;
+        TSEL->step[2].time = ST_NOTE; TSEL->step[2].n = 1;
+        press(B_EDIT);
+        ok &= !step_on(&TSEL->step[2]) && msg_is("STEP CLEARED") && str_eq(ui.msg2, "[SAVE] HOLD TO UNDO");
+        hold(B_SAVE);
+        ok &= step_on(&TSEL->step[2]);
+        bad += check("1.8 SEQ > STEP: EDIT clears the step, SAVE held puts it back", ok);
+    }
     return bad;
 }
 
@@ -3102,7 +3163,7 @@ static int test_layer(void)
     ok = transport_req == 1u && ui.layer == LAYER_FX;
     transport_req = 0;
     press(B_SAVE); ok &= ui.home;
-    hold(B_SAVE); ok &= !msg_is("UNDO/REDO T1") && ui.home;
+    hold(B_SAVE); ok &= !msg_is("UNDO/REDO T1 SOUND") && ui.home;
     press(B_ENV); ok &= ui.home;
     hold(B_HOME); ok &= !ui.menu && ui.home;
     btn_up(B_FX); frame();
@@ -5409,6 +5470,21 @@ static int test_note_hit_leds(void)
     bad += check("#147 more notes than slots within the hold: the newest NOTE_HIT_SLOTS show, the oldest goes first", ok);
 
     memset((void *)note_hit, 0, sizeof note_hit);
+    memset(note_hit_next, 0, sizeof note_hit_next);
+    fm1_ms = t0 = 40000u;
+    for (i = 0; i < NOTE_HIT_SLOTS; i++)
+        trk_note_on(t, 60u + i, 100);
+    fm1_ms = t0 + 10u;
+    trk_note_on(t, 62, 100);                         /* refresh a slot ahead of the next eviction */
+    for (i = 0; i < 3u; i++) {
+        fm1_ms = t0 + 20u + i * 10u;
+        trk_note_on(t, 68u + i, 100);
+    }
+    trk_all_off(t);
+    bad += check("#147 overflow keeps a retriggered note ahead of older distinct notes",
+                 hit_slots(0) == (int)NOTE_HIT_SLOTS && hit_leds(t) == ((1u << 9) | (0x7Fu << 11)));
+
+    memset((void *)note_hit, 0, sizeof note_hit);
     for (i = 0; i < NPART; i++) {                       /* all four parts: each part's own key, its own ring */
         song.sel = (uint8_t)i;
         (void)key_leds(0);
@@ -5514,6 +5590,33 @@ static int test_note_hit_leds(void)
     scr_touch();
     ok &= key_leds(0) == 0u;
     bad += check("#147 LEDs going dark (AUTO OFF) ends the events; waking shows no old note", ok);
+    for (i = 0; i < 3u; i++) {
+        ui_power_on();
+        host_idle = host_anim = 0;
+        fm1_ms += 20000u;
+        scr_touch();
+        (void)key_leds(0);                          /* observe stopped state before the map takes over */
+        if (!i) {
+            set_engine_of(TSEL, ENGI_DRUM);
+            go_page(GR_ROLL);
+        } else if (i == 1u) {
+            name_open(NK_PROJ_SAVE, 0);
+        } else {
+            ui.layer = LAYER_SCL;
+        }
+        ok = keys_own();
+        seq_start(); ui_leds();
+        trk_note_on(TSEL, 60, 100); trk_all_off(TSEL);
+        ok &= hit_slots(song.sel) != 0;
+        seq_stop(); ui_leds();
+        bad += check("#147 stop clears events while DRUM grid, NAME or a layer owns the LEDs",
+                     ok && !hit_slots(song.sel));
+        trk_note_on(TSEL, 60, 100); trk_all_off(TSEL);
+        fm1_ms += 10000u; scr_touch(); ui_leds();
+        bad += check("#147 stale events sweep while DRUM grid, NAME or a layer owns the LEDs",
+                     keys_own() && !hit_slots(song.sel));
+    }
+    ui_power_on();
     return bad;
 }
 
@@ -9024,6 +9127,13 @@ static int test_graph_modes(void)
     ok &= !(settings_dev[10] & 6u);
     bad += check("#572 GRAPH SCOPE / CURVE / STILL: stored in bits 1..2 of settings_dev[10]; STILL draws without the scope", ok);
 
+    ui_power_on(); song.playing = 0; frame();          /* the envelope marker follows focus without a value change */
+    TSEL->p[column_param(2)] = TSEL->p[column_param(3)] = 127;
+    turn(EN_K3, 1); frame();                           /* ATK, clamped: hot, nothing changes */
+    turn(EN_K4, 1); frame();                           /* REL, clamped: only the focus moves */
+    ok = ui.read_bank.focus == 3u && panel_curve(TSEL) == CK_ENV && roll_static_now();
+    bad += check("GRAPH TURN: moving focus between clamped envelope knobs redraws the curve's marker", ok);
+
     ui_power_on(); song.playing = 0; frame();          /* harden: a page change ends the turned knob's curve */
     turn(EN_K1, 1);
     ok = ui.curve_t > 0u;
@@ -9883,7 +9993,7 @@ static int test_fm6_ops(void)
           fm6_patch[tr][at] == before[at] - 7u && slot_own() && fop_op == 2u;
     bad += check("FM6 ops: OPERATOR KNOB 4 on OP 3: its LEVEL byte only; F5 -> SLOT OWN", ok);
     hold(B_SAVE);
-    ok = !memcmp(before, fm6_patch[tr], FP_SIZE) && TSEL->p[P_E7] == 4 && fm6_slot[tr] == 4u && msg_is("UNDO/REDO T2");
+    ok = !memcmp(before, fm6_patch[tr], FP_SIZE) && TSEL->p[P_E7] == 4 && fm6_slot[tr] == 4u && msg_is("UNDO/REDO T2 SOUND");
     hold(B_SAVE);
     ok &= fm6_patch[tr][3u * FP_OP + FP_OL] == before[3u * FP_OP + FP_OL] - 7u && slot_own();
     frames(1600);
@@ -11419,7 +11529,7 @@ static int test_macro_ui(void)
         words &= str_eq(ui_mod_dst_name(TSEL, MD_E1 + 1), LABEL[s][0]) && str_eq(ui_mod_dst_name(TSEL, MD_E1 + 2), SHORT[s]);
         ev_name(TSEL, P_E2, name); words &= str_eq(name, SHORT[s]);
         ui_param_format(TSEL, P_E0, track_desc(TSEL, P_E0), (int32_t)s, val, &unit);
-        words &= !strncmp(val, N_MACRO_SHAPE[s], 5) && strlen(val) <= 5u && fmt_named;
+        words &= !strncmp(val, N_MACRO_SHAPE[s], 6) && strlen(val) <= 6u && fmt_named;
         words &= str_eq(track_desc(TSEL, P_E1)->label, "TIMBRE") && str_eq(track_desc(TSEL, P_E2)->label, "COLOR") &&
                  str_eq(track_desc(TSEL, P_E0)->label, "SHAPE") && track_desc(TSEL, P_E2)->fmt == F_PCT;
         track_hash = fnv(2166136261u, trk, sizeof trk);
@@ -11455,7 +11565,7 @@ static int test_macro_ui(void)
         go_home(); draw_columns();
         words &= str_eq(ui_param_label(TSEL, P_E1), MACRO_LABEL[s][0]) && str_eq(ui_param_label(TSEL, P_E2), MACRO_LABEL[s][1]);
         ui_param_format(TSEL, P_E0, track_desc(TSEL, P_E0), (int32_t)s, val, &unit);
-        words &= !strncmp(val, N_MACRO_SHAPE[s], 5) && strlen(val) <= 5u && fmt_named;
+        words &= !strncmp(val, N_MACRO_SHAPE[s], 6) && strlen(val) <= 6u && fmt_named;
         fits &= help_fits(help_page());
         go_title("EDIT 1"); draw_columns();
         fits &= help_fits(help_page());
@@ -11479,6 +11589,133 @@ static int test_macro_ui(void)
     return bad;
 }
 #endif
+
+/* 1.8 (the UX audit): steps edited by hand are undone themselves (not the load before them), PLAY stops from the menu
+ * and a dialog, DELETE SECTION names the section, an external clock lost says so */
+static int test_ux18(void)
+{
+    int bad = 0, ok;
+    char qa[24], qb[24];
+    track_t *t;
+    ui_power_on();
+    song.sel = 0; t = TSEL;
+    go_home(); frame();
+    turn(EN_PRESET, 1);                              /* a sound load: the undo's copy */
+    {
+        uint8_t eng = t->eng_req, pr = t->preset;
+        go_title("STEP");
+        ui.cursor = 2;
+        t->step[2].time = ST_NOTE; t->step[2].n = 1; t->step[2].note[0] = 60;
+        turn(EN_K2, 2); turn(EN_K2, 1);              /* NOTE, one gesture */
+        ok = t->step[2].note[0] == 63;
+        hold(B_SAVE);
+        ok &= t->step[2].note[0] == 60 && t->eng_req == eng && t->preset == pr && msg_is("UNDO/REDO T1 STEPS");
+        hold(B_SAVE);
+        ok &= t->step[2].note[0] == 63;
+        bad += check("1.8 STEP: KNOB 2 on a step, SAVE held: the note back (not the sound loaded before), again redoes", ok);
+    }
+    ui_power_on();
+    song.sel = 0; t = TSEL;
+    go_title("STEP");
+    song.rec = 1u; ui.cursor = 0;                    /* armed, stopped: step entry */
+    tap_key(white(3));
+    ok = step_on(&t->step[0]) && ui.cursor == 1u;
+    hold(B_SAVE);
+    ok &= !step_on(&t->step[0]) && msg_is("UNDO/REDO T1 STEPS");
+    song.rec = 0;
+    bad += check("1.8 STEP: a step entered by the keys, SAVE held takes it out", ok);
+    ui_power_on();
+    song.sel = 3; t = TSEL;                          /* T4: DRUM */
+    go_title("STEP");
+    ok = drum_track(t);
+    {
+        uint32_t i, was = 0;
+        for (i = 0; i < 4u; i++)
+            was |= step_lanes(&t->step[i]) & (1u << ui.lane);
+        tap_key(white(1)); tap_key(white(2));        /* two hits on one lane in a row: one undo */
+        ok &= !was && ((step_lanes(&t->step[1]) | step_lanes(&t->step[2])) >> ui.lane & 1u);
+        hold(B_SAVE);
+        ok &= !((step_lanes(&t->step[1]) >> ui.lane) & 1u) && !((step_lanes(&t->step[2]) >> ui.lane) & 1u);
+    }
+    bad += check("1.8 DRUM grid: hits put in a row, SAVE held takes them out together", ok);
+
+    ui_power_on();
+    ui.menu = 1; song.playing = 1; transport_req = 0;
+    press(B_PLAY);
+    ok = transport_req == 2u && ui.menu;
+    song.playing = 0; transport_req = 0;
+    press(B_PLAY);
+    ok &= transport_req == 0u && ui.menu;
+    ui.menu = 0; ui.confirm = CF_CLEAR_SONG; song.playing = 1;
+    press(B_PLAY);
+    ok &= transport_req == 2u && ui.confirm == CF_CLEAR_SONG;
+    ui.confirm = 0; song.playing = 0; transport_req = 0;
+    bad += check("1.8 PLAY stops from the menu and a dialog (they stay), starts nothing there", ok);
+
+    ui_power_on();
+    chain_config.count = 2;
+    chain_config.row[1].slot[0] = 0; chain_config.row[1].slot[1] = 0;
+    chain_config.row[1].slot[2] = 1; chain_config.row[1].slot[3] = CHAIN_SILENT;
+    chain_config.row[1].repeat = 4;
+    ui.confirm = CF_DEL_ROW; ui.confirm_trk = 1;
+    confirm_text(qa, qb);
+    ok = str_eq(qa, "DELETE SECTION 2?") && str_eq(qb, "A A B - X4");
+    ui.confirm = CF_INIT_SOUND; ui.confirm_trk = 2;
+    confirm_text(qa, qb);
+    ok &= str_eq(qa, "INITIALIZE T3 SOUND?");
+    ui.confirm = 0; chain_defaults(&chain_config);
+    bad += check("1.8 dialogs: DELETE SECTION 2? with its slots and repeats; INITIALIZE T3 SOUND?", ok);
+
+    ui_power_on();
+    ok = !proj_changed();
+    song.g[G_BPM]++;
+    ok &= proj_changed();
+    transport_req = 1;
+    ok &= project_save(0) != 0 && proj_changed();
+    transport_req = 0;
+    ok &= project_new() == 0 && !proj_changed();
+    bad += check("1.8 project dirty baseline: boot and CLEAR ALL clean, refused save keeps changes dirty", ok);
+
+    ui_power_on();
+    ok = ml_learn(22, 0, P_LEVEL) == 1u;
+    ui.menu = 1; ui.menu_sel = MI_LCLEAR; press(B_OCTUP);
+    confirm_text(qa, qb);
+    ok &= ui.confirm == CF_LEARN_CLEAR && str_eq(qa, "CLEAR MIDI LEARN?") && str_eq(qb, "1 CC GO") && ml_count() == 1u;
+    press(B_OCTDN);
+    ok &= !ui.confirm && ml_count() == 1u;
+    ui.menu = 1; ui.menu_sel = MI_LCLEAR; press(B_OCTUP); press(B_OCTUP);
+    ok &= !ui.confirm && !ml_count() && msg_is("LEARN CLEARED");
+    bad += check("1.8 LEARN CLEAR: asks, OCT- keeps learned CCs, OCT+ clears them", ok);
+
+    ui_power_on();
+    {
+        char val[12]; const char *unit;
+        uint32_t j;
+        param_format(&GP[G_RTYPE], 1, val, &unit);
+        ok = str_eq(val, "SPRING");
+        param_format(&TP[P_AMODE], AM_REPEAT, val, &unit);
+        ok &= str_eq(val, "REPEAT");
+        for (j = 1; j <= 4u; j++) {
+            param_format(&GP[G_SLOT], (int32_t)j, val, &unit);
+            ok &= val[0] == (char)('A' + j - 1u) && !val[1];
+        }
+        bad += check("1.8 value names: full SPRING / REPEAT and project SLOT A..D", ok);
+    }
+    go_title("VOICE 3");
+    turn(EN_K2, 1);
+    ok = TSEL->p[P_ATSNS] == 1 && TSEL->p[P_ATDST] == MD_CUT && TSEL->p[P_ATAMT] == 32 && msg_is("AT: F3-C5 KEYS ONLY");
+    turn(EN_K2, -1); TSEL->p[P_ATDST] = MD_PITCH; TSEL->p[P_ATAMT] = 17; turn(EN_K2, 1);
+    ok &= TSEL->p[P_ATDST] == MD_PITCH && TSEL->p[P_ATAMT] == 17;
+    track_select(3); go_title("VOICE 3"); turn(EN_K2, 1);
+    ok &= TSEL->p[P_ATDST] == MD_DIST && TSEL->p[P_ATAMT] == 32;
+    bad += check("1.8 AFTERTOUCH panel: enabling chooses CUT +32 (DRUM DIST), existing routing stays", ok);
+
+    ui_power_on();
+    clock_lost = 2; frame();
+    ok = msg_is("NO CLOCK (TRS)") && !clock_lost;
+    bad += check("1.8 an external clock lost: NO CLOCK (TRS)", ok);
+    return bad;
+}
 
 int main(int argc, char **argv)
 {
@@ -11592,6 +11829,7 @@ int main(int argc, char **argv)
     bad += test_prev_page();
     bad += test_footer_first();
     bad += test_no_flash();
+    bad += test_ux18();
 #if FELUCCA_FM4
     bad += test_fm_charts();                        /* (DIGITAL's charts: built with FELUCCA_FM4=1 only) */
 #else

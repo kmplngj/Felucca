@@ -35,3 +35,10 @@ thanks the work below; each keeps its own licence (see [LICENSE](LICENSE), [LICE
   [jasonpersinger](https://github.com/jasonpersinger) (the ROOM reverb click fix, #121),
   [renebohne](https://github.com/renebohne) (MIDI Program Change, #179),
   [gospodindilly-ops](https://github.com/gospodindilly-ops) (the second core, #247)
+
+- Upstream 1.8.0 integration: **wojciechsura** (CLEAR ALL), **hellsend** (FM6 AMS),
+  **ugotworms** (ADPCM engine), and Leo Kuroshita (aftertouch, UI and desktop).
+  The FM-1 analog pressure scanner derives from Charles Vestal's fm1-base work
+  ([MPL-2.0](LICENSES/MPL-2.0-felucca-bsp.txt), [BSP notice](LICENSES/NOTICE-felucca-bsp.txt));
+  the optional BRR decoder derives from Shay Green's snes_spc
+  ([LGPL-2.1-or-later](LICENSES/LGPL-2.1-snes_spc.txt)).

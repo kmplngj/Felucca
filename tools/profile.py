@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ENGINE_ID_LIMIT = 64
 IDENTITY_REFERENCE = 'profiles/engine-identities.json'
 
-SUPPORTED_PROFILES = ('standard', 'reduced-lofi', 'macro')
+SUPPORTED_PROFILES = ('standard', 'reduced-lofi', 'macro', 'adpcm')
 
 OUTPUTS = ('felucca_profile.h', 'engine_includes.inc', 'engine_registry.inc',
            'engine_metadata.inc', 'engine_cc.inc', 'engine_categories.inc', 'engine_names.inc', 'engine_order.inc', 'resolved-profile.json')
@@ -290,7 +290,7 @@ def collection_provenance(catalog, engines, providers, pins, hashes, api, licens
 
 
 def validate_selection(root, name):
-    if not name or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in name):
+    if not name or len(name) > 64 or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in name):
         raise ValueError('invalid profile name')
     catalog_path, profile_path = root / 'profiles/catalog.json', root / f'profiles/{name}.json'
     catalog, profile = read_json(catalog_path), read_json(profile_path)

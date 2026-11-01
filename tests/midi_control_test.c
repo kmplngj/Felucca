@@ -2,6 +2,25 @@
  * End-to-end channel input and external-clock tests using the real queues,
  * UART parser, ownership model, sequencer, voice renderer and UI source. */
 #include "ui_harness.h"
+/* Pressure math uses the production main-loop reader; only converter ownership is simulated here.
+ * The existing input test exercises the real asynchronous GPIO/ADC scanner. */
+#include "../firmware/src/keytouch.h"
+static volatile struct { uint16_t con, master; uint8_t drive, probe, pend, master_valid; } fm1_an;
+enum { FM1_ADC_MASTER = 4, FM1_ADC_BATT = 3 };
+#define FM1_ADC_CON(div, delay) ((div) | ((delay) << 12))
+static uint32_t at_adc_reads, at_test_ticks, at_drain;
+static int32_t fm1_adc_read(uint32_t ch) { at_adc_reads++; return ch == FM1_ADC_MASTER ? 700 : 600; }
+static uint32_t at_ticks(void)
+{
+    if (at_drain && --at_drain == 0)
+        fm1_an.pend = 0;                         /* TIMER5 takes its earlier conversion while the main loop waits. */
+    return at_test_ticks += 1000u;
+}
+#define fm1_ticks at_ticks
+#include "../firmware/src/keytouch.c"
+#undef fm1_ticks
+#include "../firmware/src/master.c"
+
 
 static void midi_test_reset(void)
 {
@@ -25,6 +44,111 @@ static int gate_note(const track_t *t, uint32_t note)
     for (uint32_t i = 0; i < NVOICE; i++) if (t->v[i].active && t->v[i].gate && t->v[i].note == note) return 1;
     return 0;
 }
+static int aftertouch_test(void)
+{
+    int bad = 0;
+    midi_test_reset();
+    track_t *t = &trk[0];
+    memset((void *)kt_p, 0, sizeof kt_p);
+    memset(kt_at, 0, sizeof kt_at);
+    memset((void *)kt_dn, 0, sizeof kt_dn);
+    kt_on = 0; kt_seq = kt_done = 0; kt_ms = 0;
+    kt_poll(5);
+    bad += check("aftertouch defaults leave pressure scanner off", !kt_on && !fm1_an.con && !t->at);
+    t->p[P_ATSNS] = 5;
+    kt_poll(10);
+    master_knob = 700 * 16;
+    song.master_q12 = master_of_pot(700);
+    fm1_an.master = 0;                           /* no phase-1 column-0 conversion completed yet */
+    master_poll();
+    bad += check("enabling pressure sensing preserves MASTER until its first pot sample", !fm1_an.master_valid &&
+                 master_knob == 700 * 16 && song.master_q12 == master_of_pot(700));
+    fm1_an.master = 700;
+    fm1_an.master_valid = 1;
+    master_poll();
+    bad += check("first unchanged scanned MASTER value produces no level dip", master_knob == 700 * 16 &&
+                 song.master_q12 == master_of_pot(700));
+    fm1_in.notes = 1u;
+    events_block(CTL);
+    kt_sample(0, 800, 1);
+    kt_poll(15);
+    bad += check("a resting key establishes zero pressure", kt_on && kt_p[0] == 0);
+    song.sel = 1;
+    kt_poll(20);
+    bad += check("a held original track keeps pressure scan on across track selection", kt_on && fm1_an.con);
+    for (uint32_t ms = 25; ms <= 300; ms += 5) {
+        kt_sample(0, 800, 1);
+        kt_poll(ms);
+    }
+    usb.config = 1;
+    mo_r = mo_w;
+    for (uint32_t ms = 305; ms <= 500; ms += 5) {
+        kt_sample(0, 400, 1);
+        kt_poll(ms);
+        events_block(CTL);
+    }
+    bad += check("physical lean produces pressure on the held key's original track", kt_p[0] > 90 && t->at == kt_p[0] && !trk[1].at);
+    uint32_t pkt = midi_out_q[(mo_w - 1u) % MQ];
+    bad += check("physical pressure emits USB MIDI channel pressure", mo_w != mo_r && (pkt & 0xFFFFu) == 0xD00Du &&
+                 ((pkt >> 16) & 127u) == t->at);
+    t->p[P_ATDST] = MD_PAN;
+    t->p[P_ATAMT] = 32;
+    int16_t pan = t->p[P_PAN];
+    mod_begin(t);
+    bad += check("dedicated AT route modulates a part without taking a matrix slot", t->p[P_PAN] > pan);
+    mod_end(t);
+    bad += check("aftertouch leaves the saved parameter unchanged after the block", t->p[P_PAN] == pan);
+    /* Five distinct block destinations require all five scratch entries, including the fifth AT slot. */
+    const uint32_t dst[4] = {MD_PAN, MD_DLY, MD_REV, MD_RATE};
+    for (uint32_t i = 0; i < 4; i++) {
+        t->p[P_M1SRC + 3u * i] = MS_AT;
+        t->p[P_M1DST + 3u * i] = (int16_t)dst[i];
+        t->p[P_M1AMT + 3u * i] = 16;
+    }
+    t->p[P_ATDST] = MD_CHO;
+    int16_t stored[P_COUNT];
+    memcpy(stored, t->p, sizeof stored);
+    mod_begin(t);
+    bad += check("four matrix routes and dedicated AT route coexist", MOD(t).nk == 5);
+    mod_end(t);
+    bad += check("all five modulation destinations restore their stored values", !memcmp(stored, t->p, sizeof stored));
+    fm1_in.notes = 0;
+    events_block(CTL);
+    kt_poll(505);
+    events_block(CTL);
+    bad += check("key release sends zero pressure to its original track", !kt_p[0] && !t->at);
+    kt_poll(510);
+    bad += check("unselected track and no held pressure shut the scanner off", !kt_on && !fm1_an.con);
+    song.sel = 0;
+    t->p[P_ATSNS] = 0;
+    queued(0xD0, 91, 0, 1);
+    kt_poll(515);
+    events_block(CTL);
+    bad += check("MIDI pressure remains usable with physical sensing off", !kt_on && t->at == 91);
+    queued(0xB0, 121, 0, 1);
+    bad += check("Reset Controllers clears dedicated aftertouch input", !t->at);
+    /* ADC handoff: a scan conversion can remain pending after sensing is turned off. */
+    fm1_an.pend = 1;
+    at_adc_reads = 0;
+    bad += check("pending scan retains ADC ownership after sensing is off", kt_adc_master() == -1 &&
+                 kt_adc_batt(2000) == -1 && !at_adc_reads);
+    fm1_an.pend = 0;
+    bad += check("main-loop ADC reads resume once the scan has taken its conversion", kt_adc_master() == 700 &&
+                 kt_adc_batt(2000) == 600 && at_adc_reads == 2);
+    fm1_an.con = (uint16_t)FM1_ADC_CON(7, 2);
+    uint16_t con = fm1_an.con;
+    fm1_an.pend = 1;
+    at_adc_reads = at_test_ticks = at_drain = 0;
+    bad += check("battery handoff timeout skips conversion and restores scanner", kt_adc_batt(3000) == -1 &&
+                 fm1_an.pend && fm1_an.con == con && !at_adc_reads);
+    at_drain = 2;
+    bad += check("battery conversion waits for the pending scan result", kt_adc_batt(4000) == 600 &&
+                 !fm1_an.pend && fm1_an.con == con && at_adc_reads == 1);
+    fm1_an.con = 0;
+    usb.config = 0;
+    return bad;
+}
+
 static int controls_test(void)
 {
     int bad = 0; midi_test_reset(); track_t *t = &trk[0];
@@ -970,7 +1094,14 @@ static int learn_test(void)
     turn(EN_K1, 3); press(B_OCTDN);
     ok &= ml_count() == ML_N && ui.menu == 1;                           /* (knobs, OCT-: nothing) */
     press(B_OCTUP);
-    ok &= !ml_count() && msg_is("LEARN CLEARED") && ui.menu == 1 && song.octave == 0 && oct_leds() == 0u;
+    ok &= ui.confirm == CF_LEARN_CLEAR && ml_count() == ML_N;
+    press(B_OCTDN);                                     /* cancel preserves every learned assignment */
+    ok &= !ui.confirm && ml_count() == ML_N;
+    hold(B_HOME);
+    press(B_OCTUP);
+    ok &= ui.confirm == CF_LEARN_CLEAR;
+    press(B_OCTUP);
+    ok &= !ml_count() && msg_is("LEARN CLEARED") && !ui.confirm && song.octave == 0;
     memcpy(before, trk[1].p, sizeof before);
     press(B_HOME);
     queued(0xB0, 74, 3, 1);
@@ -982,7 +1113,7 @@ static int learn_test(void)
 
     /* the stored codes with 1.5's parameters (the INSERT 96..100, TYPE 101, ESYNC 102, P_E0 103): a common parameter
      * id + 1, below ML_E0; an engine one ML_E0 + k whatever P_E0 is; every id back as it went in */
-    ok = P_E0 == 103u && P_COUNT == 111u && P_E0 < ML_E0;
+    ok = P_E0 == 106u && P_COUNT == 114u && P_E0 < ML_E0;
     for (i = 0; i < P_COUNT; i++)
         ok &= ml_id(ml_code(i)) == i && (i < P_E0 ? ml_code(i) == i + 1u && ml_code(i) < ML_E0 : ml_code(i) == ML_E0 + i - P_E0);
     ok &= ml_id(0) == P_COUNT && ml_id(P_E0 + 1u) == P_COUNT && ml_id(ML_E0 - 1u) == P_COUNT;   /* (no such parameter) */
@@ -994,7 +1125,7 @@ static int learn_test(void)
     queued(0xB0, 31, 127, 1);
     queued(0xB0, 33, 127, 1);
     ok &= trk[1].p[P_IMIX] == 0 && trk[2].p[P_ESYNC] == 1 && trk[3].p[P_E0 + 3u] == param_desc_of(eng_idx(trk[3].eng_req), P_E0 + 3u)->max;
-    bad += check("MIDI LEARN codes with 1.5's P_E0 103: common ids + 1 (INSERT MIX, ESYNC), engine ML_E0 + k; all ids round trip", ok);
+    bad += check("MIDI LEARN codes with aftertouch P_E0 106: common ids + 1 (INSERT MIX, ESYNC), engine ML_E0 + k; all ids round trip", ok);
     memset(settings_ml, 0, 32);
     return bad;
 }
@@ -1044,7 +1175,7 @@ static int pc_test(void)
     pc(0, 1); frame();
     ok &= t->preset == 1;
     hold(B_SAVE);
-    ok &= same_sound(t, &was) && msg_is("UNDO/REDO T1");
+    ok &= same_sound(t, &was) && msg_is("UNDO/REDO T1 SOUND");
     bad += check("  two before a frame: the last loads; a run of PCs is one undo (SAVE held: the sound before)", ok);
 
     /* the editor: a RELOAD for the selected track only */
@@ -1173,7 +1304,7 @@ static int pc_test(void)
 }
 int main(void)
 {
-    int bad = controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
+    int bad = aftertouch_test() + controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
               arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

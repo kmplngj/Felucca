@@ -44,6 +44,13 @@
 #endif
 #define ENGI_TEST FELUCCA_PROFILE_NSLOTS   /* host fixture follows every real stable catalog slot */
 #define ENGI_MACRO 14u
+#define ENGI_ADPCM 15u
+#ifndef FELUCCA_ADPCM
+#define FELUCCA_ADPCM FELUCCA_PROFILE_ENGINE_15
+#endif
+#if FELUCCA_ADPCM != FELUCCA_PROFILE_ENGINE_15
+#error "Select FELUCCA_PROFILE=adpcm to build the optional ADPCM engine"
+#endif
 #define NENGINES (FELUCCA_PROFILE_NSLOTS + FELUCCA_ENG_TEST14)   /* this build's engine table: ids 0..NENGINES-1 (FELUCCA_SLICE=0
                                                   * leaves 13 out of the catalog, its slot stays: engines.c) */
 #ifndef FELUCCA_CPU2
@@ -122,6 +129,7 @@ enum {                          /* per-track parameters */
     P_ITYPE, P_IA, P_IB, P_IC, P_IMIX,         /* 1.5 (#78, #177): the INSERT, its TYPE, three values and MIX (fx.c) */
     P_FTYPE,                                   /* 1.5 (#104): ANALOG's filter TYPE, LP (as before) / BP / HP (eng_analog.c) */
     P_ESYNC,                                   /* 1.5 (#175): ENV SYNC: ATK DEC REL as note values of the tempo (voice.c) */
+    P_ATSNS, P_ATDST, P_ATAMT,                 /* 1.8: physical pressure sensitivity and dedicated AT routing */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
     P_COUNT
 };
@@ -370,9 +378,9 @@ typedef struct track {
     uint8_t lfo_wrap;            /* the LFO's phase wrapped this block: its S&H is drawn after the parts (voice.c) */
     uint32_t esync_k[3];         /* ATK's step, DEC's and REL's coefficient (Q16) this block (voice.c esync_coef) */
     uint8_t spread_on;           /* SPREAD this block (fx.c mix_part, voice.c track_render) */
-    uint8_t rsv_sz[9];           /* (sizeof(track_t) a multiple of 16: below) */
+    uint8_t rsv_sz[5];           /* (sizeof(track_t) a multiple of 16: below) */
 #else
-    uint8_t rsv_sz[7];           /* (sizeof(track_t) a multiple of 16: below) */
+    uint8_t rsv_sz[5];           /* (sizeof(track_t) a multiple of 16: below) */
 #endif
     int16_t armp, aholdp;        /* P_AMODE / P_AHOLD as last seen by the ISR */
     /* engine switch (voice.c engine_block): the old engine's voices fade out, then it switches */

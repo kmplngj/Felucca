@@ -23,6 +23,13 @@ OPTIONAL = ESTIMATOR["OPTIONAL"]
 
 
 class SpanFixtures(unittest.TestCase):
+    def test_overlapping_heads_are_one_loop(self):
+        self.assertEqual(ESTIMATOR["spans"]({100: 160, 120: 180}), [(100, 180)])
+        self.assertEqual(ESTIMATOR["spans"]({100: 140, 120: 180, 160: 200}), [(100, 200)])
+
+    def test_contained_loop_stays_nested(self):
+        self.assertEqual(ESTIMATOR["spans"]({100: 200, 120: 160}), [(100, 200), (120, 160)])
+
     def test_real_pi32v2_listing(self):
         fns = ESTIMATOR["functions"](HERE / "target_budget_fixtures" / "real_pi32v2.dis")
         self.assertEqual(set(fns), {"dv_out"})
@@ -340,6 +347,17 @@ class CommandLineFixtures(unittest.TestCase):
             row = next(line for line in present.stdout.splitlines() if line.split()[:2] == ["target:", name])
             self.assertIn(f"(budget {limit}) ok", row)
         self.assertEqual(self.budget.read_bytes(), before)
+
+    def test_restart_fence_helper_rejects_a_loop_with_unchanged_poll(self):
+        name = "ep1_restart_ready"
+        self.write_dis(extra=("usb_poll", name), loops={name: 1})
+        before = self.cli()
+        self.assert_status(before, 0)
+        self.write_dis(extra=("usb_poll", name))
+        after = self.cli()
+        self.assert_status(after, 1)
+        row = next(line for line in after.stdout.splitlines() if line.split()[:2] == ["target:", name])
+        self.assertIn("(budget 0) OVER BUDGET", row)
 
     def test_update_rewrites_required_only_then_checks(self):
         self.budget.unlink()

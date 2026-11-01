@@ -77,9 +77,10 @@ FUN1..FUN4: `proj_from_v4` .. `proj_from_v1`), then always `proj_engines_ok`, `p
 | FUN7 | `FUN7`, serialized: np at byte 66 (89 before the chord keys, 91), biased byte params, 9-byte steps, chain v9, 260 B motion (64 x 4 B) | 3388 | `proj_unpack` (v7), `proj_motion_v9`, `proj_motion_ids`, `chain_from_v9` | by count; init FM6 patches; G_RTYPE ROOM if out of range; motion ids moved with P_E0 | `tests/old_pack.h`, `fun10_test.c`, `project_test.c`, `backup_test.c` | yes, before 1.0 (source comment) |
 | FUN8 | `FUN8`, FUN7 + 4 x 128 B FM6 patches at name - 512; np 91 | 3584 | `proj_unpack` (v8) | by count (DRUM lane levels 100 %); its patches | `old_pack.h`, `fun10_test.c`, `backup_test.c` | yes, 1.0.x (source comment) |
 | FUN9 | `FUN9`, FUN8 + 64 B; np 99 (DRUM lane levels) | 3648 | `proj_unpack` (v9) | by count (LFO 2 SYNC OFF, TRIG NOTE, POL BI, QUANTIZE ON, SPREAD 0), nudges 0 | `old_pack.h`, `fun10_test.c`, `backup_test.c` | yes, 1.1 (source comment) |
-| FUN10 np 103 | `FUNA` 0x46554E41, byte 66 = 103 (before SPREAD) | 3840 | `proj_unpack` (v10), `core.h params_by_count` | SPREAD 0, engine values and their motion ids up by one (then by seven) | `fun10_test.c` | only from 1.2 development builds before SPREAD (source comment) |
-| FUN10 np 104 | `FUNA`, byte 66 = 104 | 3840 | as above | INSERT OFF, filter TYPE LP, ENV SYNC OFF; engine values / motion ids up by seven | `fun10_test.c`, `insert_test.c` | yes, 1.2 .. 1.4 (source comment) |
-| FUN10 np 111 | `FUNA`, byte 66 = 111 = P_COUNT | 3840 | `proj_unpack` | **current** | all project suites | current writer |
+| FUN10 np 103 | `FUNA` 0x46554E41, byte 66 = 103 (before SPREAD) | 3840 | `proj_unpack` (v10), `core.h params_by_count` | SPREAD 0, engine values and their motion ids up by one, then seven, then three for aftertouch | `fun10_test.c` | only from 1.2 development builds before SPREAD (source comment) |
+| FUN10 np 104 | `FUNA`, byte 66 = 104 | 3840 | as above | INSERT OFF, filter TYPE LP, ENV SYNC OFF; engine values / motion ids up by seven, then three for aftertouch | `fun10_test.c`, `insert_test.c` | yes, 1.2 .. 1.4 (source comment) |
+| FUN10 np 111 | `FUNA`, byte 66 = 111 | 3840 | `proj_unpack`, `params_by_count` | aftertouch defaults OFF; engine values / motion ids up by three | all project suites | yes, 1.5 .. 1.7 |
+| FUN10 np 114 | `FUNA`, byte 66 = 114 = P_COUNT | 3840 | `proj_unpack` | **current**, including aftertouch 103..105 | all project suites | current writer |
 | (retained RAM) | a `.noinit` slot holding a shorter older record inside 3840 B | n/a | `proj_import_any` (size word < 3840) | as its format; RAM only, refilled from flash otherwise | `project_test.c`, `fun10_test.c` | after a warm reset across an update |
 
 Conversions inside any project format (applied on every import; the stored record keeps what it holds until it is
@@ -117,7 +118,7 @@ magic, record size or count reads as **empty** (`up_bank_check` zeroes the RAM m
 | ver 2 | int16 values (note pattern) | `up_values`, `up_params` -> `params_by_count` | by count | `upreset_test.c` | yes, since 1.0 |
 | ver 3 | int16 values, drum grid pattern | `up_grid` | by count, grid | `upreset_test.c` | yes (grid era) |
 | ver 4 / 5 | byte-packed values (+64), category at byte 143; 5 = grid | `up_value`, `up_cat_of` | **current** (np = P_COUNT) | `upreset_test.c`, `robust_test.c` | current writer |
-| np 53..104 | `np` < P_COUNT (111) | `params_by_count` | by count, new parameters at defaults | `upreset_test.c`, `fun10_test.c` | yes |
+| np 53..113 | `np` < P_COUNT (114) | `params_by_count` | by count, new parameters at defaults | `upreset_test.c`, `fun10_test.c` | yes |
 | ver > 5 or invalid | `up_valid` fails | kept as inert bytes in the bank | not listed (EMPTY slot) | `backup_test.c` ("future record version") | from later firmware |
 | PHYS MODEL 4 | engine PHYS, E0 = 4 | `up_migrate` (RAM mirror, at boot and `UP_PUT`) -> `drum_from_phys` | DRUM; **written back** at the bank's next write | `upreset_test.c` | yes |
 | SAMPLE PERC | engine SAMPLE, E0 = 4 | `up_migrate` -> `drum_from_perc` | DRUM default kit; written back as above | `upreset_test.c` | yes, before 1.0.3 |
@@ -200,9 +201,9 @@ implicitly).
 
 | Type | Schema id | Length | Validation the firmware keeps | Growth budget |
 | --- | --- | ---: | --- | --- |
-| 1..4, 9 | `FUNA` + size 3840 + byte 66 = P_COUNT (111) | 3840 | storage CRC, FNV-1a, `proj_unpack` ranges, `proj_engines_ok`, chain/motion validity | **none in the object** (3840 B = `ST_PAYLOAD_MAX`); 13 spare bytes before `PROJ_MIDI_OFF` (3 track parameters). Further project data goes to PRX sidecars (types 10..14, A3, #316), tagged to the parent by value hash or uid ([flash-capacity.md 6](flash-capacity.md#6-what-the-prx-sidecar-needs)) |
+| 1..4, 9 | `FUNA` + size 3840 + byte 66 = P_COUNT (114) | 3840 | storage CRC, FNV-1a, `proj_unpack` ranges, `proj_engines_ok`, chain/motion validity | **none in the object** (3840 B = `ST_PAYLOAD_MAX`); 1 spare byte before `PROJ_MIDI_OFF` (no additional track parameter). Further project data goes to PRX sidecars (types 10..14, A3, #316), tagged to the parent by an association defined by the PRX design ([flash-capacity.md 6](flash-capacity.md#6-what-the-prx-sidecar-needs)) |
 | 0 | `PER4` (572) or `PER6` ext ver 1 (672..2688) | as stored | storage CRC, `persist_ext_ok`, the field checks of `ed_bk_commit` | SETX tail (`ver` 2, tagged chunks) inside the 2,688 B envelope: 960 B (A2, #315). Calibration (`panel_t`) to be split from preferences: never imported from another device's record |
-| 5, 6 | `UPB1`, rsize 192, 16 slots; records ver 4 / 5, np = P_COUNT | 3080 | storage CRC, bank shape, `up_valid` | 32 packed value bytes per record unused (np 111 of 144, the category at 143); deep patches go to DEEP sidecars (A4, #317) |
+| 5, 6 | `UPB1`, rsize 192, 16 slots; records ver 4 / 5, np = P_COUNT | 3080 | storage CRC, bank shape, `up_valid` | 29 packed value bytes per record unused (np 114 of 144, the category at 143); deep patches go to DEEP sidecars (A4, #317) |
 | 8 | `UPF6` ver 1, 32 slots | 3728 | storage CRC, `upf_valid`, tag match | 112 B |
 | 32 | `FM6V` ver 1, 32 voices | 3616 | storage CRC, `ed_bk_fvb_check` | tail kept erased (SPL record scan) |
 
@@ -256,9 +257,9 @@ patches. Both have representative DIGITAL, PHYS and SAMPLE PERC cases.
 | Section | Store and firmware path run | Input | Output | Dropped / moved |
 | --- | --- | --- | --- | --- |
 | `projects` | FUN10 (`phys` byte 0, 1, 2), FUN8 and FUN7 (both np 91): `proj_import`, `proj_bound`, `proj_pack` (what `proj_fetch` does) | the whole image | the whole FUN10 image; per track engine and preset before and after | `motion_dropped`: motion events on EDIT (>= P_E0) and OP ENV values of a converted DIGITAL track or SAMPLE PERC track (track, step, parameter, lock, value) |
-| `presets` | `UPB1` record: `up_bank_check` (boot: PHYS MODEL 4 and SAMPLE PERC become DRUM in the RAM mirror), then `up_load` | the 192-byte record as stored | `record_out` (the mirror's record); `loaded`: engine, preset, 111 values (int16) and the FM6 patch (155 B + 1) the track gets | a DIGITAL record is kept as stored (`record_out` equals `input`) and converts on every load; version 1 PHYS MODEL 2 reads as MODAL bowed in `loaded` |
+| `presets` | `UPB1` record: `up_bank_check` (boot: PHYS MODEL 4 and SAMPLE PERC become DRUM in the RAM mirror), then `up_load` | the 192-byte record as stored | `record_out` (the mirror's record); `loaded`: engine, preset, 114 values (int16) and the FM6 patch (155 B + 1) the track gets | a DIGITAL record is kept as stored (`record_out` equals `input`) and converts on every load; version 1 PHYS MODEL 2 reads as MODAL bowed in `loaded` |
 | `favourites` | PER4 (572 B) and PER6 (ext ver 1, 64 rows): `settings_import` | `rows_in`: the non-zero favourites rows (row = engine id, 32 B, preset bits LSB first) | `rows_out`: the runtime rows | `moved` (DIGITAL preset k to FM6 preset `FM4_TO_FM6[k]`; SAMPLE PERC, bit 4 of row 4, to DRUM preset 0) and `dropped` (row 1 bits past the 8 DIGITAL presets) |
-| `load` | `fm4_load_preset` (a stored DIGITAL preset number) and `fm4_apply` (DIGITAL values: `up_load`, `project_restore_runtime`, the editor) | the preset number, or 111 int16 values | the track afterwards: engine, preset, values and FM6 patch; `p_after_convert` is the caller's array as `fm4_convert` leaves it | n/a |
+| `load` | `fm4_load_preset` (a stored DIGITAL preset number) and `fm4_apply` (DIGITAL values: `up_load`, `project_restore_runtime`, the editor) | the preset number, or 114 int16 values | the track afterwards: engine, preset, values and FM6 patch; `p_after_convert` is the caller's array as `fm4_convert` leaves it | n/a |
 
 `constants` lists the ids the vectors use (P_COUNT, P_E0, the OP ENV range, engine ids, `FX_DEF`, `FM4_TO_FM6`,
 `DRUM_KIT_E`). **How the WebApp compares** (Felucca-WebApp `test_legacy.mjs`): load the file, for each `projects` case

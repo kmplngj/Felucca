@@ -46,6 +46,12 @@ static uint32_t host_bus;
 #undef FM1_PR
 #define FM1_PR(p, r) (*(host_now += host_bus, &host_reg[(p) & 15u][((r) / 4u) & 63u]))
 #define fm1_ticks host_ticks
+/* Real pressure scan with memory-backed ADC registers, sharing the existing GPIO timing model. */
+static volatile uint32_t host_adc_con, host_adc_res, host_adc_wla;
+#define FM1_ADC_CON_R host_adc_con
+#define FM1_ADC_RES host_adc_res
+#define FM1_WLA_CON0 host_adc_wla
+#include "../firmware/src/keytouch.h"
 #include "../firmware/hal/fm1_input.h"
 
 #define TICK_US 100u
@@ -577,8 +583,40 @@ static void idle_anim_test(void)
     memset(fm1_led_breath, 0, sizeof fm1_led_breath);
 }
 
+static void pressure_scan_test(void)
+{
+    uint32_t driven = 1u << 7;
+    kt_on = 1;
+    fm1_in.notes = 1u << 9;                       /* PA7, column 0: key 9 */
+    fm1_an.con = (uint16_t)FM1_ADC_CON(7, 2);
+    fm1_an.drive = 1;
+    fm1_an.phase = 0;
+    fm1__an_start(0, 1u << 3);
+    check("AT held key: weak row drive, column LEDs dark, asynchronous ADC", fm1_an.pend && fm1_an.driven &&
+          !(FM1_PR(FM1_PA, FM1_DIR) & driven) && (FM1_PR(FM1_PA, FM1_HD0) & driven) && !led_now);
+    host_adc_res = 512;
+    host_adc_con |= 0x80u;
+    fm1__an_take();
+    check("AT completed reading reaches held key and restores digital row", kt_d[9] == 512 && kt_dn[9] == 1 &&
+          !fm1_an.pend && (FM1_PR(FM1_PA, FM1_DIR) & driven) && !(FM1_PR(FM1_PA, FM1_HD0) & driven));
+    fm1__an_start(0, 1u << 3);
+    fm1__an_take();
+    check("AT timeout restores row without publishing a stale reading", fm1_an.timeouts == 1 && kt_dn[9] == 1 &&
+          (FM1_PR(FM1_PA, FM1_DIR) & driven));
+    fm1_an.phase = 1;
+    fm1__an_start(0, 0);
+    host_adc_res = 777;
+    host_adc_con |= 0x80u;
+    fm1__an_take();
+    check("AT scan reserves PA8 column 0 for MASTER", fm1_an.master == 777 && fm1_an.master_valid && !fm1_an.rowbit);
+    fm1_an.con = 0;
+    kt_on = 0;
+    fm1_in.notes = 0;
+}
+
 int main(void)
 {
+    pressure_scan_test();
     uint32_t id, k, lat_max = 0, lat_sum = 0, lat_n = 0, worst_rel = 0, bad = 0;
     printf("debounce: press %u frames, release %u frames, frame %u us\n",
            (unsigned)FM1_DEB_PRESS, (unsigned)FM1_DEB_RELEASE, (unsigned)(FM1_NCOL * TICK_US));
