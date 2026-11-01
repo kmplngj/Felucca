@@ -348,7 +348,7 @@ static void nm_draw_field(void)
         nm_title(b);
         cv_text_on(9, 1 - AF_S_CAP_Y, &AF_S, b, T_MID, T_BG);
         fmt_int(b, nm.len); str_cpy(b + str_len(b), "/12", 4);
-        cv_text_r(231, 1 - AF_S_CAP_Y, &AF_S, b, nm.len >= NM_LEN ? T_ACCENT : T_MID, T_BG);
+        cv_text_r(231, 1 - AF_S_CAP_Y, &AF_S, b, nm.len >= NM_LEN ? T_WARN : T_MID, T_BG);
         if (nm.kind <= NK_USER_RENAME)
             cv_text_r(231 - text_w(&AF_S, b) - 10, 1 - AF_S_CAP_Y, &AF_S, CAT_NAME[nm.cat % CAT_N], T_THEME, T_BG);
         cv_text_on(8, y, &AF_N, text, empty ? T_MID : T_TEXT, T_BG);

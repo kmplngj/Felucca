@@ -65,6 +65,12 @@ class ReleaseTest(unittest.TestCase):
             self.assertIn('not hardware-qualified', dev)
             self.assertNotIn('author attests', dev)
             self.assertIn('https://example.org/test', stable)
+            for model in ('smk37', 'smk37-elite', 'smk37-mke'):
+                self.assertIn('felucca-1.6.2-' + model + '.fwsc', stable)
+            for phrase in ('FM-1 package only', 'USB-only', 'Two user sample slots',
+                           'storage stays locked', 'physical initialization', 'qualification remains pending'):
+                self.assertIn(phrase, stable)
+            self.assertNotIn('Experimental SMK keyboard assets', dev)
 
     def test_dev_notes_do_not_read_history_and_keep_build_risk_install_recovery_links(self):
         with patch.object(release, 'git', side_effect=AssertionError('Dev must not read history')), \

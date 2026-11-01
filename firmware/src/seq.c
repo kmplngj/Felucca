@@ -48,6 +48,7 @@ static int8_t held_dt[NTRK][16];
 static volatile uint8_t kb_asleep;       /* MENU > SCREEN OFF (ui.c): the screen dark or waking, a key pressed now only
                                           * wakes it (silent, no layer, its release nothing) */
 static uint8_t last_note = 60;
+static volatile uint8_t clock_lost;      /* G_CLOCK source whose external clock timed out; consumed by the UI. */
 static volatile uint8_t transport_req;   /* 1 start, 2 stop, 3 restart (from the UI) */
 static volatile uint8_t panic_req;       /* bit per track: release every sounding note (preset / engine change) */
 static volatile uint8_t midi_hint;       /* MIDI IN played track n - 1, which is not the selected one (the UI says so) */
@@ -758,11 +759,22 @@ static __attribute__((noinline)) void perf_key_remap(void)
     }
 }
 
+#if BOARD_SMK37
+/* SMK-37 Pro: velocity keys and pads. Key k's velocity (a pad: its white key's, smk_input.h) */
+static uint32_t key_vel(uint32_t k)
+{
+    uint32_t v = fm1_in.key_vel[SMK_KEY_F3 + k];
+    return v ? v : kb_vel;
+}
+#else
+#define key_vel(k) ((uint32_t)kb_vel)               /* the FM-1's keys: SELECT VEL */
+#endif
+
 /* key k plays kb_note[k] on track t: its chord (chord.c; the note alone with CHRD OFF). A note another key
  * holds already sounds: it is not started again (nor sent to MIDI OUT); the key keeps its notes */
 static void key_on(uint32_t k, track_t *t)
 {
-    uint32_t n = chord_build(t, kb_note[k], kb_chord[k]), i, mc = trk_midi_ch(trk_index(t)), vel = kb_vel;
+    uint32_t n = chord_build(t, kb_note[k], kb_chord[k]), i, mc = trk_midi_ch(trk_index(t)), vel = key_vel(k);
     kb_chn[k] = 0;
     in_key = (uint8_t)(k + 1u);                     /* (the arp keeps the key: arp_add) */
     for (i = 0; i < n; i++) {
@@ -809,10 +821,62 @@ static __attribute__((noinline)) void kb_lat(uint32_t k)
 }
 #endif
 
+#if BOARD_SMK37
+/* SMK-37 Pro: the keybed's 10 keys beyond the FM-1's 27 (C3..E3 below F3, G#5..C6 above G5) continue the keys: the
+ * selected track's key map (kb_map: QNT, ROOT, SCALE, TRN, the octave; DRUM's GM drum map, SLICE's slices) past
+ * either end, one note each at the key's velocity (no chord). They play only while the keys play: no layer held or
+ * locked, no DRUM grid, NAME or SONG keys, not under the splash or waking the screen */
+static uint8_t ext_note[FM1_NKEY], ext_trk[FM1_NKEY];   /* note + 1 sounding, 0 = none */
+static volatile int16_t smk_bend14;             /* the pitch wheel, -8192..8191 (main.c smk_wheels) */
+static volatile uint8_t smk_modw;               /* the mod wheel, 0..127 */
+static void ext_keys_block(void)
+{
+    int32_t e;
+    while ((e = smk_extkey_take()) >= 0) {
+        uint32_t k = (uint32_t)e >> 8, v = (uint32_t)e & 0x7Fu, sel = song.sel % NTRK, n, mc;
+        if (k >= FM1_NKEY)
+            continue;
+        if (!v) {
+            if (ext_note[k]) {
+                track_t *t = &trk[ext_trk[k] % NTRK];
+                n = ext_note[k] - 1u;
+                ext_note[k] = 0;                        /* remove this owner before checking the others */
+                if (!midi_local_held(t, n)) {
+                    mc = trk_midi_ch(ext_trk[k] % NTRK);
+                    input_off(t, n);                    /* external MIDI owners are checked by input_off */
+                    midi_out_event(0x08u | (0x80u | mc) << 8 | n << 16);
+                }
+            }
+            continue;
+        }
+        if (ext_note[k] || kb_boot_hold || kb_asleep || song.grid || (fm1_in.buttons & kb_mask) || kb_lock)
+            continue;
+        n = kb_map(&trk[sel], (uint32_t)((int32_t)k - (int32_t)SMK_KEY_F3));
+        if (n == KB_SILENT)
+            continue;
+        if (!midi_local_held(&trk[sel], n)) {
+            /* Outer keys join the same internal hold as MIDI IN, including ARP;
+             * replaying input_on would leave an extra arp_phys count on release.
+             * Local MIDI OUT still describes the physical press. The existing
+             * FM-1 central-key/MIDI policy (#307) remains unchanged. */
+            if (!midi_note_held(&trk[sel], n))
+                input_on(&trk[sel], n, v);
+            mc = trk_midi_ch(sel);
+            midi_out_event(0x09u | (0x90u | mc) << 8 | n << 16 | v << 24);
+        }
+        ext_note[k] = (uint8_t)(n + 1u);
+        ext_trk[k] = (uint8_t)sel;
+    }
+}
+#endif
+
 static void keyboard_block(void)
 {
     uint32_t cur = fm1_in.notes, ch, k;
     uint32_t lay, fx, mute;
+#if BOARD_SMK37
+    ext_keys_block();
+#endif
     ch = cur ^ kb_prev;                          /* keys also sound while entering steps */
     if (perf_remap)
         perf_key_remap();
@@ -868,6 +932,29 @@ static void keyboard_block(void)
         }
     }
     kb_prev = cur;
+}
+
+/* 1.8 AFTERTOUCH: each key's pressure (kt_p, 0..127 by its track's SENS; keytouch.c writes it from the main loop and
+ * bumps kt_seq; the host builds: always 0) to its track's AT, the most of the keys playing it, and to MIDI OUT as
+ * channel pressure, on a change. A track no key presses stays as MIDI IN left it. noinline: out of the audio ISR's
+ * loop, and nothing to do until kt_seq moves */
+#define KT_KEYS 20u              /* the keys on the analog rows, F3 .. C5 (the top seven: none) */
+static volatile uint8_t kt_p[KT_KEYS], kt_seq;
+static uint8_t kt_done, kt_at[NTRK];
+static __attribute__((noinline)) void kt_block(void)
+{
+    uint8_t m[NTRK] = {0};
+    uint32_t k, i;
+    kt_done = kt_seq;
+    for (k = 0; k < KT_KEYS; k++)
+        if (kb_chn[k] && kb_trk[k] < NTRK && kt_p[k] > m[kb_trk[k]])
+            m[kb_trk[k]] = kt_p[k];
+    for (i = 0; i < NTRK; i++)
+        if (m[i] != kt_at[i]) {
+            kt_at[i] = m[i];
+            trk[i].at = m[i];
+            midi_out_event(0x0Du | (0xD0u | trk_midi_ch(i)) << 8 | (uint32_t)m[i] << 16);
+        }
 }
 
 /* -------------------------------------------------------- sequencer --- */
@@ -1354,9 +1441,63 @@ static int32_t click_beat_now(void)
 }
 
 /* everything that happens between two rendered blocks */
+#if BOARD_SMK37
+/* SMK-37 Pro: the wheels (main.c smk_wheels) as the selected track's own MIDI controllers, as if played on its
+ * channel: the pitch wheel its pitch bend (the channel's bend range, RPN 0: 2 semitones unless set; a DRUM track
+ * ignores it, as it ignores MIDI bend), the mod wheel its CC1, the mod matrix's MODW source (mod.c). Both go to MIDI
+ * OUT too. Another track selected: the one before is left unbent, its MODW at 0. Audio ISR, before the MIDI IN of
+ * the block (an incoming bend or CC1 for the same track wins until the wheel moves again) */
+static void smk_wheels_block(uint32_t routing_reset)
+{
+    static uint8_t prev = 0xFF, prev_mc = 0xFF, lm = 0xFF;
+    static int32_t lb = 0x7FFFFFFF;
+    uint32_t sel = song.sel % NTRK, mc = trk_midi_ch(sel), m = smk_modw;
+    int32_t b = smk_bend14;
+    /* Route cleanup rebuilds local bend from incoming channel state even when
+     * the selected output channel stays the same. Restore the physical wheels
+     * once here, before this block's later MIDI events can take precedence. */
+    if (routing_reset) {
+        lb = 0x7FFFFFFF;
+        lm = 0xFF;
+    }
+    if (sel != prev || mc != prev_mc) {
+        if (prev < NTRK) {
+            midi_bend_target[prev] = 0;
+            smk_bend_source[prev] = 0;
+            trk[prev].mw = 0;
+            /* Release the channel actually driven, even if its routing has changed.
+             * A shared channel remains controlled by the newly selected track. */
+            if (prev_mc != mc) {
+                midi_out_event(0x0Eu | (0xE0u | prev_mc) << 8 | 64u << 24);
+                midi_out_event(0x0Bu | (0xB0u | prev_mc) << 8 | 1u << 16);
+            }
+        }
+        prev = (uint8_t)sel;
+        prev_mc = (uint8_t)mc;
+        lb = 0x7FFFFFFF;
+        lm = 0xFF;
+    }
+    if (b != lb) {
+        uint32_t u = (uint32_t)(b + 8192);
+        lb = b;
+        smk_bend_source[sel] = (uint8_t)(SMK_BEND_PHYSICAL | (mc + 1u));
+        midi_expression(&trk[sel], midi_channel(mc));
+        midi_out_event(0x0Eu | (0xE0u | mc) << 8 | (u & 0x7Fu) << 16 | ((u >> 7) & 0x7Fu) << 24);
+    }
+    if (m != lm) {
+        lm = (uint8_t)m;
+        trk[sel].mw = (uint8_t)m;
+        midi_out_event(0x0Bu | (0xB0u | mc) << 8 | 1u << 16 | m << 24);
+    }
+}
+#endif
+
 static void events_block(uint32_t n)
 {
     uint32_t i, pr, seq_n = n;
+#if BOARD_SMK37
+    uint32_t wheel_routing_reset = 0;
+#endif
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     if (midi_clock.mode != clock_mode) {
         seq_stop();
@@ -1387,8 +1528,12 @@ static void events_block(uint32_t n)
         transport_req = 0;
     }
     if (midi_route != (uint8_t)song.g[G_ROUTE]) {     /* ROUT changed: a block lets go of the other channels */
-        if (song.g[G_ROUTE] != ROUTE_SEL)
+        if (song.g[G_ROUTE] != ROUTE_SEL) {
             midi_route_block();
+#if BOARD_SMK37
+            wheel_routing_reset = 1;
+#endif
+        }
         midi_route = (uint8_t)song.g[G_ROUTE];       /* Keep the previous route available to ownership cleanup. */
     }
     pr = panic_req;
@@ -1429,7 +1574,12 @@ static void events_block(uint32_t n)
         t->armp = t->p[P_AMODE];
         t->aholdp = t->p[P_AHOLD];
     }
+#if BOARD_SMK37
+    smk_wheels_block(wheel_routing_reset);
+#endif
     keyboard_block();
+    if (kt_seq != kt_done)
+        kt_block();
     while (mi_r != mi_w) {                            /* USB-MIDI (and TRS) in */
         uint32_t at = mi_r % MQ, pkt = midi_in_q[at], status = (pkt >> 8) & 0xFFu;
         uint32_t st = status & 0xF0u, ch = status & 0x0Fu;
@@ -1453,6 +1603,7 @@ static void events_block(uint32_t n)
             if (fm1_ms - last > 500u) {
                 seq_stop();                         /* cable loss must not leave a running held note */
                 midi_clock.tempo_valid = 0;
+                clock_lost = (uint8_t)clock_mode;
             } else
                 seq_n = midi_clock_advance(fm1_ms);
         }

@@ -18,9 +18,9 @@ export function installProbe() {
       this.port.addEventListener("message", ({ data: m }) => {
         if (m.type === "error") probe.errors.push(m.message);
         if (m.type === "frame") {
-          if (m.testMacro) probe.macro = m.testMacro;
+          if (m.testMacro) { probe.macro = m.testMacro; probe.state = m.testState; }
           probe.frames++;
-          if (m.fb) probe.draws++;
+          if (m.fb) { probe.draws++; probe.display = { seq: probe.draws, fb: Array.from(m.fb), state: m.testState }; }
           if (m.leds) probe.leds = m.leds;
         }
       });
@@ -80,6 +80,8 @@ export function observeMacroWorklet(source) {
   const marker = 'const msg = { type: "frame" };';
   if (source.split(marker).length !== 2) throw new Error("worklet observation marker changed");
   return source.replace(marker, `${marker}
+      msg.testState = { action: ex.web_test_user_action(), engine: ex.web_test_engine(),
+        params: Array.from({ length: ex.web_test_engine_param_base() + 8 }, (_, i) => ex.web_test_param(i)) };
       msg.testMacro = {
         count: ex.web_test_macro_count(), engine: ex.web_test_engine(),
         rank: ex.web_test_engine_rank(14),

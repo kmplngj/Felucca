@@ -10,6 +10,8 @@
 static int project_save(uint32_t slot);
 static void panel_setup(void);
 static void project_load(uint32_t slot);
+static int project_new(void);
+static int proj_changed(void);
 static int project_used(uint32_t slot);
 static int graph_project_used(uint32_t slot);       /* cached slot validity for display only (ui_graph.c) */
 static uint32_t chain_prepare(void);
@@ -222,7 +224,11 @@ static struct {
     uint8_t ly;                  /* the layer whose button is down (LAYER_*), 0 = none */
     uint8_t layer;               /* the layer whose map is shown (LAYER_*), 0 = none */
     uint8_t lock;                /* #83: the layer locked open by a double tap (LAYER_*), 0 = none (ui_layer.c) */
+#if BOARD_SMK37
+    uint32_t pg_down;            /* SMK calibration may map a page to button 16 or 17 */
+#else
     uint16_t pg_down;            /* page buttons down (panel ids) that act when let go */
+#endif
     uint32_t layer_sig;          /* drawn-state cache of the map */
     char msg[24];
     char msg2[24];               /* a second message, shown when the first is over */
@@ -254,9 +260,11 @@ static struct {
 } ui;
 
 enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PAT,
-       CF_DEL_ROW, CF_CLEAR_SONG, CF_INIT_SOUND, CF_CLEAR_MOTION, CF_ERASE_USER, CF_ERASE_PROJ, CF_CLEAN_SOUND };
+       CF_DEL_ROW, CF_CLEAR_SONG, CF_INIT_SOUND, CF_CLEAR_MOTION, CF_ERASE_USER, CF_ERASE_PROJ, CF_CLEAN_SOUND,
+       CF_CLEAR_ALL, CF_LOAD_PROJ, CF_LEARN_CLEAR };
                                   /* ui.confirm: TOOLS' clears; SAVE over a used slot; a pattern over the user's steps;
-                                   * USER ERASE; PROJECT ERASE (1.5.5, #199); CLEAN INIT (1.5.5, #190) */
+                                   * USER ERASE; PROJECT ERASE (1.5.5, #199); CLEAN INIT (1.5.5, #190);
+                                   * MENU > SYSTEM > CLEAR ALL; PROJECT LOAD over changes not saved; MIDI LEARN CLEAR (1.8) */
 
 /* MENU > DISPLAY > AUTO OFF (formerly SCREEN OFF): after a while with no input on the panel the screen goes dark (the backlight
  * stays on: lcd.c lcd_power)
@@ -296,6 +304,7 @@ static struct {
     uint8_t eat;                 /* the wake gesture: panel input swallowed (ui_input) */
     uint8_t led_off;             /* SCR_LED_* latches: stay dark across a complete millisecond-clock wrap */
     uint8_t setting;             /* last applied AUTO OFF byte, including a backup/settings import */
+    uint8_t recovering;          /* failed power command may have completed late; normalize wake without eating input */
     uint32_t idle;               /* fm1_ms of the last panel input (or blocker) */
     uint32_t t;                  /* fm1_ms of the last panel command (SLPIN, SLPOUT) */
     uint32_t eat_t;              /* fm1_ms of the last swallowed knob detent */
@@ -395,7 +404,10 @@ static void scr_wake_now(void)                         /* main.c: the crash scre
 {
     if (scrn.st != SCR_ON)
         lcd_wake_now();
+    if (LCD_FAILED())
+        return;
     scrn.st = SCR_ON;
+    scrn.recovering = 0;
     scr_touch();
 }
 static uint8_t mf_seen;          /* 1.5.5 (#208): the MIDI IN notes of this pass (seq.c midi_seen, taken at every pass's
@@ -405,15 +417,29 @@ static int scr_input(uint32_t pressed, uint32_t notes)
 {
     uint32_t held = fm1_in.buttons | fm1_in.notes, k;
     int32_t moved = 0;
+#if BOARD_SMK37
+    uint32_t outer;
+    notes |= smk_extkey_activity(&outer);
+    held |= outer;
+#endif
     scr_sync();
     if (pressed | notes | held | panel_moved)
         scr_touch();
+    if (LCD_FAILED() && scrn.st == SCR_OFF && (pressed | notes | held | panel_moved))
+        scr_wake();
     panel_moved = 0;
     if (mf_seen && !(ui_prefs2 & (PREF_WAKE_PANEL >> 16))) {     /* +MIDI: a note-on since the last pass keeps it on,
                                                                  * wakes it; nothing swallowed (the note has played) */
         scr_touch();
         if (scrn.st == SCR_OFF)
             scrn.st = SCR_WAKE;
+    }
+    if (LCD_FAILED() || scrn.recovering) {
+        scrn.eat = kb_asleep = 0;                       /* a failed display cannot hold musical input asleep */
+#if BOARD_SMK37
+        smk_extkeys_asleep = kb_boot_hold;             /* future presses play; queued wake marks stay consumed */
+#endif
+        return 0;
     }
     if (scrn.st == SCR_ON && !scrn.eat)
         return 0;
@@ -430,6 +456,9 @@ static int scr_input(uint32_t pressed, uint32_t notes)
         return 1;
     scrn.eat = 0;                                       /* all let go, the knobs at rest: input again */
     kb_asleep = 0;
+#if BOARD_SMK37
+    smk_extkeys_asleep = 0;
+#endif
     return 0;
 }
 /* ui_draw, every frame: 1 = draw it */
@@ -446,14 +475,21 @@ static int scr_frame(void)
         if (!scr_dark_active() && (scr_mode_get() == 1u || !scr_expired()))
             return 1;
         lcd_power(0);
+        if (LCD_FAILED())
+            return 0;
         scrn.st = SCR_OFF;
         scrn.t = fm1_ms;
         scrn.eat = 1;
+#if BOARD_SMK37
+        smk_extkeys_asleep = 1;              /* mark new events before audio suppression becomes visible */
+#endif
         kb_asleep = 1;
         break;
     case SCR_WAKE:
         if (fm1_ms - scrn.t >= 120u) {
             lcd_power(1);
+            if (LCD_FAILED())
+                return 0;
             scrn.st = SCR_SLPOUT;
             scrn.t = fm1_ms;
         }
@@ -478,7 +514,10 @@ static void scr_shown(void)                            /* after the frame: the r
     if (scrn.st != SCR_SHOW)
         return;
     lcd_power(2);
+    if (LCD_FAILED())
+        return;
     scrn.st = SCR_ON;
+    scrn.recovering = 0;
 #if FELUCCA_SCREEN_CAPTURE
     /* Explicit capture already touched once at BEGIN. Keep input invalidation
      * separate from the asynchronous wake redraw's completion. */
@@ -582,7 +621,8 @@ static void ui_say(const char *a, const char *b)
     str_cpy(ui.msg, a, sizeof ui.msg);
     n = str_len(ui.msg);
     str_cpy(ui.msg + n, b, sizeof ui.msg - n);
-    ui.msg_t = 40;
+    n = str_len(ui.msg);
+    ui.msg_t = (uint8_t)(n > 25u ? 90u : 40u + 2u * n);   /* (1.8: longer words stay longer, ~0.7..1.5 s) */
     ui.msg2[0] = 0;
 }
 
@@ -1216,7 +1256,7 @@ static void undo_swap(void)
 {
     track_t *t;
     uint32_t i;
-    char b[4] = {'T', 0, 0, 0};
+    char b[16] = {'T', 0, ' ', 0};
     if (!undo.trk) {
         ui_message("NOTHING TO UNDO");
         return;
@@ -1284,7 +1324,9 @@ static void undo_swap(void)
     undo.keep = 0;                                /* the next load copies the track as it is now */
     if (t == TSEL)
         sync_reload = 1;
-    b[1] = (char)('1' + trk_index(t));
+    b[1] = (char)('1' + trk_index(t));             /* (1.8: and what came back) */
+    str_cpy(b + 3, undo.what & UNDO_SOUND ? (undo.what & UNDO_PAT ? "SOUND+STEPS" : "SOUND") :
+            undo.what & UNDO_PAT ? "STEPS" : "AUTO", sizeof b - 3u);
     ui_say("UNDO/REDO ", b);
     ui.force = 1;
 }

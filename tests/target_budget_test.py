@@ -23,6 +23,13 @@ OPTIONAL = ESTIMATOR["OPTIONAL"]
 
 
 class SpanFixtures(unittest.TestCase):
+    def test_overlapping_heads_are_one_loop(self):
+        self.assertEqual(ESTIMATOR["spans"]({100: 160, 120: 180}), [(100, 180)])
+        self.assertEqual(ESTIMATOR["spans"]({100: 140, 120: 180, 160: 200}), [(100, 200)])
+
+    def test_contained_loop_stays_nested(self):
+        self.assertEqual(ESTIMATOR["spans"]({100: 200, 120: 160}), [(100, 200), (120, 160)])
+
     def test_real_pi32v2_listing(self):
         fns = ESTIMATOR["functions"](HERE / "target_budget_fixtures" / "real_pi32v2.dis")
         self.assertEqual(set(fns), {"dv_out"})

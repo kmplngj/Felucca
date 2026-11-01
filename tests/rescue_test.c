@@ -11,11 +11,19 @@
 #define __attribute__(x)   /* (the sources' .pool sections: no Mach-O section names, as in ota_test.c) */
 #include "../firmware/src/boot_policy.h"
 #define FELUCCA_OTA 1
+#if BOARD_SMK37
+#include "../firmware/hal/fm1_flash_map.h"
+#define FELUCCA_ID SMK_MODEL "_900"
+enum { FM1_BTN_OCT_DOWN = 4, FM1_BTN_OCT_UP = 5 };
+#else
 #define FELUCCA_ID "FM-1_900"
+#endif
 #define FELUCCA_OTA_DRYRUN 0
 #define FM1_TICKS_PER_US 24u
 #define FL_FAR(fn) fn
+#ifndef FL_IN
 #define FL_IN(off,n,lo,hi) ((off) >= (lo) && (off) <= (hi) && (n) <= (hi)-(off))
+#endif
 #define T_BG 1
 #define T_TEXT 2
 #define T_THEME 3
@@ -27,6 +35,14 @@ static uint32_t chip = 0x856014u, fail_erase, fail_prog, host_silent, requests, 
 static uint32_t physical_buttons;
 static volatile uint32_t fm1_ms;
 static uint8_t usb_rescue_mode, flash_ok;
+#if BOARD_SMK37
+static uint32_t led_common, led_erase_bad, irq_off;
+static irq_save_fn irq_save;
+static irq_restore_fn irq_restore;
+static uint32_t irq_save(void) { irq_off = 1; return 0; }
+static void irq_restore(uint32_t f) { (void)f; irq_off = 0; }
+static void smk__common(uint32_t group) { if (!irq_off) led_erase_bad++; led_common = group; }
+#endif
 static struct { uint8_t up, detached, ota_req, uboot_req; } usb;
 static struct { uint32_t buttons; } fm1_in;
 static boot_policy_guard_t bootguard;
@@ -54,6 +70,9 @@ static uint32_t fl_jedec_ram(void) { return chip; }
 static fl_erase4k_ram_fn fl_erase4k_ram;
 static int fl_erase4k_ram(uint32_t off, uint32_t *took)
 {
+#if BOARD_SMK37
+    if (!irq_off || led_common != 2u) led_erase_bad++;
+#endif
     erases++; *took = 17000u; ticks += 17000u * 24u;
     if (fail_erase) return -1;
     memset(nor + off, 255, 4096); return 0;
@@ -77,6 +96,10 @@ static int fl_erase4k(uint32_t off, uint32_t *took) { wrapper_calls++; return fl
 static fl_write_fn fl_write;
 static int fl_write(uint32_t off, const uint8_t *p, uint32_t n) { uint32_t t; wrapper_calls++; return fl_prog_ram(off,p,n,&t); }
 static int st_read(uint32_t off, void *p, uint32_t n) { wrapper_calls++; return fl_read_ram(off,p,n); }
+#if BOARD_SMK37
+/* Normal SMK OTA reads bypass store ownership; rescue itself uses the raw HAL. */
+static int st_raw_read(uint32_t off, void *p, uint32_t n) { return fl_read_ram(off,p,n); }
+#endif
 static int ota_frame_get(const uint8_t **p, uint32_t *n)
 { if (!frame_ready) return 0; *p = frame; *n = frame_len; return 1; }
 static void ota_frame_done(void) { frame_ready = 0; }
@@ -118,6 +141,9 @@ static void reset(void)
     ticks = 0; fm1_ms = 0; erases = writes = commits = requests = identities = 0;
     fail_prog = fail_erase = host_silent = frame_ready = 0;
     audio_calls = wrapper_calls = 0; chip = 0x856014u;
+#if BOARD_SMK37
+    led_common = led_erase_bad = 0; irq_off = 1;
+#endif
     bootguard.magic = BOOTGUARD_MAGIC; bootguard.pending = BOOT_POLICY_RESCUING;
     bootguard.failed = 2;
     rescue_init();
@@ -138,10 +164,21 @@ int main(int argc, char **argv)
         memcpy(package+940,raw+960,(size_t)size-960);
         package_len=(uint32_t)size-20; free(raw);
     }
+#if BOARD_SMK37
+    physical_buttons = 3;
+    CHECK("SMK bank buttons do not select OCT rescue/calibration", rescue_boot_buttons() == 0);
+    physical_buttons = 1u << FM1_BTN_OCT_DOWN;
+    CHECK("SMK physical OCT- normalizes to rescue bit", rescue_boot_buttons() == 1);
+    physical_buttons |= 1u << FM1_BTN_OCT_UP;
+    CHECK("SMK both OCT keys normalize to calibration bits", rescue_boot_buttons() == 3);
+    reset(); chip = 0xEB6014u; rescue_init();
+    CHECK("SMK alternate qualified flash JEDEC supports recovery", flash_ok);
+#else
     physical_buttons = 1;
     CHECK("manual decision reads physical OCT- before normal startup", rescue_boot_buttons() == 1);
     physical_buttons = 3;
     CHECK("physical both-OCT remains available to calibration", rescue_boot_buttons() == 3);
+#endif
     reset();
     for (i=0;i<20000;i++) rescue_step();
     CHECK("rescue idle performs no erase/program/normal audio wrappers", !erases && !writes && !audio_calls && !wrapper_calls);
@@ -172,6 +209,22 @@ int main(int argc, char **argv)
     CHECK("rescue staging uses only polled HAL flash calls, never audio", !audio_calls && !wrapper_calls);
     reset(); usb.uboot_req=1; rescue_step();
     CHECK("explicit ROM request clears bootguard without any flash write", rom == 1 && !bootguard.pending && !writes && !erases);
+#if BOARD_SMK37
+    {
+        uint32_t mode, group, failed, safe = 1;
+        for (mode = 0; mode < 2u; mode++)
+            for (group = 0; group < 2u; group++)
+                for (failed = 0; failed < 2u; failed++) {
+                    int rc;
+                    reset(); usb_rescue_mode = (uint8_t)mode; irq_off = mode;
+                    led_common = group; fail_erase = failed;
+                    rc = ota_erase(OTA_AREA);
+                    safe &= (rc != 0) == (failed != 0) && erases == 1u && !led_erase_bad &&
+                            irq_off == mode && audio_calls == !mode;
+                }
+        CHECK("normal/rescue OTA blanks either LED common before successful/failed erase", safe);
+    }
+#endif
     free(package);
     return fails != 0;
 }

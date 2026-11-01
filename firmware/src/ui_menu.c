@@ -519,9 +519,16 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
     } else if (up) {
         if (ui.menu_sel == MI_SCROFF) {
             menu_off_open();
-        } else if (ui.menu_sel == MI_LCLEAR) {         /* LEARN CLEAR (1.5): every learned CC; no dialog (the menu has
-                                                         * none: every other row's change is undone the same way) */
-            ui_message(ml_clear_all() ? "LEARN CLEARED" : "NOTHING LEARNED");
+        } else if (ui.menu_sel == MI_LCLEAR) {         /* LEARN CLEAR (1.5): every learned CC; 1.8: the dialog first */
+            if (ml_count()) {
+                menu_close();
+                confirm_open(CF_LEARN_CLEAR, 0);
+            } else {
+                ui_message("NOTHING LEARNED");
+            }
+        } else if (ui.menu_sel == MI_CLRALL) {          /* CLEAR ALL (1.8, #266): the dialog, out of the menu */
+            menu_close();
+            confirm_open(CF_CLEAR_ALL, 0);
         } else if (ui.menu_sel == MI_PANEL) {
             panel_setup();
             scrn.idle = fm1_ms;                         /* (SCREEN OFF: its own loop had the input) */

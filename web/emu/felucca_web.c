@@ -149,6 +149,7 @@ static uint32_t fm1_input_note_edges(void) { uint32_t n = web_notes_pressed; web
 static fm1_enc_take_fn fm1_enc_take;
 static int32_t fm1_enc_take(uint32_t e) { int32_t s = web_enc_steps[e % 7u]; web_enc_steps[e % 7u] = 0; return s; }
 static void fm1_input_init(void) {}
+#define FM1_OCT_BOTH 3u                         /* same physical OCT bits as the FM-1 input HAL */
 static void fm1_input_tick(void) {}
 static void fm1_wdt_feed(void) {}
 static void fm1_irq_off(void) {}
@@ -532,6 +533,10 @@ EXPORT void web_test_heavy(void)
 
 EXPORT uint32_t web_test_user_preset(uint32_t i) { return (uint32_t)up_used(i); }
 EXPORT uint32_t web_test_engine(void) { return TSEL->eng_req; }
+EXPORT uint32_t web_test_user_action(void)
+{
+    return !ui.home && !ui.menu && !ui.confirm && !name_on() && cur_page()->graph == GR_USER ? act_col() : 0;
+}
 EXPORT int32_t web_test_param(uint32_t i) { return i < P_COUNT ? TSEL->p[i] : 0; }
 EXPORT uint32_t web_test_engine_param_base(void) { return P_E0; }
 EXPORT uint32_t web_test_engine_rank(uint32_t e) { return eng_ok(e) ? eng_rank(e) : UINT32_MAX; }

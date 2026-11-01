@@ -239,6 +239,28 @@ class ResourceReport(unittest.TestCase):
             self.assertEqual(result['logical_constants'], {'NPART': '4', 'NTRK': 'NPART', 'NSTEP': '64'})
             self.assertEqual(result['generator_runtime'], R.generator_runtime(B.SRC))
 
+    def test_board_model_effective_defines_are_bound_and_checked(self):
+        fingerprints = {key: {} for key in ('generator_runtime', 'loader_environment_sha256',
+                        'compiler_headers_sha256', 'execution_environment', 'compiler_sha256',
+                        'toolchain_sha256', 'sdk_sha256')}
+        base = ('#define FELUCCA_CPU2 0\n#define FELUCCA_SLICE 1\n#define FELUCCA_FM4 0\n')
+        for model, name in B.fm1pkg_make.MODELS.items():
+            macros = base + ('#define FELUCCA_ID "' + name + '_900"\n'
+                             '#define BOARD_SMK37 1\n#define SMK_MODEL "' + name + '"\n'
+                             '#define FELUCCA_UART 0\n')
+            with self.subTest(model=model), patch.object(B, 'BOARD', 'smk37'), \
+                    patch.object(B, 'MODEL', model), patch.object(B, 'PRODUCT', name + '_900'), \
+                    patch.object(R, 'tool_fingerprints', return_value=fingerprints), \
+                    patch.object(B, 'tc', side_effect=lambda tool, *args: macros if tool == 'cc' else 'clang fixture'):
+                config = R.configuration(B)
+                self.assertEqual((config['board'], config['model']), ('smk37', model))
+                self.assertEqual(config['effective_defines']['SMK_MODEL'], '"' + name + '"')
+                for changed in (macros.replace('BOARD_SMK37 1', 'BOARD_SMK37 0'),
+                                macros.replace('SMK_MODEL "' + name + '"', 'SMK_MODEL "FM-1"'),
+                                macros.replace('FELUCCA_UART 0', 'FELUCCA_UART 1')):
+                    with patch.object(B, 'tc', return_value=changed), self.assertRaisesRegex(ValueError, 'board/model/UART'):
+                        R.configuration(B)
+
     def test_generator_environment_is_bound_before_asset_generation(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

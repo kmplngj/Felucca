@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Build isolated standard/reduced hosts and carry actual records between them."""
+"""Build isolated standard/reduced/ADPCM hosts; carry actual stored records across profiles."""
 import hashlib
 import json
 import os
@@ -40,7 +40,7 @@ def main():
     if 'FELUCCA_FONT' not in selection_env:
         common=ROOT/'build/gen/resolved-profile.json'
         if common.exists(): selection_env['FELUCCA_FONT']=json.loads(common.read_text())['asset_variant']
-    for name in ('standard','reduced-lofi'):
+    for name in ('standard','reduced-lofi','adpcm'):
         # Include paths come before common generated assets; each host gets its own selection.
         gen=ROOT/'build'/f'profile-{name}-gen'
         run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,env=selection_env)
@@ -48,10 +48,14 @@ def main():
         for asset in ('ui_fonts.h', 'ui-font-manifest.json'):
             shutil.copyfile(ROOT/'build/gen'/asset, gen/asset)
         run(sys.executable,'tools/profile.py','--profile',name,'--out',gen,'--check',env=selection_env)
+        if name=='adpcm':
+            run(sys.executable,'tools/gen_adpcm.py',gen/'felucca_adpcm.h')
         flags=['-O2','-w','-I'+str(gen),'-Ibuild/gen','-Ifirmware/src']
         macros=subprocess.check_output([*cc,*flags,'-dM','-E','tests/profile_roundtrip.c'],text=True,cwd=ROOT)
         assert f'#define FELUCCA_PROFILE_NAME \"{name}\"' in macros, 'wrong compiled profile identity'
-        assert f'#define FELUCCA_PROFILE_ENGINE_3 {int(name=="standard")}' in macros, 'wrong compiled engine selection'
+        assert f'#define FELUCCA_PROFILE_ENGINE_3 {int(name!="reduced-lofi")}' in macros, 'wrong compiled engine selection'
+        assert f'#define FELUCCA_PROFILE_ENGINE_15 {int(name=="adpcm")}' in macros, 'wrong ADPCM selection'
+        assert '#define FELUCCA_PROFILE_ENGINE_14 0' in macros, 'MACRO slot must remain unavailable'
         for src in ('profile_roundtrip','engine_metadata_test','engid_test'):
             exe=OUT/f'{name}-{src}'
             run(*cc,*flags,f'tests/{src}.c','-lm','-o',exe)
@@ -59,6 +63,11 @@ def main():
         # The emulator bridge uses this very same selection, even for native validation.
         run(*cc,*flags,'web/emu/native_check.c','-lm','-o',OUT/f'{name}-emu-native')
         symbols=subprocess.check_output(['nm',str(OUT/f'{name}-profile_roundtrip')],text=True)
+        if name=='adpcm':
+            assert 'adp_render' in symbols, 'ADPCM implementation is missing'
+            assert 'macro_render' not in symbols, 'MACRO leaked into ADPCM profile'
+        else:
+            assert 'adp_render' not in symbols, 'ADPCM leaked into another profile'
         if name=='standard':
             assert 'lofi_render' in symbols, 'standard implementation is missing'
         if name=='reduced-lofi':

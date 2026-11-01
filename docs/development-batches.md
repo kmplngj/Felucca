@@ -6,6 +6,9 @@ device test setup. Extend an existing relevant draft PR when appropriate. The go
 is fewer firmware builds, installations and repeated hardware setups, while keeping
 each change reviewable and diagnosable.
 
+For the live handoff and later retries, apply
+[bounded hardware sessions](ai-workflows.md#finish-bounded-hardware-sessions).
+
 - Check current source, merged PRs and existing tests before selecting work: an open
   issue may already be implemented. Complete missing evidence instead of rewriting it.
 - Declare the batch's issue list, scope and acceptance checks before implementation.

@@ -25,12 +25,27 @@ static int ota_erase(uint32_t off)
     if (!flash_ok || !ota_in_area(off, 0x1000u) || (off & 0xFFFu))
         return -8;
     if (usb_rescue_mode) {
+#if BOARD_SMK37
+        smk__common(2);                         /* recovery already owns the IRQ-masked scan */
+#endif
         int rc = FL_FAR(fl_erase4k_ram)(off, &took);
         rescue_poll();
         return rc;
     }
+#if BOARD_SMK37
+    {
+        uint32_t f = irq_save();
+        int rc;
+        audio_silence();
+        smk__common(2);                         /* no scan can re-enable a common before the command */
+        rc = FL_FAR(fl_erase4k_ram)(off, &took);
+        irq_restore(f);
+        return rc;
+    }
+#else
     audio_silence();
     return fl_erase4k(off, &took);
+#endif
 }
 static int ota_prog(uint32_t off, const void *p, uint32_t n)
 {
@@ -64,7 +79,11 @@ static int ota_fread(uint32_t off, void *p, uint32_t n)
         rescue_poll();
         return rc;
     }
+#if BOARD_SMK37
+    return st_raw_read(off, p, n);              /* updater remains available while the store is locked */
+#else
     return st_read(off, p, n);
+#endif
 }
 static void ota_show(uint32_t step, int32_t code)
 {

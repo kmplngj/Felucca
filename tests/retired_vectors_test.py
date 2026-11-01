@@ -18,6 +18,23 @@ class ProjectIdentityTest(unittest.TestCase):
         validate_projects(self.data)
         self.assertEqual({case["format"] for case in self.data["projects"]}, {"FUN7", "FUN8", "FUN10"})
 
+    def test_current_outputs_keep_aftertouch_defaults_and_parameter_extent(self):
+        constants = self.data["constants"]
+        self.assertEqual((constants["P_COUNT"], constants["P_E0"]), (114, 106))
+        for case in self.data["projects"]:
+            with self.subTest(project=case["name"]):
+                raw = bytes.fromhex(case["output"])
+                self.assertEqual(raw[66], constants["P_COUNT"])
+                for track in range(4):
+                    pos = 68 + track * (constants["P_COUNT"] + 578)
+                    self.assertEqual(raw[pos + 103:pos + 106], bytes([64, 64, 64]))
+        states = [case["loaded"] for case in self.data["presets"]]
+        states += [case["track"] for case in self.data["load"]]
+        for state in states:
+            raw = bytes.fromhex(state["p"])
+            self.assertEqual(len(raw), 2 * constants["P_COUNT"])
+            self.assertEqual(raw[206:212], bytes(6))
+
     def test_each_project_format_covers_each_retired_sound(self):
         for fmt in ("FUN7", "FUN8", "FUN10"):
             with self.subTest(format=fmt):
@@ -59,7 +76,7 @@ class ProjectIdentityTest(unittest.TestCase):
                                               if c["format"] == fmt and c["retired"] == "PHYS"
                                               and c["phys_byte"] == phys))
                     self.assertEqual(case["motion_dropped"], [])
-                    case["motion_dropped"] = [{"track": 1, "step": 3, "param": 104, "lock": 0, "value": 30}]
+                    case["motion_dropped"] = [{"track": 1, "step": 3, "param": self.data["constants"]["P_E0"] + 1, "lock": 0, "value": 30}]
                     with self.assertRaisesRegex(ValueError, "motion_dropped"):
                         validate_projects({"projects": [case]})
 

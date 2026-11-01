@@ -33,6 +33,16 @@
  * plus the ota.c hooks (frames, time, idle). */
 #include "ldr_status.h"
 #define LDR_APP_LO 0x4000u
+#if BOARD_SMK37
+#define LDR_APP_HI 0x9D000u
+#define LDR_REC_LO 0x9D000u
+#define LDR_REC_HI 0xC0000u
+/* Never classify persistent object/sample bytes as update records. */
+#define LDR_DATA_LO 0x9D000u
+#define LDR_DATA_HI 0xBB000u
+#define LDR_AUTO_LO 0u
+#define LDR_AUTO_HI 0u
+#else
 #define LDR_APP_HI 0x93000u
 #define LDR_REC_LO 0x93000u                     /* update records live above the app ... */
 #define LDR_REC_HI 0xFC000u                     /* ... and below Felucca's globals (Felucca's records: 0xE4F00, */
@@ -42,6 +52,7 @@
 #define LDR_AUTO_HI 0xE8000u                    /* sector + 0x100 reaches +0xF00) and the FM6 voice bank (0xE7000): their bytes are */
                                                 /* not records, so no sector of [LDR_AUTO_LO, LDR_AUTO_HI) is classified or erased; */
                                                 /* loader.c asserts the bounds equal fm1_flash.h's FL_AUTO_LO / FL_VBANK_HI */
+#endif
 #define LDR_NSEC ((LDR_APP_HI - LDR_APP_LO) >> 12)
 
 static int ldr_fread(uint32_t off, void *p, uint32_t n);

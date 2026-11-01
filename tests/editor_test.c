@@ -1,10 +1,24 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* The firmware editor handler, USB framing and UART recovery against RAM flash.
+/* The firmware editor handler, USB framing and UART recovery against shared NOR.
  * Build with the generated tables and the same flags as hostsim.c. */
 #include "../firmware/hal/fm1_flash_data_contract.h"
-static unsigned char host_samples[3][0x14000];
+#ifdef SMK_EDITOR_TEST
+#define BOARD_SMK37 1
+#include "../firmware/hal/fm1_flash_map.h"
+static unsigned char host_nor[0x100000];
+#define host_samples (*(unsigned char (*)[3][0x14000])(host_nor + FL_SMP_LO))
+static unsigned host_sample_reads, host_raw_reads, host_mutation_unsafe, host_marker_fail;
+static unsigned host_led_common;
+static uint32_t host_erase_offsets[64], host_erase_count;
+static unsigned char *host_sample_ptr(unsigned k) { host_sample_reads++; return host_samples[k]; }
+#define SMP_USER_XIP(k) host_sample_ptr(k)
+#else
+#include "host_nor.h"
+/* Keep the array shape used by robustness/fuzz fixtures, backed by the real slot map. */
+#define host_samples (*(uint8_t (*)[3][0x14000])(nor + 0xA0000u))
 #define SMP_USER_XIP(k) host_samples[k]
+#endif
 #define FELUCCA_OTA 1
 #define FELUCCA_RESTART 1
 #define FELUCCA_FLASH 0
@@ -18,6 +32,10 @@ static unsigned char host_samples[3][0x14000];
 #undef fx_audio_activity
 static volatile uint32_t host_audio_activity;
 #define fx_audio_activity host_audio_activity
+#ifndef SMK_EDITOR_TEST
+_Static_assert(sizeof host_samples == SMP_USER_SLOTS * SMP_USER_SIZE && SMP_USER_BASE == 0xA0000u,
+               "editor sample NOR mapping");
+#endif
 #define MENU_N (34u + FELUCCA_CPU2)                  /* ALL DARK id 33, GRAPH 34 (#572); id 32 stays reserved in CPU2=0 builds */
 
 static uint32_t host_progress = 1, host_erases, host_writes;
@@ -54,23 +72,62 @@ static void panel_setup(void) {}
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
 
+#ifndef SMK_EDITOR_TEST
 static uint32_t flash_ok = 1;
 static void audio_silence(void) {}
+#endif
 static void fl_inval(uint32_t off, uint32_t n) { (void)off; (void)n; }
-static uint8_t *host_flash_ptr(uint32_t off) { return &host_samples[0][0] + off - SMP_USER_BASE; }
+#ifdef SMK_EDITOR_TEST
+static uint8_t *host_flash_ptr(uint32_t off) { return host_nor + off; }
+#endif
 static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took)
 {
+#ifdef SMK_EDITOR_TEST
+    if (host_led_common != 2u) host_mutation_unsafe++;
+    host_erase_offsets[host_erase_count++] = off;
+    if (FL_IN(off, 4096, FL_SMP_LO, FL_SMP_HI) && host_nor[FL_STOCKTAG_HI - 8u] != 255) host_mutation_unsafe++;
+    if (host_marker_fail && off == FL_STOCKTAG_LO) return -1;
     memset(host_flash_ptr(off), 0xFF, 4096); *took = 0; host_erases++; return 0;
+#else
+    *took = 0;
+    host_erases++;                                /* logical attempts; erases counts actual NOR work */
+    if (off < SMP_USER_BASE || off > SMP_USER_BASE + sizeof host_samples - 4096u || (off & 4095u))
+        return -8;
+    return st_erase(off);
+#endif
 }
 static fl_write_fn fl_write;
 static int fl_write(uint32_t off, const uint8_t *p, uint32_t n)
 {
+#ifdef SMK_EDITOR_TEST
+    if (FL_IN(off, n, FL_SMP_LO, FL_SMP_HI) && host_nor[FL_STOCKTAG_HI - 8u] != 255) host_mutation_unsafe++;
     memcpy(host_flash_ptr(off), p, n); host_writes++; return 0;
+#else
+    host_writes++;                                /* one HAL call can program several NOR pages */
+    if (off < SMP_USER_BASE || off > SMP_USER_BASE + sizeof host_samples ||
+        n > SMP_USER_BASE + sizeof host_samples - off)
+        return -8;
+    while (n) {                                  /* fm1_flash.h fl_write's page splitting */
+        uint32_t chunk = 256u - (off & 255u);
+        int rc;
+        if (chunk > n) chunk = n;
+        if ((rc = st_prog(off, p, chunk)) != 0) return rc;
+        off += chunk; p += chunk; n -= chunk;
+    }
+    return 0;
+#endif
 }
-static int st_read(uint32_t off, void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
-static int st_prog(uint32_t off, const void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
-static int st_erase(uint32_t off) { (void)off; return -1; }
+#ifdef SMK_EDITOR_TEST
+#define FL_FAR(fn) fn
+static void smk__common(uint32_t group) { host_led_common = group; }
+static uint16_t abuf[8];
+static uint32_t irq_save(void) { return 0; }
+static void irq_restore(uint32_t f) { (void)f; }
+static int fl_read_ram(uint32_t off, uint8_t *p, uint32_t n) { host_raw_reads++; memcpy(p, host_nor + off, n); return 0; }
+static int fl_erase4k_ram(uint32_t off, uint32_t *took) { return fl_erase4k(off, took); }
+#include "../firmware/src/storage_hw.c"
+#endif
 #include "../firmware/src/storage.c"
 #include "../firmware/src/editor.c"
 static uint32_t host_restarts;
@@ -84,6 +141,12 @@ static int check(const char *what, int ok)
 static void reset(void)
 {
     uint32_t t, i;
+#ifndef SMK_EDITOR_TEST
+    memset(nor, 0xFF, sizeof nor);
+    erase_error = dead = 0;
+    cut_bytes = cut_erase = -1;
+    erases = progs = 0;
+#endif
     memset(&song, 0, sizeof song); memset(trk, 0, sizeof trk);
     memset(&chain, 0, sizeof chain); chain_defaults(&chain_config);
     memset(&ed_w, 0, sizeof ed_w); memset(&ui, 0, sizeof ui);
@@ -244,7 +307,7 @@ static int preferences(void)
         host_wire[n - 4] == 0x45 && host_wire[n - 3] == 1 && host_wire[n - 2] == 5);
     request(ED_UI_SET, a, 2);
     bad += check("UI_SET updates the actual palette and reports RAM-only saving",
-        host_wire[5] == 3 && settings.palette == 7 && T_BG == UI_PALETTES[7].bg);
+        host_wire[5] == 3 && settings.palette == 7 && T_BG == UI_PALETTES[7].c1);
     bad += check("FELUCCA_FLASH=0: the shared settings durability is RAM only (#296: rc 3 for every editor write)",
         settings_save_result() == SETTINGS_RAM_ONLY && ed_settings_save() == 3u);
     a[1] = NPALETTES; request(ED_UI_SET, a, 2);
@@ -491,6 +554,150 @@ static int samples(void)
                  request(ED_UP_ERASE, a, 1) == 8u && host_wire[6] == 2);
     return bad;
 }
+
+#ifndef SMK_EDITOR_TEST
+static void sample_power_on(void)
+{
+    erase_error = dead = 0;
+    cut_bytes = cut_erase = -1;
+    erases = progs = 0;                            /* persistent bytes survive power restoration */
+}
+
+static uint32_t sample_begin(uint32_t slot)
+{
+    uint8_t a = (uint8_t)slot;
+    return request(ED_SMP_BEGIN, &a, 1) == 8u ? host_wire[6] : 99u;
+}
+
+static uint32_t sample_write(uint32_t slot, const uint8_t *data)
+{
+    uint8_t a[320] = {(uint8_t)slot, 0, 4, 0};     /* offset 512 */
+    uint32_t n = 4u + pack7(data, 256u, a + 4);
+    return request(ED_SMP_WRITE, a, n) == 11u ? host_wire[9] : 99u;
+}
+
+static uint32_t sample_end(uint32_t slot, const smp_user_hdr_t *h)
+{
+    uint8_t a[640] = {(uint8_t)slot};
+    uint32_t n = 1u + pack7((const uint8_t *)h, sizeof *h, a + 1);
+    return request(ED_SMP_END, a, n) == 8u ? host_wire[6] : 99u;
+}
+
+static int sample_outside_is(uint32_t base, uint32_t n, const uint8_t *before)
+{
+    return !memcmp(nor, before, base) &&
+           !memcmp(nor + base + n, before + base + n, sizeof nor - base - n);
+}
+
+static int sample_prefix_is(uint32_t base, const uint8_t *data, uint32_t n, uint32_t cut)
+{
+    uint32_t i;
+    if (memcmp(nor + base, data, cut)) return 0;
+    for (i = cut; i < n; i++) if (nor[base + i] != 0xFFu) return 0;
+    return 1;
+}
+
+/* Sample upload is single-copy: BEGIN invalidates it, payload precedes END's
+ * header. Do not impose the A/B bank contract or assume torn headers stay absent
+ * after reboot; this checks errors, exact flash effects and same-data retries. */
+static int sample_nor_faults(void)
+{
+    static uint8_t before[sizeof nor];
+    static const uint32_t payload_cuts[] = {0, 1, 127, 255, 256};
+    const uint32_t header_cuts[] = {0, 1, 255, 256, 257, sizeof(smp_user_hdr_t) - 1u, sizeof(smp_user_hdr_t)};
+    uint8_t data[256], torn[sizeof(smp_user_hdr_t)], a[256];
+    smp_user_hdr_t h;
+    uint32_t slot, i, j, cut, base, trials = 0;
+    int bad = 0, ok;
+    for (slot = 0; slot < SMP_USER_SLOTS; slot++) {
+        reset();
+        memset(nor, 0x5A, sizeof nor);             /* neighbors, bank/staging regions and slot tails */
+        for (i = 0; i < sizeof data; i++) data[i] = (uint8_t)(i * 37u + slot);
+        memset(&h, 0, sizeof h);
+        h.magic = SMP_USER_MAGIC; h.version = 1; h.nz = 1;
+        h.data_len = sizeof data; h.crc = st_crc32(data, sizeof data);
+        h.zone[0].n = 512; h.zone[0].le = 511; h.zone[0].rate = 65536; h.zone[0].hi = 127;
+        base = SMP_USER_BASE + slot * SMP_USER_SIZE;
+        ok = !sample_begin(slot);
+        memcpy(before, nor, sizeof nor);
+        for (j = 0; j < sizeof payload_cuts / sizeof payload_cuts[0]; j++) {
+            memcpy(nor, before, sizeof nor);
+            sample_power_on();
+            usr_nz[slot] = 0;
+            cut = payload_cuts[j]; cut_bytes = (long)cut;
+            ok &= sample_write(slot, data) == (cut < sizeof data ? 3u : 0u) &&
+                  !erases && progs == cut && dead == (cut < sizeof data) && !usr_nz[slot] &&
+                  sample_prefix_is(base + SMP_USER_DATA, data, sizeof data, cut) &&
+                  sample_outside_is(base + SMP_USER_DATA, sizeof data, before);
+            if (cut < sizeof data) {
+                memcpy(torn, nor + base + SMP_USER_DATA, sizeof data);
+                ok &= sample_write(slot, data) == 3u && !erases && progs == cut &&
+                      !memcmp(torn, nor + base + SMP_USER_DATA, sizeof data);
+            }
+            sample_power_on();
+            ok &= !sample_write(slot, data) && !erases && progs == sizeof data &&
+                  !memcmp(nor + base + SMP_USER_DATA, data, sizeof data) &&
+                  sample_outside_is(base + SMP_USER_DATA, sizeof data, before);
+            trials++;
+        }
+        bad += check("sample payload cuts: exact prefix, sticky power and same-data retry", ok);
+        memcpy(before, nor, sizeof nor);           /* complete payload, erased header */
+        ok = 1;
+        for (j = 0; j < sizeof header_cuts / sizeof header_cuts[0]; j++) {
+            memcpy(nor, before, sizeof nor);
+            sample_power_on();
+            usr_nz[slot] = 0;
+            cut = header_cuts[j]; cut_bytes = (long)cut;
+            ok &= sample_end(slot, &h) == (cut < sizeof h ? 4u : 0u) &&
+                  !erases && progs == cut && dead == (cut < sizeof h) &&
+                  sample_prefix_is(base, (const uint8_t *)&h, sizeof h, cut) &&
+                  sample_outside_is(base, sizeof h, before);
+            if (cut < sizeof h) {
+                memcpy(torn, nor + base, sizeof h);
+                ok &= !usr_nz[slot] && sample_end(slot, &h) == 4u && !erases && progs == cut &&
+                      !memcmp(torn, nor + base, sizeof h);
+                sample_power_on();
+                ok &= !sample_end(slot, &h) && !erases && progs == sizeof h;
+            }
+            ok &= usr_nz[slot] == 1u && usr_zone[slot][0].n == 512u &&
+                  !memcmp(nor + base, &h, sizeof h) && sample_outside_is(base, sizeof h, before);
+            trials++;
+        }
+        bad += check("sample header page/byte cuts: refusal, retry, complete zones and neighbors", ok);
+
+        memset(nor, 0x5A, sizeof nor);
+        memcpy(before, nor, sizeof nor);
+        sample_power_on(); erase_error = 1;
+        ok = sample_begin(slot) == 1u && !dead && !erases && !progs && !memcmp(nor, before, sizeof nor);
+        sample_power_on(); cut_erase = 0;
+        ok &= sample_begin(slot) == 1u && dead && erases == 1u && !progs;
+        for (i = 0; i < 2048u; i++) ok &= nor[base + i] == 0xFFu;
+        ok &= !memcmp(nor + base + 2048u, before + base + 2048u, 2048u) &&
+              sample_outside_is(base, 4096u, before);
+        memcpy(torn, nor + base, sizeof torn);
+        ok &= sample_begin(slot) == 1u && erases == 1u && !progs && !memcmp(torn, nor + base, sizeof torn);
+        sample_power_on();
+        ok &= !sample_begin(slot) && erases == 1u && !progs && !sample_write(slot, data) &&
+              !sample_end(slot, &h) && usr_nz[slot] == 1u && sample_outside_is(base, 4096u, before);
+        bad += check("sample BEGIN: refused/half erase, sticky cut and restored-power upload", ok);
+
+        sample_power_on();
+        ok = !sample_begin(slot);
+        memset(a, 0, sizeof a);
+        ok &= !sample_write(slot, a);
+        memset(a, 0xFF, sizeof a);
+        ok &= !sample_write(slot, a);              /* no erase: NOR cannot set those bits again */
+        h.crc = st_crc32(a, sizeof a);
+        ok &= sample_end(slot, &h) == 3u && !usr_nz[slot];
+        for (i = 0; i < sizeof a; i++) ok &= nor[base + SMP_USER_DATA + i] == 0;
+        bad += check("sample reprogram cannot set bits: END refuses the impossible payload CRC", ok);
+    }
+    printf("editor sample NOR: %u payload/header boundaries across all three slots\n", trials);
+    reset();
+    return bad;
+}
+
+#endif /* !SMK_EDITOR_TEST */
 
 static int song_protocol(void)
 {
@@ -1248,7 +1455,7 @@ static int menu_protocol(void)
     reset();
     ui.force = 0;
     ok = menu_set(0, 2) == 3 && host_wire[6] == 0 && ed_rv(host_wire + 7) == 2 && settings.palette == 2u &&
-         T_BG == UI_PALETTES[2].bg && ui.force;
+         T_BG == UI_PALETTES[2].c1 && ui.force;
     ok &= menu_set(1, 1) == 3 && ui_style == ST_LINE;
     ok &= menu_set(2, 1) == 3 && (ui_prefs & PREF_LARGE);
     ok &= menu_set(3, 1) == 3 && (ui_prefs & PREF_ANIM_OFF);
@@ -1556,9 +1763,16 @@ static int custom_palette(void)
          host_wire[7] == (T_BG >> 11) && host_wire[8] == ((T_BG >> 5) & 63u);        /* (nothing stored: the palette in use, to start from) */
     bad += check("PALETTE_GET: none stored (flags 0), five colours: the palette in use", ok);
     ok = palette_cmd(ED_PALETTE_GET, a, 1) == 0u;
-    bad += check("  PALETTE_GET takes no arguments", ok);
+    bad += check("  PALETTE_GET rejects an unknown schema request", ok);
+    a[0] = 2;
+    n = palette_cmd(ED_PALETTE_GET, a, 1);
+    ok = n == 23u && host_wire[5] == 4u && host_wire[6] == 5u;
+    for (i = 0; i < 5u; i++)
+        ok &= (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]) == ux.pal[i];
+    bad += check("PALETTE_GET [2]: explicit schema marker and the five stored roles, independent of firmware version", ok);
+    a[0] = 0;
     n = pal_send(0, flat);
-    ok = n > 0u && host_wire[5] == 0 && T_BG == flat[0] && T_TEXT == flat[2] && !(ui_cpal_flags & CPAL_STORED);
+    ok = n > 0u && host_wire[5] == 0 && T_BG == flat[0] && T_TEXT == flat[2] && T_REC == UI_PALETTES[settings.palette].primary && !(ui_cpal_flags & CPAL_STORED);
     bad += check("PALETTE_SET: colours that are hard to read are shown too (a preview: the editor warns, the device does not refuse)", ok);
     a[0] = 3; request(ED_PALETTE_SET, a, 1);
     n = pal_send(1, flat);
@@ -1578,19 +1792,19 @@ static int custom_palette(void)
         ok &= !(ui_cpal_flags & CPAL_STORED);
     }
     bad += check("  a value out of range, an unknown op: rc 1, nothing stored", ok);
-    n = pal_send(0, good);                                                          /* the preview: gfx.c's copy only */
-    ok = n > 0u && host_wire[5] == 0 && T_BG == good[0] && T_TEXT == good[2] && T_THEME == good[3] && T_ACCENT == good[4] &&
+    n = pal_send(16, good);                                                          /* the preview: gfx.c's copy only */
+    ok = n > 0u && host_wire[5] == 0 && T_BG == good[0] && T_TEXT == good[2] && T_THEME == good[1] && T_REC == good[3] && T_ACCENT == good[4] &&
          ui_cpal_flags == 0u && ui_cpal[0] == 0 && palette_n() == NPALETTES;
     bad += check("PALETTE_SET op 0 (preview): the colours are shown at once, nothing is stored", ok);
-    ok = T_SEL == ux_mix(good[0], good[3], UI_SEL_PCT) && T_MID == ux_mix(good[0], good[2], UI_MID_PCT) && T_INK == good[0] &&
+    ok = T_SEL == ux_mix(good[0], good[1], UI_SEL_PCT) && T_MID == ux_mix(good[0], good[2], UI_MID_PCT) && T_INK == good[0] &&
          !ux.mono && ux.light == 0u;
     bad += check("  the other tokens derived as for any palette (SEL, MID, INK), not GREY", ok);
     a[0] = 3; n = palette_cmd(ED_PALETTE_SET, a, 1);
-    ok = n > 0u && host_wire[5] == 0 && T_BG == UI_PALETTES[settings.palette].bg;
+    ok = n > 0u && host_wire[5] == 0 && T_BG == UI_PALETTES[settings.palette].c1;
     bad += check("PALETTE_SET op 3: the preview dropped, the palette in use again", ok);
-    n = pal_send(1, good);
-    ok = n > 0u && host_wire[4] == ED_PALETTE_SET && (host_wire[5] == 3 || host_wire[5] == 0) && ui_cpal_flags == (CPAL_STORED | CPAL_ACTIVE) &&
-         palette_cur() == NPALETTES && palette_n() == NPALETTES + 1u && T_BG == good[0] && host_wire[6] == 3 && host_wire[7] == 5;
+    n = pal_send(17, good);
+    ok = n > 0u && host_wire[4] == ED_PALETTE_SET && (host_wire[5] == 3 || host_wire[5] == 0) && ui_cpal_flags == (CPAL_STORED | CPAL_ACTIVE | CPAL_V2) &&
+         palette_cur() == NPALETTES && palette_n() == NPALETTES + 1u && T_BG == good[0] && host_wire[6] == 7 && host_wire[7] == 5;
     for (i = 0; i < 5u; i++) ok &= (uint16_t)(ui_cpal[2 * i] | ui_cpal[2 * i + 1] << 8) == good[i];
     bad += check("PALETTE_SET op 1: stored, in use (flags 3), five colours little endian in the settings' bytes", ok);
     n = palette_cmd(ED_PALETTE_GET, a, 0);
@@ -1609,7 +1823,7 @@ static int custom_palette(void)
     ok = n > 0u && host_wire[5] != 1 && palette_cur() == NPALETTES;
     a[1] = 3; request(ED_UI_SET, a, 2);
     ok &= palette_cur() == 3u && settings.palette == 3u && (ui_cpal_flags & CPAL_STORED) && !(ui_cpal_flags & CPAL_ACTIVE) &&
-          T_BG == UI_PALETTES[3].bg;
+          T_BG == UI_PALETTES[3].c1;
     a[1] = NPALETTES; request(ED_UI_SET, a, 2);
     ok &= palette_cur() == NPALETTES && T_BG == good[0] && settings.palette == 3u;
     a[1] = NPALETTES + 1u; request(ED_UI_SET, a, 2);
@@ -1620,7 +1834,7 @@ static int custom_palette(void)
         menu_desc(0, &it);
         ok = it.max == (int32_t)NPALETTES && it.nnames == NPALETTES + 1u && !strcmp(it.names[NPALETTES], "CUSTOM") &&
              it.value == (int32_t)NPALETTES;
-        ok &= menu_set(0, 5) == 3 && palette_cur() == 5u && T_BG == UI_PALETTES[5].bg;
+        ok &= menu_set(0, 5) == 3 && palette_cur() == 5u && T_BG == UI_PALETTES[5].c1;
         ok &= menu_set(0, 99) == 3 && palette_cur() == NPALETTES && T_BG == good[0];
         bad += check("MENU COLOR: 11 values while CUSTOM is stored (CUSTOM last), MENU_SET reaches it", ok);
     }
@@ -1628,7 +1842,7 @@ static int custom_palette(void)
     ok = n > 0u && host_wire[6] == NPALETTES;
     bad += check("UI_STATE: the palette byte is 10 while CUSTOM is in use", ok);
     a[0] = 2; n = palette_cmd(ED_PALETTE_SET, a, 1);
-    ok = n > 0u && ui_cpal_flags == 0u && palette_cur() == settings.palette && palette_n() == NPALETTES && T_BG == UI_PALETTES[settings.palette].bg;
+    ok = n > 0u && ui_cpal_flags == 0u && palette_cur() == settings.palette && palette_n() == NPALETTES && T_BG == UI_PALETTES[settings.palette].c1;
     for (i = 0; i < 10u; i++) ok &= ui_cpal[i] == 0;
     bad += check("PALETTE_SET op 2: removed (flags 0, bytes 0), the built-in palette is back, COLOR has 10 values again", ok);
     a[0] = 0; a[1] = NPALETTES; n = request(ED_UI_SET, a, 2);
@@ -1636,20 +1850,115 @@ static int custom_palette(void)
     bad += check("UI_SET 0 with CUSTOM (10) but none stored: rc 1", ok);
     {   /* a settings object with the bytes round trips (settings_export / settings_import), none stored reads as none */
         persist_t p;
-        pal_send(1, good);
+        pal_send(17, good);
         settings_export(&p);
         memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
-        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 3u && palette_n() == NPALETTES + 1u;
+        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 7u && palette_n() == NPALETTES + 1u;
         palette_apply();
         ok &= T_BG == good[0] && T_ACCENT == good[4];
         bad += check("settings: CUSTOM kept by an export and an import, in use after palette_apply", ok);
-        p.favorites.factory[15][12] = 3; p.favorites.factory[15][0] = p.favorites.factory[15][4] = 0x55;   /* hard to read: kept as saved */
+        p.favorites.factory[15][12] = 7; p.favorites.factory[15][0] = p.favorites.factory[15][4] = 0x55;   /* hard to read: kept as saved */
         p.favorites.factory[15][1] = p.favorites.factory[15][5] = 0x55;
-        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 3u && ui_cpal[0] == 0x55 && palette_n() == NPALETTES + 1u;
+        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 7u && ui_cpal[0] == 0x55 && palette_n() == NPALETTES + 1u;
         bad += check("settings: colours that are hard to read are kept as saved (the user's choice)", ok);
+        {   /* 1.6 and before: BG SURF TEXT THEME ACCENT (flags 3) is read as BG THEME TEXT <red> ACCENT, once */
+            uint8_t *f = p.favorites.factory[15];
+            memset(f, 0, 16);
+            for (i = 0; i < 5u; i++) { f[2 * i] = (uint8_t)good[i]; f[2 * i + 1] = (uint8_t)(good[i] >> 8); }
+            f[12] = 3;
+            ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 3u;
+            palette_apply();
+            ok &= ui_cpal_flags == 7u && T_BG == good[0] && T_THEME == good[3] && T_TEXT == good[2] && T_ACCENT == good[4] &&
+                  T_REC == UI_REC_DARK;
+            palette_apply();
+            ok &= T_THEME == good[3] && T_REC == UI_REC_DARK;      /* (not migrated twice) */
+            bad += check("settings: a CUSTOM of 1.6 (BG SURF TEXT THEME ACCENT) is read as the five of 1.7, once", ok);
+        }
+        {   /* An inactive light CUSTOM migrates on GET too; export/import must not shuffle it again. */
+            uint8_t *f = p.favorites.factory[15];
+            uint16_t light[5] = {rgb565(248, 240, 232), good[1], good[2], good[3], good[4]};
+            for (i = 0; i < 5u; i++) { f[2 * i] = (uint8_t)light[i]; f[2 * i + 1] = (uint8_t)(light[i] >> 8); }
+            f[12] = CPAL_STORED;
+            ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == CPAL_STORED;
+            a[0] = 2;
+            n = palette_cmd(ED_PALETTE_GET, a, 1);
+            ok &= n > 0u && host_wire[5] == (CPAL_STORED | 4u) && !cpal_on() && ui_cpal_flags == (CPAL_STORED | CPAL_V2);
+            {   /* GET keeps its old flags contract and sends all five in the new order. */
+                uint16_t migrated[5] = {light[0], light[3], light[2], UI_REC_LIGHT, light[4]};
+                for (i = 0; i < 5u; i++) {
+                    uint16_t wire = (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]);
+                    ok &= wire == migrated[i];
+                }
+                settings_export(&p);
+                ok &= settings_import(&p, sizeof p) == 1;
+                cpal_fix();
+                for (i = 0; i < 5u; i++)
+                    ok &= (uint16_t)(ui_cpal[2 * i] | ui_cpal[2 * i + 1] << 8) == migrated[i];
+            }
+            bad += check("settings: inactive light CUSTOM migrates on GET, keeps wire flags and survives a second import unchanged", ok);
+        }
+        {   /* PER6's authoritative device bytes use the same one-time migration and marker. */
+            persist_rec_t r;
+            favorites.factory[FAV_ROWS - 1u][0] = 1u;
+            settings_export_rec(&r);
+            for (i = 0; i < 5u; i++) { r.x.dev[2 * i] = (uint8_t)good[i]; r.x.dev[2 * i + 1] = (uint8_t)(good[i] >> 8); }
+            r.x.dev[12] = CPAL_STORED | CPAL_ACTIVE;
+            ok = r.magic == PERSIST_MAGIC_EXT && settings_import((persist_t *)(void *)&r, sizeof r) == 1;
+            palette_apply();
+            ok &= ui_cpal_flags == (CPAL_STORED | CPAL_ACTIVE | CPAL_V2) && T_THEME == good[3] && T_REC == UI_REC_DARK;
+            settings_export_rec(&r);
+            ok &= r.x.dev[12] == (CPAL_STORED | CPAL_ACTIVE | CPAL_V2) &&
+                  settings_import((persist_t *)(void *)&r, sizeof r) == 1;
+            palette_apply();
+            ok &= T_THEME == good[3] && T_REC == UI_REC_DARK;
+            favorites.factory[FAV_ROWS - 1u][0] = 0u;
+            bad += check("settings: PER6 CUSTOM migrates once and its exported device bytes retain the marker", ok);
+        }
         p.favorites.factory[15][12] = 0xFE;
         ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 0u && ui_cpal[0] == 0;
-        bad += check("settings: a flags byte without the stored bit: none, the colours zero; the bits past the two dropped", ok);
+        bad += check("settings: a flags byte without the stored bit: none, the colours zero; the bits past the three dropped", ok);
+    }
+    {   /* An unchanged 1.6 client reads and edits its original roles; it cannot overwrite primary. */
+        const uint16_t legacy[5] = {good[0], good[0], good[2], good[1], good[4]};
+        uint16_t edited[5] = {flat[0], flat[1], flat[2], flat[3], flat[4]};
+        reset();
+        pal_send(17, good);
+        n = palette_cmd(ED_PALETTE_GET, a, 0);
+        ok = n == 23u && host_wire[5] == 3u;
+        for (i = 0; i < 5u; i++)
+            ok &= (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]) == legacy[i];
+        bad += check("legacy PALETTE_GET: unchanged flags and BG SURF TEXT THEME ACCENT order (native SURF is BG)", ok);
+        pal_send(0, edited);
+        ok = T_BG == edited[0] && T_THEME == edited[3] && T_TEXT == edited[2] && T_REC == good[3] && T_ACCENT == edited[4];
+        a[0] = 3;
+        request(ED_PALETTE_SET, a, 1);
+        ok &= T_THEME == good[1] && T_REC == good[3];
+        pal_send(1, edited);
+        ok &= host_wire[6] == 3u && T_THEME == edited[3] && T_REC == good[3];
+        a[0] = 2;
+        palette_cmd(ED_PALETTE_GET, a, 1);
+        ok &= host_wire[5] == 7u;
+        {   uint16_t expected[5] = {edited[0], edited[3], edited[2], good[3], edited[4]};
+            for (i = 0; i < 5u; i++)
+                ok &= (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]) == expected[i];
+        }
+        bad += check("legacy preview/store/drop-preview round trip retains primary; schema2 reads the exact new order", ok);
+        a[0] = 0; a[1] = 2;
+        request(ED_UI_SET, a, 2);                    /* Keep CUSTOM stored while a built-in is in use. */
+        pal_send(1, edited);
+        bad += check("legacy store retains an inactive CUSTOM's primary instead of the displayed built-in primary", T_REC == good[3]);
+        n = pal_send(20, good);
+        ok = n > 0u && host_wire[5] == 1u && T_THEME == edited[3] && T_REC == good[3];
+        a[0] = 2; a[1] = 0;
+        ok &= palette_cmd(ED_PALETTE_GET, a, 2) == 0u;
+        bad += check("unknown schema and op requests leave the palette unchanged", ok);
+        a[0] = 19;
+        request(ED_PALETTE_SET, a, 1);
+        ok = host_wire[5] == 0u && host_wire[6] == 7u;
+        a[0] = 18;
+        request(ED_PALETTE_SET, a, 1);
+        ok &= host_wire[6] == 4u && ui_cpal_flags == 0u;
+        bad += check("schema2 remove/drop-preview acknowledge the requested schema without leaking stored-layout flags", ok);
     }
     return bad;
 }
@@ -1892,9 +2201,10 @@ static int guarded_control(void)
     return bad;
 }
 
+#ifndef SMK_EDITOR_TEST
 int main(void)
 {
-    int bad = guarded_control() + backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
+    int bad = guarded_control() + backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + sample_nor_faults() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + watch_lifecycle() + watch_backpressure() + usb_burst() + menu_protocol() + drum_kit_retired() +
               learn_protocol() + custom_palette()
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
@@ -1904,4 +2214,5 @@ int main(void)
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
     return bad != 0;
 }
+#endif /* !SMK_EDITOR_TEST */
 #endif

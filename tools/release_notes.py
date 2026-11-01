@@ -110,6 +110,24 @@ CI does not exercise physical USB/TRS, audio, power-loss recovery or your flash 
   [curated changes]({docs}/docs/changelog.md), and
   [release policy / remaining test limits]({docs}/docs/releases.md).
 
+## Experimental SMK keyboard assets
+
+The FM-1 hardware attestation above applies to the FM-1 package only. These SMK
+packages are experimental; physical key/pad, USB, audio and interrupted-update
+qualification remains pending for each model:
+
+- SMK-37 Pro: `felucca-{version}-smk37.fwsc`
+- SMK-37 Elite: `felucca-{version}-smk37-elite.fwsc`
+- MKE-P37: `felucca-{version}-smk37-mke.fwsc`
+
+Use only your exact model's package and the Python USB-MIDI installer. SMK MIDI is
+USB-only. Two user sample slots are available; USR3 stays unavailable. Unowned
+storage stays locked until explicit physical initialization; this erases the
+SMK metadata area. Read [SMK setup and recovery]({docs}/docs/smk37.md) first.
+Each model includes uniquely named resource, profile, build identity, reproduction
+and manifest JSON evidence. Verify the aggregate `SHA256SUMS`; the common complete
+source archive and license assets cover all four builds from this exact commit.
+
 ## Complete commit changelog
 
 Range: {comparison}

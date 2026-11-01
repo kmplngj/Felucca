@@ -288,7 +288,7 @@ Available: v1. Request length (argument bytes): **0**.
 
 The prefix is positional, not tagged. NENGINES is the name-list length, not the
 number of playable engines. Version text is at most 24 characters, engine names
-at most 8. Current standard counts are P_COUNT 111, G_COUNT 27, NSTEP 64, P_E0 103,
+at most 8. Current standard counts are P_COUNT 114, G_COUNT 27, NSTEP 64, P_E0 106,
 NTRK 4 and CHAIN_ROWS 16. Prefer the returned counts over these examples.
 Older replies end earlier; ignore trailing features you do not consume. Blocks
 have tag-specific lengths: the byte `01` is the block version, not a generic
@@ -685,7 +685,7 @@ Loading applies its sound and preserves the track’s steps and own parameters.
   record in RAM and flash, including its name. Without flash, a valid change is RAM-only until power-off.
   (`UP_PUT` / `UP_STORE` / `UP_ERASE` stop the transport first, see "Saves while playing"; a device
   that cannot stop it in 100 ms answers rc 2 and writes nothing.)
-- Frames stay below the 640-byte incoming buffer; maximum UP_PUT size is 287 argument bytes (293 with framing) with P_COUNT 111 and a 12-character name.
+- Frames stay below the 640-byte incoming buffer; maximum UP_PUT size is 293 argument bytes (299 with framing) with P_COUNT 114 and a 12-character name.
 - **Categories (1.2, Discussion #90).** A user preset has a sound category: 0 none, 1 BASS, 2 LEAD, 3 PAD, 4 PLUCK,
   5 KEYS, 6 DRUM, 7 FX, 8 OTHER (append-only; the device's PRESETS > LIST filters by it, its NAME screen sets it).
   `UP_LIST` sends one byte per listed slot after all the slot entries (0 for an empty slot); `UP_GET` ends with it
@@ -1001,7 +1001,7 @@ Available: v7. Request length (argument bytes): **1 (query); op 1: 3; ops 2, 7, 
   holds until another step changes it; the loop restarts from the sound's own value, and stopping puts the
   sound's own values back. Parameters that can be recorded (`motion_param`): ids 0..16 (LEVEL, ENV, LFO),
   33..36 (DIST, CHO, DLY, REV), 38 (GLIDE), 39 (PAN), 44 (DETUNE), 61..80 (the FM operator parameters) and
-  83..90 (the DRUM lane levels), 95 (SPREAD), 96..100 (INSERT) and P_E0..P_E7 (103..110; not the chord keys 81, 82). The device records them while the track is armed, playing and selected, from its knobs
+  83..90 (the DRUM lane levels), 95 (SPREAD), 96..100 (INSERT) and P_E0..P_E7 (106..113; not the chord keys 81, 82 or aftertouch settings 103..105). The device records them while the track is armed, playing and selected, from its knobs
   and from `SET` / `TRACK_PARAM` alike.
   - `MOTION` with the track alone is the query. `on` 0 keeps the data and stops playing it; 1 plays it. Clear
     drops the track's events and turns it off; on the device it is undone by SAVE held.
@@ -1520,7 +1520,7 @@ without changing MIDI note playback. Accepted routed USB/TRS note-ons count;
 clock, CC, pitch bend, aftertouch, note-offs, Program Change, SysEx and unheard
 channels do not. With both stages at NEVER there is no timed darkness to wake.
 
-MIDI IN TRACK in a project (FUN10, no format change): the last 3 of the 16 spare bytes before the FM6 patches
+MIDI IN TRACK in a project (FUN10, no format change): the last 3 of the 4 spare bytes before the FM6 patches
 (`PROJ_MIDI_OFF` = 3309), 24 bits little-endian. Bits 5k..5k+4: track k's channel as stored, 0..15 = the channel
 (k + v) mod 16 (so 0, what every older project holds, is channel k + 1), 16 OMNI, 17 OFF (18..31: read as 0); bit 23:
 MIDI IN is TRACK (then global 14 holds the fallback block, see Global ids). Covered by the project's hash as the rest.
@@ -1667,18 +1667,26 @@ The parameter id is this firmware's (`P_*`, P_E0 from `INFO`). rc: 0 applied and
 CC that is never learned (op 0), a track past 3, an id past P_COUNT − 1), 3 applied in RAM only (no flash, a
 failed write), 4 applied, saved when the transport stops, 5 full (16 others: clear one first). Op 1 accepts any 7-bit CC, including a reserved or unassigned CC; it clears its entry if one exists. Op 2 clears the map. Both use the shared settings-save result even when unchanged (pending unsaved settings can therefore return rc 3 or 4). The device does not tell the editor when it learns: read the map
 again (LEARN_GET) when it matters (e.g. with the settings, or after the user says so). Example: `F0 7D 46 4C 4F 00 4A
-03 69 F7` (op 0: CC74, T4, id 105: P_E0 + 2, DRUM's TONE, with current P_E0 103) answers `F0 7D 46 4C 4F 00 10 01 4A 03 69 ...
-F7` (rc 0, 16 entries, the first CC74 on T4 id 105).
+03 6C F7` (op 0: CC74, T4, id 108: P_E0 + 2, DRUM's TONE, with current P_E0 106) answers `F0 7D 46 4C 4F 00 10 01 4A 03 6C ...
+F7` (rc 0, 16 entries, the first CC74 on T4 id 108).
 
 ## CUSTOM palette (80-81; 1.6)
 
 COLOR (MENU > DISPLAY, Discussion #239, #244) has a palette of the user's as its 11th value, CUSTOM. A palette is five
-stored colours, BG SURF TEXT THEME ACCENT; the device derives the other tokens (MID, DIM, LINE, SEL, TINT, INK, RAISE, KEY,
-LANE, GRID, REC) from them with fixed blends, as for the built-in palettes (`firmware/src/gfx.c palette_set`,
+stored colours, color1 color2 color3 primary secondary (upstream 1.7; the earlier layout was BG SURF TEXT THEME ACCENT):
+color1 is the background, color2 the identity colour (values, curves, selections), color3 the text, primary REC and
+warnings, and secondary the one active thing. SURF is derived as color1 + 12 % of color2; the native Direction A
+layout draws on BG. The device derives the other tokens (MID, DIM, LINE, SEL, TINT, INK, RAISE, KEY, LANE, GRID)
+with fixed blends, as for the built-in palettes (`firmware/src/gfx.c palette_set`,
 `tools/gen_ui_palettes.py`), CUSTOM is not GREY and not MONO (the channels blend as they are). The colours are RGB565,
 sent as three 7-bit bytes each: red 0..31, green 0..63, blue 0..31. CUSTOM is part of the settings (kept across
 power-off, not in projects or user presets; a full backup carries it with the settings object, id 1: bytes 0..9 and 12 of
-the device bytes, the PER4 record's 16th favourites row and PER6's `dev`). Firmware before 1.6 keeps the bytes (a round trip through it does not lose the palette) and shows
+the device bytes, the PER4 record's 16th favourites row and PER6's `dev`). Byte 12 bit 2 marks the new colour order.
+An older CUSTOM without that bit is converted once when applied or read: color1 = BG, color2 = THEME, color3 = TEXT,
+primary = red chosen for the background's lightness, secondary = ACCENT. The next ordinary settings save retains
+the converted order and its marker. Firmware with the earlier five-slot layout interprets a new CUSTOM in its old
+order. The wire protocol negotiates colour order explicitly, independently of the firmware version string; legacy
+requests retain their original roles and flags. Firmware before 1.6 keeps the bytes (a round trip through it does not lose the palette) and shows
 the built-in palette that was in use before CUSTOM was chosen (the settings' palette field is never CUSTOM). INFO
 advertises `45 01 5` (five colours) after `4B 01 NCOND`; firmware without the tag answers neither command.
 
@@ -1689,32 +1697,49 @@ While one is stored, CUSTOM is the 11th name of `UI_PALETTES` (cmd 36: count 11,
 <a id="cmd-80"></a>
 ### 80 PALETTE_GET
 
-Available: INFO `45 01` (1.6). Request length (argument bytes): **0**.
+Available: INFO `45 01` (1.6). Request length (argument bytes): **0**, or **1** for the explicit schema request `2`.
 
-- Request: —.
-- Reply: flags (bit 0 stored, bit 1 in use), 5, then 5 × (r, g, b): the stored colours, or with none stored the palette in use (a place to start from).
+- Legacy request: no arguments. Reply: flags (bit 0 stored, bit 1 in use), 5, then 5 × (r, g, b) in the original
+  **BG SURF TEXT THEME ACCENT** order. SURF equals BG in the native Direction A layout. Primary is not exposed here.
+- New-order request: `2`. Reply: the same payload with **flag bit 2 (`4`) set**, in
+  **color1 color2 color3 primary secondary** order. The flag acknowledges this request only, not the stored migration marker.
+- Colours come from the stored CUSTOM, or with none stored the palette in use (a place to start from). Unknown
+  schema arguments or lengths get no reply and change nothing.
+
+A client probes `PALETTE_GET [2]` and selects the new schema only when the reply has flag `4`. Older upstream
+firmware may ignore the argument and return its legacy colours without that flag. Older fork firmware rejects
+the extra argument without replying: after a probe timeout, retry the no-argument GET and use the legacy schema.
+Do not infer schema support from `1.6.1`, INFO's five-colour count or persisted flags. Use the matching SET
+operation family for subsequent mutations.
 
 <a id="cmd-81"></a>
 ### 81 PALETTE_SET
 
-Available: INFO `45 01` (1.6). Request length (argument bytes): **ops 0, 1: 16; ops 2, 3: 1**.
+Available: INFO `45 01` (1.6). Request length (argument bytes): **ops 0, 1, 16, 17: 16; ops 2, 3, 18, 19: 1**.
 
-- Request: op 0 preview: 0, 5 × (r, g, b); op 1 store: 1, 5 × (r, g, b); op 2 remove: 2; op 3 drop the preview: 3.
-- Reply: rc, then PALETTE_GET's reply.
+- Legacy ops: 0 preview, 1 store, 2 remove, 3 drop the preview. Ops 0/1 carry 5 × (r, g, b) in the original
+  BG SURF TEXT THEME ACCENT order. BG, TEXT, THEME and ACCENT edit color1, color3, color2 and secondary;
+  SURF is ignored because the native layout derives it. Primary retains the stored CUSTOM's primary, even
+  when inactive, or the current built-in primary if no CUSTOM is stored.
+- New-schema ops: add `0x10` to the same operation (16 preview, 17 store, 18 remove, 19 drop preview).
+  Ops 16/17 carry all five colours in color1 color2 color3 primary secondary order, including primary.
+- Reply: rc, then PALETTE_GET's payload in the requested operation family's order. New-schema operations
+  set flag `4`; legacy operations expose only stored/in-use bits 0 and 1.
 
-Wrong length/op or RGB component out of range returns rc 1 and the current palette payload.
+Wrong length/op or RGB component out of range returns rc 1 and the current palette payload, without applying
+or saving the submitted colours. Older firmware does not support ops 16..19; negotiate before sending them.
 
 Op 0 shows the colours at once and stores nothing (RAM only; the device's own COLOR or op 3 brings back the palette in
 use; a power cycle too). Op 1 stores them, makes CUSTOM the palette in use and saves like `UI_SET` (rc 0 saved, 3 applied in
 RAM only, 4 saved when the transport stops). Op 2 removes the stored palette (the built-in palette from before is in use
 again). rc 1: arguments (a value past its range, an unknown op, a wrong length). **The device accepts any colours**, readable
 or not; it is the editor that warns. The rule the editor warns by (the lightness 0..255 as in `firmware/src/gfx.c ux_luma`: (54 R + 183 G +
-19 B) / 256 of the colour at full scale): TEXT against BG at least 128 apart, TEXT against SURF 96, THEME against BG 80,
-ACCENT against BG 64; every built-in palette keeps 195, 171, 135 and 147 at the least. With colours nobody can read the way
+19 B) / 256 of the colour at full scale): color3 against color1 at least 128 apart, color2 against color1 80,
+secondary against color1 64, primary against color1 64. With colours nobody can read the way
 back is the editor's op 2, or the device's MENU: hold HOME for the menu, COLOR is the first row of the first tab (DISPLAY), a
 knob turn picks a built-in palette. A preview by the slider is op 0 sent at most every few tens of ms; the value in the
-settings changes only with op 1. Example: `F0 7D 46 4C 51 01 01 02 05 03 04 0A 06 ...` is op 1 with BG = (r 1, g 2, b 5),
-SURF = (3, 4, 10), ...
+settings changes only with a store operation. Example: `F0 7D 46 4C 51 11 01 02 05 03 04 0A 06 ...` is op 17
+(hex `11`) with color1 = (r 1, g 2, b 5), color2 = (3, 4, 10), ...
 
 ## Raw store export (82-83; #456)
 
@@ -1811,8 +1836,8 @@ migrated object goes through a current-schema upload path that does not exist ye
 
 ## Parameter and engine reference
 
-The engine parameters are `P_E0..P_E7`: P_COUNT−8 .. P_COUNT−1 (103..110 since 1.5; 96..103 in 1.2 .. 1.4; 91..98 in
-1.1), and `INFO` gives `P_E0`.
+The engine parameters are `P_E0..P_E7`: P_COUNT−8 .. P_COUNT−1 (106..113 since 1.8; 103..110 in 1.5 .. 1.7; 96..103 in 1.2 .. 1.4;
+91..98 in 1.1), and `INFO` gives `P_E0`.
 Their meaning, range and names depend on the current engine, so re-read `DESC` for them
 after an engine change.
 
@@ -1916,7 +1941,25 @@ parameters. New common values are inserted before the last eight engine values.
 | 1.1 | 99 | 91 | DRUM lane levels 83..90 |
 | early 1.2 | 103 | 95 | LFO SYNC/TRIG/POL, QNTZ 91..94 |
 | 1.2..1.4 | 104 | 96 | SPREAD 95 |
-| 1.5 onward | 111 | 103 | INSERT 96..100, TYPE 101, ESYNC 102 |
+| 1.5..1.7 | 111 | 103 | INSERT 96..100, TYPE 101, ESYNC 102 |
+| 1.8 | 114 | 106 | AT 103, ATDST 104, ATAMT 105 |
+
+### Aftertouch parameters (1.8)
+
+VOICE 3 adds three common parameters before `P_E0`:
+
+| id | label | fmt, range, default |
+| --- | --- | --- |
+| 103 | AT | ENUM: OFF (0), sensitivity 1..10; default OFF |
+| 104 | ATDST | ENUM: the same 23 destinations as DST1..DST4; default OFF |
+| 105 | ATAMT | BIPCT, −64..63; default 0 |
+
+AT controls physical key-pressure sensing; OFF still permits incoming MIDI pressure.
+ATDST and ATAMT route the AT source through a dedicated modulation slot alongside the four MOD slots.
+All three are stored with the sound and project, and are excluded from motion recording.
+Older counts load them at their defaults and move the last eight values and engine-parameter motion IDs
+up to 106..113. FUN10 keeps its magic and 3840-byte size; firmware with a smaller P_COUNT refuses
+these newer projects. User presets continue to map their values by the stored count.
 
 ## Parameter formats
 
@@ -2083,8 +2126,8 @@ keep their IDs, missing values take defaults. Engine IDs must be below 64;
 unavailable IDs remain stored. Values outside −64..127 are invalid.
 
 The chain follows the tracks, then motion, then spare bytes and the FM6 patches
-(four 128-byte packed records, except FUN7). FUN10 writes 111 parameters:
-`68 + 4 × (111 + 2 + 576) + 84 + 388 = 3296`, leaving 16 bytes before patches.
+(four 128-byte packed records, except FUN7). Current FUN10 writes 114 parameters:
+`68 + 4 × (114 + 2 + 576) + 84 + 388 = 3308`, leaving 4 bytes before patches.
 The last three spare bytes (3309..3311) hold MIDI IN TRACK routing; see the
 [MENU reference](#menu-settings-72-73-104). The name is 12 ASCII bytes, uppercase,
 NUL-padded; the reader stops at the first NUL. All zero, or a nonprintable byte
@@ -2222,7 +2265,10 @@ completion checks prevent skipped or duplicate chunks becoming a valid PNG.
 The fixed session lifetime is 120 seconds from BEGIN, including host stalls;
 requests do not extend it. Unsigned elapsed-time checks handle timer wrap.
 Failed commands emit `SCAP ERROR code=argument|stale|state|bounds|busy|unsupported`
-as appropriate. Missing coverage or a changed repeated full draw aborts the
+as appropriate. Native LCD transfer failure also terminates as `coverage` rather
+than publishing READY; its explicit wake hold is released. This does not add a
+state or change the protocol version.
+Missing coverage or a changed repeated full draw aborts the
 session; no partial frame is a successful screenshot. `draw_hash` is an ordered
 draw-operation FNV32 fingerprint, **not** the final image CRC. The host computes
 the latter after complete assembly. This transport captures intended LCD pixels,

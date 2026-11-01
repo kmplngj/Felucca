@@ -9,6 +9,10 @@ publishes tested main builds and a pinned WebApp fork; its
 
 ## Fork features
 
+The [upstream 1.8.0 backport guide](upstream-1.8-backport.md) documents aftertouch,
+CLEAR ALL, step undo, confirmations, palette migration, optional ADPCM and desktop
+support, including compatibility and pending device checks.
+
 - **Automatic project saves:** with RESTORE LAST on, autosave waits for stopped transport,
   idle controls and voices, and ten seconds of quiet stereo output. Long effect tails
   keep postponing the save; USB LEVEL FIXED also protects the full-level USB signal with MASTER turned down. See the
