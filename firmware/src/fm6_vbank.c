@@ -160,6 +160,7 @@ static uint32_t fvb_begin(void)
     if (!ST_AVAILABLE)
         return 4;
     fvb_tx.copy = st_current(OBJ_AUTOSAVE, &h) == 0 ? 1u : 0u;   /* the copy st_save writes next */
+    st_tried |= (uint16_t)(1u << OBJ_AUTOSAVE);                  /* (storage.c st_fresh: the pair saw an erase) */
     if (st_erase(fvb_stage()))
         return 4;
     fvb_tx.used = 0;
