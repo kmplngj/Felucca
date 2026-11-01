@@ -52,8 +52,6 @@ These snapshot reviews grant zero individual commit assessments.
 | Experimental USB host | Existing #289 feasibility owner. Donor reports no working hardware confirmation; require board/VBUS, powered-hub, descriptor/error/hotplug, note release and host/device recovery evidence. No simultaneous computer-facing device/audio role is established. |
 | Industrial and genre-specific arrangements | Optional generator/content recipes under #208/#214. Preserve native startup behavior; no wholesale seventeen-genre application or five-track storage model. |
 
-## Instruments and provenance
-
 ## MIDI device follow-up
 
 [#828](https://github.com/kmplngj/Felucca/issues/828) now owns concrete opt-in
@@ -78,7 +76,7 @@ router; direct USB peripherals remain the separate #289 experiment. Donor M:S mo
 and M:S/SP-404 maps still need physical confirmation. This follow-up changes plans
 and issue acceptance only, with no firmware or tested compatibility claim.
 
-## Instrument audition
+## Instruments and provenance
 
 Candidate set: Rhodes/glass breathing pad, driven Reese/Hoover bass, CZ/fold acid,
 and Super/Hyper/Lead; optionally compare one percussion recipe against native DRUM.
