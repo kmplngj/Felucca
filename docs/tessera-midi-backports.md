@@ -26,6 +26,8 @@ A selected external input is distinct from transport ownership. Local PLAY with
 an absent or lost master runs internally, with the normal count-in when recording.
 A master's recently running pulses keep external timing. Selected-source Start,
 Continue and Stop reclaim transport; pulses alone cannot claim local playback.
+Start/Continue cancel any local count-in and discard its pending pickup and
+unrendered countdown click before following the master.
 Physically held ARP keys play locally while the master is stopped. Releasing a
 HOLD chord leaves it waiting for external transport instead of free-running.
 

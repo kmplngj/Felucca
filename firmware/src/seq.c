@@ -382,6 +382,15 @@ static volatile uint8_t cin_left, cin_total;    /* the count-in's beats still to
 static volatile uint32_t cin_pos;               /* samples into its beat playing */
 static uint8_t cin_flush;                       /* the count-in ended in this block: record what was kept */
 static uint8_t cin_note[NTRK][4], cin_vel[NTRK][4], cin_n[NTRK], cin_up[NTRK];   /* kept notes; cin_up bit k: let go */
+/* Cancel the count-in and its pending pickup without stopping live transport. */
+static void cin_cancel(void)
+{
+    if (cin_left || cin_flush)
+        click_req = 0;                            /* discard an unrendered countdown click, not its sounding tail */
+    cin_left = 0;
+    cin_flush = 0;
+    memset(cin_n, 0, sizeof cin_n);
+}
 static int seq_counting(void) { return cin_left != 0u; }
 static uint32_t click_beat_len(void) { return 4u * div_samples(2); }   /* DIV 2: 1/16 */
 static int click_wanted(void)                  /* CLICK REC: while a track is armed (not in a song: no recording) */
@@ -1000,9 +1009,7 @@ static void seq_stop(void)
 {
     uint32_t i;
     song.playing = 0;
-    cin_left = 0;                                  /* (a count-in: cancelled, nothing recorded) */
-    cin_flush = 0;
-    memset(cin_n, 0, sizeof cin_n);
+    cin_cancel();                                 /* a count-in is cancelled, nothing recorded */
     if (song.g[G_CLOCK])                           /* external clock: the arp stops with the transport, */
         for (i = 0; i < NPART; i++)                /* its sounding note too (HOLD keeps the latched chord) */
             if (trk[i].arp_note)

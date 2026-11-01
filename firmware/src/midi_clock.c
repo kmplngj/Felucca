@@ -13,6 +13,8 @@ static struct {
 
 static __attribute__((noinline)) void midi_clock_transport(uint32_t status, uint32_t ms)
 {
+    if (status == 0xFAu || status == 0xFBu)
+        cin_cancel();                             /* master transport supersedes any local count-in/pickup */
     if (status == 0xFAu) {                         /* Start: step zero */
         midi_clock.pos = midi_clock.rendered = 0;
         midi_clock.have_pulse = midi_clock.tempo_valid = 0;

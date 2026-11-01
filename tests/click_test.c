@@ -501,6 +501,32 @@ static void ext_clock(void)
     midi_enqueue(0xFu | 0xF8u << 8, 1u); run(1);
     transport_req = 1; run(2);
     check("external clock: local PLAY with a running master bypasses count-in", song.playing && !seq_counting());
+    for (uint32_t status = 0xFAu; status <= 0xFBu; status++) {
+        fresh(); grid_track();
+        song.g[G_CLOCK] = 1; cin_bars = 1; song.rec = 1u; click_mode = CLICK_ON;
+        run(2); transport_req = 1;
+        run(ceil_div(QB / 2u, CTL));                  /* mid-count-in, after its first click has ended */
+        uint32_t takeover = nb;
+        midi_enqueue(0xFu | status << 8, 1u); run(1);
+        midi_enqueue(0xFu | 0xF8u << 8, 1u); run(100);
+        clicks(takeover * CTL);
+        check(status == 0xFAu ? "external Start cancels count-in and clicks the first master beat immediately" :
+                               "external Continue cancels count-in and clicks the first master beat immediately",
+              song.playing && !seq_counting() && blk_beat[takeover] == 0 && nc == 1u &&
+              c_at[0] == takeover * CTL && fabs(c_hz[0] / 1760.0 - 1.0) < 0.03);
+    }
+    fresh(); grid_track();
+    trk[0].seq_idx = 1; trk[0].seq_pos = 100;
+    clk_step = 1; clk_pos = 100;                     /* Continue resumes between quarter-note clicks */
+    song.g[G_CLOCK] = 1; cin_bars = 1; song.rec = 1u; click_mode = CLICK_ON;
+    run(2); transport_req = 1; run(1);
+    while (cin_pos + CTL < click_beat_len()) run(1);
+    uint32_t takeover = nb;
+    midi_enqueue(0xFu | 0xFBu << 8, 1u); run(100);  /* cin_block queues a countdown click in this very block */
+    clicks(takeover * CTL);
+    check("external Continue between beats discards the countdown click queued in its takeover block",
+          song.playing && !seq_counting() && nc == 0u);
+
 }
 
 int main(void)

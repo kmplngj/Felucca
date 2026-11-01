@@ -111,7 +111,8 @@ a released latched chord waits for external transport and its gate ends in real 
 Local PLAY uses internal timing when the selected master is silent or lost, including
 the normal recording count-in. A running master's pulses retain external timing.
 Selected-source Start, Continue or Stop reclaims transport; clock pulses alone cannot
-claim locally started playback. Stopped STEP entry retains its existing behavior.
+claim locally started playback. Start/Continue cancel a local count-in and discard
+its pending pickup; stopped STEP entry retains its existing behavior.
 
 Measured external tempo is smoothed over roughly two beats with display hysteresis
 and fresh acquisition after a gap above 500 ms. This reduces jitter without changing

@@ -2091,7 +2091,8 @@ describes older containers and their recovery paths.
 
 - **MIDI clock** has no SysEx. `G_CLOCK` selects the source: 0 INT, 1 USB, 2 TRS. Selected-source
   Start (0xFA), Continue (0xFB) and Stop (0xFC) reclaim external transport ownership; Start restarts
-  from step 0, Continue resumes and Stop stops. While externally owned, the sequencer follows that
+  from step 0, Continue resumes and Stop stops. Start/Continue cancel a local count-in and discard
+  its pending pickup. While externally owned, the sequencer follows that
   port's Clock pulses (the other port's are ignored), BPM follows measured incoming tempo (40..240),
   and more than 500 ms without a pulse stops transport. Local PLAY with a silent or lost master uses
   internal timing, including the normal recording count-in; clock pulses alone cannot claim that local

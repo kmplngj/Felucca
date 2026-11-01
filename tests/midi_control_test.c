@@ -388,6 +388,47 @@ static void clock_to(uint32_t source, uint32_t start, uint32_t count)
 {
     for (uint32_t i = 0; i < count; i++) clock_packet(source, 0xF8, start + (i * 125u) / 6u);
 }
+/* External transport takes over a local count-in without retaining its pickup.
+ * Continue resumes paused phase; Start enters step zero on the master's clock. */
+static int clock_countin_takeover(void)
+{
+    int bad = 0;
+    for (uint32_t source = 1; source <= 2; source++)
+        for (uint32_t status = 0xFAu; status <= 0xFBu; status++)
+            for (uint32_t ending = 0; ending <= 1u; ending++) {
+                clock_setup(source);
+                track_t *t = &trk[0];
+                step_t first = t->step[0];
+                t->seq_idx = 5; t->seq_pos = 123;
+                song.rec = 1; cin_bars = 1; transport_req = 1;
+                events_block(CTL);
+                while (cin_left > 1u || cin_pos < click_beat_len() / 2u)
+                    events_block(CTL);
+                queued(0x90, 72, 99, source); queued(0x80, 72, 0, source);
+                bad += check("local count-in buffers a released last-eighth pickup before takeover",
+                             !song.playing && seq_counting() && cin_n[0] == 1u && cin_note[0][0] == 72 && (cin_up[0] & 1u));
+                clock_packet(source == 1u ? 2u : 1u, status, 10);
+                bad += check("wrong-source transport leaves the local count-in and pickup intact",
+                             !song.playing && seq_counting() && cin_n[0] == 1u);
+                if (ending)
+                    while (cin_pos + CTL < click_beat_len()) events_block(CTL);
+                clock_packet(source, status, 20);
+                /* At the final count-in block, the local start already enters step
+                 * zero before Continue arrives; its pending pickup must not flush. */
+                uint32_t from_top = status == 0xFAu || ending;
+                uint32_t idx = from_top ? 0u : 5u, pos = from_top ? 0u : 123u;
+                char label[100];
+                snprintf(label, sizeof label, "source %u %s cancels count-in/pickup (ending %u)", source, status == 0xFAu ? "Start" : "Continue", ending);
+                bad += check(label, song.playing && midi_clock.mode == source && !seq_counting() && !cin_flush && !cin_n[0]);
+                bad += check("takeover preserves Start/Continue phase without recording the abandoned pickup",
+                             t->seq_idx == idx && t->seq_pos == pos && !memcmp(&t->step[0], &first, sizeof first));
+                clock_to(source, 21, 7);
+                bad += check("master clocks advance after takeover without resurrecting count-in or pickup",
+                             song.playing && !seq_counting() && !cin_n[0] && t->seq_idx == idx + 1u && t->seq_pos == pos &&
+                             !memcmp(&t->step[0], &first, sizeof first));
+            }
+    return bad;
+}
 static int clock_test(uint32_t source)
 {
     int bad = 0; clock_setup(source);
@@ -1376,7 +1417,7 @@ static int pc_test(void)
 }
 int main(void)
 {
-    int bad = aftertouch_test() + controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
+    int bad = aftertouch_test() + controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_countin_takeover() + clock_arp_and_boundaries() +
               arp_ext_stop_test() + arp_idle_live_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }
