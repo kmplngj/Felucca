@@ -406,6 +406,33 @@ class CliEvidence(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertFalse(result["restart_verified"])
 
+    def test_backend_enumeration_failure_preserves_json_before_and_after_restart(self):
+        for direction in ("input", "output"):
+            for after_send in (False, True):
+                with self.subTest(direction=direction, after_send=after_send):
+                    device = Device()
+                    backend = object.__new__(C.ExactMidoBackend)
+                    def names(which):
+                        if which == direction and (not after_send or 1 in device.operations()):
+                            raise RuntimeError("CoreMIDI enumeration failed")
+                        return device.input_names() if which == "input" else device.output_names()
+                    class Midi:
+                        def get_input_names(self): return names("input")
+                        def get_output_names(self): return names("output")
+                    backend.mido = Midi()
+                    backend.open = device.open
+                    with patch.object(C, "ExactMidoBackend", return_value=backend), \
+                            patch.object(C, "Controller", side_effect=lambda b: C_REAL(b, clock=device.clock,
+                                         query_timeout=0.1, reconnect_timeout=1, poll=0.1, request_seed=1)), \
+                            contextlib.redirect_stdout(io.StringIO()) as output:
+                        self.assertEqual(C.main(["restart", "--json"]), 4)
+                    result = json.loads(output.getvalue())
+                    self.assertEqual(result["error"], "transport")
+                    self.assertEqual(result["restart_sent"], after_send)
+                    self.assertEqual(result["acknowledged"], after_send)
+                    self.assertFalse(result["restart_verified"])
+                    self.assertEqual(device.operations().count(1), int(after_send))
+
     def test_missing_dependency_message_preserves_arguments_and_never_discovers(self):
         with patch.object(C, "ExactMidoBackend", side_effect=ImportError("mido")), \
                 contextlib.redirect_stdout(io.StringIO()) as output:

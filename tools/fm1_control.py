@@ -37,10 +37,16 @@ class ControlError(Exception):
 class ExactMidoBackend(MidoBackend):
     # Duplicate names cannot unambiguously select a physical endpoint.
     def input_names(self):
-        return self.mido.get_input_names()
+        try:
+            return self.mido.get_input_names()
+        except Exception as error:
+            raise ControlError("transport", f"Cannot enumerate MIDI inputs: {error}") from error
 
     def output_names(self):
-        return self.mido.get_output_names()
+        try:
+            return self.mido.get_output_names()
+        except Exception as error:
+            raise ControlError("transport", f"Cannot enumerate MIDI outputs: {error}") from error
 
 
 @dataclass(frozen=True)
