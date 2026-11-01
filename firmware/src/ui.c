@@ -10,6 +10,8 @@
 static int project_save(uint32_t slot);
 static void panel_setup(void);
 static void project_load(uint32_t slot);
+static int project_new(void);
+static int proj_changed(void);
 static int project_used(uint32_t slot);
 static int graph_project_used(uint32_t slot);       /* cached slot validity for display only (ui_graph.c) */
 static uint32_t chain_prepare(void);
@@ -258,9 +260,11 @@ static struct {
 } ui;
 
 enum { CF_NONE, CF_CLEAR_SEQ, CF_CLEAR_TRK, CF_OVR_PROJ, CF_OVR_USER, CF_LOAD_PAT,
-       CF_DEL_ROW, CF_CLEAR_SONG, CF_INIT_SOUND, CF_CLEAR_MOTION, CF_ERASE_USER, CF_ERASE_PROJ, CF_CLEAN_SOUND };
+       CF_DEL_ROW, CF_CLEAR_SONG, CF_INIT_SOUND, CF_CLEAR_MOTION, CF_ERASE_USER, CF_ERASE_PROJ, CF_CLEAN_SOUND,
+       CF_CLEAR_ALL, CF_LOAD_PROJ, CF_LEARN_CLEAR };
                                   /* ui.confirm: TOOLS' clears; SAVE over a used slot; a pattern over the user's steps;
-                                   * USER ERASE; PROJECT ERASE (1.5.5, #199); CLEAN INIT (1.5.5, #190) */
+                                   * USER ERASE; PROJECT ERASE (1.5.5, #199); CLEAN INIT (1.5.5, #190);
+                                   * MENU > SYSTEM > CLEAR ALL; PROJECT LOAD over changes not saved; MIDI LEARN CLEAR (1.8) */
 
 /* MENU > DISPLAY > AUTO OFF (formerly SCREEN OFF): after a while with no input on the panel the screen goes dark (the backlight
  * stays on: lcd.c lcd_power)
@@ -617,7 +621,8 @@ static void ui_say(const char *a, const char *b)
     str_cpy(ui.msg, a, sizeof ui.msg);
     n = str_len(ui.msg);
     str_cpy(ui.msg + n, b, sizeof ui.msg - n);
-    ui.msg_t = 40;
+    n = str_len(ui.msg);
+    ui.msg_t = (uint8_t)(n > 25u ? 90u : 40u + 2u * n);   /* (1.8: longer words stay longer, ~0.7..1.5 s) */
     ui.msg2[0] = 0;
 }
 
@@ -1251,7 +1256,7 @@ static void undo_swap(void)
 {
     track_t *t;
     uint32_t i;
-    char b[4] = {'T', 0, 0, 0};
+    char b[16] = {'T', 0, ' ', 0};
     if (!undo.trk) {
         ui_message("NOTHING TO UNDO");
         return;
@@ -1319,7 +1324,9 @@ static void undo_swap(void)
     undo.keep = 0;                                /* the next load copies the track as it is now */
     if (t == TSEL)
         sync_reload = 1;
-    b[1] = (char)('1' + trk_index(t));
+    b[1] = (char)('1' + trk_index(t));             /* (1.8: and what came back) */
+    str_cpy(b + 3, undo.what & UNDO_SOUND ? (undo.what & UNDO_PAT ? "SOUND+STEPS" : "SOUND") :
+            undo.what & UNDO_PAT ? "STEPS" : "AUTO", sizeof b - 3u);
     ui_say("UNDO/REDO ", b);
     ui.force = 1;
 }

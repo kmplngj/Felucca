@@ -60,7 +60,13 @@ static struct {
 #if FELUCCA_UART
 static struct { uint32_t bytes, msgs, drops; } um = {17, 18, 19};
 #endif
-static struct { uint8_t enc_rest[FM1_NENC]; } fm1_in;
+static struct { uint8_t enc_rest[FM1_NENC]; uint32_t notes; } fm1_in;
+#if CONSOLE_KEYTOUCH
+#define KT_ROWKEYS 20u
+static uint8_t kt_on = 1, kt_p[KT_ROWKEYS];
+static uint16_t kt_d[KT_ROWKEYS];
+static struct { uint32_t timeouts; uint16_t con; } fm1_an = {7, 0x1234};
+#endif
 /* last must precede the fields cleared by con_inp. */
 static volatile struct {
     uint32_t last, gap_max, gap_hist[FM1_GAP_BINS];
@@ -123,8 +129,19 @@ int main(int argc, char **argv)
                                           0x119A8u, 0x119ACu, 0x119A0u, 0xFFFFFFFFu, 1};
     if (argc < 2 || argc > 3 ||
         (strcmp(argv[1], "status") && strcmp(argv[1], "dbg") &&
-         strcmp(argv[1], "inp") && strcmp(argv[1], "crash")))
+         strcmp(argv[1], "inp") && strcmp(argv[1], "crash") &&
+         strcmp(argv[1], "at") && strcmp(argv[1], "help")))
         return 2;
+#if CONSOLE_KEYTOUCH
+    {
+        uint32_t k;
+        fm1_in.notes = 0x0FF80001u;       /* include keys outside the twenty sensed keys */
+        for (k = 0; k < KT_ROWKEYS; k++) {
+            kt_d[k] = (uint16_t)(1023u - k * 7u);
+            kt_p[k] = (uint8_t)(k * 6u);
+        }
+    }
+#endif
 #if FELUCCA_RENDER_STAGE
     render_stage_begin();
     render_stage_block(200u, 2u);
@@ -147,6 +164,10 @@ int main(int argc, char **argv)
             fm1_boot_clock.valid = 0;
         else if (!strcmp(argv[2], "no-crash"))
             fm1_crash.magic = 0;
+#if CONSOLE_KEYTOUCH
+        else if (!strcmp(argv[2], "at-off"))
+            kt_on = 0;
+#endif
 #if FELUCCA_UAC
         else if (!strncmp(argv[2], "uac-", 4)) {
             /* State-only rate epochs; output still uses production dispatch. */
@@ -195,6 +216,17 @@ int main(int argc, char **argv)
     cdc_in[n] = '\r';
     ci_w = (uint32_t)n + 1u;
     cdc_task();
+#if CONSOLE_KEYTOUCH
+    if (!strcmp(argv[1], "at")) {
+        uint32_t k;
+        if (kt_on != (argc == 3 ? 0u : 1u) || fm1_an.timeouts != 7u ||
+            fm1_an.con != 0x1234u || fm1_in.notes != 0x0FF80001u)
+            return 2;
+        for (k = 0; k < KT_ROWKEYS; k++)
+            if (kt_d[k] != 1023u - k * 7u || kt_p[k] != k * 6u)
+                return 2;
+    }
+#endif
     if (con.stalled || co_w >= CO_N)
         return 2;
     return fwrite(cdc_out, 1, co_w, stdout) == co_w ? 0 : 2;

@@ -33,7 +33,9 @@ compatibility limits and build identification. The
 [upstream manual](https://github.com/hugelton/Felucca/wiki/Home) documents the shared
 instrument; some details may differ in this fork.
 
-This fork builds on upstream 1.6.1 with workflow improvements, deferred project autosave,
+This fork incorporates [upstream 1.8.0 features](docs/upstream-1.8-backport.md), including
+aftertouch, CLEAR ALL, step-edit undo, safer load dialogs and the FM6 AMS correction,
+with workflow improvements, deferred project autosave,
 native pixel typography, performance diagnostics and broader host/emulator regression coverage.
 The M8Stealth display uses native pixel lettering for both regular text
 and control/status badges, with stable number/unit placement
@@ -58,7 +60,8 @@ Five portable engines live in the pinned
 engine build profiles are implemented. Versioned [profile contracts and exact post-link
 resource reports](docs/build-profiles.md#machine-readable-build-evidence) expose supported
 recipes and their measured build allocations. Broader engine selection and startup usage modes
-remain planned. The optional second-core worker is beta and off by default.
+remain planned. An opt-in ADPCM profile and source-only SDL2 desktop build are also available; both
+retain their upstream experimental status. The optional second-core worker is beta and off by default.
 [Bounded FM-1 comparisons](docs/cpu2-idle-polling.md) cover an idle-poll mitigation
 for observed BAD_JOB failures on one unit; broader unit, engine/profile and TRS
 qualification remains pending. After a recorded worker failure it is held off
@@ -70,6 +73,8 @@ The opt-in [MACRO/Braids profile](docs/macro-engine.md) adds a fourteenth engine
 FOLD and FBFM support eight voices; the 45 added models use one voice per part.
 This firmware-native integration is experimental and
 requires `FELUCCA_PROFILE=macro`; the normal build and hosted demo do not include it.
+The current full MACRO target recipe exceeds flash capacity; see the
+[backport build limits](docs/upstream-1.8-backport.md#known-build-limits).
 The [FM-1 test procedure](docs/macro-hardware-test.md) includes reproducible projects
 and songs. The [device results record](docs/macro-device-results.md) separates
 user-reported model/control and held-note checks from pending persistence, transport and timing

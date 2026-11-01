@@ -691,10 +691,14 @@ static void grid_edit(uint32_t slot, int32_t steps)
         cursor_move(ui.cursor + steps);
     else if (slot == 1u)
         ui.lane = (uint8_t)clamp((int32_t)ui.lane + (steps > 0 ? 1 : -1), 0, NLANE - 1);
-    else if (slot == 2u)
-        grid_hit(TSEL, ui.cursor, ui.lane, steps > 0);
-    else
-        grid_acc(TSEL, ui.cursor, ui.lane, steps > 0);
+    else {
+        step_undo_take(TSEL, 0x1000u | ui.lane);          /* (1.8: hits on one lane in a row: one undo) */
+        if (slot == 2u)
+            grid_hit(TSEL, ui.cursor, ui.lane, steps > 0);
+        else
+            grid_acc(TSEL, ui.cursor, ui.lane, steps > 0);
+        motion_undo_done(TSEL);
+    }
 }
 
 /* the keys on the grid (presses): a white key toggles the selected lane at its step of the page (its accent
@@ -724,10 +728,13 @@ static void grid_keys(uint32_t pressed)
                     ui.plk_acc = acc ? ui.plk_acc | b : ui.plk_acc & ~b;
                     ui.plk_lane = ui.lane;
                     ui.plk_trk = song.sel;
-                } else if (acc) {
-                    grid_acc(TSEL, i, ui.lane, 1);
                 } else {
-                    grid_hit(TSEL, i, ui.lane, 1);
+                    step_undo_take(TSEL, 0x1000u | ui.lane);
+                    if (acc)
+                        grid_acc(TSEL, i, ui.lane, 1);
+                    else
+                        grid_hit(TSEL, i, ui.lane, 1);
+                    motion_undo_done(TSEL);
                 }
             }
             cursor_set((int32_t)i);
@@ -770,10 +777,13 @@ static void lock_keys(void)
     uint32_t i;
     for (i = 0; gone && i < NSTEP; i++)
         if ((gone >> i) & 1u) {
+            track_t *t = &trk[ui.plk_trk % NTRK];
+            step_undo_take(t, 0x1000u | ui.plk_lane);
             if ((ui.plk_acc >> i) & 1u)
-                grid_acc(&trk[ui.plk_trk % NTRK], i, ui.plk_lane, 0);
+                grid_acc(t, i, ui.plk_lane, 0);
             else
-                grid_hit(&trk[ui.plk_trk % NTRK], i, ui.plk_lane, 0);
+                grid_hit(t, i, ui.plk_lane, 0);
+            motion_undo_done(t);
         }
     ui.plk_rm &= ~gone;
 }
@@ -847,7 +857,7 @@ static void nudge_turn(uint64_t held, int32_t steps)
         }
     motion_undo_done(TSEL);
     if (TSEL->p[P_SQNT]) {
-        ui_message("QUANTIZE IS ON");
+        ui_message("QUANTIZE ON: SEQ>AUTO");
         return;
     }
     ev_nudge_fmt(b + 6, v);
@@ -900,7 +910,7 @@ static void sd_turn(uint32_t slot, int32_t steps)
     }
     motion_undo_done(t);
     if (k == EVK_NUDGE && t->p[P_SQNT])
-        ui_message("QUANTIZE IS ON");                   /* (kept: it plays once QUANTIZE is OFF) */
+        ui_message("QUANTIZE ON: SEQ>AUTO");                   /* (kept: it plays once QUANTIZE is OFF) */
     else if (k == EVK_VEL && (t->step[ui.cursor].flags & SF_ACCENT))
         ui_message("ACC PLAYS 127");                    /* (kept: it plays once the ACC goes) */
 }
@@ -940,6 +950,8 @@ static void step_edit(uint32_t slot, int32_t steps)
     }
     if (slot)
         follow_hold();                                    /* (1.6, #242: editing the cursor's step: it stays on the screen) */
+    if (slot && !(slot == 2u && step_on(st)))             /* (1.8: a knob turned on one step: one undo; LEN: below) */
+        step_undo_take(TSEL, 0x2400u | slot << 6 | ui.cursor);
     switch (slot) {
     case 0:                                               /* STEP: the cursor */
         cursor_move(ui.cursor + steps);
@@ -975,6 +987,8 @@ static void step_edit(uint32_t slot, int32_t steps)
         break;
     }
     }
+    if (slot)
+        motion_undo_done(TSEL);
 }
 
 static void edit_param(uint32_t slot, int32_t steps)
@@ -1154,8 +1168,11 @@ static void act_do(void)
     if (id != G_LOAD)
         ui.act = 0;
     switch (id) {
-    case G_LOAD:
-        project_load(k);
+    case G_LOAD:                                          /* 1.8: over changes not saved, the dialog first */
+        if (project_used(k) && proj_changed())
+            confirm_open(CF_LOAD_PROJ, k);
+        else
+            project_load(k);
         break;
     case G_SAVE:                                          /* the NAME screen writes it */
         if (transport_busy())
@@ -1260,6 +1277,7 @@ static void seq_entry(uint32_t pressed)
         if (!ui.entry_open) {
             ui.entry_open = 1;
             follow_hold();                                /* (1.6, #242) */
+            step_undo_take(t, 0);                         /* (1.8: each step entered: one undo) */
             if (!add) {
                 st->n = 0;
                 st->time = ST_NOTE;
@@ -1280,6 +1298,7 @@ static void seq_entry(uint32_t pressed)
             }
         }
         last_note = (uint8_t)note;
+        motion_undo_done(t);
     }
     if (ui.entry_open && !(fm1_in.notes & ~kb_layer)) {
         if (add)
@@ -1425,10 +1444,13 @@ static int page_tap(uint32_t b)
             lock_clear(held);
             return 1;
         }
+        step_undo_take(TSEL, 0);                         /* (1.8: SAVE held puts it back) */
         step_clear(&TSEL->step[ui.cursor]);
         (void)motion_clear_locks(TSEL, ui.cursor);
+        motion_undo_done(TSEL);
         cursor_set(ui.cursor + 1);
         ui_message("STEP CLEARED");
+        str_cpy(ui.msg2, "[SAVE] HOLD TO UNDO", sizeof ui.msg2);
         return 1;
     }
     if (b == B_EDIT && !ui.home && cur_page()->graph == GR_EVENTS) {   /* AUTOMATION: EDIT deletes the row's record */
@@ -1529,6 +1551,10 @@ static void ui_notices(void)
     sample_notice();
     ml_poll();                                          /* (MIDI LEARN: a CC came for the picked parameter) */
     if (motion_full) { motion_full = 0; ui_message("AUTOMATION FULL"); }
+    if (clock_lost) {                                   /* (1.8: PLAY with CLK USB / TRS and no clock coming) */
+        ui_message(clock_lost == 1u ? "NO CLOCK (USB)" : "NO CLOCK (TRS)");
+        clock_lost = 0;
+    }
     if (midi_follow())                                  /* (AUTO SELECT took the track: no "MIDI IN -> Tn") */
         midi_hint = 0;
     if (midi_hint) {                                    /* MIDI notes into a track that is not selected */
@@ -1722,6 +1748,11 @@ static void ui_input(void)
     }
     if (rec == BT_TAP && !ui.menu && !ui.confirm && !name_on())   /* REC pressed in another layer (REC alone: */
         rec_tap();                                      /* its layer's tap); nothing in the menu, a dialog or NAME */
+    if ((ui.menu || ui.confirm || name_on()) && ((pressed >> panel.btn[B_PLAY]) & 1u) &&
+        (song.playing || chain_busy() || seq_counting()))
+        transport_req = 2;                              /* PLAY stops a transport from the menu, a dialog, NAME (1.8;
+                                                         * NAME: one started meanwhile, MIDI Start, the editor, so the
+                                                         * name can be saved); here it never starts one */
     if (ui.menu) {                                      /* SAVE / REC taps do nothing here (HOME: above) */
         if (ui.save_t0)
             ui.save_t0 |= 2u;
@@ -1741,9 +1772,6 @@ static void ui_input(void)
     if (name_on() && !ui.confirm) {                     /* NAME: the keys type, KNOB 1 / 2, OCT+ / OCT- (ui_name.c); */
         if (ui.save_t0)                                 /* SAVE does nothing */
             ui.save_t0 |= 2u;
-        if (((pressed >> panel.btn[B_PLAY]) & 1u) && (song.playing || chain_busy() || seq_counting()))
-            transport_req = 2;                          /* PLAY stops a transport started meanwhile (MIDI Start, the
-                                                         * editor) so the name can be saved; it never starts one */
         ui.pg_down = 0;
         name_input(notes, oct);
         return;
@@ -1785,6 +1813,12 @@ static void ui_input(void)
                 if (!chain_busy()) { chain_defaults(&chain_config); ui.song_row = 0; ui_message("SONG CLEARED"); }
             } else if (kind == CF_INIT_SOUND) {
                 if (!chain_busy()) { set_engine(TSEL->eng_req); ui_message("SOUND INIT"); }
+            } else if (kind == CF_LEARN_CLEAR) {
+                ui_message(ml_clear_all() ? "LEARN CLEARED" : "NOTHING LEARNED");
+            } else if (kind == CF_LOAD_PROJ) {
+                project_load(ui.confirm_trk & 3u);
+            } else if (kind == CF_CLEAR_ALL) {
+                (void)project_new();
             } else if (kind == CF_CLEAN_SOUND) {
                 if (!chain_busy()) { clean_engine(); ui_message("CLEAN INIT"); }
             } else {

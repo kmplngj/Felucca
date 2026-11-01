@@ -313,6 +313,9 @@ if [ -f build/gen/felucca_profile.h ] && grep -q '^#define FELUCCA_PROFILE_ENGIN
     # MACRO ownership/cap transitions have a separate focused fixture below.
     UNION_FLAGS=-DFELUCCA_UNION_EXTRA_OMIT=14
 fi
+if [ -f build/gen/felucca_profile.h ] && grep -q '^#define FELUCCA_PROFILE_ENGINE_15 1' build/gen/felucca_profile.h; then
+    UNION_FLAGS=-DFELUCCA_UNION_EXTRA_OMIT=15
+fi
 
 u_portable() {
     run "offline update-record survey: raw coverage, predicate and file boundaries" python3 tests/update_records_test.py
@@ -1575,6 +1578,39 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_braids.h ]; then
             done
         }
         unit asan_macro "" u_asan_macro
+    fi
+fi
+
+UNIT_NEEDS=
+if [ "$MODE" = --plan ] || [ -f build/gen/felucca_adpcm.h ]; then
+    UNIT_NEEDS="assets adpcm-assets"
+    u_adpcm() {
+        $CC -O2 -w -Ifirmware/src -Itests -o "$OUT/adpcm_test" tests/adpcm_test.c -lm
+        mkdir -p build/adpcm_demo
+        ADPCM_REF=-
+        ADPCM_SPC=${SNES_SPC:-vendor/snes_spc}/snes_spc
+        if [ -f "$ADPCM_SPC/SPC_DSP.cpp" ] && command -v c++ >/dev/null 2>&1; then
+            c++ -O2 -w -I"$ADPCM_SPC" -Ibuild/gen -Itests -o "$OUT/adpcm_ref" tests/adpcm_ref.cpp
+            run "ADPCM: snes_spc reference scenarios" "$OUT/adpcm_ref" "$OUT/adpcm_ref.bin"
+            ADPCM_REF="$OUT/adpcm_ref.bin"
+            outcome adpcm-reference passed
+        else
+            echo "== skip ADPCM reference (set SNES_SPC to a snes_spc 0.9.0 checkout)"
+            outcome adpcm-reference skipped snes-spc-unavailable
+        fi
+        run "ADPCM: counters, presets, release, arena transitions and demo" "$OUT/adpcm_test" "$ADPCM_REF" build/adpcm_demo
+    }
+    UNIT_CAPABILITIES=adpcm-reference
+    unit adpcm "" u_adpcm
+    UNIT_CAPABILITIES=
+    if [ "$MODE" = --plan ] || { [ "${SANITIZE:-1}" != 0 ] && san_ok; }; then
+        UNIT_NEEDS="assets adpcm-assets sanitizer"
+        u_asan_adpcm() {
+            $SCC -DFELUCCA_ARENA_CHECK=1 -Itests -o "$A/adpcm_test" tests/adpcm_test.c -lm
+            mkdir -p build/adpcm_demo_asan
+            run "ASan/UBSan: ADPCM presets, echo and arena transitions" env NOCOST=1 "$A/adpcm_test" - build/adpcm_demo_asan
+        }
+        unit asan_adpcm "" u_asan_adpcm
     fi
 fi
 

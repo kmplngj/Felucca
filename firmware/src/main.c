@@ -226,7 +226,11 @@ static void music_frame_sense(void)
 {
     int32_t b;
     MUSIC_FRAME_STEP(MF_SENSE);
+#ifdef KT_ROWKEYS
+    b = kt_adc_batt(fm1_ms);
+#else
     b = fm1_adc_read(FM1_ADC_BATT);                     /* battery: slow IIR */
+#endif
     if (b > 0)
         song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
     master_poll();
@@ -444,6 +448,9 @@ static void fm1_main(void)
     for (;;) {
         uint32_t m = fm1_ms;
         fm1_wdt_feed();
+#ifdef KT_ROWKEYS
+        kt_poll(m);
+#endif
         usb_retry(fm1_ms);
         boot_policy_service(&bootguard, &boot_live, fm1_ms);
 #if FELUCCA_CPU2

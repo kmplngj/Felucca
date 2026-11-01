@@ -882,7 +882,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kmplngj/Felucca-WebApp
-          ref: a881cb73ae66730f6c2a6bff14a2f170e09d7690 # WebApp #15: deterministic WATCH test fixture (merged)
+          ref: 0ede896f8fd4abd60645db5435c6d17e37cb0794 # WebApp #21: v1.8 producer contracts and compatible palettes
           path: build/pages/webapp
           persist-credentials: false
       - name: Validate the editor and stage the fork site

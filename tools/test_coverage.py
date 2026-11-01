@@ -32,7 +32,7 @@ PRODUCERS = {'tests/target_budget.py': {'target-budget'},
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_KEYS = ('CC', 'CXX', 'SANITIZE', 'TSAN', 'JOBS', 'TEST_JOBS', 'DAISYSP',
                'GOLDEN_UPDATE', 'BUDGET_UPDATE', 'VERSION', 'EMU_OPT', 'EMU_CFLAGS', 'EMU_PREVIEW', 'LCD_BAUD',
-               'JIELI_TOOLCHAIN', 'AC79_SDK', 'UI_SCREEN_DIR', 'MENU_JSON', 'TRACKS')
+               'JIELI_TOOLCHAIN', 'AC79_SDK', 'SNES_SPC', 'UI_SCREEN_DIR', 'MENU_JSON', 'TRACKS')
 SAN_FLAGS = ['-O1', '-g', '-fsanitize=address,undefined',
              '-fno-sanitize=signed-integer-overflow,shift,bounds,object-size,pointer-overflow',
              '-fno-sanitize-recover=undefined', '-w']
@@ -292,7 +292,7 @@ def requirements(needs, env):
     """Applicability is source/config based; installation only affects availability."""
     missing = []
     for need in needs:
-        if need not in ('assets', 'pillow', 'sanitizer', 'node', 'emcc', 'macro-assets'):
+        if need not in ('assets', 'pillow', 'sanitizer', 'node', 'emcc', 'macro-assets', 'adpcm-assets'):
             raise ValueError('unknown coverage prerequisite: ' + need)
         if need == 'assets' and not (ROOT / 'build/gen/felucca_tables.h').is_file():
             missing.append('generated-assets-missing')
@@ -312,6 +312,8 @@ def requirements(needs, env):
             missing.append(need + '-unavailable')
         elif need == 'macro-assets' and not (ROOT / 'build/gen/felucca_braids.h').is_file():
             missing.append('macro-assets-missing')
+        elif need == 'adpcm-assets' and not (ROOT / 'build/gen/felucca_adpcm.h').is_file():
+            missing.append('adpcm-assets-missing')
     return missing
 
 
@@ -474,10 +476,11 @@ def _verify(path, run_id, root=ROOT, shard=False):
         require(digest(logs / unit['log']) == evidence['log_sha256'], name + ': log changed')
         if unit['status'] == 'not_applicable':
             require(not evidence['events'] and unit.get('returncode') is None, name + ': excluded unit executed')
-            require(name in ('tsan', 'macro', 'asan_macro') and unit.get('reason') in
+            require(name in ('tsan', 'macro', 'asan_macro', 'adpcm', 'asan_adpcm') and unit.get('reason') in
                     ('not-requested', 'profile-excluded'), name + ': undeclared exclusion')
             require((name == 'tsan' and not os.environ.get('TSAN') and unit['reason'] == 'not-requested') or
-                    (name in ('macro', 'asan_macro') and 14 not in d['engine_ids'] and unit['reason'] == 'profile-excluded'),
+                    (name in ('macro', 'asan_macro') and 14 not in d['engine_ids'] and unit['reason'] == 'profile-excluded') or
+                    (name in ('adpcm', 'asan_adpcm') and 15 not in d['engine_ids'] and unit['reason'] == 'profile-excluded'),
                     name + ': wrong applicability')
             continue
         require(unit['status'] == 'passed' and unit.get('returncode') == 0 and unit.get('reason') is None,

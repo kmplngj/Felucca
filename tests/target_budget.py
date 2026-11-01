@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from test_coverage import Producer
 coverage = Producer()
 
-FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_legacy", "digital_render_custom", "phase_render", "phase_render_f", "lofi_render", "sample_render", "formant_render",
+FUNCS = ["adp_render", "adp_block", "adp_post", "analog_render", "analog_render_1", "digital_render", "digital_render_legacy", "digital_render_custom", "phase_render", "phase_render_f", "lofi_render", "sample_render", "formant_render",
          "trio_render", "trio_pass", "wheel_render", "wheel_block",
          "grain_render", "grain_block", "phys_render", "drum_render", "noise_render", "fm6_render", "fm6_op_run", "fm6_op_fb", "px_modal_block", "px_modal_run", "px_memb_block",
          "px_string_excite", "px_string_run", "px_symp_run",
@@ -57,13 +57,13 @@ FUNCS = ["analog_render", "analog_render_1", "digital_render", "digital_render_l
 # retains the historical full checks; mutable build/gen outputs never select its functions.
 # built only with FELUCCA_FM4=1 (DIGITAL, src/eng_digital.c; not in the default build, so not in BUDGET): absent,
 # they are skipped; present, checked against these (their budget lines until the engine was retired in 1.0)
-OPTIONAL = {"digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,
+OPTIONAL = {"adp_render": 2577, "adp_block": 102, "adp_post": 309, "digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,
             "uac_tap48": 504,           # (absent from a FELUCCA_UAC_48K=0 or FELUCCA_UAC=0 build)
             "mix_part": 3549,           # CPU2 build: cold epilogue layout after word memset; see docs/performance.md
             "c1_params": 83,           # 15 temporary values per handed part; absent with FELUCCA_CPU2=0
             # New outlined TIMER5 coverage; maxima of matched default/CPU2-off
             # target listings. Existing caller/engine budgets stay unchanged.
-            "usb_poll": 23757, "fm1_input_tick": 14,
+            "usb_poll": 23757, "fm1_input_tick": 536,  # 1.8 analog scan, default/CPU2-off measured; see performance guide
             "fm1__frame": 134, "fm1__keys": 204,
             # Separate hot USB bodies, absent if disabled/inlined; source-matched
             # standard/CPU2-off maxima, not whole-service or cycle bounds.
@@ -112,8 +112,27 @@ def functions(path):
     return out
 
 
+def spans(heads):
+    """the loops of {head: end}: spans that overlap without one holding the other are one loop entered at two
+    heads (the compiler's layout: a rarely taken path branching back to a little before the loop's head), joined
+    into one; only a span inside another is a loop nested in it"""
+    out = []
+    for h, e in sorted(heads.items()):
+        i = 0
+        while i < len(out):
+            h0, e0 = out[i]
+            if h0 < h <= e0 < e or h < h0 <= e < e0:
+                del out[i]
+                h, e = min(h, h0), max(e, e0)
+                i = 0
+            else:
+                i += 1
+        out.append((h, e))
+    return out
+
+
 def cost(insns):
-    """loops: one span per loop head (the farthest backward branch to it); an instruction inside d
+    """loops: overlapping loop heads are joined; an instruction inside d
     spans weighs NEST ** (d - 1) (an inner loop runs several times per pass of the outer one)"""
     lo = insns[0][0]
     heads = {}
@@ -122,10 +141,11 @@ def cost(insns):
         if m and lo <= int(m.group(1), 16) < a:
             h = int(m.group(1), 16)
             heads[h] = max(heads.get(h, a), a)
+    loops = spans(heads)
     n = divs = calls = 0
     w = 0
     for a, t in insns:
-        d = min(sum(1 for h, e in heads.items() if h <= a <= e), MAXD)
+        d = min(sum(1 for h, e in loops if h <= a <= e), MAXD)
         if not d:
             continue
         k = NEST ** (d - 1)

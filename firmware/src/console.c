@@ -662,11 +662,34 @@ static void con_padtest(void)
 }
 #endif
 
+/* 1.8 AFTERTOUCH: the last driven reading and pressure of F3 .. C5.
+ * Adapted from hugelton/Felucca@1d431e4d206464d98cefd1e35107c0aaeabe20ee.
+ * Reading the published state neither starts ADC sensing nor resets counters. */
+static void con_at(void)
+{
+#if defined(KT_ROWKEYS) && !BOARD_SMK37
+    uint32_t k;
+    con_kv("at_on", kt_on);
+    con_kv("an_timeouts", (int32_t)fm1_an.timeouts);
+    con_kv("held", (int32_t)(fm1_in.notes & 0xFFFFFu));
+    for (k = 0; k < KT_ROWKEYS; k++) {
+        con_dec((int32_t)k);
+        con_putc('=');
+        con_dec(kt_d[k]);
+        con_putc('/');
+        con_dec(kt_p[k]);
+        con_puts(k % 5u == 4u ? "\r\n" : " ");
+    }
+#else
+    con_puts("at unavailable\r\n");
+#endif
+}
+
 static void con_exec(const char *p)
 {
     FM1_ASSERT_THREAD();                                /* formatted replies: main loop only (#428) */
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+        con_puts("status  dbg  inp  at  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "screen"))
         con_screen(p);
     else if (con_word(&p, "status"))
@@ -677,6 +700,8 @@ static void con_exec(const char *p)
         con_crash();
     else if (con_word(&p, "inp"))
         con_inp();
+    else if (con_word(&p, "at"))
+        con_at();
     else if (con_word(&p, "params"))
         con_params();
 #if BOARD_SMK37

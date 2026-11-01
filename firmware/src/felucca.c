@@ -67,7 +67,7 @@
                                   * hal/fm1_irq.h */
 #endif
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "v1.6.1" /* shown in the menu, the console and the editor; build.py --release X.Y */
+#define FELUCCA_VERSION "v1.8.0" /* shown in the menu, the console and the editor; build.py --release X.Y */
 #endif
 #if FELUCCA_OTA && !FELUCCA_FLASH
 #error "FELUCCA_OTA needs FELUCCA_FLASH"
@@ -93,6 +93,7 @@
 #include "smk_input.h"
 #include "smk_compat.h"
 #else
+#include "keytouch.h"        /* FM-1 analog pressure scan hooks (MPL-2.0). */
 #include "fm1_input.h"
 #endif
 #include "fm1_timer.h"
@@ -159,6 +160,9 @@
 #endif
 #if FELUCCA_CDC
 #include "console.c"
+#endif
+#if !BOARD_SMK37
+#include "keytouch.c"           /* FM-1 key pressure, from the upstream 1.8 BSP integration. */
 #endif
 #include "master.c"              /* the MASTER pot (#137: read before the audio starts) */
 #include "rescue.c"              /* #116: polled recovery before normal services start */

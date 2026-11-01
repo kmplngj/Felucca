@@ -251,7 +251,8 @@ def run_locked(script, output, env, count, ai_output=False, preflight=False, con
             if contract:
                 if unit['name'] == 'tsan' and not env.get('TSAN'):
                     unit.update(status='not_applicable', reason='not-requested')
-                elif unit['name'] in ('macro', 'asan_macro') and 14 not in contract.engine_ids:
+                elif ((unit['name'] in ('macro', 'asan_macro') and 14 not in contract.engine_ids) or
+                      (unit['name'] in ('adpcm', 'asan_adpcm') and 15 not in contract.engine_ids)):
                     unit.update(status='not_applicable', reason='profile-excluded')
                 else:
                     key = tuple(unit['needs'])
