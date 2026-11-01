@@ -810,6 +810,18 @@ if [ "$MODE" = --plan ] || [ -f build/gen/felucca_tables.h ]; then
     }
     unit ui "" u_ui
 
+    u_adsr_sync() {
+        run "ADSR: synchronized submitted values, real LCD/handler oracle and causal controls" \
+            python3 tests/adsr_sync_test.py --negative-controls --out "$OUT/adsr_sync"
+    }
+    unit adsr_sync "" u_adsr_sync
+
+    u_adsr_sync_fm4() {
+        run "ADSR, legacy FM4: every operator envelope against the real LCD/full-render oracle" \
+            python3 tests/adsr_sync_test.py --fm4 --out "$OUT/adsr_sync_fm4"
+    }
+    unit adsr_sync_fm4 "" u_adsr_sync_fm4
+
     u_sound_install() {
         $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/sound_install_test" tests/sound_install_test.c -lm
         run "Sound install (#298): every sound load publishes engine, preset and values in one interrupt-off window" \

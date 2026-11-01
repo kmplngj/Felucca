@@ -1,7 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Included ONLY in frozen host copies of voice.c by retirement_measure.py.
  * Deliberately performs file IO: never include this in production firmware. */
+/* hostsim.c blanks __attribute__; restore it for glibc's fortified declarations. */
+#pragma push_macro("__attribute__")
+#undef __attribute__
 #include <fcntl.h>
+#pragma pop_macro("__attribute__")
 #ifndef RV_COUNTERFACTUAL
 #define RV_COUNTERFACTUAL 0
 #endif
@@ -10,14 +14,22 @@ static uint32_t rv_last_mask[NPART];
 static void rv_write(const char *s, int n)
 {
     const char *path = getenv("RETIREMENT_EVENTS");
-    int fd;
+    FILE *f;
+    int fd, failed;
     if (!path) return;
+    /* Atomic owner-only creation; existing files keep their permissions and append behavior. */
     fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0600);
-    if (fd < 0 || write(fd, s, (size_t)n) != n) {
+    if (fd < 0 || !(f = fdopen(fd, "a"))) {
+        if (fd >= 0) close(fd);
         perror("retirement observer");
         exit(2);
     }
-    close(fd);
+    failed = fwrite(s, 1, (size_t)n, f) != (size_t)n;
+    if (fclose(f) != 0) failed = 1;
+    if (failed) {
+        perror("retirement observer");
+        exit(2);
+    }
 }
 static void rv_observe_block(track_t *t)
 {

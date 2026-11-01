@@ -227,6 +227,11 @@ recorded in the linked reports, rather than every current build or device.
   adapter or completed capture with stale input provenance. See
   [interaction replay](interaction-replay.md).
 
+- **ADSR redraw synchronization:** keep submitted curve values and redraw state
+  coherent across asynchronous parameter changes, avoiding stale curves when values
+  return during a display transfer. Other parameter edits retain conservative redraws;
+  FM-1 qualification remains pending. See [scope and validation](adsr-render-synchronization.md).
+
 - **Python installer liveness:** unrelated or malformed SysEx no longer keeps a
   stalled update waiting indefinitely or hides a disconnected MIDI port. Valid
   update requests still renew the existing staging and writing idle budgets.

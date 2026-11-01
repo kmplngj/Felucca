@@ -8848,6 +8848,13 @@ static int test_graph_modes(void)
     ok &= !(settings_dev[10] & 6u);
     bad += check("#572 GRAPH SCOPE / CURVE / STILL: stored in bits 1..2 of settings_dev[10]; STILL draws without the scope", ok);
 
+    ui_power_on(); song.playing = 0; frame();          /* the envelope marker follows focus without a value change */
+    TSEL->p[column_param(2)] = TSEL->p[column_param(3)] = 127;
+    turn(EN_K3, 1); frame();                           /* ATK, clamped: hot, nothing changes */
+    turn(EN_K4, 1); frame();                           /* REL, clamped: only the focus moves */
+    ok = ui.read_bank.focus == 3u && panel_curve(TSEL) == CK_ENV && roll_static_now();
+    bad += check("GRAPH TURN: moving focus between clamped envelope knobs redraws the curve's marker", ok);
+
     ui_power_on(); song.playing = 0; frame();          /* harden: a page change ends the turned knob's curve */
     turn(EN_K1, 1);
     ok = ui.curve_t > 0u;
