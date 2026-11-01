@@ -97,6 +97,60 @@ Object types are stored in each commit record ([`st_hdr_t`, storage.c:36-42](htt
 so the enum values are on flash: `OBJ_COUNT` is 10, and the voice bank's 32 is kept at or above
 `OBJ_COUNT` on purpose.
 
+### Blank destination checks (#197, narrowed in #721)
+
+`st_save_to` skips one erase only for a genuinely fresh object: neither copy holds a
+commit record of any type (the retired FM6 bank and the voice bank's staged records
+share pairs) and no save of that object has been attempted since boot. Only then does
+it read the destination in 256-byte chunks, and it skips the erase only after all
+4,096 bytes read as `0xFF`, including header padding and unused tail. The first dirty
+byte keeps the ordinary erase path; a scan read error returns a save failure before
+erasing or programming. Every other destination is erased without a scan, as before
+#197: the blank B beside a valid A, a reused copy, any retry after a failed or
+interrupted save to the object, and a voice-bank staging in the autosave pair.
+
+**Interrupted-erase caveat.** A sector that reads all `0xFF` after a power cut during
+an earlier erase or during its first program can hold cells with too little erase or
+program margin. They may read correctly at write time and drift later; the newest
+copy then fails its CRC and the older copy loads, losing the latest save. A full
+erase clears that state, so the skip is limited to fresh copies. A first erase or
+program interrupted before a commit, leaving a sector that reads entirely `0xFF`,
+followed by a reboot remains indistinguishable from a fresh copy: no commit record
+or RAM marker survives, so the next first save may still skip. This includes an
+interrupted first erase over data left by stock firmware in the autosave margin.
+Retention in this residual case is not established. The RAM marker (`st_tried`)
+covers every retry in the same boot.
+
+The scan uses a static 256-byte `.pool` buffer (main loop only, like `st_buf`, which
+already holds the new payload, including explicit-copy legacy migration), so the
+`st_save_to` frame stays at the baseline 112 bytes. The [Maku source](https://github.com/okumurari2/maku/blob/64cb7e4bc426d308185baf7d577a336968632657/firmware/src/storage.c)
+supplied the complete-sector scan approach; native mandatory header/payload readback
+and fail-closed read handling are retained. No proactive erase is added.
+
+Production-source simulated-NOR checks count the following complete 600-byte saves,
+including current-copy selection and final readback. The baseline always erases.
+
+| Destination state | Baseline reads / bytes / erases | This branch reads / bytes / erases | Programs (both) |
+| --- | --- | --- | --- |
+| Fresh object, empty A | 4 / 696 / 1 | 22 / 4,856 / 0 | 4 |
+| Empty B, valid A | 5 / 1,296 / 1 | 5 / 1,296 / 1 | 4 |
+| Reused A, valid A/B | 5 / 1,296 / 1 | 5 / 1,296 / 1 | 4 |
+| First save of the object after a boot, valid copy | 5 / 1,296 / 1 | 6 / 1,328 / 1 | 4 |
+
+Thus only the first save of a fresh object adds two 32-byte record reads and 4 KiB
+of scan reads and avoids one erase; the first save of a used object after each boot
+adds one 32-byte record read and still erases; later saves cost exactly the baseline.
+These are hook-operation counts, not FM-1 durations or endurance measurements. The
+hardware driver still limits each read's IRQ-off window to at most 256 bytes.
+Programming still pauses interrupts; no interruption-free save or measured latency
+gain is claimed. Physical save, retention, audio/panel/USB timing remain separate
+qualification gates. Saved formats, sector allocations and CRC/commit ordering stay
+unchanged. The [storage fixture](../tests/storage_test.c) covers every payload length,
+every single dirty-byte position, another type's record in the pair, scan errors,
+blank-looking copies after a failed first save, a half erase with a dead power latch
+and its retry (same boot and after a reboot), torn saves, readback failures,
+sequence wrap, fallback and explicit-copy migration.
+
 ### 2.2 Areas Felucca must not touch
 
 | Range | What | Evidence | Rule |
@@ -218,6 +272,7 @@ Other measured sizes that new objects add to or must avoid duplicating (`.pool` 
 | --- | ---: | --- |
 | `persist_saved`, `persist_tmp`, `ed_bk_settings` | 3 x 2,688 | every byte of `persist_rec_t` growth costs 3 bytes of pool |
 | `st_buf` | 3,840 | the staging copy `st_save_to` always makes ([storage.c:77, 148-149](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/storage.c#L77)) |
+| `st_scan` | 256 | the fresh-copy blank scan's scratch, main loop only ([blank destination checks](#blank-destination-checks-197-narrowed-in-721)) |
 | `proj_wire_u` | 3,840 | also the backup staging; `ED_BK_MAX` ([editor_backup.c:13](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/editor_backup.c#L13)) caps a backup object at this size |
 | `proj_scratch` | 4,784 | decoded `project_t` |
 | `up_bank` / `upf` | 6,160 / 3,728 | mirrors of flash objects (#22 would read them through XIP) |

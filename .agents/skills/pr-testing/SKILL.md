@@ -49,6 +49,11 @@ audible workload and any diagnostics needed even if no new panel function exists
 
 ## Write the user's procedure
 
+For a live FM-1 session or a retry after a tooling failure, apply
+[bounded hardware sessions](../../../docs/ai-workflows.md#finish-bounded-hardware-sessions)
+when selecting checkpoints and reusing completed evidence. Keep the full repeatable
+PR procedure available; guide the current tester through only its remaining checks.
+
 1. **Build and prerequisites.** Identify the PR head commit, build flags/variant
    and intended device. Give an exact artifact/run link when available, or checkout
    and build commands for that revision with a link to prerequisites. Identify

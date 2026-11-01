@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- Focused piano keys in the browser emulator respond to Enter, Space and numpad
+  Enter, report their pressed state to assistive technology, and release when
+  focus moves away. Adapted to the native input ownership model after
+  [fm1-base's keyboard controls](https://github.com/charlesvestal/fm1-base/commit/46743d1de1101f0a614964e0a4334edd48b5aded).
+
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed present known numeric fields,
@@ -45,6 +50,14 @@ recorded in the linked reports, rather than every current build or device.
   change.
 
 ### Added
+
+- Opt-in [SMK-37 Pro, SMK-37 Elite and MKE-P37 targets](smk37.md) add model-specific
+  firmware packages, velocity keys/pads, faders/wheels and protected per-board
+  flash layouts. Unknown stores remain RAM-only until explicit initialization;
+  failed operations cannot confirm ownership. SMK has two user sample slots and
+  USB MIDI, with per-model physical qualification pending. Normal CI/PR firmware
+  builds and Latest Dev retain the standard FM-1 target; tagged releases also
+  carry experimental SMK assets with separate build evidence.
 
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
@@ -203,6 +216,12 @@ recorded in the linked reports, rather than every current build or device.
   full commit provenance remain in release metadata; the UI regression gate now
   exercises the generated Dev version before merge. This fixes the initial Dev
   release's layout-test failure; no publication gate is relaxed.
+- **SLICE persistence:** MAN-slice saves and backup restores verify the stored
+  record before reporting success. Ineffective or corrupt writes take the existing
+  save/restore error paths; a failed save (readback mismatch) is retried at the next
+  stopped poll, at most twice per slot, then SAVE ERROR stays. Records remain
+  single-copy, no rollback; interrupted saves can still lose that slot's slices. FM-1 save/restart/restore qualification remains pending.
+
 - Native replay source-change guards include consumed portable Engines sources
   and generated include files, so changes during compilation cannot publish an
   adapter or completed capture with stale input provenance. See
@@ -224,6 +243,13 @@ recorded in the linked reports, rather than every current build or device.
   are unchanged. Native host rendering and scroll checks qualify this text change;
   no physical display observation is claimed.
   See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
+
+- **LCD failure containment:** a missing completion stops further display work
+  while retaining DMA source ownership. Verified late completion permits a bounded
+  wake/full-redraw retry of the latest UI state; failed initialization stays stopped
+  until reboot. Screenshots cannot report a completed image after transport failure.
+  Physical DMA, recovery and loaded FM-1 service qualification remain pending;
+  see [the contract and limits](lcd-fault-containment.md).
 
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across
@@ -374,6 +400,18 @@ recorded in the linked reports, rather than every current build or device.
   a `FELUCCA_CPU2=0` build removes the worker entirely.
 
 ### Optimized
+
+- Storage skips a redundant erase only for a fresh copy: neither A nor B holds a
+  commit record, no save of the object was tried since boot, and a complete
+  destination-sector check reads blank. Every other destination, including any
+  same-boot retry after a failed or interrupted save, is erased as before, because a
+  sector that reads blank after an interrupted erase can still hold cells with too
+  little margin. A first erase or program cut by power loss that leaves the copy
+  reading blank cannot be told apart from a fresh copy after reboot and may still skip.
+  Read errors stop the save before writes, and native commit/readback checks remain.
+  [Measured host I/O counts and the interrupted-erase caveat](flash-capacity.md#blank-destination-checks-197-narrowed-in-721)
+  distinguish extra scan reads from avoided erase calls. Physical timing
+  and retention qualification remain pending. No proactive erase or format change.
 
 - Native icons share identical complete 12 px compressed streams while preserving
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the

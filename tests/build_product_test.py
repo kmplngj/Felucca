@@ -20,6 +20,66 @@ import build as B
 import fm1pkg_make
 
 
+class BoardSelection(unittest.TestCase):
+    def setUp(self):
+        env = patch.dict(os.environ, {"FELUCCA_PROFILE": "standard"})
+        env.start()
+        self.addCleanup(env.stop)
+        for name in ("BOARD", "MODEL", "FELUCCA_UART"):
+            os.environ.pop(name, None)
+
+    def test_models_have_native_identity_and_distinct_artifacts(self):
+        for model, name in fm1pkg_make.MODELS.items():
+            with self.subTest(model=model):
+                suffix = "-smk37" + ("-" + model if model != "pro" else "")
+                dev = B.resolve(["--board", "smk37", "--model", model])
+                release = B.resolve(["--board", "smk37", "--model", model, "--release", "1.6"])
+                self.assertEqual(dev["product"], name + "_900")
+                self.assertEqual(dev["name"], "felucca" + suffix + ".fwsc")
+                self.assertEqual(release["product"], name + "_916")
+                self.assertEqual(release["name"], "felucca-1.6" + suffix + ".fwsc")
+                self.assertEqual(release["rel"], "release-1.6" + suffix)
+        self.assertEqual(B.resolve(["--board", "smk37"])["model"], "pro")
+        self.assertEqual(B.resolve([])["product"], "FM-1_900")
+
+    def test_environment_precedence_and_independent_profile(self):
+        with patch.dict(os.environ, {"BOARD": "smk37", "MODEL": "elite", "FELUCCA_PROFILE": "minimal"}):
+            c = B.resolve([])
+            self.assertEqual((c["board"], c["model"]), ("smk37", "elite"))
+            self.assertEqual(c["name"], "felucca-smk37-elite-minimal.fwsc")
+            self.assertEqual(B.resolve(["--model", "mke"])["model"], "mke")
+            with self.assertRaises(SystemExit):
+                B.resolve(["--board", "fm1"])
+
+    def test_bad_selection_rejected_before_jobs(self):
+        bad = (["--board", "bogus"], ["--model", "pro"], ["--board", "fm1", "--model", "elite"],
+               ["--board", "smk37", "--model", "bad"], ["--board", "smk37", "--product", "FM-1_900"],
+               ["--board", "smk37", "--model", "elite", "--product", "SMK-37 Pro_900"],
+               ["--board", "smk37", "--product", "SMK-37 Pro_016"])
+        with tempfile.TemporaryDirectory() as folder, patch.object(B, "OUT", Path(folder)), \
+                patch.object(B, "generate") as generate, patch.object(B, "build_loader") as loader, \
+                patch.object(B, "toolchain") as toolchain:
+            for argv in bad:
+                with self.subTest(argv=argv), self.assertRaises(SystemExit):
+                    B.main(argv)
+            for job in (generate, loader, toolchain):
+                job.assert_not_called()
+        with patch.dict(os.environ, {"FELUCCA_UART": "1"}), self.assertRaises(SystemExit):
+            B.resolve(["--board", "smk37"])
+
+    def test_model_flags_uart_and_linker_capacity(self):
+        for model, name in fm1pkg_make.MODELS.items():
+            with self.subTest(model=model), patch.object(B, "BOARD", "smk37"), \
+                    patch.object(B, "MODEL", model), patch.object(B, "APP_SLOT", 0x97400):
+                self.assertEqual(B.board_flags(), ["-DBOARD_SMK37=1", '-DSMK_MODEL="' + name + '"'])
+                self.assertIn("-DFELUCCA_UART=0", B.app_flags())
+                self.assertEqual(B.ld_regions()["XIP"], (B.APP_XIP, 0x97400))
+                B.check_product(name + "_CUSTOM", name)
+        with patch.object(B, "BOARD", "fm1"):
+            self.assertEqual(B.board_flags(), [])
+            self.assertEqual(B.ld_regions()["XIP"], (B.APP_XIP, 0x8DFBC))
+
+
 class Stop(Exception):
     pass
 

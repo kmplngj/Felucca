@@ -1,10 +1,24 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* The firmware editor handler, USB framing and UART recovery against RAM flash.
+/* The firmware editor handler, USB framing and UART recovery against shared NOR.
  * Build with the generated tables and the same flags as hostsim.c. */
 #include "../firmware/hal/fm1_flash_data_contract.h"
-static unsigned char host_samples[3][0x14000];
+#ifdef SMK_EDITOR_TEST
+#define BOARD_SMK37 1
+#include "../firmware/hal/fm1_flash_map.h"
+static unsigned char host_nor[0x100000];
+#define host_samples (*(unsigned char (*)[3][0x14000])(host_nor + FL_SMP_LO))
+static unsigned host_sample_reads, host_raw_reads, host_mutation_unsafe, host_marker_fail;
+static unsigned host_led_common;
+static uint32_t host_erase_offsets[64], host_erase_count;
+static unsigned char *host_sample_ptr(unsigned k) { host_sample_reads++; return host_samples[k]; }
+#define SMP_USER_XIP(k) host_sample_ptr(k)
+#else
+#include "host_nor.h"
+/* Keep the array shape used by robustness/fuzz fixtures, backed by the real slot map. */
+#define host_samples (*(uint8_t (*)[3][0x14000])(nor + 0xA0000u))
 #define SMP_USER_XIP(k) host_samples[k]
+#endif
 #define FELUCCA_OTA 1
 #define FELUCCA_FLASH 0
 #define FELUCCA_VERSION "TEST"
@@ -13,6 +27,10 @@ static unsigned char host_samples[3][0x14000];
 #include "../firmware/hal/fm1_lcd_contract.h"
 #include "hostsim.c"
 #undef main
+#ifndef SMK_EDITOR_TEST
+_Static_assert(sizeof host_samples == SMP_USER_SLOTS * SMP_USER_SIZE && SMP_USER_BASE == 0xA0000u,
+               "editor sample NOR mapping");
+#endif
 #define MENU_N (34u + FELUCCA_CPU2)                  /* ALL DARK id 33, GRAPH 34 (#572); id 32 stays reserved in CPU2=0 builds */
 
 static uint32_t host_progress = 1, host_erases, host_writes;
@@ -49,23 +67,62 @@ static void panel_setup(void) {}
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
 
+#ifndef SMK_EDITOR_TEST
 static uint32_t flash_ok = 1;
 static void audio_silence(void) {}
+#endif
 static void fl_inval(uint32_t off, uint32_t n) { (void)off; (void)n; }
-static uint8_t *host_flash_ptr(uint32_t off) { return &host_samples[0][0] + off - SMP_USER_BASE; }
+#ifdef SMK_EDITOR_TEST
+static uint8_t *host_flash_ptr(uint32_t off) { return host_nor + off; }
+#endif
 static fl_erase4k_fn fl_erase4k;
 static int fl_erase4k(uint32_t off, uint32_t *took)
 {
+#ifdef SMK_EDITOR_TEST
+    if (host_led_common != 2u) host_mutation_unsafe++;
+    host_erase_offsets[host_erase_count++] = off;
+    if (FL_IN(off, 4096, FL_SMP_LO, FL_SMP_HI) && host_nor[FL_STOCKTAG_HI - 8u] != 255) host_mutation_unsafe++;
+    if (host_marker_fail && off == FL_STOCKTAG_LO) return -1;
     memset(host_flash_ptr(off), 0xFF, 4096); *took = 0; host_erases++; return 0;
+#else
+    *took = 0;
+    host_erases++;                                /* logical attempts; erases counts actual NOR work */
+    if (off < SMP_USER_BASE || off > SMP_USER_BASE + sizeof host_samples - 4096u || (off & 4095u))
+        return -8;
+    return st_erase(off);
+#endif
 }
 static fl_write_fn fl_write;
 static int fl_write(uint32_t off, const uint8_t *p, uint32_t n)
 {
+#ifdef SMK_EDITOR_TEST
+    if (FL_IN(off, n, FL_SMP_LO, FL_SMP_HI) && host_nor[FL_STOCKTAG_HI - 8u] != 255) host_mutation_unsafe++;
     memcpy(host_flash_ptr(off), p, n); host_writes++; return 0;
+#else
+    host_writes++;                                /* one HAL call can program several NOR pages */
+    if (off < SMP_USER_BASE || off > SMP_USER_BASE + sizeof host_samples ||
+        n > SMP_USER_BASE + sizeof host_samples - off)
+        return -8;
+    while (n) {                                  /* fm1_flash.h fl_write's page splitting */
+        uint32_t chunk = 256u - (off & 255u);
+        int rc;
+        if (chunk > n) chunk = n;
+        if ((rc = st_prog(off, p, chunk)) != 0) return rc;
+        off += chunk; p += chunk; n -= chunk;
+    }
+    return 0;
+#endif
 }
-static int st_read(uint32_t off, void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
-static int st_prog(uint32_t off, const void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
-static int st_erase(uint32_t off) { (void)off; return -1; }
+#ifdef SMK_EDITOR_TEST
+#define FL_FAR(fn) fn
+static void smk__common(uint32_t group) { host_led_common = group; }
+static uint16_t abuf[8];
+static uint32_t irq_save(void) { return 0; }
+static void irq_restore(uint32_t f) { (void)f; }
+static int fl_read_ram(uint32_t off, uint8_t *p, uint32_t n) { host_raw_reads++; memcpy(p, host_nor + off, n); return 0; }
+static int fl_erase4k_ram(uint32_t off, uint32_t *took) { return fl_erase4k(off, took); }
+#include "../firmware/src/storage_hw.c"
+#endif
 #include "../firmware/src/storage.c"
 #include "../firmware/src/editor.c"
 
@@ -77,6 +134,12 @@ static int check(const char *what, int ok)
 static void reset(void)
 {
     uint32_t t, i;
+#ifndef SMK_EDITOR_TEST
+    memset(nor, 0xFF, sizeof nor);
+    erase_error = dead = 0;
+    cut_bytes = cut_erase = -1;
+    erases = progs = 0;
+#endif
     memset(&song, 0, sizeof song); memset(trk, 0, sizeof trk);
     memset(&chain, 0, sizeof chain); chain_defaults(&chain_config);
     memset(&ed_w, 0, sizeof ed_w); memset(&ui, 0, sizeof ui);
@@ -471,6 +534,150 @@ static int samples(void)
                  request(ED_UP_ERASE, a, 1) == 8u && host_wire[6] == 2);
     return bad;
 }
+
+#ifndef SMK_EDITOR_TEST
+static void sample_power_on(void)
+{
+    erase_error = dead = 0;
+    cut_bytes = cut_erase = -1;
+    erases = progs = 0;                            /* persistent bytes survive power restoration */
+}
+
+static uint32_t sample_begin(uint32_t slot)
+{
+    uint8_t a = (uint8_t)slot;
+    return request(ED_SMP_BEGIN, &a, 1) == 8u ? host_wire[6] : 99u;
+}
+
+static uint32_t sample_write(uint32_t slot, const uint8_t *data)
+{
+    uint8_t a[320] = {(uint8_t)slot, 0, 4, 0};     /* offset 512 */
+    uint32_t n = 4u + pack7(data, 256u, a + 4);
+    return request(ED_SMP_WRITE, a, n) == 11u ? host_wire[9] : 99u;
+}
+
+static uint32_t sample_end(uint32_t slot, const smp_user_hdr_t *h)
+{
+    uint8_t a[640] = {(uint8_t)slot};
+    uint32_t n = 1u + pack7((const uint8_t *)h, sizeof *h, a + 1);
+    return request(ED_SMP_END, a, n) == 8u ? host_wire[6] : 99u;
+}
+
+static int sample_outside_is(uint32_t base, uint32_t n, const uint8_t *before)
+{
+    return !memcmp(nor, before, base) &&
+           !memcmp(nor + base + n, before + base + n, sizeof nor - base - n);
+}
+
+static int sample_prefix_is(uint32_t base, const uint8_t *data, uint32_t n, uint32_t cut)
+{
+    uint32_t i;
+    if (memcmp(nor + base, data, cut)) return 0;
+    for (i = cut; i < n; i++) if (nor[base + i] != 0xFFu) return 0;
+    return 1;
+}
+
+/* Sample upload is single-copy: BEGIN invalidates it, payload precedes END's
+ * header. Do not impose the A/B bank contract or assume torn headers stay absent
+ * after reboot; this checks errors, exact flash effects and same-data retries. */
+static int sample_nor_faults(void)
+{
+    static uint8_t before[sizeof nor];
+    static const uint32_t payload_cuts[] = {0, 1, 127, 255, 256};
+    const uint32_t header_cuts[] = {0, 1, 255, 256, 257, sizeof(smp_user_hdr_t) - 1u, sizeof(smp_user_hdr_t)};
+    uint8_t data[256], torn[sizeof(smp_user_hdr_t)], a[256];
+    smp_user_hdr_t h;
+    uint32_t slot, i, j, cut, base, trials = 0;
+    int bad = 0, ok;
+    for (slot = 0; slot < SMP_USER_SLOTS; slot++) {
+        reset();
+        memset(nor, 0x5A, sizeof nor);             /* neighbors, bank/staging regions and slot tails */
+        for (i = 0; i < sizeof data; i++) data[i] = (uint8_t)(i * 37u + slot);
+        memset(&h, 0, sizeof h);
+        h.magic = SMP_USER_MAGIC; h.version = 1; h.nz = 1;
+        h.data_len = sizeof data; h.crc = st_crc32(data, sizeof data);
+        h.zone[0].n = 512; h.zone[0].le = 511; h.zone[0].rate = 65536; h.zone[0].hi = 127;
+        base = SMP_USER_BASE + slot * SMP_USER_SIZE;
+        ok = !sample_begin(slot);
+        memcpy(before, nor, sizeof nor);
+        for (j = 0; j < sizeof payload_cuts / sizeof payload_cuts[0]; j++) {
+            memcpy(nor, before, sizeof nor);
+            sample_power_on();
+            usr_nz[slot] = 0;
+            cut = payload_cuts[j]; cut_bytes = (long)cut;
+            ok &= sample_write(slot, data) == (cut < sizeof data ? 3u : 0u) &&
+                  !erases && progs == cut && dead == (cut < sizeof data) && !usr_nz[slot] &&
+                  sample_prefix_is(base + SMP_USER_DATA, data, sizeof data, cut) &&
+                  sample_outside_is(base + SMP_USER_DATA, sizeof data, before);
+            if (cut < sizeof data) {
+                memcpy(torn, nor + base + SMP_USER_DATA, sizeof data);
+                ok &= sample_write(slot, data) == 3u && !erases && progs == cut &&
+                      !memcmp(torn, nor + base + SMP_USER_DATA, sizeof data);
+            }
+            sample_power_on();
+            ok &= !sample_write(slot, data) && !erases && progs == sizeof data &&
+                  !memcmp(nor + base + SMP_USER_DATA, data, sizeof data) &&
+                  sample_outside_is(base + SMP_USER_DATA, sizeof data, before);
+            trials++;
+        }
+        bad += check("sample payload cuts: exact prefix, sticky power and same-data retry", ok);
+        memcpy(before, nor, sizeof nor);           /* complete payload, erased header */
+        ok = 1;
+        for (j = 0; j < sizeof header_cuts / sizeof header_cuts[0]; j++) {
+            memcpy(nor, before, sizeof nor);
+            sample_power_on();
+            usr_nz[slot] = 0;
+            cut = header_cuts[j]; cut_bytes = (long)cut;
+            ok &= sample_end(slot, &h) == (cut < sizeof h ? 4u : 0u) &&
+                  !erases && progs == cut && dead == (cut < sizeof h) &&
+                  sample_prefix_is(base, (const uint8_t *)&h, sizeof h, cut) &&
+                  sample_outside_is(base, sizeof h, before);
+            if (cut < sizeof h) {
+                memcpy(torn, nor + base, sizeof h);
+                ok &= !usr_nz[slot] && sample_end(slot, &h) == 4u && !erases && progs == cut &&
+                      !memcmp(torn, nor + base, sizeof h);
+                sample_power_on();
+                ok &= !sample_end(slot, &h) && !erases && progs == sizeof h;
+            }
+            ok &= usr_nz[slot] == 1u && usr_zone[slot][0].n == 512u &&
+                  !memcmp(nor + base, &h, sizeof h) && sample_outside_is(base, sizeof h, before);
+            trials++;
+        }
+        bad += check("sample header page/byte cuts: refusal, retry, complete zones and neighbors", ok);
+
+        memset(nor, 0x5A, sizeof nor);
+        memcpy(before, nor, sizeof nor);
+        sample_power_on(); erase_error = 1;
+        ok = sample_begin(slot) == 1u && !dead && !erases && !progs && !memcmp(nor, before, sizeof nor);
+        sample_power_on(); cut_erase = 0;
+        ok &= sample_begin(slot) == 1u && dead && erases == 1u && !progs;
+        for (i = 0; i < 2048u; i++) ok &= nor[base + i] == 0xFFu;
+        ok &= !memcmp(nor + base + 2048u, before + base + 2048u, 2048u) &&
+              sample_outside_is(base, 4096u, before);
+        memcpy(torn, nor + base, sizeof torn);
+        ok &= sample_begin(slot) == 1u && erases == 1u && !progs && !memcmp(torn, nor + base, sizeof torn);
+        sample_power_on();
+        ok &= !sample_begin(slot) && erases == 1u && !progs && !sample_write(slot, data) &&
+              !sample_end(slot, &h) && usr_nz[slot] == 1u && sample_outside_is(base, 4096u, before);
+        bad += check("sample BEGIN: refused/half erase, sticky cut and restored-power upload", ok);
+
+        sample_power_on();
+        ok = !sample_begin(slot);
+        memset(a, 0, sizeof a);
+        ok &= !sample_write(slot, a);
+        memset(a, 0xFF, sizeof a);
+        ok &= !sample_write(slot, a);              /* no erase: NOR cannot set those bits again */
+        h.crc = st_crc32(a, sizeof a);
+        ok &= sample_end(slot, &h) == 3u && !usr_nz[slot];
+        for (i = 0; i < sizeof a; i++) ok &= nor[base + SMP_USER_DATA + i] == 0;
+        bad += check("sample reprogram cannot set bits: END refuses the impossible payload CRC", ok);
+    }
+    printf("editor sample NOR: %u payload/header boundaries across all three slots\n", trials);
+    reset();
+    return bad;
+}
+
+#endif /* !SMK_EDITOR_TEST */
 
 static int song_protocol(void)
 {
@@ -1711,9 +1918,10 @@ static int macro_model_protocol(void)
 }
 #endif
 
+#ifndef SMK_EDITOR_TEST
 int main(void)
 {
-    int bad = backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + song_protocol() + malformed_saves() +
+    int bad = backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + sample_nor_faults() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + watch_lifecycle() + watch_backpressure() + usb_burst() + menu_protocol() + drum_kit_retired() +
               learn_protocol() + custom_palette()
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14
@@ -1723,4 +1931,5 @@ int main(void)
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
     return bad != 0;
 }
+#endif /* !SMK_EDITOR_TEST */
 #endif

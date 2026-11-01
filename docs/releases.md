@@ -38,6 +38,13 @@ next update replaces them; keep local backups and a known-good package.
 
 ## Tagged release procedure
 
+Tagged releases also build and attach [experimental SMK-37 Pro, Elite and
+MKE-P37 packages](smk37.md), each with model-specific identity and build evidence.
+The checklist and attestation below apply to the standard FM-1 package only.
+SMK assets remain unqualified until separately tested on each physical model;
+release notes preserve that distinction. Normal PR CI and Latest Dev build only
+the standard FM-1 firmware.
+
 1. Choose `vX.Y`, `vX.Y.Z`, `vX.Y.Z.W` or a suffix such as `v1.6-rc1`.
    Each numeric component must be one digit; suffixes are alphanumeric.
    Update the [curated changelog](changelog.md), compatibility and known limitations

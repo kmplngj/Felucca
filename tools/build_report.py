@@ -158,13 +158,22 @@ def configuration(build):
     # Preprocess only, with exactly the C compilation flags. This captures actual
     # source/generated defaults and conditional macros without a second compile.
     macros = build.tc('cc', *flags, '-dM', '-E', build.FW / 'src/felucca.c')
-    defines = dict(re.findall(r'^#define (FELUCCA_\w+)(?:[ \t]+(.*))?$', macros, re.M))
+    defines = dict(re.findall(r'^#define (FELUCCA_\w+|BOARD_SMK37|SMK_MODEL)(?:[ \t]+(.*))?$', macros, re.M))
     constants = dict(re.findall(r'^#define (FS|CTL|NPART|NVOICE|NTRK|NSTEP|HALF_FRAMES|C1_NP|NENGINES|ENG_ID_MAX)[ \t]+(.*)$',
                                 macros, re.M))
     if not {'FELUCCA_CPU2', 'FELUCCA_ID', 'FELUCCA_SLICE', 'FELUCCA_FM4'} <= defines.keys():
         raise ValueError('compiler did not expose required effective build defines')
+    board, model = getattr(build, 'BOARD', 'fm1'), getattr(build, 'MODEL', None)
+    _, _, model_name = build.fm1pkg_make.target(board, model)
+    build.check_product(build.PRODUCT, model_name)
+    if board == 'smk37':
+        if (defines.get('BOARD_SMK37') != '1' or defines.get('SMK_MODEL') != '"' + model_name + '"'
+                or defines.get('FELUCCA_UART') != '0'):
+            raise ValueError('compiler board/model/UART defines differ from selected SMK target')
+    elif defines.get('BOARD_SMK37', '0') != '0' or 'SMK_MODEL' in defines:
+        raise ValueError('SMK defines in FM-1 target')
     fingerprints = tool_fingerprints(build)
-    return {'compile_flags': ['-target', 'pi32v2', *flags], 'effective_defines': defines,
+    return {'board': board, 'model': model, 'compile_flags': ['-target', 'pi32v2', *flags], 'effective_defines': defines,
             'logical_constants': constants, 'generator_runtime': fingerprints['generator_runtime'],
             'loader_environment_sha256': fingerprints['loader_environment_sha256'],
             'compiler_headers_sha256': fingerprints['compiler_headers_sha256'],
@@ -331,7 +340,19 @@ def main():
         # under the caller's current environment. Feature/profile/font changes fail.
         build.PRODUCT = report['configuration']['product']
         build.VERSION = report['configuration']['version_override']
-        build.fm1pkg_make.SDK = build.resolve([])['sdk']
+        saved = report['configuration']
+        target_args = ['--board', saved['board']]
+        if saved['model'] is not None:
+            target_args += ['--model', saved['model']]
+        selected = build.resolve([*target_args, '--product', build.PRODUCT])
+        # Explicit caller target selection must agree with the report.
+        if 'BOARD' in build.os.environ or 'MODEL' in build.os.environ:
+            current = build.resolve([])
+            if (current['board'], current['model']) != (selected['board'], selected['model']):
+                raise ValueError('resource report board/model differs from selected environment')
+        build.BOARD, build.MODEL = selected['board'], selected['model']
+        build.APP_SLOT = build.fm1pkg_make.BOARDS[build.BOARD][1]
+        build.fm1pkg_make.SDK = selected['sdk']
         from profile import generated, check_outputs, contract_json
         name = build.os.environ.get('FELUCCA_PROFILE', 'standard')
         check_outputs(generated(build.SRC, name), build.GEN)

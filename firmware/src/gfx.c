@@ -28,6 +28,13 @@ typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #include "ui_keycaps.h"                 /* KC_*: the keycaps / badges (tools/gen_aa_keycaps.py), KNOB_* arcs */
 #define ELLIPSIS '\x85'                 /* the ellipsis glyph of AF_S and AF_M */
 
+/* Synchronous host/emulator adapters have no in-flight transport to recover.
+ * The actual driver supplies both hooks before this file is included. */
+#ifndef LCD_ASYNC_DRIVER
+#define LCD_FAILED() 0
+#define LCD_SERVICE(now) 0
+#endif
+
 /* host tests hook in here (layout lint, draw cost); nothing in the firmware */
 #ifndef GFX_HOOK_TEXT
 #define GFX_HOOKS 0                     /* (the firmware: what only the hooks read is not even computed) */
@@ -199,6 +206,8 @@ static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
     if (w * h > CV_MAX)
         h = CV_MAX / w;
     lcd_sync();                     /* the last blit may still read cv_px */
+    if (LCD_FAILED())
+        return;                     /* timeout did not acquire the canvas */
     GFX_HOOK_BEGIN();
     cv_w = w;
     cv_h = h;
@@ -237,6 +246,8 @@ static void cv_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint3
     if (w > cv_w - x0) w = cv_w - x0;
     if (h > cv_h - y0) h = cv_h - y0;
     lcd_sync();                                   /* never overwrite a running DMA's source */
+    if (LCD_FAILED())
+        return;
     GFX_HOOK_BLIT_RECT(x, y, x0, y0, w, h);         /* before packing changes canvas coordinates */
     for (r = 0; r < h; r++)
         for (c = 0; c < w; c++)
@@ -246,6 +257,8 @@ static void cv_blit_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint3
 
 static inline void cv_pset(int32_t x, int32_t y, uint16_t c)
 {
+    if (LCD_FAILED())
+        return;
     y += cv_oy;
     if ((uint32_t)x < cv_w && (uint32_t)y < cv_h)
         cv_px[(uint32_t)y * cv_w + (uint32_t)x] = swap16(c);
@@ -255,6 +268,8 @@ static void cv_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 {
     int32_t x1 = x + w, y1 = y + h + cv_oy, i;
     uint16_t sc = swap16(c);
+    if (LCD_FAILED())
+        return;
     y += cv_oy;                             /* clipped once, then filled row by row */
     if (x < 0)
         x = 0;
@@ -290,6 +305,8 @@ static void cv_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
     int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1, sx = x0 < x1 ? 1 : -1;
     int32_t dy = y1 > y0 ? y0 - y1 : y1 - y0, sy = y0 < y1 ? 1 : -1;
     int32_t err = dx + dy, guard = 2000;
+    if (LCD_FAILED())
+        return;
     while (guard--) {                       /* bounded: a line is never longer than 480 px */
         int32_t e2 = 2 * err;               /* both tests use the same error value */
         cv_pset(x0, y0, c);
@@ -408,6 +425,8 @@ static const uint16_t *ramp(uint16_t fg, uint16_t bg)
 static void cv_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint16_t *rv)
 {
     uint32_t k = 0, gx, gy;
+    if (LCD_FAILED())
+        return;
     y += cv_oy;
     for (gy = 0; gy < h; gy++) {
         int32_t py = y + (int32_t)gy;
@@ -435,6 +454,8 @@ static void cv_bitmap(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_
                       uint32_t scale, uint16_t ink)
 {
     uint32_t sw = w / scale, sy, sx, k, j, srow = 0;
+    if (LCD_FAILED())
+        return;
     y += cv_oy;
     for (sy = 0; sy * scale < h; sy++, srow += sw)
         for (k = 0; k < scale; k++) {
@@ -486,8 +507,11 @@ static const uint16_t *hc_lut(const uint8_t *hc)
 static void cv_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint8_t *hc,
                         const uint16_t *rv)
 {
-    const uint16_t *lut = hc_lut(hc);
+    const uint16_t *lut;
     uint32_t gy, v = 0, run = 0, acc = 0, nb = 0;
+    if (LCD_FAILED())
+        return;
+    lut = hc_lut(hc);
     y += cv_oy;
     for (gy = 0; gy < h; gy++) {
         int32_t py = y + (int32_t)gy;

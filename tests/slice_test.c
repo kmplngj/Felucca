@@ -21,7 +21,16 @@
  *    page), read back at a scan, kept for the same sample only, junk and torn writes ignored, a long sample. */
 #include <stdarg.h>
 #include <stdint.h>
-static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3, as the flash at 0xA0000 */
+/* Keep the original zero-initialized slot image, now inside the shared NOR's
+ * real flash map. The array view also retains sizeof host_slots for guards. */
+#define st_read host_nor_read
+#define st_erase host_nor_erase
+#define st_prog host_nor_prog
+#include "host_nor.h"
+#undef st_prog
+#undef st_erase
+#undef st_read
+#define host_slots (*(uint8_t (*)[3u * 0x14000u])(nor + 0xA0000u))
 #define SMP_USER_XIP(k) ((const uint8_t *)host_slots + (k) * SMP_USER_SIZE)
 #define main hostsim_main
 #include "hostsim.c"
@@ -38,25 +47,33 @@ static int transport_busy(void) { return host_busy; }
 static int slice_page_on(void) { return host_page; }
 static void ui_message(const char *s) { snprintf(host_msg, sizeof host_msg, "%s", s); }
 static uint32_t host_erases;
+/* Successful command replies need not mean that NOR contents changed. */
+enum { HOST_IGNORE_WRITE = 1, HOST_IGNORE_ERASE, HOST_IGNORE_PROGRAM, HOST_CORRUPT_PROGRAM };
+static uint32_t host_write_fault, host_fault_off;
 static int st_read(uint32_t off, void *dst, uint32_t n) { (void)off; (void)dst; (void)n; return -1; }
 static int st_erase(uint32_t off)
 {
-    if (off < SMP_USER_BASE || off + 0x1000u > SMP_USER_BASE + sizeof host_slots || (off & 0xFFFu))
+    if (off < SMP_USER_BASE || off > SMP_USER_BASE + sizeof host_slots - 0x1000u || (off & 0xFFFu))
         return -8;
-    memset((uint8_t *)host_slots + (off - SMP_USER_BASE), 0xFF, 0x1000u);
-    host_erases++;
-    return 0;
+    host_erases++;                                      /* accepted requests, distinct from completed physical erases */
+    if (off == host_fault_off && (host_write_fault == HOST_IGNORE_WRITE || host_write_fault == HOST_IGNORE_ERASE))
+        return 0;
+    return host_nor_erase(off);
 }
 static int st_prog(uint32_t off, const void *src, uint32_t n)
 {
-    uint32_t i;
-    if (off < SMP_USER_BASE || off + n > SMP_USER_BASE + sizeof host_slots)
+    int rc;
+    if (off < SMP_USER_BASE || off > SMP_USER_BASE + sizeof host_slots ||
+        n > SMP_USER_BASE + sizeof host_slots - off)
         return -8;
     if (host_torn)
         return -1;                                       /* power gone after the erase */
-    for (i = 0; i < n; i++)                              /* NOR: bits only go 1 -> 0 */
-        ((uint8_t *)host_slots)[off - SMP_USER_BASE + i] &= ((const uint8_t *)src)[i];
-    return 0;
+    if (off == host_fault_off && (host_write_fault == HOST_IGNORE_WRITE || host_write_fault == HOST_IGNORE_PROGRAM))
+        return 0;
+    rc = host_nor_prog(off, src, n);
+    if (!rc && off == host_fault_off && host_write_fault == HOST_CORRUPT_PROGRAM)
+        ((uint8_t *)host_slots)[off - SMP_USER_BASE] &= 0xFEu;
+    return rc;
 }
 #include "../firmware/src/storage.c"
 #include "../firmware/src/slice_store.c"
@@ -75,6 +92,241 @@ static void check(const char *what, int ok, const char *fmt, ...)
     }
     printf("\n");
     fails += !ok;
+}
+
+/* Through the panel's deferred-save owner, not just the low-level return code. */
+static void store_readback_tests(void)
+{
+    static uint8_t original[sizeof host_slots], before[sizeof host_slots];
+    static const uint32_t pos[] = {0, 1000};
+    void (*load)(uint32_t) = slc_man_load;
+    uint32_t k, mode, j;
+    memcpy(original, host_slots, sizeof original);
+    slc_store_boot();
+    host_busy = host_page = 0;
+    for (k = 0; k < SMP_USER_SLOTS; k++)
+        for (mode = HOST_IGNORE_WRITE; mode <= HOST_CORRUPT_PROGRAM; mode++) {
+            slc_rec_t wanted;
+            uint32_t off = k * SMP_USER_SIZE + SLC_REC_OFF, e0;
+            int ok;
+            memcpy(host_slots, original, sizeof original);
+            /* Use the same valid loop in every physical slot. */
+            memcpy((uint8_t *)host_slots + k * SMP_USER_SIZE, original, SMP_USER_SIZE);
+            memset((uint8_t *)host_slots + off, mode <= HOST_IGNORE_ERASE ? 0 : 0xFF, ST_SECTOR);
+            smp_user_scan(k);
+            ok = slc_man_restore(k, 2, 0, pos) == 0;
+            slc_rec_make(k, &wanted);
+            memcpy(before, host_slots, sizeof before);
+            host_write_fault = mode;
+            host_fault_off = SMP_USER_BASE + off;
+            slc_man_save = (uint8_t)(1u << k);
+            host_msg[0] = 0;
+            slc_store_poll();
+            ok &= str_eq(host_msg, "SAVE ERROR") && slc_man_save == (uint8_t)(1u << k) &&   /* the bit stays: retried */
+                  memcmp((uint8_t *)host_slots + off, &wanted, sizeof wanted) != 0;
+            for (j = 0; j < 2u; j++) {                       /* the fault persists: two retries, the bit stays between */
+                host_msg[0] = 0;
+                ok &= slc_man_save == (uint8_t)(1u << k);
+                slc_store_poll();
+                ok &= str_eq(host_msg, "SAVE ERROR");
+            }
+            ok &= !slc_man_save;                             /* exhausted: cleared, SAVE ERROR was shown */
+            host_msg[0] = 0;
+            slc_store_poll();                                /* nothing left to retry */
+            ok &= !host_msg[0] && !slc_man_save;
+            ok &= !memcmp(host_slots, before, off) &&
+                  !memcmp((uint8_t *)host_slots + off + ST_SECTOR, before + off + ST_SECTOR,
+                          sizeof before - off - ST_SECTOR);
+            check("store: acknowledged ineffective/corrupt write reports SAVE ERROR", ok, "slot %u fault %u msg '%s'",
+                  k + 1u, mode, host_msg);
+            host_write_fault = 0;
+            slc_man_save = (uint8_t)(1u << k);              /* a fresh user request after the fault clears */
+            slc_store_poll();
+            ok = str_eq(host_msg, "SLICES SAVED") &&
+                 !memcmp((uint8_t *)host_slots + off, &wanted, sizeof wanted);
+            e0 = host_erases;
+            host_msg[0] = 0;
+            slc_man_save = (uint8_t)(1u << k);
+            slc_store_poll();
+            ok &= host_erases == e0 && !host_msg[0];
+            smp_user_scan(k);
+            {
+                const slc_man_t *m = slc_man_of(slc_get(k + 1u));
+                ok &= m && m->n == 2u && !memcmp(m->pos, pos, sizeof pos);
+            }
+            check("store: fresh save recovers, unchanged save skips erase, rescan restores", ok,
+                  "slot %u fault %u", k + 1u, mode);
+        }
+    memcpy(host_slots, original, sizeof original);
+    slc_man_load = load;
+    for (j = 0; j < SMP_USER_SLOTS; j++) smp_user_scan(j);
+}
+
+static void store_request(uint32_t k)
+{
+    slc_man_save = (uint8_t)(1u << k);
+    host_msg[0] = 0;
+    slc_store_poll();
+}
+
+static int store_outside_is(uint32_t off, const uint8_t *before)
+{
+    return !memcmp(nor, before, off) &&
+           !memcmp(nor + off + ST_SECTOR, before + off + ST_SECTOR, sizeof nor - off - ST_SECTOR);
+}
+
+/* These are single-copy records: an erase can lose the old slices. Exercise
+ * the deferred-save owner and reboot scan, comparing the complete physical
+ * image rather than assuming that any particular cut must leave valid slices. */
+static void store_nor_tests(void)
+{
+    static uint8_t original[sizeof nor], fixture[sizeof nor], before[sizeof nor], after[sizeof nor];
+    static const uint32_t old_pos[] = {0, 2000}, pos[] = {0, 1000};
+    void (*load)(uint32_t) = slc_man_load;
+    uint32_t k, mode, i, j, cut_count = 0, bad_cut = 0, bad_erase = 0, bad_sticky = 0, bad_retry = 0, bad_same = 0;
+    int contract = 1;
+    memcpy(original, nor, sizeof original);
+    for (i = 0; i < sizeof fixture; i++) fixture[i] = (uint8_t)(i * 37u + (i >> 12));
+    memcpy(fixture + SMP_USER_BASE, host_slots, sizeof host_slots);
+    slc_store_boot();
+    host_busy = host_page = host_torn = 0;
+
+    /* Preserve the harness's deliberate variants, while writes delegate to
+     * the shared physical model. Refused legacy calls do not latch dead. */
+    {
+        uint8_t b = 0xA5, ones = 0xFF, out = 0x5A;
+        uint32_t off = SMP_USER_BASE + SLC_REC_OFF, e0 = host_erases;
+        pid_t pid;
+        int status = 0;
+        contract &= st_read(off, &out, 1) == -1 && out == 0x5A;
+        contract &= st_erase(SMP_USER_BASE - ST_SECTOR) == -8 && st_erase(off + 1u) == -8 &&
+                    st_erase(UINT32_MAX & ~0xFFFu) == -8 && host_erases == e0;
+        contract &= st_prog(SMP_USER_BASE - 1u, &b, 1) == -8 && st_prog(UINT32_MAX, &b, 2) == -8;
+        contract &= st_erase(off) == 0 && host_erases == e0 + 1u;
+        host_torn = 1;
+        contract &= st_prog(off, &b, 1) == -1 && !dead && nor[off] == 0xFF;
+        host_torn = 0;
+        contract &= st_prog(off, &b, 1) == 0 && st_prog(off, &ones, 1) == 0 && nor[off] == b;
+        fflush(NULL);
+        pid = fork();
+        if (!pid) { uint8_t bytes[2] = {0, 0}; (void)st_prog(off + 255u, bytes, sizeof bytes); _exit(0); }
+        contract &= pid > 0 && waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 1;
+    }
+    check("NOR: unavailable reads, guarded slots, legacy tear, AND and page refusal", contract, 0);
+
+    for (k = 0; k < SMP_USER_SLOTS; k++)
+        /* 0..152: every byte cut plus the completed record; then half/refused erase. */
+        for (mode = 0; mode <= sizeof(slc_rec_t) + 2u; mode++) {
+            slc_rec_t wanted;
+            const slc_man_t *m;
+            uint32_t off = SMP_USER_BASE + k * SMP_USER_SIZE + SLC_REC_OFF;
+            uint32_t e0, p0, h0;
+            int ok = 1, failed = mode != sizeof wanted, complete;
+            memcpy(nor, fixture, sizeof nor);
+            memcpy(nor + SMP_USER_BASE + k * SMP_USER_SIZE, fixture + SMP_USER_BASE, SMP_USER_SIZE);
+            dead = erase_error = 0;
+            cut_bytes = cut_erase = -1;
+            erases = progs = 0;
+            for (j = 0; j < SMP_USER_SLOTS; j++) smp_user_scan(j);
+            ok &= slc_man_restore(k, 2, 0, old_pos) == 0;
+            store_request(k);
+            ok &= str_eq(host_msg, "SLICES SAVED") && !slc_man_save;
+            /* Nonblank unused bytes distinguish half erase from a full erase. */
+            memset(nor + off + sizeof wanted, 0x3C, ST_SECTOR - sizeof wanted);
+            ok &= slc_man_restore(k, 2, 0, pos) == 0;
+            slc_rec_make(k, &wanted);
+            memcpy(before, nor, sizeof before);
+            e0 = erases; p0 = progs; h0 = host_erases;
+            if (mode <= sizeof wanted) cut_bytes = mode;
+            else if (mode == sizeof wanted + 1u) cut_erase = 0;
+            else erase_error = 1;
+            store_request(k);
+            ok &= slc_man_save == (failed ? (uint8_t)(1u << k) : 0u) &&
+                  str_eq(host_msg, failed ? "SAVE ERROR" : "SLICES SAVED") &&
+                  host_erases == h0 + 1u && store_outside_is(off, before);
+            if (mode <= sizeof wanted) {
+                ok &= erases == e0 + 1u && progs == p0 + mode && dead == failed;
+                ok &= !memcmp(nor + off, &wanted, mode);
+                for (i = mode; i < ST_SECTOR; i++) ok &= nor[off + i] == 0xFF;
+                cut_count++;
+            } else if (mode == sizeof wanted + 1u) {
+                ok &= erases == e0 + 1u && progs == p0 && dead;
+                for (i = 0; i < ST_SECTOR / 2u; i++) ok &= nor[off + i] == 0xFF;
+                ok &= !memcmp(nor + off + ST_SECTOR / 2u, before + off + ST_SECTOR / 2u, ST_SECTOR / 2u);
+            } else
+                ok &= erases == e0 && progs == p0 && !dead && !memcmp(nor, before, sizeof before);
+            complete = !memcmp(nor + off, &wanted, sizeof wanted);
+            /* The failed request remains pending. Its bounded retries must
+             * leave the cut/refused physical image and completed counts intact. */
+            if (failed) {
+                int retry_ok = 1;
+                memcpy(after, nor, sizeof after);
+                e0 = erases; p0 = progs; h0 = host_erases;
+                for (j = 0; j < 2u; j++) {
+                    host_msg[0] = 0;
+                    slc_store_poll();
+                    retry_ok &= slc_man_save == (!complete && !j ? (uint8_t)(1u << k) : 0u) &&
+                                str_eq(host_msg, complete ? "" : "SAVE ERROR");
+                }
+                host_msg[0] = 0;
+                slc_store_poll();                        /* exhausted: no fourth attempt */
+                retry_ok &= !slc_man_save && !host_msg[0] && !memcmp(nor, after, sizeof after) &&
+                            erases == e0 && progs == p0 && host_erases == h0 + (complete ? 0u : 2u);
+                bad_sticky += !retry_ok;
+            }
+            smp_user_scan(k);                           /* lost RAM, as at boot */
+            m = slc_man_of(slc_get(k + 1u));
+            ok &= usr_nz[k] && (complete ? m && m->n == 2u && !memcmp(m->pos, pos, sizeof pos) :
+                   mode == sizeof wanted + 2u ? m && m->n == 2u && !memcmp(m->pos, old_pos, sizeof old_pos) : !m);
+            if (!ok) printf("slice: NOR physical/reboot mismatch slot %u boundary %u\n", k + 1u, mode);
+            if (mode <= sizeof wanted) bad_cut += !ok; else bad_erase += !ok;
+
+            /* A new request while power is still absent/refused cannot mutate
+             * any byte, nor count a completed erase/program. */
+            if (failed && !complete) {
+                ok = slc_man_restore(k, 2, 0, pos) == 0;
+                memcpy(after, nor, sizeof after);
+                e0 = erases; p0 = progs; h0 = host_erases;
+                store_request(k);
+                ok &= str_eq(host_msg, "SAVE ERROR") && slc_man_save == (uint8_t)(1u << k);
+                for (j = 0; j < 2u; j++) {
+                    host_msg[0] = 0;
+                    slc_store_poll();
+                    ok &= str_eq(host_msg, "SAVE ERROR") &&
+                          slc_man_save == (!j ? (uint8_t)(1u << k) : 0u);
+                }
+                host_msg[0] = 0;
+                slc_store_poll();
+                ok &= !host_msg[0] && !slc_man_save && !memcmp(nor, after, sizeof after) &&
+                      erases == e0 && progs == p0 && host_erases == h0 + 3u;
+                bad_sticky += !ok;
+            }
+            dead = erase_error = 0;
+            cut_bytes = cut_erase = -1;
+            ok = slc_man_restore(k, 2, 0, pos) == 0;
+            store_request(k);                           /* explicit fresh user request after power restoration */
+            ok &= !slc_man_save && str_eq(host_msg, complete ? "" : "SLICES SAVED") &&
+                  !memcmp(nor + off, &wanted, sizeof wanted) && store_outside_is(off, before);
+            smp_user_scan(k);
+            m = slc_man_of(slc_get(k + 1u));
+            ok &= m && m->n == 2u && !memcmp(m->pos, pos, sizeof pos);
+            bad_retry += !ok;
+            memcpy(after, nor, sizeof after);
+            e0 = erases; p0 = progs; h0 = host_erases;
+            store_request(k);
+            bad_same += slc_man_save || host_msg[0] || erases != e0 || progs != p0 || host_erases != h0 ||
+                        memcmp(nor, after, sizeof after);
+        }
+    check("NOR: every record byte boundary, complete image and reboot", !bad_cut, "%u boundaries, %u failures", cut_count, bad_cut);
+    check("NOR: half/refused erase preserves samples and all neighbors", !bad_erase, "6 cases, %u failures", bad_erase);
+    check("NOR: bounded retries and still-cut requests cannot change flash", !bad_sticky, "%u failures", bad_sticky);
+    check("NOR: restored-power fresh saves and rescans recover each slot", !bad_retry, "%u failures", bad_retry);
+    check("NOR: unchanged repeated requests perform no writes", !bad_same, "%u failures", bad_same);
+    memcpy(nor, original, sizeof nor);
+    dead = erase_error = 0;
+    cut_bytes = cut_erase = -1;
+    slc_man_load = load;
+    for (j = 0; j < SMP_USER_SLOTS; j++) smp_user_scan(j);
 }
 
 /* 1: every stored state == the decoder's state there; returns the mismatches */
@@ -797,6 +1049,9 @@ int main(int argc, char **argv)
         slc_man_load = 0;
         smp_user_scan(0);                                  /* (the demos: no MAN slices) */
     }
+
+    store_readback_tests();
+    store_nor_tests();
 
     /* 5 */
     {
