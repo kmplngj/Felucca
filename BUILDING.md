@@ -731,6 +731,18 @@ Use `--strict` for an approved baseline gate; report mode returns success after 
 its findings. See [UI comparison](docs/ui-comparison.md) for capture, selections, exit
 codes and the separate hardware readability check.
 
+The full runner includes the focused [ADSR render synchronization](docs/adsr-render-synchronization.md)
+checks in normal and legacy FM4 modes. After generating assets, run them separately with:
+
+```sh
+uv run --locked --group build python tests/adsr_sync_test.py --negative-controls
+uv run --locked --group build python tests/adsr_sync_test.py --fm4 --out build/adsr-sync-fm4
+```
+
+These compare the real LCD output against forced renders and inject changes around
+snapshot/raster/submission boundaries. They retain conservative unrelated-parameter
+redraws; they do not establish FM-1 timing or complete the broader redraw work in #95.
+
 The [silent FX bus regression](tests/fx_rest_test.md) compares bursts and long silences
 with the rest paths forced off, at `-O2` and `-Os`, including persistent state and
 actual skip counters. The suite requires the chorus, delay and HALL rest paths;

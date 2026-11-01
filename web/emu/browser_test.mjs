@@ -19,6 +19,7 @@ const report = { schema: 1, status: "fail", checks: [], errors: [], evidence: []
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 let browser, page, server, capturedAudio, factoryEnvelope, current = "setup";
 const screenshots = new Map();
+const frames = new Map();
 const messages = [];
 
 async function check(name, action) {
@@ -57,19 +58,39 @@ async function wrapperContrast() {
   return { text_elements: rows.length, minimum_ratio: Math.min(...rows.map((row) => row.ratio)) };
 }
 async function screen(name) {
-  const pixels = await page.locator("#screen").evaluate((canvas) => {
-    // Read a copy so observation does not change the page canvas's rendering mode.
-    const context = new OffscreenCanvas(240, 240).getContext("2d", { willReadFrequently: true });
-    context.drawImage(canvas, 0, 0);
-    const data = context.getImageData(0, 0, 240, 240).data;
+  // Check the actual page renderer against the latest observed worklet frame.
+  const pixels = await waitFor(() => {
+    const frame = __feluccaTest.display;
+    if (!frame) return false;
+    const actual = document.querySelector("#screen");
+    const copy = new OffscreenCanvas(240, 240), ctx = copy.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(actual, 0, 0);
+    const displayed = ctx.getImageData(0, 0, 240, 240).data;
+    for (let i = 0; i < frame.fb.length; i++) {
+      const v = frame.fb[i], p = ((v >> 8) | (v << 8)) & 65535;
+      if (displayed[i * 4] !== Math.round(((p >> 11) & 31) * 255 / 31) ||
+          displayed[i * 4 + 1] !== Math.round(((p >> 5) & 63) * 255 / 63) ||
+          displayed[i * 4 + 2] !== Math.round((p & 31) * 255 / 31) || displayed[i * 4 + 3] !== 255) return false;
+    }
+    const canvas = document.createElement("canvas"); canvas.width = canvas.height = 240;
+    const context = canvas.getContext("2d"), img = context.createImageData(240, 240), data = img.data;
+    for (let i = 0; i < frame.fb.length; i++) {
+      const v = frame.fb[i], p = ((v >> 8) | (v << 8)) & 65535;
+      data[i * 4] = ((p >> 11) & 31) * 255 / 31;
+      data[i * 4 + 1] = ((p >> 5) & 63) * 255 / 63;
+      data[i * 4 + 2] = (p & 31) * 255 / 31; data[i * 4 + 3] = 255;
+    }
+    context.putImageData(img, 0, 0);
     const colors = new Set();
     for (let i = 0; i < data.length; i += 4) colors.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
-    return { colors: colors.size, pixels: Array.from(data) };
+    return { colors: colors.size, pixels: Array.from(data), raw: frame.fb, state: frame.state,
+      seq: frame.seq, png: canvas.toDataURL().split(",")[1] };
   });
   assert(pixels.colors > 4, `${name}: blank or incomplete LCD (${pixels.colors} colors)`);
-  screenshots.set(name, await page.locator("#screen").screenshot());
+  screenshots.set(name, Buffer.from(pixels.png, "base64"));
+  frames.set(name, Buffer.from(new Uint16Array(pixels.raw).buffer));
   // ui.c's default graph panel is y=76..197; exclude transient header/card highlights.
-  return { sha256: hash(Buffer.from(pixels.pixels)), colors: pixels.colors,
+  return { sha256: hash(Buffer.from(pixels.pixels)), colors: pixels.colors, state: pixels.state, seq: pixels.seq,
     graph_sha256: hash(Buffer.from(pixels.pixels.slice(76 * 240 * 4, 198 * 240 * 4))) };
 }
 async function waitFor(fn, arg) {
@@ -328,7 +349,12 @@ try {
   await check("panel save reaches browser storage and reload", async () => {
     await page.setViewportSize({ width: 1200, height: 900 });
     await waitFor(() => document.getElementById("panel").viewBox.baseVal.width === 1000);
+    await tap("HOME");
+    const expectedSeq = await page.evaluate(() => __feluccaTest.draws);
+    await tap("ENV");
+    await waitFor(n => (__feluccaTest.leds[0] & (1 << 2)) && __feluccaTest.display?.seq > n, expectedSeq);
     const expected = await screen("before-save");
+    const savedState = { engine: expected.state.engine, adsr: expected.state.params.slice(1, 5) };
     assert.notEqual(expected.graph_sha256, factoryEnvelope, "saved attack must differ from factory state");
     await tap("SAVE"); await tap("OCT+"); await tap("OCT+");
     const saved = await waitFor(() => {
@@ -345,12 +371,19 @@ try {
     assert.equal(await page.evaluate(() => __feluccaTest.restoredSectors), Object.keys(JSON.parse(saved)).length,
       "saved sectors were not delivered to the restarted worklet");
     await screen("reloaded");
+    const bootState = await page.evaluate(() => ({ engine: __feluccaTest.state.engine, adsr: __feluccaTest.state.params.slice(1, 5) }));
+    assert.notDeepEqual(bootState, savedState, "reboot unexpectedly retained saved sound before LOAD");
     // Load USER slot 1 through the real panel and observe the applied parameters.
     await tap("SAVE");
     await page.getByRole("slider", { name: "KNOB 2", exact: true }).press("ArrowUp");
-    await tap("OCT+"); await tap("HOME"); await tap("ENV");
-    await waitFor(() => (__feluccaTest.leds[0] & (1 << 2)) !== 0);
+    await waitFor(() => __feluccaTest.state?.action === 2);
+    await tap("OCT+"); await tap("HOME");
+    const restoredSeq = await page.evaluate(() => __feluccaTest.draws);
+    await tap("ENV");
+    await waitFor(n => (__feluccaTest.leds[0] & (1 << 2)) && __feluccaTest.display?.seq > n, restoredSeq);
     const restored = await screen("restored-env");
+    assert.deepEqual({ engine: restored.state.engine, adsr: restored.state.params.slice(1, 5) }, savedState,
+      "saved engine and envelope parameters were not restored");
     assert.equal(restored.graph_sha256, expected.graph_sha256, "saved envelope was not restored and applied");
     return { sectors: Object.keys(JSON.parse(saved)).length, storage_sha256: hash(saved),
       restored_graph_sha256: restored.graph_sha256 };
@@ -436,7 +469,7 @@ try {
       await waitFor(() => __feluccaTest.frames > 5 && (__feluccaTest.leds[0] & (1 << 6)));
       assert.equal(await page.evaluate(() => __feluccaTest.restoredSectors), Object.keys(JSON.parse(saved)).length);
       await page.evaluate(() => __feluccaTest.listen());
-      await tap("SAVE"); await turn("KNOB 2", 1); await tap("OCT+"); await tap("HOME");
+      await tap("SAVE"); await turn("KNOB 2", 1); await waitFor(() => __feluccaTest.state?.action === 2); await tap("OCT+"); await tap("HOME");
       const restored = await model(47);
       assert.deepEqual(restored.params, expected, "MACRO controls changed across saved-sector restart/load");
       await page.getByRole("button", { name: "F3", exact: true }).focus();
@@ -464,6 +497,9 @@ try {
       report.evidence.push("page.png");
       for (const [name, png] of screenshots) {
         await writeFile(resolve(out, `${name}.png`), png); report.evidence.push(`${name}.png`);
+      }
+      for (const [name, raw] of frames) {
+        await writeFile(resolve(out, `${name}.rgb565`), raw); report.evidence.push(`${name}.rgb565`);
       }
       const audio = capturedAudio || await page.evaluate(() => ({ blocks: __feluccaTest.audio, rate: __feluccaTest.context?.sampleRate }));
       if (audio.blocks.length) {

@@ -150,6 +150,16 @@ const c = await device(null);
 c.render(600);
 check("a fresh instance with the kept sectors has it; one without does not",
       b.ex.web_test_user_preset(0) === 1 && c.ex.web_test_user_preset(0) === 0);
+check("USER action observer is inactive on HOME", b.ex.web_test_user_action() === 0);
+b.tap(B.SAVE);
+const beforeObserve = b.screen();
+check("USER action observer reports SAVE without changing the screen",
+      b.ex.web_test_user_action() === 4 && b.ex.web_test_user_action() === 4 &&
+      Buffer.from(beforeObserve.buffer).equals(Buffer.from(b.screen().buffer)));
+b.turn(EN.K2, 1);
+check("USER action observer reports LOAD after encoder input", b.ex.web_test_user_action() === 2);
+b.tap(B.OCTUP); b.tap(B.HOME);
+check("USER action observer returns inactive after leaving USER", b.ex.web_test_user_action() === 0);
 
 // ---- legacy and added MACRO models through the panel's save/name/load flow
 // Read the controls as well as slot occupancy: an occupied slot alone cannot prove that

@@ -67,7 +67,9 @@ no media. There are no model calls, video streams, continuous screenshot uploads
 automatic retries, baseline rewrites or full console dumps.
 
 On failure, the runner saves available LCD snapshots, a page screenshot and up
-to eight seconds of stereo PCM as `audio.wav`. To retain these on success too:
+to eight seconds of stereo PCM as `audio.wav`. Each LCD snapshot has its raw
+RGB565 framebuffer beside it; the pixels and observed parameters come from the
+same worklet frame. To retain these on success too:
 
 ```sh
 npm test --prefix web/emu -- --artifacts=always

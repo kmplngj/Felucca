@@ -444,6 +444,10 @@ unit fixture "" u_fixture
         self.assertEqual([unit['name'] for unit in test_jobs.coverage.select_plan(
             list(plan.values()), dict(kind='focused', selected=['asan_boot_clock']))],
             ['asan_boot_clock'])
+        for name in ('adsr_sync', 'adsr_sync_fm4'):
+            self.assertIn(name, plan)
+            self.assertEqual(plan[name]['needs'], ['assets'])
+            self.assertEqual(plan[name]['dependencies'], [])
         self.assertEqual(plan['regression']['producers'],
                          ['regress', 'regress_os', 'regress_cpu2_0', 'regress_c1',
                           'tests/regress_counter_test.py'])

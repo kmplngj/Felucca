@@ -110,7 +110,8 @@ Identity supplies THEME, primary supplies REC/warnings, and secondary supplies A
 - **ACCENT** the one active thing: the knob turning now (its rule, numeral and curve dot), the step edited,
   the tab underline. Never on a resting label.
 - GREY and MONO keep neutral base colours, with red REC/warnings, blue active controls and a green
-  battery on USB power. Editing-state rule forms remain readable without colour.
+  battery on USB power. Editing-state rule forms remain readable without colour. In every palette a
+  turning knob also inverts its state text, a cue that remains where the accent matches the theme or MID.
 - Built-in palettes keep every emitted text pair at or above 4.5:1. CUSTOM is user-controlled.
 
 ## Typography

@@ -35,7 +35,9 @@ choices and their validation limits.
 [AGENTS.md](../AGENTS.md) holds the task routes and firmware invariants. Read the
 guide for the affected subsystem, then the actual implementation and callers.
 Load the [batch procedure](development-batches.md) when combining issues and the
-[PR-testing skill](../.agents/skills/pr-testing/SKILL.md) when preparing a handoff.
+[PR-testing skill](../.agents/skills/pr-testing/SKILL.md) when planning/running PR
+validation or preparing a handoff. It routes host, replay, browser and companion
+WebApp coverage before selecting the remaining device checks.
 Keep specialist procedures behind explicit task pointers instead of repeating
 them in every prompt. Reuse material already read in the current run; refresh
 when its revision changes or the task reaches a new subsystem.

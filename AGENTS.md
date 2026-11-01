@@ -50,7 +50,7 @@ build/host/union_test tests/union_golden.txt  # engine-memory changes
 | Select or implement a batch of related issues for one hardware handoff | [Batch procedure](docs/development-batches.md); prefer two or three issues sharing a subsystem and test setup |
 | Plan or resume live FM-1 testing, including one PR or a failed test-tool run | [Bounded hardware sessions](docs/ai-workflows.md#finish-bounded-hardware-sessions): remaining checks, evidence reuse, operator checkpoints and stopping criteria |
 | Complete a change: README, changelog and diagnostic-guide assessment | [Documentation policy](docs/documentation-policy.md) |
-| Create or update a PR, or hand off a change for user testing | [PR testing skill](.agents/skills/pr-testing/SKILL.md) |
+| Plan/run PR tests, create/update a PR or hand off user checks | [PR testing skill](.agents/skills/pr-testing/SKILL.md): software coverage first, remaining device checks |
 
 If this checkout has a `.codegraph/` index, use CodeGraph first to locate code and trace
 callers. Otherwise use normal source search; indexing is the owner's choice.
