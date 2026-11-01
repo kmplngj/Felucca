@@ -64,6 +64,14 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- [Guarded USB-MIDI warm restart](device-control.md) for automated FM-1 tests,
+  with full build/boot identity, BUSY refusal, explicit transfer ownership and a
+  separate host control tool. The host sends once and verifies the next boot
+  generation after reconnect. Capability-negotiated identity queries also expose
+  the verified PR label and canonical compiled build-profile name, preserving
+  the original query/reply for older clients. No implicit project save or bootloader change;
+  physical qualification remains pending.
+
 - Opt-in [SMK-37 Pro, SMK-37 Elite and MKE-P37 targets](smk37.md) add model-specific
   firmware packages, velocity keys/pads, faders/wheels and protected per-board
   flash layouts. Unknown stores remain RAM-only until explicit initialization;

@@ -47,6 +47,9 @@ FLAT/LINE choices are retired; physical readability and loaded-panel qualificati
 The [diagnostic capability overview](docs/diagnostics.md#diagnostic-capabilities) distinguishes
 the normal USB console and read-only host collector from opt-in assertion, crash-register,
 arithmetic-reproducer and screenshot builds, with their activation and evidence limits.
+A separate [device control tool](docs/device-control.md) provides a guarded
+USB-MIDI warm restart for hardware tests, with BUSY refusal and verified boot return.
+It does not replace physical cold-power/recovery checks; device qualification is pending.
 An opt-in [device-screen capture diagnostic](docs/screen-capture.md) exports
 firmware-rendered static HOME/menu pixels with device build provenance over USB SERIAL.
 Its explicit `--wake` option silently wakes and holds the current view for capture.

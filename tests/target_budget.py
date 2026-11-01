@@ -39,7 +39,7 @@ FUNCS = ["adp_render", "adp_block", "adp_post", "analog_render", "analog_render_
          "slice_render", "slc_rev",                          # SLICE (eng_slice.c): the render, the reverse windows
          "fm1_alnk0_irq", "fm1_timer5_irq",               # the audio ISR; TIMER5: the key / LED scan (hal/fm1_input.h)
          "usb_poll", "fm1_input_tick", "fm1__frame", "fm1__keys",  # shared rescue calls can outline TIMER5 work
-         "uac_service", "sie_rd", "sie_wr",                 # outlined hot USB callees; caller scores exclude their bodies
+         "uac_service", "sie_rd", "sie_wr", "ep1_restart_ready",  # outlined hot USB callees; caller scores exclude their bodies
          "mix_part",                                        # a part's block (fx.c), on either core since the second
          "mix_spread", "send_begin", "send_add",             # send-ramp helpers: count their loops separately from callers
          "c1_params",                                       # bounded canonical snapshot/restore around a worker job
@@ -67,7 +67,9 @@ OPTIONAL = {"adp_render": 2577, "adp_block": 102, "adp_post": 309, "digital_rend
             "fm1__frame": 134, "fm1__keys": 204,
             # Separate hot USB bodies, absent if disabled/inlined; source-matched
             # standard/CPU2-off maxima, not whole-service or cycle bounds.
-            "uac_service": 13, "sie_rd": 5, "sie_wr": 5}
+            "uac_service": 13, "sie_rd": 5, "sie_wr": 5,
+            # App-only bounded fence validation has no loops; packet-copy loops remain in usb_poll.
+            "ep1_restart_ready": 0}
 # a FELUCCA_CPU2=0 build (no mix_part: inlined into the audio ISR, as 1.6) has the one-core ISR, checked against this
 ONE_CORE = {"fm1_alnk0_irq": 37502}
 TOL = 0.10                      # exact (no noise): small edits pass, a grown render loop does not

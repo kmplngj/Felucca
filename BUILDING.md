@@ -287,6 +287,12 @@ and the version string `v1.0`; the package is `build/felucca-1.0.fwsc`, and
 
 ### Build revision and PR identity
 
+The optional extended [USB-MIDI identity QUERY](web/EDITOR_PROTOCOL.md#device-control-84)
+exports the same verified PR label and the generated `FELUCCA_PROFILE_NAME`
+(1..64 lowercase letters, digits or hyphens). The profile is the resolved profile
+selection; feature-flag overrides remain separate build-provenance inputs.
+Older query clients retain their original byte-compatible reply.
+
 Each build resolves its actual checkout into `build/gen/build_identity.h` and
 `build/build-identity.json`; the version, eight-character commit, dirty flag and
 optional PR label appear in MENU > SYSTEM > ABOUT (panel steps in

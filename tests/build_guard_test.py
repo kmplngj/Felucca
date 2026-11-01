@@ -4,6 +4,8 @@
 from pathlib import Path
 import os
 import runpy
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -35,6 +37,29 @@ def noinit_header(extent):
             "                  CONTENTS, ALLOC, LOAD, READONLY, CODE\n"
             f"  5 .noinit       {extent:08x}  {NOINIT_ORG:08x}  {NOINIT_ORG:08x}  00040000  2**2\n"
             "                  ALLOC\n")
+
+
+class RestartOptions(unittest.TestCase):
+    def preprocess(self, *options):
+        compiler = shutil.which("cc")
+        if compiler is None:
+            self.skipTest("C preprocessor unavailable")
+        source = (ROOT / "firmware/src/felucca.c").read_text().split("#include <stdint.h>", 1)[0]
+        return subprocess.run([compiler, "-E", "-P", "-x", "c", "-I", str(ROOT / "firmware/hal"), *options, "-"],
+                              input=source + "FELUCCA_RESTART\n", capture_output=True, text=True)
+
+    def test_restart_follows_ota_and_preserves_explicit_disable(self):
+        for options, expected in (((), "1"), (("-DFELUCCA_OTA=0",), "0"),
+                                  (("-DFELUCCA_RESTART=0",), "0")):
+            with self.subTest(options=options):
+                result = self.preprocess(*options)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), expected)
+
+    def test_restart_without_editor_transport_is_rejected(self):
+        result = self.preprocess("-DFELUCCA_OTA=0", "-DFELUCCA_RESTART=1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("FELUCCA_RESTART needs FELUCCA_OTA", result.stderr)
 
 
 class AppGuards(unittest.TestCase):

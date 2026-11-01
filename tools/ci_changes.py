@@ -12,7 +12,7 @@ import subprocess
 SUITES = ("full", "python", "backup", "emulator")
 PORTABLE_TESTS = (
     "firmware_watch_test.py", "bootarea_test.py", "update_records_test.py",
-    "build_identity_test.py",
+    "build_identity_test.py", "fm1_control_test.py",
     "bitmap_font_test.py", "build_guard_test.py", "build_report_test.py", "profile_contract_test.py", "build_product_test.py",
     "smk_release_test.py",
     "build_manifest_test.py", "wasm_report_test.py", "maintainer_bundle_test.py", "emulator_trace_test.py",
@@ -22,7 +22,7 @@ PORTABLE_TESTS = (
 )
 PYTHON_INPUTS = {f"tests/{name}" for name in PORTABLE_TESTS} | {
     "tools/firmware_watch.py", "tools/fm1_bootarea.py", "tools/fm1_update_records.py",
-    "tools/fm1_diagnostics.py", "tools/fm1_pr.py", "tools/uac_tone_check.py", "tests/console_diagnostics.c", "tests/ui_compare.py",
+    "tools/fm1_diagnostics.py", "tools/fm1_pr.py", "tools/fm1_control.py", "tools/uac_tone_check.py", "tests/console_diagnostics.c", "tests/ui_compare.py",
 }
 BACKUP_INPUTS = {"web/fm1backup.js", "web/test_backup.mjs"}
 REVIEW_INPUTS = {"AGENTS.md", ".coderabbit.yaml", ".github/CODERABBIT.md",
