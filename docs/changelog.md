@@ -453,6 +453,13 @@ recorded in the linked reports, rather than every current build or device.
   icon IDs and decoded pixels. Decoder and cache code are unchanged. See the
   [icon-stream evidence](icon-stream-dedup.md) for dated measurements and scope.
 
+- SAMPLE renders its amplitude ramp as an exact running sum and applies BITS as
+  one precomputed mask, so settled and moving envelopes, clean and reduced BITS
+  share one loop with the same output and voice state. The static target loop
+  estimate falls from 128 to 118 and app flash by 8 B; new
+  [regression goldens](../tests/regress.c) pin live BITS/DRV edits. FM-1 timing is
+  pending.
+
 - Docker target builds share one invocation-owned toolchain container across loader,
   application and resource checks, reducing repeated container startup overhead.
   Compiler arguments and firmware behavior are unchanged; the benefit depends on
