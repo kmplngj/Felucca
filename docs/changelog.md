@@ -47,6 +47,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- [PHYS decay and overload recovery](tessera-audio-backports.md), copied from
+  Tessera: decayed MODAL/MEMB modes clear their fixed-point residue, and audio
+  protection starts shedding after one half above 92% or two above 80% of the
+  deadline. Existing voice protection and saved sounds remain compatible;
+  physical listening and matched-load deadline checks are pending.
+
 - Focused piano keys in the browser emulator respond to Enter, Space and numpad
   Enter, report their pressed state to assistive technology, and release when
   focus moves away. Adapted to the native input ownership model after

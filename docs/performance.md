@@ -255,7 +255,7 @@ Observe the following together:
   or historical captures, retain the revision and its actual reset semantics.
 - `audio_late`: cumulative DMA deadline misses. Compare end minus start, using a workload
   interval; a low average cannot dismiss new misses.
-- `voices_shed`: overload protection, triggered after two consecutive halves above 85%
+- `voices_shed`: overload protection, triggered after one half above 92% or two consecutive halves above 80%
   **including** nested TIMER5 time. A lower CPU reading accompanied by more shedding is
   not an equivalent-workload improvement. `voices_given_up` counts every
   `voice_kill()` fade: budget/allocator victims, overload victims and MIDI
@@ -263,6 +263,8 @@ Observe the following together:
   `voices_shed` is the overload subset. Their difference describes non-overload
   kill calls only when those other sources are known; read back voices separately
   to measure the surviving load.
+  The [Tessera audio backport](tessera-audio-backports.md) records this policy's
+  source, static cost and pending FM-1 comparison.
 - `uac_underruns`, `uac_overruns`, `uac_missed`, `uac_stalls`, UART drops and USB stalls:
   capture their deltas while streaming and playing, not just an idle snapshot.
 - `inp`: scan cost, worst gaps, encoder losses and key latency. It clears its interval

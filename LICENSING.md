@@ -44,6 +44,10 @@ The PHYS decayed-mode cleanup is copied from Theo Dainis' Tessera commit
 adapted from `c976aef33a22f0d457d3a7d2b0a3000b020a177c`.
 `firmware/src/phys_dsp.c` retains its DaisySP MIT licence and notice; the host test
 retains GPL-3.0-only. Theo Dainis' modification credit is retained in both files.
+The earlier overload recovery and its host assertions are copied from Tessera
+`abe4983ef72c68b4f4fca5ce90b49c07c49800cb` under GPL-3.0-only.
+The [audio backport record](docs/tessera-audio-backports.md) identifies the donor
+snapshot and the integration changes. No donor presets, samples or engines are copied.
 
 ## What is GPL-3.0-only
 
