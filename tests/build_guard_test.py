@@ -45,7 +45,7 @@ class RestartOptions(unittest.TestCase):
         if compiler is None:
             self.skipTest("C preprocessor unavailable")
         source = (ROOT / "firmware/src/felucca.c").read_text().split("#include <stdint.h>", 1)[0]
-        return subprocess.run([compiler, "-E", "-P", "-x", "c", *options, "-"],
+        return subprocess.run([compiler, "-E", "-P", "-x", "c", "-I", str(ROOT / "firmware/hal"), *options, "-"],
                               input=source + "FELUCCA_RESTART\n", capture_output=True, text=True)
 
     def test_restart_follows_ota_and_preserves_explicit_disable(self):
