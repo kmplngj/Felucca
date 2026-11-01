@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2020 Electrosmith, Corp, Emilie Gillet
  * Ported to fixed-point C for Felucca, 2026: Leo Kuroshita (@kurogedelic), Hügelton Instruments
+ * Modifications Copyright (C) 2026 Theo Dainis
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -231,6 +232,22 @@ typedef struct {                                         /* per block */
     int32_t dust_dc;                                     /* its mean, Q20 (taken off the aux) */
 } px_modal_blk_t;
 
+/* per block, the first n modes' states: bounded at +-64 (far beyond any real use: every sum of the next block fits in
+ * 32 bits), and a mode rung out to below 2^-12 (both states: ~-85 dBFS out) cleared. Its rounding would hold it there
+ * for as long as the note is held, a hum of a few LSB (found looking into a "bit-reduced" MODAL at short DAMP,
+ * 2026-11-01). From Tessera e1224163b12498a3d0ed922ac849d09186dbdff0. */
+static inline void px_modes_bound(px_modal_t *M, uint32_t n)
+{
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        int32_t a = M->s[i][0], b = M->s[i][1];
+        if ((uint32_t)(a + 1024) < 2048u && (uint32_t)(b + 1024) < 2048u)
+            a = b = 0;
+        M->s[i][0] = px_clamp(a, -(1 << 28), 1 << 28);
+        M->s[i][1] = px_clamp(b, -(1 << 28), 1 << 28);
+    }
+}
+
 /* Resonator::CalcStiff, Q16 in and out */
 static int32_t px_stiff(int32_t s)
 {
@@ -330,10 +347,7 @@ static __attribute__((noinline)) void px_modal_block(px_modal_blk_t *B, px_modal
     B->n = i;
     for (; i < PX_NMODE; i++)                            /* out of the band: silent */
         M->s[i][0] = M->s[i][1] = 0;
-    for (i = 0; i < B->n; i++) {                         /* bound the states at +-64 (far beyond any real use): */
-        M->s[i][0] = px_clamp(M->s[i][0], -(1 << 28), 1 << 28);   /* every sum of the next block fits */
-        M->s[i][1] = px_clamp(M->s[i][1], -(1 << 28), 1 << 28);   /* in 32 bits */
-    }
+    px_modes_bound(M, B->n);
 }
 
 /* ----------------------------------------------------------- Membrane --- */
@@ -391,10 +405,7 @@ static __attribute__((noinline)) void px_memb_block(px_modal_blk_t *B, px_modal_
     B->n = i;
     for (; i < PX_NMODE; i++)
         M->s[i][0] = M->s[i][1] = 0;
-    for (i = 0; i < B->n; i++) {
-        M->s[i][0] = px_clamp(M->s[i][0], -(1 << 28), 1 << 28);
-        M->s[i][1] = px_clamp(M->s[i][1], -(1 << 28), 1 << 28);
-    }
+    px_modes_bound(M, B->n);
 }
 
 /* n (<= 32) samples: out[i] = the resonator (Q20), aux[i] = the exciter (Q20). The exciter first (skipped

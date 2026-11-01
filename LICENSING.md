@@ -37,6 +37,14 @@ synthetic wave generator remain GPL-3.0-only. The complete
 factory sound data is copied. Source pins and adaptations are recorded in the
 [backport guide](docs/upstream-1.8-backport.md).
 
+## Tessera audio fixes
+
+The PHYS decayed-mode cleanup is copied from Theo Dainis' Tessera commit
+`e1224163b12498a3d0ed922ac849d09186dbdff0`, with the public-path decay regression
+adapted from `c976aef33a22f0d457d3a7d2b0a3000b020a177c`.
+`firmware/src/phys_dsp.c` retains its DaisySP MIT licence and notice; the host test
+retains GPL-3.0-only. Theo Dainis' modification credit is retained in both files.
+
 ## What is GPL-3.0-only
 
 Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header:
