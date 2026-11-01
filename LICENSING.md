@@ -7,6 +7,36 @@ texts are in `LICENSES/` and the component paths listed below.
 
 Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 
+The experimental SMK board adapter also retains Copyright (C) 2026 M. Geisler
+(genkigenki/makkuro), GPL-3.0-only. It adapts
+`genkigenki/Felucca@b67312cd25bd01b097ed69388b83e86bd8449365`; see
+[the source and qualification record](docs/smk37.md#source-and-qualification).
+This covers the selected SMK HAL, controls, flash-layout, packaging and updater
+changes, with native safety adaptations. No vendor dump, factory calibration,
+CC BY-NC guide assets or restricted donor logo is included.
+The elapsed wheel-drift helper additionally adapts GPL-3.0-only
+`zvenson/dinghy@7c31bb25c90cc11b2a94f1a10f549d0817884ac1`,
+`firmware/src/smk_wheel.h`, with its individual notice retained.
+
+## Upstream 1.8.0 copied components
+
+The backport pins `hugelton/Felucca@9f62297c2db627bbcb20d7ce896683a17318674c`.
+GPL firmware/UI and desktop files retain upstream copyright notices.
+`firmware/src/keytouch.c`, `keytouch.h`, `firmware/hal/fm1_adc.h` and
+`fm1_input_analog.h` retain MPL-2.0 from the upstream aftertouch integration and
+`hugelton/felucca-bsp@5942e68b89ab9ccd23f2c541d712ca38fe635f11`.
+Their separate [licence](LICENSES/MPL-2.0-felucca-bsp.txt) and
+[notice](LICENSES/NOTICE-felucca-bsp.txt) accompany distributions; other HAL files
+keep their own GPL notices.
+
+The optional `firmware/src/adpcm_dsp.c` BRR/Gaussian decoder derives from
+Shay Green's snes_spc and retains LGPL-2.1-or-later; the decoding portion of
+`tools/gen_adpcm.py` retains the same attribution. The engine glue and original
+synthetic wave generator remain GPL-3.0-only. The complete
+[LGPL text](LICENSES/LGPL-2.1-snes_spc.txt) is included. No Nintendo sample bank or
+factory sound data is copied. Source pins and adaptations are recorded in the
+[backport guide](docs/upstream-1.8-backport.md).
+
 ## What is GPL-3.0-only
 
 Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header:
@@ -14,9 +44,10 @@ Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` 
 - the firmware: `firmware/` (app, HAL, update loader; not `firmware/engines/`, MIT: below)
 - the build script and tools: `build.sh`, `tools/` (except the CC0 `tools/gen_waves.py` generator and MIT external-emulator patch below)
 - the web pages (installer, editor, the browser emulator `web/emu/`) and their tests: `web/` (not the Fukiai and DotGothic16 fonts, below)
+- the SDL2 desktop/common platform adapters: `platforms/`
 - the host tests: `tests/`
 
-Four source files are ports and keep the licence of their originals:
+The following source files are ports and keep the licence of their originals:
 `firmware/src/phys_dsp.c` (DaisySP, MIT), `firmware/src/phys_symp.c` (Rings, MIT) and
 `firmware/src/fm6_core.c` (msfa, Apache-2.0), and `firmware/src/macro_dsp.c`
 (Braids, MIT). The bundled full Braids/stmlib source bank and its generated C DSP

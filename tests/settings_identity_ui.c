@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Real INFO rendering and metadata presence, including both canvas bands. */
+/* This render-only fixture never services hardware. GCC at -O0 emits the unused
+ * USB/UART HAL bodies included by hostsim.c; model only their target fence
+ * mnemonics as empty host operations, retaining each asm's compiler memory
+ * clobber. Register access and every rendering/layout check remain intact. */
+__asm__(".macro csync\n.endm\n.macro ssync\n.endm\n");
 #define IDENTITY_UI_RENDER 1
 #define UI_RENDER_TEXT_MAX 64
 #include "ui_render.c"

@@ -14,7 +14,7 @@
  *   projects     input FUN10 / FUN8 / FUN7 image -> output FUN10 image (import, proj_bound, pack: the load path of proj_fetch);
  *                tracks (engine / preset before and after), motion_dropped (events the conversion removed)
  *   presets      a UPB1 record as stored -> the record in the RAM mirror after up_bank_check (the boot path) -> what
- *                up_load makes of it in the selected track (engine, preset, 111 values, the FM6 patch)
+ *                up_load makes of it in the selected track (engine, preset, P_COUNT values, the FM6 patch)
  *   favourites   a PER4 / PER6 settings record -> the favourites rows after settings_import; moved and dropped bits
  *   load         fm4_apply on DIGITAL values and fm4_load_preset on DIGITAL preset numbers: the track afterwards
  *   cc -w -Ibuild/gen -Ifirmware/src -o build/host/retired_vectors tests/retired_vectors.c -lm */

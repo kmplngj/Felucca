@@ -17,10 +17,15 @@ build/host/autosave_audio_test_os
 ```
 
 The full runner also runs it under ASan/UBSan. Output reports actual last-audible
-and first-erase times, erase peaks and counts. A failed assertion exits nonzero.
-The independent PCM oracle requires no erase during an audible block or within
+and first-write times, write peaks, successful header commits and actual erase
+counts. Every scenario runs with both a blank destination and a blank header with
+a dirty tail. A failed assertion exits nonzero. The independent PCM oracle observes
+every erase and attempted program, requiring no mutation during an audible block or within
 ten seconds afterward, exactly one eventual save, no repeated unchanged write,
-and restoration of the deferred edit.
+and restoration of the deferred edit. Program-failure injection on the first save
+of a fresh (blank, never tried) autosave preserves retry/wear checks even when that
+save needs no erase; the retry, and every later save, erases its destination (#721).
+The persistence fixture retains separate failures of actual erases.
 
 ## Exact threshold and target ISR cost
 

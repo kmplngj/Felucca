@@ -14,7 +14,7 @@ on:
         required: true
         default: standard
         type: choice
-        options: [standard, reduced-lofi, macro]
+        options: [standard, reduced-lofi, macro, adpcm]
 
 permissions:
   contents: read

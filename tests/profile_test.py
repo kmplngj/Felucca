@@ -48,9 +48,25 @@ class ResolverTests(unittest.TestCase):
         self.assertFalse(any('braids/' in p for p in a['input_sha256']))
         self.assertIn('assets/braids/upstream/digital_oscillator.cc',b['input_sha256'])
         self.assertIn('firmware/src/macro_dsp.c',b['input_sha256'])
-        self.assertIn('#define FELUCCA_PROFILE_NSLOTS 15',macro['felucca_profile.h'])
+        self.assertIn('#define FELUCCA_PROFILE_NSLOTS 16',macro['felucca_profile.h'])
         self.assertIn('ENG_AT(FELUCCA_PROFILE_NSLOTS, &ENG_TEST14)',macro['engine_registry.inc'])
         self.assertNotIn('requires the original',macro['felucca_profile.h'])
+
+    def test_adpcm_is_opt_in_with_native_dependency_closure(self):
+        standard=profile.generated(ROOT,'standard')
+        adpcm=profile.generated(ROOT,'adpcm')
+        a=json.loads(standard['resolved-profile.json'])
+        b=json.loads(adpcm['resolved-profile.json'])
+        self.assertEqual(set(b['engine_ids'])-set(a['engine_ids']),{15})
+        self.assertNotIn(14,b['engine_ids'])
+        self.assertNotIn('adpcm',a['providers'])
+        self.assertIn('adpcm',b['providers'])
+        for path in ('tools/gen_adpcm.py','firmware/src/adpcm_dsp.c','firmware/src/eng_adpcm.c'):
+            self.assertNotIn(path,a['input_sha256'])
+            self.assertIn(path,b['input_sha256'])
+        self.assertIn('#define FELUCCA_PROFILE_ENGINE_15 1',adpcm['felucca_profile.h'])
+        self.assertIn('#define FELUCCA_PROFILE_ENGINE_14 0',adpcm['felucca_profile.h'])
+        self.assertIn('#define FELUCCA_PROFILE_NSLOTS 16',standard['felucca_profile.h'])
 
     def test_macro_transitive_asset_change_invalidates_only_selected_profile(self):
         outputs=profile.generated(ROOT,'macro')
@@ -67,6 +83,22 @@ class ResolverTests(unittest.TestCase):
                 helper.write_text(helper.read_text()+'\n// mutation fixture\n')
                 self.assertEqual(before['standard'],profile.generated(root,'standard'))
                 self.assertNotEqual(before['macro'],profile.generated(root,'macro'))
+
+    def test_adpcm_dsp_and_generator_changes_invalidate_only_selected_profile(self):
+        outputs=profile.generated(ROOT,'adpcm')
+        pins=json.loads(outputs['resolved-profile.json'])['source_pins']
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            paths=set(json.loads(outputs['resolved-profile.json'])['input_sha256'])
+            paths.add('profiles/standard.json')
+            for rel in paths:
+                dest=root/rel;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy(ROOT/rel,dest)
+            with patch.object(profile,'source_pins',return_value=pins):
+                for rel in ('tools/gen_adpcm.py','firmware/src/adpcm_dsp.c'):
+                    before={n:profile.generated(root,n) for n in ('standard','adpcm')}
+                    helper=root/rel;helper.write_text(helper.read_text()+'\n// mutation fixture\n')
+                    self.assertEqual(before['standard'],profile.generated(root,'standard'))
+                    self.assertNotEqual(before['adpcm'],profile.generated(root,'adpcm'))
 
     def test_unknown_and_duplicate_ids(self):
         self.standard['engines'].append(63);self.fails('unknown')
@@ -95,7 +127,7 @@ class ResolverTests(unittest.TestCase):
                 (lambda r: r['slots'][2].update(key=r['slots'][0]['key']), 'duplicate engine keys'),
                 (lambda r: r['slots'][63].update(key='felucca.engine.future'), 'reserved'),
                 (lambda r: r['slots'][14].update(key=None,status='reserved'), 'retain every allocated'),
-                (lambda r: r['slots'][15].update(key='felucca.engine.future',status='active'), 'retain every allocated')):
+                (lambda r: r['slots'][16].update(key='felucca.engine.future',status='active'), 'retain every allocated')):
             reference=copy.deepcopy(self.reference);mutate(reference)
             with self.subTest(error=error), self.assertRaisesRegex(ValueError,error):
                 profile.resolve(self.catalog,self.standard,reference)
@@ -183,9 +215,9 @@ class ResolverTests(unittest.TestCase):
         c=copy.deepcopy(self.catalog);p=copy.deepcopy(self.standard);r=copy.deepcopy(self.reference)
         c['collections']['portable-gpl']=dict(path='firmware/engines-gpl',repository='https://example.invalid/fixture',
             license='GPL-3.0-only',licenses=['firmware/engines-gpl/LICENSE'],requires=['portable-mit'])
-        e=copy.deepcopy(c['engines'][-1]);e.update(id=15,key='felucca.engine.gpl-fixture',name='FIXTURE',order=15,
+        e=copy.deepcopy(c['engines'][-1]);e.update(id=16,key='felucca.engine.gpl-fixture',name='FIXTURE',order=16,
             owner='portable-gpl',source='firmware/engines-gpl/src/fixture.c',requires=['portable-dsp'])
-        c['engines'].append(e);p['engines'].append(15);r['slots'][15].update(key=e['key'],status='active')
+        c['engines'].append(e);p['engines'].append(16);r['slots'][16].update(key=e['key'],status='active')
         engines,providers=profile.resolve(c,p,r)
         self.assertEqual(engines[-1]['owner'],'portable-gpl')
         self.assertIn('portable-dsp',[p['id'] for p in providers])

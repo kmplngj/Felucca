@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ENGINE_ID_LIMIT = 64
 IDENTITY_REFERENCE = 'profiles/engine-identities.json'
 
-SUPPORTED_PROFILES = ('standard', 'reduced-lofi', 'macro')
+SUPPORTED_PROFILES = ('standard', 'reduced-lofi', 'macro', 'adpcm')
 
 OUTPUTS = ('felucca_profile.h', 'engine_includes.inc', 'engine_registry.inc',
            'engine_metadata.inc', 'engine_cc.inc', 'engine_categories.inc', 'engine_names.inc', 'engine_order.inc', 'resolved-profile.json')

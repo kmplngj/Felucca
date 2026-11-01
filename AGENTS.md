@@ -48,8 +48,9 @@ build/host/union_test tests/union_golden.txt  # engine-memory changes
 | Scan registered firmware sources, backfill history or maintain scan progress | [Firmware-watch skill](.agents/skills/firmware-watch/SKILL.md) and [ledger guide](docs/firmware-watch.md) |
 | Plan build profiles, usage modes, new engine IDs or new persistent data | [docs/modularity.md](docs/modularity.md) and the issues it maps; for flash sectors, saved bytes or retained RAM, the [capacity plan](docs/flash-capacity.md) |
 | Select or implement a batch of related issues for one hardware handoff | [Batch procedure](docs/development-batches.md); prefer two or three issues sharing a subsystem and test setup |
+| Plan or resume live FM-1 testing, including one PR or a failed test-tool run | [Bounded hardware sessions](docs/ai-workflows.md#finish-bounded-hardware-sessions): remaining checks, evidence reuse, operator checkpoints and stopping criteria |
 | Complete a change: README, changelog and diagnostic-guide assessment | [Documentation policy](docs/documentation-policy.md) |
-| Create or update a PR, or hand off a change for user testing | [PR testing skill](.agents/skills/pr-testing/SKILL.md) |
+| Plan/run PR tests, create/update a PR or hand off user checks | [PR testing skill](.agents/skills/pr-testing/SKILL.md): software coverage first, remaining device checks |
 
 If this checkout has a `.codegraph/` index, use CodeGraph first to locate code and trace
 callers. Otherwise use normal source search; indexing is the owner's choice.

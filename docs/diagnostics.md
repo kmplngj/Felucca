@@ -3,6 +3,14 @@
 
 ## Diagnostic capabilities
 
+The [experimental SMK targets](smk37.md) retain the USB console and add
+`storage_available` / `storage_owner_ready` status fields plus SMK input counters.
+Unknown/failed storage ownership is reported as locked; physical flash access
+for calibration and recovery is independent. SMK has no FM-1 TRS input or
+`FM1_INPUT_LAT` key-latency instrumentation: do not interpret its scan statistics
+as measured FM-1 key latency. Model qualification and the shared LCD/pad bus
+remain separate device checks.
+
 Choose the capability for the question being investigated. Console commands require
 a build with USB CDC enabled and MENU > SYSTEM > USB SERIAL ON. Read
 [build options](../BUILDING.md#build-product-identity-forks) before selecting a diagnostic
@@ -13,7 +21,9 @@ variant; enabling a flag locally does not identify the firmware already on a dev
 | Build identity | Startup, ABOUT, INFO | Normal firmware identifies the version, commit or PR and fork source; negotiated USB-MIDI identity queries additionally expose the verified PR label and resolved build-profile name ([protocol](../web/EDITOR_PROTOCOL.md#device-control-84)); see [build identity](../BUILDING.md#build-revision-and-pr-identity). |
 | Guarded warm restart | USB-MIDI editor control; `tools/fm1_control.py` | Normal target builds with OTA/editor support advertise identity and restart. Default `info` is read-only; explicit `restart` is a mutating test control with BUSY refusal and boot-generation verification. See [device control](device-control.md); it is separate from the diagnostics collector and does not qualify cold-power recovery. |
 | Health, input and retained crashes | USB SERIAL `status`, `dbg`, `inp`, `crash`; `tools/fm1_diagnostics.py` | Normal CDC builds. The read-only collector retains raw replies, JSONL and summary counter deltas; [collection and interpretation](#collect-diagnostics) are described below. Input latency requires confirmed `FM1_INPUT_LAT` instrumentation; render load is not whole-chip CPU use. |
+| FM-1 key pressure | USB SERIAL `at`, entered in a serial terminal | Normal CDC builds with the FM-1 key-pressure scan. Reads current sensing state, ADC timeout count, held-key mask and the last reading/pressure for F3–C5; [command and limits](#fm-1-key-pressure-at). It does not enable sensing. Other targets/adapters reply `at unavailable`; the four-command collector does not send it. |
 | Boot clock registers | USB SERIAL `status` keys `boot_clock_*`; the same read-only collector | Normal CDC builds, captured once before normal initialization. Seven raw words help compare boot paths; they neither measure MHz nor correct clocks. See [boot clock evidence](#boot-clock-evidence). |
+| LCD transfer faults | USB SERIAL `status` keys `lcd_fault`, `lcd_owned`, `lcd_faults`, `lcd_recoveries` | Normal native CDC builds. Ordinary-RAM state/counters reset on boot; the collector reports available counter deltas. Completion, retry and physical limits are described in [LCD containment](lcd-fault-containment.md). |
 | Interrupt misuse | `status` keys `isr_misuse`, `isr_misuse_pc` | Opt-in `FELUCCA_ISR_ASSERT=1` on the FM-1, default `0`. Counts guarded main-loop calls made in interrupt context; [target and host behavior differ](#interrupt-context-assertion-felucca_isr_assert). |
 | Crash register context | `crash` register fields; `status` key `crash_ctx` | Development-only `FELUCCA_CRASH_CTX=1`, default `0`. Adds retained faulting-core registers and 76 B NOINIT; read the [layout, transition and capture limits](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro). |
 | Arithmetic reproducer | `status` keys `mul64_*` | Development-only `FELUCCA_MUL64_REPRO=1`, default `0`. Adds bounded main-loop test work; see [the diagnostic build](#diagnostic-builds-for-425-felucca_crash_ctx-felucca_mul64_repro) and [matched device-soak procedure](mul64-hload-audit.md#phase-2-step-1-synthetic-reproducer-and-device-soak). It does not fix or prove the cause of audio failures. |
@@ -32,6 +42,34 @@ collector does not run a reproducer, enable instrumentation or capture screensho
 it only reads fields supplied by the installed build. Record the exact build, flags,
 workload and hardware observations with each result. See the linked guides for resource
 costs and distinguish host/emulator coverage from real FM-1 observations.
+
+## FM-1 key pressure (`at`)
+
+Open the installed firmware's USB SERIAL port in a serial terminal with DTR asserted,
+then send `at` followed by Return (CR). The baud rate is ignored. This is a read-only
+command in normal `FELUCCA_CDC=1` FM-1 builds; no diagnostic build flag is required.
+The console echoes `at`, prints the fields below and returns its `> ` prompt.
+
+| Output | Meaning |
+| --- | --- |
+| `at_on 0` or `at_on 1` | Whether the key-pressure scan is currently enabled. |
+| `an_timeouts N` | Scan ADC conversions that missed their following tick, since boot; a 16-bit counter wrapping after 65535. Reading it does not clear it. |
+| `held N` | Decimal bitmask of the twenty sensed keys currently held; bit 0 is F3, bit 19 is C5. Higher keys are excluded. |
+| `k=reading/pressure` | Twenty entries, indexed 0–19 in semitone order from F3 to C5, five per line. The last driven ADC reading is 0–1023 (lower means harder pressure); the processed pressure is 0–127. |
+
+The command reads published state; it starts no ADC conversion and changes no
+track parameter, calibration, counter or saved data. The track's EDIT > VOICE 3
+`AT` setting defaults to `0` (OFF). Pressure sensing remains off with all tracks'
+`AT` settings at `0`; a held key belonging to a track with `AT` enabled can keep
+sensing active after selecting another track. The command never turns it on.
+
+The upper seven FM-1 keys have no pressure converter and are outside this report.
+Last readings can be stale when sensing is off or a key has no new driven sample;
+the printed fields are sampled individually while the scan may continue, so they
+are not an atomic snapshot or a latency/clock measurement. Builds without the FM-1
+key-pressure hooks, including SMK targets, return `at unavailable` and no simulated
+zero readings. The browser and desktop adapters do not model physical pressure.
+`tools/fm1_diagnostics.py` retains its four-command scope and does not collect `at`.
 
 ## Boot clock evidence
 

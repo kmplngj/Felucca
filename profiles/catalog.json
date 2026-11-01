@@ -428,6 +428,36 @@
         "braids_MacroOscillator_RenderTriple",
         "braids_Svf_Process"
       ]
+    },
+    {
+      "id": 15,
+      "key": "felucca.engine.adpcm",
+      "name": "ADPCM",
+      "symbol": "ENG_ADPCM",
+      "source": "firmware/src/eng_adpcm.c",
+      "owner": "firmware",
+      "tag": "ADP",
+      "icon": "sample",
+      "category": 8,
+      "preset_categories": "LLBBKKPD",
+      "cc": 0,
+      "order": 15,
+      "union_control": false,
+      "requires": [
+        "adpcm"
+      ],
+      "tests": [
+        "tests/adpcm_test.c",
+        "tests/adpcm_cases.h",
+        "tests/adpcm_ref.cpp"
+      ],
+      "assets": [],
+      "render": "adp_render",
+      "budget_functions": [
+        "adp_render",
+        "adp_block",
+        "adp_post"
+      ]
     }
   ],
   "providers": [
@@ -515,6 +545,19 @@
         "assets/braids/upstream/settings.h",
         "assets/braids/upstream/stmlib.h",
         "assets/braids/upstream/svf.h"
+      ]
+    },
+    {
+      "id": "adpcm",
+      "requires": [
+        "native-core"
+      ],
+      "licenses": [
+        "LICENSES/LGPL-2.1-snes_spc.txt"
+      ],
+      "generator_inputs": [
+        "tools/gen_adpcm.py",
+        "firmware/src/adpcm_dsp.c"
       ]
     }
   ],

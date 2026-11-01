@@ -57,7 +57,7 @@ static uint32_t batt_icon(int32_t lvl)
 static void draw_battery(int32_t bx)
 {
     int32_t lvl = batt_shown();
-    cv_icon_mid(bx, H_HEAD / 2, 24, batt_icon(lvl), lvl == 1 ? T_ACCENT : lvl == 0 ? T_MID : T_THEME, T_BG);   /* 24 px: the glyph is wide and short */
+    cv_icon_mid(bx, H_HEAD / 2, 24, batt_icon(lvl), lvl == 4 ? T_OK : lvl == 1 ? T_WARN : lvl == 0 ? T_MID : T_THEME, T_BG);   /* 24 px: the glyph is wide and short */
 }
 
 /* ---------------------------------------------------- rolling digits --- */
@@ -1238,6 +1238,11 @@ static void draw_column_values(void)
             card_span_of(d);
         }
         card_mot_of(vp);                                /* (a global: never) */
+        if (vp == &TSEL->p[P_ATDST]) {                  /* AFTERTOUCH's DEST: as MOD's (the engine's names) */
+            card_span_by(span_mod_dst, TSEL, 0, MD_N - 1, 0);
+            draw_column(c, d->label, ui_mod_dst_name(TSEL, *vp), "", *vp ? VAL(c) : T_DIM, -1, mod_dst_icon(TSEL, *vp));
+            continue;
+        }
         if (vp == &TSEL->p[P_LRATE] && TSEL->p[P_LSYNC]) {   /* LFO 2 SYNC on: RATE does nothing, DIM (1.2) */
             draw_column(c, d->label, val, unit, T_DIM, RATIO(d, *vp), param_icon(d, *vp));
             continue;
@@ -1358,6 +1363,7 @@ static void confirm_text(char *a, char *b)
     case CF_CLEAR_TRK:
         str_cpy(a, "CLEAR TRACK 1?", 24);
         a[12] = (char)('1' + k % NTRK);
+        str_cpy(b, "STEPS AND AUTOMATION", 24);      /* (1.8: the automation goes too) */
         break;
     case CF_OVR_PROJ:
         str_cpy(a, "OVERWRITE PROJECT A?", 24);
@@ -1365,18 +1371,46 @@ static void confirm_text(char *a, char *b)
         if (!project_name(k & 3u, b) || !b[0])          /* the project's name, else what SONG plays from it */
             str_cpy(b, "SONG PATTERN CHANGES", 24);
         break;
-    case CF_DEL_ROW:
-        str_cpy(a, "DELETE SECTION?", 24);
+    case CF_DEL_ROW:                                 /* 1.8: its number, the slots it plays, its repeats */
+        str_cpy(a, "DELETE SECTION ", 24);
+        fmt_int(a + str_len(a), (int32_t)k + 1);
+        str_cpy(a + str_len(a), "?", 2);
+        if (k < chain_config.count) {
+            const chain_row_t *r = &chain_config.row[k];
+            uint32_t j;
+            for (j = 0; j < NTRK; j++) {
+                b[2 * j] = r->slot[j] < CHAIN_SILENT ? (char)('A' + r->slot[j]) : '-';
+                b[2 * j + 1] = ' ';
+            }
+            b[2 * NTRK] = 'X';
+            fmt_int(b + 2 * NTRK + 1, r->repeat);
+        }
         break;
     case CF_CLEAR_SONG:
         str_cpy(a, "CLEAR SONG ORDER?", 24);
         break;
     case CF_INIT_SOUND:
-        str_cpy(a, "INITIALIZE SOUND?", 24);
+        str_cpy(a, "INITIALIZE T1 SOUND?", 24);       /* (1.8: the track) */
+        a[12] = (char)('1' + k % NTRK);
         break;
     case CF_CLEAN_SOUND:                             /* 1.5.5 (#190): the basic sound, nothing added */
-        str_cpy(a, "CLEAN INIT SOUND?", 24);
+        str_cpy(a, "CLEAN INIT T1 SOUND?", 24);
+        a[12] = (char)('1' + k % NTRK);
         str_cpy(b, "NO FX, NO MOD", 24);
+        break;
+    case CF_LEARN_CLEAR:                             /* 1.8: MENU > MIDI > LEARN CLEAR */
+        str_cpy(a, "CLEAR MIDI LEARN?", 24);
+        fmt_int(b, (int32_t)ml_count());
+        str_cpy(b + str_len(b), " CC GO", 8);
+        break;
+    case CF_LOAD_PROJ:                               /* 1.8: over changes not saved */
+        str_cpy(a, "LOAD PROJECT A?", 24);
+        a[13] = (char)('A' + (k & 3u));
+        str_cpy(b, "CHANGES NOT SAVED GO", 24);
+        break;
+    case CF_CLEAR_ALL:                               /* 1.8 (#266): MENU > SYSTEM */
+        str_cpy(a, "CLEAR ALL?", 24);
+        str_cpy(b, "SAVED PROJECTS STAY", 24);
         break;
     case CF_CLEAR_MOTION:
         str_cpy(a, "CLEAR T1 AUTOMATION?", 24); a[7] = (char)('1' + k % NTRK);
@@ -1408,6 +1442,7 @@ static void confirm_text(char *a, char *b)
     default:
         str_cpy(a, "CLEAR T1 SEQUENCE?", 24);     /* the header (T1..T4) is hidden */
         a[7] = (char)('1' + k % NTRK);
+        str_cpy(b, "STEPS AND AUTOMATION", 24);      /* (1.8: the automation goes too) */
         break;
     }
 }
@@ -1499,9 +1534,33 @@ static void scap_scene_check(void)
 }
 #endif
 static void ui_draw_page(uint32_t counting);
+static void ui_display_failed(void)
+{
+    ui.force = 1;
+    scrn.eat = kb_asleep = 0;
+#if BOARD_SMK37
+    smk_extkeys_asleep = kb_boot_hold;                 /* display failure must not release the splash gate */
+#endif
+#if FELUCCA_SCREEN_CAPTURE
+    if (scap_live()) scap.state = SCAP_COVERAGE;         /* no completed wire image; also releases a wake lease */
+    scap.tapping = 0;
+#endif
+}
 static void ui_draw(void)
 {
     static uint8_t counting;
+    if (LCD_SERVICE(fm1_ms)) {
+        /* A failed SLPIN could have completed late. Wait from confirmed release,
+         * then SLPOUT / wait / full redraw / DISPON, even if software was ON. */
+        scrn.st = SCR_WAKE;
+        scrn.t = fm1_ms;
+        scrn.recovering = 1;
+        ui.force = 1;
+    }
+    if (LCD_FAILED()) {
+        ui_display_failed();
+        return;                   /* inputs/music/background service are outside drawing */
+    }
     style_apply();
 #if FELUCCA_SCREEN_CAPTURE
     scap_scene_check();
@@ -1512,6 +1571,7 @@ static void ui_draw(void)
         ui.force = 1;
     }
     if (!scr_frame()) {                                 /* MENU > SCREEN OFF: dark (or waking), nothing drawn */
+        if (LCD_FAILED()) { ui_display_failed(); return; }
 #if FELUCCA_SCREEN_CAPTURE
         if (scap.state == SCAP_PENDING || scap.state == SCAP_READY) scap.state = SCAP_ASLEEP;
 #endif
@@ -1532,25 +1592,40 @@ static void ui_draw(void)
         }
     }
 #endif
+    if (scrn.recovering && scrn.st == SCR_SHOW) {
+        lcd_fill(0, 0, 240, 240, T_BG);                 /* partial old frames/overlays cannot supply untouched gaps */
+        lcd_sync();                                  /* cancel page computation if even the final clear row failed */
+        if (LCD_FAILED()) { ui_display_failed(); return; }
+    }
     ui_draw_page(counting);
+    if (LCD_FAILED()) {
+        ui_display_failed();
+        return;
+    }
 #if FELUCCA_SCREEN_CAPTURE
     if (scap.tapping) {
         lcd_sync();                                  /* complete the last asynchronous source read */
-        scap_render_end();
+        if (LCD_FAILED()) { ui_display_failed(); return; }
+        else scap_render_end();
     }
 #endif
     scr_shown();
+    if (LCD_FAILED()) { ui_display_failed(); return; }
 #if FELUCCA_SCREEN_CAPTURE
     /* The first captured band is a subsequent frame, after the full wake redraw
      * and DISPON. Never publish the transitional SCR_SHOW frame as READY. */
     if (scap.state == SCAP_WAKING && scrn.st == SCR_ON) {
         lcd_sync();
+        if (LCD_FAILED()) { ui_display_failed(); return; }
         scap_scene_check();
         if (scap.state == SCAP_WAKING) {
             /* No panel gesture woke this display. Release sleep's suppression
              * before a keyboard ISR can consume the first post-wake press. */
             scrn.eat = 0;
             kb_asleep = 0;
+#if BOARD_SMK37
+            smk_extkeys_asleep = 0;
+#endif
             scap.state = SCAP_PENDING;
         }
     }
@@ -1558,6 +1633,9 @@ static void ui_draw(void)
 }
 static void ui_draw_page(uint32_t counting)
 {
+#ifdef UI_DRAW_PAGE_HOOK
+    UI_DRAW_PAGE_HOOK();
+#endif
     if (ui.uboot) {
         draw_uboot();
         draw_head();

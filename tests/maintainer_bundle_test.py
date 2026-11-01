@@ -31,7 +31,7 @@ class MaintainerBundles(unittest.TestCase):
         self.root = self.fixture.repo.resolve()
         self.fixture.git(self.root, 'remote', 'add', 'origin', 'https://github.com/kmplngj/Felucca.git')
         self.fixture.write(self.root, 'firmware/src/felucca.c', '#define FELUCCA_VERSION "v1.6.1"\n')
-        for name in ('catalog.json', 'engine-identities.json', 'standard.json', 'reduced-lofi.json', 'macro.json'):
+        for name in ('catalog.json', 'engine-identities.json', 'standard.json', 'reduced-lofi.json', 'macro.json', 'adpcm.json'):
             shutil.copyfile(ROOT / 'profiles' / name, self.root / 'profiles' / name)
         self.fixture.commit(self.root)
         self.revision = B.git(self.root, 'rev-parse', 'HEAD')

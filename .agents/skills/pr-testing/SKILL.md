@@ -1,107 +1,59 @@
 ---
 name: pr-testing
-description: Prepare or update actionable PR user test instructions, especially FM-1 hardware setup, panel navigation, scenarios and expected results. Use when creating/updating a PR or handing off a change for user testing.
+description: Plan and run PR validation with host, emulator and WebApp tests, then prepare actionable user checks for remaining gaps. Use for PR testing, PR descriptions and test handoffs.
 ---
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 
-# PR user testing
+# PR testing
 
-Use this skill when creating or updating a PR, or handing off a change for user
-testing. Keep the PR description current with the final implementation and revision.
-The [PR template](../../../.github/pull_request_template.md) has separate sections
-for **Validation performed** and **User test instructions**. Fill both; commands the
-author ran do not replace instructions for the user.
+Cover each changed behavior with the cheapest faithful test and leave the owner
+only the checks that need their device or judgment. Preserve the current request's
+scope: preparing instructions does not authorize test execution, flashing or publishing.
 
-## Establish the scope and route
+## Plan coverage
 
-Read the changed sources, relevant tests and [README](../../../README.md).
-Check [BUILDING](../../../BUILDING.md),
-[CONTRIBUTING](../../../CONTRIBUTING.md) and the relevant guide for setup and
-validation requirements. Trace panel routing through `firmware/src/ui_input.c`,
-page definitions in `firmware/src/params.c`, `ui.c`, `ui_layer.c` and
-`menu_items.c` as applicable. Verify labels and gestures against the PR's code;
-the upstream wiki, hosted editor and hosted emulator may describe another revision.
-Do not invent an access path. If a route cannot be verified, state what is unknown
-and leave that check pending.
+1. Establish the candidate's repository, base/head, dirty changes, engine pin,
+   profile and flags; for a merge artifact record its base/head and merge SHA.
+   Read the relevant changed sources, callers, tests and setup guides. Load the
+   [software test routes](references/software.md) when selecting or running checks.
+2. In the existing task/PR record, map every changed behavior and relevant regression
+   to a check, observable pass condition, evidence/artifact identity, result and
+   residual gap. Use **passed**, **failed**, **skipped/unavailable** or **pending**.
+   Reuse matching evidence; a generic smoke pass covers only its named assertions.
+3. Delegate substantial execution using the shared
+   [worker rules](../issue-delivery/references/delegation.md): Terra runs defined
+   tests; Sol handles complex coverage decisions and interpretation. Keep shared
+   builds under one owner. Read that reference when dispatching workers.
 
-Keep development PRs in draft and use affected named host units with prerequisite
-closure during iteration; see [validation stages](../../../.github/CI.md#feedback-and-merge-stages).
-Creating a draft or preparing early user test instructions does not require a full
-local host suite. Mark the frozen candidate ready for review and require complete
-applicable CI before merge. Reuse successful matching CI evidence rather than
-rerunning an unchanged full suite locally; report its tested revision and scope.
-For local full host-suite runs performed by the agent, use
-`uv run --locked --group build tests/run_tests.sh --ai-output` and follow the
-[summary-first evidence workflow](../../../docs/ai-workflows.md#read-results-before-opening-raw-evidence).
-CI keeps normal output for `tools/ci.py verify-tests`.
+The plan is ready when every changed behavior has a covering check or an explicit
+gap. A missing simulator path stays pending; it never becomes an inferred pass.
 
-For early hardware iteration, the explicit `tools/fm1_pr.py NUMBER --validation target`
-mode omits host/browser validation; label its limits and keep merge acceptance
-pending. For a final standard-profile artifact, use `--automatic` when the tested
-PR merge revision is intended, avoiding an extra exact-head full build. These
-choices do not authorize device installation beyond the current request.
+## Execute within scope
 
-Choose scenarios that exercise the actual change, the original bug or intended
-behavior, and the relevant unchanged behavior. Include boundary values,
-cancel/undo, another track or engine, save/load/restart and older data only when
-they matter to this change. For internal DSP/performance fixes, explain the
-audible workload and any diagnostics needed even if no new panel function exists.
+During edits, run affected named units with prerequisite closure and keep development
+PRs in draft. At the frozen candidate require the complete applicable
+[CI plan](../../../.github/CI.md#feedback-and-merge-stages) before merge; focused
+passes remain partial. Reuse successful matching CI instead of duplicating it locally.
+Fresh relevant inputs, failures or unresolved concerns determine reruns.
 
-## Write the user's procedure
+Follow [BUILDING](../../../BUILDING.md#tests) and the local storage wrapper for
+builds/tests. Rebuild affected harnesses after source changes. Read compact summaries
+first and inspect warnings, skips and relevant failure evidence using the
+[evidence workflow](../../../docs/ai-workflows.md#read-results-before-opening-raw-evidence).
+Keep raw logs/media under ignored `build/`; return outcomes and evidence paths.
 
-1. **Build and prerequisites.** Identify the PR head commit, build flags/variant
-   and intended device. Give an exact artifact/run link when available, or checkout
-   and build commands for that revision with a link to prerequisites. Identify
-   the installable `.fwsc` package; a raw `.bin` is not a user install package.
-   For hardware changes, give the install command or verified installer procedure
-   from [BUILDING](../../../BUILDING.md#install). Give the uv setup and an executable
-   command from a trusted caller checkout, for example `brew install uv` on macOS,
-   then `uv run --locked --group midi tools/fm1_pr.py NUMBER` (or append `--automatic`
-   only when the existing automatic artifact is the intended revision/variant).
-   No installer-backend flag or manual pip setup is needed. The caller's locked
-   environment and installer must not come from unreviewed PR scripts. For local
-   builds use `uv run --locked --group build ./build.sh`; image-dependent tests
-   use the same `build` group. Preserve explicit build-profile/variant requirements;
-   the standard artifact does not establish testing of a different profile.
-   The default hosted release or
-   browser demo does not establish testing of the PR. State required cables,
-   headphones/output, MIDI source/channel, host OS/browser, samples or test data.
-   If the test changes stored data, explain how to back up and use a disposable
-   project/slot, and describe cleanup or downgrade limits that actually apply.
-2. **Known starting state.** State the starting screen, selected track/engine,
-   preset/pattern and transport state. Explain how to reach that state; do not
-   assume the user knows the UI. Confirm the installed version using the device's
-   ABOUT screen when relevant, but retain the artifact/commit identity because
-   development builds can share the same display version.
-3. **Reach the function.** Give numbered physical actions from the starting
-   state. Name the button, whether to tap or hold and when to release it, repeated
-   page cycling, menu tab/row selection, knob number and visible label/value.
-   Use the label printed on the physical panel: the FM-1 button for the firmware's
-   `SCL` pages is **SEL**, between FX and ENV; distinguish it from the SELECT knob.
-   For example, a `SAVE > PRESETS` breadcrumb needs the SAVE taps required to
-   reach PRESETS; `MENU > ABOUT` needs the hold, tab, row and open actions.
-   A link to a manual supplements these actions; it does not replace them.
-4. **Exercise and observe.** For each scenario, state input actions and an
-   observable expected result: label/value, sound, note behavior, saved state,
-   host MIDI/audio result or diagnostic output. Give concrete values or durations
-   where needed to reproduce the behavior. A performance check needs a baseline,
-   the same workload and a measurement method; host counters or target static
-   estimates do not prove real-device deadlines. Avoid bare "test audio" or
-   "check that it works" instructions.
-5. **Finish and report.** Explain relevant stop/cancel/restore actions. Ask the
-   tester to report the commit/artifact, device version, host setup if relevant,
-   scenario and observed versus expected result. Request logs or a photo/recording
-   only when useful to diagnose the changed path.
+Execution is complete when each selected check has a result and provenance,
+including incomplete/blocked runs and skips. Escalate unexpected failures with
+their evidence before changing code, baselines or the acceptance scope.
 
-## Keep evidence honest and proportionate
+## Prepare the handoff
 
-In **Validation performed**, list checks actually run and their results, separating
-host tests, target build/static budgets, emulator and real FM-1 observations.
-Record skips and limitations. In **User test instructions**, label device scenarios
-**Pending hardware validation** unless that exact revision and scenario were
-actually tested on an FM-1. Emulator coverage does not validate USB audio/MIDI,
-TRS MIDI, update/recovery, physical panel/LCD behavior or device audio deadlines.
-See [BUILDING's emulator scope](../../../BUILDING.md#browser-emulator).
+Use the [PR template](../../../.github/pull_request_template.md) and link the originating
+issue. Keep **Validation
+performed** separate from **User test instructions** and update both for the final
+implementation. Report host, target/static, emulator, WebApp mock/browser and real
+FM-1 evidence separately. State exactly what remains and why its software coverage
+is insufficient; do not ask the owner to repeat completed software checks by default.
 
 When a [Sol loop](../sol-loop/SKILL.md) was run, include its actual model/effort,
 round count, reviewed candidate and final reviewer verdict in **Validation
@@ -109,21 +61,19 @@ performed**. Retain unresolved findings, disagreements and later coverage gaps;
 an exhausted review budget is not approval. A local review is separate from
 required PR review and physical hardware acceptance.
 
-For documentation-only changes, state why hardware testing is unnecessary and
-give steps to verify the changed instructions, relative links and resulting PR
-description. For tooling-only changes, provide the appropriate commands, inputs
-and expected outputs; include hardware steps if the tooling touches a device.
-Follow the [development guide's validation rules](../../../AGENTS.md#build-and-validate)
-without requiring irrelevant firmware runs. Test instructions describe actions for
-the user; they do not grant the agent permission to flash or publish.
+For remaining FM-1 checks, read the [hardware procedure](references/hardware.md).
+Keep the complete repeatable route available, but guide a live/resumed session
+through only the unfinished checks. Mark unperformed device scenarios **Pending
+hardware validation**. Emulator/mock results do not establish physical LCD/panel,
+codec sound, USB/TRS reliability, update/recovery or target deadlines.
 
-## Final PR check
+For software-only checks, give the exact candidate/client identity, setup, command
+or local URL, actions and expected results. Documentation-only changes need link
+and instruction checks; explain why hardware is unnecessary. Tooling that touches
+a device retains its applicable device checks.
 
-- The description identifies the final revision/build and links its issue.
-- Validation results and future user checks are distinct; pending checks are explicit.
-- A user can reach the function without guessing a button, page, knob or prerequisite.
-- Each scenario says what to do, what to observe and how to recognize success.
-- The README assessment names updated sections or explains why existing text covers
-  the result, as required by [documentation policy](../../../docs/documentation-policy.md).
-- Replace every template prompt with actual instructions or a specific reason it
-  does not apply. Recheck the procedure whenever the implementation changes.
+The handoff is complete when the user can reproduce each remaining scenario
+without guessing prerequisites, actions or success conditions; all template prompts
+are resolved, hardware status is explicit and the
+[README/changelog/diagnostic assessments](../../../docs/documentation-policy.md)
+are recorded. Instructions grant no additional execution or publication authority.

@@ -318,3 +318,12 @@ Git-free reproduction. An optional build-time Wasm receipt binds the simulator f
 that native build; absent or failed runtime output stays unavailable. This is local
 maintainer staging, with no public builder, deployment, installation approval or new
 profile/default. Full host/browser/device acceptance remains separate.
+
+## Optional ADPCM profile
+
+`FELUCCA_PROFILE=adpcm` retains the standard engine set and adds the experimental
+BRR/Gaussian/echo engine at ID 15 (`felucca.engine.adpcm`). MACRO retains ID 14
+and is absent from this profile. The default standard profile excludes ADPCM.
+The per-part arena grows from 12,888 to 13,344 bytes only in the ADPCM profile.
+Host/reference checks do not establish FM-1 deadline fit; upstream considers this
+engine too expensive for the FM-1. See [the backport guide](upstream-1.8-backport.md).

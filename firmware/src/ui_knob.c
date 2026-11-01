@@ -95,6 +95,17 @@ static int16_t knob_value(const knob_target_t *kt, uint32_t k, int32_t s)
     const param_desc_t *d = kt->d;
     return (int16_t)param_turn(d, *kt->vp, accel(EN_K1 + k, s, d->fmt == F_ENUM ? 0 : d->max - d->min));
 }
+/* 1.8 AFTERTOUCH: SENS turned on, with no DEST yet: CUT (DRUM: DIST), AMT +32. Only F3 .. C5 sense
+ * pressure on the FM-1; its top seven keys have no converter. */
+static void at_turn_on(track_t *t)
+{
+    if (!t->p[P_ATDST]) {
+        t->p[P_ATDST] = (int16_t)(eng_is(t->eng_req, ENGI_DRUM) ? MD_DIST : MD_CUT);
+        t->p[P_ATAMT] = 32;
+    }
+    ui_message("AT: F3-C5 KEYS ONLY");
+}
+
 /* a permanent turn: the value, then (a track's) automation capture and the MIDI LEARN pick. A global value is
  * neither; MIXER's MUTE is set by direction and only picked */
 static void knob_edit(const knob_target_t *kt, uint32_t k, int32_t s)
@@ -102,8 +113,12 @@ static void knob_edit(const knob_target_t *kt, uint32_t k, int32_t s)
     uint32_t id;
     if (kt->dir)
         *kt->vp = (int16_t)(s > 0);
-    else
-        *kt->vp = knob_value(kt, k, s);
+    else {
+        int16_t v = knob_value(kt, k, s);
+        if (kt->t && kt->vp == &kt->t->p[P_ATSNS] && !*kt->vp && v)
+            at_turn_on(kt->t);
+        *kt->vp = v;
+    }
     if (!kt->t)
         return;
     id = (uint32_t)(kt->vp - kt->t->p);

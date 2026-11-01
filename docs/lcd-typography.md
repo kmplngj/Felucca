@@ -65,8 +65,9 @@ M content on parent and detail pages; S is reserved for supporting hints.
 
 Use spacing and theme roles alongside size: `T_THEME` for values, `T_MID` for
 secondary information, `T_ACCENT` for the active knob, and existing selected
-and disabled tokens. MONO's inverted hot-label chip continues to show state
-when its accent and label colors coincide.
+and disabled tokens. The focused bank's status chip is inverted while its knob
+turns, in every palette. A turning card label is inverted only when `T_ACCENT`
+equals `T_MID`.
 
 ### Readable inactive information
 
@@ -113,8 +114,8 @@ label and status right of the value. Each overview column has a rule above its S
 label and M value. The focused column's rule is three rows thick and its form
 names the state: solid for a value, dashed for automation, doubled for a step
 lock, dotted for MOMENTARY's temporary value. Its colour is the accent only while
-the knob turns, otherwise the theme colour (DIM for an inactive one). MONO, where
-accent and theme are the same, also inverts the status while the knob turns.
+the knob turns, otherwise the theme colour (DIM for an inactive one). Every
+palette also inverts the status while the knob turns.
 
 The focused value uses one face over its complete declared domain: X when its
 glyphs and ink fit 195 px on a tall bank, else L within the band's room (195 or
