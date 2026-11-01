@@ -153,6 +153,16 @@ class Reachability(unittest.TestCase):
 
 
 class Annotation(unittest.TestCase):
+    def test_ui_tools_keep_irq_off_scans_at_os(self):
+        candidates = S.size_names()
+        ordinary = {"fop_card", "tl_do", "ed_learn_handle", "ed_palette_handle"}
+        guarded = {"tl_order", "tl_motion_plan"}
+        ir = module(extra="".join(function(name) for name in sorted(ordinary | guarded)))
+        out, hit, _ = S.annotate(ir, candidates)
+        self.assertEqual(hit, ordinary)
+        for name in guarded:
+            self.assertNotIn("@" + name + "() minsize", out)
+
     def test_attributes_idempotence_and_non_candidates(self):
         ir = module(extra=function("ui", attrs="local_unnamed_addr #0") + function("other", attrs="nounwind") +
                     function("existing", attrs="minsize #0"))
