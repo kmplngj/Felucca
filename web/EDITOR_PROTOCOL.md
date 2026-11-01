@@ -26,8 +26,9 @@ the commands and revisions actually exercised.
 ## Device control 84
 
 INFO appends `5A 01 caps`: bit 0 supports the read-only control identity; bit 1
-supports guarded warm restart. `TRANSFER_COMPLETE` requires bit 0; `RESTART`
-requires both bits. Normal target OTA/editor builds advertise both.
+supports guarded warm restart; bit 2 supports the extended identity QUERY.
+`TRANSFER_COMPLETE` requires bit 0; `RESTART`
+requires bits 0 and 1. Normal target OTA/editor builds advertise all three bits.
 Host fixtures omit restart support unless an explicit test hook enables it.
 The browser emulator omits USB/editor support entirely. Negotiate the capability;
 do not repurpose MIDI System Reset, UBOOT or OTA.
@@ -39,6 +40,7 @@ table. The fifth byte must be at most 15. Lengths count argument bytes only.
 | Operation | Request | Reply |
 | --- | --- | --- |
 | 0 QUERY | `0, request_id:u32` (6 bytes) | `0, rc, request_id:u32, generation:u32, challenge:u32, uptime_ms:u32, busy:u32, dirty, commit:NUL, version:NUL` on success |
+| 0 QUERY extended | `0, request_id:u32, 1` (7 bytes; requires bit 2) | Original successful QUERY reply followed by `pr:NUL, profile:NUL` |
 | 1 RESTART | `1, request_id:u32, generation:u32, challenge:u32` (16 bytes) | `1, rc, request_id:u32, generation:u32` (12 bytes) |
 | 2 TRANSFER_COMPLETE | `2, request_id:u32, generation:u32, challenge:u32` (16 bytes) | `2, rc, request_id:u32, generation:u32` (12 bytes) |
 
@@ -47,6 +49,21 @@ codes are 0 accepted, 1 malformed arguments, 2 stale/expired token, 3 busy and
 4 unsupported restart. A complete control reply may be dropped atomically when
 the bounded USB queue has no room; this never arms a reset. Clients correlate
 both operation and request ID and reject malformed replies.
+
+The original six-byte QUERY and its reply remain byte compatible with older
+clients. Send the seven-byte variant only when INFO bit 2 is present; any other
+QUERY length or extension selector returns rc 1. Both variants share the same
+challenge/busy handling and never save data, stop playback or arm a restart.
+
+Identity strings are printable ASCII with maximum byte counts excluding NUL:
+`commit` 40, `version` 24, `pr` 32 and `profile` 64. `pr` is the build generator's
+verified `FELUCCA_BUILD_PR` label (for example `PR #790 head`); empty means no verified
+PR metadata, including local builds. `profile` is the exact generated
+`FELUCCA_PROFILE_NAME`, validated as 1..64 lowercase letters, digits or hyphens.
+It identifies the selected profile, not every feature-flag override. Older
+six-byte replies contain neither field: display unavailable/unknown rather than
+inferring a PR or profile from commit, version, engine count or capability bits.
+Clients must reject malformed, unterminated or overlong strings and trailing data.
 
 QUERY returns a fresh single-use challenge. RESTART and TRANSFER_COMPLETE must
 echo that challenge and the current nonzero boot generation within 2000 ms and

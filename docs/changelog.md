@@ -54,7 +54,9 @@ recorded in the linked reports, rather than every current build or device.
 - [Guarded USB-MIDI warm restart](device-control.md) for automated FM-1 tests,
   with full build/boot identity, BUSY refusal, explicit transfer ownership and a
   separate host control tool. The host sends once and verifies the next boot
-  generation after reconnect. No implicit project save or bootloader change;
+  generation after reconnect. Capability-negotiated identity queries also expose
+  the verified PR label and canonical compiled build-profile name, preserving
+  the original query/reply for older clients. No implicit project save or bootloader change;
   physical qualification remains pending.
 
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies

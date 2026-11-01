@@ -168,7 +168,7 @@ static int info(void)
     }
     bad += check("INFO's old prefix: NENGINES names, \"-\" where this build cannot play the id", ok);
     ok = n >= 4u && host_wire[n - 4u] == 0x5A && host_wire[n - 3u] == 1u &&
-         host_wire[n - 2u] == ED_CONTROL_CAPS && ED_CONTROL_CAPS == 1u && host_wire[n - 1u] == 0xF7;
+         host_wire[n - 2u] == ED_CONTROL_CAPS && ED_CONTROL_CAPS == 5u && host_wire[n - 1u] == 0xF7;
     bad += check("INFO 5A 01: query-only control appended in this host adapter", ok);
     n -= 3u;
     ok = host_wire[n - 4u] == 0x59 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == (FELUCCA_FLASH ? ED_RAW_CAPS : 0u);

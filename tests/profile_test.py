@@ -26,6 +26,11 @@ class ResolverTests(unittest.TestCase):
     def fails(self, text, c=None, p=None):
         with self.assertRaisesRegex(ValueError,text):
             profile.resolve(c or self.catalog,p or self.standard,self.reference)
+    def test_profile_name_is_bounded_for_wire_identity(self):
+        for name in ("", "a" * 65, "Standard", "../standard"):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "invalid profile name"):
+                profile.validate_selection(ROOT, name)
+
     def test_standard_and_reduced_stable_ids(self):
         a,_=profile.resolve(self.catalog,self.standard,self.reference)
         b,_=profile.resolve(self.catalog,profile.read_json(ROOT/'profiles/reduced-lofi.json'),self.reference)

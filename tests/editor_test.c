@@ -200,7 +200,7 @@ static int preferences(void)
     }
     uint32_t n = request(ED_INFO, a, 0);
     bad += check("INFO guarded control capability appended without changing older tags",
-        host_wire[n - 4] == 0x5A && host_wire[n - 3] == 1 && host_wire[n - 2] == 3);
+        host_wire[n - 4] == 0x5A && host_wire[n - 3] == 1 && host_wire[n - 2] == 7);
     n -= 3;
     bad += check("INFO #456: 59 01 caps, last (the raw store export, cmds 82 / 83; 0 here: no flash in this build)",
         host_wire[n - 4] == 0x59 && host_wire[n - 3] == 1 && host_wire[n - 2] == 0);
@@ -1756,10 +1756,41 @@ static int guarded_control(void)
     uint8_t a[17] = {0}, q[6] = {0, 23, 0, 0, 0, 0};
     uint32_t end;
     reset(); usb.up = 1; fm1_ms += ED_CONTROL_QUIET_MS;
+    uint32_t query_ms = fm1_ms;
     uint32_t n = request(ED_CONTROL, q, sizeof q);
     bad += check("CONTROL query correlates identity, generation, challenge and uptime",
         n > 34 && host_wire[5] == 0 && !host_wire[6] && ed_bk_r32(host_wire + 7) == 23 &&
         ed_bk_r32(host_wire + 12) == 7 && ed_bk_r32(host_wire + 17) != 0 && !ed_bk_r32(host_wire + 27));
+    {
+        uint8_t legacy[128], extended[7] = {0, 23, 0, 0, 0, 0, 1};
+        uint32_t legacy_n = n;
+        memcpy(legacy, host_wire, n);
+        fm1_ms = query_ms - ED_CONTROL_QUIET_MS;
+        reset(); usb.up = 1; fm1_ms += ED_CONTROL_QUIET_MS;
+        n = request(ED_CONTROL, extended, sizeof extended);
+        uint32_t pr_n = (uint32_t)strlen(FELUCCA_BUILD_PR) + 1u;
+        uint32_t profile_n = (uint32_t)strlen(FELUCCA_PROFILE_NAME) + 1u;
+        bad += check("CONTROL extended identity keeps legacy prefix and appends verified PR/profile",
+            n == legacy_n + pr_n + profile_n && !memcmp(legacy, host_wire, legacy_n - 1u) &&
+            !memcmp(host_wire + legacy_n - 1u, FELUCCA_BUILD_PR, pr_n) &&
+            !memcmp(host_wire + legacy_n - 1u + pr_n, FELUCCA_PROFILE_NAME, profile_n) && host_wire[n - 1u] == 0xF7);
+        bad += check("CONTROL identity query never changes song/settings/transfer or arms reset",
+            !ed_control.pending && !host_restarts && !song.playing && !song.rec && !set_later.on && !ed_control.transfer);
+        fm1_ms = query_ms - ED_CONTROL_QUIET_MS;
+        reset(); usb.up = 1; fm1_ms += ED_CONTROL_QUIET_MS;
+        n = request(ED_CONTROL, q, sizeof q);
+        bad += check("CONTROL six-byte query remains byte exact for older clients",
+            n == legacy_n && !memcmp(legacy, host_wire, n));
+        extended[6] = 0;
+        request(ED_CONTROL, extended, sizeof extended);
+        uint32_t malformed = host_wire[6] == 1 && !ed_control.pending && !host_restarts;
+        extended[6] = 2;
+        request(ED_CONTROL, extended, sizeof extended);
+        malformed &= host_wire[6] == 1 && !ed_control.pending && !host_restarts;
+        request(ED_CONTROL, q, 5);
+        malformed &= host_wire[6] == 1 && !ed_control.pending && !host_restarts;
+        bad += check("CONTROL unknown metadata format/truncated query never arms reset", malformed);
+    }
     control_token(a, 1);
     request(ED_CONTROL, a, 15);
     bad += check("CONTROL malformed length never arms reset", host_wire[6] == 1 && !ed_control.pending);

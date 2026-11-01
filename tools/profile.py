@@ -290,7 +290,7 @@ def collection_provenance(catalog, engines, providers, pins, hashes, api, licens
 
 
 def validate_selection(root, name):
-    if not name or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in name):
+    if not name or len(name) > 64 or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in name):
         raise ValueError('invalid profile name')
     catalog_path, profile_path = root / 'profiles/catalog.json', root / f'profiles/{name}.json'
     catalog, profile = read_json(catalog_path), read_json(profile_path)

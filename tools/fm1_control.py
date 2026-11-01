@@ -52,6 +52,8 @@ class Identity:
     dirty: bool
     commit: str
     version: str
+    pr: str | None = None
+    profile: str | None = None
 
 
 def u32(value):
@@ -179,7 +181,8 @@ class Controller:
     def query(self, link, timeout=None):
         request = self.request_id()
         link.drain()
-        if not link.send(frame(b"\0" + u32(request))):
+        extended = bool(self.evidence.get("capabilities", 0) & 4)
+        if not link.send(frame(b"\0" + u32(request) + (b"\1" if extended else b""))):
             raise ControlError("transport", "Control query send failed")
         data = self.reply(link, 0, request, self.query_timeout if timeout is None else timeout)
         if data is None:
@@ -189,18 +192,26 @@ class Controller:
         if len(data) < 30 or data[27] not in (0, 1):
             raise ControlError("protocol", "Invalid control identity length/dirty state")
         try:
-            commit, version, tail = data[28:].split(b"\0")
-            if tail or not version:
+            strings = data[28:].split(b"\0")
+            bounds = (40, 24, 32, 64) if extended else (40, 24)
+            if len(strings) != len(bounds) + 1 or strings[-1] or not strings[1]:
                 raise ValueError("trailing data or empty version")
-            commit, version = commit.decode("ascii"), version.decode("ascii")
-            if any(ord(char) < 32 or ord(char) > 126 for char in commit + version):
+            if any(len(value) > bound for value, bound in zip(strings, bounds)):
+                raise ValueError("identity string too long")
+            values = [value.decode("ascii") for value in strings[:-1]]
+            if any(ord(char) < 32 or ord(char) > 126 for char in "".join(values)):
                 raise ValueError("nonprinting identity")
+            commit, version = values[:2]
+            pr, profile = values[2:] if extended else (None, None)
+            if extended and ((pr and not re.fullmatch(r"PR #[1-9][0-9]{0,6} (head|merge)", pr)) or
+                             not re.fullmatch(r"[a-z0-9-]{1,64}", profile)):
+                raise ValueError("invalid verified PR label or canonical profile")
         except (ValueError, UnicodeError) as error:
             raise ControlError("protocol", "Malformed control build identity") from error
         values = [read_u32(data[offset:offset + 5]) for offset in (7, 12, 17, 22)]
         if not values[0] or not values[1]:
             raise ControlError("protocol", "Missing boot generation or challenge")
-        return Identity(*values, bool(data[27]), commit, version)
+        return Identity(*values, bool(data[27]), commit, version, pr, profile)
 
     def open(self, pair):
         try:
@@ -282,7 +293,8 @@ class Controller:
                     link = self.open(pair)
                     after = self.query(link, min(self.query_timeout, max(0, end - self.clock.monotonic())))
                     self.evidence["after"] = asdict(after)
-                    if (after.commit, after.dirty, after.version) != (before.commit, before.dirty, before.version):
+                    if ((after.commit, after.dirty, after.version, after.pr, after.profile) !=
+                            (before.commit, before.dirty, before.version, before.pr, before.profile)):
                         raise ControlError("identity", "Build identity changed after restart")
                     if after.generation != before.generation:
                         if after.generation != expected:

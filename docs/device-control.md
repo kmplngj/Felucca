@@ -28,7 +28,13 @@ matching build are selection checks, not a hardware serial-number attestation.
 Older firmware without the advertised capability is refused without sending
 a restart request. Keep the package provenance alongside the reported full
 commit and dirty flag; a self-reported commit alone is not an independent flash
-readback.
+readback. With extended identity capability bit 2, JSON also records the verified
+`pr` label and canonical compiled `profile` name. An empty PR label means no
+verified PR association; the tool does not infer one from a branch or commit.
+A profile name identifies the resolved profile, with feature overrides recorded
+separately in package provenance. Older query-capable firmware uses the unchanged
+six-byte request and reports both fields as JSON `null`. Firmware without the
+identity capability remains unsupported by this control tool.
 
 ## Restart once and verify the return
 

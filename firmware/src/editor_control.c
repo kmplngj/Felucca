@@ -6,7 +6,7 @@
 #define FELUCCA_RESTART 0
 #endif
 #define ED_CONTROL 84u
-#define ED_CONTROL_CAPS (1u | (FELUCCA_RESTART ? 2u : 0u))
+#define ED_CONTROL_CAPS (1u | (FELUCCA_RESTART ? 2u : 0u) | 4u)
 #define ED_CONTROL_TTL 2000u
 #define ED_CONTROL_QUIET_MS 100u
 static struct {
@@ -88,7 +88,8 @@ static void ed_control_handle(const uint8_t *a, uint32_t n)
     uint32_t rc = 0, busy = 0, end, epoch;
     ed_control.pending = 0;                      /* every new control request cancels the old transaction */
     if (n < 6u || !ed_control_u32_ok(a + 1) || op > 2u ||
-        (op == 0u ? n != 6u : n != 16u || !ed_control_u32_ok(a + 6) || !ed_control_u32_ok(a + 11)))
+        (op == 0u ? (n != 6u && (n != 7u || a[6] != 1u)) :
+         n != 16u || !ed_control_u32_ok(a + 6) || !ed_control_u32_ok(a + 11)))
         rc = 1;
     fm1_irq_off();
     if (!rc) {
@@ -116,6 +117,9 @@ static void ed_control_handle(const uint8_t *a, uint32_t n)
     if (!op && !rc) {
         ed_bk_u32(ed_control.challenge); ed_bk_u32(fm1_ms); ed_bk_u32(busy);
         ed_b(FELUCCA_BUILD_DIRTY); ed_str(FELUCCA_BUILD_COMMIT, 40); ed_str(FELUCCA_VERSION, 24);
+        if (n == 7u) {
+            ed_str(FELUCCA_BUILD_PR, 32); ed_str(FELUCCA_PROFILE_NAME, 64);
+        }
     }
     ed_out[ed_n++] = 0xF7;
     if (!ota_wire_control(ed_out, ed_n, &end, &epoch) && op == 1u && !rc) {

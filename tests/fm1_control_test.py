@@ -70,6 +70,12 @@ class Link:
             response = (bytes((0, 0)) + request + number(dev.generation) + number(dev.challenge)
                         + number(dev.uptime) + number(dev.busy) + bytes((dev.dirty,))
                         + dev.commit.encode() + b"\0" + dev.version.encode() + b"\0")
+            if len(args) == 7:
+                if args[-1] != 1 or not dev.caps & 4:
+                    raise AssertionError("extended query sent without advertised format")
+                response += dev.pr.encode() + b"\0" + dev.profile.encode() + b"\0"
+            elif len(args) != 6:
+                raise AssertionError("incorrect query length")
             if dev.response_transform:
                 response = dev.response_transform(response)
             self.inbox.append(PREFIX + response + b"\xf7")
@@ -114,17 +120,20 @@ class Device:
         self.generation, self.challenge, self.last_challenge = 7, 100, 0
         self.uptime, self.busy, self.dirty = 10000, 0, 0
         self.commit, self.version = COMMIT, "3.22-test"
+        self.pr, self.profile = "PR #790 head", "standard"
         self.unsupported, self.response_transform = False, None
         self.caps, self.info_response = 3, None
         self.ack, self.send_ok, self.status = True, True, 0
         self.restart_at, self.restart_delay, self.disappear_duration = None, 0.2, 0
         self.next_generation, self.next_commit, self.next_dirty = 8, COMMIT, 0
+        self.next_pr, self.next_profile = self.pr, self.profile
         self.next_inputs, self.next_outputs, self.reopen_failures = None, None, 0
 
     def update(self):
         if self.restart_at is not None and self.clock.now >= self.restart_at:
             self.generation, self.commit, self.dirty = self.next_generation, self.next_commit, self.next_dirty
             self.uptime = 2
+            self.pr, self.profile = self.next_pr, self.next_profile
             if self.next_inputs is not None:
                 self.inputs = self.next_inputs
             if self.next_outputs is not None:
@@ -172,6 +181,49 @@ class ControlContract(unittest.TestCase):
             self.control.run(action, **kwargs)
         self.assertEqual(error.exception.code, code)
         self.assertTrue(all(link.closed for link in self.device.links))
+
+    def test_legacy_query_shape_is_unchanged(self):
+        result = self.control.run()
+        self.assertEqual(len(self.device.sent[1][5:-1]), 6)
+        self.assertIsNone(result["before"]["pr"])
+        self.assertIsNone(result["before"]["profile"])
+
+    def test_extended_query_requires_capability_and_preserves_metadata(self):
+        self.device.caps = 7
+        result = self.control.run()
+        self.assertEqual(self.device.sent[1][5:-1], b"\0" + number(11) + b"\1")
+        self.assertEqual(result["before"]["pr"], "PR #790 head")
+        self.assertEqual(result["before"]["profile"], "standard")
+        self.assertEqual(self.device.operations(), [0])
+        self.assertFalse(result["restart_attempted"])
+
+    def test_extended_metadata_can_honestly_omit_verified_pr(self):
+        self.device.caps = 5
+        self.device.pr = ""
+        result = self.control.run()
+        self.assertEqual((result["before"]["pr"], result["before"]["profile"]), ("", "standard"))
+
+    def test_extended_metadata_rejects_malformed_strings_without_mutation(self):
+        for suffix in (b"", b"PR\0standard", b"PR\0standard\0extra\0",
+                       b"P" * 33 + b"\0standard\0", b"PR\0" + b"s" * 65 + b"\0",
+                       b"PR\0bad\nprofile\0", b"\0\0", b"invented\0standard\0",
+                       b"PR #790 head\0Bad Profile\0", b"PR #0 head\0standard\0"):
+            with self.subTest(suffix=suffix):
+                self.setUp()
+                self.device.caps = 7
+                self.device.response_transform = lambda data: data[:28] + COMMIT.encode() + b"\0v1\0" + suffix
+                self.fails("protocol", action="info")
+                self.assertEqual(self.device.operations(), [0])
+
+    def test_restart_rejects_changed_extended_metadata(self):
+        for field, value in (("next_profile", "reduced-lofi"), ("next_pr", "PR #791 head")):
+            with self.subTest(field=field):
+                self.setUp()
+                self.device.caps = 7
+                setattr(self.device, field, value)
+                self.fails("identity")
+                self.assertEqual(self.device.operations(), [0, 1, 0])
+                self.assertFalse(self.control.evidence["restart_verified"])
 
     def test_info_is_default_and_never_releases_or_restarts(self):
         self.device.busy = 255
