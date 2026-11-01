@@ -23,8 +23,8 @@ static void fm1_lcd_send_data(const void *p,uint32_t n) {
  wire_selected=1; wire_src=p; wire_n=n; memcpy(wire_copy,p,n); wire_bytes+=n;
  if(wire_cmd==0x2c && felucca_dbg.stage==5) graph_bytes+=n;
 }
-static void fm1_lcd_wait(void) {
- trace_need(wire_selected,"selected completion"); if(!wire_src) return;
+static int fm1_lcd_wait(void) {
+ trace_need(wire_selected,"selected completion"); if(!wire_src) return 1;
  trace_need(!memcmp(wire_src,wire_copy,wire_n),"DMA source lifetime");
  if(wire_cmd==0x2a || wire_cmd==0x2b) {
   trace_need(wire_n==4,"address bytes"); uint32_t a=wire_src[0]*256u+wire_src[1],b=wire_src[2]*256u+wire_src[3];
@@ -40,7 +40,10 @@ static void fm1_lcd_wait(void) {
  }
  wire_src=0;wire_n=0;
  if(trace_sync_hook) trace_sync_hook();
+ return 1;
 }
+/* Healthy completion consumes the borrowed bytes before the driver releases CS. */
+static int fm1_lcd_complete(void) { return fm1_lcd_wait(); }
 static void fm1_lcd_deselect(void){ trace_need(wire_selected&&!wire_src,"idle deselect");wire_selected=0; }
 #include "@ROOT@/firmware/src/lcd.c"
 #define GFX_HOOKS 1

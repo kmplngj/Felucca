@@ -30,6 +30,9 @@ def prepare(source, out, force_graph=False, mutation=None):
     original = (source / 'tests/ui_harness.h').read_text()
     prefix = original[:original.index('static int check(')]
     start = prefix.index('static void lcd_fill(')
+    # Replace the whole guarded backend on newer harnesses; older source exports have no guard.
+    if '#ifndef UI_LCD_SOURCE' in prefix[:start]:
+        start = prefix.index('#ifndef UI_LCD_SOURCE')
     end = prefix.index('#define FELUCCA_FLASH 0', start)
     backend = (ROOT / 'tests/adsr_sync_lcd_observer.h').read_text().replace('@ROOT@', str(source))
     if mutation == 'dma-source':
