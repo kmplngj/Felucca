@@ -53,6 +53,8 @@ Its explicit `--wake` option silently wakes and holds the current view for captu
 It is disabled in normal builds and does not measure physical LCD colours or backlight glow.
 [MIDI timing and DSP hardening](docs/midi-dsp-reliability.md) retains external-clock
 phase, timestamps TRS input during rendering, and guards invalid tempo.
+[Tessera MIDI fixes](docs/tessera-midi-backports.md) also accept fragmented USB SysEx
+and let local PLAY and held ARP keys work with a stopped external master.
 [Device results](docs/midi-dsp-device-results-2026-10-21.md) qualify USB pulse-count
 phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
 Five portable engines live in the pinned

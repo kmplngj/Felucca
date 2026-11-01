@@ -105,8 +105,21 @@ External USB/TRS clock uses fixed musical units with separate fractional carries
 for each sequencer and arpeggiator, including tempo changes and SONG sections.
 An extreme live ARP rate reduction can create a temporary backlog: at most eight
 notes are generated per control block and remaining phase is retained for later
-blocks. Stop freezes that backlog; a new key tapped while stopped still sounds
-once and its gate ends in real time. Internal-clock timing and stored IDs are unchanged.
+blocks. With an external source selected, Stop freezes a released HOLD chord's
+backlog. Physically held keys keep arpeggiating locally while the master is stopped;
+a released latched chord waits for external transport and its gate ends in real time.
+Local PLAY uses internal timing when the selected master is silent or lost, including
+the normal recording count-in. A running master's pulses retain external timing.
+Selected-source Start, Continue or Stop reclaims transport; clock pulses alone cannot
+claim locally started playback. Stopped STEP entry retains its existing behavior.
+
+Measured external tempo is smoothed over roughly two beats with display hysteresis
+and fresh acquisition after a gap above 500 ms. This reduces jitter without changing
+wire-pulse musical phase. At a jittered 239.5 BPM, whole-millisecond timestamps can
+still alternate the displayed 239/240; host fixtures keep measured modulation within
+0.25% for the covered tempos. USB-MIDI CIN `0xF` single-byte SysEx fragments are
+accepted alongside realtime messages. No saved-data or protocol IDs change.
+See [Tessera sources and qualification limits](tessera-midi-backports.md).
 
 Invalid internal tempo uses the declared 120 BPM default locally; valid 40–240 BPM
 and a measured external beat retain their timing. This guard does not establish

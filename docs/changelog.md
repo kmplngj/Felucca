@@ -47,6 +47,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- [Tessera MIDI backports](tessera-midi-backports.md) accept single-byte USB SysEx
+  fragments, smooth measured external tempo and reacquire it after a gap. Local PLAY
+  and physically held ARP keys work while the selected master is silent or stopped;
+  released HOLD chords still wait for transport. Physical USB/TRS qualification is pending.
+
 - Focused piano keys in the browser emulator respond to Enter, Space and numpad
   Enter, report their pressed state to assistive technology, and release when
   focus moves away. Adapted to the native input ownership model after

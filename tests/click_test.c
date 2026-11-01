@@ -494,9 +494,13 @@ static void ext_clock(void)
     fresh(); grid_track();
     song.g[G_CLOCK] = 1; cin_bars = 1; song.rec = 1u;
     run(2);
-    transport_req = 1;                                 /* PLAY on the FM-1 with CLK EXT: as a Start, no count-in */
+    transport_req = 1;                                 /* selected but silent: local PLAY uses internal count-in */
     run(2);
-    check("external clock: PLAY on the FM-1 starts as before (as a Start), never a count-in", song.playing && !seq_counting());
+    check("external clock: local PLAY without a master uses the internal count-in", !song.playing && seq_counting());
+    midi_enqueue(0xFu | 0xFCu << 8, 1u); run(1);
+    midi_enqueue(0xFu | 0xF8u << 8, 1u); run(1);
+    transport_req = 1; run(2);
+    check("external clock: local PLAY with a running master bypasses count-in", song.playing && !seq_counting());
 }
 
 int main(void)
