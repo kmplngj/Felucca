@@ -129,6 +129,49 @@ class OutputTest(unittest.TestCase):
                         process.communicate()
                     (self.root / "ready").unlink(missing_ok=True)
 
+    def test_cancel_stops_redirected_descendant(self):
+        grandchild = (
+            "import os, signal, time; from pathlib import Path; "
+            "signal.signal(signal.SIGINT, signal.SIG_IGN); "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "Path('ready').write_text(str(os.getpid())); time.sleep(30)"
+        )
+        parent = (
+            "import subprocess, sys, time; "
+            f"subprocess.Popen([sys.executable, '-c', {grandchild!r}], "
+            "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); time.sleep(30)"
+        )
+        command = self.fixture('run "redirected" python3 -c ' + shlex.quote(parent))
+        process = subprocess.Popen(command + ["--ai-output"], env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        descendant = None
+        try:
+            deadline = time.monotonic() + 5
+            while not (self.root / "ready").exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            descendant = int((self.root / "ready").read_text())
+            process.send_signal(signal.SIGTERM)
+            out, err = process.communicate(timeout=8)
+            self.assertEqual(process.returncode, 143, (out, err))
+            # A killed orphan can briefly remain a zombie until init reaps it.
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                state = subprocess.run(["ps", "-o", "stat=", "-p", str(descendant)],
+                                       capture_output=True, text=True).stdout.strip()
+                if not state or state.startswith("Z"):
+                    break
+                time.sleep(0.02)
+            self.assertTrue(not state or state.startswith("Z"), state)
+        finally:
+            if descendant is not None:
+                try:
+                    os.kill(descendant, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+
 
 if __name__ == "__main__":
     unittest.main()

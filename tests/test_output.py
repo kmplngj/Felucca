@@ -92,6 +92,10 @@ def compact(command, output_root):
                     continue
                 raw.write(data)
                 diagnostics(line)
+        if interrupted:
+            # EOF can arrive while a redirected descendant is still alive. Kill
+            # the remaining group before wait() releases our child's PID.
+            forward(signal.SIGKILL)
         code = process.wait()
     finally:
         for timer in escalation:
