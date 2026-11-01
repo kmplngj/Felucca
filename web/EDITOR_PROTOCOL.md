@@ -36,7 +36,9 @@ entries below distinguish these cases. Commands 23, 24, 26 and 32 are device pus
 only. IDs 39..63 and all unlisted IDs have no handler and get no reply.
 
 Every data byte is 7 bit. MIDI realtime bytes may occur inside SysEx; another status
-aborts the partial frame. Pushes may arrive while a request is outstanding. Send
+aborts the partial frame. USB-MIDI CIN `0xF` single-byte packets may also carry a
+SysEx start, continuation or end while assembling a frame. Realtime bytes remain
+separate and never enter the SysEx payload. Pushes may arrive while a request is outstanding. Send
 one request at a time, including PING; see [editor notes](#notes-for-the-editor).
 The [shared Editor/updater dispatch investigation](../docs/sysex-dispatch-race.md)
 records the regression, device evidence and qualification scope for retained replies.

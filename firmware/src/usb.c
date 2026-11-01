@@ -850,13 +850,20 @@ static void sysex_byte(uint8_t b)
     }
 }
 
-static void midi_in_event(uint32_t pkt)                 /* one USB-MIDI event packet */
+/* CIN 0xF SysEx handling from Rastapopolix/tessera@998ca1a3040ed0ca05e25c95a7e10a8bffa791d2,
+ * Kerem Kilic (GPL-3.0-only). macOS may send a byte of a long dump as a
+ * single-byte packet when its packet lists split. Realtime stays separate. */
+static void midi_in_event(uint32_t pkt)
 {
     uint32_t cin = pkt & 15u, st = (pkt >> 8) & 0xFFu;
     if (cin >= 4u && cin <= 7u) {
         uint32_t k, nb = cin == 4u || cin == 7u ? 3u : cin == 6u ? 2u : 1u;
         for (k = 0; k < nb; k++)
             sysex_byte((uint8_t)(pkt >> (8u * (k + 1u))));
+        return;
+    }
+    if (cin == 0xFu && st < 0xF8u && (usb.sx_on || st == 0xF0u)) {
+        sysex_byte((uint8_t)st);
         return;
     }
     if (st >= 0x80u && st < 0xF8u) {
