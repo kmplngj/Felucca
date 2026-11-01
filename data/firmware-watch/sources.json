@@ -464,6 +464,50 @@
       "requested_at": "2026-10-28",
       "source_name": "Ravel (FM-1 main firmware; software branch excluded)",
       "status": "pending_initialization"
+    },
+    {
+      "repository": "deamonSLINKY/PERF-1",
+      "repository_id": 1433400155,
+      "source_name": "PERF-1 (generative performance firmware; pad, bass, acid, pluck and DX-style FM)",
+      "branches": [
+        "main"
+      ],
+      "historical_targets": {
+        "main": "79fdf21608c77f4987423303f5a9c72397af8e55"
+      },
+      "pinned_recent_targets": {
+        "main": "79fdf21608c77f4987423303f5a9c72397af8e55"
+      },
+      "recent_frontiers": {
+        "main": "79fdf21608c77f4987423303f5a9c72397af8e55"
+      },
+      "historical_total_at_setup": 294,
+      "historical_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "recent_reviewed": 0,
+      "last_reviewed_sha": null,
+      "requested_at": "2026-11-01",
+      "authorization": "User requested analysis of PERF-1 v0.16.0, adoption planning and GitHub issues, and suggested adding it to the watcher; review recommends registration. Retain the original intake historical target from Felucca #808.",
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/808",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/805",
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/808",
+        "https://github.com/kmplngj/Felucca/issues/805",
+        "https://github.com/kmplngj/Felucca/issues/806",
+        "https://github.com/kmplngj/Felucca/issues/807",
+        "https://github.com/kmplngj/Felucca/issues/186",
+        "https://github.com/kmplngj/Felucca/issues/185",
+        "https://github.com/kmplngj/Felucca/issues/458",
+        "https://github.com/kmplngj/Felucca/issues/166",
+        "https://github.com/kmplngj/Felucca/issues/34",
+        "https://github.com/kmplngj/Felucca/issues/440",
+        "https://github.com/kmplngj/Felucca/issues/441",
+        "https://github.com/kmplngj/Felucca/issues/825",
+        "https://github.com/kmplngj/Felucca/issues/826",
+        "https://github.com/kmplngj/Felucca/issues/658"
+      ],
+      "status": "pending_initialization",
+      "initialization_policy": "After ordinary reviewed registration reaches main and the canonical state registry, reverify canonical identity/main/immutable pin, fetch complete non-shallow DAG and fresh tip, preserve existing targets/journal/intervals, initialize source state and calculate queues, then remove this pending entry. Original intake pin has 294 reachable commits; v0.16.0 release snapshot 22c295d6a098fc837f285c641aba4a4acb8c0077 has 321. Neither snapshot grants individual commit review credit."
     }
   ],
   "repositories": [
