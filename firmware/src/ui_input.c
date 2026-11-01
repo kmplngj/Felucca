@@ -233,10 +233,66 @@ static uint32_t midi_leds(const track_t *t)
     return m;
 }
 
+/* #147: a note that starts and ends between two LED frames (a short sequencer, ARP or MIDI note, a key tap) stays lit
+ * NOTE_HOLD_MS after its note-on, however late the frame: voice.c note_hit holds each part's recent note-ons with their
+ * time, the lamp ages them here, and a sounding note's own indication (below) is untouched: the hold ends the same
+ * NOTE_HOLD_MS after the note-on whether the note still sounds, and adds nothing to a voice, the recorder or MIDI */
+#define NOTE_HOLD_MS 100u
+
+/* the resets and the housekeeping of the note events, once per LED frame (and by each reader, so a test or another
+ * path sees them too): the LEDs going dark clear every part's events, a new selected part
+ * clears its own (sound.c note_hits_clear; a sound install clears its part's), and every few seconds the stale ones go
+ * (note_hits_sweep), so the 24-bit time never lets an old note back. The events end on their own after NOTE_HOLD_MS;
+ * seq_stop clears at the actual stop, including a stop/restart between readers, so this service never clears a
+ * fresh post-stop event based on an old playing snapshot. Part changes and sleep end their holds here. */
+static void hit_service(int dark)
+{
+    static uint8_t was_dark, was_sel = 0xFFu;
+    static uint32_t swept;
+    uint32_t p;
+    if (dark && !was_dark)
+        for (p = 0; p < NPART; p++)
+            note_hits_clear(p);
+    else if (song.sel != was_sel)
+        note_hits_clear(song.sel);
+    was_dark = dark != 0;
+    was_sel = song.sel;
+    if (fm1_ms - swept >= 5000u) {
+        swept = fm1_ms;
+        note_hits_sweep();
+    }
+}
+
+/* the keys of the notes track t started within NOTE_HOLD_MS, bit k = key k: as play_leds, where the keys play that
+ * note now, the lowest key that gives it; a note no key plays is not shown. Read only: nothing is consumed, so
+ * another reader (a display, #146) sees the same events */
+static uint32_t hit_leds(const track_t *t)
+{
+    uint32_t p = (uint32_t)(t - trk) % NPART, i, k, note, w, now, m = 0, any = 0, h[4] = {0, 0, 0, 0};
+    hit_service(0);
+    now = fm1_ms;
+    for (i = 0; i < NOTE_HIT_SLOTS; i++) {
+        w = note_hit[p][i];
+        if ((w & NOTE_HIT_VALID) && note_hit_age(now, w) < NOTE_HOLD_MS + NOTE_HIT_EARLY) {
+            h[(w & 127u) >> 5] |= 1u << (w & 31u);
+            any = 1;
+        }
+    }
+    for (k = 0; any && k < 27u; k++) {
+        note = kb_map(t, k);
+        if (note > 127u || !((h[note >> 5] >> (note & 31u)) & 1u))
+            continue;
+        h[note >> 5] &= ~(1u << (note & 31u));          /* (a lower key gave it) */
+        m |= 1u << k;
+    }
+    return m;
+}
+
 /* the keys of the notes the selected track's sequencer and ARP sound now (#38), bit k = key k: where the keys
  * play that note (kb_map: the octave, TRN, QNT, an engine's own map), the lowest key that gives it (QNT SNAP
  * rounds the keys above down onto it); a note no key plays is not shown. A snapshot of the ISR's seq_notes /
- * arp_note (arp_ch): no state of its own, nothing to do while nothing sounds */
+ * arp_note (arp_ch), and the keys of the notes started in the last NOTE_HOLD_MS (#147): nothing of its own, nothing
+ * to do while nothing sounds */
 static uint32_t play_leds(void)
 {
     const track_t *t = TSEL;
@@ -258,7 +314,7 @@ static uint32_t play_leds(void)
             }
         m |= hit << k;
     }
-    return m | midi_leds(t);
+    return m | midi_leds(t) | hit_leds(t);
 }
 
 /* Discussion #89: on SEQ > STEP (the piano roll; the DRUM grid has its own map) while stopped, the keys of the
@@ -439,7 +495,9 @@ static void ui_leds(void)
     uint32_t fam = cur_fam(), mode = settings_leds, inv = leds_inv();   /* (1.5.6: INV LO 1, INV HI 2) */
     int keys_map = keys_own();
     static uint8_t ready;
-    if (scr_led_dark()) {                             /* AUTO OFF owns all LED levels, ahead of ANIM IDLE. Scan stays on. */
+    int dark = scr_led_dark();
+    hit_service(dark);                               /* maps and animations must not skip lifecycle or stale cleanup */
+    if (dark) {                                       /* AUTO OFF owns all LED levels, ahead of ANIM IDLE. Scan stays on. */
         uint32_t elapsed = fm1_ms - scrn.idle - scr_limit();
         if (fm1_led_anim_on())
             fm1_led_anim_stop();

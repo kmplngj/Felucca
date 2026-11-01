@@ -998,6 +998,7 @@ static void seq_stop(void)
 {
     uint32_t i;
     song.playing = 0;
+    note_hits_stop();                              /* stop boundary, before any later restart or live note-on */
     cin_left = 0;                                  /* (a count-in: cancelled, nothing recorded) */
     cin_flush = 0;
     memset(cin_n, 0, sizeof cin_n);

@@ -72,6 +72,7 @@ static uint32_t si_n;
 /* FM6 patch/values coherence (SLOT a factory sound): at every point an interrupt could run, track 0's patch is the
  * factory one its SLOT value names (fm6_sync would otherwise render the new preset with the old patch) */
 static uint32_t si_fm6chk, si_fm6bad;
+static uint32_t si_hit_after_publish;
 static void si_fm6_probe(void)
 {
     uint8_t v[FP_SIZE + 1u];
@@ -93,7 +94,14 @@ static void si_probe(uint32_t kind)
         si_take(&si_log[k][si_n], &trk[k]);
     si_kind[si_n++] = (uint8_t)kind;
 }
-static void si_edge(int masking) { si_probe(masking ? 1u : 2u); }
+static void si_edge(int masking)
+{
+    si_probe(masking ? 1u : 2u);
+    if (!masking && si_hit_after_publish && trk[0].preset == 2u) {
+        si_hit_after_publish = 0;
+        trk_note_on(&trk[0], 60, 100);           /* pending audio interrupt immediately after publication */
+    }
+}
 
 /* the load done by fn on the tracks in mask: 1 when each changed (or kept) its sound as one window says */
 static int si_watch(void (*fn)(void), uint32_t mask, uint32_t *changed)
@@ -165,6 +173,15 @@ static void op_digital(void) { set_engine(ENGI_DIGITAL); }        /* a retired D
 int main(void)
 {
     uint32_t bad = 0, ch, k;
+    ui_power_on();
+    track_select(0);
+    fm1_ms = 5000u;
+    (void)hit_leds(TSEL);
+    trk_note_on(TSEL, 62, 100);
+    si_hit_after_publish = 1;
+    op_preset();
+    bad += si_check("new-sound note-on at the publication edge survives the old-event clear",
+                   !si_hit_after_publish && hit_leds(TSEL) == 1u << 7);
     ui_power_on();
     track_select(0);
     bad += si_check("PRESETS on the same engine (values only) in one window",
