@@ -5536,6 +5536,21 @@ static int test_note_hit_leds(void)
     events_block(CTL);
     bad += check("#147 stop: the events end with the transport", !song.playing && key_leds(0) == 0u && !hit_slots(0));
 
+    fm1_ms = t0 = 75000u;
+    transport_req = 1; events_block(CTL);             /* a whole start/note/stop between LED readers */
+    ok = song.playing && t->seq_n && t->seq_notes[0] == 60u && hit_slots(0);
+    transport_req = 2; events_block(CTL);
+    bad += check("#147 a start and stop between LED frames clears the short step's event",
+                 ok && !song.playing && !key_leds(0) && !hit_slots(0));
+
+    transport_req = 1; events_block(CTL);
+    (void)key_leds(0);                               /* reader saw playing; next sees playing again */
+    t->step[0].note[0] = 64;
+    transport_req = 3; events_block(CTL);             /* real GLO+PLAY stop/restart, then new step zero */
+    bad += check("#147 restart between LED frames clears old hits and keeps the new step's event",
+                 song.playing && t->seq_n && t->seq_notes[0] == 64u && key_leds(0) == (1u << 11));
+    transport_req = 2; events_block(CTL);
+
     fm1_ms = t0 = 80000u;                               /* an engine change resets its part's events */
     usb_note(0, 60, 100);
     usb_note(0, 60, 0);

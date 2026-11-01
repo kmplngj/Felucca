@@ -67,10 +67,11 @@ recorded in the linked reports, rather than every current build or device.
 - Keyboard LEDs keep a note-on lit for about 100 ms (elapsed time, not frames), so
   very short sequencer, arpeggiator, MIDI and key-tap notes stay visible even when
   they start and end between two LED updates (#147). The audio side records each
-  part's recent note-ons, all four parts, in 128 B of RAM with a few instructions
-  per note-on; the LED code only reads them. The hold never extends a voice,
+  part's recent note-ons in a 128 B event ring plus 4 B of replacement state,
+  with a bounded eight-slot search per note-on. The hold never extends a voice,
   recording or MIDI, and ends at once on stop, a new selected part, an engine
-  change or LED sleep. Host tests only; FM-1 timing and visibility checks pending.
+  change or LED sleep. Stop clears the events at the transport boundary, even
+  when stop and restart fit between LED updates.
 
 - [Guarded USB-MIDI warm restart](device-control.md) for automated FM-1 tests,
   with full build/boot identity, BUSY refusal, explicit transfer ownership and a

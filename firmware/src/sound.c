@@ -64,7 +64,7 @@ static void sound_unguard(uint32_t f)
 #endif
 }
 
-/* #147 (voice.c note_hit): the reset of one part's note events, the only write besides the producer's: the interrupt off,
+/* #147 (voice.c note_hit): main-loop reset of one part's note events, guarded against the audio-event owner:
  * NOTE_HIT_SLOTS stores. Main loop only (sound_install; the LED service: ui_input.c) */
 static void note_hits_clear(uint32_t part)
 {

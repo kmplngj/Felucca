@@ -403,8 +403,9 @@ static void mono_remove(track_t *t, uint32_t note)
  * reader sees the old event or the new one, never half of either, and no index or flag is published. The producer
  * refreshes the slot that already holds the note (a repeat takes no second slot), else an empty slot or the oldest
  * event; equal timestamps use circular order. Consumers (the main loop) only read: each decides its
- * own window from the event's time, so none consumes an event another needs. The one clear is note_hits_clear (sound.c),
- * a reset, with the interrupt off. The time is the event's own, not the reader's: the hold follows elapsed time however
+ * own window from the event's time, so none consumes an event another needs. seq_stop clears in the event owner;
+ * main-loop resets and stale sweeps (sound.c) exclude the interrupt while writing. The time is the event's own,
+ * not the reader's: the hold follows elapsed time however
  * late a frame is. It extends no voice and touches neither the recorder nor MIDI out. */
 #define NOTE_HIT_SLOTS 8u
 #define NOTE_HIT_VALID 0x80000000u
@@ -443,6 +444,16 @@ static void note_hit_post(const track_t *t, uint32_t note)
     if (i == NOTE_HIT_SLOTS || s == note_hit_next[p])
         note_hit_next[p] = (uint8_t)((s + 1u) % NOTE_HIT_SLOTS);
     r[s] = NOTE_HIT_VALID | (now & NOTE_HIT_TMASK) << 7 | (note & 127u);
+}
+
+/* The event owner clears on the actual stop, even if stop/restart fit between LED frames.
+ * seq_stop runs in the audio ISR, or under the project restore's interrupt guard. */
+static void note_hits_stop(void)
+{
+    uint32_t p, i;
+    for (p = 0; p < NPART; p++)
+        for (i = 0; i < NOTE_HIT_SLOTS; i++)
+            note_hit[p][i] = 0;
 }
 
 static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)

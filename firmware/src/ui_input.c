@@ -240,21 +240,21 @@ static uint32_t midi_leds(const track_t *t)
 #define NOTE_HOLD_MS 100u
 
 /* the resets and the housekeeping of the note events, once per LED frame (and by each reader, so a test or another
- * path sees them too): the transport stopping and the LEDs going dark clear every part's events, a new selected part
+ * path sees them too): the LEDs going dark clear every part's events, a new selected part
  * clears its own (sound.c note_hits_clear; a sound install clears its part's), and every few seconds the stale ones go
  * (note_hits_sweep), so the 24-bit time never lets an old note back. The events end on their own after NOTE_HOLD_MS;
- * these resets end them at the stop, the part change or the sleep, not up to 100 ms later */
+ * seq_stop clears at the actual stop, including a stop/restart between readers, so this service never clears a
+ * fresh post-stop event based on an old playing snapshot. Part changes and sleep end their holds here. */
 static void hit_service(int dark)
 {
-    static uint8_t was_play, was_dark, was_sel = 0xFFu;
+    static uint8_t was_dark, was_sel = 0xFFu;
     static uint32_t swept;
     uint32_t p;
-    if ((was_play && !song.playing) || (dark && !was_dark))
+    if (dark && !was_dark)
         for (p = 0; p < NPART; p++)
             note_hits_clear(p);
     else if (song.sel != was_sel)
         note_hits_clear(song.sel);
-    was_play = song.playing != 0u;
     was_dark = dark != 0;
     was_sel = song.sel;
     if (fm1_ms - swept >= 5000u) {
