@@ -108,6 +108,10 @@ static uint32_t request(uint32_t cmd, const uint8_t *a, uint32_t n)
 #define ID_GONE 3u                                    /* representative reduced portable profile */
 #elif !FELUCCA_SLICE
 #define ID_GONE 13u                                   /* (FELUCCA_SLICE=0: SLICE left out) */
+#elif !FELUCCA_PROFILE_ENGINE_15
+#define ID_GONE 15u                                   /* optional ADPCM identity remains stored when absent */
+#elif !FELUCCA_PROFILE_ENGINE_14
+#define ID_GONE 14u                                   /* ADPCM profile retains the unavailable MACRO slot */
 #else
 #define ID_GONE ((uint32_t)NENGINES)                  /* (past the table) */
 #endif

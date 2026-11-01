@@ -205,6 +205,7 @@ class ConsoleContractTests(unittest.TestCase):
             command = shlex.split(os.environ.get("CC", "cc")) + [
                 "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
                 "-DFELUCCA_UAC=" + str(int(features)), "-DFELUCCA_UART=" + str(int(features)),
+                "-DCONSOLE_KEYTOUCH=" + str(int(features)),
                 str(root / "tests/console_diagnostics.c"), "-o", str(binary)]
             subprocess.run(command, check=True, timeout=30)
             cls.binaries[features] = binary
@@ -235,6 +236,21 @@ class ConsoleContractTests(unittest.TestCase):
         self.assertEqual((status["lcd_fault"], status["lcd_owned"]), (1, 1))
         self.assertEqual(status["lcd_faults"], 4000000000)
         self.assertEqual(status["lcd_recoveries"], 3)
+
+    def test_aftertouch_readings_and_off_state_are_read_only(self):
+        for on in (True, False):
+            args = [] if on else ["at-off"]
+            raw = subprocess.check_output([str(self.binaries[True]), "at", *args], timeout=5)
+            rows = "".join(f"{k}={1023 - k * 7}/{k * 6}" + ("\r\n" if k % 5 == 4 else " ")
+                           for k in range(20))
+            self.assertEqual(raw, (f"at\r\nat_on {int(on)}\r\nan_timeouts 7\r\nheld 524289\r\n" +
+                                   rows + "> ").encode())
+        help_reply = subprocess.check_output([str(self.binaries[True]), "help"], timeout=5)
+        self.assertIn(b"inp  at  crash", help_reply)
+
+    def test_aftertouch_without_analog_scan_is_unavailable(self):
+        raw = subprocess.check_output([str(self.binaries[False]), "at"], timeout=5)
+        self.assertEqual(raw, b"at\r\nat unavailable\r\n> ")
 
     def test_lcd_counter_deltas_and_older_firmware(self):
         start = snapshot(status=STATUS + "lcd_faults 2\nlcd_recoveries 1\n")

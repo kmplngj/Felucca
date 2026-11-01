@@ -27,7 +27,7 @@ import profile
 import source_archive
 
 REPOSITORY = 'kmplngj/Felucca'
-PROFILES = ('standard', 'reduced-lofi', 'macro')
+PROFILES = profile.SUPPORTED_PROFILES
 REVISION = re.compile(r'[0-9a-f]{40}')
 HOOKS = ('NODE_OPTIONS', 'NODE_PATH', 'EMU_OPT', 'EMU_CFLAGS', 'EMU_PREVIEW')
 

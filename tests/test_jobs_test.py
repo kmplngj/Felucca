@@ -433,6 +433,9 @@ unit fixture "" u_fixture
         self.assertEqual(plan["stress_replay"]["dependencies"], ["replay"])
         self.assertEqual({f"catalog_{i}" for i in (10, 11, 12, 13)} & plan.keys(),
                          {f"catalog_{i}" for i in (10, 11, 12, 13)})
+        self.assertEqual(plan['adpcm']['needs'], ['assets', 'adpcm-assets'])
+        self.assertEqual(plan['adpcm']['capabilities'], ['adpcm-reference'])
+        self.assertEqual(plan['asan_adpcm']['needs'], ['assets', 'adpcm-assets', 'sanitizer'])
         self.assertIn('asan_fuzz_ed', plan)
         self.assertIn('sanitizer', plan['asan_fuzz_ed']['needs'])
         self.assertEqual(plan['diagnostics']['needs'], [])

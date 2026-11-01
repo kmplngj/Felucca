@@ -283,6 +283,7 @@ static void ui_power_on(void)
     palette_set(UI_GREY_INDEX);
     transport_req = 0;
     panic_req = 0;
+    clock_lost = 0;
     mi_r = mi_w = midi_in_overflow = 0;
     memset(midi_sel_on, 0, sizeof midi_sel_on);
     memset(midi_ch, 0, sizeof midi_ch);
@@ -314,6 +315,7 @@ static void ui_power_on(void)
     scrn.idle = fm1_ms;
     kb_asleep = 0;
     panel_moved = 0;
+    proj_kept_now();                                /* production boot calls autosave_boot after its defaults */
 }
 
 /* one UI frame (input, then the drawing on the stub display) */

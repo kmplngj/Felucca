@@ -395,6 +395,14 @@ invocation; stale `build/genwav/` files cannot change the header. Headers and th
 cache are published atomically for parallel invocations. The canonical WAV files
 remain under `build/genwav/` for the SLICE test loop.
 
+## Desktop beta
+
+`platforms/linux/build.sh` builds the source-only SDL2 desktop port against the
+selected fork profile and fresh `build/gen` assets. Install SDL2 development files;
+ALSA MIDI is optional on Linux and CoreMIDI is used on macOS. See the
+[desktop build and smoke checks](platforms/linux/README.md). This does not produce
+an FM-1 install package.
+
 ## Browser emulator
 
 ```
@@ -1353,3 +1361,8 @@ It needs the configured target tools and SDK but does not compile firmware. Sour
 artifact hashes bind actual working bytes; a recorded dirty checkout is not identified
 by its commit alone. Releases and CI artifacts include both JSON sidecars; local release
 `SHA256SUMS` covers them. These reports do not measure live stack use or FM-1 deadlines.
+
+The experimental `FELUCCA_PROFILE=adpcm` recipe selects the upstream 1.8 BRR engine
+at stable ID 15, leaving MACRO at 14 and all standard engines enabled. It stays off
+in standard builds and is too costly to claim FM-1 qualification. See the
+[backport source and test guide](docs/upstream-1.8-backport.md).

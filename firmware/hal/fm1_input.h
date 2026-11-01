@@ -402,6 +402,8 @@ static __attribute__((noinline)) void fm1__frame(void)
     fm1_in.frames++;
 }
 
+#include "fm1_input_analog.h"
+
 /* one column per call, from a timer ISR (see top) */
 #define FM1__DIM_T(ns) (((ns) * FM1_TICKS_PER_US + 500u) / 1000u)   /* a pulse in TIMER4 ticks */
 static uint8_t fm1__tick_col, fm1__dim_k = 16u;   /* the bits of the shift the dim pulse spans (0..16) */
@@ -531,6 +533,8 @@ static void fm1_input_tick(void)
     uint32_t t0 = fm1_ticks(), g = t0 - fm1_in_stat.last, b = 0;
     uint32_t w = 0xFFFFu ^ (1u << n) ^ (n < 2u ? 1u << (11u + n) : 0u), lit, dim = 0, k = fm1__dim_k;
     uint32_t br = 0, kb = 0;
+    if (fm1_an.pend)
+        fm1__an_take();
     fm1__led_lines(0);
     fm1_in_stat.last = t0;
     while (b < FM1_GAP_BINS - 1u && g >= (150u * FM1_TICKS_PER_US << b))
@@ -580,9 +584,14 @@ static void fm1_input_tick(void)
     }
     fm1__sr_bits(w, k, 16u);
     fm1__sr_latch();                               /* column n, the lines dark */
-    if (n == 0u)                                   /* (a new frame: the mid level's turn, before column 0 lights) */
+    if (n == 0u) {                                 /* a new frame: mid-level LEDs and the analog row's turn */
         fm1__mid_ph = (uint8_t)(fm1__mid_ph + 1u >= fm1__mid_n ? 0u : fm1__mid_ph + 1u);
-    fm1__led_lines(FM1__LIT(n));
+        fm1_an.phase = (uint8_t)(fm1_an.phase + 1u >= 2u + (fm1_an.probe != 0u) ? 0u : fm1_an.phase + 1u);
+    }
+    if (fm1_an.con)
+        fm1__an_start(n, FM1__LIT(n));
+    else
+        fm1__led_lines(FM1__LIT(n));
     fm1__tick_col = (uint8_t)n;
     fm1__keys(p);                                  /* its keys now: no wait for the frame's end */
     if (n == 0u) {

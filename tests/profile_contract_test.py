@@ -23,11 +23,14 @@ class Contract(unittest.TestCase):
                         FELUCCA_FM4='1', FELUCCA_SLICE='0'):
             self.assertEqual(before, profile.contract_json(ROOT))
         value = json.loads(before)
-        self.assertEqual(set(value['supported_profiles']), {'standard', 'reduced-lofi', 'macro'})
+        self.assertEqual(set(value['supported_profiles']), {'standard', 'reduced-lofi', 'macro', 'adpcm'})
         recipes = value['supported_profiles']
         standard = recipes['standard']['resolved']['engine_ids']
         self.assertNotIn(1, standard)
         self.assertNotIn(14, standard)
+        self.assertNotIn(15, standard)
+        self.assertEqual(recipes['adpcm']['resolved']['engine_ids'], standard + [15])
+        self.assertNotIn(14, recipes['adpcm']['resolved']['engine_ids'])
         self.assertEqual(recipes['macro']['resolved']['engine_ids'], standard + [14])
         self.assertEqual(recipes['reduced-lofi']['resolved']['engine_ids'], [i for i in standard if i != 3])
         self.assertEqual(value['registry']['defaults'], [0, 12, 4, 10])
@@ -42,7 +45,8 @@ class Contract(unittest.TestCase):
         self.assertEqual(len(identities),64)
         self.assertEqual(identities[1],{'id':1,'key':'felucca.engine.digital','status':'retired'})
         self.assertEqual(identities[14],{'id':14,'key':'felucca.engine.macro','status':'active'})
-        self.assertTrue(all(s['status']=='reserved' and s['key'] is None for s in identities[15:]))
+        self.assertEqual(identities[15],{'id':15,'key':'felucca.engine.adpcm','status':'active'})
+        self.assertTrue(all(s['status']=='reserved' and s['key'] is None for s in identities[16:]))
         for recipe in recipes.values():
             resolved=recipe['resolved']
             self.assertEqual(resolved['profile_engine_ids'],recipe['recipe']['engines'])

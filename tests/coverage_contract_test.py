@@ -266,7 +266,9 @@ class ContractTests(unittest.TestCase):
         for name, reason, engines, configuration in (
                 ('tsan', 'not-requested', [0], {'TSAN': ''}),
                 ('macro', 'profile-excluded', [0], {'TSAN': ''}),
-                ('asan_macro', 'profile-excluded', [0], {'TSAN': ''})):
+                ('asan_macro', 'profile-excluded', [0], {'TSAN': ''}),
+                ('adpcm', 'profile-excluded', [0], {'TSAN': ''}),
+                ('asan_adpcm', 'profile-excluded', [0], {'TSAN': ''})):
             d = copy.deepcopy(self.data)
             d['summary']['units'][0].update(name=name, status='not_applicable', reason=reason, returncode=None)
             d['units'][0].update(name=name, events=[])
@@ -281,13 +283,14 @@ class ContractTests(unittest.TestCase):
                     self.verify(d)
             else:
                 # The same missing generated assets cannot exclude a selected engine.
-                d['engine_ids'] = [0, 14]
+                selected = [0, 15 if 'adpcm' in name else 14]
+                d['engine_ids'] = selected
                 path = self.root / 'selected.json'
                 C.atomic(path, d)
                 with patch.object(C, 'snapshot', return_value=self.source), \
                      patch.object(C, 'host_config', return_value={'fixture': True}), \
                      patch.object(C, 'baseline_config', return_value=['fixture-o2', 'fixture-os']), \
-                     patch.object(C, 'selected_engines', return_value=[0, 14]), \
+                     patch.object(C, 'selected_engines', return_value=selected), \
                      self.assertRaisesRegex(ValueError, 'applicability'):
                     C.verify(path, 'fresh', self.root)
 
@@ -489,9 +492,9 @@ class LifecycleTests(unittest.TestCase):
 
     def test_missing_installations_are_availability_not_applicability(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(C, 'ROOT', Path(temporary)):
-            self.assertEqual(C.requirements(['assets', 'macro-assets', 'node', 'emcc', 'sanitizer'],
+            self.assertEqual(C.requirements(['assets', 'macro-assets', 'adpcm-assets', 'node', 'emcc', 'sanitizer'],
                                             dict(PATH='', SANITIZE='0')),
-                             ['generated-assets-missing', 'macro-assets-missing', 'node-unavailable',
+                             ['generated-assets-missing', 'macro-assets-missing', 'adpcm-assets-missing', 'node-unavailable',
                               'emcc-unavailable', 'sanitizer-disabled'])
             with self.assertRaisesRegex(ValueError, 'unknown coverage prerequisite'):
                 C.requirements(['invented'], {})

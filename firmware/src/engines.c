@@ -14,6 +14,8 @@
  * every part (x NPART of the pool). Zero-initialised pool section: main.c fm1_cstart clears it. */
 #if FELUCCA_PROFILE_ENGINE_14
 #define ENG_MEM_PART 17328u  /* MACRO full Braids state, aligned to the arena's eight-byte boundary */
+#elif FELUCCA_ADPCM
+#define ENG_MEM_PART 13344u  /* optional BRR decoder, stereo samples and per-part echo */
 #else
 #define ENG_MEM_PART 12888u
 #endif

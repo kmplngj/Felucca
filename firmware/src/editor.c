@@ -410,8 +410,10 @@ static int ed_args_ok(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     switch (cmd) {
     case ED_INFO: case ED_DUMP: case ED_SMP_INFO: case ED_PING:
-    case ED_UI_STATE: case ED_UI_PALETTES: case ED_LEARN_GET: case ED_PALETTE_GET:
+    case ED_UI_STATE: case ED_UI_PALETTES: case ED_LEARN_GET:
         return !n;
+    case ED_PALETTE_GET:
+        return !n || (n == 1u && a[0] == 2u);        /* explicit new five-colour order */
     case ED_GET: case ED_DESC: case ED_PRESET: case ED_PROJECT: case ED_UP_LIST:
     case ED_TRACK_PARAM:
         return n == 2u || (cmd == ED_TRACK_PARAM && n == 4u);

@@ -503,6 +503,12 @@ static void engine_block(track_t *t)
         if (!t->xf_on) {
             for (i = 0; i < NVOICE; i++)
                 any |= t->v[i].active;
+#if FELUCCA_ADPCM
+            if (t->engine == ENGI_ADPCM) {              /* a part may still sound after its last voice */
+                eng_mem_claim(t);
+                any |= adp_part(t)->d.edirty;
+            }
+#endif
             if (any) {
                 t->xf_on = 1;
                 t->xf = XF_BLOCKS;
@@ -768,6 +774,16 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     }
     if (T_SPREAD(t))
         SPREAD_SUM(out, t);                /* out: every voice; spread_buf: the left ones */
+#if FELUCCA_ADPCM
+    if (e == &ENG_ADPCM) {                            /* the optional engine's per-part echo */
+        vmod_t echo_fade;
+        if (fade) {
+            echo_fade.amp0 = VOICE_FS * (int32_t)t->xf / (int32_t)XF_BLOCKS;
+            echo_fade.amp1 = VOICE_FS * (int32_t)(t->xf - 1u) / (int32_t)XF_BLOCKS;
+        }
+        nr += adp_post(t, out, n, fade ? &echo_fade : 0);
+    }
+#endif
     if (fade) {
         for (i = 0; i < 8u; i++)
             t->p[P_E0 + i] = pe_new[i];

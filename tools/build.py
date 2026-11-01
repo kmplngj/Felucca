@@ -453,6 +453,10 @@ def generate():
     else:
         for old in ("felucca_braids.h", "felucca_macro.h"):
             (GEN / old).unlink(missing_ok=True)
+    if 15 in resolved["engine_ids"]:
+        cmds += [[tools / "gen_adpcm.py", GEN / "felucca_adpcm.h"]]
+    else:
+        (GEN / "felucca_adpcm.h").unlink(missing_ok=True)
     procs = [subprocess.Popen([sys.executable, *map(str, c)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True) for c in cmds]
     failed = []

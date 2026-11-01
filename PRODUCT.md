@@ -35,7 +35,7 @@ value is in.
 - Saved settings, MENU ids and protocol ids are contracts: append only, retired ids stay reserved
   (STYLE id 1, LARGE id 2 are retired native choices kept for rollback).
 - Text is M8Stealth only: two native bitmap sets (5×7, 8×9) and exact integer-scaled roles; no new font data.
-- Ten built-in palettes plus CUSTOM; GREY and MONO must stay neutral. Text pairs meet 4.5:1 in built-in palettes.
+- Ten built-in palettes plus CUSTOM; GREY and MONO keep neutral base colours with red recording/warnings and blue active controls. Text pairs meet 4.5:1 in built-in palettes.
 - Settings: uniform rows, single values edit inline, compound tasks open a detail page.
 - No touch, no pointer: every state is reached with the physical controls; hints name the physical control.
 

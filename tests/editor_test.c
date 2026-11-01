@@ -287,7 +287,7 @@ static int preferences(void)
         host_wire[n - 4] == 0x45 && host_wire[n - 3] == 1 && host_wire[n - 2] == 5);
     request(ED_UI_SET, a, 2);
     bad += check("UI_SET updates the actual palette and reports RAM-only saving",
-        host_wire[5] == 3 && settings.palette == 7 && T_BG == UI_PALETTES[7].bg);
+        host_wire[5] == 3 && settings.palette == 7 && T_BG == UI_PALETTES[7].c1);
     bad += check("FELUCCA_FLASH=0: the shared settings durability is RAM only (#296: rc 3 for every editor write)",
         settings_save_result() == SETTINGS_RAM_ONLY && ed_settings_save() == 3u);
     a[1] = NPALETTES; request(ED_UI_SET, a, 2);
@@ -1435,7 +1435,7 @@ static int menu_protocol(void)
     reset();
     ui.force = 0;
     ok = menu_set(0, 2) == 3 && host_wire[6] == 0 && ed_rv(host_wire + 7) == 2 && settings.palette == 2u &&
-         T_BG == UI_PALETTES[2].bg && ui.force;
+         T_BG == UI_PALETTES[2].c1 && ui.force;
     ok &= menu_set(1, 1) == 3 && ui_style == ST_LINE;
     ok &= menu_set(2, 1) == 3 && (ui_prefs & PREF_LARGE);
     ok &= menu_set(3, 1) == 3 && (ui_prefs & PREF_ANIM_OFF);
@@ -1743,9 +1743,16 @@ static int custom_palette(void)
          host_wire[7] == (T_BG >> 11) && host_wire[8] == ((T_BG >> 5) & 63u);        /* (nothing stored: the palette in use, to start from) */
     bad += check("PALETTE_GET: none stored (flags 0), five colours: the palette in use", ok);
     ok = palette_cmd(ED_PALETTE_GET, a, 1) == 0u;
-    bad += check("  PALETTE_GET takes no arguments", ok);
+    bad += check("  PALETTE_GET rejects an unknown schema request", ok);
+    a[0] = 2;
+    n = palette_cmd(ED_PALETTE_GET, a, 1);
+    ok = n == 23u && host_wire[5] == 4u && host_wire[6] == 5u;
+    for (i = 0; i < 5u; i++)
+        ok &= (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]) == ux.pal[i];
+    bad += check("PALETTE_GET [2]: explicit schema marker and the five stored roles, independent of firmware version", ok);
+    a[0] = 0;
     n = pal_send(0, flat);
-    ok = n > 0u && host_wire[5] == 0 && T_BG == flat[0] && T_TEXT == flat[2] && !(ui_cpal_flags & CPAL_STORED);
+    ok = n > 0u && host_wire[5] == 0 && T_BG == flat[0] && T_TEXT == flat[2] && T_REC == UI_PALETTES[settings.palette].primary && !(ui_cpal_flags & CPAL_STORED);
     bad += check("PALETTE_SET: colours that are hard to read are shown too (a preview: the editor warns, the device does not refuse)", ok);
     a[0] = 3; request(ED_PALETTE_SET, a, 1);
     n = pal_send(1, flat);
@@ -1765,19 +1772,19 @@ static int custom_palette(void)
         ok &= !(ui_cpal_flags & CPAL_STORED);
     }
     bad += check("  a value out of range, an unknown op: rc 1, nothing stored", ok);
-    n = pal_send(0, good);                                                          /* the preview: gfx.c's copy only */
-    ok = n > 0u && host_wire[5] == 0 && T_BG == good[0] && T_TEXT == good[2] && T_THEME == good[3] && T_ACCENT == good[4] &&
+    n = pal_send(16, good);                                                          /* the preview: gfx.c's copy only */
+    ok = n > 0u && host_wire[5] == 0 && T_BG == good[0] && T_TEXT == good[2] && T_THEME == good[1] && T_REC == good[3] && T_ACCENT == good[4] &&
          ui_cpal_flags == 0u && ui_cpal[0] == 0 && palette_n() == NPALETTES;
     bad += check("PALETTE_SET op 0 (preview): the colours are shown at once, nothing is stored", ok);
-    ok = T_SEL == ux_mix(good[0], good[3], UI_SEL_PCT) && T_MID == ux_mix(good[0], good[2], UI_MID_PCT) && T_INK == good[0] &&
+    ok = T_SEL == ux_mix(good[0], good[1], UI_SEL_PCT) && T_MID == ux_mix(good[0], good[2], UI_MID_PCT) && T_INK == good[0] &&
          !ux.mono && ux.light == 0u;
     bad += check("  the other tokens derived as for any palette (SEL, MID, INK), not GREY", ok);
     a[0] = 3; n = palette_cmd(ED_PALETTE_SET, a, 1);
-    ok = n > 0u && host_wire[5] == 0 && T_BG == UI_PALETTES[settings.palette].bg;
+    ok = n > 0u && host_wire[5] == 0 && T_BG == UI_PALETTES[settings.palette].c1;
     bad += check("PALETTE_SET op 3: the preview dropped, the palette in use again", ok);
-    n = pal_send(1, good);
-    ok = n > 0u && host_wire[4] == ED_PALETTE_SET && (host_wire[5] == 3 || host_wire[5] == 0) && ui_cpal_flags == (CPAL_STORED | CPAL_ACTIVE) &&
-         palette_cur() == NPALETTES && palette_n() == NPALETTES + 1u && T_BG == good[0] && host_wire[6] == 3 && host_wire[7] == 5;
+    n = pal_send(17, good);
+    ok = n > 0u && host_wire[4] == ED_PALETTE_SET && (host_wire[5] == 3 || host_wire[5] == 0) && ui_cpal_flags == (CPAL_STORED | CPAL_ACTIVE | CPAL_V2) &&
+         palette_cur() == NPALETTES && palette_n() == NPALETTES + 1u && T_BG == good[0] && host_wire[6] == 7 && host_wire[7] == 5;
     for (i = 0; i < 5u; i++) ok &= (uint16_t)(ui_cpal[2 * i] | ui_cpal[2 * i + 1] << 8) == good[i];
     bad += check("PALETTE_SET op 1: stored, in use (flags 3), five colours little endian in the settings' bytes", ok);
     n = palette_cmd(ED_PALETTE_GET, a, 0);
@@ -1796,7 +1803,7 @@ static int custom_palette(void)
     ok = n > 0u && host_wire[5] != 1 && palette_cur() == NPALETTES;
     a[1] = 3; request(ED_UI_SET, a, 2);
     ok &= palette_cur() == 3u && settings.palette == 3u && (ui_cpal_flags & CPAL_STORED) && !(ui_cpal_flags & CPAL_ACTIVE) &&
-          T_BG == UI_PALETTES[3].bg;
+          T_BG == UI_PALETTES[3].c1;
     a[1] = NPALETTES; request(ED_UI_SET, a, 2);
     ok &= palette_cur() == NPALETTES && T_BG == good[0] && settings.palette == 3u;
     a[1] = NPALETTES + 1u; request(ED_UI_SET, a, 2);
@@ -1807,7 +1814,7 @@ static int custom_palette(void)
         menu_desc(0, &it);
         ok = it.max == (int32_t)NPALETTES && it.nnames == NPALETTES + 1u && !strcmp(it.names[NPALETTES], "CUSTOM") &&
              it.value == (int32_t)NPALETTES;
-        ok &= menu_set(0, 5) == 3 && palette_cur() == 5u && T_BG == UI_PALETTES[5].bg;
+        ok &= menu_set(0, 5) == 3 && palette_cur() == 5u && T_BG == UI_PALETTES[5].c1;
         ok &= menu_set(0, 99) == 3 && palette_cur() == NPALETTES && T_BG == good[0];
         bad += check("MENU COLOR: 11 values while CUSTOM is stored (CUSTOM last), MENU_SET reaches it", ok);
     }
@@ -1815,7 +1822,7 @@ static int custom_palette(void)
     ok = n > 0u && host_wire[6] == NPALETTES;
     bad += check("UI_STATE: the palette byte is 10 while CUSTOM is in use", ok);
     a[0] = 2; n = palette_cmd(ED_PALETTE_SET, a, 1);
-    ok = n > 0u && ui_cpal_flags == 0u && palette_cur() == settings.palette && palette_n() == NPALETTES && T_BG == UI_PALETTES[settings.palette].bg;
+    ok = n > 0u && ui_cpal_flags == 0u && palette_cur() == settings.palette && palette_n() == NPALETTES && T_BG == UI_PALETTES[settings.palette].c1;
     for (i = 0; i < 10u; i++) ok &= ui_cpal[i] == 0;
     bad += check("PALETTE_SET op 2: removed (flags 0, bytes 0), the built-in palette is back, COLOR has 10 values again", ok);
     a[0] = 0; a[1] = NPALETTES; n = request(ED_UI_SET, a, 2);
@@ -1823,20 +1830,115 @@ static int custom_palette(void)
     bad += check("UI_SET 0 with CUSTOM (10) but none stored: rc 1", ok);
     {   /* a settings object with the bytes round trips (settings_export / settings_import), none stored reads as none */
         persist_t p;
-        pal_send(1, good);
+        pal_send(17, good);
         settings_export(&p);
         memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev);
-        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 3u && palette_n() == NPALETTES + 1u;
+        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 7u && palette_n() == NPALETTES + 1u;
         palette_apply();
         ok &= T_BG == good[0] && T_ACCENT == good[4];
         bad += check("settings: CUSTOM kept by an export and an import, in use after palette_apply", ok);
-        p.favorites.factory[15][12] = 3; p.favorites.factory[15][0] = p.favorites.factory[15][4] = 0x55;   /* hard to read: kept as saved */
+        p.favorites.factory[15][12] = 7; p.favorites.factory[15][0] = p.favorites.factory[15][4] = 0x55;   /* hard to read: kept as saved */
         p.favorites.factory[15][1] = p.favorites.factory[15][5] = 0x55;
-        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 3u && ui_cpal[0] == 0x55 && palette_n() == NPALETTES + 1u;
+        ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 7u && ui_cpal[0] == 0x55 && palette_n() == NPALETTES + 1u;
         bad += check("settings: colours that are hard to read are kept as saved (the user's choice)", ok);
+        {   /* 1.6 and before: BG SURF TEXT THEME ACCENT (flags 3) is read as BG THEME TEXT <red> ACCENT, once */
+            uint8_t *f = p.favorites.factory[15];
+            memset(f, 0, 16);
+            for (i = 0; i < 5u; i++) { f[2 * i] = (uint8_t)good[i]; f[2 * i + 1] = (uint8_t)(good[i] >> 8); }
+            f[12] = 3;
+            ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 3u;
+            palette_apply();
+            ok &= ui_cpal_flags == 7u && T_BG == good[0] && T_THEME == good[3] && T_TEXT == good[2] && T_ACCENT == good[4] &&
+                  T_REC == UI_REC_DARK;
+            palette_apply();
+            ok &= T_THEME == good[3] && T_REC == UI_REC_DARK;      /* (not migrated twice) */
+            bad += check("settings: a CUSTOM of 1.6 (BG SURF TEXT THEME ACCENT) is read as the five of 1.7, once", ok);
+        }
+        {   /* An inactive light CUSTOM migrates on GET too; export/import must not shuffle it again. */
+            uint8_t *f = p.favorites.factory[15];
+            uint16_t light[5] = {rgb565(248, 240, 232), good[1], good[2], good[3], good[4]};
+            for (i = 0; i < 5u; i++) { f[2 * i] = (uint8_t)light[i]; f[2 * i + 1] = (uint8_t)(light[i] >> 8); }
+            f[12] = CPAL_STORED;
+            ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == CPAL_STORED;
+            a[0] = 2;
+            n = palette_cmd(ED_PALETTE_GET, a, 1);
+            ok &= n > 0u && host_wire[5] == (CPAL_STORED | 4u) && !cpal_on() && ui_cpal_flags == (CPAL_STORED | CPAL_V2);
+            {   /* GET keeps its old flags contract and sends all five in the new order. */
+                uint16_t migrated[5] = {light[0], light[3], light[2], UI_REC_LIGHT, light[4]};
+                for (i = 0; i < 5u; i++) {
+                    uint16_t wire = (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]);
+                    ok &= wire == migrated[i];
+                }
+                settings_export(&p);
+                ok &= settings_import(&p, sizeof p) == 1;
+                cpal_fix();
+                for (i = 0; i < 5u; i++)
+                    ok &= (uint16_t)(ui_cpal[2 * i] | ui_cpal[2 * i + 1] << 8) == migrated[i];
+            }
+            bad += check("settings: inactive light CUSTOM migrates on GET, keeps wire flags and survives a second import unchanged", ok);
+        }
+        {   /* PER6's authoritative device bytes use the same one-time migration and marker. */
+            persist_rec_t r;
+            favorites.factory[FAV_ROWS - 1u][0] = 1u;
+            settings_export_rec(&r);
+            for (i = 0; i < 5u; i++) { r.x.dev[2 * i] = (uint8_t)good[i]; r.x.dev[2 * i + 1] = (uint8_t)(good[i] >> 8); }
+            r.x.dev[12] = CPAL_STORED | CPAL_ACTIVE;
+            ok = r.magic == PERSIST_MAGIC_EXT && settings_import((persist_t *)(void *)&r, sizeof r) == 1;
+            palette_apply();
+            ok &= ui_cpal_flags == (CPAL_STORED | CPAL_ACTIVE | CPAL_V2) && T_THEME == good[3] && T_REC == UI_REC_DARK;
+            settings_export_rec(&r);
+            ok &= r.x.dev[12] == (CPAL_STORED | CPAL_ACTIVE | CPAL_V2) &&
+                  settings_import((persist_t *)(void *)&r, sizeof r) == 1;
+            palette_apply();
+            ok &= T_THEME == good[3] && T_REC == UI_REC_DARK;
+            favorites.factory[FAV_ROWS - 1u][0] = 0u;
+            bad += check("settings: PER6 CUSTOM migrates once and its exported device bytes retain the marker", ok);
+        }
         p.favorites.factory[15][12] = 0xFE;
         ok = settings_import(&p, sizeof p) == 1 && ui_cpal_flags == 0u && ui_cpal[0] == 0;
-        bad += check("settings: a flags byte without the stored bit: none, the colours zero; the bits past the two dropped", ok);
+        bad += check("settings: a flags byte without the stored bit: none, the colours zero; the bits past the three dropped", ok);
+    }
+    {   /* An unchanged 1.6 client reads and edits its original roles; it cannot overwrite primary. */
+        const uint16_t legacy[5] = {good[0], good[0], good[2], good[1], good[4]};
+        uint16_t edited[5] = {flat[0], flat[1], flat[2], flat[3], flat[4]};
+        reset();
+        pal_send(17, good);
+        n = palette_cmd(ED_PALETTE_GET, a, 0);
+        ok = n == 23u && host_wire[5] == 3u;
+        for (i = 0; i < 5u; i++)
+            ok &= (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]) == legacy[i];
+        bad += check("legacy PALETTE_GET: unchanged flags and BG SURF TEXT THEME ACCENT order (native SURF is BG)", ok);
+        pal_send(0, edited);
+        ok = T_BG == edited[0] && T_THEME == edited[3] && T_TEXT == edited[2] && T_REC == good[3] && T_ACCENT == edited[4];
+        a[0] = 3;
+        request(ED_PALETTE_SET, a, 1);
+        ok &= T_THEME == good[1] && T_REC == good[3];
+        pal_send(1, edited);
+        ok &= host_wire[6] == 3u && T_THEME == edited[3] && T_REC == good[3];
+        a[0] = 2;
+        palette_cmd(ED_PALETTE_GET, a, 1);
+        ok &= host_wire[5] == 7u;
+        {   uint16_t expected[5] = {edited[0], edited[3], edited[2], good[3], edited[4]};
+            for (i = 0; i < 5u; i++)
+                ok &= (uint16_t)(host_wire[7 + 3 * i] << 11 | host_wire[8 + 3 * i] << 5 | host_wire[9 + 3 * i]) == expected[i];
+        }
+        bad += check("legacy preview/store/drop-preview round trip retains primary; schema2 reads the exact new order", ok);
+        a[0] = 0; a[1] = 2;
+        request(ED_UI_SET, a, 2);                    /* Keep CUSTOM stored while a built-in is in use. */
+        pal_send(1, edited);
+        bad += check("legacy store retains an inactive CUSTOM's primary instead of the displayed built-in primary", T_REC == good[3]);
+        n = pal_send(20, good);
+        ok = n > 0u && host_wire[5] == 1u && T_THEME == edited[3] && T_REC == good[3];
+        a[0] = 2; a[1] = 0;
+        ok &= palette_cmd(ED_PALETTE_GET, a, 2) == 0u;
+        bad += check("unknown schema and op requests leave the palette unchanged", ok);
+        a[0] = 19;
+        request(ED_PALETTE_SET, a, 1);
+        ok = host_wire[5] == 0u && host_wire[6] == 7u;
+        a[0] = 18;
+        request(ED_PALETTE_SET, a, 1);
+        ok &= host_wire[6] == 4u && ui_cpal_flags == 0u;
+        bad += check("schema2 remove/drop-preview acknowledge the requested schema without leaking stored-layout flags", ok);
     }
     return bad;
 }

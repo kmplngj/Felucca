@@ -338,7 +338,7 @@ Findings:
 | O5b | Trade slots 2 or 1 as well | 20 more sectors each | the same, for another slot | Held back for #62 only ([A8](#5-allocation-table)) |
 | O6 | **Shrink each sample slot** | 1-3 sectors per slot | truncates existing samples, `SMP_USER_SIZE` is baked into the slot layout and the info reply | **Reject** |
 | O7 | **Compression** | see below | main-loop codec, flash for the codec, variable size | **Adopt only for variable-length stores** (banks), never as capacity for fixed objects |
-| O8 | **Sidecar tied by a uid in the project spare bytes** instead of a content hash | tag survives re-packing and unchanged sidecars need no rewrite | spends 4 of the project's 13 spare bytes (see [2.1](#21-flash-map)) | Alternative; see [7, rule 5](#7-common-rules) |
+| O8 | **Sidecar tied by a uid in the project spare bytes** instead of a content hash | tag survives re-packing and unchanged sidecars need no rewrite | needs 4 project spare bytes; the 1.8 parameter layout leaves only 1 (the dated baseline had 13) | Blocked in the current layout; see [7, rule 5](#7-common-rules) |
 | O9 | **Unclaimed flash outside the windows** (`0x93000..0x97000`, `0xE8000..0xFC000`) | 4 + 20 sectors | Needs a survey of stock-flashed units and of the stock-return path; touches the loader's and guards' windows | **Not usable now**; survey proposed ([F7](#8-follow-up-issues)) |
 | O10 | **Single-copy sidecar** (the SLICE pattern) | half the sectors | A torn write loses the data | Only for derived data that can be rebuilt |
 
@@ -433,7 +433,7 @@ repository could not be read for this page); GENDEV device defaults of the gener
 | [#71](https://github.com/kmplngj/Felucca/issues/71) per-drum overrides | tune/decay/character per lane | per project | 128 B | FITS after A9 | A3/P6 |
 | [#141](https://github.com/kmplngj/Felucca/issues/141) editable kits (stage C) | 4 banks x 16 sounds | device | 1,464 B (from #141) | FITS after A9, conditional on stage C promotion | A6 |
 | [#168](https://github.com/kmplngj/Felucca/issues/168) Yama kits, per-lane edits | kit id; later per-lane edits | per project | 32 B; edits via #71 | FITS after A9 | A3/P8, P6 |
-| [#188](https://github.com/kmplngj/Felucca/issues/188) deep patches | FM TONE 80 B, VA 110 B, CZ 144 B | per track in a project; per user sound | 576 B per project; 148 B per sound | FITS after A9. The user-preset record has 32 unclaimed packed bytes: `np` uses 0–110 of 144 and category uses 143, leaving 111–142. None of the three fits it | A3/P7, A4 |
+| [#188](https://github.com/kmplngj/Felucca/issues/188) deep patches | FM TONE 80 B, VA 110 B, CZ 144 B | per track in a project; per user sound | 576 B per project; 148 B per sound | FITS after A9. The current user-preset record has 29 unclaimed packed bytes: `np` uses 0–113 of 144 and category uses 143, leaving 114–142 (the dated baseline had 32). None of the three fits it | A3/P7, A4 |
 | [#74](https://github.com/kmplngj/Felucca/issues/74) FM6 library, 64 voices | 64 x 112 B | device | 7,168 B in two objects | FITS after A9 | A5 |
 | [#79](https://github.com/kmplngj/Felucca/issues/79) boot project / template | a slot reference and flags | device | 16 B | FITS if the template *is* a project slot; an independent template object is **BLOCKED** (2 sectors, none free) | A2/STARTUP |
 | [#169](https://github.com/kmplngj/Felucca/issues/169) setlist | an order over projects | device | at most 96 B | FITS for an order over the four slots; a setlist with its own song storage is **BLOCKED** (2 sectors per song). WaveLoop's design (USR3 plus project 4) is not transplanted | A2/SETLIST |
@@ -453,8 +453,8 @@ Facts the design follows from (the format is F3's job):
   re-imports and re-packs every project it restores (`proj_bound`, `proj_pack`), so the stored bytes, and
   the FNV `sum` in their last 4 bytes, can differ from the archived ones (an older parameter count is mapped
   up). **A tag that is a hash of the serialized bytes does not survive a backup restore.** The tag must be
-  a hash of the musical values (the `autosave_sig` function, minus the sidecar) or a uid stored in the
-  project's spare bytes (O8). F3 chooses.
+  a hash of the musical values (the `autosave_sig` function, minus the sidecar) or another association
+  that F3 defines. O8's 4-byte uid no longer fits the current project's spare bytes.
 - Torn-write recovery for a pair is F3's required contract, not a property supplied by two ordinary
   `st_save` calls. Stage the sidecar before committing its parent and read only a valid matching pair,
   but also specify how the last committed pair survives retries. For example, after P0/S0, an unmatched
@@ -469,10 +469,11 @@ Facts the design follows from (the format is F3's job):
   writer therefore stores an explicit empty (tombstone) sidecar, or an equivalent invalidation, on that
   transition; "written once, now empty" is a state the reader must see. F3 specifies it and tests it
   (set, clear, reload).
-- The project's FUN10 record has 13 spare bytes ([project.c:154-167](https://github.com/kmplngj/Felucca/blob/a373657123fa50118c9e31848c21821c10f89b18/firmware/src/project.c#L154-L167):
-  body ends at byte 3,296 of 3,309, `PROJ_MIDI_OFF`), three more track parameters at 4 B each. Nothing else
-  should be appended to FUN10; use PRX. If F3 chooses a 4-byte UID from this space, only 9 bytes remain;
-  it cannot simultaneously promise all 13 bytes remain unused.
+- The current FUN10 record (1.8 parameters) has **1 spare byte** before `PROJ_MIDI_OFF`:
+  the body ends at byte 3,308 and MIDI routing starts at 3,309. AFTERTOUCH's three track parameters
+  use 12 of the dated baseline's 13 spare bytes. No additional four-track parameter or 4-byte UID fits.
+  Nothing else should be appended to FUN10; use PRX. F3 must choose an association that fits the
+  current layout rather than reserving a UID in those former spare bytes.
 
 ## 7. Common rules
 
@@ -545,7 +546,7 @@ as in rule 11.
 | --- | --- | --- |
 | F1 | Storage: add the USR3 reclaim and the A3-A6 object map | Enum entries 10-19, `st_sector`, layout tests, an explicit "reclaim USR3" action that requires an empty or backed-up slot and a confirmation, `SMP_USER_SLOTS` 3 to 2 at runtime for that device, SLICE and SAMPLE behavior for the reclaimed slot (USR3 stays a reserved set id that plays as empty), editor sample-info text, README/MENU copy, and the downgrade warnings of section 4 (MENU confirmation, release notes, editor warning on restoring USR3-region objects to older firmware). No consumer. |
 | F2 | Settings: write only the used favourite rows and add the SETX tail | Writer trims `rows`; SETX `ver` 2 tagged chunks kept inside 2,688 B; `settings_dev[13]` for #204; downgrade statement; pool unchanged. |
-| F3 | Project extension (PRX) sidecar objects | Payload format and tag (value hash or uid), pair recovery rule, the tombstone for a sidecar reset to defaults (set, clear, reload test), autosave signature, `project_save` / `autosave_poll` ordering, backup ids 10-14, `proj_slot` unaffected. |
+| F3 | Project extension (PRX) sidecar objects | Payload format and tag (compatible with the single remaining project spare byte), pair recovery rule, the tombstone for a sidecar reset to defaults (set, clear, reload test), autosave signature, `project_save` / `autosave_poll` ordering, backup ids 10-14, `proj_slot` unaffected. |
 | F4 | Deep-patch sidecar (DEEP) for user sounds | Tag to the record, 148 B entries, backup ids 15-16, behavior when a record is edited or renamed (compare `upf_tag`). |
 | F5 | Native FM6 voice library (FVL), 64 voices | Two 32-voice objects, names, replace/delete, backup ids 17-18, interaction with the 32-voice bank at `0xE7000`. |
 | F6 | Design a variable-length pattern-bank store (#62) | Measured capacity from real projects, encoding, "bank store full" policy, RAM residency against #20, the extra trade (O5b), song references; blocks #66. |

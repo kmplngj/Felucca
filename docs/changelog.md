@@ -30,6 +30,19 @@ recorded in the linked reports, rather than every current build or device.
 | **Diagnostics and reproducible testing** | [Read-only USB collector](diagnostics.md), [rendered-screen capture](screen-capture.md), [interaction replay](interaction-replay.md) and [real browser UI/audio gate](cloud-testing.md), with their setup, provenance and validation scope. | Collection continuity is not a firmware pass. Host/WASM replay does not qualify FM-1 I/O or deadlines; digital screenshots do not qualify physical colours/backlight. Capture flags are development-only, and explicit capture wake awaits device validation. |
 | **CI and AI workflows** | [Selective CI, caches and exact-revision artifacts](../.github/CI.md); [AI workflow guide](ai-workflows.md) linking summary-first evidence, the firmware-watch ledger/skill, PR-testing instructions and firmware-specific AI review configuration. | Context filtering preserves full relevant diff and history coverage. AI/static review complements target and device checks. Text reduction is a context-size proxy until actual token usage and task quality are measured. |
 
+## Upstream 1.8.0 backport
+
+- Added FM-1 key pressure and MIDI channel-pressure routing on EDIT > VOICE 3,
+  disabled by default, plus CLEAR ALL and undo for hand-edited steps.
+- Added unsaved-project load and MIDI LEARN clear confirmations, contextual dialogs,
+  menu/dialog transport stop, clock-loss notices and six-letter value labels.
+- Corrected FM6 operator amplitude modulation with nonzero AMS, preserving factory
+  voices with AMS zero. Updated five-colour palettes and one-time CUSTOM migration.
+- Added the experimental, default-off ADPCM profile at stable ID 15 (MACRO keeps 14)
+  and the source-only SDL2 desktop beta. The fork retains its own HAL and native UI.
+- [Source pins, compatibility and pending device checks](upstream-1.8-backport.md)
+  distinguish host/build evidence from physical FM-1 acceptance.
+
 ## Fork development
 
 ### Fixed
