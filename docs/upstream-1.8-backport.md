@@ -74,11 +74,19 @@ platform-specific physical checks.
 
 ## Known build limits
 
-The standard, CPU2-off, ADPCM and SMK-37 Pro target builds pass their resource
-checks. The full MACRO recipe currently fails the XIP linker limit: this working
-candidate is 7,400 bytes over, while the unchanged baseline is already 1,320 bytes
-over. These figures use default target flags and the working-tree build identity;
-MACRO needs separate capacity work before this full recipe can be installed.
+The initial standard, CPU2-off, ADPCM and SMK-37 Pro target builds passed their
+resource checks. After integrating current fork main `348fa118` (including its
+MACRO size pass), the v1.8.0 development candidate's standard build uses 503,504 B
+of app flash, 62,900 B of regular RAM, 336,244 B of POOL and 15,576 B of NOINIT.
+These are static allocations with default target flags, selective size enabled
+and compiled CPU2 support (runtime OFF), not device CPU/stack measurements.
+
+The full MACRO recipe remains outside the XIP limit: 5,952 bytes over at clean
+candidate `bca6e993`. The earlier backport working tree was 7,400 bytes over;
+its historical unchanged `f0fea3c` baseline was already 1,320 bytes over. Exact
+build identities change image size. The current main size improvements are kept,
+and all MACRO models/data remain present. Broader size/stack/timing changes are
+outside this backport; the opt-in full MACRO recipe still needs capacity work.
 
 A clean validation snapshot passed Git versus verified Git-free native build and
 bundle reproduction. Sealed native/WASM receipts remain unavailable because the

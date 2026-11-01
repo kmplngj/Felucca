@@ -118,6 +118,13 @@ static void sdl_key_event(SDL_Scancode sc, int down, int repeat)
     }
 }
 
+static void sdl_keyboard_event(const SDL_KeyboardEvent *e)
+{
+    /* A shortcut never starts a control, but adding a modifier must not trap one already held. */
+    if (e->type == SDL_KEYUP || !(e->keysym.mod & (KMOD_CTRL | KMOD_GUI | KMOD_ALT)))
+        sdl_key_event(e->keysym.scancode, e->type == SDL_KEYDOWN, e->repeat);
+}
+
 /* ------------------------------------------------------------- the gamepad --- */
 /* the D-pad moves the cursor (it comes on), the left stick the arrow (panel.c: the one moved last is used); A holds
  * (or clicks the arrow), X latches, B lets all go, the shoulders turn, START is PLAY and BACK HOME (held while they are) */
@@ -415,6 +422,53 @@ static int sdl_panel_check(void)
         bad += !playing || !stopped || web_master_adc != m0 + 160u || !latched || !unlatched || !stick_key || sent_key;
 #undef CLICK
     }
+    {   /* A modifier pressed after a note/button must not swallow that control's release. */
+        static const struct { SDL_Scancode sc; SDL_Keymod mod; const char *name; } mods[] = {
+            {SDL_SCANCODE_LCTRL, KMOD_LCTRL, "CTRL"}, {SDL_SCANCODE_LALT, KMOD_LALT, "ALT"},
+            {SDL_SCANCODE_LGUI, KMOD_LGUI, "GUI"},
+        };
+        uint32_t k;
+        panel_layout(&pnl, PNL_WIDE);
+        for (k = 0; k < sizeof mods / sizeof mods[0]; k++) {
+            SDL_KeyboardEvent e;
+            uint32_t held, released, shortcut;
+            SDL_zero(e);
+            e.type = SDL_KEYDOWN; e.keysym.scancode = SDL_SCANCODE_Z;
+            sdl_keyboard_event(&e);
+            e.keysym.scancode = SDL_SCANCODE_3;
+            sdl_keyboard_event(&e);
+            sdl_sync(); web_render(441);
+            held = sdl_key == 1u && sent_key == 1u && fm1_in.notes == 1u &&
+                   sdl_btn == (1u << B_ENV) && sent_btn == (1u << B_ENV) &&
+                   (fm1_in.buttons & (1u << panel.btn[B_ENV]));
+            e.keysym.mod = mods[k].mod; e.keysym.scancode = mods[k].sc;
+            sdl_keyboard_event(&e);
+            e.type = SDL_KEYUP; e.keysym.scancode = SDL_SCANCODE_Z;
+            sdl_keyboard_event(&e);
+            e.keysym.scancode = SDL_SCANCODE_3;
+            sdl_keyboard_event(&e);
+            e.keysym.mod = KMOD_NONE; e.keysym.scancode = mods[k].sc;
+            sdl_keyboard_event(&e);
+            sdl_sync(); web_render(441);
+            released = !sdl_key && !sent_key && !fm1_in.notes && !sdl_btn && !sent_btn && !fm1_in.buttons;
+            /* Modified presses remain shortcuts: no new note or panel-button hold. */
+            e.type = SDL_KEYDOWN; e.keysym.mod = mods[k].mod; e.keysym.scancode = SDL_SCANCODE_X;
+            sdl_keyboard_event(&e);
+            e.keysym.scancode = SDL_SCANCODE_4;
+            sdl_keyboard_event(&e);
+            sdl_sync();
+            shortcut = !sdl_key && !sent_key && !fm1_in.notes && !sdl_btn && !sent_btn && !fm1_in.buttons;
+            printf("felucca keyboard %s: note/button held %u, released after modifier %u, shortcuts stay silent %u\n",
+                   mods[k].name, held, released, shortcut);
+            bad += !held || !released || !shortcut;
+            /* Keep each scenario independent even when checking the old broken dispatcher. */
+            e.type = SDL_KEYUP; e.keysym.mod = KMOD_NONE; e.keysym.scancode = SDL_SCANCODE_Z;
+            sdl_keyboard_event(&e);
+            e.keysym.scancode = SDL_SCANCODE_3;
+            sdl_keyboard_event(&e);
+            sdl_sync();
+        }
+    }
     printf("felucca panel: fit 1280x720 %s, 800x1280 %s, 640x480 %s\n", NAME[panel_fit(1280, 720)], NAME[panel_fit(800, 1280)],
            NAME[panel_fit(640, 480)]);
     return bad ? 1 : 0;
@@ -570,8 +624,7 @@ int main(int argc, char **argv)
                 break;
             case SDL_KEYDOWN:
             case SDL_KEYUP:
-                if (!(e.key.keysym.mod & (KMOD_CTRL | KMOD_GUI | KMOD_ALT)))
-                    sdl_key_event(e.key.keysym.scancode, e.type == SDL_KEYDOWN, e.key.repeat);
+                sdl_keyboard_event(&e.key);
                 break;
             case SDL_MOUSEBUTTONDOWN:
                 if (e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT) {
