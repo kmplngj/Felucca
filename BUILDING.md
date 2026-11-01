@@ -107,6 +107,9 @@ keeps the flash's storage sectors (projects, user presets, settings) in the brow
 MIDI out, the editor, updates), TRS MIDI and the user sample slots. A build of it is on the site:
 <https://hugelton.github.io/Felucca/webapp/try/>.
 
+An optional real Chromium/AudioWorklet smoke gate is documented in
+[Browser smoke test](docs/cloud-testing.md). It runs separately from the existing Node/Wasm tests.
+
 ## Tests
 
 ```
