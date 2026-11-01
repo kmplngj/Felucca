@@ -397,9 +397,69 @@ static void mono_remove(track_t *t, uint32_t note)
     t->nmono = (uint8_t)k;
 }
 
+/* #147: the note-on events of each part for the keyboard LEDs' short hold, so a note that starts and ends between two
+ * LED frames still shows. A ring of NOTE_HIT_SLOTS words per part: bit 31 valid, bits 7..30 the fm1_ms (24 bits) of the
+ * note-on, bits 0..6 the note. Producer: trk_note_on, the audio ISR only; a word is one aligned 32-bit store, so a
+ * reader sees the old event or the new one, never half of either, and no index or flag is published. The producer
+ * refreshes the slot that already holds the note (a repeat takes no second slot), else an empty slot or the oldest
+ * event; equal timestamps use circular order. Consumers (the main loop) only read: each decides its
+ * own window from the event's time, so none consumes an event another needs. seq_stop clears in the event owner;
+ * main-loop resets and stale sweeps (sound.c) exclude the interrupt while writing. The time is the event's own,
+ * not the reader's: the hold follows elapsed time however
+ * late a frame is. It extends no voice and touches neither the recorder nor MIDI out. */
+#define NOTE_HIT_SLOTS 8u
+#define NOTE_HIT_VALID 0x80000000u
+#define NOTE_HIT_TMASK 0xFFFFFFu                        /* the 24-bit time: 4.6 h, the main loop sweeps the older ones */
+static volatile uint32_t note_hit[NPART][NOTE_HIT_SLOTS];
+static uint8_t note_hit_next[NPART];                    /* producer-owned circular tie-break for equal event times */
+/* ms since the event of word w, plus NOTE_HIT_EARLY: a note-on can stamp fm1_ms a few ms after a reader took its own
+ * "now" (the ISR ran in between), so an event up to NOTE_HIT_EARLY ms ahead of "now" still counts as new (ages
+ * 0..NOTE_HIT_EARLY - 1). The age wraps in 24 bits: a reader treats an age of NOTE_HIT_EARLY + its window or more as
+ * expired */
+#define NOTE_HIT_EARLY 8u
+static inline uint32_t note_hit_age(uint32_t now, uint32_t w)
+{
+    return (now - (w >> 7) + NOTE_HIT_EARLY) & NOTE_HIT_TMASK;
+}
+
+static void note_hit_post(const track_t *t, uint32_t note)
+{
+    uint32_t p = (uint32_t)(t - trk) % NPART, i, s = note_hit_next[p];
+    uint32_t now = fm1_ms, oldest = 0, empty = 0;
+    volatile uint32_t *r = note_hit[p];
+    for (i = 0; i < NOTE_HIT_SLOTS; i++) {
+        uint32_t j = (note_hit_next[p] + i) % NOTE_HIT_SLOTS, w = r[j];
+        if ((w & NOTE_HIT_VALID) && (w & 127u) == (note & 127u)) {
+            s = j;
+            break;
+        }
+        if (!(w & NOTE_HIT_VALID)) {
+            if (!empty) s = j;
+            empty = 1;
+        } else if (!empty) {
+            uint32_t age = note_hit_age(now, w);
+            if (age > oldest) { oldest = age; s = j; }
+        }
+    }
+    if (i == NOTE_HIT_SLOTS || s == note_hit_next[p])
+        note_hit_next[p] = (uint8_t)((s + 1u) % NOTE_HIT_SLOTS);
+    r[s] = NOTE_HIT_VALID | (now & NOTE_HIT_TMASK) << 7 | (note & 127u);
+}
+
+/* The event owner clears on the actual stop, even if stop/restart fit between LED frames.
+ * seq_stop runs in the audio ISR, or under the project restore's interrupt guard. */
+static void note_hits_stop(void)
+{
+    uint32_t p, i;
+    for (p = 0; p < NPART; p++)
+        for (i = 0; i < NOTE_HIT_SLOTS; i++)
+            note_hit[p][i] = 0;
+}
+
 static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
 {
     uint32_t any = 0, i, mode = trk_vmode(t);
+    note_hit_post(t, note);                             /* (a muted part's sequencer notes show too: seq_notes) */
     if (t->p[P_MUTE])
         return;
     if (t->xf_on || eng_idx(t->eng_req) != t->engine) {          /* engine switch under way: after the fade */

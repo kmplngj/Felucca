@@ -66,6 +66,8 @@ static int st_read(uint32_t off, void *p, uint32_t n) { (void)off; (void)p; (voi
 static int st_prog(uint32_t off, const void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
 static int st_erase(uint32_t off) { (void)off; return -1; }
 #include "../firmware/src/storage.c"
+/* This catalog harness omits the naming UI. */
+static int name_on(void) { return 0; }
 #include "../firmware/src/editor.c"
 
 static int check(const char *what, int ok)
@@ -155,6 +157,8 @@ static int info(void)
     uint8_t a[1] = {0};
     reset();
     n = request(ED_INFO, a, 0);
+    if (n < 24u)
+        return check("INFO contains the complete capability tail", 0);
     pos = 5u;                                         /* (F0 7D 46 4C cmd, then the version string) */
     while (pos < n && host_wire[pos]) pos++;
     pos++;
@@ -169,6 +173,10 @@ static int info(void)
         ok &= eng_ok(e) ? str_eq(nm, ENGINES[e]->name) : str_eq(nm, "-");
     }
     bad += check("INFO's old prefix: NENGINES names, \"-\" where this build cannot play the id", ok);
+    ok = n >= 4u && host_wire[n - 4u] == 0x5A && host_wire[n - 3u] == 1u &&
+         host_wire[n - 2u] == ED_CONTROL_CAPS && ED_CONTROL_CAPS == 5u && host_wire[n - 1u] == 0xF7;
+    bad += check("INFO 5A 01: query-only control appended in this host adapter", ok);
+    n -= 3u;
     ok = host_wire[n - 4u] == 0x59 && host_wire[n - 3u] == 1u && host_wire[n - 2u] == (FELUCCA_FLASH ? ED_RAW_CAPS : 0u);
     bad += check("INFO 59 01: the raw store export (#456: cmds 82, 83), last", ok);
     n -= 3u;                                                    /* (the 58 01 block before it, as before) */

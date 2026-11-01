@@ -16,6 +16,17 @@ int main(void)
     uint8_t a[640] = {0}, data[256] = {1}, backup[8] = {34,0,0,0,0,0,1,0};
     smp_user_hdr_t h;
     uint32_t n, slot, owner, cmd, len;
+    /* A wake-only/silent outer key has physical ownership without a sounding note. */
+    smk_reset(1); control_token(a, 1); smk_extkeys_held = 1u;
+    CHECK(!fm1_in.notes && !midi_track_held(0));
+    request(ED_CONTROL, a, 16);
+    CHECK(host_wire[6] == 3 && !ed_control.pending && !host_restarts);
+    smk_extkeys_held = 0;
+    smk_reset(1); control_token(a, 1); request(ED_CONTROL, a, 16);
+    CHECK(ed_control.pending && !host_wire[6]);
+    smk_extkeys_held = 1u; so_done = ed_control.end; ed_control_poll();
+    CHECK(!ed_control.pending && !host_restarts);
+    smk_extkeys_held = 0;
     /* Every unavailable mutation replies in the existing shape, before STOP or flash/XIP access. */
     for (owner = 0; owner < 2; owner++) for (slot = 0; slot < 3; slot++) {
         if (owner && slot < 2) continue;

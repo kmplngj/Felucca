@@ -348,6 +348,17 @@ class CommandLineFixtures(unittest.TestCase):
             self.assertIn(f"(budget {limit}) ok", row)
         self.assertEqual(self.budget.read_bytes(), before)
 
+    def test_restart_fence_helper_rejects_a_loop_with_unchanged_poll(self):
+        name = "ep1_restart_ready"
+        self.write_dis(extra=("usb_poll", name), loops={name: 1})
+        before = self.cli()
+        self.assert_status(before, 0)
+        self.write_dis(extra=("usb_poll", name))
+        after = self.cli()
+        self.assert_status(after, 1)
+        row = next(line for line in after.stdout.splitlines() if line.split()[:2] == ["target:", name])
+        self.assertIn("(budget 0) OVER BUDGET", row)
+
     def test_update_rewrites_required_only_then_checks(self):
         self.budget.unlink()
         self.write_dis(extra=("uac_tap48",), loops={"analog_render": 12})

@@ -20,6 +20,7 @@ static unsigned char *host_sample_ptr(unsigned k) { host_sample_reads++; return 
 #define SMP_USER_XIP(k) host_samples[k]
 #endif
 #define FELUCCA_OTA 1
+#define FELUCCA_RESTART 1
 #define FELUCCA_FLASH 0
 #define FELUCCA_VERSION "TEST"
 #define FELUCCA_CDC 1                                    /* (as the firmware: MENU > USB SERIAL switches the console) */
@@ -27,6 +28,10 @@ static unsigned char *host_sample_ptr(unsigned k) { host_sample_reads++; return 
 #include "../firmware/hal/fm1_lcd_contract.h"
 #include "hostsim.c"
 #undef main
+/* FLASH=0 omits the audio activity counter; inject that ISR-owned scalar for the control guard. */
+#undef fx_audio_activity
+static volatile uint32_t host_audio_activity;
+#define fx_audio_activity host_audio_activity
 #ifndef SMK_EDITOR_TEST
 _Static_assert(sizeof host_samples == SMP_USER_SLOTS * SMP_USER_SIZE && SMP_USER_BASE == 0xA0000u,
                "editor sample NOR mapping");
@@ -124,7 +129,12 @@ static int fl_erase4k_ram(uint32_t off, uint32_t *took) { return fl_erase4k(off,
 #include "../firmware/src/storage_hw.c"
 #endif
 #include "../firmware/src/storage.c"
+/* Naming UI is absent from this protocol harness; model its independent open state. */
+static uint32_t host_name_open;
+static int name_on(void) { return host_name_open != 0; }
 #include "../firmware/src/editor.c"
+static uint32_t host_restarts;
+static void ed_restart_platform(void) { host_restarts++; }
 
 static int check(const char *what, int ok)
 {
@@ -146,9 +156,19 @@ static void reset(void)
     memset(&favorites, 0, sizeof favorites); memset(settings_ml, 0, sizeof settings_ml); memset(settings_dev, 0, sizeof settings_dev); memset(&settings, 0, sizeof settings); settings_init();
     memset(proj_slot, 0, sizeof proj_slot); memset(up_bank, 0, sizeof up_bank);
     memset(&um, 0, sizeof um); memset(usr_nz, 0, sizeof usr_nz);
+    memset(midi_notes, 0, sizeof midi_notes); memset(midi_owners, 0, sizeof midi_owners);
+    memset(midi_ch, 0, sizeof midi_ch); memset(mchord, 0, sizeof mchord);
     host_progress = 1; host_erases = host_writes = host_wire_n = 0;
     transport_req = panic_req = 0; sx_ready = sx_collect = sx_busy = 0;
-    so_r = so_w = mi_r = mi_w = 0; midi_in_overflow = 0; usb.config = 1;
+    so_r = so_w = so_done = mi_r = mi_w = 0; midi_in_overflow = 0; usb.config = 1; usb.up = 0;
+    so_flight = 0; so_epoch++; host_restarts = 0;
+    ed_control_boot(7); ed_bk_put = fvb_tx.on = set_later.on = 0;
+    fm1_in.notes = fm1_in.buttons = kb_boot_hold = cin_left = 0;
+    usb.rx_pend = usb.suspended = usb.uboot_req = usb.ota_req = 0;
+    ci_r = ci_w = cdc.rx_pend = 0;
+#if FELUCCA_SLICE
+    slc_man_save = 0;
+#endif
     for (i = 0; i < G_COUNT; i++) song.g[i] = GP[i].def;
     for (t = 0; t < NTRK; t++) {
         track_defaults(&trk[t]); set_engine_of(&trk[t], 0); apply_preset_to(&trk[t], 0);
@@ -245,6 +265,9 @@ static int preferences(void)
                      ok && host_wire[4] == ED_STORE_GET && host_wire[5] == 1u && host_wire[6] == 4u);
     }
     uint32_t n = request(ED_INFO, a, 0);
+    bad += check("INFO guarded control capability appended without changing older tags",
+        host_wire[n - 4] == 0x5A && host_wire[n - 3] == 1 && host_wire[n - 2] == 7);
+    n -= 3;
     bad += check("INFO #456: 59 01 caps, last (the raw store export, cmds 82 / 83; 0 here: no flash in this build)",
         host_wire[n - 4] == 0x59 && host_wire[n - 3] == 1 && host_wire[n - 2] == 0);
     n -= 3u;                                              /* (the tags before it, as before) */
@@ -2020,10 +2043,214 @@ static int macro_model_protocol(void)
 }
 #endif
 
+static void control_u32(uint8_t *p, uint32_t v)
+{
+    for (uint32_t i = 0; i < 5u; i++) p[i] = (uint8_t)((v >> (7u * i)) & 127u);
+}
+static void control_token_now(uint8_t *a, uint32_t op)
+{
+    uint8_t q[6] = {0, 23, 0, 0, 0, 0};
+    usb.up = 1;
+    request(ED_CONTROL, q, sizeof q);
+    a[0] = (uint8_t)op;
+    control_u32(a + 1, 42);
+    control_u32(a + 6, ed_bk_r32(host_wire + 12));
+    control_u32(a + 11, ed_bk_r32(host_wire + 17));
+}
+static void control_token(uint8_t *a, uint32_t op)
+{
+    fm1_ms += ED_CONTROL_QUIET_MS;
+    control_token_now(a, op);
+}
+static int guarded_control(void)
+{
+    int bad = 0;
+    uint8_t a[17] = {0}, q[6] = {0, 23, 0, 0, 0, 0};
+    uint32_t end;
+    reset(); usb.up = 1; fm1_ms += ED_CONTROL_QUIET_MS;
+    uint32_t query_ms = fm1_ms;
+    uint32_t n = request(ED_CONTROL, q, sizeof q);
+    bad += check("CONTROL query correlates identity, generation, challenge and uptime",
+        n > 34 && host_wire[5] == 0 && !host_wire[6] && ed_bk_r32(host_wire + 7) == 23 &&
+        ed_bk_r32(host_wire + 12) == 7 && ed_bk_r32(host_wire + 17) != 0 && !ed_bk_r32(host_wire + 27));
+    {
+        uint8_t legacy[128], extended[7] = {0, 23, 0, 0, 0, 0, 1};
+        uint32_t legacy_n = n;
+        memcpy(legacy, host_wire, n);
+        fm1_ms = query_ms - ED_CONTROL_QUIET_MS;
+        reset(); usb.up = 1; fm1_ms += ED_CONTROL_QUIET_MS;
+        n = request(ED_CONTROL, extended, sizeof extended);
+        uint32_t pr_n = (uint32_t)strlen(FELUCCA_BUILD_PR) + 1u;
+        uint32_t profile_n = (uint32_t)strlen(FELUCCA_PROFILE_NAME) + 1u;
+        bad += check("CONTROL extended identity keeps legacy prefix and appends verified PR/profile",
+            n == legacy_n + pr_n + profile_n && !memcmp(legacy, host_wire, legacy_n - 1u) &&
+            !memcmp(host_wire + legacy_n - 1u, FELUCCA_BUILD_PR, pr_n) &&
+            !memcmp(host_wire + legacy_n - 1u + pr_n, FELUCCA_PROFILE_NAME, profile_n) && host_wire[n - 1u] == 0xF7);
+        bad += check("CONTROL identity query never changes song/settings/transfer or arms reset",
+            !ed_control.pending && !host_restarts && !song.playing && !song.rec && !set_later.on && !ed_control.transfer);
+        fm1_ms = query_ms - ED_CONTROL_QUIET_MS;
+        reset(); usb.up = 1; fm1_ms += ED_CONTROL_QUIET_MS;
+        n = request(ED_CONTROL, q, sizeof q);
+        bad += check("CONTROL six-byte query remains byte exact for older clients",
+            n == legacy_n && !memcmp(legacy, host_wire, n));
+        extended[6] = 0;
+        request(ED_CONTROL, extended, sizeof extended);
+        uint32_t malformed = host_wire[6] == 1 && !ed_control.pending && !host_restarts;
+        extended[6] = 2;
+        request(ED_CONTROL, extended, sizeof extended);
+        malformed &= host_wire[6] == 1 && !ed_control.pending && !host_restarts;
+        request(ED_CONTROL, q, 5);
+        malformed &= host_wire[6] == 1 && !ed_control.pending && !host_restarts;
+        bad += check("CONTROL unknown metadata format/truncated query never arms reset", malformed);
+    }
+    control_token(a, 1);
+    request(ED_CONTROL, a, 15);
+    bad += check("CONTROL malformed length never arms reset", host_wire[6] == 1 && !ed_control.pending);
+    a[15] = 16; request(ED_CONTROL, a, 16);
+    bad += check("CONTROL rejects overflowing u32 encoding", host_wire[6] == 1 && !ed_control.pending);
+    control_token(a, 1); a[6]++;
+    request(ED_CONTROL, a, 16);
+    bad += check("CONTROL rejects stale generation without resetting", host_wire[6] == 2 && !ed_control.pending);
+    control_token(a, 1); song.playing = 1;
+    request(ED_CONTROL, a, 16); song.playing = 0;
+    bad += check("CONTROL refuses transport and consumes token", host_wire[6] == 3 && !ed_control.pending);
+    request(ED_CONTROL, a, 16);
+    bad += check("CONTROL replay after busy refusal is stale", host_wire[6] == 2 && !ed_control.pending);
+    uint32_t ok = 1;
+    for (uint32_t i = 0; i < 12u; i++) {
+        control_token(a, 1);
+        switch (i) {
+        case 0: cin_left = 1; break;
+        case 1: chain.armed = 1; break;
+        case 2: transport_req = 3; break;
+        case 3: fm1_in.notes = 1; break;
+        case 4: trk[0].v[0].active = 1; break;
+        case 5: ui.ml.on = 1; break;
+        case 6: ui.menu = 1; break;
+        case 7: set_later.on = 1; break;
+        case 8:
+#if FELUCCA_SLICE
+            slc_man_save = 1;
+#else
+            set_later.on = 1;
+#endif
+            break;
+        case 9: usb.uboot_req = 1; break;
+        case 10: ed_bk_put = 1; break;
+        case 11: fvb_tx.on = 1; break;
+        }
+        request(ED_CONTROL, a, 16);
+        ok &= host_wire[6] == 3 && !ed_control.pending && !host_restarts;
+        reset();
+    }
+    bad += check("CONTROL refuses count-in/song/notes/learn/menu/writes/update/transfers", ok);
+    reset(); control_token(a, 1);
+    host_name_open = 1;
+    request(ED_CONTROL, a, 16);
+    bad += check("CONTROL refuses a silent NAME dialog without confirmation flags",
+        !ui.confirm && name_on() && host_wire[6] == 3 && !ed_control.pending && !host_restarts);
+    host_name_open = 0;
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    ok = ed_control.pending;
+    host_name_open = 1; so_done = ed_control.end; ed_control_poll();
+    bad += check("CONTROL NAME opened after acceptance cancels before reset",
+        ok && !ed_control.pending && !host_restarts);
+    host_name_open = 0; reset();
+    if (eng_ok(ENGI_DRUM)) {
+        int32_t pcm[2u * CTL];
+        uint32_t active = 0, sounded = 0;
+        reset();
+        host_preset(TSEL, ENGI_DRUM, 0);
+        TSEL->p[P_AMODE] = 0;
+        song.g[G_ROUTE] = ROUTE_SEL;
+        song.master_q12 = MASTER_FULL;
+        midi_in_event(0x642A9009u);           /* USB MIDI CH1: closed hi-hat, held through its one-shot decay */
+        for (uint32_t block = 0; block < 5u * FS / CTL; block++) {
+            mix_block(pcm, CTL);
+            active = 0;
+            for (uint32_t voice = 0; voice < NVOICE; voice++) active += TSEL->v[voice].active != 0;
+            sounded |= active != 0;
+            if (sounded && !active) break;
+        }
+        ok = sounded && !active && midi_track_held(0) && !TSEL->nheld && !TSEL->arp_phys;
+        control_token(a, 1); request(ED_CONTROL, a, 16);
+        bad += check("CONTROL refuses held MIDI one-shot after its real DRUM voice decays",
+            ok && host_wire[6] == 3 && !ed_control.pending && !host_restarts);
+        midi_in_event(0x002A8008u);
+        events_block(CTL);
+        control_token(a, 1); request(ED_CONTROL, a, 16);
+        ok = !midi_track_held(0) && !host_wire[6] && ed_control.pending;
+        so_done = ed_control.end; ed_control_poll();
+        bad += check("CONTROL permits restart after real MIDI NoteOff and observed quiet",
+            ok && host_restarts == 1 && !ed_control.pending);
+        reset();
+    }
+    control_token(a, 1); host_audio_activity++;
+    request(ED_CONTROL, a, 16);
+    bad += check("CONTROL refuses FX tail activity with no active voices", host_wire[6] == 3 && !ed_control.pending);
+    fm1_ms += ED_CONTROL_QUIET_MS - 1u;
+    control_token_now(a, 1);
+    request(ED_CONTROL, a, 16);
+    bad += check("CONTROL requires the full observed audio quiet interval", host_wire[6] == 3 && !ed_control.pending);
+    control_token(a, 1);
+    request(ED_CONTROL, a, 16); so_done = ed_control.end; host_audio_activity++;
+    ok = ed_control.pending;
+    ed_control_poll();
+    bad += check("CONTROL burst after acceptance cancels before reset", ok && !host_restarts && !ed_control.pending);
+    reset(); control_token(a, 1);
+    control_token(a, 1);
+    request(ED_CONTROL, a, 16); end = ed_control.end;
+    ed_control_poll();
+    bad += check("CONTROL queue drain does not prove ACK endpoint completion",
+        host_wire[6] == 0 && ed_control.pending && !host_restarts && so_r == so_w);
+    so_done = end; ed_control_poll();
+    bad += check("CONTROL invokes platform only after real completion fence", host_restarts == 1 && !ed_control.pending);
+    request(ED_CONTROL, a, 16);
+    bad += check("CONTROL accepted token cannot be replayed", host_wire[6] == 2 && host_restarts == 1);
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    fm1_ms += ED_CONTROL_TTL; so_done = ed_control.end; ed_control_poll();
+    bad += check("CONTROL timeout aborts even if ACK completion is finally visible", !host_restarts && !ed_control.pending);
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    so_epoch++; so_done = ed_control.end; ed_control_poll();
+    bad += check("CONTROL USB reset invalidates its completion fence", !host_restarts && !ed_control.pending);
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    trk[0].v[0].active = 1; so_done = ed_control.end; ed_control_poll();
+    bad += check("CONTROL final busy recheck cancels accepted restart", !host_restarts && !ed_control.pending);
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    mi_w++; mi_r = mi_w; so_done = ed_control.end; ed_control_poll();
+    bad += check("CONTROL musical input since acceptance cancels even after consumption", !host_restarts && !ed_control.pending);
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    request(ED_PING, a, 0); so_done = so_w; ed_control_poll();
+    bad += check("CONTROL later editor traffic cancels pending transaction", !host_restarts && !ed_control.pending);
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    so_done = ed_control.end;
+    sx_ready = 1;                         /* TIMER5 published after ed_service's optimistic precheck */
+    ed_control_poll();
+    bad += check("CONTROL final locked snapshot catches newly published SysEx", !host_restarts && !ed_control.pending);
+    reset(); control_token(a, 1); so_w = so_r + SXQ;
+    sysex_byte(0xF0); sysex_byte(ED_HDR0); sysex_byte(ED_HDR1); sysex_byte(ED_HDR2); sysex_byte(ED_CONTROL);
+    for (uint32_t i = 0; i < 16; i++) sysex_byte(a[i]); sysex_byte(0xF7);
+    ed_service();
+    bad += check("CONTROL full queue rejects atomically without arming or waiting", !ed_control.pending && !host_restarts && so_w - so_r == SXQ);
+    reset();
+    request(ED_SMP_INFO, a, 0); control_token(a, 1); request(ED_CONTROL, a, 16);
+    bad += check("CONTROL stateless transfer ownership does not expire implicitly", host_wire[6] == 3 && ed_control.transfer);
+    control_token(a, 2); ed_bk_put = 1; request(ED_CONTROL, a, 16);
+    bad += check("CONTROL release refuses genuinely active backup upload", host_wire[6] == 3 && ed_control.transfer);
+    ed_bk_put = 0; control_token(a, 2); request(ED_CONTROL, a, 16);
+    bad += check("CONTROL explicit owner release clears only transfer latch", !host_wire[6] && !ed_control.transfer && !host_restarts);
+    control_token(a, 1); fm1_ms += ED_CONTROL_TTL; request(ED_CONTROL, a, 16);
+    bad += check("CONTROL expired challenge refuses reset", host_wire[6] == 2 && !ed_control.pending);
+    reset(); control_token(a, 1); ed_control_boot(8); request(ED_CONTROL, a, 16);
+    bad += check("CONTROL next boot rejects previous boot request", host_wire[6] == 2 && !ed_control.pending);
+    reset();
+    return bad;
+}
+
 #ifndef SMK_EDITOR_TEST
 int main(void)
 {
-    int bad = backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + sample_nor_faults() + song_protocol() + malformed_saves() +
+    int bad = guarded_control() + backup_extended_absent() + preferences() + motion_locks() + framing() + uart_recovery() + steps() + samples() + sample_nor_faults() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + watch_lifecycle() + watch_backpressure() + usb_burst() + menu_protocol() + drum_kit_retired() +
               learn_protocol() + custom_palette()
 #if FELUCCA_PROFILE_ENGINE_14 && FELUCCA_ENG_OMIT != 14

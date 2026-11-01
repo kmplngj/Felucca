@@ -81,6 +81,8 @@ static int st_read(uint32_t off, void *p, uint32_t n) { (void)off; (void)p; (voi
 static int st_prog(uint32_t off, const void *p, uint32_t n) { (void)off; (void)p; (void)n; return -1; }
 static int st_erase(uint32_t off) { (void)off; return -1; }
 #include "../firmware/src/storage.c"
+/* This effective-patch harness omits the naming UI. */
+static int name_on(void) { return 0; }
 #include "../firmware/src/editor.c"
 
 static int bad, nchecks;
