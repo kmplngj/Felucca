@@ -65,8 +65,9 @@ M content on parent and detail pages; S is reserved for supporting hints.
 
 Use spacing and theme roles alongside size: `T_THEME` for values, `T_MID` for
 secondary information, `T_ACCENT` for the active knob, and existing selected
-and disabled tokens. The turning knob's inverted state chip, drawn in every
-palette, continues to show state where accent and label colors coincide.
+and disabled tokens. The focused bank's status chip is inverted while its knob
+turns, in every palette. A turning card label is inverted only when `T_ACCENT`
+equals `T_MID`.
 
 ### Readable inactive information
 

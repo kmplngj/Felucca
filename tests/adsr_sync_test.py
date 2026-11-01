@@ -121,13 +121,18 @@ def run(source, out, *, fm4=False, force_graph=False, mutation=None):
         if not force_graph:
             check_counts(record['rows'])
     else:
-        failed = process.returncode != 0
-        if not failed:
-            try:
-                check_counts(record['rows'])
-            except AssertionError:
-                failed = True
-        assert failed, 'negative control escaped: ' + mutation
+        expected = {
+            'old-signature': (12, 'sync-changed-actual-view', 'independent forced-render graph equality'),
+            'live-posthash': (13, 'sync-ABA-followup', 'independent forced-render graph equality'),
+            'live-render': (14, 'post-raster-followup', 'independent forced-render graph equality'),
+            'dma-source': (0, None, 'DMA source lifetime'),
+        }
+        count, last_tag, check = expected[mutation]
+        assert process.returncode == 2, (mutation, 'expected causal exit 2', process.returncode, process.stderr)
+        assert process.stderr.splitlines() == ['wire: ' + check], (mutation, process.stderr)
+        assert [row['index'] for row in record['rows']] == list(range(count)), (mutation, record['rows'])
+        if last_tag is not None:
+            assert record['rows'][-1]['tag'] == last_tag, (mutation, record['rows'][-1])
         record['detected'] = True
     record['sha256'] = {q.name: hashlib.sha256(q.read_bytes()).hexdigest()
                         for q in out.iterdir() if q.is_file()}
