@@ -391,7 +391,11 @@ Current compiler flags and reachability exclusions are authoritative in `tools/b
 and `tools/size_fns.py`. The [remaining-helper experiment](selective-minsize-521.md)
 measured a 64 B option for HELP/category helpers and rejected promotion because
 of extra main-loop calls without service-latency evidence; production selection
-is unchanged. Clock/voltage changes, a second core, or FPU/DSP rewrites are
+is unchanged for those helpers. The [MACRO flash-fit comparison](macro-flash-size.md)
+extends selection to FM6 operator UI, sequence tools and editor LEARN/PALETTE
+helpers while retaining `-Os` for their IRQ-off record scans/copies. Its 2,220 B
+combined saving includes losslessly narrowed Braids formant tables; target service
+timing remains unmeasured. Clock/voltage changes, a second core, or FPU/DSP rewrites are
 separate hardware experiments with their own correctness, timing and reliability evidence.
 
 ## Soft-double link guard

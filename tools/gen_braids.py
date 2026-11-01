@@ -119,6 +119,17 @@ res = []
 for m in re.finditer(r"const (?:u?int\d+_t)(?:\*| )+\w+\[\] = \{", resource):
     end = balanced(resource, m.end() - 1)
     declaration = resource[m.start():end] + ";\n"
+    if any(" " + name + "[]" in declaration for name in ("wav_formant_sine", "wav_formant_square")):
+        # RenderVowel indexes these signed samples directly; both fit in a byte.
+        # Reject changed inputs rather than silently truncating their samples.
+        values = [int(value.strip()) for value in declaration.split("{", 1)[1].split("}", 1)[0].split(",") if value.strip()]
+        if len(values) != 256 or any(not -128 <= value <= 127 for value in values):
+            raise ValueError("Braids formant tables need 256 signed 8-bit samples")
+        declaration = declaration.replace("const int16_t ", "const int8_t ", 1)
+    if " waveform_table[]" in declaration:
+        # The formant entries are bytes; RenderBuzz uses only the int16_t comb
+        # entries. C converts this heterogeneous table's void pointers on use.
+        declaration = declaration.replace("const int16_t* ", "const void* ", 1)
     # Two source samples per output frame at 44.1 kHz. Retune the immutable
     # phase/delay tables from 96 kHz to 88.2 kHz, outside the audio interrupt.
     if "--reference" not in sys.argv and ("lut_oscillator_increments[]" in declaration or "lut_oscillator_delays[]" in declaration):

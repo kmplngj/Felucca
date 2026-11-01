@@ -396,6 +396,12 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Optimized
 
+- The opt-in MACRO firmware fits the FM-1 app slot again through lossless Braids
+  formant-table storage and additional main-loop size optimization. The matched
+  default-feature build saves **2,220 B** with unchanged static RAM, models and
+  factory sounds; IRQ-off record scans retain their generated code. See the
+  [measurements and pending device service/timing checks](macro-flash-size.md).
+
 - Storage skips a redundant erase only for a fresh copy: neither A nor B holds a
   commit record, no save of the object was tried since boot, and a complete
   destination-sector check reads blank. Every other destination, including any
