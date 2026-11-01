@@ -64,6 +64,36 @@ static void sound_unguard(uint32_t f)
 #endif
 }
 
+/* #147 (voice.c note_hit): main-loop reset of one part's note events, guarded against the audio-event owner:
+ * NOTE_HIT_SLOTS stores. Main loop only (sound_install; the LED service: ui_input.c) */
+static void note_hits_clear(uint32_t part)
+{
+    uint32_t i, f = sound_guard();
+    for (i = 0; i < NOTE_HIT_SLOTS; i++)
+        note_hit[part % NPART][i] = 0;
+    sound_unguard(f);
+}
+
+/* an event older than this is dropped by the sweep: far past any reader's window, far short of the 24-bit time's wrap
+ * (4.6 h), so an idle part's old note never comes back as a new one */
+#define NOTE_HIT_STALE_MS 4096u
+/* drop the stale events (a rare clear per event: the interrupt off for one compare and store, and only if the slot
+ * still holds the word seen, so a note-on that refreshed it in between is kept). Main loop only, every few seconds */
+static void note_hits_sweep(void)
+{
+    uint32_t now = fm1_ms, p, i, w, f;
+    for (p = 0; p < NPART; p++)
+        for (i = 0; i < NOTE_HIT_SLOTS; i++) {
+            w = note_hit[p][i];
+            if (!(w & NOTE_HIT_VALID) || note_hit_age(now, w) < NOTE_HIT_STALE_MS)
+                continue;
+            f = sound_guard();
+            if (note_hit[p][i] == w)
+                note_hit[p][i] = 0;
+            sound_unguard(f);
+        }
+}
+
 /* every common value of the sound in p (before E1..E8) that is not the track's own (param_kept) at its default */
 static void sound_defaults(int16_t *p)
 {
@@ -117,7 +147,8 @@ static void sound_install(track_t *t, uint32_t eng, uint32_t preset, const int16
         fm6_set_patch(tr, patch);
     if (flags & SND_PANIC)
         panic_req |= (uint8_t)(1u << tr);
-    sound_unguard(f);
+    note_hits_clear(tr);                              /* (#147: the old sound's note events are not the new one's) */
+    sound_unguard(f);                                  /* a new-sound note-on may run as soon as this publishes */
     if (fslot) {
         fm6_own_ok &= (uint8_t)~(1u << tr);           /* (fm6_load_slot: nothing of OWN to bring back) */
         fm6_slot[tr] = (uint8_t)slot;

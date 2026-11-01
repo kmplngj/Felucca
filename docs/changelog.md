@@ -69,6 +69,23 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Added
 
+- Keyboard LEDs keep a note-on lit for about 100 ms (elapsed time, not frames), so
+  very short sequencer, arpeggiator, MIDI and key-tap notes stay visible even when
+  they start and end between two LED updates (#147). The audio side records each
+  part's recent note-ons in a 128 B event ring plus 4 B of replacement state,
+  with a bounded eight-slot search per note-on. The hold never extends a voice,
+  recording or MIDI, and ends at once on stop, a new selected part, an engine
+  change or LED sleep. Stop clears the events at the transport boundary, even
+  when stop and restart fit between LED updates.
+
+- [Guarded USB-MIDI warm restart](device-control.md) for automated FM-1 tests,
+  with full build/boot identity, BUSY refusal, explicit transfer ownership and a
+  separate host control tool. The host sends once and verifies the next boot
+  generation after reconnect. Capability-negotiated identity queries also expose
+  the verified PR label and canonical compiled build-profile name, preserving
+  the original query/reply for older clients. No implicit project save or bootloader change;
+  physical qualification remains pending.
+
 - Opt-in [SMK-37 Pro, SMK-37 Elite and MKE-P37 targets](smk37.md) add model-specific
   firmware packages, velocity keys/pads, faders/wheels and protected per-board
   flash layouts. Unknown stores remain RAM-only until explicit initialization;

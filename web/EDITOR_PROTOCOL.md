@@ -21,7 +21,102 @@ the commands and revisions actually exercised.
 - [MOTION 64](#cmd-64), [backup 65..67](#v7-full-backup-65-67), [FM6 68..71](#fm6-patches-68-71)
 - [MENU 72..73](#menu-settings-72-73-104), [voice bank 74..77](#fm6-voice-bank-74-77-141)
 - [MIDI LEARN 78..79](#midi-learn-78-79-15), [palette 80..81](#custom-palette-80-81-16), [raw export 82..83](#raw-store-export-82-83-456)
-- [Parameter reference](#parameter-and-engine-reference), [project containers](#project-containers), [protocol changelog](#protocol-changelog)
+- [Device control 84](#device-control-84), [Parameter reference](#parameter-and-engine-reference), [project containers](#project-containers), [protocol changelog](#protocol-changelog)
+
+## Device control 84
+
+INFO appends `5A 01 caps`: bit 0 supports the read-only control identity; bit 1
+supports guarded warm restart; bit 2 supports the extended identity QUERY.
+`TRANSFER_COMPLETE` requires bit 0; `RESTART`
+requires bits 0 and 1. Normal target OTA/editor builds advertise all three bits.
+Host fixtures omit restart support unless an explicit test hook enables it.
+The browser emulator omits USB/editor support entirely. Negotiate the capability;
+do not repurpose MIDI System Reset, UBOOT or OTA.
+See [host usage and limits](../docs/device-control.md).
+
+All integers below are the five-byte, canonical u32 encoding in the framing
+table. The fifth byte must be at most 15. Lengths count argument bytes only.
+
+| Operation | Request | Reply |
+| --- | --- | --- |
+| 0 QUERY | `0, request_id:u32` (6 bytes) | `0, rc, request_id:u32, generation:u32, challenge:u32, uptime_ms:u32, busy:u32, dirty, commit:NUL, version:NUL` on success |
+| 0 QUERY extended | `0, request_id:u32, 1` (7 bytes; requires bit 2) | Original successful QUERY reply followed by `pr:NUL, profile:NUL` |
+| 1 RESTART | `1, request_id:u32, generation:u32, challenge:u32` (16 bytes) | `1, rc, request_id:u32, generation:u32` (12 bytes) |
+| 2 TRANSFER_COMPLETE | `2, request_id:u32, generation:u32, challenge:u32` (16 bytes) | `2, rc, request_id:u32, generation:u32` (12 bytes) |
+
+An error QUERY reply has the same 12-byte prefix as the other replies. Return
+codes are 0 accepted, 1 malformed arguments, 2 stale/expired token, 3 busy and
+4 unsupported restart. A complete control reply may be dropped atomically when
+the bounded USB queue has no room; this never arms a reset. Clients correlate
+both operation and request ID and reject malformed replies.
+
+The original six-byte QUERY and its reply remain byte compatible with older
+clients. Send the seven-byte variant only when INFO bit 2 is present; any other
+QUERY length or extension selector returns rc 1. Both variants share the same
+challenge/busy handling and never save data, stop playback or arm a restart.
+
+Identity strings are printable ASCII with maximum byte counts excluding NUL:
+`commit` 40, `version` 24, `pr` 32 and `profile` 64. `pr` is the build generator's
+verified `FELUCCA_BUILD_PR` label (for example `PR #790 head`); empty means no verified
+PR metadata, including local builds. `profile` is the exact generated
+`FELUCCA_PROFILE_NAME`, validated as 1..64 lowercase letters, digits or hyphens.
+It identifies the selected profile, not every feature-flag override. Older
+six-byte replies contain neither field: display unavailable/unknown rather than
+inferring a PR or profile from commit, version, engine count or capability bits.
+Clients must reject malformed, unterminated or overlong strings and trailing data.
+
+QUERY returns a fresh single-use challenge. RESTART and TRANSFER_COMPLETE must
+echo that challenge and the current nonzero boot generation within 2000 ms and
+the same USB epoch. A newer query replaces the challenge. A refused mutation
+also consumes it. Generation comes from the existing retained boot counter,
+skips zero on wrap and changes on ordinary app boot; it is not a persistent
+flash counter or physical device identity. `commit` is the compiled full SHA
+(or `unknown`); `dirty` is 0/1. The host tool requires a full SHA for mutations.
+
+| Busy bit | Meaning |
+| --- | --- |
+| 0 | Transport, count-in, recording or song chain operation |
+| 1 | Held physical input, notes, voices, latched/sequence/rhythm state or less than 100 ms observed master-audio quiet |
+| 2 | Menu, confirmation, update gesture, LEARN or transient input layer |
+| 3 | Transfer ownership latch, active backup write or FM6-bank transfer |
+| 4 | Deferred setting/persistence or SLICE work/page |
+| 5 | USB unavailable/suspended, update/rescue request or active USB audio stream |
+| 6 | Active optional screen capture |
+| 7 | Pending MIDI/USB/CDC input or MIDI overflow |
+
+The quiet interval uses the existing master-energy activity generation (roughly
+−60 dBFS block energy), including effect tails. Main-loop observation requires
+at least 100 ms without a generation change. This is a conservative software
+guard, not a physical silence or deadline measurement; it adds no audio-ISR work.
+
+RESTART does not save anything or clear a busy condition. After accepting it,
+the main loop waits at most 2000 ms for the final acknowledgement packet's
+actual EP1 completion. Queue dequeue alone is insufficient. Reset/detach,
+endpoint reconfiguration, a failed SIE transaction, later incoming editor/MIDI
+traffic, audio activity, expiry or a changed busy condition cancels the pending
+restart. The final check and platform handoff run with interrupts excluded.
+The platform stops audio, marks the boot intentional, detaches USB and invokes
+the existing CPU1-safe ordinary P33 reset. An accepted ACK reports a pending
+operation, not proof that a reset occurred. Host verification requires the same
+full build/dirty/version with the next boot generation after reopening the
+selected ports. The host waits beyond the pending deadline before sending
+reconnect queries, since a new control request cancels an earlier transaction.
+
+Transfer commands retain a conservative ownership latch: sample commands 11..15,
+backup commands 65..67, FM6-bank commands 74..77 and raw-export commands 82..83.
+This does not change their existing replies or stored formats. There is no
+implicit idle timeout for the latch because stateless uploads may pause and
+resume. TRANSFER_COMPLETE is an explicit declaration by the exclusive owner
+after completion/cancellation; it clears only that latch and refuses known
+active backup/FM6 transactions or pending write/USB conditions. It is separate
+from RESTART. Existing clients continue working but must explicitly release
+ownership before using this restart facility after a transfer.
+
+Use one cooperative controlling client. These tokens prevent stale/replayed
+requests within this protocol; they are not authentication, USB serial numbers
+or isolation from another client. No additional retained RAM or flash journal
+is used. Physical endpoint, restart, data-preservation and post-boot operation
+checks remain pending until recorded for the candidate package.
 
 ## Framing
 

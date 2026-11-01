@@ -1009,6 +1009,7 @@ static void seq_stop(void)
 {
     uint32_t i;
     song.playing = 0;
+    note_hits_stop();                              /* stop boundary, before any later restart or live note-on */
     cin_cancel();                                 /* a count-in is cancelled, nothing recorded */
     if (song.g[G_CLOCK])                           /* external clock: the arp stops with the transport, */
         for (i = 0; i < NPART; i++)                /* its sounding note too (HOLD keeps the latched chord) */
