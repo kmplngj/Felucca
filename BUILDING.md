@@ -178,6 +178,12 @@ uv run --locked --group build ./build.sh
 `JIELI_TOOLCHAIN` and `AC79_SDK` override the default locations
 (`~/.jieli/toolchain`, `~/fw-AC79_AIoT_SDK`).
 
+The default target remains FM-1. Opt-in SMK builds use `--board smk37` and
+`--model pro|elite|mke`; see [SMK packages, controls and storage/recovery](docs/smk37.md).
+Board/model selection is separate from `FELUCCA_PROFILE`. Normal push/PR builds
+do not build the SMK model matrix; **Experimental SMK firmware** is manual or
+called by tagged releases.
+
 ### Final-image soft-double policy
 
 Every target application build checks the final linked ELF symbol table against
@@ -884,6 +890,12 @@ differing PCM/state word appear in the output; fixture code is in
 `web/emu/partition_test.c` and `web/emu/partition_test.mjs`.
 
 ## Device diagnostics
+
+The native LCD fault regression compiles the actual driver/canvas/UI against an
+independent DMA oracle (`tests/lcd_fault_test.c`), including sanitizer coverage.
+`python3 tests/lcd_wait_test.py` checks the HAL's real completion/wait bodies with
+substituted registers. These host checks do not qualify hardware DMA abort or
+recovery; see [LCD containment](docs/lcd-fault-containment.md).
 
 For repeatable read-only CDC diagnostics captures, see [Collecting device diagnostics](docs/diagnostics.md).
 The client needs Python 3 on macOS/Linux and an explicitly selected serial port; it does not install firmware.

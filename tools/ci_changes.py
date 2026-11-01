@@ -14,6 +14,7 @@ PORTABLE_TESTS = (
     "firmware_watch_test.py", "bootarea_test.py", "update_records_test.py",
     "build_identity_test.py",
     "bitmap_font_test.py", "build_guard_test.py", "build_report_test.py", "profile_contract_test.py", "build_product_test.py",
+    "smk_release_test.py",
     "build_manifest_test.py", "wasm_report_test.py", "maintainer_bundle_test.py", "emulator_trace_test.py",
     "native_emulator_replay_test.py", "native_hotspots_test.py", "native_audio_window_test.py",
     "cpu_baseline_test.py", "diagnostics_test.py", "gen_samples_test.py", "fm1pkg_test.py", "fm1_pr_test.py", "replay_validation_test.py",

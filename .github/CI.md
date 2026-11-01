@@ -1,6 +1,15 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Firmware CI and releases
 
+Normal push/PR firmware validation continues to build the standard FM-1 target.
+The **Experimental SMK firmware** workflow builds Pro, Elite and MKE when manually
+dispatched or called by tagged releases. Each model has resource evidence and
+complete corresponding source. Tagged releases attach these assets as
+experimental; FM-1 hardware attestation does not qualify SMK models.
+SMK platform host fixtures use synthetic,
+non-installable packages in normal CI and require no additional target build.
+See [experimental board controls, storage and qualification](../docs/smk37.md).
+
 `CI` runs on pull requests, pushes to `main` and manual dispatch. Its reusable
 `Firmware validation` job runs natively on Ubuntu 24.04 x86-64 with Clang for the
 host harness and JieLi Clang 4.0.1 for pi32v2. No repository secrets are required.

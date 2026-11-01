@@ -15,7 +15,20 @@
 #include <string.h>
 #define __attribute__(x)   /* (the sources' .pool sections: no Mach-O section names) */
 
+#include "../firmware/hal/fm1_cc.h"
+#if BOARD_SMK37
+#ifdef SMK_LOADER_TEST
+#define FELUCCA_ID "ota-" SMK_MODEL "_900"
+#else
+#define FELUCCA_ID SMK_MODEL "_900"
+#endif
+#define TEST_OTA_LO 0xBB000u
+#define TEST_OTA_HI 0xC0000u
+#else
 #define FELUCCA_ID "FM-1_900"
+#define TEST_OTA_LO 0xE0000u
+#define TEST_OTA_HI 0xE5000u
+#endif
 #define FELUCCA_OTA_DRYRUN 0
 #define OTA_STOCK_CONST                  /* the table is written below: the stand-ins' boot areas */
 
@@ -26,6 +39,7 @@ static size_t logical_len;
 static uint8_t rx[1024];                 /* one pending host frame (7-bit bytes) */
 static uint32_t rx_len, rx_full;
 static uint32_t now_ms, requests, ident_replies, mute_after = 0xFFFFFFFFu, bad_erase, erases;
+static uint32_t flash_reads;
 static int committed;
 static uint8_t committed_parm[112];
 static int32_t last_code;
@@ -78,7 +92,7 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)
     m[6] = 0;
     memcpy(m + 7, &addr, 4);
     m[11] = (uint8_t)len; m[12] = (uint8_t)(len >> 8); m[13] = 0;
-    if (addr == 0xE0000000u) {
+    if (addr >= 0xE0000000u) {
         memset(m + 14, 0, len);
         memcpy(m + 14, "success", 8);
     } else {
@@ -103,7 +117,7 @@ static uint32_t ota_now_ms(void) { return now_ms; }
 static void ota_idle(void) { now_ms += 1; }
 static int ota_erase(uint32_t off)
 {
-    if (off < 0xE0000u || off >= 0xE5000u || (off & 0xFFFu)) { bad_erase++; return -8; }
+    if (off < TEST_OTA_LO || off >= TEST_OTA_HI || (off & 0xFFFu)) { bad_erase++; return -8; }
     erases++;
     memset(nor + off, 0xFF, 4096);
     return 0;
@@ -112,11 +126,11 @@ static int ota_prog(uint32_t off, const void *src, uint32_t n)
 {
     const uint8_t *s = src;
     uint32_t i;
-    if (off < 0xE0000u || off + n > 0xE5000u) { bad_erase++; return -8; }
+    if (off < TEST_OTA_LO || off + n > TEST_OTA_HI) { bad_erase++; return -8; }
     for (i = 0; i < n; i++) nor[off + i] &= s[i];
     return 0;
 }
-static int ota_fread(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
+static int ota_fread(uint32_t off, void *dst, uint32_t n) { flash_reads++; memcpy(dst, nor + off, n); return 0; }
 static void ota_show(uint32_t step, int32_t code) { if (step == 9) last_code = code; }
 static void ota_commit(const uint8_t *parm) { committed = 1; memcpy(committed_parm, parm, 112); }
 
@@ -213,7 +227,7 @@ static int check(const char *what, int ok)
 static int area_erased(void)
 {
     uint32_t i;
-    for (i = 0xE0000; i < 0xE5000; i++) if (nor[i] != 0xFF) return 0;
+    for (i = TEST_OTA_LO; i < TEST_OTA_HI; i++) if (nor[i] != 0xFF) return 0;
     return 1;
 }
 
@@ -222,7 +236,7 @@ static void reset_dev(void)
     memset(nor, 0xFF, sizeof nor);
     memcpy(nor, dev_head, 0x4000);                        /* device flash head = the first package's flash.bin head */
     rx_full = 0; requests = 0; ident_replies = 0; committed = 0; last_code = 0;
-    mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0;
+    mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0; flash_reads = 0;
 }
 
 /* the device's chip key: its isd_config.ini blob rewritten as fm1pkg_make.key_blob does; 0x10000 = a broken blob */
@@ -293,26 +307,55 @@ int main(int argc, char **argv)
     bad += check("session commits (flash.bin exactly 0x93000)", rc == 0 && committed);
     bad += check("headers + loader + confirm, no head reads", requests >= 10 && requests <= 30);
     {
-        uint8_t *h = nor + 0xE0000, *p = committed_parm;
-        bad += check("staged body == the package's loader", !memcmp(nor + 0xE0020, logical + ota_body_off(), 64));
+        uint8_t *h = nor + TEST_OTA_LO, *p = committed_parm;
+        bad += check("staged body == the package's loader", !memcmp(nor + TEST_OTA_LO + 32u, logical + ota_body_off(), 64));
         bad += check("LOADER.BIN head CRC",
                      (h[0] | h[1] << 8) == ota_crc16(h + 2, 30, 0) && !memcmp(h + 16, "LOADER.BIN", 10));
-        bad += check("record at 0xE4F00 == RAM record", !memcmp(nor + 0xE4F00, p, 112));
+        bad += check("record at 0xE4F00 == RAM record", !memcmp(nor + OTA_RES, p, 112));
+        bad += check("record model identity", !memcmp(p + 8, OTA_PARM_ID, sizeof OTA_PARM_ID - 1));
         bad += check("record CRC / type / magic / ota_addr",
                      (p[0] | p[1] << 8) == ota_crc16(p + 2, 78, 0) && (p[2] | p[3] << 8) == 0x5A0D &&
-                     (p[6] | p[7] << 8) == 0x5441 && ota_rd32(p + 72) == 0xE0000);
+                     (p[6] | p[7] << 8) == 0x5441 && ota_rd32(p + 72) == TEST_OTA_LO);
         bad += check("nothing written outside 0xE0000..0xE4FFF", bad_erase == 0);
     }
-    /* boot cleanup erases it */
-    bad += check("boot cleanup erases the area", ota_boot_cleanup() == 1 && area_erased());
-    bad += check("second boot: nothing to do", ota_boot_cleanup() == 0);
+#if BOARD_SMK37
+    {   /* An explicit OTA still stages/commits without store ownership. Its
+         * partial/successful staging is not an automatic adoption on reboot. */
+        uint32_t before_erases = erases, before_reads = flash_reads;
+        bad += check("unowned reboot keeps explicitly staged update", ota_boot_cleanup(0) == 0 &&
+                     erases == before_erases && flash_reads == before_reads && !area_erased());
+    }
+#endif
+    /* Owned-store cleanup retains its existing behavior. FM-1 ignores the
+     * ownership argument because its existing map/policy is unchanged. */
+    bad += check("boot cleanup erases the area", ota_boot_cleanup(1) == 1 && area_erased());
+    bad += check("second boot: nothing to do", ota_boot_cleanup(1) == 0);
+#if BOARD_SMK37
+    {
+        static uint8_t kept[OTA_AREA_LEN];
+        uint32_t value, kept_all = 1;
+        /* Every byte value, including all-FF, arbitrary stock VM data and
+         * record-shaped tails: locked boot must do no reads or erases. */
+        for (value = 0; value < 256u; value++) {
+            reset_dev();
+            memset(nor + OTA_AREA, (int)value, OTA_AREA_LEN);
+            memcpy(kept, nor + OTA_AREA, sizeof kept);
+            kept_all &= ota_boot_cleanup(0) == 0 && !erases && !flash_reads &&
+                        !memcmp(kept, nor + OTA_AREA, sizeof kept);
+        }
+        bad += check("foreign SMK VM sentinels survive locked cleanup", kept_all);
+    }
+#else
+    reset_dev(); nor[OTA_AREA] = 0;
+    bad += check("FM1 cleanup ignores SMK ownership gate", ota_boot_cleanup(0) == 1 && area_erased());
+#endif
 
     /* 1.6.1: another board's package (flash.bin not this board's app area size): refused in step 1, nothing erased */
     {
         uint8_t keep[0x40 + 11 * 0x50];
         memcpy(keep, logical, sizeof keep);
         reset_dev();
-        set_fl_size(logical, 0x9D000u);
+        set_fl_size(logical, BOARD_SMK37 ? 0x93000u : 0x9D000u);
         rc = ota_session();
         bad += check("another board's size (0x9D000): -15, no commit, no erase", rc == -15 && !committed && erases == 0 &&
                      area_erased());
@@ -386,8 +429,8 @@ int main(int argc, char **argv)
             rc = ota_session();
             bad += check(S[k].what, rc == S[k].rc &&
                          (rc ? !committed && erases == 0 && area_erased()
-                             : committed && !memcmp(nor + 0xE0020, logical + ota_body_off(), 64) &&
-                               !memcmp(nor + 0xE4F00, committed_parm, 112)) &&
+                             : committed && !memcmp(nor + TEST_OTA_LO + 32u, logical + ota_body_off(), 64) &&
+                               !memcmp(nor + OTA_RES, committed_parm, 112)) &&
                          bad_erase == 0 && !memcmp(nor + 0x20, dev_head + 0x20, 0x60));
         }
         /* a boot area byte for byte the device's own needs no pin (nothing in it changes, as before #619); one byte

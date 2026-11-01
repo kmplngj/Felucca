@@ -107,6 +107,13 @@ static uint8_t fm1_peek8(uint32_t a) { (void)a; abort(); }
 static int flash_ok;
 static int st_read(uint32_t a, void *b, uint32_t n) { (void)a; (void)b; (void)n; abort(); }
 
+/* Full fixture models the current LCD status; minimal also models older
+ * firmware which does not advertise those optional fields. */
+#if FELUCCA_UAC && FELUCCA_UART
+#define LCD_ASYNC_DRIVER 1
+static uint8_t lcd_fault = 1, lcd_busy = 1;
+static uint32_t lcd_faults = 4000000000u, lcd_recoveries = 3;
+#endif
 #include "../firmware/src/console.c"
 
 int main(int argc, char **argv)

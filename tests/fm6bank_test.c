@@ -529,6 +529,7 @@ int main(void)
 {
     int bad = 0;
     bad += store_test();
+    if (host_nor_set_bits) { printf("store_test programmed 0 -> 1 bits %u time(s) onto non-erased flash\n", host_nor_set_bits); bad++; }
     bad += cut_test();
     bad += slot_test();
     bad += keep_test();

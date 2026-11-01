@@ -34,6 +34,11 @@ recorded in the linked reports, rather than every current build or device.
 
 ### Fixed
 
+- Focused piano keys in the browser emulator respond to Enter, Space and numpad
+  Enter, report their pressed state to assistive technology, and release when
+  focus moves away. Adapted to the native input ownership model after
+  [fm1-base's keyboard controls](https://github.com/charlesvestal/fm1-base/commit/46743d1de1101f0a614964e0a4334edd48b5aded).
+
 - The [CDC diagnostics collector](diagnostics.md#interpreting-a-report) requires a
   complete, valid key-latency group before reporting measured latency. Missing
   older-firmware metrics remain unmeasured; malformed present known numeric fields,
@@ -45,6 +50,14 @@ recorded in the linked reports, rather than every current build or device.
   change.
 
 ### Added
+
+- Opt-in [SMK-37 Pro, SMK-37 Elite and MKE-P37 targets](smk37.md) add model-specific
+  firmware packages, velocity keys/pads, faders/wheels and protected per-board
+  flash layouts. Unknown stores remain RAM-only until explicit initialization;
+  failed operations cannot confirm ownership. SMK has two user sample slots and
+  USB MIDI, with per-model physical qualification pending. Normal CI/PR firmware
+  builds and Latest Dev retain the standard FM-1 target; tagged releases also
+  carry experimental SMK assets with separate build evidence.
 
 - Two [release channels](releases.md): one rolling **Latest Dev** prerelease identifies
   the latest validated main-branch PR merge; tagged packages require exact-commit device
@@ -192,9 +205,11 @@ recorded in the linked reports, rather than every current build or device.
   [Recording interpretation](diagnostics.md#usb-test-tone-recordings) keeps device
   qualification separate from the offline result.
 
-- PR-source cleanup protects reflog-only detached commits and refuses removal with
-  deinitialized or orphan private submodule repositories. It preserves history
-  without automatic metadata repair. See the
+- PR-source cleanup protects reflog-only detached commits in the parent worktree
+  and its submodules, including commits retained only by an old-side HEAD-log entry.
+  It refuses removal with deinitialized or orphan private submodule repositories
+  and preserves history without automatic metadata repair. Unrelated checkouts'
+  reflogs do not block cleanup. See the
   [worktree preservation and cleanup procedure](../BUILDING.md#optional-isolated-pr-sources).
 
 - Latest Dev uses a compact commit-based firmware version that fits ABOUT. PR and
@@ -223,6 +238,13 @@ recorded in the linked reports, rather than every current build or device.
   are unchanged. Native host rendering and scroll checks qualify this text change;
   no physical display observation is claimed.
   See [licensing scope](../LICENSING.md#sample-pack-dedication-and-scope).
+
+- **LCD failure containment:** a missing completion stops further display work
+  while retaining DMA source ownership. Verified late completion permits a bounded
+  wake/full-redraw retry of the latest UI state; failed initialization stays stopped
+  until reboot. Screenshots cannot report a completed image after transport failure.
+  Physical DMA, recovery and loaded FM-1 service qualification remain pending;
+  see [the contract and limits](lcd-fault-containment.md).
 
 - **LCD state readability:** muted track names/settings, mixer annotations,
   piano-roll pitch labels and MOD text/units retain readable contrast across

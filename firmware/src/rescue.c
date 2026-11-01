@@ -75,7 +75,13 @@ static uint32_t rescue_boot_buttons(void)
             fm1_input_tick();
         }
     } while ((uint32_t)(fm1_ticks() - start) < 30000u * FM1_TICKS_PER_US);
+#if BOARD_SMK37
+    /* The SMK bank buttons occupy bits 0/1; boot policy takes normalized OCT bits. */
+    return ((fm1_in.buttons >> FM1_BTN_OCT_DOWN) & 1u) |
+           (((fm1_in.buttons >> FM1_BTN_OCT_UP) & 1u) << 1);
+#else
     return fm1_in.buttons & 3u;                 /* physical OCT-, OCT+; no saved panel mapping */
+#endif
 }
 
 #if FELUCCA_OTA
@@ -88,7 +94,11 @@ static void rescue_init(void)
     fm1_ms = 0;
     /* JEDEC is read-only. Avoid irq_restore(), which unconditionally enables
      * interrupts on this HAL, and never import or clean up persisted data. */
+#if BOARD_SMK37
+    flash_ok = FL_JEDEC_OK(FL_FAR(fl_jedec_ram)());
+#else
     flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;
+#endif
     lcd_init();
     rescue_screen();
     usb_start();

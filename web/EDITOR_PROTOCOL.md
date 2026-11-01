@@ -2144,7 +2144,10 @@ completion checks prevent skipped or duplicate chunks becoming a valid PNG.
 The fixed session lifetime is 120 seconds from BEGIN, including host stalls;
 requests do not extend it. Unsigned elapsed-time checks handle timer wrap.
 Failed commands emit `SCAP ERROR code=argument|stale|state|bounds|busy|unsupported`
-as appropriate. Missing coverage or a changed repeated full draw aborts the
+as appropriate. Native LCD transfer failure also terminates as `coverage` rather
+than publishing READY; its explicit wake hold is released. This does not add a
+state or change the protocol version.
+Missing coverage or a changed repeated full draw aborts the
 session; no partial frame is a successful screenshot. `draw_hash` is an ordered
 draw-operation FNV32 fingerprint, **not** the final image CRC. The host computes
 the latter after complete assembly. This transport captures intended LCD pixels,

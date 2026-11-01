@@ -27,7 +27,27 @@
 #undef memset
 #undef memcpy
 #undef memcmp
+#if BOARD_SMK37
+/* Partial input adapter for shared production consumers (smk_input.h's keybed layout). */
+#define FM1_NKEY 37u
+#define SMK_KEY_F3 5u
+#ifndef SMK_ENC_MASTER
+#define SMK_ENC_MASTER 0u
+#endif
+static struct { volatile uint32_t notes, buttons; uint8_t key_vel[FM1_NKEY]; } fm1_in;
+static uint32_t smk_extkeys_held, smk_extkeys_pressed;
+static uint8_t smk_extkeys_asleep;
+static uint32_t smk_extkey_activity(uint32_t *held)
+{
+    uint32_t p = smk_extkeys_pressed; *held = smk_extkeys_held; smk_extkeys_pressed = 0; return p;
+}
+#ifndef HOST_SMK_EXTKEY_TAKE
+#define HOST_SMK_EXTKEY_TAKE() (-1)
+#endif
+static int32_t smk_extkey_take(void) { return HOST_SMK_EXTKEY_TAKE(); }
+#else
 static struct { volatile uint32_t notes, buttons; } fm1_in;
+#endif
 #include "../firmware/src/core.h"
 #include "../firmware/src/engines.c"
 #include "../firmware/src/params.c"

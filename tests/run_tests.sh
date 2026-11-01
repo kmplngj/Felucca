@@ -334,6 +334,7 @@ u_portable() {
     run "firmware source watch migration and recovery" python3 tests/firmware_watch_test.py
     run "generated sample inputs: stale/extra WAVs and header cache" python3 tests/gen_samples_test.py
     run "build --product: precedence, validation, no job on bad input (mocked)" python3 tests/build_product_test.py
+    run "SMK release assets: model identity, source reproduction, tampering and publication staging" python3 tests/smk_release_test.py
     run "JieLi 64-bit arithmetic compile/link smoke (explicit skip without toolchain)" python3 tests/build_guard_target_test.py
     run "selective minsize: ISR symbol graph and annotation fixtures" python3 tests/size_fns_test.py
     run "selective minsize: real JieLi LLVM IR smoke (explicit skip without toolchain)" python3 tests/size_fns_target_test.py
@@ -349,6 +350,9 @@ u_portable() {
 unit portable "" u_portable
 
 u_storage() {
+    $CC -o "$OUT/host_nor_test" tests/host_nor_test.c
+    run "host NOR model (host_nor.h): aligned erase / program, 0 -> 1 counter, bounds / alignment aborts" "$OUT/host_nor_test"
+
     $CC -o "$OUT/storage_test" tests/storage_test.c
     run "flash storage (A/B, torn writes)" "$OUT/storage_test"
 
@@ -455,6 +459,96 @@ u_lcd_power() {
     run "LCD power: baseline controller commands, unchanged RGB565 and delayed DMA ownership" "$OUT/lcd_power_test"
 }
 unit lcd_power "" u_lcd_power
+
+u_lcd_fault() {
+    $CC -w -o "$OUT/lcd_fault_test" tests/lcd_fault_test.c -lm
+    run "LCD fault: actual driver/canvas/UI ownership, backoff, latest redraw, power/capture" "$OUT/lcd_fault_test"
+    run "LCD HAL: completion acknowledgment and bounded missing-completion polls" python3 tests/lcd_wait_test.py
+    negative_rc=0
+    "$OUT/lcd_fault_test" --dma-negative > "$OUT/lcd_fault_negative.log" 2>&1 || negative_rc=$?
+    if [ "$negative_rc" != 1 ] || ! grep -q 'LCD fault oracle: in-flight source modified' "$OUT/lcd_fault_negative.log"; then
+        echo "FAIL LCD fault ownership negative control did not detect an in-flight write"
+        return 1
+    fi
+    negative_rc=0
+    "$OUT/lcd_fault_test" --cache-negative > "$OUT/lcd_fault_cache_negative.log" 2>&1 || negative_rc=$?
+    if [ "$negative_rc" != 1 ] || ! grep -q 'cached recovery matches the complete latest forced redraw' "$OUT/lcd_fault_cache_negative.log"; then
+        echo "FAIL LCD fault cache negative control did not detect missing full repaint"
+        return 1
+    fi
+}
+UNIT_NEEDS=assets
+unit lcd_fault "" u_lcd_fault
+UNIT_NEEDS=
+
+u_smk_platform() {
+    $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_input_test" tests/smk_input_test.c
+    run "SMK input: production velocity, pad/key ownership, outer keys and encoders" "$OUT/smk_input_test"
+    $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_outer_activity_test" tests/smk_outer_activity_test.c
+    run "SMK outer keys: held activity, queued wake consumption and warm initialization" "$OUT/smk_outer_activity_test"
+    $CC -std=gnu11 -O2 -Wno-int-to-pointer-cast -o "$OUT/smk_scan_test" tests/smk_scan_test.c
+    run "SMK scan: physical columns, delayed DMA/latch, startup, all keys and LED groups" "$OUT/smk_scan_test"
+    run "SMK wheels: elapsed-time drift, repeated polls, wrap and bounded delayed service" python3 tests/smk_wheel_test.py
+    $CC -std=gnu11 -O2 -o "$OUT/smk_lcd_test" tests/smk_lcd_test.c
+    run "SMK display: LCD DMA lifetime and RGB pad SPI sharing" "$OUT/smk_lcd_test"
+    $CC -std=c99 -Wextra -Werror -pedantic -o "$OUT/smk_storage_setup_test" tests/smk_storage_setup_test.c
+    run "SMK storage confirmation: physical release, fresh confirm, cancel and timeout" "$OUT/smk_storage_setup_test"
+    $CC -std=gnu11 -O2 -o "$OUT/smk_storage_test" tests/smk_storage_test.c
+    run "SMK storage: ownership, interrupted initialization and protected flash" "$OUT/smk_storage_test"
+    $CC -std=gnu11 -O2 -o "$OUT/smk_flash_guard_test" tests/smk_flash_guard_test.c
+    run "SMK flash: protected windows despite an incorrect caller allow-list" "$OUT/smk_flash_guard_test"
+    python3 tests/smk_fixtures.py "$OUT/smk-fixtures"
+    python3 tests/ota_stock_fixtures.py "$OUT/smk-fixtures/official-fm1"
+    for smk_model in pro elite mke; do
+        case "$smk_model" in
+            pro) smk_identity='SMK-37 Pro' ;;
+            elite) smk_identity='SMK-37 Elite' ;;
+            mke) smk_identity='MKE-P37' ;;
+        esac
+        $CC -std=gnu11 -O2 -DBOARD_SMK37=1 -DOWN_PKG=1 "-DSMK_MODEL=\"$smk_identity\"" \
+            -o "$OUT/smk_ota_$smk_model" tests/ota_test.c
+        run "SMK $smk_model: production OTA handshake, staging and board bounds" \
+            "$OUT/smk_ota_$smk_model" "$OUT/smk-fixtures/$smk_model.fwsc"
+        $CC -std=gnu11 -O2 -DBOARD_SMK37=1 "-DSMK_MODEL=\"$smk_identity\"" \
+            -o "$OUT/smk_rescue_$smk_model" tests/rescue_test.c
+        run "SMK $smk_model: early recovery, physical OCT keys and alternate JEDEC" \
+            "$OUT/smk_rescue_$smk_model" "$OUT/smk-fixtures/$smk_model.fwsc"
+        $CC -std=gnu11 -O2 -DBOARD_SMK37=1 -DOWN_PKG=1 "-DSMK_MODEL=\"$smk_identity\"" \
+            -o "$OUT/smk_loader_$smk_model" tests/smk_loader_test.c
+        for smk_stock in v15 v16; do
+            run "SMK $smk_model: loader retry, data preservation and FM-1 $smk_stock refusal" \
+                "$OUT/smk_loader_$smk_model" "$OUT/smk-fixtures/$smk_model.fwsc" \
+                "$OUT/smk-fixtures/official-fm1/$smk_stock.fwsc"
+        done
+    done
+}
+unit smk_platform "" u_smk_platform
+
+UNIT_NEEDS=assets
+u_smk_editor() {
+    $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_editor_test" tests/smk_editor_test.c -lm
+    run "SMK editor: ownership, unavailable slots, backup reads and marker-before-write" "$OUT/smk_editor_test"
+}
+unit smk_editor "" u_smk_editor
+u_smk_ui() {
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_ui_test" tests/smk_ui_test.c -lm
+    run "SMK UI: consumed/remapped BANK keys, high button IDs and reserved MASTER calibration" "$OUT/smk_ui_test"
+}
+unit smk_ui "" u_smk_ui
+u_smk_note_ownership() {
+    $CC -std=gnu11 -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/smk_note_ownership_test" tests/smk_note_ownership_test.c -lm
+    run "SMK notes: shared central/outer/MIDI holds, chords, ARP and release orders" "$OUT/smk_note_ownership_test"
+}
+unit smk_note_ownership "" u_smk_note_ownership
+u_smk_wheel_transfer() {
+    for smk_board in 0 1; do
+        $CC -O2 -w -DBOARD_SMK37=$smk_board -Ibuild/gen -Ifirmware/src \
+            -o "$OUT/smk_wheel_transfer_$smk_board" tests/smk_wheel_transfer_test.c -lm
+        run "Wheel channel handoff (SMK=$smk_board)" "$OUT/smk_wheel_transfer_$smk_board"
+    done
+}
+unit smk_wheel_transfer "" u_smk_wheel_transfer
+UNIT_NEEDS=
 
 u_screen_capture() {
     $CC -std=c11 -Wall -Wextra -Werror -Wno-unused-function -o "$OUT/screen_capture_test" tests/screen_capture_test.c
@@ -1279,6 +1373,29 @@ else
     mkdir -p "$OUT/asan"
     A="$OUT/asan"
     SCC="${CC%% *} $SAN -Ibuild/gen -Ifirmware/src"
+    u_asan_smk_input() {
+        for smk_test in input outer_activity scan; do
+            ${CC%% *} -std=gnu11 -O1 -g -Wno-int-to-pointer-cast -fsanitize=address,undefined \
+                -fno-sanitize-recover=all -o "$A/smk_${smk_test}_test" "tests/smk_${smk_test}_test.c"
+            run "ASan/UBSan: SMK $smk_test ownership and activity" "$A/smk_${smk_test}_test"
+        done
+    }
+    unit asan_smk_input "smk_platform" u_asan_smk_input
+    u_asan_smk_ui() {
+        $SCC -o "$A/smk_ui_test" tests/smk_ui_test.c -lm
+        run "ASan/UBSan: SMK calibration and consumed wake/boot gestures" "$A/smk_ui_test"
+    }
+    unit asan_smk_ui "smk_ui" u_asan_smk_ui
+    u_asan_smk_note_ownership() {
+        $SCC -o "$A/smk_note_ownership_test" tests/smk_note_ownership_test.c -lm
+        run "ASan/UBSan: SMK shared-note ownership and final release" "$A/smk_note_ownership_test"
+    }
+    unit asan_smk_note_ownership "smk_note_ownership" u_asan_smk_note_ownership
+    u_asan_smk_wheel_transfer() {
+        $SCC -DBOARD_SMK37=1 -o "$A/smk_wheel_transfer" tests/smk_wheel_transfer_test.c -lm
+        run "ASan/UBSan: SMK wheel channel handoff" "$A/smk_wheel_transfer"
+    }
+    unit asan_smk_wheel_transfer "smk_wheel_transfer" u_asan_smk_wheel_transfer
     u_asan_icon_streams() {
         ${CC%% *} -O1 -g -w -fsanitize=address,undefined -fno-sanitize-recover=all -Ibuild/gen -I"$OUT" \
             -o "$A/icon_stream_test" tests/icon_stream_test.c -lm
@@ -1307,6 +1424,13 @@ else
         run "LCD power model (ASan/UBSan)" "$A/lcd_power_test"
     }
     unit asan_lcd_power "lcd_power" u_asan_lcd_power
+
+    u_asan_lcd_fault() {
+        ${CC%% *} -O1 -g -w -Ibuild/gen -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -o "$A/lcd_fault_test" tests/lcd_fault_test.c -lm
+        run "LCD fault ownership and real UI (ASan/UBSan)" "$A/lcd_fault_test"
+    }
+    unit asan_lcd_fault "lcd_fault" u_asan_lcd_fault
 
     u_asan_screen_capture() {
         ${CC%% *} -std=c11 -Wall -Wextra -Werror -Wno-unused-function \
