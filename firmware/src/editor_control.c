@@ -34,12 +34,15 @@ static uint32_t ed_control_busy(void)
     if (fm1_in.notes || fm1_in.buttons || kb_boot_hold ||
         fx_audio_activity != ed_control.quiet_audio || fm1_ms - ed_control.quiet_since < ED_CONTROL_QUIET_MS)
         busy |= 2u;
+#if BOARD_SMK37
+    if (smk_extkeys_held) busy |= 2u;            /* silent/wake-only outer keys still have physical ownership */
+#endif
     for (k = 0; k < NTRK; k++) {
         if (midi_track_held(k) || trk[k].nheld || trk[k].arp_phys || trk[k].latched || trk[k].seq_n || trk[k].rh_n)
             busy |= 2u;
         for (i = 0; i < NVOICE; i++) if (trk[k].v[i].active) busy |= 2u;
     }
-    if (ui.menu || ui.confirm || ui.uboot || ui.ml.on || ui.ly || ui.layer || ui.entry_open)
+    if (ui.menu || ui.confirm || ui.uboot || ui.ml.on || ui.ly || ui.layer || ui.entry_open || name_on())
         busy |= 4u;
     if (ed_control.transfer || ed_bk_put || fvb_tx.on) busy |= 8u;
     if (set_later.on) busy |= 16u;

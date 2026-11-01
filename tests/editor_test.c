@@ -129,6 +129,9 @@ static int fl_erase4k_ram(uint32_t off, uint32_t *took) { return fl_erase4k(off,
 #include "../firmware/src/storage_hw.c"
 #endif
 #include "../firmware/src/storage.c"
+/* Naming UI is absent from this protocol harness; model its independent open state. */
+static uint32_t host_name_open;
+static int name_on(void) { return host_name_open != 0; }
 #include "../firmware/src/editor.c"
 static uint32_t host_restarts;
 static void ed_restart_platform(void) { host_restarts++; }
@@ -2141,6 +2144,18 @@ static int guarded_control(void)
         reset();
     }
     bad += check("CONTROL refuses count-in/song/notes/learn/menu/writes/update/transfers", ok);
+    reset(); control_token(a, 1);
+    host_name_open = 1;
+    request(ED_CONTROL, a, 16);
+    bad += check("CONTROL refuses a silent NAME dialog without confirmation flags",
+        !ui.confirm && name_on() && host_wire[6] == 3 && !ed_control.pending && !host_restarts);
+    host_name_open = 0;
+    reset(); control_token(a, 1); request(ED_CONTROL, a, 16);
+    ok = ed_control.pending;
+    host_name_open = 1; so_done = ed_control.end; ed_control_poll();
+    bad += check("CONTROL NAME opened after acceptance cancels before reset",
+        ok && !ed_control.pending && !host_restarts);
+    host_name_open = 0; reset();
     if (eng_ok(ENGI_DRUM)) {
         int32_t pcm[2u * CTL];
         uint32_t active = 0, sounded = 0;
