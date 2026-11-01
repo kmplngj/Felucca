@@ -235,6 +235,7 @@ enum { AM_OFF, AM_UP, AM_DN, AM_UPDN, AM_RND, AM_ORD, AM_REPEAT, AM_DNUP, AM_UP8
  * samples. Carry the fractional difference instead of accumulating floor()
  * error each step. Separate carries retain polymeter and each ARP rate. */
 #define MIDI_CLOCK_GRID 24000u                    /* fixed units per quarter, divisible by every DIV denominator */
+static uint8_t midi_sync_active;                /* external transport currently owns musical timing */
 typedef struct { uint32_t remainder; } midi_grid_t;
 static midi_grid_t midi_seq_grid[NTRK], midi_arp_grid[NPART], midi_click_grid, midi_beat_grid;
 static __attribute__((noinline)) void midi_grid_reset(void)
@@ -381,6 +382,15 @@ static volatile uint8_t cin_left, cin_total;    /* the count-in's beats still to
 static volatile uint32_t cin_pos;               /* samples into its beat playing */
 static uint8_t cin_flush;                       /* the count-in ended in this block: record what was kept */
 static uint8_t cin_note[NTRK][4], cin_vel[NTRK][4], cin_n[NTRK], cin_up[NTRK];   /* kept notes; cin_up bit k: let go */
+/* Cancel the count-in and its pending pickup without stopping live transport. */
+static void cin_cancel(void)
+{
+    if (cin_left || cin_flush)
+        click_req = 0;                            /* discard an unrendered countdown click, not its sounding tail */
+    cin_left = 0;
+    cin_flush = 0;
+    memset(cin_n, 0, sizeof cin_n);
+}
 static int seq_counting(void) { return cin_left != 0u; }
 static uint32_t click_beat_len(void) { return 4u * div_samples(2); }   /* DIV 2: 1/16 */
 static int click_wanted(void)                  /* CLICK REC: while a track is armed (not in a song: no recording) */
@@ -490,12 +500,13 @@ static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
     t->arp_pos += n;
     if (t->arp_pos < period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw) && t->arp_pos != 0xFFFFFFF + n)
         return;
-    if (song.g[G_CLOCK] && t->arp_pos != 0xFFFFFFFu + n) {
-        if (!song.playing) return;                /* pending phase waits; a new stopped key still sounds once */
+    if (song.g[G_CLOCK] && !song.playing && !t->arp_phys && t->arp_pos != 0xFFFFFFFu + n)
+        return;                                    /* a released HOLD chord waits for transport */
+    if (midi_sync_active && t->arp_pos != 0xFFFFFFFu + n) {
         arp_external_due(t, period, sw);
         return;
     }
-    if (song.g[G_CLOCK]) midi_arp_grid[trk_index(t)].remainder = 0;
+    if (midi_sync_active) midi_arp_grid[trk_index(t)].remainder = 0;
     t->arp_pos = 0;
     arp_fire(t, period);
 }
@@ -999,9 +1010,7 @@ static void seq_stop(void)
     uint32_t i;
     song.playing = 0;
     note_hits_stop();                              /* stop boundary, before any later restart or live note-on */
-    cin_left = 0;                                  /* (a count-in: cancelled, nothing recorded) */
-    cin_flush = 0;
-    memset(cin_n, 0, sizeof cin_n);
+    cin_cancel();                                 /* a count-in is cancelled, nothing recorded */
     if (song.g[G_CLOCK])                           /* external clock: the arp stops with the transport, */
         for (i = 0; i < NPART; i++)                /* its sounding note too (HOLD keeps the latched chord) */
             if (trk[i].arp_note)
@@ -1303,7 +1312,7 @@ static __attribute__((noinline)) void seq_enter(track_t *t, uint32_t top, uint32
 static void seq_tick(track_t *t, uint32_t n)
 {
     uint32_t period, len, top;
-    if (song.g[G_CLOCK])
+    if (midi_sync_active)
         n = midi_grid_advance(&midi_seq_grid[trk_index(t)], n, (uint32_t)t->p[P_SDIV]);
     if (t->seq_n && !t->seq_hold) {
         if (t->seq_off <= n)
@@ -1411,7 +1420,7 @@ static __attribute__((noinline)) void cin_record(void)
 /* the metronome's beat: adv samples on while the transport runs (click.c sounds it in this block) */
 static void click_tick(uint32_t adv)
 {
-    if (song.g[G_CLOCK]) adv = midi_grid_advance(&midi_click_grid, adv, 2u);
+    if (midi_sync_active) adv = midi_grid_advance(&midi_click_grid, adv, 2u);
     uint32_t p = div_samples(2), beat = 0;
     if (clk_pos == CLK_START) {
         clk_pos = 0;
@@ -1499,13 +1508,17 @@ static void events_block(uint32_t n)
 #if BOARD_SMK37
     uint32_t wheel_routing_reset = 0;
 #endif
-    uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
-    if (midi_clock.mode != clock_mode) {
+    uint32_t selected_clock = (uint32_t)song.g[G_CLOCK];
+    if (midi_clock.selected != selected_clock || midi_sync_active != midi_clock.mode) {
         seq_stop();
+        midi_clock_mode(0);
         memset(&midi_clock, 0, sizeof midi_clock);
-        midi_clock.mode = (uint8_t)clock_mode;
+        midi_clock.selected = (uint8_t)selected_clock;
         midi_beat_samples = 0;
     }
+    if (transport_req == 1u)
+        midi_clock_local_start(fm1_ms);
+    uint32_t clock_mode = midi_clock.mode;
     if (cin_left && !clock_mode)
         cin_block(n);
     if (transport_req == 1u) {
@@ -1588,7 +1601,12 @@ static void events_block(uint32_t n)
         uint32_t source = midi_in_source[at] ? midi_in_source[at] : 1u, ms = midi_in_ms[at];
         mi_r++;
         if (status >= 0xF8u) {
-            if (clock_mode == source) {
+            if (selected_clock == source) {
+                if (status == 0xFAu || status == 0xFBu || status == 0xFCu) {
+                    if (!clock_mode) midi_clock_mode(source);
+                    clock_mode = source;
+                }
+                if (!clock_mode) continue;          /* pulses alone cannot claim local playback */
                 if (status == 0xF8u)
                     midi_clock_pulse(ms);
                 else
@@ -1620,6 +1638,8 @@ static void events_block(uint32_t n)
         click_tick(seq_n);
     for (i = 0; i < NPART; i++) {
         uint32_t arp_n = clock_mode ? midi_grid_advance(&midi_arp_grid[i], seq_n, (uint32_t)trk[i].p[P_ARATE]) : n;
+        if (!song.playing && selected_clock)
+            arp_n = trk[i].arp_phys ? n : 0u;
         arp_step(&trk[i], arp_n, clock_mode && song.playing ? arp_n : n);
     }
     beat_pos += clock_mode ? midi_grid_advance(&midi_beat_grid, seq_n, 0u) : n; /* ARP LED beat */

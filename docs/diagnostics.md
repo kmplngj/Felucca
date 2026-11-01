@@ -353,6 +353,10 @@ Compare audio lateness, overload `voices_shed`,
 victims and MIDI All Sound Off. It does not measure rejected or admitted requests;
 `voices_shed` is its overload subset. A clean sustain after shedding is a smaller
 workload, so retain actual surviving-voice observations when available.
+Shedding is requested after one DMA half above 92% of its deadline or two consecutive
+halves above 80%, including nested TIMER5 time; `cpu_pct` excludes that nested work.
+See the [Tessera audio backport](tessera-audio-backports.md) for provenance and
+the pending device comparison. The fields, transports and diagnostic flags are unchanged.
 
 `status` `cpu2_stack`, when present, scans the worker's 4,096 B user allocation
 for its fill pattern. This allocation includes a 256 B low guard; its usable

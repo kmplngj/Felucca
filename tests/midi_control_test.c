@@ -388,6 +388,47 @@ static void clock_to(uint32_t source, uint32_t start, uint32_t count)
 {
     for (uint32_t i = 0; i < count; i++) clock_packet(source, 0xF8, start + (i * 125u) / 6u);
 }
+/* External transport takes over a local count-in without retaining its pickup.
+ * Continue resumes paused phase; Start enters step zero on the master's clock. */
+static int clock_countin_takeover(void)
+{
+    int bad = 0;
+    for (uint32_t source = 1; source <= 2; source++)
+        for (uint32_t status = 0xFAu; status <= 0xFBu; status++)
+            for (uint32_t ending = 0; ending <= 1u; ending++) {
+                clock_setup(source);
+                track_t *t = &trk[0];
+                step_t first = t->step[0];
+                t->seq_idx = 5; t->seq_pos = 123;
+                song.rec = 1; cin_bars = 1; transport_req = 1;
+                events_block(CTL);
+                while (cin_left > 1u || cin_pos < click_beat_len() / 2u)
+                    events_block(CTL);
+                queued(0x90, 72, 99, source); queued(0x80, 72, 0, source);
+                bad += check("local count-in buffers a released last-eighth pickup before takeover",
+                             !song.playing && seq_counting() && cin_n[0] == 1u && cin_note[0][0] == 72 && (cin_up[0] & 1u));
+                clock_packet(source == 1u ? 2u : 1u, status, 10);
+                bad += check("wrong-source transport leaves the local count-in and pickup intact",
+                             !song.playing && seq_counting() && cin_n[0] == 1u);
+                if (ending)
+                    while (cin_pos + CTL < click_beat_len()) events_block(CTL);
+                clock_packet(source, status, 20);
+                /* At the final count-in block, the local start already enters step
+                 * zero before Continue arrives; its pending pickup must not flush. */
+                uint32_t from_top = status == 0xFAu || ending;
+                uint32_t idx = from_top ? 0u : 5u, pos = from_top ? 0u : 123u;
+                char label[100];
+                snprintf(label, sizeof label, "source %u %s cancels count-in/pickup (ending %u)", source, status == 0xFAu ? "Start" : "Continue", ending);
+                bad += check(label, song.playing && midi_clock.mode == source && !seq_counting() && !cin_flush && !cin_n[0]);
+                bad += check("takeover preserves Start/Continue phase without recording the abandoned pickup",
+                             t->seq_idx == idx && t->seq_pos == pos && !memcmp(&t->step[0], &first, sizeof first));
+                clock_to(source, 21, 7);
+                bad += check("master clocks advance after takeover without resurrecting count-in or pickup",
+                             song.playing && !seq_counting() && !cin_n[0] && t->seq_idx == idx + 1u && t->seq_pos == pos &&
+                             !memcmp(&t->step[0], &first, sizeof first));
+            }
+    return bad;
+}
 static int clock_test(uint32_t source)
 {
     int bad = 0; clock_setup(source);
@@ -430,7 +471,25 @@ static int clock_arp_and_boundaries(void)
     clock_packet(1, 0xF8, 5u); fm1_ms = 10; events_block(CTL);
     bad += check("external clock timestamps survive uint32 millisecond wrap", song.playing && midi_clock.last_ms == 5u);
     clock_setup(1); transport_req = 1; events_block(CTL); fm1_ms = 501; events_block(CTL);
-    bad += check("local PLAY waiting for missing external clock also times out", !song.playing);
+    bad += check("local PLAY without an external master runs internally", song.playing && !midi_clock.mode);
+    clock_to(1, 510, 7);
+    bad += check("clock pulses alone cannot claim locally started playback", song.playing && !midi_clock.mode);
+    clock_packet(2, 0xFC, 650);
+    bad += check("wrong-source Stop cannot claim local transport", song.playing && !midi_clock.mode);
+    clock_packet(1, 0xFC, 660);
+    bad += check("selected-source Stop claims transport and stops local playback", !song.playing && midi_clock.mode == 1u);
+    transport_req = 1; events_block(CTL); fm1_ms = 1200; events_block(CTL);
+    bad += check("local PLAY after silent master Stop runs internally", song.playing && !midi_clock.mode);
+    clock_packet(1, 0xFA, 1210); clock_to(1, 1210, 7);
+    bad += check("master Start claims external timing again", song.playing && midi_clock.mode == 1u && trk[0].seq_idx == 1u);
+    clock_packet(1, 0xFC, 1400); clock_to(1, 1400, 3); transport_req = 1; events_block(CTL);
+    bad += check("local PLAY follows a master whose pulses are still running", song.playing && midi_clock.mode == 1u);
+    fm1_ms = 2000; events_block(CTL);
+    bad += check("a followed master clock still times out", !song.playing);
+    transport_req = 1; events_block(CTL); fm1_ms = 2600; events_block(CTL);
+    bad += check("local PLAY after lost-clock timeout runs internally", song.playing && !midi_clock.mode);
+    clock_packet(1, 0xFB, 2610);
+    bad += check("selected-source Continue reclaims local playback", song.playing && midi_clock.mode == 1u);
     return bad;
 }
 /* ARP HOLD latched on an external clock: a Stop, a lost clock or a tap while stopped must not leave the arp note
@@ -477,6 +536,60 @@ static int arp_ext_stop_test(void)
     bad += check("internal clock: STOP leaves the free-running ARP note to its gate", trk[0].arp_note == 72 && gate_note(&trk[0], 72) && trk[0].arp_off == off - CTL);
     for (i = 0; i < 4000 && (!trk[0].arp_note || trk[0].arp_note == 72); i++) events_block(CTL);
     bad += check("internal clock: the ARP keeps stepping after STOP", trk[0].arp_note && trk[0].arp_note != 72 && trk[0].nheld == 1u);
+    return bad;
+}
+/* Adapted from Tessera 87d0b3783c52e814435cad13e77611df1ef94160.
+ * A stopped sync master must not turn a live arpeggiator into a single-note
+ * latch. Exercise both clock choices, real key/USB/UART input and every voice
+ * mode before transport, after Stop and after a lost clock. */
+static void arp_live_key(uint32_t source, uint32_t key, uint32_t on)
+{
+    if (!source) {
+        if (on) fm1_in.notes |= 1u << key;
+        else fm1_in.notes &= ~(1u << key);
+        events_block(CTL);
+    } else if (source == 1u) queued(on ? 0x90 : 0x80, 53u + key, on ? 100 : 0, source);
+    else {
+        um_byte(on ? 0x90 : 0x80); um_byte((uint8_t)(53u + key)); um_byte(on ? 100 : 0);
+        events_block(CTL);
+    }
+}
+static int arp_idle_live_test(void)
+{
+    int bad = 0;
+    for (uint32_t clock = 1; clock <= 2; clock++)
+        for (uint32_t source = 0; source < 3; source++)
+            for (uint32_t mode = V_POLY; mode <= V_UNISON; mode++)
+                for (uint32_t state = 0; state < 3; state++) {
+                    clock_setup(clock); track_t *t = &trk[0];
+                    t->p[P_VOICE] = (int16_t)mode; t->p[P_PRIO] = 0;
+                    t->p[P_AMODE] = 3; t->p[P_AHOLD] = 0; t->p[P_AOCT] = 1;
+                    t->p[P_ARATE] = 2; t->p[P_APROB] = 127; t->p[P_AGATE] = 100;
+                    if (state == 1) clock_packet(clock, 0xFC, 10);
+                    else if (state == 2) {
+                        clock_packet(clock, 0xFA, 10); clock_packet(clock, 0xF8, 10);
+                        fm1_ms = 600; events_block(CTL);
+                    }
+                    arp_live_key(source, 7, 1); arp_live_key(source, 11, 1);
+                    uint32_t heard = 0;
+                    for (uint32_t i = 0; i < 1000; i++) {
+                        events_block(CTL);
+                        if (gate_note(t, 60)) heard |= 1u;
+                        if (gate_note(t, 64)) heard |= 2u;
+                    }
+                    char label[100];
+                    snprintf(label, sizeof label, "idle ARP plays both held notes: clock %u input %u voice %u state %u", clock, source, mode, state);
+                    bad += check(label, !song.playing && t->nheld == 2u && heard == 3u && t->arp_idx > 1u);
+                    clock_packet(clock, 0xFA, 1000);
+                    uint32_t before = t->arp_idx;
+                    clock_to(clock, 1000, 7);
+                    bad += check("live ARP hands timing back to the running master", song.playing && midi_clock.mode == clock && t->arp_idx > before);
+                    clock_packet(clock, 0xFC, 1150); before = t->arp_idx;
+                    for (uint32_t i = 0; i < 1000; i++) events_block(CTL);
+                    bad += check("master Stop restores local ARP timing for keys still held", !song.playing && t->arp_idx > before + 1u);
+                    arp_live_key(source, 7, 0); arp_live_key(source, 11, 0);
+                    bad += check("idle live ARP releases both keys without hanging ownership", !t->nheld && !t->arp_phys && !t->arp_note && !midi_owners[0]);
+                }
     return bad;
 }
 /* USB-MIDI back-pressure: full 64-byte bulk packets (16 events) faster than the audio ISR drains the ring are
@@ -1304,7 +1417,7 @@ static int pc_test(void)
 }
 int main(void)
 {
-    int bad = aftertouch_test() + controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
+    int bad = aftertouch_test() + controls_test() + sustain_test() + ownership_test() + panel_midi_ownership_test() + clock_test(1) + clock_test(2) + clock_countin_takeover() + clock_arp_and_boundaries() +
+              arp_ext_stop_test() + arp_idle_live_test() + usb_burst_test() + route_test() + route_block_test() + route_track_test() + route_owner_change_test() + follow_test() + cc_map_test() + learn_test() + pc_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

@@ -131,7 +131,9 @@ entries below distinguish these cases. Commands 23, 24, 26 and 32 are device pus
 only. IDs 39..63 and all unlisted IDs have no handler and get no reply.
 
 Every data byte is 7 bit. MIDI realtime bytes may occur inside SysEx; another status
-aborts the partial frame. Pushes may arrive while a request is outstanding. Send
+aborts the partial frame. USB-MIDI CIN `0xF` single-byte packets may also carry a
+SysEx start, continuation or end while assembling a frame. Realtime bytes remain
+separate and never enter the SysEx payload. Pushes may arrive while a request is outstanding. Send
 one request at a time, including PING; see [editor notes](#notes-for-the-editor).
 The [shared Editor/updater dispatch investigation](../docs/sysex-dispatch-race.md)
 records the regression, device evidence and qualification scope for retained replies.
@@ -2182,10 +2184,15 @@ describes older containers and their recovery paths.
 
 ## MIDI transport
 
-- **MIDI clock** has no SysEx. `G_CLOCK` selects the source: 0 INT, 1 USB, 2 TRS. With 1 or 2 the sequencer
-  steps on that port's Clock pulses (the other port's are ignored), Start (0xFA) restarts from step 0,
-  Continue (0xFB) resumes and Stop (0xFC) stops; BPM follows the incoming tempo (40..240), and 500 ms
-  without a pulse stops the transport. Changing `G_CLOCK` stops it.
+- **MIDI clock** has no SysEx. `G_CLOCK` selects the source: 0 INT, 1 USB, 2 TRS. Selected-source
+  Start (0xFA), Continue (0xFB) and Stop (0xFC) reclaim external transport ownership; Start restarts
+  from step 0, Continue resumes and Stop stops. Start/Continue cancel a local count-in and discard
+  its pending pickup. While externally owned, the sequencer follows that
+  port's Clock pulses (the other port's are ignored), BPM follows measured incoming tempo (40..240),
+  and more than 500 ms without a pulse stops transport. Local PLAY with a silent or lost master uses
+  internal timing, including the normal recording count-in; clock pulses alone cannot claim that local
+  playback. Changing `G_CLOCK` stops transport. See [Tessera MIDI behavior and limits](../docs/tessera-midi-backports.md)
+  for tempo filtering and held-key versus released HOLD arpeggiation.
 - Pitch bend, sustain (CC64), RPN 0 (bend range, ±0..24 semitones), CC120 / 121 / 123 are MIDI only and
   have no parameters, protocol or saved state. The standard CC map (1.1: CC5 7 10 71..75 91 93 94, README "MIDI
   in") sets parameters as a knob does: the editor sees those changes as `CHANGED` / `TRACK_CHANGED` pushes.

@@ -11,6 +11,7 @@
  * holds the hashes of 1.4 (the engines' own arrays, before the shared region): any difference fails. The 380
  * sequences that play SAMPLE's PIANO (SAMPLE presets 0 / 1, GRAIN's FROZEN / SHIMMER) were rewritten in 1.5, when
  * PIANO went back to the full piano of 1.1.5; the other 340 are 1.4's.
+ * Tessera's PHYS silence fix updates 314 hashes whose primary or accompaniment plays an affected PHYS preset.
  * env: GOLDEN_UPDATE=1 rewrites GOLDEN_FILE (only with a reason: a switch is to sound as it did). */
 #define main hostsim_main
 #include "hostsim.c"

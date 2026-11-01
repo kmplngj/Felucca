@@ -28,6 +28,8 @@ The standard profile combines thirteen engines with factory presets, four tracks
 a 64-step sequencer, songs, effects, a modulation matrix, USB/TRS MIDI and USB audio.
 Eight is the shared allocation pool; deadline headroom depends on the sound and USB load
 ([measured PHYS example](docs/audio-deadline-investigation-2026-10-21.md)).
+The [audio backport record](docs/tessera-audio-backports.md) covers PHYS decay cleanup,
+earlier overload recovery and their remaining FM-1 checks.
 The [fork feature guide](docs/fork-features.md) covers controls, defaults,
 compatibility limits and build identification. The
 [upstream manual](https://github.com/hugelton/Felucca/wiki/Home) documents the shared
@@ -56,6 +58,8 @@ Its explicit `--wake` option silently wakes and holds the current view for captu
 It is disabled in normal builds and does not measure physical LCD colours or backlight glow.
 [MIDI timing and DSP hardening](docs/midi-dsp-reliability.md) retains external-clock
 phase, timestamps TRS input during rendering, and guards invalid tempo.
+[Tessera MIDI fixes](docs/tessera-midi-backports.md) also accept fragmented USB SysEx
+and let local PLAY and held ARP keys work with a stopped external master.
 [Device results](docs/midi-dsp-device-results-2026-10-21.md) qualify USB pulse-count
 phase with CPU2 OFF; physical TRS and CPU2 ON clock-phase checks remain pending.
 Five portable engines live in the pinned

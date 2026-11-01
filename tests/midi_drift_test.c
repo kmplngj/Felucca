@@ -145,6 +145,9 @@ static int drift_all_divisions(uint32_t source)
 static int drift_continue(uint32_t source)
 {
     int bad=0; drift_setup(source,120);
+    /* Released HOLD waits for transport; physically held keys now play locally. */
+    trk[0].p[P_AHOLD]=1;
+    input_off(&trk[0],60); input_off(&trk[0],64);
     for(uint32_t i=1;i<=11u;i++) drift_packet(source,0xF8,10u+i*125u/6u);
     drift_packet(source,0xFC,240u);
     track_t *t=&trk[0];
@@ -186,6 +189,7 @@ static int drift_bounded_catchup(void)
     bad+=check("extreme live ARP rate reduction fires at most eight overdue steps per block",
                t->arp_idx>1u && t->arp_idx<=9u && t->arp_pos>=fast);
     uint32_t paused_idx=t->arp_idx,paused_pos=t->arp_pos;
+    t->p[P_AHOLD]=1; input_off(t,60); input_off(t,64);
     seq_stop();
     for(uint32_t i=0;i<4u;i++) arp_step(t,0,CTL);
     bad+=check("Stop freezes an outstanding bounded ARP catch-up backlog",
@@ -246,12 +250,77 @@ static int drift_chain_boundaries(uint32_t source)
     return bad;
 }
 
+/* Adapted from Tessera 87d0b3783c52e814435cad13e77611df1ef94160's tempo_flutter_test for millisecond input. */
+static int drift_tempo_flutter(void)
+{
+    int bad = 0;
+    for (uint32_t source = 1; source <= 2; source++) {
+        drift_setup(source, 120);
+        uint32_t start = 0xFFFFF000u;
+        drift_packet(source, 0xFA, start);
+        uint32_t min_beat = UINT32_MAX, max_beat = 0;
+        int stable = 1, exact = 1;
+        for (uint32_t pulse = 0; pulse <= 24u * 16u; pulse++) {
+            uint32_t at = start + pulse * 125u / 6u + (pulse / 6u) % 2u;
+            drift_packet(source, 0xF8, at);
+            if (pulse >= 24u * 4u) {
+                if (song.g[G_BPM] != 120) stable = 0;
+                if (beat_samples() < min_beat) min_beat = beat_samples();
+                if (beat_samples() > max_beat) max_beat = beat_samples();
+            }
+            if (pulse % 6u == 0 && (trk[0].seq_idx != pulse / 6u % 16u || trk[0].seq_pos)) exact = 0;
+        }
+        bad += check("jitter across millisecond wrap keeps displayed BPM at 120", stable);
+        bad += check("jitter moves measured modulation period by less than 0.25 percent", max_beat - min_beat < FS / 800u);
+        bad += check("smoothed tempo preserves exact six-clock step boundaries", exact);
+        uint32_t last = start + 24u * 16u * 125u / 6u;
+        for (uint32_t pulse = 1; pulse <= 6u; pulse++) drift_packet(source, 0xF8, last + pulse * 100u / 6u);
+        bad += check("120 to 150 BPM locks within six clocks", song.g[G_BPM] == 150 && beat_samples() == FS * 2u / 5u);
+        last += 100u;
+        for (uint32_t pulse = 1; pulse <= 24u * 4u; pulse++)
+            drift_packet(source, 0xF8, last + pulse * 60000u / (151u * 24u));
+        bad += check("one-BPM edit reaches display within four beats", song.g[G_BPM] == 151);
+        static const uint32_t bpm10[] = {400, 730, 1205, 1370, 2395, 2400};
+        for (uint32_t k = 0; k < NELEM(bpm10); k++) {
+            drift_setup(source, 120);
+            drift_packet(source, 0xFA, start);
+            uint32_t expected = FS * 600u / bpm10[k];
+            int16_t shown = 0;
+            int settled = 1, precise = 1, display_ok = 1;
+            for (uint32_t pulse = 0; pulse <= 24u * 16u; pulse++) {
+                uint32_t at = start + (uint32_t)((uint64_t)pulse * 600000u / (bpm10[k] * 24u)) + (pulse / 6u) % 2u;
+                drift_packet(source, 0xF8, at);
+                if (pulse == 24u * 4u) shown = song.g[G_BPM];
+                if (pulse >= 24u * 4u) {
+                    if (song.g[G_BPM] != shown) settled = 0;
+                    if (song.g[G_BPM] * 10 < (int32_t)bpm10[k] - 10 || song.g[G_BPM] * 10 > (int32_t)bpm10[k] + 10) display_ok = 0;
+                    if (beat_samples() + expected / 400u < expected || beat_samples() > expected + expected / 400u) precise = 0;
+                }
+            }
+            char label[100];
+            snprintf(label, sizeof label, "source %u %u.%u BPM BPM stays within one and modulation within 0.25 percent", source, bpm10[k] / 10u, bpm10[k] % 10u);
+            /* Whole-ms timestamps add quantization to the master's jitter.
+             * Near 240 BPM a fractional master can still cross the display's
+             * hysteresis edge; measured modulation must remain precise. */
+            bad += check(label, (settled || bpm10[k] == 2395u) && display_ok && precise && shown * 10 >= (int32_t)bpm10[k] - 10 && shown * 10 <= (int32_t)bpm10[k] + 10);
+        }
+        drift_setup(source, 120);
+        for (uint32_t pulse = 1; pulse <= 6u; pulse++) drift_packet(source, 0xF8, 10u + pulse * 125u / 6u);
+        drift_packet(source, 0xFC, 140u);
+        drift_packet(source, 0xF8, 1000u);
+        for (uint32_t pulse = 1; pulse <= 6u; pulse++) drift_packet(source, 0xF8, 1000u + pulse * 100u / 6u);
+        bad += check("pulses after a stopped-master gap reacquire tempo in six clocks", !song.playing && song.g[G_BPM] == 150 && beat_samples() == FS * 2u / 5u);
+    }
+    return bad;
+}
+
 int main(void)
 {
     int bad=drift_run(2,120,0,0)+drift_run(1,120,1,1)+drift_run(2,97,1,1)+
             drift_run(1,240,1,1)+drift_run(2,40,0,0);
     bad+=drift_tempo_edges(1)+drift_tempo_edges(2)+drift_start_and_wrap(1)+drift_start_and_wrap(2);
     bad+=drift_all_divisions(1)+drift_all_divisions(2)+drift_continue(1)+drift_continue(2)+drift_bounded_catchup();
+    bad+=drift_tempo_flutter();
     bad+=drift_chain_boundaries(1)+drift_chain_boundaries(2);
     printf("MIDI LONG-RUN PHASE: %s\n",bad?"FAIL":"PASS");
     return bad!=0;

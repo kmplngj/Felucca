@@ -86,6 +86,7 @@ static int lfo(void)
             midi_clock_pulse(ms);
         t->lfo_ph = 0;
         ok = midi_beat_samples == 26460u && fabs(lfo_cycles(t, 26460u * 4u / CTL) - (double)(26460u * 4u / CTL) * CTL / 26460.0) < 1e-4;
+        ms += 5u;                                  /* first new interval is 30 ms too: no mixed 175 ms window */
         for (i = 0; i < 13u; i++, ms += 30u)        /* slower: 83 BPM */
             midi_clock_pulse(ms);
         t->lfo_ph = 0;

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+ * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
+ * Modifications Copyright (C) 2026 Theo Dainis */
 /* PHYS engine test (src/eng_phys.c, src/phys_dsp.c, phys_symp.c) on the Mac, through hostsim.c
  * as regress.c.
  *   build/host/phys_test [DEMODIR]          (run_tests.sh: build/phys_demo)
@@ -146,6 +147,37 @@ static uint32_t preset_of(uint32_t md)
         if ((uint32_t)ENG_PHYS.presets[i].e[0] == md)
             return i;
     return 0;
+}
+
+/* Tessera c976aef33a22f0d457d3a7d2b0a3000b020a177c: a held MODAL note at the shortest DAMP
+ * rings out to silence; fixed-point rounding must not leave the modes humming. Exercise the whole
+ * engine through voice.c and the mixer, as the donor's decay check does. Felucca's existing preset gain
+ * and output rounding leave 1.01 LSB RMS after the fix (4.55 before); allow 1.25 rather than Tessera's 1. */
+static void modal_decay(void)
+{
+    uint32_t f, k;
+    double tail = 0;
+    host_tracks_init();
+    for (k = 1; k < NTRK; k++)
+        trk[k].p[P_LEVEL] = 0;
+    host_preset(&trk[0], 9, preset_of(PM_MODAL));
+    trk[0].p[P_ATK] = 0;
+    trk[0].p[P_E3] = 0;
+    for (f = 0; f < FS * 2u; f += CTL) {
+        int32_t o[2 * CTL];
+        if (!f)
+            trk_note_on(&trk[0], 60, 110);
+        mix_block(o, CTL);
+        for (k = 0; k < CTL && f + k < FS * 2u; k++)
+            if (f + k >= FS * 3u / 2u) {
+                int16_t s = (int16_t)o[2 * k];
+                tail += (double)s * s;
+            }
+    }
+    tail = sqrt(tail / (FS / 2u));
+    printf("phys_test: MODAL DAMP 0 tail at 1.5 .. 2 s %.2f LSB RMS (limit 1.25): %s\n",
+           tail, tail > 1.25 ? "FAIL" : "ok");
+    fails += tail > 1.25;
 }
 
 /* the whole engine (phys_note_on / phys_render through voice.c): every parameter and the pitch swept, a new
@@ -394,6 +426,7 @@ int main(int argc, char **argv)
     if (!getenv("NOCOST"))
         cost();                                         /* first: its children start from a clean state */
     stability();
+    modal_decay();
     torture();
     if (argc > 1)
         demos(argv[1]);

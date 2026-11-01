@@ -37,6 +37,18 @@ synthetic wave generator remain GPL-3.0-only. The complete
 factory sound data is copied. Source pins and adaptations are recorded in the
 [backport guide](docs/upstream-1.8-backport.md).
 
+## Tessera audio fixes
+
+The PHYS decayed-mode cleanup is copied from Theo Dainis' Tessera commit
+`e1224163b12498a3d0ed922ac849d09186dbdff0`, with the public-path decay regression
+adapted from `c976aef33a22f0d457d3a7d2b0a3000b020a177c`.
+`firmware/src/phys_dsp.c` retains its DaisySP MIT licence and notice; the host test
+retains GPL-3.0-only. Theo Dainis' modification credit is retained in both files.
+The earlier overload recovery and its host assertions are copied from Tessera
+`abe4983ef72c68b4f4fca5ce90b49c07c49800cb` under GPL-3.0-only.
+The [audio backport record](docs/tessera-audio-backports.md) identifies the donor
+snapshot and the integration changes. No donor presets, samples or engines are copied.
+
 ## What is GPL-3.0-only
 
 Every file in this tree that carries an `SPDX-License-Identifier: GPL-3.0-only` header:
@@ -127,6 +139,8 @@ release/site packaging includes every `LICENSES/*.txt` notice with the package.
 | Braids by Emilie Gillet (<https://github.com/pichenettes/eurorack>): MACRO's full oscillator/resource bank and stmlib helpers, translated/adapted to integer C | MIT | `firmware/src/macro_dsp.c`, `assets/braids/`, `LICENSES/MIT-Braids.txt` |
 | msfa by Google Inc. and Pascal Gauthier, from Dexed (<https://github.com/asb2m10/dexed>): the FM6 engine's synthesis, ported to integer C (Dexed itself is GPL-3.0; only msfa is used; the FM6 factory patches are Felucca's own) | Apache-2.0 | `firmware/src/fm6_core.c`, `LICENSES/Apache-2.0-msfa.txt` |
 | klattsch by Tony Gies (<https://github.com/tgies/klattsch>): design reference for the VOICE engine; no code copied. Formant data from Klatt (1980) / Hillenbrand et al. (1995) | MIT (klattsch) | credit only |
+| MIDI tempo filtering and stopped-master PLAY/ARP behavior, adapted from [Tessera](https://github.com/Rastapopolix/tessera/commit/87d0b3783c52e814435cad13e77611df1ef94160) after Melodee by keremimo; original ChanceTheMaker/keremimo clock notices retained | GPL-3.0-only | `firmware/src/midi_clock.c`, `seq.c`, adapted clock/control regressions; [source and integration record](docs/tessera-midi-backports.md) |
+| USB-MIDI CIN `0xF` SysEx fragment handling by Kerem Kilic, from [Tessera](https://github.com/Rastapopolix/tessera/commit/998ca1a3040ed0ca05e25c95a7e10a8bffa791d2) | GPL-3.0-only | `firmware/src/usb.c`, adapted regression in `tests/midi_uart_test.c` |
 | X0X by charlesvestal (<https://github.com/charlesvestal/fm1-x0x>), a Felucca fork: the design of the browser emulator (the worklet, the device clock driven by its audio, the exports); its files credit it in their headers | GPL-3.0 | `web/emu/` |
 | The second core: its start, mailbox and guards from X0X by charlesvestal (<https://github.com/charlesvestal/fm1-x0x>, with the dual-core findings of Melodee by keremimo, <https://github.com/keremimo/melodee>); its audio split, measurements and hardening after Jangada by zednaked (<https://github.com/zednaked/jangada>); each credited in its files | GPL-3.0 | `firmware/hal/fm1_cpu1.{h,S}`, `firmware/src/fx.c`, `tests/c1_host.h`, `tests/dualcore_test.c` |
 | DotGothic16 font by The DotGothic16 Project Authors (<https://github.com/fontworks-fonts/DotGothic16>): the browser emulator's knob labels, served with its page (cut to printable ASCII; the font declares no Reserved Font Name) | SIL OFL 1.1 | `web/emu/fonts/DotGothic16-subset.woff`, `LICENSES/OFL-DotGothic16.txt` (also `web/emu/fonts/OFL.txt`) |
