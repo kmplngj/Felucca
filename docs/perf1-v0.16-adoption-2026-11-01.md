@@ -54,6 +54,32 @@ These snapshot reviews grant zero individual commit assessments.
 
 ## Instruments and provenance
 
+## MIDI device follow-up
+
+[#828](https://github.com/kmplngj/Felucca/issues/828) now owns concrete opt-in
+device profiles and sampler output maps. Start with an exact model/program and
+transport matrix, then MPK mini keys/pads/knobs (MK4 relative versus older absolute
+CCs), MPC/M:S native performance controls, and independent M:S/MPC/SP-404 drum
+output maps. Generic notes, velocity, bend and wheel already work through native
+services; device-specific mappings and physical qualification are the new work.
+Only bind performance actions that actually exist natively; donor Auto-DJ commands
+remain deferred. Preserve Learn precedence and press-time note releases.
+
+#526 now includes a bounded comparison of PERF-1's content-driven TRS drain with
+the current native event-gated count reader. Reproduce isolated pad attacks and
+releases without a following aftertouch/event, then stress running status, clock,
+wraps and full-rate traffic with USB audio and CPU2 OFF/ON. A synthetic missed-count
+fixture is a hypothesis, not silicon evidence. Adapt the sentinel approach only
+after demonstrating an additional native failure and proving DMA/clear/overrun
+ownership. Retaining the current receiver after a documented no-repro is valid.
+
+TRS is currently an input path. Outbound sampler maps use USB through a host or
+router; direct USB peripherals remain the separate #289 experiment. Donor M:S mode
+and M:S/SP-404 maps still need physical confirmation. This follow-up changes plans
+and issue acceptance only, with no firmware or tested compatibility claim.
+
+## Instrument audition
+
 Candidate set: Rhodes/glass breathing pad, driven Reese/Hoover bass, CZ/fold acid,
 and Super/Hyper/Lead; optionally compare one percussion recipe against native DRUM.
 Separate timbre from breath/stab scheduling, harmony and master effects. Use equal
