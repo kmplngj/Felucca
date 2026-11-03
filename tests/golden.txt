@@ -96,5 +96,7 @@ sends/ANALOG/reverb 217d0dceb6ded8e8
 sends/ANALOG/all 98b9543c25342780
 sends/ANALOG/dist 1ff75ac225e918e0
 song/4track_mix 6667b6c911a3b548
+sample/tone_edits/PIANO 3ea0564a5e5b595c
+sample/tone_edits/FLUTE 2853e118172ce1f8
 slicer/gate/ANALOG_ACID 07581a19222c2474
 slicer/song_gate_stut 7e91d788f9dedecc

@@ -6,7 +6,7 @@
  * 1. golden renders: every engine x factory preset, the GM map on DRUM (SAMPLE PERC until 1.0.2; and on each model kit,
  *    KIT 80 10 66 55 77), the voice modes (POLY / MONO /
  *    LEGATO / UNISON) of three engines, the FX sends, a 4-track sequencer mix, and the SLICER (slicer.c:
- *    GATE / STUT on the phrase, and on the 4-track mix with the transport). Each render plays
+ *    GATE / STUT on the phrase, and on the 4-track mix with the transport), SAMPLE with BITS / DRV edited live. Each render plays
  *    a fixed phrase (notes, an overlap, a chord, note-offs, the release tail) and is reduced to a
  *    64-bit FNV-1a hash of its output samples, compared with GOLDEN_FILE (tests/golden.txt).
  *    Every render runs in its own fork()ed child of a process that never touched the DSP state, so
@@ -193,7 +193,7 @@ static void phrase(track_t *t, uint32_t base)
 }
 
 /* ------------------------------------------------------------- jobs --- */
-enum { J_PRESET, J_MODE, J_SENDS, J_DRUMS, J_SONG, J_CPU, J_CHECK, J_SLICER };
+enum { J_PRESET, J_MODE, J_SENDS, J_DRUMS, J_SONG, J_CPU, J_CHECK, J_SLICER, J_SAMPLE };
 typedef struct {
     char name[64];
     uint8_t kind, e, pi, arg, cpu_notes;
@@ -277,6 +277,42 @@ static void job_slicer(const job_t *j)
     for (i = 0; i < 4u; i++)
         t->p[P_SLCR + i] = S[j->arg][i];
     phrase(t, 60);
+}
+
+/* SAMPLE's tone controls edited while notes hold and release (no factory preset moves them): BITS across
+ * every /10 step (0 and 9 clean, 10 .. 127 quantised), DRV between off and on, over the attack, the settled
+ * sustain and the release of the amplitude ramp, a looped set (arg 2: FLUTE) and a one-shot (arg 0: PIANO) */
+static void job_sample_tone(const job_t *j)
+{
+    static const int16_t BITS[16] = {0, 9, 10, 19, 20, 0, 49, 50, 9, 80, 99, 100, 127, 0, 30, 0};
+    static const int16_t DRV[7] = {0, 64, 0, 127, 1, 0, 0};
+    track_t *t = &trk[0];
+    uint32_t k;
+    host_tracks_init();
+    host_preset(t, ENGI_SAMPLE, j->arg);
+    t->p[P_AMODE] = 0;
+    t->p[P_ATK] = 30;                          /* a moving ramp over many blocks, then a settled one */
+    t->p[P_SUS] = 100;
+    t->p[P_REL] = 60;
+    input_on(t, 60, 100);
+    input_on(t, 67, 70);
+    for (k = 0; k < 48u; k++) {
+        if (k == 20u)
+            input_off(t, 67);
+        if (k == 28u)
+            input_on(t, 72, 127);              /* a new attack while the others settle or release */
+        if (k == 36u)
+            input_off(t, 60);
+        t->p[P_E2] = BITS[k % 16u];
+        t->p[P_E6] = DRV[k % 7u];
+        run_to(fpos + (k % 3u + 1u) * 7u * CTL);
+    }
+    input_off(t, 72);
+    t->p[P_E2] = 40;                           /* the release tail quantised and driven */
+    t->p[P_E6] = 90;
+    rel_at = fpos;
+    dc_end = fpos;
+    finish();
 }
 
 /* the 4-track mix: T1 ANALOG ACID, T2 the power-on pad (TRK_DEF: FM6 PAD since DIGITAL was retired; DIGITAL PAD
@@ -414,6 +450,9 @@ static int run_job_body(job_t *j)
         break;
     case J_SLICER:
         job_slicer(j);
+        break;
+    case J_SAMPLE:
+        job_sample_tone(j);
         break;
     case J_CPU:
         job_cpu(j);
@@ -1091,6 +1130,8 @@ int main(int argc, char **argv)
             j->arg = (uint8_t)k0;
         }
     add(J_SONG, "song/4track_mix");
+    add(J_SAMPLE, "sample/tone_edits/PIANO");       /* BITS and DRV edited live, over moving and settled ramps */
+    add(J_SAMPLE, "sample/tone_edits/FLUTE")->arg = 2;
     {   /* the SLICER */
         job_t *j = add(J_SLICER, "slicer/gate/ANALOG_ACID");
         j->e = 0, j->pi = 4, j->arg = 0;
