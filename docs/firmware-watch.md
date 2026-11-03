@@ -8,6 +8,17 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [WaveLoop Kits review](waveloop-kits-adoption-2026-10-30.md), tracked in
+[Felucca #816](https://github.com/kmplngj/Felucca/issues/816), registers
+`lucian-labs/fm1-waveloop-kits` main as a pending source, repository ID `1437618050`,
+pinned at `20ca3180a238df07b9efec913e42954b60356090` (nine reachable commits
+in the complete non-shallow main DAG; zero credited assessments). This source is a
+porting kit: bundled modules, fixtures, recipes and patches are reviewable changes;
+linked donor repositories are not automatically additional watch scope. After review
+and merge, the existing runner must reconcile the registry and independently verify
+identity, branch, immutable pin and full DAG before initialization. Pending registration
+is not active monitoring. No new runner, schedule or coverage credit is added.
+
 The [Ravel adoption review](ravel-adoption-2026-10-28.md), tracked in
 [Felucca #762](https://github.com/kmplngj/Felucca/issues/762), registers
 `De-Pattern/Ravel_FM1` main as a pending source, repository ID `1425709397`,

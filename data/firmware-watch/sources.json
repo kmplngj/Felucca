@@ -8,6 +8,45 @@
   ],
   "pending_source_additions": [
     {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/816",
+      "authorization": "User requested WaveLoop Kits feature/instrument/optimization analysis, GitHub issues and suggested adding the source to the existing watcher in this chat (2026-10-30).",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "20ca3180a238df07b9efec913e42954b60356090"
+      },
+      "historical_total_at_setup": 9,
+      "initialization_policy": "Initialize at the start of the next audit run before freezing its inventory; verify repository identity/main/pin, fetch complete DAG and fresh tip, append initialized repository state, recalculate queues from DAGs and confirmed journal, then remove this pending entry. Snapshot review grants no per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/815",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "20ca3180a238df07b9efec913e42954b60356090"
+      },
+      "recent_frontiers": {
+        "main": "20ca3180a238df07b9efec913e42954b60356090"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/812",
+        "https://github.com/kmplngj/Felucca/issues/813",
+        "https://github.com/kmplngj/Felucca/issues/814",
+        "https://github.com/kmplngj/Felucca/issues/815",
+        "https://github.com/kmplngj/Felucca/issues/816",
+        "https://github.com/kmplngj/Felucca/issues/63",
+        "https://github.com/kmplngj/Felucca/issues/71",
+        "https://github.com/kmplngj/Felucca/issues/169",
+        "https://github.com/kmplngj/Felucca-Engines-GPL/issues/14"
+      ],
+      "repository": "lucian-labs/fm1-waveloop-kits",
+      "repository_id": 1437618050,
+      "requested_at": "2026-10-30",
+      "source_name": "WaveLoop Kits (source modules, porting recipes, fixtures and exact-base patches; not firmware)",
+      "status": "pending_initialization"
+    },
+    {
       "adoption_plan": "https://github.com/kmplngj/Felucca/issues/359",
       "authorization": "User requested in the DUELL adoption chat: also add wave to the updater issue and process.",
       "branches": [
