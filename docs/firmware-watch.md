@@ -375,6 +375,17 @@ history or establish implemented features, available profiles or native gains.
 
 ## Release-specific adoption reviews
 
+The [PERF-1 v0.16.0 review](perf1-v0.16-adoption-2026-11-01.md) refreshes
+[#808](https://github.com/kmplngj/Felucca/issues/808) and adds a pending
+`deamonSLINKY/PERF-1` main registration (repository ID `1433400155`). It retains
+the original intake pin `79fdf21608c77f4987423303f5a9c72397af8e55` (294 reachable
+commits); release `22c295d6a098fc837f285c641aba4a4acb8c0077` has 321. Both counts
+come from the complete non-shallow graph, with zero credited commit assessments.
+After ordinary review and guarded state-registry reconciliation, the existing
+runner must verify identity/main/pin/full history before initialization and
+discovery of the release tip. Pending registration is not active tracking; this
+changes no schedule, journal or frozen interval.
+
 The [Araminta v2.8 review](araminta-v2.8-review-2026-10-21.md) refreshes
 the existing adoption and experimental instrument issues against the immutable
 release commit. Araminta main is already registered; normal source synchronization
