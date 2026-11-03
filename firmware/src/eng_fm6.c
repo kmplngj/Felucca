@@ -221,7 +221,7 @@ static void fm6_adopt(uint32_t tr)
 /* a factory sound load put a SLOT value in (a preset, an engine change): its patch (OWN: the patch stays) */
 static void fm6_track_loaded(const track_t *t)
 {
-    uint32_t tr = (uint32_t)(t - trk);
+    uint32_t tr = trk_index(t);
     if (tr < NTRK && eng_is(t->eng_req, ENGI_FM6)) {
         fm6_own_ok &= (uint8_t)~(1u << tr);
         if (t->p[P_E7] >= 0 && t->p[P_E7] < (int32_t)FM6_NFACTORY)
@@ -287,7 +287,7 @@ static void fm6_poll(void)
  * published patch. Within FM6 the part syncs every block, so a 32-bit generation cannot come round unseen. */
 static void fm6_eff_drop(const track_t *t)
 {
-    uint32_t tr = (uint32_t)(t - trk);
+    uint32_t tr = trk_index(t);
     if (tr < NTRK)
         fm6_eff[tr].ok = 0;
 }
@@ -295,7 +295,7 @@ static void fm6_eff_drop(const track_t *t)
 /* the patch through E0..E6 (audio ISR; cheap when nothing changed) */
 static void fm6_sync(const track_t *t)
 {
-    uint32_t tr = (uint32_t)(t - trk), k, j, car, n = 0;
+    uint32_t tr = trk_index(t), k, j, car, n = 0;
     const int16_t *e = &t->p[P_E0];
     int32_t meg, step;
     if (tr >= NTRK)
@@ -346,14 +346,14 @@ static fm6_note_t *fm6_note_of(track_t *t, voice_t *v)
     uint32_t i;
     if (t < &trk[0] || t >= &trk[NPART])
         return 0;
-    i = (uint32_t)(v - t->v);
-    return i < FM6_POLY ? (fm6_note_t *)ENG_MEM_OF(t, ENGI_FM6, t - trk) + i : 0;
+    i = voice_index(t, v);
+    return i < FM6_POLY ? (fm6_note_t *)ENG_MEM_OF(t, ENGI_FM6, trk_index(t)) + i : 0;
 }
 
 static void fm6_note_on(track_t *t, voice_t *v)
 {
     fm6_note_t *n = fm6_note_of(t, v);
-    uint32_t tr = (uint32_t)(t - trk);
+    uint32_t tr = trk_index(t);
     const uint8_t *p;
     if (!n)
         return;
@@ -366,7 +366,7 @@ static void fm6_note_on(track_t *t, voice_t *v)
 
 static void fm6_block(track_t *t)       /* once a block and part: the macros, the LFO */
 {
-    uint32_t tr = (uint32_t)(t - trk);
+    uint32_t tr = trk_index(t);
     if (tr >= NTRK)
         return;
     fm6_sync(t);
@@ -378,7 +378,7 @@ static void fm6_block(track_t *t)       /* once a block and part: the macros, th
 static int fm6_done(track_t *t, voice_t *v)
 {
     fm6_note_t *n = fm6_note_of(t, v);
-    uint32_t tr = (uint32_t)(t - trk);
+    uint32_t tr = trk_index(t);
     if (!n || !n->live)
         return 1;
     if (!fm6_note_done(n, fm6_eff[tr].p, fm6_eff[tr].alg))
@@ -390,7 +390,7 @@ static int fm6_done(track_t *t, voice_t *v)
 static void fm6_render(track_t *t, voice_t *v, int32_t *out, uint32_t len, const vmod_t *m)
 {
     fm6_note_t *n = fm6_note_of(t, v);
-    uint32_t tr = (uint32_t)(t - trk), i;
+    uint32_t tr = trk_index(t), i;
     const uint8_t *p;
     int32_t bus[FM6_N], lf, fb, lvl, k, a, da;
     if (!n || !n->live || len != FM6_N)

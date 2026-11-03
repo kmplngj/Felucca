@@ -13,7 +13,7 @@ static uint8_t digital_stage[NPART][NVOICE][4];
 
 static void digital_note_on(track_t *t, voice_t *v)
 {
-    uint32_t tr = (uint32_t)(t - trk), vi = (uint32_t)(v - t->v), op;
+    uint32_t tr = trk_index(t), vi = voice_index(t, v), op;
     for (op = 0; op < 4u; op++) {
         digital_env[tr][vi][op] = t->p[P_FM1_ATK + op * 5u] ? 0 : 1 << 24;
         digital_stage[tr][vi][op] = t->p[P_FM1_ATK + op * 5u] ? 1 : 2;
@@ -132,7 +132,7 @@ static int digital_custom(const track_t *t)
 
 static void digital_op_tick(track_t *t, voice_t *v, int32_t gain[4])
 {
-    uint32_t tr = (uint32_t)(t - trk), vi = (uint32_t)(v - t->v), op;
+    uint32_t tr = trk_index(t), vi = voice_index(t, v), op;
     for (op = 0; op < 4u; op++) {
         const int16_t *p = &t->p[P_FM1_ATK + op * 5u];
         int32_t e = digital_env[tr][vi][op], sus = p[2] == 127 ? 1 << 24 : (int32_t)p[2] * (1 << 17);

@@ -936,14 +936,14 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
 /* the INSERT at rest at once (mix_part: TYPE turned OFF while the part was silent, its fade never ran) */
 static __attribute__((noinline)) void ins_rest(track_t *t)
 {
-    memset(&ins[(uint32_t)(t - trk) % NTRK], 0, sizeof(ins_t));
+    memset(&ins[trk_index(t) % NTRK], 0, sizeof(ins_t));
     t->ins_run = 0;
 }
 
 /* the track's INSERT on its block b (mix_part, mix_spread): nothing while TYPE is OFF or MIX is 0 and faded */
 static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint32_t n)
 {
-    ins_t *s = &ins[(uint32_t)(t - trk) % NTRK];
+    ins_t *s = &ins[trk_index(t) % NTRK];
     int32_t ty = clamp(t->p[P_ITYPE], 0, IT_N - 1), tw;
     if (s->type != ty && !s->w)                         /* faded out: the new type from rest */
         s->type = (uint8_t)ty;
@@ -1046,8 +1046,8 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
     if (t->p[P_ITYPE] | t->ins_run)
         track_insert(t, b, n);                          /* (the mono sum, as DIST) */
     slicer_track_sd(t, b, d, n);
-    if ((pf.mute >> (t - trk)) & 1u)
-        perf_mute_sd((uint32_t)(t - trk), b, d, n);
+    if ((pf.mute >> trk_index(t)) & 1u)
+        perf_mute_sd(trk_index(t), b, d, n);
     int32_t gains[3];
     int ramp = send_begin(t, gains);
     int32_t c = ramp ? 0 : gains[0], dl = ramp ? 0 : gains[1], r = ramp ? 0 : gains[2], pk = t->peak;
@@ -1116,7 +1116,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         if (shape < 3u) vcost = legacy_cost[shape];
     }
 #endif
-    part_cost[(uint32_t)(t - trk) % NTRK] = (uint16_t)(nr * vcost + (nr || t->tail ? 60u : 0u));
+    part_cost[trk_index(t) % NTRK] = (uint16_t)(nr * vcost + (nr || t->tail ? 60u : 0u));
     if (nr)
 #else
     if (track_render(t, b, n))
@@ -1139,8 +1139,8 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         if (t->p[P_ITYPE] | t->ins_run)
             track_insert(t, b, n);                      /* the INSERT (1.5): off, nothing */
         slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
-        if ((pf.mute >> (t - trk)) & 1u)
-            perf_mute((uint32_t)(t - trk), b, n);       /* perform.c: a black key in the FX layer */
+        if ((pf.mute >> trk_index(t)) & 1u)
+            perf_mute(trk_index(t), b, n);              /* perform.c: a black key in the FX layer */
     }
     if (!T_SPREAD(t)) {                                /* (the mix's values read after the calls: none is held over
                                                          * them, no spill in the loop: the ISR's cost as before 1.5) */
