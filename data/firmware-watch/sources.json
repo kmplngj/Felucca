@@ -464,6 +464,45 @@
       "requested_at": "2026-10-28",
       "source_name": "Ravel (FM-1 main firmware; software branch excluded)",
       "status": "pending_initialization"
+    },
+    {
+      "adoption_plan": "https://github.com/kmplngj/Felucca/issues/837",
+      "authorization": "User requested on 2026-11-04: analyse open-mpk4 firmware features, instruments, optimizations and design for our fork, make a plan and GitHub issues, and consider adding it to the watcher. Source review recommends main-only registration.",
+      "branches": [
+        "main"
+      ],
+      "historical_reviewed": 0,
+      "historical_targets": {
+        "main": "14b01b408ba6fa1d45abb7dbbe321bd97b778b1d"
+      },
+      "historical_total_at_setup": 2,
+      "initialization_policy": "Initialize after ordinary reviewed registration reaches main and the canonical state registry; reverify repository identity/canonical name/main/immutable pin, fetch complete non-shallow DAG and fresh tip, preserve existing journal and frozen intervals, append initialized repository state and recalculate queues from complete DAGs and confirmed records. Remove pending entry only after success; preserve explicit blockers on failure. This topic snapshot grants zero per-commit coverage.",
+      "instrument_issue": "https://github.com/kmplngj/Felucca/issues/838",
+      "last_reviewed_sha": null,
+      "pinned_recent_targets": {
+        "main": "14b01b408ba6fa1d45abb7dbbe321bd97b778b1d"
+      },
+      "recent_frontiers": {
+        "main": "14b01b408ba6fa1d45abb7dbbe321bd97b778b1d"
+      },
+      "recent_reviewed": 0,
+      "recent_total_at_setup": 0,
+      "related_issues": [
+        "https://github.com/kmplngj/Felucca/issues/837",
+        "https://github.com/kmplngj/Felucca/issues/838",
+        "https://github.com/kmplngj/Felucca/issues/839",
+        "https://github.com/kmplngj/Felucca/issues/840",
+        "https://github.com/kmplngj/Felucca/issues/33",
+        "https://github.com/kmplngj/Felucca/issues/36",
+        "https://github.com/kmplngj/Felucca/issues/60",
+        "https://github.com/kmplngj/Felucca/issues/95",
+        "https://github.com/kmplngj/Felucca/issues/828"
+      ],
+      "repository": "giusmarci/open-mpk4",
+      "repository_id": 1445403691,
+      "requested_at": "2026-11-04",
+      "source_name": "OPEN MPK4 (Akai MIDI controller/sequencer; harmony, note-performance effects and native-panel design references; no audio synthesis engines)",
+      "status": "pending_initialization"
     }
   ],
   "repositories": [

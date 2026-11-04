@@ -8,6 +8,17 @@ issue or inapplicable. Scanning never implements firmware or claims device valid
 
 ## Canonical files and branch
 
+The [OPEN MPK4 adoption review](open-mpk4-adoption-2026-11-04.md), tracked in
+[Felucca #837](https://github.com/kmplngj/Felucca/issues/837), registers
+`giusmarci/open-mpk4` main as a pending source, repository ID `1445403691`,
+pinned at `14b01b408ba6fa1d45abb7dbbe321bd97b778b1d` (two reachable commits in
+its complete non-shallow main DAG, zero credited assessments). It is a MIDI
+controller/sequencer with harmony and UI references, not an audio synth.
+After ordinary review brings the registration to main and the canonical state
+registry, the existing runner must reverify identity, branch, immutable pin and
+complete history before initialization. Pending registration is not active tracking
+or completed coverage; this adds no schedule or automation.
+
 The [Ravel adoption review](ravel-adoption-2026-10-28.md), tracked in
 [Felucca #762](https://github.com/kmplngj/Felucca/issues/762), registers
 `De-Pattern/Ravel_FM1` main as a pending source, repository ID `1425709397`,
